@@ -8,23 +8,18 @@
  * - Real-time tool transparency display
  */
 
-import React from "react";
-import ReactDOM from "react-dom/client";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { App } from "./App";
+import "./index.css";
 
-function App() {
-  return (
-    <div>
-      <h1>Memory Loop</h1>
-      <p>Mobile-friendly vault interface - placeholder</p>
-    </div>
-  );
+const rootElement = document.getElementById("root");
+if (!rootElement) {
+  throw new Error("Root element not found");
 }
 
-const root = document.getElementById("root");
-if (root) {
-  ReactDOM.createRoot(root).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>
-  );
-}
+createRoot(rootElement).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);

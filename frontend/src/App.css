@@ -1,0 +1,82 @@
+/**
+ * Memory Loop - App Shell Styles
+ *
+ * Styles for the main application layout.
+ * Mobile-first with responsive adjustments.
+ */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ============================================
+   Header
+   ============================================ */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+/* Tablet and up */
+@media (min-width: 768px) {
+  .app-header {
+    padding: var(--space-4) var(--space-6);
+  }
+
+  .app-title {
+    font-size: var(--font-size-2xl);
+  }
+}
+
+/* Desktop and up */
+@media (min-width: 1024px) {
+  .app-header {
+    padding: var(--space-4) var(--space-8);
+  }
+}
+
+/* ============================================
+   Main Content Area
+   ============================================ */
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  width: 100%;
+  max-width: var(--container-desktop);
+  margin: 0 auto;
+}
+
+/* Tablet and up */
+@media (min-width: 768px) {
+  .app-main {
+    padding: var(--space-6);
+  }
+}
+
+/* Desktop and up */
+@media (min-width: 1024px) {
+  .app-main {
+    padding: var(--space-8);
+  }
+}

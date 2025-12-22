@@ -3,6 +3,7 @@
  *
  * Provides:
  * - Health check endpoint at /api/health
+ * - Vaults list endpoint at /api/vaults
  * - WebSocket upgrade handler at /ws
  * - Static file serving from frontend build
  * - CORS headers for local development
@@ -12,6 +13,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import { upgradeWebSocket, websocket } from "hono/bun";
+import { discoverVaults, VaultsDirError } from "./vault-manager";
 
 /**
  * Get the port from environment variable or use default
@@ -50,6 +52,20 @@ export const createApp = () => {
   // Health check endpoint
   app.get("/api/health", (c) => {
     return c.text("Memory Loop Backend");
+  });
+
+  // Vaults list endpoint
+  app.get("/api/vaults", async (c) => {
+    try {
+      const vaults = await discoverVaults();
+      return c.json({ vaults });
+    } catch (error) {
+      if (error instanceof VaultsDirError) {
+        return c.json({ error: error.message }, 500);
+      }
+      // Re-throw unexpected errors
+      throw error;
+    }
   });
 
   // WebSocket upgrade handler at /ws

@@ -8,9 +8,10 @@
  */
 
 import { serverConfig } from "./server";
+import { serverLog as log } from "./logger";
 
 const server = Bun.serve(serverConfig);
 
-console.log(`Memory Loop Backend running at http://localhost:${server.port}`);
-console.log(`WebSocket available at ws://localhost:${server.port}/ws`);
-console.log(`Health check at http://localhost:${server.port}/api/health`);
+log.info(`Memory Loop Backend running at http://localhost:${server.port}`);
+log.info(`WebSocket available at ws://localhost:${server.port}/ws`);
+log.info(`Health check at http://localhost:${server.port}/api/health`);

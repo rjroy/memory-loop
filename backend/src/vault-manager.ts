@@ -8,6 +8,7 @@
 import { readdir, readFile, stat, access } from "node:fs/promises";
 import { join } from "node:path";
 import type { VaultInfo } from "@memory-loop/shared";
+import { vaultLog as log } from "./logger";
 
 /**
  * Error thrown when VAULTS_DIR is not configured or inaccessible.
@@ -46,11 +47,13 @@ export const INBOX_PATTERNS = [
 export function getVaultsDir(): string {
   const vaultsDir = process.env.VAULTS_DIR;
   if (!vaultsDir) {
+    log.error("VAULTS_DIR environment variable is not set");
     throw new VaultsDirError(
       "VAULTS_DIR environment variable is not set. " +
         "Set it to the parent directory containing your Obsidian vaults."
     );
   }
+  log.debug(`VAULTS_DIR: ${vaultsDir}`);
   return vaultsDir;
 }
 
@@ -185,22 +188,28 @@ export async function parseVault(
  * @throws VaultsDirError if VAULTS_DIR is not set or inaccessible
  */
 export async function discoverVaults(): Promise<VaultInfo[]> {
+  log.info("Discovering vaults...");
   const vaultsDir = getVaultsDir();
 
   // Verify VAULTS_DIR exists and is accessible
   if (!(await directoryExists(vaultsDir))) {
+    log.error(`VAULTS_DIR does not exist: ${vaultsDir}`);
     throw new VaultsDirError(
       `VAULTS_DIR "${vaultsDir}" does not exist or is not accessible. ` +
         "Ensure the directory exists and you have read permissions."
     );
   }
 
+  log.info(`Scanning: ${vaultsDir}`);
+
   // List all entries in VAULTS_DIR
   let entries: string[];
   try {
     entries = await readdir(vaultsDir);
+    log.debug(`Found ${entries.length} entries`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    log.error(`Failed to read VAULTS_DIR: ${message}`);
     throw new VaultsDirError(
       `Failed to read VAULTS_DIR "${vaultsDir}": ${message}`
     );
@@ -212,18 +221,23 @@ export async function discoverVaults(): Promise<VaultInfo[]> {
   for (const entry of entries) {
     // Skip hidden directories
     if (entry.startsWith(".")) {
+      log.debug(`Skipping hidden: ${entry}`);
       continue;
     }
 
     try {
+      log.debug(`Checking: ${entry}`);
       const vault = await parseVault(vaultsDir, entry);
       if (vault) {
+        log.info(`Found vault: ${vault.id} (${vault.name})`);
         vaults.push(vault);
+      } else {
+        log.debug(`Not a vault (no CLAUDE.md): ${entry}`);
       }
     } catch (error) {
       // Log individual vault errors but continue with other vaults
-      console.warn(
-        `Warning: Failed to parse vault "${entry}":`,
+      log.warn(
+        `Failed to parse vault "${entry}":`,
         error instanceof Error ? error.message : String(error)
       );
     }
@@ -232,6 +246,7 @@ export async function discoverVaults(): Promise<VaultInfo[]> {
   // Sort vaults by name for consistent ordering
   vaults.sort((a, b) => a.name.localeCompare(b.name));
 
+  log.info(`Discovery complete: ${vaults.length} vault(s) found`);
   return vaults;
 }
 
@@ -243,16 +258,24 @@ export async function discoverVaults(): Promise<VaultInfo[]> {
  * @throws VaultsDirError if VAULTS_DIR is not set or inaccessible
  */
 export async function getVaultById(vaultId: string): Promise<VaultInfo | null> {
+  log.info(`Looking up vault: ${vaultId}`);
   const vaultsDir = getVaultsDir();
 
   // Verify VAULTS_DIR exists
   if (!(await directoryExists(vaultsDir))) {
+    log.error(`VAULTS_DIR does not exist: ${vaultsDir}`);
     throw new VaultsDirError(
       `VAULTS_DIR "${vaultsDir}" does not exist or is not accessible.`
     );
   }
 
-  return parseVault(vaultsDir, vaultId);
+  const vault = await parseVault(vaultsDir, vaultId);
+  if (vault) {
+    log.info(`Vault found: ${vault.name} at ${vault.path}`);
+  } else {
+    log.warn(`Vault not found: ${vaultId}`);
+  }
+  return vault;
 }
 
 /**

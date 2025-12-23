@@ -21,6 +21,7 @@ import {
 } from "./session-manager";
 import { captureToDaily } from "./note-capture";
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk";
+import { wsLog as log } from "./logger";
 
 /**
  * WebSocket interface for sending messages.
@@ -96,6 +97,7 @@ export class WebSocketHandler {
    * Sends a server message to the client.
    */
   private send(ws: WebSocketLike, message: ServerMessage): void {
+    log.debug(`-> ${message.type}`, message);
     ws.send(JSON.stringify(message));
   }
 
@@ -107,6 +109,7 @@ export class WebSocketHandler {
     code: ErrorCode,
     message: string
   ): void {
+    log.error(`Sending error: ${code} - ${message}`);
     this.send(ws, { type: "error", code, message });
   }
 
@@ -115,10 +118,13 @@ export class WebSocketHandler {
    * Sends the vault list to the client.
    */
   async onOpen(ws: WebSocketLike): Promise<void> {
+    log.info("Connection opened, discovering vaults...");
     try {
       const vaults = await discoverVaults();
+      log.info(`Found ${vaults.length} vault(s)`, vaults.map((v) => v.id));
       this.send(ws, { type: "vault_list", vaults });
     } catch (error) {
+      log.error("Failed to discover vaults", error);
       const message =
         error instanceof Error ? error.message : "Failed to discover vaults";
       this.sendError(ws, "INTERNAL_ERROR", message);
@@ -130,8 +136,10 @@ export class WebSocketHandler {
    * Cleans up any active queries.
    */
   async onClose(): Promise<void> {
+    log.info("Connection closed, cleaning up...");
     // Interrupt any active query
     if (this.state.activeQuery) {
+      log.info("Interrupting active query");
       try {
         await this.state.activeQuery.interrupt();
       } catch {
@@ -142,6 +150,7 @@ export class WebSocketHandler {
 
     // Reset state
     this.state = createConnectionState();
+    log.info("Cleanup complete");
   }
 
   /**
@@ -160,6 +169,7 @@ export class WebSocketHandler {
     try {
       json = JSON.parse(rawMessage);
     } catch {
+      log.warn("Received invalid JSON", rawMessage.slice(0, 100));
       this.sendError(ws, "VALIDATION_ERROR", "Invalid JSON");
       return;
     }
@@ -169,12 +179,14 @@ export class WebSocketHandler {
     if (!result.success) {
       const errorMessage =
         result.error.errors[0]?.message ?? "Invalid message format";
+      log.warn("Message validation failed", { json, errors: result.error.errors });
       this.sendError(ws, "VALIDATION_ERROR", errorMessage);
       return;
     }
 
     // Route to appropriate handler
     const message = result.data;
+    log.info(`<- ${message.type}`, message);
     await this.routeMessage(ws, message);
   }
 
@@ -218,19 +230,24 @@ export class WebSocketHandler {
     ws: WebSocketLike,
     vaultId: string
   ): Promise<void> {
+    log.info(`Selecting vault: ${vaultId}`);
     try {
       const vault = await getVaultById(vaultId);
 
       if (!vault) {
+        log.warn(`Vault not found: ${vaultId}`);
         this.sendError(ws, "VAULT_NOT_FOUND", `Vault "${vaultId}" not found`);
         return;
       }
+
+      log.info(`Vault found: ${vault.name} at ${vault.path}`);
 
       // Update state with selected vault
       this.state.currentVault = vault;
       this.state.currentSessionId = null;
       this.state.activeQuery = null;
 
+      log.info("Sending session_ready");
       // Send session_ready with empty session (will be created on first message)
       // For now, we signal readiness without a session ID - the session will be
       // created lazily on the first discussion_message
@@ -239,7 +256,9 @@ export class WebSocketHandler {
         sessionId: "", // Will be populated after first query
         vaultId: vault.id,
       });
+      log.info("Vault selection complete");
     } catch (error) {
+      log.error("Failed to select vault", error);
       const message =
         error instanceof Error ? error.message : "Failed to select vault";
       this.sendError(ws, "INTERNAL_ERROR", message);
@@ -254,7 +273,9 @@ export class WebSocketHandler {
     ws: WebSocketLike,
     text: string
   ): Promise<void> {
+    log.info(`Capturing note (${text.length} chars)`);
     if (!this.state.currentVault) {
+      log.warn("No vault selected for note capture");
       this.sendError(
         ws,
         "VAULT_NOT_FOUND",
@@ -267,6 +288,7 @@ export class WebSocketHandler {
       const result = await captureToDaily(this.state.currentVault, text);
 
       if (!result.success) {
+        log.error("Note capture failed", result.error);
         this.sendError(
           ws,
           "NOTE_CAPTURE_FAILED",
@@ -275,11 +297,13 @@ export class WebSocketHandler {
         return;
       }
 
+      log.info(`Note captured at ${result.timestamp}`);
       this.send(ws, {
         type: "note_captured",
         timestamp: result.timestamp,
       });
     } catch (error) {
+      log.error("Note capture threw", error);
       const message =
         error instanceof Error ? error.message : "Failed to capture note";
       this.sendError(ws, "NOTE_CAPTURE_FAILED", message);
@@ -295,7 +319,9 @@ export class WebSocketHandler {
     ws: WebSocketLike,
     text: string
   ): Promise<void> {
+    log.info(`Discussion message (${text.length} chars)`);
     if (!this.state.currentVault) {
+      log.warn("No vault selected for discussion");
       this.sendError(
         ws,
         "VAULT_NOT_FOUND",
@@ -306,12 +332,14 @@ export class WebSocketHandler {
 
     // Use mock mode for testing
     if (isMockMode()) {
+      log.info("Using mock SDK mode");
       await this.handleMockDiscussion(ws, text);
       return;
     }
 
     // Abort any existing query before starting a new one
     if (this.state.activeQuery) {
+      log.info("Aborting previous query");
       try {
         await this.state.activeQuery.interrupt();
       } catch {
@@ -321,6 +349,7 @@ export class WebSocketHandler {
     }
 
     const messageId = generateMessageId();
+    log.info(`Starting query with messageId: ${messageId}`);
 
     try {
       // Create or resume session
@@ -328,11 +357,15 @@ export class WebSocketHandler {
 
       if (this.state.currentSessionId) {
         // Resume existing session
+        log.info(`Resuming session: ${this.state.currentSessionId}`);
         queryResult = await resumeSession(this.state.currentSessionId, text);
       } else {
         // Create new session
+        log.info("Creating new session");
         queryResult = await createSession(this.state.currentVault, text);
       }
+
+      log.info(`Session ready: ${queryResult.sessionId}`);
 
       // Store active query for potential abort
       this.state.activeQuery = queryResult;
@@ -342,14 +375,17 @@ export class WebSocketHandler {
       this.send(ws, { type: "response_start", messageId });
 
       // Stream events from SDK
+      log.info("Streaming SDK events...");
       await this.streamEvents(ws, messageId, queryResult);
 
       // Send response_end
       this.send(ws, { type: "response_end", messageId });
+      log.info("Discussion complete");
 
       // Clear active query after completion
       this.state.activeQuery = null;
     } catch (error) {
+      log.error("Discussion failed", error);
       // Clear active query on error
       this.state.activeQuery = null;
 

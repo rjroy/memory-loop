@@ -15,6 +15,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { SessionMetadata, VaultInfo } from "@memory-loop/shared";
 import { directoryExists, fileExists } from "./vault-manager";
+import { sessionLog as log } from "./logger";
 
 /**
  * Base directory for storing session metadata.
@@ -351,8 +352,13 @@ export async function createSession(
   prompt: string,
   options?: Partial<Options>
 ): Promise<SessionQueryResult> {
+  log.info(`Creating session for vault: ${vault.id}`);
+  log.info(`Vault path: ${vault.path}`);
+  log.debug(`Prompt: ${prompt.slice(0, 100)}...`);
+
   try {
     // Create SDK query with vault's cwd and project settings
+    log.info("Calling Claude Agent SDK query()...");
     const queryResult = query({
       prompt,
       options: {
@@ -363,7 +369,10 @@ export async function createSession(
     });
 
     // Extract session ID from first event
+    log.info("Waiting for first SDK event...");
     const { sessionId, firstEvent } = await extractSessionId(queryResult);
+    log.info(`Session created: ${sessionId}`);
+    log.debug("First event type:", firstEvent.type);
 
     // Create and save session metadata
     const now = new Date().toISOString();
@@ -375,6 +384,7 @@ export async function createSession(
       lastActiveAt: now,
     };
     await saveSession(metadata);
+    log.info("Session metadata saved");
 
     // Return wrapped result
     return {
@@ -383,6 +393,7 @@ export async function createSession(
       interrupt: () => queryResult.interrupt(),
     };
   } catch (error) {
+    log.error("Failed to create session", error);
     if (error instanceof SessionError) {
       throw error;
     }
@@ -403,18 +414,24 @@ export async function resumeSession(
   prompt: string,
   options?: Partial<Options>
 ): Promise<SessionQueryResult> {
+  log.info(`Resuming session: ${sessionId}`);
+
   // Load existing session metadata
   const metadata = await loadSession(sessionId);
 
   if (!metadata) {
+    log.warn(`Session not found: ${sessionId}`);
     throw new SessionError(
       `Session "${sessionId}" not found`,
       "SESSION_NOT_FOUND"
     );
   }
 
+  log.info(`Session metadata loaded: vault=${metadata.vaultId}`);
+
   try {
     // Create SDK query with resume option
+    log.info("Calling Claude Agent SDK query() with resume...");
     const queryResult = query({
       prompt,
       options: {
@@ -426,8 +443,10 @@ export async function resumeSession(
     });
 
     // Extract session ID from first event (should match)
+    log.info("Waiting for first SDK event...");
     const { sessionId: resumedId, firstEvent } =
       await extractSessionId(queryResult);
+    log.info(`Session resumed: ${resumedId}`);
 
     // Update lastActiveAt
     metadata.lastActiveAt = new Date().toISOString();
@@ -440,6 +459,7 @@ export async function resumeSession(
       interrupt: () => queryResult.interrupt(),
     };
   } catch (error) {
+    log.error("Failed to resume session", error);
     if (error instanceof SessionError) {
       throw error;
     }

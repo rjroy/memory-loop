@@ -15,6 +15,7 @@ import { serveStatic } from "hono/bun";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { discoverVaults, VaultsDirError } from "./vault-manager";
 import { createWebSocketHandler } from "./websocket-handler";
+import { serverLog as log } from "./logger";
 
 /**
  * Get the port from environment variable or use default
@@ -26,7 +27,7 @@ export const getPort = (): number => {
     if (!isNaN(parsed) && parsed > 0 && parsed <= 65535) {
       return parsed;
     }
-    console.warn(`Invalid PORT "${envPort}", using default 3000`);
+    log.warn(`Invalid PORT "${envPort}", using default 3000`);
   }
   return 3000;
 };
@@ -78,10 +79,10 @@ export const createApp = () => {
 
       return {
         onOpen(_event, ws) {
-          console.log("WebSocket connection opened");
+          log.info("WebSocket connection opened");
           // Send vault list on connection
           handler.onOpen(ws).catch((error) => {
-            console.error("Error in WebSocket onOpen:", error);
+            log.error("Error in WebSocket onOpen:", error);
           });
         },
         onMessage(event, ws) {
@@ -91,35 +92,35 @@ export const createApp = () => {
             // Convert Blob to text, then handle
             void data.text().then((text) => {
               void handler.onMessage(ws, text).catch((error) => {
-                console.error("Error in WebSocket onMessage:", error);
+                log.error("Error in WebSocket onMessage:", error);
               });
             });
           } else if (typeof data === "string") {
             // String data
             void handler.onMessage(ws, data).catch((error) => {
-              console.error("Error in WebSocket onMessage:", error);
+              log.error("Error in WebSocket onMessage:", error);
             });
           } else if (data instanceof ArrayBuffer) {
             // ArrayBuffer data
             void handler.onMessage(ws, data).catch((error) => {
-              console.error("Error in WebSocket onMessage:", error);
+              log.error("Error in WebSocket onMessage:", error);
             });
           } else {
             // SharedArrayBuffer or other - convert to string
             const text = new TextDecoder().decode(new Uint8Array(data as ArrayBufferLike));
             void handler.onMessage(ws, text).catch((error) => {
-              console.error("Error in WebSocket onMessage:", error);
+              log.error("Error in WebSocket onMessage:", error);
             });
           }
         },
         onClose() {
-          console.log("WebSocket connection closed");
+          log.info("WebSocket connection closed");
           handler.onClose().catch((error) => {
-            console.error("Error in WebSocket onClose:", error);
+            log.error("Error in WebSocket onClose:", error);
           });
         },
         onError(event) {
-          console.error("WebSocket error:", event);
+          log.error("WebSocket error:", event);
         },
       };
     })

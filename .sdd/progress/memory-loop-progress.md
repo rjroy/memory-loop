@@ -106,7 +106,7 @@ None yet.
 |-----------|--------|
 | Backend | ✅ 236 tests passing |
 | Frontend | ✅ 103 tests passing |
-| E2E | ✅ Infrastructure in place (3 spec files) |
+| E2E | Manual testing |
 
 **Total**: 339 unit tests passing
 
@@ -114,5 +114,4 @@ None yet.
 
 ## Notes for Next Session
 - Implementation complete
-- E2E tests require proper browser setup (Playwright fallback build may have issues on Arch Linux)
-- Run `bunx playwright install` to set up browsers before running E2E tests
+- Mock SDK available for testing without Claude API credentials (set MOCK_SDK=true)

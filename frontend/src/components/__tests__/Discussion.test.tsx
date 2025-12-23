@@ -83,6 +83,44 @@ afterEach(() => {
 });
 
 describe("Discussion", () => {
+  describe("vault selection", () => {
+    it("sends select_vault on WebSocket connect", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Wait for the select_vault message to be sent
+      await waitFor(() => {
+        expect(sentMessages).toContainEqual({
+          type: "select_vault",
+          vaultId: "vault-1",
+        });
+      });
+    });
+
+    it("sends select_vault with correct vault ID", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Verify the select_vault message has the correct vault ID
+      await waitFor(() => {
+        const vaultSelections = sentMessages.filter(
+          (m) => m.type === "select_vault"
+        );
+        expect(vaultSelections.length).toBe(1);
+        expect(vaultSelections[0]).toEqual({
+          type: "select_vault",
+          vaultId: "vault-1",
+        });
+      });
+    });
+  });
+
   describe("rendering", () => {
     it("renders input field and send button", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
@@ -207,8 +245,11 @@ describe("Discussion", () => {
       fireEvent.change(input, { target: { value: "Hello" } });
       fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
 
-      // Should not have sent any messages
-      expect(sentMessages.length).toBe(0);
+      // Should not have sent any discussion_message (select_vault is expected on connect)
+      const discussionMessages = sentMessages.filter(
+        (m) => m.type === "discussion_message"
+      );
+      expect(discussionMessages.length).toBe(0);
     });
 
     it("disables button when input is empty", async () => {

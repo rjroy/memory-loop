@@ -5,7 +5,7 @@
  * Features message history, streaming responses, and slash command detection.
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useSession, useServerMessageHandler } from "../contexts/SessionContext";
 import { MessageBubble } from "./MessageBubble";
@@ -37,10 +37,34 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const hasSentVaultSelectionRef = useRef(false);
 
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
   const { vault, messages, addMessage } = useSession();
+
+  // Callback to re-send vault selection on WebSocket reconnect
+  const handleReconnect = useCallback(() => {
+    hasSentVaultSelectionRef.current = false;
+  }, []);
+
+  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
+    onReconnect: handleReconnect,
+  });
   const handleServerMessage = useServerMessageHandler();
+
+  // Send vault selection when WebSocket connects (initial or reconnect)
+  useEffect(() => {
+    if (
+      connectionStatus === "connected" &&
+      vault &&
+      !hasSentVaultSelectionRef.current
+    ) {
+      sendMessage({
+        type: "select_vault",
+        vaultId: vault.id,
+      });
+      hasSentVaultSelectionRef.current = true;
+    }
+  }, [connectionStatus, vault, sendMessage]);
 
   // Load draft from localStorage on mount
   useEffect(() => {

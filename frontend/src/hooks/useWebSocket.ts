@@ -41,6 +41,8 @@ export interface UseWebSocketOptions {
   maxDelay?: number;
   /** Enable auto-reconnect (default: true) */
   autoReconnect?: boolean;
+  /** Callback fired when reconnecting (not on initial connection) */
+  onReconnect?: () => void;
 }
 
 /**
@@ -94,6 +96,13 @@ export function useWebSocket(
   );
   const reconnectDelayRef = useRef(config.initialDelay);
   const mountedRef = useRef(true);
+  const hasConnectedOnceRef = useRef(false);
+  const onReconnectRef = useRef(config.onReconnect);
+
+  // Keep onReconnect ref in sync with latest callback
+  useEffect(() => {
+    onReconnectRef.current = config.onReconnect;
+  }, [config.onReconnect]);
 
   /**
    * Clears any pending reconnect timeout.
@@ -159,6 +168,13 @@ export function useWebSocket(
         ws.close();
         return;
       }
+
+      // Fire onReconnect callback if this is a reconnection (not first connection)
+      if (hasConnectedOnceRef.current) {
+        onReconnectRef.current?.();
+      }
+      hasConnectedOnceRef.current = true;
+
       setConnectionStatus("connected");
       resetReconnectDelay();
     };

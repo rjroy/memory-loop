@@ -130,7 +130,7 @@ describe("NoteCapture", () => {
       const textarea = screen.getByRole("textbox");
       fireEvent.change(textarea, { target: { value: "Test note content" } });
 
-      expect(textarea.value).toBe("Test note content");
+      expect((textarea as HTMLTextAreaElement).value).toBe("Test note content");
     });
 
     it("saves draft to localStorage on change", async () => {
@@ -158,7 +158,7 @@ describe("NoteCapture", () => {
       });
 
       const textarea = screen.getByRole("textbox");
-      expect(textarea.value).toBe("Saved draft");
+      expect((textarea as HTMLTextAreaElement).value).toBe("Saved draft");
     });
   });
 
@@ -290,7 +290,7 @@ describe("NoteCapture", () => {
       });
 
       await waitFor(() => {
-        expect(textarea.value).toBe("");
+        expect((textarea as HTMLTextAreaElement).value).toBe("");
       });
     });
 

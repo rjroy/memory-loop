@@ -89,11 +89,17 @@ To test without using API credits:
 MOCK_SDK=true bun run dev
 ```
 
-### Production Build
+### Production
 
 ```bash
+# Type-check and build frontend
 bun run build
+
+# Start server (runs backend from source, serves built frontend)
+./scripts/launch.sh
 ```
+
+**Note:** The backend runs directly from TypeScript source (not bundled). This is required because the Claude Agent SDK resolves paths relative to the running script location.
 
 ### Other Commands
 

@@ -71,6 +71,7 @@ MOCK_SDK=true                   # Optional (testing without API)
 ## Key Patterns
 
 - **Strict TypeScript** with `noEmit` (Bun handles transpilation)
+- **No backend bundling** - runs from source (`bun run src/index.ts`) because Claude Agent SDK resolves paths relative to the running script
 - **ESLint 9 flat config** with TypeScript-ESLint projectService
 - **Zod validation** with `safeParse` for untrusted input
 - **Custom error classes** with `.code` property (e.g., `VAULT_NOT_FOUND`)

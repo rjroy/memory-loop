@@ -14,6 +14,7 @@ import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { discoverVaults, VaultsDirError } from "./vault-manager";
+import { createWebSocketHandler } from "./websocket-handler";
 
 /**
  * Get the port from environment variable or use default
@@ -69,35 +70,53 @@ export const createApp = () => {
   });
 
   // WebSocket upgrade handler at /ws
-  // Full message handling implemented in TASK-008
+  // Each connection gets its own handler instance for state isolation
   app.get(
     "/ws",
     upgradeWebSocket(() => {
+      const handler = createWebSocketHandler();
+
       return {
         onOpen(_event, ws) {
           console.log("WebSocket connection opened");
-          ws.send(JSON.stringify({ type: "connected" }));
+          // Send vault list on connection
+          handler.onOpen(ws).catch((error) => {
+            console.error("Error in WebSocket onOpen:", error);
+          });
         },
         onMessage(event, ws) {
           // event.data can be string, ArrayBuffer, or Blob
           const data = event.data;
-          const message =
-            typeof data === "string"
-              ? data
-              : data instanceof ArrayBuffer
-                ? new TextDecoder().decode(data)
-                : "[binary]";
-          console.log("WebSocket message received:", message);
-          // Message handling to be implemented in TASK-008
-          ws.send(
-            JSON.stringify({
-              type: "ack",
-              message: "Message received",
-            })
-          );
+          if (data instanceof Blob) {
+            // Convert Blob to text, then handle
+            void data.text().then((text) => {
+              void handler.onMessage(ws, text).catch((error) => {
+                console.error("Error in WebSocket onMessage:", error);
+              });
+            });
+          } else if (typeof data === "string") {
+            // String data
+            void handler.onMessage(ws, data).catch((error) => {
+              console.error("Error in WebSocket onMessage:", error);
+            });
+          } else if (data instanceof ArrayBuffer) {
+            // ArrayBuffer data
+            void handler.onMessage(ws, data).catch((error) => {
+              console.error("Error in WebSocket onMessage:", error);
+            });
+          } else {
+            // SharedArrayBuffer or other - convert to string
+            const text = new TextDecoder().decode(new Uint8Array(data as ArrayBufferLike));
+            void handler.onMessage(ws, text).catch((error) => {
+              console.error("Error in WebSocket onMessage:", error);
+            });
+          }
         },
         onClose() {
           console.log("WebSocket connection closed");
+          handler.onClose().catch((error) => {
+            console.error("Error in WebSocket onClose:", error);
+          });
         },
         onError(event) {
           console.error("WebSocket error:", event);

@@ -27,7 +27,8 @@ coverage/
 
 # Logs
 *.log
+logs/
 backend/logs/
 
 # Bun
-bun.lockb
+bun.lock

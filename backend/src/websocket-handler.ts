@@ -20,6 +20,7 @@ import {
   type SessionQueryResult,
 } from "./session-manager";
 import { captureToDaily } from "./note-capture";
+import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk";
 
 /**
  * WebSocket interface for sending messages.
@@ -288,6 +289,7 @@ export class WebSocketHandler {
   /**
    * Handles discussion_message.
    * Queries the Claude Agent SDK and streams responses to the client.
+   * Uses mock responses when MOCK_SDK=true.
    */
   private async handleDiscussionMessage(
     ws: WebSocketLike,
@@ -299,6 +301,12 @@ export class WebSocketHandler {
         "VAULT_NOT_FOUND",
         "No vault selected. Send select_vault first."
       );
+      return;
+    }
+
+    // Use mock mode for testing
+    if (isMockMode()) {
+      await this.handleMockDiscussion(ws, text);
       return;
     }
 
@@ -352,6 +360,26 @@ export class WebSocketHandler {
           error instanceof Error ? error.message : "SDK query failed";
         this.sendError(ws, "SDK_ERROR", message);
       }
+    }
+  }
+
+  /**
+   * Handles discussion message in mock mode.
+   * Streams pre-defined mock responses for testing.
+   */
+  private async handleMockDiscussion(
+    ws: WebSocketLike,
+    text: string
+  ): Promise<void> {
+    // Create mock session if needed
+    if (!this.state.currentSessionId && this.state.currentVault) {
+      this.state.currentSessionId = createMockSession(this.state.currentVault.id);
+    }
+
+    // Stream mock response events
+    for await (const event of generateMockResponse(text)) {
+      if (ws.readyState !== 1) break;
+      this.send(ws, event);
     }
   }
 

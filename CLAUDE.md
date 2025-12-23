@@ -57,7 +57,6 @@ Server → Client: `vault_list`, `session_ready`, `note_captured`, `response_sta
 ## Environment Variables
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-...   # Required
 VAULTS_DIR=/path/to/vaults     # Required
 PORT=3000                       # Optional (default 3000)
 MOCK_SDK=true                   # Optional (testing without API)

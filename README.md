@@ -22,7 +22,6 @@ The app runs on your local network and works great on phones, tablets, and deskt
 ## Prerequisites
 
 - [Bun](https://bun.sh) v1.1+
-- An Anthropic API key
 - One or more directories with `CLAUDE.md` files (e.g., Obsidian vaults)
 
 ## Configuration
@@ -32,9 +31,6 @@ The app runs on your local network and works great on phones, tablets, and deskt
 Create a `.env` file in the project root:
 
 ```bash
-# Required: Your Anthropic API key
-ANTHROPIC_API_KEY=sk-ant-...
-
 # Required: Path to directory containing your vaults
 VAULTS_DIR=/path/to/your/vaults
 

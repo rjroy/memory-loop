@@ -1,0 +1,124 @@
+/**
+ * NoteCapture Component Styles
+ *
+ * Mobile-first with auto-growing textarea and touch-friendly submit button.
+ */
+
+.note-capture {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--spacing-md);
+}
+
+.note-capture__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  flex: 1;
+}
+
+.note-capture__input {
+  flex: 1;
+  min-height: 120px;
+  padding: var(--spacing-md);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  resize: none;
+  transition: border-color 0.2s ease;
+}
+
+.note-capture__input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.note-capture__input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.note-capture__input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.note-capture__submit {
+  min-height: 48px;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.note-capture__submit:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+}
+
+.note-capture__submit:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.note-capture__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Toast notification */
+.note-capture__toast {
+  position: fixed;
+  bottom: calc(var(--spacing-lg) + 60px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  z-index: 100;
+  animation: toast-slide-up 0.3s ease;
+  max-width: calc(100% - var(--spacing-lg) * 2);
+  text-align: center;
+}
+
+.note-capture__toast--success {
+  background-color: var(--color-success);
+  color: white;
+}
+
+.note-capture__toast--error {
+  background-color: var(--color-error);
+  color: white;
+}
+
+@keyframes toast-slide-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Tablet and up - larger input area */
+@media (min-width: 768px) {
+  .note-capture {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: var(--spacing-lg);
+  }
+
+  .note-capture__input {
+    min-height: 200px;
+  }
+}

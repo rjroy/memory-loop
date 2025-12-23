@@ -333,13 +333,15 @@ describe("Server -> Client Messages", () => {
       expect(result.vaultId).toBe("vault-1");
     });
 
-    test("rejects empty sessionId", () => {
+    test("accepts empty sessionId (lazy session creation)", () => {
       const msg = {
-        type: "session_ready",
+        type: "session_ready" as const,
         sessionId: "",
         vaultId: "vault-1",
       };
-      expect(() => SessionReadyMessageSchema.parse(msg)).toThrow(ZodError);
+      const result = SessionReadyMessageSchema.parse(msg);
+      expect(result.sessionId).toBe("");
+      expect(result.vaultId).toBe("vault-1");
     });
   });
 

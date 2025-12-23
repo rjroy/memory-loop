@@ -124,10 +124,11 @@ export const VaultListMessageSchema = z.object({
 
 /**
  * Server confirms session is ready
+ * Note: sessionId can be empty when vault is first selected (session created lazily)
  */
 export const SessionReadyMessageSchema = z.object({
   type: z.literal("session_ready"),
-  sessionId: z.string().min(1),
+  sessionId: z.string(), // Can be empty - session created on first discussion_message
   vaultId: z.string().min(1),
 });
 

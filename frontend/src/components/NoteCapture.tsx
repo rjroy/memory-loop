@@ -5,7 +5,7 @@
  * Submits via WebSocket and shows toast feedback.
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useSession } from "../contexts/SessionContext";
 import "./NoteCapture.css";
@@ -47,9 +47,33 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasSentVaultSelectionRef = useRef(false);
 
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
   const { vault } = useSession();
+
+  // Callback to re-send vault selection on WebSocket reconnect
+  const handleReconnect = useCallback(() => {
+    hasSentVaultSelectionRef.current = false;
+  }, []);
+
+  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
+    onReconnect: handleReconnect,
+  });
+
+  // Send vault selection when WebSocket connects (initial or reconnect)
+  useEffect(() => {
+    if (
+      connectionStatus === "connected" &&
+      vault &&
+      !hasSentVaultSelectionRef.current
+    ) {
+      sendMessage({
+        type: "select_vault",
+        vaultId: vault.id,
+      });
+      hasSentVaultSelectionRef.current = true;
+    }
+  }, [connectionStatus, vault, sendMessage]);
 
   // Load draft from localStorage on mount
   useEffect(() => {

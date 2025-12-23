@@ -8,7 +8,9 @@
     "build": "tsc --noEmit",
     "start": "bun run src/index.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "test:unit": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "dependencies": {
     "hono": "^4.6.0",

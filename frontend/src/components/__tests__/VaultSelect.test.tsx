@@ -58,7 +58,7 @@ let sentMessages: ClientMessage[] = [];
 const originalWebSocket = globalThis.WebSocket;
 
 // Mock fetch
-let mockFetchResponse: { ok: boolean; status: number; json: () => Promise<VaultInfo[]> };
+let mockFetchResponse: { ok: boolean; status: number; json: () => Promise<{ vaults: VaultInfo[] }> };
 const originalFetch = globalThis.fetch;
 
 // Test data
@@ -92,11 +92,11 @@ beforeEach(() => {
   // @ts-expect-error - mocking WebSocket
   globalThis.WebSocket = MockWebSocket;
 
-  // Default mock fetch response
+  // Default mock fetch response - must match { vaults: VaultInfo[] } shape
   mockFetchResponse = {
     ok: true,
     status: 200,
-    json: () => Promise.resolve(testVaults),
+    json: () => Promise.resolve({ vaults: testVaults }),
   };
 
   // @ts-expect-error - mocking fetch
@@ -167,7 +167,7 @@ describe("VaultSelect", () => {
       mockFetchResponse = {
         ok: true,
         status: 200,
-        json: () => Promise.resolve([]),
+        json: () => Promise.resolve({ vaults: [] }),
       };
 
       render(<VaultSelect />, { wrapper: TestWrapper });
@@ -184,7 +184,7 @@ describe("VaultSelect", () => {
       mockFetchResponse = {
         ok: false,
         status: 500,
-        json: () => Promise.resolve([]),
+        json: () => Promise.resolve({ vaults: [] }),
       };
 
       render(<VaultSelect />, { wrapper: TestWrapper });
@@ -198,7 +198,7 @@ describe("VaultSelect", () => {
       mockFetchResponse = {
         ok: false,
         status: 500,
-        json: () => Promise.resolve([]),
+        json: () => Promise.resolve({ vaults: [] }),
       };
 
       render(<VaultSelect />, { wrapper: TestWrapper });

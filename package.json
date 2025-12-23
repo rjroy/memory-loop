@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "bun run --filter '*' dev",
     "build": "bun run --filter '*' build",
-    "lint": "eslint .",
+    "lint": "bun run --filter '*' lint",
     "test": "bun run --cwd backend test && bun run --cwd frontend test",
     "typecheck": "bun run --filter '*' typecheck"
   },

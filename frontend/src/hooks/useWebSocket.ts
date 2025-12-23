@@ -46,14 +46,14 @@ export interface UseWebSocketOptions {
 }
 
 /**
- * Default configuration values.
+ * Default configuration values (excludes optional callback).
  */
-const DEFAULT_OPTIONS: Required<UseWebSocketOptions> = {
+const DEFAULT_OPTIONS = {
   url: "/ws",
   initialDelay: 1000,
   maxDelay: 30000,
   autoReconnect: true,
-};
+} satisfies Omit<Required<UseWebSocketOptions>, "onReconnect">;
 
 /**
  * Builds the WebSocket URL from a path.

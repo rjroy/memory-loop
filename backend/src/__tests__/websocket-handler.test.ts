@@ -1,0 +1,1227 @@
+/**
+ * WebSocket Handler Tests
+ *
+ * Unit tests for WebSocket message routing and handling.
+ * Uses mocking for external dependencies (vault manager, session manager, note capture).
+ */
+
+/* eslint-disable @typescript-eslint/require-await, require-yield */
+
+import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import type { VaultInfo, ServerMessage } from "@memory-loop/shared";
+
+// =============================================================================
+// Mock Setup
+// =============================================================================
+
+// Mock vault manager functions
+const mockDiscoverVaults = mock<() => Promise<VaultInfo[]>>(() =>
+  Promise.resolve([])
+);
+const mockGetVaultById = mock<(id: string) => Promise<VaultInfo | null>>(() =>
+  Promise.resolve(null)
+);
+
+// Mock session manager functions
+const mockInterrupt = mock(() => Promise.resolve());
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockCreateSession = mock<(...args: any[]) => Promise<any>>(() =>
+  Promise.resolve({
+    sessionId: "test-session-id",
+    events: (async function* () {})(),
+    interrupt: mockInterrupt,
+  })
+);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockResumeSession = mock<(...args: any[]) => Promise<any>>(() =>
+  Promise.resolve({
+    sessionId: "resumed-session-id",
+    events: (async function* () {})(),
+    interrupt: mockInterrupt,
+  })
+);
+
+// Mock note capture
+const mockCaptureToDaily = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<{
+    success: boolean;
+    timestamp: string;
+    notePath?: string;
+    error?: string;
+  }>
+>(() =>
+  Promise.resolve({
+    success: true,
+    timestamp: "2025-01-01T12:00:00.000Z",
+    notePath: "",
+  })
+);
+
+// Apply mocks
+void mock.module("../vault-manager", () => ({
+  discoverVaults: mockDiscoverVaults,
+  getVaultById: mockGetVaultById,
+  VaultsDirError: class VaultsDirError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "VaultsDirError";
+    }
+  },
+}));
+
+void mock.module("../session-manager", () => ({
+  createSession: mockCreateSession,
+  resumeSession: mockResumeSession,
+  SessionError: class SessionError extends Error {
+    constructor(
+      message: string,
+      public readonly code: string
+    ) {
+      super(message);
+      this.name = "SessionError";
+    }
+  },
+}));
+
+void mock.module("../note-capture", () => ({
+  captureToDaily: mockCaptureToDaily,
+}));
+
+// Import handler after mocks are set up
+import {
+  WebSocketHandler,
+  createWebSocketHandler,
+  createConnectionState,
+  generateMessageId,
+} from "../websocket-handler";
+
+// =============================================================================
+// Test Fixtures
+// =============================================================================
+
+/**
+ * Creates a mock VaultInfo object.
+ */
+function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
+  return {
+    id: "test-vault",
+    name: "Test Vault",
+    path: "/tmp/test-vault",
+    hasClaudeMd: true,
+    inboxPath: "00_Inbox",
+    ...overrides,
+  };
+}
+
+/**
+ * Creates a mock WebSocket for testing.
+ */
+function createMockWebSocket() {
+  const messages: string[] = [];
+
+  return {
+    send: mock((data: string) => {
+      messages.push(data);
+    }),
+    readyState: 1 as const, // OPEN
+    messages,
+    getLastMessage(): ServerMessage | null {
+      const last = messages[messages.length - 1];
+      return last ? (JSON.parse(last) as ServerMessage) : null;
+    },
+    getMessages(): ServerMessage[] {
+      return messages.map((m) => JSON.parse(m) as ServerMessage);
+    },
+    close: mock(() => {}),
+  };
+}
+
+// =============================================================================
+// Test Suites
+// =============================================================================
+
+describe("WebSocket Handler", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    // Create unique test directory
+    testDir = join(
+      tmpdir(),
+      `ws-handler-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(testDir, { recursive: true });
+
+    // Reset all mocks
+    mockDiscoverVaults.mockReset();
+    mockGetVaultById.mockReset();
+    mockCreateSession.mockReset();
+    mockResumeSession.mockReset();
+    mockCaptureToDaily.mockReset();
+    mockInterrupt.mockReset();
+
+    // Set default mock implementations
+    mockDiscoverVaults.mockResolvedValue([]);
+    mockGetVaultById.mockResolvedValue(null);
+    mockCaptureToDaily.mockResolvedValue({
+      success: true,
+      timestamp: "2025-01-01T12:00:00.000Z",
+      notePath: "",
+    });
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  // ===========================================================================
+  // Factory Function Tests
+  // ===========================================================================
+
+  describe("createConnectionState", () => {
+    test("creates state with null values", () => {
+      const state = createConnectionState();
+      expect(state.currentVault).toBeNull();
+      expect(state.currentSessionId).toBeNull();
+      expect(state.activeQuery).toBeNull();
+    });
+  });
+
+  describe("createWebSocketHandler", () => {
+    test("creates a new WebSocketHandler instance", () => {
+      const handler = createWebSocketHandler();
+      expect(handler).toBeInstanceOf(WebSocketHandler);
+    });
+  });
+
+  describe("generateMessageId", () => {
+    test("generates unique IDs", () => {
+      const id1 = generateMessageId();
+      const id2 = generateMessageId();
+      expect(id1).not.toBe(id2);
+    });
+
+    test("starts with 'msg_' prefix", () => {
+      const id = generateMessageId();
+      expect(id.startsWith("msg_")).toBe(true);
+    });
+  });
+
+  // ===========================================================================
+  // Connection Lifecycle Tests
+  // ===========================================================================
+
+  describe("onOpen", () => {
+    test("sends vault_list message", async () => {
+      const vaults = [createMockVault({ id: "vault-1", name: "Vault 1" })];
+      mockDiscoverVaults.mockResolvedValue(vaults);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onOpen(ws as unknown as Parameters<typeof handler.onOpen>[0]);
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("vault_list");
+      if (message?.type === "vault_list") {
+        expect(message.vaults).toHaveLength(1);
+        expect(message.vaults[0].id).toBe("vault-1");
+      }
+    });
+
+    test("sends error if vault discovery fails", async () => {
+      mockDiscoverVaults.mockRejectedValue(new Error("Discovery failed"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onOpen(ws as unknown as Parameters<typeof handler.onOpen>[0]);
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toContain("Discovery failed");
+      }
+    });
+  });
+
+  describe("onClose", () => {
+    test("clears connection state", async () => {
+      const handler = createWebSocketHandler();
+
+      // Set up some state
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const ws = createMockWebSocket();
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Close connection
+      await handler.onClose();
+
+      // State should be reset
+      const state = handler.getState();
+      expect(state.currentVault).toBeNull();
+      expect(state.currentSessionId).toBeNull();
+      expect(state.activeQuery).toBeNull();
+    });
+
+    test("interrupts active query on close", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Create a fast generator that completes quickly
+      const fastGenerator = (async function* () {
+        yield { type: "system", session_id: "test" };
+      })();
+
+      const localInterrupt = mock(() => Promise.resolve());
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "test-session",
+        events: fastGenerator,
+        interrupt: localInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Start and complete a discussion
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      // Now set up another generator for the next message
+      let shouldStop = false;
+      const slowGenerator = (async function* () {
+        yield { type: "system", session_id: "slow-test" };
+        // Wait until stopped
+        while (!shouldStop) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+      })();
+
+      const slowInterrupt = mock(() => {
+        shouldStop = true;
+        return Promise.resolve();
+      });
+
+      mockResumeSession.mockResolvedValue({
+        sessionId: "test-session",
+        events: slowGenerator,
+        interrupt: slowInterrupt,
+      });
+
+      // Start another discussion (don't await)
+      const discussionPromise = handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Another message" })
+      );
+
+      // Give it a moment to start
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Close connection - this should trigger interrupt
+      await handler.onClose();
+
+      // Interrupt should have been called on the slow query
+      expect(slowInterrupt).toHaveBeenCalled();
+
+      // Wait for discussion to complete
+      await discussionPromise;
+    });
+  });
+
+  // ===========================================================================
+  // Message Parsing Tests
+  // ===========================================================================
+
+  describe("onMessage - parsing", () => {
+    test("handles string data", async () => {
+      mockDiscoverVaults.mockResolvedValue([]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "ping" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("pong");
+    });
+
+    test("handles ArrayBuffer data", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      const data = new TextEncoder().encode(JSON.stringify({ type: "ping" }));
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        data.buffer
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("pong");
+    });
+
+    test("sends error for invalid JSON", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        "not valid json"
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+        expect(message.message).toContain("Invalid JSON");
+      }
+    });
+
+    test("sends error for invalid message structure", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "unknown_type" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+
+    test("sends error for missing required fields", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // select_vault requires vaultId
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+  });
+
+  // ===========================================================================
+  // select_vault Handler Tests
+  // ===========================================================================
+
+  describe("select_vault", () => {
+    test("selects vault and sends session_ready", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("session_ready");
+      if (message?.type === "session_ready") {
+        expect(message.vaultId).toBe("test-vault");
+      }
+
+      // State should be updated
+      const state = handler.getState();
+      expect(state.currentVault).not.toBeNull();
+      expect(state.currentVault?.id).toBe("test-vault");
+    });
+
+    test("sends error for non-existent vault", async () => {
+      mockGetVaultById.mockResolvedValue(null);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "non-existent" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+      }
+    });
+
+    test("clears previous session when selecting new vault", async () => {
+      const vault1 = createMockVault({ id: "vault-1" });
+      const vault2 = createMockVault({ id: "vault-2" });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select first vault
+      mockGetVaultById.mockResolvedValue(vault1);
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "vault-1" })
+      );
+
+      // Simulate having a session
+      mockCreateSession.mockResolvedValue({
+        sessionId: "session-1",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+      });
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      // Select second vault
+      mockGetVaultById.mockResolvedValue(vault2);
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "vault-2" })
+      );
+
+      // Session should be cleared
+      const state = handler.getState();
+      expect(state.currentSessionId).toBeNull();
+      expect(state.currentVault?.id).toBe("vault-2");
+    });
+  });
+
+  // ===========================================================================
+  // capture_note Handler Tests
+  // ===========================================================================
+
+  describe("capture_note", () => {
+    test("captures note and sends note_captured", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockCaptureToDaily.mockResolvedValue({
+        success: true,
+        timestamp: "2025-01-15T14:30:00.000Z",
+        notePath: "/tmp/test-vault/00_Inbox/2025-01-15.md",
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Capture note
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "capture_note", text: "My note content" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("note_captured");
+      if (message?.type === "note_captured") {
+        expect(message.timestamp).toBe("2025-01-15T14:30:00.000Z");
+      }
+
+      // Verify captureToDaily was called with correct args
+      expect(mockCaptureToDaily).toHaveBeenCalledWith(vault, "My note content");
+    });
+
+    test("sends error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "capture_note", text: "My note" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("sends error if capture fails", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockCaptureToDaily.mockResolvedValue({
+        success: false,
+        timestamp: "2025-01-15T14:30:00.000Z",
+        notePath: "",
+        error: "Failed to write file",
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Capture note
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "capture_note", text: "My note" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("NOTE_CAPTURE_FAILED");
+        expect(message.message).toContain("Failed to write file");
+      }
+    });
+  });
+
+  // ===========================================================================
+  // discussion_message Handler Tests
+  // ===========================================================================
+
+  describe("discussion_message", () => {
+    test("creates new session and streams response", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Create mock events
+      const events = [
+        { type: "system", subtype: "init", session_id: "new-session" },
+        {
+          type: "assistant",
+          session_id: "new-session",
+          message: {
+            content: [{ type: "text", text: "Hello there!" }],
+          },
+        },
+      ];
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "new-session",
+        events: (async function* () {
+          for (const event of events) {
+            yield event;
+          }
+        })(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Send discussion message
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hi Claude" })
+      );
+
+      const messages = ws.getMessages();
+
+      // Should have: session_ready, response_start, response_chunk, response_end
+      expect(messages.some((m) => m.type === "response_start")).toBe(true);
+      expect(messages.some((m) => m.type === "response_chunk")).toBe(true);
+      expect(messages.some((m) => m.type === "response_end")).toBe(true);
+
+      // Verify session was stored
+      const state = handler.getState();
+      expect(state.currentSessionId).toBe("new-session");
+    });
+
+    test("resumes existing session", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // First message creates session
+      mockCreateSession.mockResolvedValue({
+        sessionId: "first-session",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+      });
+
+      // Second message should resume
+      mockResumeSession.mockResolvedValue({
+        sessionId: "first-session",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // First discussion
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "First message" })
+      );
+
+      // Second discussion should resume
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Second message" })
+      );
+
+      // resumeSession should have been called
+      expect(mockResumeSession).toHaveBeenCalledWith(
+        "first-session",
+        "Second message"
+      );
+    });
+
+    test("sends error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+      }
+    });
+
+    test("streams tool events", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // The SDK emits events with a "result" type containing tool info in content array
+      const events = [
+        { type: "system", session_id: "tool-session" },
+        {
+          type: "result",
+          session_id: "tool-session",
+          result: {
+            content: [
+              {
+                type: "tool_use",
+                name: "read_file",
+                id: "tool-123",
+                input: { path: "/test.md" },
+              },
+            ],
+          },
+        },
+        {
+          type: "result",
+          session_id: "tool-session",
+          result: {
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "tool-123",
+                content: "File content here",
+              },
+            ],
+          },
+        },
+      ];
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "tool-session",
+        events: (async function* () {
+          for (const event of events) {
+            yield event;
+          }
+        })(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Read a file" })
+      );
+
+      const messages = ws.getMessages();
+
+      // Find tool messages
+      const toolStart = messages.find((m) => m.type === "tool_start");
+      const toolInput = messages.find((m) => m.type === "tool_input");
+      const toolEnd = messages.find((m) => m.type === "tool_end");
+
+      expect(toolStart).toBeDefined();
+      expect(toolInput).toBeDefined();
+      expect(toolEnd).toBeDefined();
+
+      if (toolStart?.type === "tool_start") {
+        expect(toolStart.toolName).toBe("read_file");
+        expect(toolStart.toolUseId).toBe("tool-123");
+      }
+    });
+
+    test("aborts previous query when new message arrives", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // First query that takes a while
+      const firstInterrupt = mock(() => Promise.resolve());
+      mockCreateSession.mockResolvedValueOnce({
+        sessionId: "slow-session",
+        events: (async function* () {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          yield { type: "system", session_id: "slow-session" };
+        })(),
+        interrupt: firstInterrupt,
+      });
+
+      // Second query
+      mockCreateSession.mockResolvedValueOnce({
+        sessionId: "fast-session",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Start first discussion (don't await)
+      const firstPromise = handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "First" })
+      );
+
+      // Give it a moment to start
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Start second discussion (this should abort the first)
+      // But we need to clear the session ID to trigger createSession again
+      // Actually, this will try to resume, so let's set up the mock
+      mockResumeSession.mockResolvedValue({
+        sessionId: "slow-session",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+      });
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Second" })
+      );
+
+      // First interrupt should have been called
+      expect(firstInterrupt).toHaveBeenCalled();
+
+      // Wait for first to complete
+      await firstPromise;
+    });
+  });
+
+  // ===========================================================================
+  // resume_session Handler Tests
+  // ===========================================================================
+
+  describe("resume_session", () => {
+    test("sets session ID and sends session_ready", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Resume session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "old-session-123" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("session_ready");
+      if (message?.type === "session_ready") {
+        expect(message.sessionId).toBe("old-session-123");
+        expect(message.vaultId).toBe("test-vault");
+      }
+
+      const state = handler.getState();
+      expect(state.currentSessionId).toBe("old-session-123");
+    });
+
+    test("sends error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "session-123" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+      }
+    });
+  });
+
+  // ===========================================================================
+  // new_session Handler Tests
+  // ===========================================================================
+
+  describe("new_session", () => {
+    test("clears session ID and sends session_ready", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "session-to-clear",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault and create session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      // Clear session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "new_session" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("session_ready");
+      if (message?.type === "session_ready") {
+        expect(message.sessionId).toBe("");
+        expect(message.vaultId).toBe("test-vault");
+      }
+
+      const state = handler.getState();
+      expect(state.currentSessionId).toBeNull();
+    });
+
+    test("sends error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "new_session" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+      }
+    });
+
+    test("interrupts active query", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const activeInterrupt = mock(() => Promise.resolve());
+      mockCreateSession.mockResolvedValue({
+        sessionId: "active-session",
+        events: (async function* () {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        })(),
+        interrupt: activeInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Start discussion (don't await)
+      const discussionPromise = handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // New session should interrupt
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "new_session" })
+      );
+
+      expect(activeInterrupt).toHaveBeenCalled();
+
+      await discussionPromise;
+    });
+  });
+
+  // ===========================================================================
+  // abort Handler Tests
+  // ===========================================================================
+
+  describe("abort", () => {
+    test("interrupts active query", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const activeInterrupt = mock(() => Promise.resolve());
+      mockCreateSession.mockResolvedValue({
+        sessionId: "active-session",
+        events: (async function* () {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        })(),
+        interrupt: activeInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Start discussion (don't await)
+      const discussionPromise = handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Abort
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "abort" })
+      );
+
+      expect(activeInterrupt).toHaveBeenCalled();
+
+      await discussionPromise;
+    });
+
+    test("does nothing if no active query", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Should not throw
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "abort" })
+      );
+
+      // No error should be sent
+      expect(ws.messages).toHaveLength(0);
+    });
+  });
+
+  // ===========================================================================
+  // ping/pong Handler Tests
+  // ===========================================================================
+
+  describe("ping", () => {
+    test("responds with pong", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "ping" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("pong");
+    });
+  });
+
+  // ===========================================================================
+  // State Management Tests
+  // ===========================================================================
+
+  describe("State Management", () => {
+    test("maintains isolation between handlers", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const handler1 = createWebSocketHandler();
+      const handler2 = createWebSocketHandler();
+      const ws1 = createMockWebSocket();
+
+      // Select vault on handler1
+      await handler1.onMessage(
+        ws1 as unknown as Parameters<typeof handler1.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // handler2 should not have a vault
+      const state1 = handler1.getState();
+      const state2 = handler2.getState();
+
+      expect(state1.currentVault?.id).toBe("test-vault");
+      expect(state2.currentVault).toBeNull();
+    });
+
+    test("preserves vault across multiple messages", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockCaptureToDaily.mockResolvedValue({
+        success: true,
+        timestamp: "2025-01-01T00:00:00.000Z",
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Capture multiple notes
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "capture_note", text: "Note 1" })
+      );
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "capture_note", text: "Note 2" })
+      );
+
+      // captureToDaily should have been called with the vault both times
+      expect(mockCaptureToDaily).toHaveBeenCalledTimes(2);
+      expect(mockCaptureToDaily).toHaveBeenCalledWith(vault, "Note 1");
+      expect(mockCaptureToDaily).toHaveBeenCalledWith(vault, "Note 2");
+    });
+  });
+
+  // ===========================================================================
+  // Error Handling Tests
+  // ===========================================================================
+
+  describe("Error Handling", () => {
+    test("handles SDK errors gracefully", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Import SessionError for this test
+      const { SessionError } = await import("../session-manager");
+      mockCreateSession.mockRejectedValue(
+        new SessionError("SDK unavailable", "SDK_ERROR")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("SDK_ERROR");
+      }
+    });
+
+    test("handles unexpected errors", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockCreateSession.mockRejectedValue(new Error("Unexpected failure"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("SDK_ERROR");
+        expect(message.message).toContain("Unexpected failure");
+      }
+    });
+  });
+});

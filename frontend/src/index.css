@@ -1,0 +1,259 @@
+/**
+ * Memory Loop - Global Styles
+ *
+ * Mobile-first responsive design with CSS custom properties.
+ * Breakpoints: 320px (mobile), 768px (tablet), 1024px (desktop)
+ */
+
+/* ============================================
+   CSS Custom Properties (Design Tokens)
+   ============================================ */
+
+:root {
+  /* Colors - Light theme */
+  --color-background: #ffffff;
+  --color-surface: #f8f9fa;
+  --color-surface-elevated: #ffffff;
+  --color-text-primary: #1a1a2e;
+  --color-text-secondary: #4a4a68;
+  --color-text-muted: #8a8aa3;
+  --color-accent: #6366f1;
+  --color-accent-hover: #4f46e5;
+  --color-border: #e2e4e9;
+  --color-error: #ef4444;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+
+  /* Aliases for component compatibility */
+  --color-bg: var(--color-background);
+  --color-bg-secondary: var(--color-surface);
+  --color-text: var(--color-text-primary);
+  --color-primary: var(--color-accent);
+  --color-primary-hover: var(--color-accent-hover);
+  --color-primary-light: #e0e7ff;
+  --color-error-light: #fef2f2;
+
+  /* Spacing scale (4px base) */
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+
+  /* Typography */
+  --font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    monospace;
+
+  --font-size-xs: 0.75rem;   /* 12px */
+  --font-size-sm: 0.875rem;  /* 14px */
+  --font-size-base: 1rem;    /* 16px */
+  --font-size-lg: 1.125rem;  /* 18px */
+  --font-size-xl: 1.25rem;   /* 20px */
+  --font-size-2xl: 1.5rem;   /* 24px */
+  --font-size-3xl: 1.875rem; /* 30px */
+  --font-size-4xl: 2.25rem;  /* 36px */
+
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Border radius */
+  --radius-sm: 0.25rem;  /* 4px */
+  --radius-md: 0.5rem;   /* 8px */
+  --radius-lg: 0.75rem;  /* 12px */
+  --radius-xl: 1rem;     /* 16px */
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* Touch target size (44px minimum for accessibility) */
+  --touch-target-min: 2.75rem; /* 44px */
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* Responsive breakpoints (for reference in JS/documentation) */
+  --breakpoint-mobile: 320px;
+  --breakpoint-tablet: 768px;
+  --breakpoint-desktop: 1024px;
+
+  /* Container widths */
+  --container-mobile: 100%;
+  --container-tablet: 720px;
+  --container-desktop: 960px;
+}
+
+/* ============================================
+   Dark Theme (prefers-color-scheme)
+   ============================================ */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #0f0f1a;
+    --color-surface: #1a1a2e;
+    --color-surface-elevated: #252540;
+    --color-text-primary: #f0f0f5;
+    --color-text-secondary: #b8b8d0;
+    --color-text-muted: #6a6a8a;
+    --color-accent: #818cf8;
+    --color-accent-hover: #6366f1;
+    --color-border: #2d2d4a;
+    --color-error: #f87171;
+    --color-success: #4ade80;
+    --color-warning: #fbbf24;
+
+    /* Aliases for component compatibility */
+    --color-bg: var(--color-background);
+    --color-bg-secondary: var(--color-surface);
+    --color-text: var(--color-text-primary);
+    --color-primary: var(--color-accent);
+    --color-primary-hover: var(--color-accent-hover);
+    --color-primary-light: #312e81;
+    --color-error-light: #450a0a;
+  }
+}
+
+/* ============================================
+   CSS Reset & Base Styles
+   ============================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  background-color: var(--color-background);
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================
+   Typography Base
+   ============================================ */
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+}
+
+h1 { font-size: var(--font-size-3xl); }
+h2 { font-size: var(--font-size-2xl); }
+h3 { font-size: var(--font-size-xl); }
+h4 { font-size: var(--font-size-lg); }
+
+p {
+  color: var(--color-text-secondary);
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-accent-hover);
+}
+
+/* ============================================
+   Interactive Elements
+   ============================================ */
+
+button,
+[role="button"] {
+  cursor: pointer;
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Focus styles for accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ============================================
+   Responsive Breakpoint Mixins (via media queries)
+
+   Usage:
+   - Mobile first: base styles apply to all
+   - @media (min-width: 768px) for tablet+
+   - @media (min-width: 1024px) for desktop+
+   ============================================ */
+
+/* Tablet and up */
+@media (min-width: 768px) {
+  h1 { font-size: var(--font-size-4xl); }
+  h2 { font-size: var(--font-size-3xl); }
+  h3 { font-size: var(--font-size-2xl); }
+}
+
+/* Desktop and up */
+@media (min-width: 1024px) {
+  body {
+    font-size: var(--font-size-base);
+  }
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

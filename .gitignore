@@ -1,9 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
 # Environment files
 .env
 .env.*
+!.env.example
 
-# Test artifacts (created by integration tests)
+# Application data
+.memory-loop/
+
+# Test artifacts
 test-*/
+coverage/
 
 # OS artifacts
 .DS_Store
@@ -15,4 +27,8 @@ test-*/
 
 # Logs
 *.log
+logs/
 backend/logs/
+
+# Bun
+bun.lock

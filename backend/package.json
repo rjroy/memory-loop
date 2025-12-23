@@ -1,0 +1,25 @@
+{
+  "name": "@memory-loop/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "tsc --noEmit",
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "test:unit": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.1.69",
+    "zod": "^3.24.0",
+    "@memory-loop/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "bun-types": "^1.1.43"
+  }
+}

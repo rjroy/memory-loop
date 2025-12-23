@@ -283,7 +283,7 @@ export function SessionProvider({
         }
       }
     }
-  }, []);
+  }, [initialVaults]);
 
   // Action creators
   const selectVault = useCallback((vault: VaultInfo) => {

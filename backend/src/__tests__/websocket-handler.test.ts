@@ -5,7 +5,7 @@
  * Uses mocking for external dependencies (vault manager, session manager, note capture).
  */
 
-/* eslint-disable @typescript-eslint/require-await, require-yield, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/require-await, require-yield */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
@@ -1114,7 +1114,6 @@ describe("WebSocket Handler", () => {
       const handler1 = createWebSocketHandler();
       const handler2 = createWebSocketHandler();
       const ws1 = createMockWebSocket();
-      const ws2 = createMockWebSocket();
 
       // Select vault on handler1
       await handler1.onMessage(

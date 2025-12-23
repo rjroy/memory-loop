@@ -22,6 +22,16 @@
   --color-border: #e2e4e9;
   --color-error: #ef4444;
   --color-success: #22c55e;
+  --color-warning: #f59e0b;
+
+  /* Aliases for component compatibility */
+  --color-bg: var(--color-background);
+  --color-bg-secondary: var(--color-surface);
+  --color-text: var(--color-text-primary);
+  --color-primary: var(--color-accent);
+  --color-primary-hover: var(--color-accent-hover);
+  --color-primary-light: #e0e7ff;
+  --color-error-light: #fef2f2;
 
   /* Spacing scale (4px base) */
   --space-1: 0.25rem;   /* 4px */
@@ -105,6 +115,18 @@
     --color-accent: #818cf8;
     --color-accent-hover: #6366f1;
     --color-border: #2d2d4a;
+    --color-error: #f87171;
+    --color-success: #4ade80;
+    --color-warning: #fbbf24;
+
+    /* Aliases for component compatibility */
+    --color-bg: var(--color-background);
+    --color-bg-secondary: var(--color-surface);
+    --color-text: var(--color-text-primary);
+    --color-primary: var(--color-accent);
+    --color-primary-hover: var(--color-accent-hover);
+    --color-primary-light: #312e81;
+    --color-error-light: #450a0a;
   }
 }
 

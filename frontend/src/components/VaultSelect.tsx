@@ -48,8 +48,8 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        const data = (await response.json()) as VaultInfo[];
-        setVaults(data);
+        const data = (await response.json()) as { vaults: VaultInfo[] };
+        setVaults(data.vaults);
         setLoadingState("loaded");
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to load vaults";

@@ -4,6 +4,24 @@
 
 This document outlines UI/UX improvements for Memory Loop, inspired by the RetroNotes mockups while maintaining practical implementation scope.
 
+## Reference Materials
+
+**Mockup images** (review these first):
+- `docs/reference/ai-gen-reference-desktop.png` - Desktop layout with synthwave aesthetic
+- `docs/reference/ai-gen-reference-mobile.png` - Mobile adaptation
+
+**Current implementation**:
+- Run `bun run dev` to see current UI at http://localhost:5173
+- CSS files in `frontend/src/` and `frontend/src/components/`
+
+## Quick Start
+
+1. Review the mockup images in `docs/reference/`
+2. Start with Priority 1-2 items (color system, button glow) in `index.css`
+3. Test changes with `bun run dev`
+4. Progress through priority table, testing on both desktop and mobile
+5. Generate image assets with art-gen MCP when ready for polish phase
+
 ## Current State vs. Mockup Analysis
 
 ### Current UI Characteristics
@@ -452,6 +470,34 @@ Features visible in mockups that could enhance functionality:
 | Logo | 64x64px | 32x32px |
 | Vault background | 1920x400px | 768x300px |
 
+### Light Theme Consideration
+
+The mockups and this plan focus on dark theme. The current app supports both via `prefers-color-scheme`. Options:
+
+**Option A: Dark-only redesign**
+- Remove light theme support
+- Simplifies implementation
+- Synthwave aesthetic works best on dark
+
+**Option B: Adapt for both themes**
+- Light theme uses softer pastels instead of neon
+- Glassmorphism works on light with adjusted opacity
+- More work but maintains accessibility preference
+
+**Recommendation**: Start with dark theme only. Add light theme adaptation later if users request it.
+
+```css
+/* If keeping light theme, add light-specific tokens */
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-accent-pink: #ec4899;
+    --color-accent-purple: #8b5cf6;
+    --glass-bg: rgba(255, 255, 255, 0.8);
+    --glass-border: rgba(139, 92, 246, 0.2);
+  }
+}
+```
+
 ### Testing Checklist
 
 - [ ] Test glassmorphism on older iOS Safari (known issues)
@@ -460,6 +506,7 @@ Features visible in mockups that could enhance functionality:
 - [ ] Validate touch targets remain 44px minimum
 - [ ] Test on throttled 3G for image load times
 - [ ] Verify no horizontal scroll from glow overflow
+- [ ] Decide on light theme support before starting
 
 ---
 

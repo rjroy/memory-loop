@@ -91,6 +91,34 @@ void mock.module("../note-capture", () => ({
   captureToDaily: mockCaptureToDaily,
 }));
 
+// Mock file browser functions
+const mockListDirectory = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<Array<{ name: string; type: string; path: string }>>
+>(() => Promise.resolve([]));
+
+const mockReadMarkdownFile = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<{ content: string; truncated: boolean }>
+>(() => Promise.resolve({ content: "", truncated: false }));
+
+// FileBrowserError mock class
+class MockFileBrowserError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string
+  ) {
+    super(message);
+    this.name = "FileBrowserError";
+  }
+}
+
+void mock.module("../file-browser", () => ({
+  listDirectory: mockListDirectory,
+  readMarkdownFile: mockReadMarkdownFile,
+  FileBrowserError: MockFileBrowserError,
+}));
+
 // Import handler after mocks are set up
 import {
   WebSocketHandler,
@@ -162,6 +190,8 @@ describe("WebSocket Handler", () => {
     mockResumeSession.mockReset();
     mockCaptureToDaily.mockReset();
     mockInterrupt.mockReset();
+    mockListDirectory.mockReset();
+    mockReadMarkdownFile.mockReset();
 
     // Set default mock implementations
     mockDiscoverVaults.mockResolvedValue([]);
@@ -171,6 +201,8 @@ describe("WebSocket Handler", () => {
       timestamp: "2025-01-01T12:00:00.000Z",
       notePath: "",
     });
+    mockListDirectory.mockResolvedValue([]);
+    mockReadMarkdownFile.mockResolvedValue({ content: "", truncated: false });
   });
 
   afterEach(async () => {
@@ -1221,6 +1253,358 @@ describe("WebSocket Handler", () => {
       if (message?.type === "error") {
         expect(message.code).toBe("SDK_ERROR");
         expect(message.message).toContain("Unexpected failure");
+      }
+    });
+  });
+
+  // ===========================================================================
+  // File Browser Tests
+  // ===========================================================================
+
+  describe("list_directory handler", () => {
+    test("returns error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "list_directory", path: "" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("returns directory listing for root path", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockListDirectory.mockResolvedValue([
+        { name: "folder1", type: "directory", path: "folder1" },
+        { name: "note.md", type: "file", path: "note.md" },
+      ]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "list_directory", path: "" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("directory_listing");
+      if (message?.type === "directory_listing") {
+        expect(message.path).toBe("");
+        expect(message.entries).toHaveLength(2);
+        expect(message.entries[0].name).toBe("folder1");
+        expect(message.entries[1].name).toBe("note.md");
+      }
+
+      expect(mockListDirectory).toHaveBeenCalledWith(vault.path, "");
+    });
+
+    test("returns directory listing for nested path", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockListDirectory.mockResolvedValue([
+        { name: "nested.md", type: "file", path: "folder1/nested.md" },
+      ]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "list_directory", path: "folder1" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("directory_listing");
+      if (message?.type === "directory_listing") {
+        expect(message.path).toBe("folder1");
+        expect(message.entries).toHaveLength(1);
+      }
+
+      expect(mockListDirectory).toHaveBeenCalledWith(vault.path, "folder1");
+    });
+
+    test("returns error for path traversal attempt", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockListDirectory.mockRejectedValue(
+        new MockFileBrowserError("Path outside vault", "PATH_TRAVERSAL")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "list_directory", path: "../etc" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("PATH_TRAVERSAL");
+      }
+    });
+
+    test("returns error for non-existent directory", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockListDirectory.mockRejectedValue(
+        new MockFileBrowserError("Directory not found", "DIRECTORY_NOT_FOUND")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "list_directory", path: "nonexistent" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("DIRECTORY_NOT_FOUND");
+      }
+    });
+
+    test("handles unexpected errors", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockListDirectory.mockRejectedValue(new Error("Unexpected failure"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "list_directory", path: "" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toContain("Unexpected failure");
+      }
+    });
+  });
+
+  describe("read_file handler", () => {
+    test("returns error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "read_file", path: "note.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("returns file content for valid markdown file", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockReadMarkdownFile.mockResolvedValue({
+        content: "# Hello World\n\nThis is a test note.",
+        truncated: false,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "read_file", path: "note.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("file_content");
+      if (message?.type === "file_content") {
+        expect(message.path).toBe("note.md");
+        expect(message.content).toBe("# Hello World\n\nThis is a test note.");
+        expect(message.truncated).toBe(false);
+      }
+
+      expect(mockReadMarkdownFile).toHaveBeenCalledWith(vault.path, "note.md");
+    });
+
+    test("returns truncated flag for large files", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockReadMarkdownFile.mockResolvedValue({
+        content: "Truncated content...",
+        truncated: true,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "read_file", path: "large-note.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("file_content");
+      if (message?.type === "file_content") {
+        expect(message.truncated).toBe(true);
+      }
+    });
+
+    test("returns error for non-markdown file", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockReadMarkdownFile.mockRejectedValue(
+        new MockFileBrowserError("Only .md files allowed", "INVALID_FILE_TYPE")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "read_file", path: "image.png" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INVALID_FILE_TYPE");
+      }
+    });
+
+    test("returns error for non-existent file", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockReadMarkdownFile.mockRejectedValue(
+        new MockFileBrowserError("File not found", "FILE_NOT_FOUND")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "read_file", path: "nonexistent.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("FILE_NOT_FOUND");
+      }
+    });
+
+    test("returns error for path traversal attempt", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockReadMarkdownFile.mockRejectedValue(
+        new MockFileBrowserError("Path outside vault", "PATH_TRAVERSAL")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "read_file", path: "../../../etc/passwd.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("PATH_TRAVERSAL");
+      }
+    });
+
+    test("handles unexpected errors", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockReadMarkdownFile.mockRejectedValue(new Error("Disk read error"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "read_file", path: "note.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toContain("Disk read error");
       }
     });
   });

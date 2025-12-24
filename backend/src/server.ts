@@ -4,6 +4,7 @@
  * Provides:
  * - Health check endpoint at /api/health
  * - Vaults list endpoint at /api/vaults
+ * - Vault asset serving at /vault/:vaultId/assets/*
  * - WebSocket upgrade handler at /ws
  * - Static file serving from frontend build
  * - CORS headers for local development
@@ -13,9 +14,36 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import { upgradeWebSocket, websocket } from "hono/bun";
+import { join } from "node:path";
+import { lstat, readFile } from "node:fs/promises";
 import { discoverVaults, VaultsDirError } from "./vault-manager";
 import { createWebSocketHandler } from "./websocket-handler";
+import { isPathWithinVault } from "./file-browser";
 import { serverLog as log } from "./logger";
+
+/**
+ * Allowed image extensions for vault asset serving.
+ */
+const ALLOWED_IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".svg",
+  ".webp",
+]);
+
+/**
+ * Content-Type mapping for image extensions.
+ */
+const IMAGE_CONTENT_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+};
 
 /**
  * Get the port from environment variable or use default
@@ -79,6 +107,78 @@ export const createApp = () => {
       }
       // Re-throw unexpected errors
       throw error;
+    }
+  });
+
+  // Vault asset serving endpoint
+  // Serves images from vault with security validation
+  app.get("/vault/:vaultId/assets/*", async (c) => {
+    const vaultId = c.req.param("vaultId");
+    // Extract the path after /vault/:vaultId/assets/
+    const url = new URL(c.req.url);
+    const prefix = `/vault/${vaultId}/assets/`;
+    const assetPath = url.pathname.startsWith(prefix)
+      ? url.pathname.slice(prefix.length)
+      : "";
+
+    // Find the vault
+    let vaults;
+    try {
+      vaults = await discoverVaults();
+    } catch (error) {
+      log.error("Failed to discover vaults for asset serving:", error);
+      return c.json({ error: "Internal server error" }, 500);
+    }
+
+    const vault = vaults.find((v) => v.id === vaultId);
+    if (!vault) {
+      return c.json({ error: "Vault not found" }, 404);
+    }
+
+    // Validate file extension
+    const ext = assetPath.substring(assetPath.lastIndexOf(".")).toLowerCase();
+    if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+      return c.json({ error: "Invalid file type" }, 400);
+    }
+
+    // Build full path and validate it's within vault
+    const fullPath = join(vault.path, assetPath);
+    if (!(await isPathWithinVault(vault.path, fullPath))) {
+      log.warn(`Path traversal attempt: ${assetPath}`);
+      return c.json({ error: "Access denied" }, 403);
+    }
+
+    // Check file exists and is not a symlink
+    try {
+      const stats = await lstat(fullPath);
+
+      if (stats.isSymbolicLink()) {
+        log.warn(`Symlink access attempt: ${assetPath}`);
+        return c.json({ error: "Access denied" }, 403);
+      }
+
+      if (!stats.isFile()) {
+        return c.json({ error: "Not a file" }, 400);
+      }
+    } catch {
+      return c.json({ error: "File not found" }, 404);
+    }
+
+    // Read and serve the file
+    try {
+      const content = await readFile(fullPath);
+      const contentType = IMAGE_CONTENT_TYPES[ext] || "application/octet-stream";
+
+      return new Response(content, {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "public, max-age=86400", // Cache for 1 day
+        },
+      });
+    } catch (error) {
+      log.error(`Failed to read asset: ${assetPath}`, error);
+      return c.json({ error: "Failed to read file" }, 500);
     }
   });
 

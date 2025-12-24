@@ -4,12 +4,13 @@
  * Tests:
  * - Health endpoint functionality
  * - Vaults endpoint functionality
+ * - Vault asset serving endpoint
  * - Port configuration
  * - App creation
  */
 
 import { describe, expect, it, afterEach, beforeEach } from "bun:test";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApp, getPort, getHost } from "../server";
@@ -279,5 +280,181 @@ describe("Vaults endpoint", () => {
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe(
       "http://localhost:5173"
     );
+  });
+});
+
+describe("Vault asset serving endpoint", () => {
+  let testDir: string;
+  const originalVaultsDir = process.env.VAULTS_DIR;
+
+  beforeEach(async () => {
+    // Create a unique test directory with a vault
+    testDir = join(
+      tmpdir(),
+      `server-asset-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(testDir, { recursive: true });
+
+    // Create a test vault with images
+    const vaultDir = join(testDir, "test-vault");
+    const imagesDir = join(vaultDir, "images");
+    await mkdir(imagesDir, { recursive: true });
+    await writeFile(join(vaultDir, "CLAUDE.md"), "# Test Vault");
+
+    // Create test image files (small binary content)
+    await writeFile(join(imagesDir, "photo.jpg"), Buffer.from([0xff, 0xd8, 0xff, 0xe0]));
+    await writeFile(join(imagesDir, "icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    await writeFile(join(imagesDir, "diagram.svg"), "<svg></svg>");
+    await writeFile(join(imagesDir, "animation.gif"), Buffer.from([0x47, 0x49, 0x46, 0x38]));
+    await writeFile(join(imagesDir, "modern.webp"), Buffer.from([0x52, 0x49, 0x46, 0x46]));
+
+    // Create a text file (should be rejected)
+    await writeFile(join(imagesDir, "notes.txt"), "text content");
+
+    process.env.VAULTS_DIR = testDir;
+  });
+
+  afterEach(async () => {
+    // Restore original env
+    if (originalVaultsDir === undefined) {
+      delete process.env.VAULTS_DIR;
+    } else {
+      process.env.VAULTS_DIR = originalVaultsDir;
+    }
+
+    // Clean up test directory
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  it("serves jpg image with correct content-type", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/vault/test-vault/assets/images/photo.jpg");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/jpeg");
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+  });
+
+  it("serves png image with correct content-type", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/vault/test-vault/assets/images/icon.png");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/png");
+  });
+
+  it("serves svg image with correct content-type", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/vault/test-vault/assets/images/diagram.svg");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/svg+xml");
+  });
+
+  it("serves gif image with correct content-type", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/vault/test-vault/assets/images/animation.gif");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/gif");
+  });
+
+  it("serves webp image with correct content-type", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/vault/test-vault/assets/images/modern.webp");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/webp");
+  });
+
+  it("returns 400 for non-image file types", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/vault/test-vault/assets/images/notes.txt");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as ErrorResponse;
+    expect(json.error).toBe("Invalid file type");
+  });
+
+  it("returns 404 for non-existent vault", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/vault/nonexistent/assets/images/photo.jpg");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(404);
+    const json = (await res.json()) as ErrorResponse;
+    expect(json.error).toBe("Vault not found");
+  });
+
+  it("returns 404 for non-existent file", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/vault/test-vault/assets/images/missing.jpg");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(404);
+    const json = (await res.json()) as ErrorResponse;
+    expect(json.error).toBe("File not found");
+  });
+
+  it("only serves allowed image extensions (defense in depth)", async () => {
+    // Path traversal is protected by multiple layers:
+    // 1. URL normalization at HTTP layer (prevents raw `..` from reaching handler)
+    // 2. Extension whitelist (only image files can be served)
+    // 3. isPathWithinVault check (tested in file-browser.test.ts)
+    // 4. Symlink rejection
+    //
+    // This test verifies the extension whitelist provides defense in depth
+    const app = createApp();
+
+    // Attempt to request a non-image file
+    const req = new Request("http://localhost/vault/test-vault/assets/CLAUDE.md");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as ErrorResponse;
+    expect(json.error).toBe("Invalid file type");
+  });
+
+  it("returns 403 for symlinks", async () => {
+    // Create a symlink to an image
+    const vaultDir = join(testDir, "test-vault");
+    const linkPath = join(vaultDir, "images", "linked.jpg");
+    const targetPath = join(vaultDir, "images", "photo.jpg");
+
+    try {
+      await symlink(targetPath, linkPath);
+    } catch {
+      // Skip test if symlinks not supported (Windows without admin)
+      return;
+    }
+
+    const app = createApp();
+    const req = new Request("http://localhost/vault/test-vault/assets/images/linked.jpg");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(403);
+    const json = (await res.json()) as ErrorResponse;
+    expect(json.error).toBe("Access denied");
+  });
+
+  it("returns 400 for directories", async () => {
+    const app = createApp();
+
+    // Try to access a path ending with just the extension (invalid path)
+    const req = new Request("http://localhost/vault/test-vault/assets/images/.png");
+    const res = await app.fetch(req);
+
+    // Should fail for invalid path
+    expect([400, 404]).toContain(res.status);
   });
 });

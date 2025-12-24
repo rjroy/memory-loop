@@ -33,6 +33,18 @@ export const getPort = (): number => {
 };
 
 /**
+ * Get the host from environment variable or use default
+ * Defaults to "0.0.0.0" to allow remote connections
+ */
+export const getHost = (): string => {
+  const envHost = process.env.HOST;
+  if (envHost) {
+    return envHost;
+  }
+  return "0.0.0.0";
+};
+
+/**
  * Create and configure the Hono application
  */
 export const createApp = () => {
@@ -148,6 +160,7 @@ export const app = createApp();
 // Export server configuration for Bun.serve
 export const serverConfig = {
   port: getPort(),
+  hostname: getHost(),
   fetch: app.fetch,
   websocket,
 };

@@ -47,15 +47,18 @@
 
 .vault-select__status--connected::before {
   background-color: var(--color-success);
+  box-shadow: 0 0 8px var(--color-success);
 }
 
 .vault-select__status--connecting::before {
   background-color: var(--color-warning);
+  box-shadow: 0 0 8px var(--color-warning);
   animation: pulse 1.5s ease-in-out infinite;
 }
 
 .vault-select__status--disconnected::before {
   background-color: var(--color-error);
+  box-shadow: 0 0 8px var(--color-error);
 }
 
 /* Loading state */
@@ -72,8 +75,8 @@
 .vault-select__spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid var(--color-border);
-  border-top-color: var(--color-primary);
+  border: 3px solid var(--glass-border);
+  border-top-color: var(--color-accent-purple);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -116,18 +119,19 @@
 .vault-select__retry-btn {
   min-height: 44px;
   padding: var(--spacing-sm) var(--spacing-lg);
-  background-color: var(--color-primary);
+  background: var(--gradient-primary);
   color: white;
   border: none;
   border-radius: var(--radius-md);
   font-size: var(--text-base);
-  font-weight: var(--font-medium);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
 }
 
 .vault-select__retry-btn:hover {
-  background-color: var(--color-primary-hover);
+  box-shadow: var(--glow-purple);
+  transform: translateY(-1px);
 }
 
 .vault-select__retry-btn:active {
@@ -217,22 +221,48 @@
   width: 100%;
   min-height: 80px;
   padding: var(--spacing-md);
-  background-color: var(--color-bg-secondary);
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease, transform 0.2s ease;
   position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .vault-select__card:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: var(--color-accent-purple);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    var(--glow-purple);
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .vault-select__card {
+    background-color: var(--color-surface);
+  }
+}
+
+@media (max-width: 767px) {
+  .vault-select__card {
+    backdrop-filter: blur(4px);
+  }
+}
+
+/* Disable hover effects on touch devices */
+@media (hover: none) {
+  .vault-select__card:hover:not(:disabled) {
+    transform: none;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  }
 }
 
 .vault-select__card:active:not(:disabled) {
@@ -245,12 +275,15 @@
 }
 
 .vault-select__card--selected {
-  border-color: var(--color-primary);
-  background-color: var(--color-primary-light);
+  border-color: var(--color-accent-purple);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(255, 107, 157, 0.1) 100%);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.2),
+    var(--glow-purple);
 }
 
 .vault-select__card--loading {
-  border-color: var(--color-primary);
+  border-color: var(--color-accent-purple);
 }
 
 .vault-select__vault-name {
@@ -276,14 +309,18 @@
 
 .vault-select__badge {
   font-size: var(--text-xs);
-  padding: 2px 8px;
+  padding: 4px 10px;
   border-radius: var(--radius-full);
-  font-weight: var(--font-medium);
+  font-weight: var(--font-weight-medium);
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--color-accent-purple);
+  border: 1px solid rgba(168, 85, 247, 0.3);
 }
 
 .vault-select__badge--claude {
-  background-color: var(--color-primary-light);
-  color: var(--color-primary);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(255, 107, 157, 0.15) 100%);
+  color: var(--color-accent-pink);
+  border-color: rgba(255, 107, 157, 0.3);
 }
 
 .vault-select__card-spinner {
@@ -293,17 +330,10 @@
   transform: translateY(-50%);
   width: 24px;
   height: 24px;
-  border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
+  border: 2px solid var(--glass-border);
+  border-top-color: var(--color-accent-purple);
   border-radius: 50%;
   animation: spin 1s linear infinite;
-}
-
-/* Dark mode adjustments */
-@media (prefers-color-scheme: dark) {
-  .vault-select__card:hover:not(:disabled) {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  }
 }
 
 /* Tablet and up */

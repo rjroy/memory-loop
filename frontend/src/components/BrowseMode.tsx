@@ -34,12 +34,14 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
 
   const hasSentVaultSelectionRef = useRef(false);
+  const [hasSessionReady, setHasSessionReady] = useState(false);
 
   const { browser, vault, cacheDirectory, setFileContent, setFileError, setFileLoading } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
+    setHasSessionReady(false);
   }, []);
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
@@ -61,23 +63,23 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
     }
   }, [connectionStatus, vault, sendMessage]);
 
-  // Load root directory after vault selection, if not cached
+  // Load root directory after session is ready, if not cached
   useEffect(() => {
-    if (
-      vault &&
-      hasSentVaultSelectionRef.current &&
-      !browser.directoryCache.has("")
-    ) {
+    if (vault && hasSessionReady && !browser.directoryCache.has("")) {
       setFileLoading(true);
       sendMessage({ type: "list_directory", path: "" });
     }
-  }, [vault, connectionStatus, browser.directoryCache, sendMessage, setFileLoading]);
+  }, [vault, hasSessionReady, browser.directoryCache, sendMessage, setFileLoading]);
 
   // Handle server messages for directory listing and file content
   useEffect(() => {
     if (!lastMessage) return;
 
     switch (lastMessage.type) {
+      case "session_ready":
+        setHasSessionReady(true);
+        break;
+
       case "directory_listing":
         cacheDirectory(lastMessage.path, lastMessage.entries);
         setFileLoading(false);

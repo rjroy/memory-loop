@@ -72,7 +72,7 @@ function ConfirmDialog({ isOpen, onConfirm, onCancel }: ConfirmDialogProps): Rea
             className="confirm-dialog__btn confirm-dialog__btn--confirm"
             onClick={onConfirm}
           >
-            New Session
+            New
           </button>
         </div>
       </div>
@@ -122,7 +122,7 @@ function MainContent(): React.ReactNode {
             onClick={handleNewSession}
             aria-label="Start new session"
           >
-            New Session
+            New
           </button>
         </div>
       </header>

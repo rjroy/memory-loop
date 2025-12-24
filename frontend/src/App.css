@@ -154,18 +154,21 @@
   }
 
   .app-header__left {
-    flex: 0 0 auto;
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .app-header__center {
     order: 0;
     width: auto;
-    flex: 1;
+    flex: 0 0 auto;
     justify-content: center;
   }
 
   .app-header__right {
-    flex: 0 0 auto;
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: flex-end;
   }
 
   .app-title {

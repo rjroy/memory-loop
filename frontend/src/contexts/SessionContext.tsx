@@ -13,12 +13,32 @@ import React, {
   useEffect,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry } from "@memory-loop/shared";
 
 /**
- * Application mode: note capture or discussion.
+ * Application mode: note capture, discussion, or browse.
  */
-export type AppMode = "note" | "discussion";
+export type AppMode = "note" | "discussion" | "browse";
+
+/**
+ * Browser state for vault file browsing.
+ */
+export interface BrowserState {
+  /** Current path being viewed (empty string for root) */
+  currentPath: string;
+  /** Set of expanded directory paths */
+  expandedDirs: Set<string>;
+  /** Cache of directory listings keyed by path */
+  directoryCache: Map<string, FileEntry[]>;
+  /** Current file content being viewed */
+  currentFileContent: string | null;
+  /** Whether current file content was truncated */
+  currentFileTruncated: boolean;
+  /** Error message if last file operation failed */
+  fileError: string | null;
+  /** Whether a file operation is in progress */
+  isLoading: boolean;
+}
 
 /**
  * Message in the conversation history.
@@ -48,6 +68,8 @@ export interface SessionState {
   mode: AppMode;
   /** Conversation history for discussion mode */
   messages: ConversationMessage[];
+  /** Browser state for file browsing mode */
+  browser: BrowserState;
 }
 
 /**
@@ -68,6 +90,20 @@ export interface SessionActions {
   clearMessages: () => void;
   /** Start a new session */
   startNewSession: () => void;
+  /** Set the current browsing path */
+  setCurrentPath: (path: string) => void;
+  /** Toggle directory expand/collapse state */
+  toggleDirectory: (path: string) => void;
+  /** Cache a directory listing */
+  cacheDirectory: (path: string, entries: FileEntry[]) => void;
+  /** Set file content from server response */
+  setFileContent: (content: string, truncated: boolean) => void;
+  /** Set file error from server response */
+  setFileError: (error: string) => void;
+  /** Set loading state for file operations */
+  setFileLoading: (isLoading: boolean) => void;
+  /** Clear all browser state (cache, expanded dirs, current file) */
+  clearBrowserState: () => void;
 }
 
 /**
@@ -81,10 +117,11 @@ export type SessionContextValue = SessionState & SessionActions;
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 /**
- * localStorage key for persisting session ID.
+ * localStorage keys for persisting state.
  */
 const STORAGE_KEY_SESSION = "memory-loop:sessionId";
 const STORAGE_KEY_VAULT = "memory-loop:vaultId";
+const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";
 
 /**
  * Action types for reducer.
@@ -96,13 +133,35 @@ type SessionAction =
   | { type: "ADD_MESSAGE"; message: ConversationMessage }
   | { type: "UPDATE_LAST_MESSAGE"; content: string; isStreaming?: boolean }
   | { type: "CLEAR_MESSAGES" }
-  | { type: "START_NEW_SESSION" };
+  | { type: "START_NEW_SESSION" }
+  | { type: "SET_CURRENT_PATH"; path: string }
+  | { type: "TOGGLE_DIRECTORY"; path: string }
+  | { type: "CACHE_DIRECTORY"; path: string; entries: FileEntry[] }
+  | { type: "SET_FILE_CONTENT"; content: string; truncated: boolean }
+  | { type: "SET_FILE_ERROR"; error: string }
+  | { type: "SET_FILE_LOADING"; isLoading: boolean }
+  | { type: "CLEAR_BROWSER_STATE" };
 
 /**
  * Generates a unique message ID.
  */
 function generateMessageId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/**
+ * Creates initial browser state.
+ */
+function createInitialBrowserState(): BrowserState {
+  return {
+    currentPath: "",
+    expandedDirs: new Set(),
+    directoryCache: new Map(),
+    currentFileContent: null,
+    currentFileTruncated: false,
+    fileError: null,
+    isLoading: false,
+  };
 }
 
 /**
@@ -120,6 +179,8 @@ function sessionReducer(
         // Clear session when switching vaults
         sessionId: null,
         messages: [],
+        // Clear browser state when switching vaults (REQ-F-23)
+        browser: createInitialBrowserState(),
       };
 
     case "SET_SESSION_ID":
@@ -129,6 +190,7 @@ function sessionReducer(
       };
 
     case "SET_MODE":
+      // Preserve browser state when switching modes (REQ-F-22)
       return {
         ...state,
         mode: action.mode,
@@ -168,6 +230,88 @@ function sessionReducer(
         messages: [],
       };
 
+    case "SET_CURRENT_PATH":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          currentPath: action.path,
+          // Clear file content when changing path
+          currentFileContent: null,
+          currentFileTruncated: false,
+          fileError: null,
+        },
+      };
+
+    case "TOGGLE_DIRECTORY": {
+      const newExpandedDirs = new Set(state.browser.expandedDirs);
+      if (newExpandedDirs.has(action.path)) {
+        newExpandedDirs.delete(action.path);
+      } else {
+        newExpandedDirs.add(action.path);
+      }
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          expandedDirs: newExpandedDirs,
+        },
+      };
+    }
+
+    case "CACHE_DIRECTORY": {
+      const newCache = new Map(state.browser.directoryCache);
+      newCache.set(action.path, action.entries);
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          directoryCache: newCache,
+        },
+      };
+    }
+
+    case "SET_FILE_CONTENT":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          currentFileContent: action.content,
+          currentFileTruncated: action.truncated,
+          fileError: null,
+          isLoading: false,
+        },
+      };
+
+    case "SET_FILE_ERROR":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          currentFileContent: null,
+          currentFileTruncated: false,
+          fileError: action.error,
+          isLoading: false,
+        },
+      };
+
+    case "SET_FILE_LOADING":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          isLoading: action.isLoading,
+          // Clear error when starting new operation
+          fileError: action.isLoading ? null : state.browser.fileError,
+        },
+      };
+
+    case "CLEAR_BROWSER_STATE":
+      return {
+        ...state,
+        browser: createInitialBrowserState(),
+      };
+
     default:
       return state;
   }
@@ -181,6 +325,7 @@ const initialState: SessionState = {
   sessionId: null,
   mode: "note",
   messages: [],
+  browser: createInitialBrowserState(),
 };
 
 /**
@@ -236,6 +381,28 @@ function persistVaultId(vaultId: string | null): void {
 }
 
 /**
+ * Loads persisted browser path from localStorage.
+ */
+function loadPersistedBrowserPath(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY_BROWSER_PATH);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persists browser path to localStorage.
+ */
+function persistBrowserPath(path: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_BROWSER_PATH, path);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+/**
  * Props for SessionProvider.
  */
 export interface SessionProviderProps {
@@ -265,6 +432,11 @@ export function SessionProvider({
     }
   }, [state.vault]);
 
+  // Persist browser path when it changes
+  useEffect(() => {
+    persistBrowserPath(state.browser.currentPath);
+  }, [state.browser.currentPath]);
+
   // Load persisted state on mount only
   useEffect(() => {
     // Load persisted session ID
@@ -282,6 +454,12 @@ export function SessionProvider({
           dispatch({ type: "SELECT_VAULT", vault });
         }
       }
+    }
+
+    // Load persisted browser path
+    const persistedBrowserPath = loadPersistedBrowserPath();
+    if (persistedBrowserPath) {
+      dispatch({ type: "SET_CURRENT_PATH", path: persistedBrowserPath });
     }
   }, [initialVaults]);
 
@@ -328,6 +506,35 @@ export function SessionProvider({
     persistSessionId(null);
   }, []);
 
+  // Browser action creators
+  const setCurrentPath = useCallback((path: string) => {
+    dispatch({ type: "SET_CURRENT_PATH", path });
+  }, []);
+
+  const toggleDirectory = useCallback((path: string) => {
+    dispatch({ type: "TOGGLE_DIRECTORY", path });
+  }, []);
+
+  const cacheDirectory = useCallback((path: string, entries: FileEntry[]) => {
+    dispatch({ type: "CACHE_DIRECTORY", path, entries });
+  }, []);
+
+  const setFileContent = useCallback((content: string, truncated: boolean) => {
+    dispatch({ type: "SET_FILE_CONTENT", content, truncated });
+  }, []);
+
+  const setFileError = useCallback((error: string) => {
+    dispatch({ type: "SET_FILE_ERROR", error });
+  }, []);
+
+  const setFileLoading = useCallback((isLoading: boolean) => {
+    dispatch({ type: "SET_FILE_LOADING", isLoading });
+  }, []);
+
+  const clearBrowserState = useCallback(() => {
+    dispatch({ type: "CLEAR_BROWSER_STATE" });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -337,6 +544,13 @@ export function SessionProvider({
     updateLastMessage,
     clearMessages,
     startNewSession,
+    setCurrentPath,
+    toggleDirectory,
+    cacheDirectory,
+    setFileContent,
+    setFileError,
+    setFileLoading,
+    clearBrowserState,
   };
 
   return (

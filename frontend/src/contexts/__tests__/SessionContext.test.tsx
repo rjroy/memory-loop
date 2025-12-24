@@ -460,4 +460,296 @@ describe("SessionContext", () => {
       expect(result.current.session.messages[0].isStreaming).toBe(false);
     });
   });
+
+  describe("browser state", () => {
+    it("provides initial browser state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.browser.currentPath).toBe("");
+      expect(result.current.browser.expandedDirs.size).toBe(0);
+      expect(result.current.browser.directoryCache.size).toBe(0);
+      expect(result.current.browser.currentFileContent).toBeNull();
+      expect(result.current.browser.currentFileTruncated).toBe(false);
+      expect(result.current.browser.fileError).toBeNull();
+      expect(result.current.browser.isLoading).toBe(false);
+    });
+
+    it("setCurrentPath updates the current path", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setCurrentPath("folder/subfolder");
+      });
+
+      expect(result.current.browser.currentPath).toBe("folder/subfolder");
+    });
+
+    it("setCurrentPath clears file content and error", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up file content first
+      act(() => {
+        result.current.setFileContent("# Test", false);
+        result.current.setFileError("Some error");
+      });
+
+      // Changing path should clear file content and error
+      act(() => {
+        result.current.setCurrentPath("new/path");
+      });
+
+      expect(result.current.browser.currentFileContent).toBeNull();
+      expect(result.current.browser.fileError).toBeNull();
+    });
+
+    it("setCurrentPath persists to localStorage", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setCurrentPath("folder/subfolder");
+      });
+
+      expect(localStorage.getItem("memory-loop:browserPath")).toBe("folder/subfolder");
+    });
+
+    it("toggleDirectory expands a collapsed directory", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.toggleDirectory("folder");
+      });
+
+      expect(result.current.browser.expandedDirs.has("folder")).toBe(true);
+    });
+
+    it("toggleDirectory collapses an expanded directory", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.toggleDirectory("folder");
+      });
+
+      expect(result.current.browser.expandedDirs.has("folder")).toBe(true);
+
+      act(() => {
+        result.current.toggleDirectory("folder");
+      });
+
+      expect(result.current.browser.expandedDirs.has("folder")).toBe(false);
+    });
+
+    it("cacheDirectory stores directory entries", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const entries = [
+        { name: "folder1", type: "directory" as const, path: "folder1" },
+        { name: "file.md", type: "file" as const, path: "file.md" },
+      ];
+
+      act(() => {
+        result.current.cacheDirectory("", entries);
+      });
+
+      expect(result.current.browser.directoryCache.get("")).toEqual(entries);
+    });
+
+    it("cacheDirectory overwrites existing cache for same path", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const entries1 = [{ name: "old.md", type: "file" as const, path: "old.md" }];
+      const entries2 = [{ name: "new.md", type: "file" as const, path: "new.md" }];
+
+      act(() => {
+        result.current.cacheDirectory("folder", entries1);
+      });
+
+      act(() => {
+        result.current.cacheDirectory("folder", entries2);
+      });
+
+      expect(result.current.browser.directoryCache.get("folder")).toEqual(entries2);
+    });
+
+    it("setFileContent updates file content and clears error", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setFileLoading(true);
+        result.current.setFileError("Previous error");
+      });
+
+      act(() => {
+        result.current.setFileContent("# Hello World", false);
+      });
+
+      expect(result.current.browser.currentFileContent).toBe("# Hello World");
+      expect(result.current.browser.currentFileTruncated).toBe(false);
+      expect(result.current.browser.fileError).toBeNull();
+      expect(result.current.browser.isLoading).toBe(false);
+    });
+
+    it("setFileContent handles truncated flag", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setFileContent("Content...", true);
+      });
+
+      expect(result.current.browser.currentFileTruncated).toBe(true);
+    });
+
+    it("setFileError updates error and clears content", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setFileContent("# Test", false);
+      });
+
+      act(() => {
+        result.current.setFileError("File not found");
+      });
+
+      expect(result.current.browser.fileError).toBe("File not found");
+      expect(result.current.browser.currentFileContent).toBeNull();
+      expect(result.current.browser.isLoading).toBe(false);
+    });
+
+    it("setFileLoading updates loading state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setFileLoading(true);
+      });
+
+      expect(result.current.browser.isLoading).toBe(true);
+
+      act(() => {
+        result.current.setFileLoading(false);
+      });
+
+      expect(result.current.browser.isLoading).toBe(false);
+    });
+
+    it("setFileLoading clears error when starting new operation", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setFileError("Previous error");
+      });
+
+      act(() => {
+        result.current.setFileLoading(true);
+      });
+
+      expect(result.current.browser.fileError).toBeNull();
+    });
+
+    it("clearBrowserState resets all browser state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up browser state
+      act(() => {
+        result.current.setCurrentPath("folder/subfolder");
+        result.current.toggleDirectory("folder");
+        result.current.cacheDirectory("folder", [{ name: "file.md", type: "file" as const, path: "folder/file.md" }]);
+        result.current.setFileContent("# Test", true);
+      });
+
+      // Clear it
+      act(() => {
+        result.current.clearBrowserState();
+      });
+
+      expect(result.current.browser.currentPath).toBe("");
+      expect(result.current.browser.expandedDirs.size).toBe(0);
+      expect(result.current.browser.directoryCache.size).toBe(0);
+      expect(result.current.browser.currentFileContent).toBeNull();
+      expect(result.current.browser.currentFileTruncated).toBe(false);
+    });
+
+    it("selectVault clears browser state (REQ-F-23)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up browser state
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setCurrentPath("folder");
+        result.current.toggleDirectory("folder");
+        result.current.cacheDirectory("folder", [{ name: "file.md", type: "file" as const, path: "folder/file.md" }]);
+      });
+
+      // Switch vault should clear browser state
+      act(() => {
+        result.current.selectVault(testVault2);
+      });
+
+      expect(result.current.browser.currentPath).toBe("");
+      expect(result.current.browser.expandedDirs.size).toBe(0);
+      expect(result.current.browser.directoryCache.size).toBe(0);
+    });
+
+    it("setMode preserves browser state (REQ-F-22)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up browser state
+      act(() => {
+        result.current.setCurrentPath("folder");
+        result.current.toggleDirectory("folder");
+        result.current.cacheDirectory("folder", [{ name: "file.md", type: "file" as const, path: "folder/file.md" }]);
+      });
+
+      // Switch mode should preserve browser state
+      act(() => {
+        result.current.setMode("discussion");
+      });
+
+      expect(result.current.browser.currentPath).toBe("folder");
+      expect(result.current.browser.expandedDirs.has("folder")).toBe(true);
+      expect(result.current.browser.directoryCache.get("folder")).toBeDefined();
+    });
+
+    it("setMode includes browse mode", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setMode("browse");
+      });
+
+      expect(result.current.mode).toBe("browse");
+    });
+  });
 });

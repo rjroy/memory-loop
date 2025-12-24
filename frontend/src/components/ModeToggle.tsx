@@ -1,7 +1,7 @@
 /**
  * Mode Toggle Component
  *
- * Segmented control for switching between Note and Discussion modes.
+ * Segmented control for switching between Note, Discussion, and Browse modes.
  * Touch-friendly with 44px minimum height.
  */
 
@@ -30,12 +30,13 @@ interface ModeOption {
 const modes: ModeOption[] = [
   { value: "note", label: "Note" },
   { value: "discussion", label: "Discussion" },
+  { value: "browse", label: "Browse" },
 ];
 
 /**
- * Segmented control for switching between Note and Discussion modes.
+ * Segmented control for switching between Note, Discussion, and Browse modes.
  *
- * - Two segments with visual highlight on selected
+ * - Three segments with visual highlight on selected
  * - 44px minimum height for touch targets
  * - Calls setMode from SessionContext on selection
  */

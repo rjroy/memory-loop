@@ -17,6 +17,8 @@ import {
   NewSessionMessageSchema,
   AbortMessageSchema,
   PingMessageSchema,
+  ListDirectoryMessageSchema,
+  ReadFileMessageSchema,
   // Server message schemas
   ServerMessageSchema,
   VaultListMessageSchema,
@@ -30,9 +32,12 @@ import {
   ToolEndMessageSchema,
   ErrorMessageSchema,
   PongMessageSchema,
+  DirectoryListingMessageSchema,
+  FileContentMessageSchema,
   // Supporting schemas
   VaultInfoSchema,
   ErrorCodeSchema,
+  FileEntrySchema,
   // Utilities
   parseClientMessage,
   parseServerMessage,
@@ -112,6 +117,10 @@ describe("ErrorCodeSchema", () => {
       "NOTE_CAPTURE_FAILED",
       "VALIDATION_ERROR",
       "INTERNAL_ERROR",
+      "FILE_NOT_FOUND",
+      "DIRECTORY_NOT_FOUND",
+      "PATH_TRAVERSAL",
+      "INVALID_FILE_TYPE",
     ];
 
     for (const code of validCodes) {
@@ -125,6 +134,54 @@ describe("ErrorCodeSchema", () => {
 
   test("rejects non-string", () => {
     expect(() => ErrorCodeSchema.parse(404)).toThrow(ZodError);
+  });
+});
+
+// =============================================================================
+// File Browser Schema Tests
+// =============================================================================
+
+describe("FileEntrySchema", () => {
+  test("accepts valid file entry", () => {
+    const entry = {
+      name: "my-note.md",
+      type: "file" as const,
+      path: "subfolder/my-note.md",
+    };
+    const result = FileEntrySchema.parse(entry);
+    expect(result.name).toBe("my-note.md");
+    expect(result.type).toBe("file");
+    expect(result.path).toBe("subfolder/my-note.md");
+  });
+
+  test("accepts valid directory entry", () => {
+    const entry = {
+      name: "subfolder",
+      type: "directory" as const,
+      path: "subfolder",
+    };
+    const result = FileEntrySchema.parse(entry);
+    expect(result.type).toBe("directory");
+  });
+
+  test("accepts empty path for root entries", () => {
+    const entry = {
+      name: "root-note.md",
+      type: "file" as const,
+      path: "",
+    };
+    const result = FileEntrySchema.parse(entry);
+    expect(result.path).toBe("");
+  });
+
+  test("rejects empty name", () => {
+    const entry = { name: "", type: "file", path: "file.md" };
+    expect(() => FileEntrySchema.parse(entry)).toThrow(ZodError);
+  });
+
+  test("rejects invalid type", () => {
+    const entry = { name: "file.md", type: "symlink", path: "file.md" };
+    expect(() => FileEntrySchema.parse(entry)).toThrow(ZodError);
   });
 });
 
@@ -236,6 +293,41 @@ describe("Client -> Server Messages", () => {
     });
   });
 
+  describe("ListDirectoryMessageSchema", () => {
+    test("accepts valid list_directory with path", () => {
+      const msg = { type: "list_directory" as const, path: "subfolder" };
+      const result = ListDirectoryMessageSchema.parse(msg);
+      expect(result.type).toBe("list_directory");
+      expect(result.path).toBe("subfolder");
+    });
+
+    test("accepts empty path for root directory", () => {
+      const msg = { type: "list_directory" as const, path: "" };
+      const result = ListDirectoryMessageSchema.parse(msg);
+      expect(result.path).toBe("");
+    });
+
+    test("accepts nested path", () => {
+      const msg = { type: "list_directory" as const, path: "folder/subfolder/deep" };
+      const result = ListDirectoryMessageSchema.parse(msg);
+      expect(result.path).toBe("folder/subfolder/deep");
+    });
+  });
+
+  describe("ReadFileMessageSchema", () => {
+    test("accepts valid read_file with path", () => {
+      const msg = { type: "read_file" as const, path: "notes/my-note.md" };
+      const result = ReadFileMessageSchema.parse(msg);
+      expect(result.type).toBe("read_file");
+      expect(result.path).toBe("notes/my-note.md");
+    });
+
+    test("rejects empty path", () => {
+      const msg = { type: "read_file", path: "" };
+      expect(() => ReadFileMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ClientMessageSchema (discriminated union)", () => {
     test("parses all client message types", () => {
       const messages = [
@@ -246,6 +338,8 @@ describe("Client -> Server Messages", () => {
         { type: "new_session" },
         { type: "abort" },
         { type: "ping" },
+        { type: "list_directory", path: "" },
+        { type: "read_file", path: "note.md" },
       ];
 
       for (const msg of messages) {
@@ -501,6 +595,10 @@ describe("Server -> Client Messages", () => {
         "NOTE_CAPTURE_FAILED",
         "VALIDATION_ERROR",
         "INTERNAL_ERROR",
+        "FILE_NOT_FOUND",
+        "DIRECTORY_NOT_FOUND",
+        "PATH_TRAVERSAL",
+        "INVALID_FILE_TYPE",
       ];
 
       for (const code of codes) {
@@ -532,6 +630,100 @@ describe("Server -> Client Messages", () => {
     });
   });
 
+  describe("DirectoryListingMessageSchema", () => {
+    test("accepts valid directory_listing with entries", () => {
+      const msg = {
+        type: "directory_listing" as const,
+        path: "subfolder",
+        entries: [
+          { name: "child-folder", type: "directory" as const, path: "subfolder/child-folder" },
+          { name: "note.md", type: "file" as const, path: "subfolder/note.md" },
+        ],
+      };
+      const result = DirectoryListingMessageSchema.parse(msg);
+      expect(result.type).toBe("directory_listing");
+      expect(result.path).toBe("subfolder");
+      expect(result.entries).toHaveLength(2);
+    });
+
+    test("accepts empty entries for empty directory", () => {
+      const msg = {
+        type: "directory_listing" as const,
+        path: "empty-folder",
+        entries: [],
+      };
+      const result = DirectoryListingMessageSchema.parse(msg);
+      expect(result.entries).toHaveLength(0);
+    });
+
+    test("accepts root directory listing", () => {
+      const msg = {
+        type: "directory_listing" as const,
+        path: "",
+        entries: [{ name: "README.md", type: "file" as const, path: "README.md" }],
+      };
+      const result = DirectoryListingMessageSchema.parse(msg);
+      expect(result.path).toBe("");
+    });
+
+    test("rejects invalid entry in entries array", () => {
+      const msg = {
+        type: "directory_listing",
+        path: "",
+        entries: [{ name: "", type: "file", path: "" }], // empty name is invalid
+      };
+      expect(() => DirectoryListingMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
+  describe("FileContentMessageSchema", () => {
+    test("accepts valid file_content", () => {
+      const msg = {
+        type: "file_content" as const,
+        path: "notes/my-note.md",
+        content: "# My Note\n\nSome content here.",
+        truncated: false,
+      };
+      const result = FileContentMessageSchema.parse(msg);
+      expect(result.type).toBe("file_content");
+      expect(result.path).toBe("notes/my-note.md");
+      expect(result.content).toContain("# My Note");
+      expect(result.truncated).toBe(false);
+    });
+
+    test("accepts truncated file content", () => {
+      const msg = {
+        type: "file_content" as const,
+        path: "large-file.md",
+        content: "...(truncated content)...",
+        truncated: true,
+      };
+      const result = FileContentMessageSchema.parse(msg);
+      expect(result.truncated).toBe(true);
+    });
+
+    test("accepts empty content", () => {
+      const msg = {
+        type: "file_content" as const,
+        path: "empty.md",
+        content: "",
+        truncated: false,
+      };
+      const result = FileContentMessageSchema.parse(msg);
+      expect(result.content).toBe("");
+    });
+
+    test("rejects empty path", () => {
+      const msg = { type: "file_content", path: "", content: "test", truncated: false };
+      expect(() => FileContentMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing truncated flag", () => {
+      const msg = { type: "file_content", path: "note.md", content: "test" };
+      expect(() => FileContentMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ServerMessageSchema (discriminated union)", () => {
     test("parses all server message types", () => {
       const messages = [
@@ -557,6 +749,8 @@ describe("Server -> Client Messages", () => {
         { type: "tool_end", toolUseId: "t1", output: {} },
         { type: "error", code: "SDK_ERROR", message: "Error" },
         { type: "pong" },
+        { type: "directory_listing", path: "", entries: [] },
+        { type: "file_content", path: "note.md", content: "test", truncated: false },
       ];
 
       for (const msg of messages) {

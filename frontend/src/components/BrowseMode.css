@@ -1,0 +1,227 @@
+/**
+ * BrowseMode Component Styles
+ *
+ * Split-pane layout with collapsible tree and responsive mobile overlay.
+ */
+
+.browse-mode {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--color-bg);
+}
+
+.browse-mode--tree-collapsed {
+  grid-template-columns: 48px 1fr;
+}
+
+/* Tree pane (desktop) */
+.browse-mode__tree-pane {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+  background-color: var(--color-bg-secondary);
+  overflow: hidden;
+}
+
+.browse-mode__tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  min-height: 48px;
+}
+
+.browse-mode__tree-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.browse-mode--tree-collapsed .browse-mode__tree-title {
+  display: none;
+}
+
+.browse-mode__collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.browse-mode__collapse-btn:hover {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text);
+}
+
+.browse-mode--tree-collapsed .browse-mode__collapse-btn {
+  margin: 0 auto;
+}
+
+.browse-mode__tree-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Viewer pane */
+.browse-mode__viewer-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.browse-mode__viewer-header {
+  display: none;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-bg-secondary);
+  min-height: 48px;
+}
+
+.browse-mode__mobile-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.browse-mode__mobile-menu-btn:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+.browse-mode__current-file {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browse-mode__viewer-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Icons */
+.browse-mode__icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Mobile overlay */
+.browse-mode__overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+}
+
+.browse-mode__mobile-tree {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 85%;
+  max-width: 320px;
+  background-color: var(--color-bg);
+  z-index: 101;
+  flex-direction: column;
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.2);
+}
+
+.browse-mode__mobile-tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  min-height: 48px;
+}
+
+.browse-mode__close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.browse-mode__close-btn:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+/* Mobile layout */
+@media (max-width: 767px) {
+  .browse-mode {
+    grid-template-columns: 1fr;
+  }
+
+  .browse-mode__tree-pane {
+    display: none;
+  }
+
+  .browse-mode__viewer-header {
+    display: flex;
+  }
+
+  .browse-mode__overlay {
+    display: block;
+  }
+
+  .browse-mode__mobile-tree {
+    display: flex;
+    animation: slide-in 0.2s ease-out;
+  }
+
+  @keyframes slide-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .browse-mode__overlay {
+    background-color: rgba(0, 0, 0, 0.7);
+  }
+
+  .browse-mode__mobile-tree {
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+  }
+}

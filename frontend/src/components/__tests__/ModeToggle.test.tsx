@@ -1,7 +1,7 @@
 /**
  * Tests for ModeToggle component
  *
- * Tests mode switching and visual states.
+ * Tests mode switching and visual states for Note, Discussion, and Browse modes.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -54,11 +54,12 @@ afterEach(() => {
 
 describe("ModeToggle", () => {
   describe("rendering", () => {
-    it("renders Note and Discussion options", () => {
+    it("renders Note, Discussion, and Browse options", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
       expect(screen.getByText("Note")).toBeDefined();
       expect(screen.getByText("Discussion")).toBeDefined();
+      expect(screen.getByText("Browse")).toBeDefined();
     });
 
     it("has proper accessibility attributes", () => {
@@ -69,7 +70,7 @@ describe("ModeToggle", () => {
       expect(tablist.getAttribute("aria-label")).toBe("Application mode");
 
       const tabs = screen.getAllByRole("tab");
-      expect(tabs.length).toBe(2);
+      expect(tabs.length).toBe(3);
     });
 
     it("shows Note as selected by default", () => {
@@ -125,17 +126,51 @@ describe("ModeToggle", () => {
       // Should still be selected
       expect(noteTab?.getAttribute("aria-selected")).toBe("true");
     });
+
+    it("switches to Browse when clicked", () => {
+      render(<ModeToggle />, { wrapper: TestWrapper });
+
+      const browseTab = screen.getByText("Browse").closest("button");
+      fireEvent.click(browseTab!);
+
+      expect(browseTab?.getAttribute("aria-selected")).toBe("true");
+      expect(browseTab?.className).toContain("mode-toggle__segment--selected");
+    });
+
+    it("can switch between all three modes", () => {
+      render(<ModeToggle />, { wrapper: TestWrapper });
+
+      // Start at Note
+      const noteTab = screen.getByText("Note").closest("button");
+      expect(noteTab?.getAttribute("aria-selected")).toBe("true");
+
+      // Switch to Discussion
+      const discussionTab = screen.getByText("Discussion").closest("button");
+      fireEvent.click(discussionTab!);
+      expect(discussionTab?.getAttribute("aria-selected")).toBe("true");
+
+      // Switch to Browse
+      const browseTab = screen.getByText("Browse").closest("button");
+      fireEvent.click(browseTab!);
+      expect(browseTab?.getAttribute("aria-selected")).toBe("true");
+
+      // Switch back to Note
+      fireEvent.click(noteTab!);
+      expect(noteTab?.getAttribute("aria-selected")).toBe("true");
+    });
   });
 
   describe("disabled state", () => {
-    it("disables both buttons when disabled prop is true", () => {
+    it("disables all buttons when disabled prop is true", () => {
       render(<ModeToggle disabled />, { wrapper: TestWrapper });
 
       const noteTab = screen.getByText("Note").closest("button");
       const discussionTab = screen.getByText("Discussion").closest("button");
+      const browseTab = screen.getByText("Browse").closest("button");
 
       expect(noteTab?.hasAttribute("disabled")).toBe(true);
       expect(discussionTab?.hasAttribute("disabled")).toBe(true);
+      expect(browseTab?.hasAttribute("disabled")).toBe(true);
     });
 
     it("does not switch mode when disabled", () => {

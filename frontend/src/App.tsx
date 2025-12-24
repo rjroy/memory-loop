@@ -6,6 +6,7 @@
  * - Vault selection screen
  * - Note capture mode
  * - Discussion mode
+ * - Browse mode (file browser and markdown viewer)
  * - Session management
  */
 
@@ -15,6 +16,7 @@ import { VaultSelect } from "./components/VaultSelect";
 import { ModeToggle } from "./components/ModeToggle";
 import { NoteCapture } from "./components/NoteCapture";
 import { Discussion } from "./components/Discussion";
+import { BrowseMode } from "./components/BrowseMode";
 import "./App.css";
 
 /**
@@ -123,7 +125,9 @@ function MainContent(): React.ReactNode {
       </header>
 
       <main className="app-main">
-        {mode === "note" ? <NoteCapture /> : <Discussion />}
+        {mode === "note" && <NoteCapture />}
+        {mode === "discussion" && <Discussion />}
+        {mode === "browse" && <BrowseMode />}
       </main>
 
       <ConfirmDialog

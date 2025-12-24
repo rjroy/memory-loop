@@ -20,6 +20,11 @@ import {
   type SessionQueryResult,
 } from "./session-manager";
 import { captureToDaily } from "./note-capture";
+import {
+  listDirectory,
+  readMarkdownFile,
+  FileBrowserError,
+} from "./file-browser";
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk";
 import { wsLog as log } from "./logger";
 
@@ -218,6 +223,12 @@ export class WebSocketHandler {
         break;
       case "ping":
         this.handlePing(ws);
+        break;
+      case "list_directory":
+        await this.handleListDirectory(ws, message.path);
+        break;
+      case "read_file":
+        await this.handleReadFile(ws, message.path);
         break;
     }
   }
@@ -647,6 +658,85 @@ export class WebSocketHandler {
    */
   private handlePing(ws: WebSocketLike): void {
     this.send(ws, { type: "pong" });
+  }
+
+  /**
+   * Handles list_directory message.
+   * Lists contents of a directory within the selected vault.
+   */
+  private async handleListDirectory(
+    ws: WebSocketLike,
+    path: string
+  ): Promise<void> {
+    log.info(`Listing directory: ${path || "/"}`);
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for directory listing");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const entries = await listDirectory(this.state.currentVault.path, path);
+      log.info(`Found ${entries.length} entries in ${path || "/"}`);
+      this.send(ws, {
+        type: "directory_listing",
+        path,
+        entries,
+      });
+    } catch (error) {
+      log.error("Directory listing failed", error);
+      if (error instanceof FileBrowserError) {
+        this.sendError(ws, error.code, error.message);
+      } else {
+        const message =
+          error instanceof Error ? error.message : "Failed to list directory";
+        this.sendError(ws, "INTERNAL_ERROR", message);
+      }
+    }
+  }
+
+  /**
+   * Handles read_file message.
+   * Reads a markdown file from the selected vault.
+   */
+  private async handleReadFile(
+    ws: WebSocketLike,
+    path: string
+  ): Promise<void> {
+    log.info(`Reading file: ${path}`);
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for file reading");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const result = await readMarkdownFile(this.state.currentVault.path, path);
+      log.info(`File read: ${path} (truncated: ${result.truncated})`);
+      this.send(ws, {
+        type: "file_content",
+        path,
+        content: result.content,
+        truncated: result.truncated,
+      });
+    } catch (error) {
+      log.error("File reading failed", error);
+      if (error instanceof FileBrowserError) {
+        this.sendError(ws, error.code, error.message);
+      } else {
+        const message =
+          error instanceof Error ? error.message : "Failed to read file";
+        this.sendError(ws, "INTERNAL_ERROR", message);
+      }
+    }
   }
 }
 

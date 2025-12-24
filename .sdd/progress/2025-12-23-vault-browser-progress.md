@@ -12,13 +12,16 @@ authored_by:
 
 # Vault Browser - Implementation Progress
 
-**Last Updated**: 2025-12-23 | **Status**: 0% complete (0 of 12 tasks)
+**Last Updated**: 2025-12-23 | **Status**: 8% complete (1 of 12 tasks)
 
 ## Current Session
-**Date**: 2025-12-23 | **Working On**: TASK-001: Protocol Extension - File Browser Messages | **Blockers**: None
+**Date**: 2025-12-23 | **Working On**: TASK-002: Backend File Browser Module | **Blockers**: None
 
 ## Completed Today
-- (none yet)
+- TASK-001: Protocol Extension - File Browser Messages ✅
+  - Commit: 68bc545
+  - Iterations: 2 (added test coverage after code review)
+  - Files: shared/src/protocol.ts, shared/src/types.ts, shared/src/__tests__/protocol.test.ts
 
 ## Discovered Issues
 - None
@@ -29,13 +32,15 @@ authored_by:
 
 ### Phase 1: Foundation
 
-**In Progress** 🚧
-- [ ] TASK-001: Protocol Extension - File Browser Messages
+**Completed** ✅
+- [x] TASK-001: Protocol Extension - File Browser Messages - *Completed 2025-12-23*
 
 ### Phase 2: Backend
 
-**Upcoming** ⏳
+**In Progress** 🚧
 - [ ] TASK-002: Backend File Browser Module
+
+**Upcoming** ⏳
 - [ ] TASK-003: WebSocket Handler Integration
 - [ ] TASK-010: Image Asset Serving Route
 
@@ -81,7 +86,7 @@ authored_by:
 
 | Component | Status |
 |-----------|--------|
-| Protocol schemas | ⏳ Not started |
+| Protocol schemas | ✅ Complete (92 tests, 24 new for file browser) |
 | file-browser.ts | ⏳ Not started |
 | FileTree | ⏳ Not started |
 | MarkdownViewer | ⏳ Not started |
@@ -90,5 +95,5 @@ authored_by:
 ---
 
 ## Notes for Next Session
-- Starting implementation with TASK-001 (Protocol Extension)
-- Critical path: TASK-001 → TASK-004 → TASK-006/007 → TASK-008 → TASK-009
+- TASK-001 complete, moving to TASK-002 (Backend File Browser Module)
+- Critical path: TASK-001 ✅ → TASK-002 → TASK-004 → TASK-006/007 → TASK-008 → TASK-009

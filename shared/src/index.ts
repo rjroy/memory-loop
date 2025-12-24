@@ -17,6 +17,8 @@ export {
   // Vault Info
   VaultInfoSchema,
   ErrorCodeSchema,
+  // File browser schemas
+  FileEntrySchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -25,6 +27,8 @@ export {
   NewSessionMessageSchema,
   AbortMessageSchema,
   PingMessageSchema,
+  ListDirectoryMessageSchema,
+  ReadFileMessageSchema,
   ClientMessageSchema,
   // Server -> Client schemas
   VaultListMessageSchema,
@@ -38,6 +42,8 @@ export {
   ToolEndMessageSchema,
   ErrorMessageSchema,
   PongMessageSchema,
+  DirectoryListingMessageSchema,
+  FileContentMessageSchema,
   ServerMessageSchema,
   // Validation utilities
   parseClientMessage,
@@ -48,6 +54,8 @@ export {
 
 // Protocol message types (inferred from Zod schemas)
 export type {
+  // File browser types
+  FileEntry,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,
@@ -56,6 +64,8 @@ export type {
   NewSessionMessage,
   AbortMessage,
   PingMessage,
+  ListDirectoryMessage,
+  ReadFileMessage,
   ClientMessage,
   // Server message types
   VaultListMessage,
@@ -69,5 +79,7 @@ export type {
   ToolEndMessage,
   ErrorMessage,
   PongMessage,
+  DirectoryListingMessage,
+  FileContentMessage,
   ServerMessage,
 } from "./protocol.js";

@@ -5,7 +5,7 @@
  * Supports collapsible tree panel and mobile-friendly overlay.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { FileTree } from "./FileTree";
@@ -33,22 +33,53 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
 
-  const { browser, vault, cacheDirectory, setFileContent, setFileError, setFileLoading } = useSession();
-  const { sendMessage, lastMessage } = useWebSocket();
+  const hasSentVaultSelectionRef = useRef(false);
+  const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  // Load root directory on mount if not cached
+  const { browser, vault, cacheDirectory, setFileContent, setFileError, setFileLoading } = useSession();
+
+  // Callback to re-send vault selection on WebSocket reconnect
+  const handleReconnect = useCallback(() => {
+    hasSentVaultSelectionRef.current = false;
+    setHasSessionReady(false);
+  }, []);
+
+  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
+    onReconnect: handleReconnect,
+  });
+
+  // Send vault selection when WebSocket connects (initial or reconnect)
   useEffect(() => {
-    if (vault && !browser.directoryCache.has("")) {
+    if (
+      connectionStatus === "connected" &&
+      vault &&
+      !hasSentVaultSelectionRef.current
+    ) {
+      sendMessage({
+        type: "select_vault",
+        vaultId: vault.id,
+      });
+      hasSentVaultSelectionRef.current = true;
+    }
+  }, [connectionStatus, vault, sendMessage]);
+
+  // Load root directory after session is ready, if not cached
+  useEffect(() => {
+    if (vault && hasSessionReady && !browser.directoryCache.has("")) {
       setFileLoading(true);
       sendMessage({ type: "list_directory", path: "" });
     }
-  }, [vault, browser.directoryCache, sendMessage, setFileLoading]);
+  }, [vault, hasSessionReady, browser.directoryCache, sendMessage, setFileLoading]);
 
   // Handle server messages for directory listing and file content
   useEffect(() => {
     if (!lastMessage) return;
 
     switch (lastMessage.type) {
+      case "session_ready":
+        setHasSessionReady(true);
+        break;
+
       case "directory_listing":
         cacheDirectory(lastMessage.path, lastMessage.entries);
         setFileLoading(false);

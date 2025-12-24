@@ -12,6 +12,10 @@ import { serverLog as log } from "./logger";
 
 const server = Bun.serve(serverConfig);
 
-log.info(`Memory Loop Backend running at http://localhost:${server.port}`);
-log.info(`WebSocket available at ws://localhost:${server.port}/ws`);
-log.info(`Health check at http://localhost:${server.port}/api/health`);
+const displayHost = server.hostname === "0.0.0.0" ? "localhost" : server.hostname;
+log.info(`Memory Loop Backend running at http://${displayHost}:${server.port}`);
+log.info(`WebSocket available at ws://${displayHost}:${server.port}/ws`);
+log.info(`Health check at http://${displayHost}:${server.port}/api/health`);
+if (server.hostname === "0.0.0.0") {
+  log.info(`Server bound to all interfaces (0.0.0.0) - accessible remotely`);
+}

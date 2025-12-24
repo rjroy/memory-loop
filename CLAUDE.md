@@ -59,6 +59,7 @@ Server → Client: `vault_list`, `session_ready`, `note_captured`, `response_sta
 ```bash
 VAULTS_DIR=/path/to/vaults     # Required
 PORT=3000                       # Optional (default 3000)
+HOST=0.0.0.0                    # Optional (default 0.0.0.0 for remote access)
 MOCK_SDK=true                   # Optional (testing without API)
 ```
 

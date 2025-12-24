@@ -12,7 +12,7 @@ import { describe, expect, it, afterEach, beforeEach } from "bun:test";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createApp, getPort } from "../server";
+import { createApp, getPort, getHost } from "../server";
 import type { VaultInfo } from "@memory-loop/shared";
 
 /** Response type for successful vault list */
@@ -64,6 +64,38 @@ describe("getPort", () => {
   it("returns default port when PORT is zero", () => {
     process.env.PORT = "0";
     expect(getPort()).toBe(3000);
+  });
+});
+
+describe("getHost", () => {
+  const originalEnv = process.env.HOST;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.HOST;
+    } else {
+      process.env.HOST = originalEnv;
+    }
+  });
+
+  it("returns default host 0.0.0.0 when HOST is not set", () => {
+    delete process.env.HOST;
+    expect(getHost()).toBe("0.0.0.0");
+  });
+
+  it("returns configured HOST when set", () => {
+    process.env.HOST = "127.0.0.1";
+    expect(getHost()).toBe("127.0.0.1");
+  });
+
+  it("returns localhost when HOST is set to localhost", () => {
+    process.env.HOST = "localhost";
+    expect(getHost()).toBe("localhost");
+  });
+
+  it("returns custom hostname when HOST is set", () => {
+    process.env.HOST = "192.168.1.100";
+    expect(getHost()).toBe("192.168.1.100");
   });
 });
 

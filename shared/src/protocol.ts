@@ -38,7 +38,24 @@ export const ErrorCodeSchema = z.enum([
   "NOTE_CAPTURE_FAILED",
   "VALIDATION_ERROR",
   "INTERNAL_ERROR",
+  "FILE_NOT_FOUND",
+  "DIRECTORY_NOT_FOUND",
+  "PATH_TRAVERSAL",
+  "INVALID_FILE_TYPE",
 ]);
+
+// =============================================================================
+// File Browser Schemas
+// =============================================================================
+
+/**
+ * Schema for a file or directory entry in a vault listing
+ */
+export const FileEntrySchema = z.object({
+  name: z.string().min(1, "Entry name is required"),
+  type: z.enum(["file", "directory"]),
+  path: z.string(), // Can be empty string for root entries
+});
 
 // =============================================================================
 // Client -> Server Message Schemas
@@ -98,6 +115,24 @@ export const PingMessageSchema = z.object({
 });
 
 /**
+ * Client requests directory listing in the vault
+ * Path is relative to vault root; empty string for root directory
+ */
+export const ListDirectoryMessageSchema = z.object({
+  type: z.literal("list_directory"),
+  path: z.string(), // Empty string for root, or relative path like "folder/subfolder"
+});
+
+/**
+ * Client requests to read a markdown file from the vault
+ * Path is relative to vault root and must end with .md
+ */
+export const ReadFileMessageSchema = z.object({
+  type: z.literal("read_file"),
+  path: z.string().min(1, "File path is required"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -108,6 +143,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   NewSessionMessageSchema,
   AbortMessageSchema,
   PingMessageSchema,
+  ListDirectoryMessageSchema,
+  ReadFileMessageSchema,
 ]);
 
 // =============================================================================
@@ -209,6 +246,25 @@ export const PongMessageSchema = z.object({
 });
 
 /**
+ * Server sends directory listing response
+ */
+export const DirectoryListingMessageSchema = z.object({
+  type: z.literal("directory_listing"),
+  path: z.string(), // The requested directory path (empty string for root)
+  entries: z.array(FileEntrySchema), // Sorted: directories first, then files, alphabetically
+});
+
+/**
+ * Server sends file content response
+ */
+export const FileContentMessageSchema = z.object({
+  type: z.literal("file_content"),
+  path: z.string().min(1, "File path is required"),
+  content: z.string(),
+  truncated: z.boolean(), // True if file exceeded 1MB and was truncated
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -223,11 +279,16 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   ToolEndMessageSchema,
   ErrorMessageSchema,
   PongMessageSchema,
+  DirectoryListingMessageSchema,
+  FileContentMessageSchema,
 ]);
 
 // =============================================================================
 // Inferred TypeScript Types
 // =============================================================================
+
+// File browser types
+export type FileEntry = z.infer<typeof FileEntrySchema>;
 
 // Client message types
 export type SelectVaultMessage = z.infer<typeof SelectVaultMessageSchema>;
@@ -237,6 +298,8 @@ export type ResumeSessionMessage = z.infer<typeof ResumeSessionMessageSchema>;
 export type NewSessionMessage = z.infer<typeof NewSessionMessageSchema>;
 export type AbortMessage = z.infer<typeof AbortMessageSchema>;
 export type PingMessage = z.infer<typeof PingMessageSchema>;
+export type ListDirectoryMessage = z.infer<typeof ListDirectoryMessageSchema>;
+export type ReadFileMessage = z.infer<typeof ReadFileMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -251,6 +314,8 @@ export type ToolInputMessage = z.infer<typeof ToolInputMessageSchema>;
 export type ToolEndMessage = z.infer<typeof ToolEndMessageSchema>;
 export type ErrorMessage = z.infer<typeof ErrorMessageSchema>;
 export type PongMessage = z.infer<typeof PongMessageSchema>;
+export type DirectoryListingMessage = z.infer<typeof DirectoryListingMessageSchema>;
+export type FileContentMessage = z.infer<typeof FileContentMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

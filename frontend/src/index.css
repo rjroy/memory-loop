@@ -87,9 +87,9 @@
   --color-warning: #fbbf24;
 
   /* Synthwave accent colors */
-  --color-accent-pink: #ff6b9d;
+  --color-accent-pink: #ee6492;
   --color-accent-purple: #a855f7;
-  --color-accent-cyan: #74E4FFFF;
+  --color-accent-cyan: #6fd5fa;
 
   /* Aliases for component compatibility */
   --color-bg: var(--color-background);

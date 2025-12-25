@@ -18,6 +18,41 @@ import { directoryExists, fileExists } from "./vault-manager";
 import { sessionLog as log } from "./logger";
 
 /**
+ * Default SDK options for Discussion mode.
+ *
+ * These options configure Claude for interactive vault exploration:
+ * - allowedTools: Auto-allow read operations without user prompts
+ * - permissionMode: Accept file edits in the vault automatically
+ * - maxTurns: Prevent runaway conversations (50 turns = ~100 messages)
+ * - maxBudgetUsd: Hard cost cap as safety net
+ * - includePartialMessages: Enable streaming for real-time responses
+ *
+ * Note: Task tool is intentionally excluded from allowedTools because
+ * subagents inherit parent tools by default, which could bypass permission
+ * checks for dangerous operations.
+ */
+export const DISCUSSION_MODE_OPTIONS: Partial<Options> = {
+  // Auto-allow read-only operations without prompting user
+  // Task is excluded: subagents inherit tools and could bypass permissions
+  allowedTools: [
+    "Read",
+    "Glob",
+    "Grep",
+    "WebFetch",
+    "WebSearch",
+    "TodoRead",
+  ],
+  // Auto-accept file edits - the user is working in their own vault
+  permissionMode: "acceptEdits",
+  // Prevent runaway conversations (50 turns = ~100 messages)
+  maxTurns: 50,
+  // Hard cost cap as safety net ($2 is generous for a single conversation)
+  maxBudgetUsd: 2.0,
+  // Enable streaming for real-time response display
+  includePartialMessages: true,
+};
+
+/**
  * Base directory for storing session metadata.
  */
 export const SESSIONS_DIR = ".memory-loop/sessions";
@@ -422,15 +457,22 @@ export async function createSession(
   log.debug(`Prompt: ${prompt.slice(0, 100)}...`);
 
   try {
-    // Create SDK query with vault's cwd and project settings
+    // Create SDK query with vault's cwd, project settings, and discussion mode defaults
     log.info("Calling Claude Agent SDK query()...");
+    const mergedOptions: Partial<Options> = {
+      ...DISCUSSION_MODE_OPTIONS,
+      cwd: vault.path,
+      settingSources: ["project"],
+      ...options, // Caller options override defaults
+    };
+    log.debug("SDK options:", {
+      allowedTools: mergedOptions.allowedTools,
+      permissionMode: mergedOptions.permissionMode,
+      maxTurns: mergedOptions.maxTurns,
+    });
     const queryResult = query({
       prompt,
-      options: {
-        cwd: vault.path,
-        settingSources: ["project"],
-        ...options,
-      },
+      options: mergedOptions,
     });
 
     // Extract session ID from first event
@@ -496,16 +538,23 @@ export async function resumeSession(
   log.info(`Session metadata loaded: vault=${metadata.vaultId}`);
 
   try {
-    // Create SDK query with resume option
+    // Create SDK query with resume option and discussion mode defaults
     log.info("Calling Claude Agent SDK query() with resume...");
+    const mergedOptions: Partial<Options> = {
+      ...DISCUSSION_MODE_OPTIONS,
+      resume: sessionId,
+      cwd: metadata.vaultPath,
+      settingSources: ["project"],
+      ...options, // Caller options override defaults
+    };
+    log.debug("SDK options:", {
+      allowedTools: mergedOptions.allowedTools,
+      permissionMode: mergedOptions.permissionMode,
+      maxTurns: mergedOptions.maxTurns,
+    });
     const queryResult = query({
       prompt,
-      options: {
-        resume: sessionId,
-        cwd: metadata.vaultPath,
-        settingSources: ["project"],
-        ...options,
-      },
+      options: mergedOptions,
     });
 
     // Extract session ID from first event (should match)

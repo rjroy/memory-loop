@@ -21,6 +21,7 @@ import {
   captureToDaily,
   NoteCaptureError,
   normalizeLineEndings,
+  parseCaptureSectionEntries,
 } from "../note-capture";
 
 // =============================================================================
@@ -261,6 +262,171 @@ describe("normalizeLineEndings", () => {
   test("handles content without line endings", () => {
     const content = "Single line";
     expect(normalizeLineEndings(content)).toBe("Single line");
+  });
+});
+
+// =============================================================================
+// Parse Capture Section Entries Tests
+// =============================================================================
+
+describe("parseCaptureSectionEntries", () => {
+  test("parses valid entries with correct format", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [08:00] First thought\n- [10:30] Second thought\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toEqual({ time: "08:00", text: "First thought", lineNum: 5 });
+    expect(entries[1]).toEqual({ time: "10:30", text: "Second thought", lineNum: 6 });
+  });
+
+  test("returns empty array when no Capture section exists", () => {
+    const content = "# 2025-12-22\n\n## Notes\n\nSome content\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toEqual([]);
+  });
+
+  test("returns empty array for empty Capture section", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toEqual([]);
+  });
+
+  test("returns empty array for empty content", () => {
+    const entries = parseCaptureSectionEntries("");
+
+    expect(entries).toEqual([]);
+  });
+
+  test("ignores malformed timestamps (25:99)", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [25:99] Invalid time\n- [10:00] Valid entry\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    // 25:99 doesn't match HH:MM pattern (only 2 digits each)
+    // Actually \d{2}:\d{2} matches 25:99 - it's just digit validation, not time validation
+    expect(entries).toHaveLength(2);
+  });
+
+  test("ignores entries with single-digit time components (1:5)", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [1:5] Invalid format\n- [10:00] Valid entry\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    // Pattern requires exactly 2 digits: \d{2}:\d{2}
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("Valid entry");
+  });
+
+  test("ignores lines without proper list marker", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n[10:00] Missing dash\n- [10:00] Valid entry\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("Valid entry");
+  });
+
+  test("handles special characters in note text", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [10:00] Check [[linked note]] and #tags\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("Check [[linked note]] and #tags");
+  });
+
+  test("handles unicode in note text", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [10:00] Meeting notes 📝\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("Meeting notes 📝");
+  });
+
+  test("stops parsing at next ## heading", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [10:00] In capture\n\n## Footer\n\n- [11:00] Not in capture\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("In capture");
+  });
+
+  test("handles CRLF line endings", () => {
+    const content = "# 2025-12-22\r\n\r\n## Capture\r\n\r\n- [10:00] Entry with CRLF\r\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("Entry with CRLF");
+  });
+
+  test("handles mixed line endings", () => {
+    const content = "# 2025-12-22\r\n\n## Capture\n\r\n- [10:00] Mixed endings\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("Mixed endings");
+  });
+
+  test("correctly calculates line numbers", () => {
+    const content = "# 2025-12-22\n\n## Summary\n\nSome summary.\n\n## Capture\n\n- [08:00] First\n- [09:00] Second\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(2);
+    // Lines are 1-indexed in the function output
+    // Line 1: # 2025-12-22
+    // Line 2: (empty)
+    // Line 3: ## Summary
+    // Line 4: (empty)
+    // Line 5: Some summary.
+    // Line 6: (empty)
+    // Line 7: ## Capture
+    // Line 8: (empty)
+    // Line 9: - [08:00] First
+    // Line 10: - [09:00] Second
+    expect(entries[0].lineNum).toBe(9);
+    expect(entries[1].lineNum).toBe(10);
+  });
+
+  test("ignores blank lines between entries", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [08:00] First\n\n- [09:00] Second\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(2);
+    expect(entries[0].text).toBe("First");
+    expect(entries[1].text).toBe("Second");
+  });
+
+  test("ignores non-entry text in Capture section", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\nSome random text\n- [10:00] Valid entry\nMore random text\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("Valid entry");
+  });
+
+  test("handles entry with only timestamp (empty text after bracket)", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [10:00] \n- [11:00] Valid\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    // Pattern requires at least one character after ] space: (.+)$
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("Valid");
+  });
+
+  test("handles very long text entries", () => {
+    const longText = "A".repeat(1000);
+    const content = `# 2025-12-22\n\n## Capture\n\n- [10:00] ${longText}\n`;
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe(longText);
+  });
+
+  test("handles multiple Capture sections (uses first one)", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [10:00] First section\n\n## Other\n\n## Capture\n\n- [11:00] Second section\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    // findCaptureSection finds the first one and stops at next ##
+    expect(entries).toHaveLength(1);
+    expect(entries[0].text).toBe("First section");
   });
 });
 

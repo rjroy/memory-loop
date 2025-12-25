@@ -1,7 +1,7 @@
 /**
  * Tests for ModeToggle component
  *
- * Tests mode switching and visual states for Note, Chat, and Browse modes.
+ * Tests mode switching and visual states for Note, Chat, and View modes.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -54,12 +54,12 @@ afterEach(() => {
 
 describe("ModeToggle", () => {
   describe("rendering", () => {
-    it("renders Note, Chat, and Browse options", () => {
+    it("renders Note, Chat, and View options", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
       expect(screen.getByText("Note")).toBeDefined();
       expect(screen.getByText("Chat")).toBeDefined();
-      expect(screen.getByText("Browse")).toBeDefined();
+      expect(screen.getByText("View")).toBeDefined();
     });
 
     it("has proper accessibility attributes", () => {
@@ -127,10 +127,10 @@ describe("ModeToggle", () => {
       expect(noteTab?.getAttribute("aria-selected")).toBe("true");
     });
 
-    it("switches to Browse when clicked", () => {
+    it("switches to View when clicked", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
-      const browseTab = screen.getByText("Browse").closest("button");
+      const browseTab = screen.getByText("View").closest("button");
       fireEvent.click(browseTab!);
 
       expect(browseTab?.getAttribute("aria-selected")).toBe("true");
@@ -149,8 +149,8 @@ describe("ModeToggle", () => {
       fireEvent.click(discussionTab!);
       expect(discussionTab?.getAttribute("aria-selected")).toBe("true");
 
-      // Switch to Browse
-      const browseTab = screen.getByText("Browse").closest("button");
+      // Switch to View
+      const browseTab = screen.getByText("View").closest("button");
       fireEvent.click(browseTab!);
       expect(browseTab?.getAttribute("aria-selected")).toBe("true");
 
@@ -166,7 +166,7 @@ describe("ModeToggle", () => {
 
       const noteTab = screen.getByText("Note").closest("button");
       const discussionTab = screen.getByText("Chat").closest("button");
-      const browseTab = screen.getByText("Browse").closest("button");
+      const browseTab = screen.getByText("View").closest("button");
 
       expect(noteTab?.hasAttribute("disabled")).toBe(true);
       expect(discussionTab?.hasAttribute("disabled")).toBe(true);

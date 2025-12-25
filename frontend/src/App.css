@@ -84,8 +84,9 @@
 }
 
 .app-title {
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-bold);
+  font-family: var(--font-family-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-weight-normal);
   margin: 0;
   white-space: nowrap;
   background: var(--gradient-primary);
@@ -172,7 +173,7 @@
   }
 
   .app-title {
-    font-size: var(--text-xl);
+    font-size: var(--font-size-3xl);
   }
 
   .app-new-session-btn {
@@ -255,15 +256,16 @@
 
 .confirm-dialog__title {
   margin: 0 0 var(--spacing-sm);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
 
 .confirm-dialog__message {
   margin: 0 0 var(--spacing-lg);
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
-  line-height: 1.5;
+  line-height: var(--line-height-relaxed);
 }
 
 .confirm-dialog__actions {

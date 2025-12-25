@@ -20,13 +20,21 @@
 }
 
 .vault-select__header h1 {
-  font-size: var(--text-xl);
-  font-weight: var(--font-semibold);
-  margin-bottom: var(--spacing-xs);
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-4xl);
+  font-weight: var(--font-weight-normal);
+  margin-bottom: var(--spacing-sm);
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .vault-select__connection-status {
-  font-size: var(--text-sm);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
 }
 
 .vault-select__status {
@@ -281,15 +289,16 @@
 }
 
 .vault-select__vault-name {
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text);
   margin: 0;
 }
 
 .vault-select__vault-path {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
+  color: var(--color-text-muted);
   margin: 0;
   word-break: break-all;
 }

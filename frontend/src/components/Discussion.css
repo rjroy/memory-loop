@@ -51,19 +51,21 @@
 /* Larger orb on desktop */
 @media (min-width: 768px) {
   .discussion__empty::before {
-    width: 160px;
-    height: 160px;
+    width: 60px;
+    height: 60px;
   }
 }
 
 .discussion__empty p {
   margin: 0;
+  font-size: var(--font-size-lg);
 }
 
 .discussion__hint {
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   margin-top: var(--spacing-sm) !important;
   color: var(--color-text-muted);
+  font-style: italic;
 }
 
 /* Input area */
@@ -82,10 +84,11 @@
 }
 
 .discussion__slash-hint {
-  font-size: var(--text-xs);
-  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  color: var(--color-accent-cyan);
   padding: var(--spacing-xs) 0;
-  font-weight: var(--font-medium);
+  font-weight: var(--font-weight-medium);
+  font-family: var(--font-family-mono);
 }
 
 .discussion__input-row {

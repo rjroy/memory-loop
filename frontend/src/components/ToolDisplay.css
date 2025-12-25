@@ -6,19 +6,26 @@
 
 .tool-display {
   margin-bottom: var(--spacing-sm);
-  background-color: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .tool-display--loading {
   border-color: var(--color-primary);
   border-style: dashed;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.2),
+    0 0 12px rgba(168, 85, 247, 0.1);
 }
 
 .tool-display--expanded {
-  background-color: var(--color-bg);
+  background: var(--glass-bg);
+  border-color: var(--glass-border-hover);
 }
 
 /* Header (always visible) */

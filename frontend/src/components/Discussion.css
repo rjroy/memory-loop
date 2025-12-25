@@ -108,14 +108,17 @@
   line-height: 1.5;
   resize: none;
   transition: border-color 0.2s ease, box-shadow 0.3s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
 }
 
 .discussion__input:focus {
   outline: none;
-  border-color: var(--color-accent-purple);
+  border-color: var(--glass-border-hover);
   box-shadow:
-    0 0 0 3px rgba(168, 85, 247, 0.1),
-    0 0 20px rgba(168, 85, 247, 0.1);
+    0 0 20px rgba(168, 85, 247, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 .discussion__input::placeholder {

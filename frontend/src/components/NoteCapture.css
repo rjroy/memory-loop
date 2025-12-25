@@ -32,14 +32,13 @@
   line-height: 1.5;
   resize: none;
   transition: border-color 0.2s ease, box-shadow 0.3s ease;
+  box-shadow: var(--glass-shadow);
 }
 
 .note-capture__input:focus {
   outline: none;
-  border-color: var(--color-accent-purple);
-  box-shadow:
-    0 0 0 3px rgba(168, 85, 247, 0.1),
-    0 0 20px rgba(168, 85, 247, 0.1);
+  border-color: var(--glass-border-hover);
+  box-shadow: var(--glass-shadow-hover);
 }
 
 @supports not (backdrop-filter: blur(10px)) {

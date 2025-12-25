@@ -14,6 +14,7 @@
   padding: 4px;
   gap: 4px;
   position: relative;
+  box-shadow: var(--glass-shadow);
 }
 
 @supports not (backdrop-filter: blur(10px)) {

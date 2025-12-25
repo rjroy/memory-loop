@@ -33,9 +33,13 @@
 }
 
 .message-bubble--assistant .message-bubble__content {
-  background-color: var(--color-bg-secondary);
+  background: var(--glass-bg);
   color: var(--color-text);
+  border: 1px solid var(--glass-border);
   border-bottom-left-radius: var(--radius-sm);
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .message-bubble__text {

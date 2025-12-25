@@ -1080,6 +1080,26 @@ describe("WebSocket Handler", () => {
         expect(message.code).toBe("VAULT_NOT_FOUND");
       }
     });
+
+    test("sends error if loadSession throws an exception", async () => {
+      // Simulate storage failure or corruption
+      mockLoadSession.mockRejectedValue(new Error("Storage read failed"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "corrupted-session" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("SESSION_NOT_FOUND");
+        expect(message.message).toBe("Failed to load session");
+      }
+    });
   });
 
   // ===========================================================================

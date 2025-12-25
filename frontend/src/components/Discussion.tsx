@@ -39,7 +39,7 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasSentVaultSelectionRef = useRef(false);
 
-  const { vault, messages, sessionId, addMessage } = useSession();
+  const { vault, messages, sessionId, addMessage, startNewSession } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -71,6 +71,12 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
         void (async () => {
           try {
             const response = await fetch(`/api/sessions/${vault.id}`);
+            if (!response.ok) {
+              // Non-2xx status - fall back to selecting vault
+              console.warn(`[Discussion] Session check failed with status ${response.status}, selecting vault`);
+              sendMessage({ type: "select_vault", vaultId: vault.id });
+              return;
+            }
             const data = (await response.json()) as { sessionId: string | null };
 
             if (data.sessionId) {
@@ -92,11 +98,12 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   // Handle errors during resume - fall back to select_vault
   useEffect(() => {
     if (lastMessage?.type === "error" && lastMessage.code === "SESSION_NOT_FOUND" && vault) {
-      // Session no longer exists on server, start fresh
+      // Session no longer exists on server, clear stale sessionId and start fresh
       console.log("[Discussion] Session not found, starting fresh");
+      startNewSession();
       sendMessage({ type: "select_vault", vaultId: vault.id });
     }
-  }, [lastMessage, vault, sendMessage]);
+  }, [lastMessage, vault, sendMessage, startNewSession]);
 
   // Load draft from localStorage on mount
   useEffect(() => {

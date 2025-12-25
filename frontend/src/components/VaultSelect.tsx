@@ -117,6 +117,12 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     try {
       // Check if server has an existing session for this vault
       const response = await fetch(`/api/sessions/${vault.id}`);
+      if (!response.ok) {
+        // Non-2xx status - fall back to starting a new session
+        console.warn(`[VaultSelect] Session check failed with status ${response.status}, starting fresh`);
+        sendMessage({ type: "select_vault", vaultId: vault.id });
+        return;
+      }
       const data = (await response.json()) as { sessionId: string | null };
 
       if (data.sessionId) {

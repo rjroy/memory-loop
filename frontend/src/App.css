@@ -37,7 +37,7 @@
 /* Ensure all content sits above background */
 .app > * {
   position: relative;
-  z-index: 1;
+  z-index: auto;
 }
 
 /* ============================================

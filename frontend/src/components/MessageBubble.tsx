@@ -6,6 +6,8 @@
  */
 
 import React from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ConversationMessage } from "../contexts/SessionContext";
 import "./MessageBubble.css";
 
@@ -38,14 +40,18 @@ export function MessageBubble({ message }: MessageBubbleProps): React.ReactNode 
       role="listitem"
     >
       <div className="message-bubble__content">
-        <p className="message-bubble__text">
-          {message.content}
+        <div className="message-bubble__text">
+          {message.role === "user" ? (
+            message.content
+          ) : (
+            <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
+          )}
           {message.isStreaming && (
             <span className="message-bubble__cursor" aria-label="Typing">
               ▊
             </span>
           )}
-        </p>
+        </div>
         <span className="message-bubble__time">
           {formatTime(message.timestamp)}
         </span>

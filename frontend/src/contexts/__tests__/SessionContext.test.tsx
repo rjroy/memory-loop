@@ -134,16 +134,26 @@ describe("SessionContext", () => {
       expect(result.current.sessionId).toBe("session-abc");
     });
 
-    it("persists session ID to localStorage", () => {
+    it("persists session ID to localStorage (with vault)", () => {
       const { result } = renderHook(() => useSession(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper([testVault]),
       });
 
+      // First select a vault
+      act(() => {
+        result.current.selectVault(testVault);
+      });
+
+      // Then set session ID
       act(() => {
         result.current.setSessionId("session-xyz");
       });
 
-      expect(localStorage.getItem("memory-loop:sessionId")).toBe("session-xyz");
+      // Session is now stored per-vault
+      const stored = localStorage.getItem("memory-loop:sessions");
+      expect(stored).toBeTruthy();
+      const sessions = JSON.parse(stored!) as Record<string, { sessionId: string }>;
+      expect(sessions[testVault.id]?.sessionId).toBe("session-xyz");
     });
   });
 
@@ -303,16 +313,26 @@ describe("SessionContext", () => {
     // Note: Loading tests skipped due to happy-dom timing issues with React effects.
     // Loading functionality is tested via E2E tests.
 
-    it("persists session ID when set", () => {
+    it("persists session ID when set (with vault)", () => {
       const { result } = renderHook(() => useSession(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper([testVault]),
       });
 
+      // First select a vault
+      act(() => {
+        result.current.selectVault(testVault);
+      });
+
+      // Then set session ID
       act(() => {
         result.current.setSessionId("session-to-persist");
       });
 
-      expect(localStorage.getItem("memory-loop:sessionId")).toBe("session-to-persist");
+      // Session is stored per-vault
+      const stored = localStorage.getItem("memory-loop:sessions");
+      expect(stored).toBeTruthy();
+      const sessions = JSON.parse(stored!) as Record<string, { sessionId: string }>;
+      expect(sessions[testVault.id]?.sessionId).toBe("session-to-persist");
     });
 
     it("persists vault ID when selected", () => {
@@ -327,22 +347,36 @@ describe("SessionContext", () => {
       expect(localStorage.getItem("memory-loop:vaultId")).toBe("test-vault");
     });
 
-    it("removes session ID from storage on startNewSession", () => {
+    it("removes session from storage on startNewSession", () => {
+      type SessionData = Record<string, { sessionId: string } | undefined>;
       const { result } = renderHook(() => useSession(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper([testVault]),
+      });
+
+      // First select a vault and set session
+      act(() => {
+        result.current.selectVault(testVault);
       });
 
       act(() => {
         result.current.setSessionId("session-123");
       });
 
-      expect(localStorage.getItem("memory-loop:sessionId")).toBe("session-123");
+      // Verify session is stored
+      let stored = localStorage.getItem("memory-loop:sessions");
+      expect(stored).toBeTruthy();
+      let sessions = JSON.parse(stored!) as SessionData;
+      expect(sessions[testVault.id]?.sessionId).toBe("session-123");
 
+      // Start new session should clear it
       act(() => {
         result.current.startNewSession();
       });
 
-      expect(localStorage.getItem("memory-loop:sessionId")).toBeNull();
+      // Session should be cleared for this vault
+      stored = localStorage.getItem("memory-loop:sessions");
+      sessions = stored ? (JSON.parse(stored) as SessionData) : {};
+      expect(sessions[testVault.id]).toBeUndefined();
     });
   });
 

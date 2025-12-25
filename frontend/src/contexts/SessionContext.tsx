@@ -92,6 +92,8 @@ export interface SessionActions {
   clearMessages: () => void;
   /** Start a new session */
   startNewSession: () => void;
+  /** Restore a session with messages from persistence */
+  restoreSession: (sessionId: string, messages: ConversationMessage[]) => void;
   /** Set the current browsing path */
   setCurrentPath: (path: string) => void;
   /** Toggle directory expand/collapse state */
@@ -123,9 +125,22 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 /**
  * localStorage keys for persisting state.
  */
-const STORAGE_KEY_SESSION = "memory-loop:sessionId";
+const STORAGE_KEY_SESSIONS = "memory-loop:sessions";
 const STORAGE_KEY_VAULT = "memory-loop:vaultId";
 const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";
+
+/**
+ * Persisted session data for a vault.
+ */
+export interface PersistedVaultSession {
+  sessionId: string;
+  messages: ConversationMessage[];
+}
+
+/**
+ * Map of vault IDs to their persisted sessions.
+ */
+type PersistedSessionsMap = Record<string, PersistedVaultSession>;
 
 /**
  * Action types for reducer.
@@ -138,6 +153,7 @@ type SessionAction =
   | { type: "UPDATE_LAST_MESSAGE"; content: string; isStreaming?: boolean }
   | { type: "CLEAR_MESSAGES" }
   | { type: "START_NEW_SESSION" }
+  | { type: "RESTORE_SESSION"; sessionId: string; messages: ConversationMessage[] }
   | { type: "SET_CURRENT_PATH"; path: string }
   | { type: "TOGGLE_DIRECTORY"; path: string }
   | { type: "CACHE_DIRECTORY"; path: string; entries: FileEntry[] }
@@ -235,6 +251,18 @@ function sessionReducer(
         ...state,
         sessionId: null,
         messages: [],
+      };
+
+    case "RESTORE_SESSION":
+      console.log(`[Session] Restoring: session=${action.sessionId.slice(0, 8)}... messages=${action.messages.length}`);
+      return {
+        ...state,
+        sessionId: action.sessionId,
+        messages: action.messages.map((msg) => ({
+          ...msg,
+          // Ensure timestamps are Date objects (may be strings from JSON)
+          timestamp: new Date(msg.timestamp),
+        })),
       };
 
     case "SET_CURRENT_PATH":
@@ -343,14 +371,28 @@ const initialState: SessionState = {
 };
 
 /**
- * Loads persisted session ID from localStorage.
+ * Loads all persisted sessions from localStorage.
  */
-function loadPersistedSessionId(): string | null {
+function loadAllSessions(): PersistedSessionsMap {
   try {
-    return localStorage.getItem(STORAGE_KEY_SESSION);
+    const stored = localStorage.getItem(STORAGE_KEY_SESSIONS);
+    if (!stored) return {};
+    return JSON.parse(stored) as PersistedSessionsMap;
   } catch {
-    return null;
+    return {};
   }
+}
+
+/**
+ * Loads persisted session for a specific vault.
+ */
+export function loadVaultSession(vaultId: string): PersistedVaultSession | null {
+  const sessions = loadAllSessions();
+  const session = sessions[vaultId] ?? null;
+  if (session) {
+    console.log(`[Session] Loaded persisted: vault=${vaultId} session=${session.sessionId.slice(0, 8)}... messages=${session.messages.length}`);
+  }
+  return session;
 }
 
 /**
@@ -365,15 +407,31 @@ function loadPersistedVaultId(): string | null {
 }
 
 /**
- * Persists session ID to localStorage.
+ * Persists session data for a vault to localStorage.
  */
-function persistSessionId(sessionId: string | null): void {
+function persistVaultSession(
+  vaultId: string,
+  sessionId: string,
+  messages: ConversationMessage[]
+): void {
   try {
-    if (sessionId) {
-      localStorage.setItem(STORAGE_KEY_SESSION, sessionId);
-    } else {
-      localStorage.removeItem(STORAGE_KEY_SESSION);
-    }
+    const sessions = loadAllSessions();
+    sessions[vaultId] = { sessionId, messages };
+    localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(sessions));
+  } catch {
+    // Ignore storage errors (quota exceeded, etc.)
+  }
+}
+
+/**
+ * Clears persisted session for a vault.
+ */
+export function clearVaultSession(vaultId: string): void {
+  console.log(`[Session] Clearing persisted session for vault=${vaultId}`);
+  try {
+    const sessions = loadAllSessions();
+    delete sessions[vaultId];
+    localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(sessions));
   } catch {
     // Ignore storage errors
   }
@@ -434,10 +492,13 @@ export function SessionProvider({
 }: SessionProviderProps): React.ReactNode {
   const [state, dispatch] = useReducer(sessionReducer, initialState);
 
-  // Persist session ID when it changes
+  // Persist session data (sessionId + messages) when they change
   useEffect(() => {
-    persistSessionId(state.sessionId);
-  }, [state.sessionId]);
+    if (state.vault && state.sessionId) {
+      console.log(`[Session] Persisting: vault=${state.vault.id} session=${state.sessionId.slice(0, 8)}... messages=${state.messages.length}`);
+      persistVaultSession(state.vault.id, state.sessionId, state.messages);
+    }
+  }, [state.vault, state.sessionId, state.messages]);
 
   // Persist vault ID when it changes
   useEffect(() => {
@@ -452,13 +513,9 @@ export function SessionProvider({
   }, [state.browser.currentPath]);
 
   // Load persisted state on mount only
+  // Note: Session restoration (sessionId + messages) is handled by VaultSelect
+  // after sending resume_session to the server
   useEffect(() => {
-    // Load persisted session ID
-    const persistedSessionId = loadPersistedSessionId();
-    if (persistedSessionId) {
-      dispatch({ type: "SET_SESSION_ID", sessionId: persistedSessionId });
-    }
-
     // Load persisted vault if vaults are provided
     if (initialVaults && initialVaults.length > 0) {
       const persistedVaultId = loadPersistedVaultId();
@@ -517,8 +574,18 @@ export function SessionProvider({
 
   const startNewSession = useCallback(() => {
     dispatch({ type: "START_NEW_SESSION" });
-    persistSessionId(null);
-  }, []);
+    // Clear persisted session for current vault
+    if (state.vault) {
+      clearVaultSession(state.vault.id);
+    }
+  }, [state.vault]);
+
+  const restoreSession = useCallback(
+    (sessionId: string, messages: ConversationMessage[]) => {
+      dispatch({ type: "RESTORE_SESSION", sessionId, messages });
+    },
+    []
+  );
 
   // Browser action creators
   const setCurrentPath = useCallback((path: string) => {
@@ -562,6 +629,7 @@ export function SessionProvider({
     updateLastMessage,
     clearMessages,
     startNewSession,
+    restoreSession,
     setCurrentPath,
     toggleDirectory,
     cacheDirectory,

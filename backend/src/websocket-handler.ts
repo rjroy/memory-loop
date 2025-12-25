@@ -16,6 +16,7 @@ import { discoverVaults, getVaultById } from "./vault-manager";
 import {
   createSession,
   resumeSession,
+  loadSession,
   SessionError,
   type SessionQueryResult,
 } from "./session-manager";
@@ -213,7 +214,7 @@ export class WebSocketHandler {
         await this.handleDiscussionMessage(ws, message.text);
         break;
       case "resume_session":
-        this.handleResumeSession(ws, message.sessionId);
+        await this.handleResumeSession(ws, message.sessionId);
         break;
       case "new_session":
         await this.handleNewSession(ws);
@@ -368,6 +369,7 @@ export class WebSocketHandler {
     try {
       // Create or resume session
       let queryResult: SessionQueryResult;
+      let isNewSession = false;
 
       if (this.state.currentSessionId) {
         // Resume existing session
@@ -377,13 +379,24 @@ export class WebSocketHandler {
         // Create new session
         log.info("Creating new session");
         queryResult = await createSession(this.state.currentVault, text);
+        isNewSession = true;
       }
 
-      log.info(`Session ready: ${queryResult.sessionId}`);
+      log.info(`Session ${isNewSession ? "created" : "resumed"}: ${queryResult.sessionId}`);
 
       // Store active query for potential abort
       this.state.activeQuery = queryResult;
       this.state.currentSessionId = queryResult.sessionId;
+
+      // Notify client of new session ID so it can persist for resume
+      if (isNewSession) {
+        log.info(`Sending session_ready with new sessionId: ${queryResult.sessionId}`);
+        this.send(ws, {
+          type: "session_ready",
+          sessionId: queryResult.sessionId,
+          vaultId: this.state.currentVault.id,
+        });
+      }
 
       // Send response_start
       this.send(ws, { type: "response_start", messageId });
@@ -423,7 +436,16 @@ export class WebSocketHandler {
   ): Promise<void> {
     // Create mock session if needed
     if (!this.state.currentSessionId && this.state.currentVault) {
-      this.state.currentSessionId = createMockSession(this.state.currentVault.id);
+      const newSessionId = createMockSession(this.state.currentVault.id);
+      this.state.currentSessionId = newSessionId;
+      log.info(`Mock session created: ${newSessionId}`);
+
+      // Notify client of new session ID so it can persist for resume
+      this.send(ws, {
+        type: "session_ready",
+        sessionId: newSessionId,
+        vaultId: this.state.currentVault.id,
+      });
     }
 
     // Stream mock response events
@@ -577,11 +599,12 @@ export class WebSocketHandler {
   /**
    * Handles resume_session message.
    * Loads an existing session for the current vault.
+   * Validates that the session exists and belongs to the current vault.
    */
-  private handleResumeSession(
+  private async handleResumeSession(
     ws: WebSocketLike,
     sessionId: string
-  ): void {
+  ): Promise<void> {
     if (!this.state.currentVault) {
       this.sendError(
         ws,
@@ -591,14 +614,40 @@ export class WebSocketHandler {
       return;
     }
 
-    // Store the session ID - actual SDK resume happens on next discussion_message
-    this.state.currentSessionId = sessionId;
+    // Load session metadata and validate it belongs to this vault
+    try {
+      const metadata = await loadSession(sessionId);
 
-    this.send(ws, {
-      type: "session_ready",
-      sessionId,
-      vaultId: this.state.currentVault.id,
-    });
+      if (!metadata) {
+        log.warn(`Session not found: ${sessionId}`);
+        this.sendError(ws, "SESSION_NOT_FOUND", "Session not found");
+        return;
+      }
+
+      if (metadata.vaultId !== this.state.currentVault.id) {
+        log.warn(
+          `Session ${sessionId} belongs to vault ${metadata.vaultId}, not ${this.state.currentVault.id}`
+        );
+        this.sendError(
+          ws,
+          "SESSION_INVALID",
+          "Session belongs to a different vault"
+        );
+        return;
+      }
+
+      // Store the session ID - actual SDK resume happens on next discussion_message
+      this.state.currentSessionId = sessionId;
+
+      this.send(ws, {
+        type: "session_ready",
+        sessionId,
+        vaultId: this.state.currentVault.id,
+      });
+    } catch (error) {
+      log.error("Failed to load session for validation", error);
+      this.sendError(ws, "SESSION_NOT_FOUND", "Failed to load session");
+    }
   }
 
   /**

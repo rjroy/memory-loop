@@ -5,9 +5,13 @@
  * Handles loading state, empty state, and vault selection.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { VaultInfo } from "@memory-loop/shared";
-import { useSession } from "../contexts/SessionContext";
+import {
+  useSession,
+  loadVaultSession,
+  clearVaultSession,
+} from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import "./VaultSelect.css";
 
@@ -36,8 +40,12 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [loadingState, setLoadingState] = useState<LoadingState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
+  // Track whether we're waiting for resume_session response
+  const [awaitingResume, setAwaitingResume] = useState(false);
+  // Track if we already attempted resume for this vault selection
+  const resumeAttemptedRef = useRef(false);
 
-  const { selectVault, setSessionId, vault: currentVault } = useSession();
+  const { selectVault, setSessionId, restoreSession, vault: currentVault } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
 
   // Fetch vaults on mount
@@ -75,18 +83,64 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   // Handle session ready message
   useEffect(() => {
     if (lastMessage?.type === "session_ready" && selectedVaultId) {
-      // Session is ready, update session context
       const vault = vaults.find((v) => v.id === selectedVaultId);
-      if (vault) {
+      if (!vault) return;
+
+      if (lastMessage.sessionId) {
+        // Response to resume_session - session was loaded
+        // IMPORTANT: selectVault must come FIRST because it clears messages
+        // Then restore session with persisted messages
         selectVault(vault);
-        if (lastMessage.sessionId) {
+        const persisted = loadVaultSession(selectedVaultId);
+        if (persisted?.messages) {
+          restoreSession(lastMessage.sessionId, persisted.messages);
+        } else {
+          // No persisted messages, just set the session ID
           setSessionId(lastMessage.sessionId);
         }
         setSelectedVaultId(null);
+        setAwaitingResume(false);
+        resumeAttemptedRef.current = false;
+        onReady?.();
+      } else if (!resumeAttemptedRef.current) {
+        // Response to select_vault (empty sessionId)
+        // Check for persisted session to resume
+        const persisted = loadVaultSession(selectedVaultId);
+        if (persisted?.sessionId) {
+          // Try to resume the persisted session
+          resumeAttemptedRef.current = true;
+          setAwaitingResume(true);
+          sendMessage({ type: "resume_session", sessionId: persisted.sessionId });
+        } else {
+          // No session to resume, proceed as new session
+          selectVault(vault);
+          setSelectedVaultId(null);
+          onReady?.();
+        }
+      } else {
+        // Resume was attempted but returned empty sessionId (shouldn't happen normally)
+        // Proceed as new session
+        selectVault(vault);
+        setSelectedVaultId(null);
+        setAwaitingResume(false);
+        resumeAttemptedRef.current = false;
         onReady?.();
       }
     }
-  }, [lastMessage, selectedVaultId, vaults, selectVault, setSessionId, onReady]);
+  }, [lastMessage, selectedVaultId, vaults, selectVault, setSessionId, restoreSession, sendMessage, onReady]);
+
+  // Handle errors during resume
+  useEffect(() => {
+    if (lastMessage?.type === "error" && awaitingResume && selectedVaultId) {
+      // Resume failed - clear invalid session and proceed as new
+      clearVaultSession(selectedVaultId);
+      setAwaitingResume(false);
+      resumeAttemptedRef.current = false;
+
+      // Re-send select_vault to get a fresh session
+      sendMessage({ type: "select_vault", vaultId: selectedVaultId });
+    }
+  }, [lastMessage, awaitingResume, selectedVaultId, sendMessage]);
 
   // Handle vault card click
   function handleVaultClick(vault: VaultInfo) {

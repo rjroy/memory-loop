@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
-import { useSession, useServerMessageHandler } from "../contexts/SessionContext";
+import { useSession, useServerMessageHandler, loadVaultSession } from "../contexts/SessionContext";
 import { MessageBubble } from "./MessageBubble";
 import "./Discussion.css";
 
@@ -38,12 +38,14 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasSentVaultSelectionRef = useRef(false);
+  const awaitingResumeRef = useRef(false);
 
-  const { vault, messages, addMessage } = useSession();
+  const { vault, messages, addMessage, setSessionId } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
+    awaitingResumeRef.current = false;
   }, []);
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
@@ -63,8 +65,31 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
         vaultId: vault.id,
       });
       hasSentVaultSelectionRef.current = true;
+      awaitingResumeRef.current = true; // We'll check for session to resume
     }
   }, [connectionStatus, vault, sendMessage]);
+
+  // Handle session_ready after reconnect - send resume_session if we have a stored session
+  useEffect(() => {
+    if (
+      lastMessage?.type === "session_ready" &&
+      awaitingResumeRef.current &&
+      vault
+    ) {
+      awaitingResumeRef.current = false;
+
+      if (!lastMessage.sessionId) {
+        // Response to select_vault (empty sessionId) - check for session to resume
+        const persisted = loadVaultSession(vault.id);
+        if (persisted?.sessionId) {
+          sendMessage({ type: "resume_session", sessionId: persisted.sessionId });
+        }
+      } else {
+        // Resume succeeded or we got a new session ID
+        setSessionId(lastMessage.sessionId);
+      }
+    }
+  }, [lastMessage, vault, sendMessage, setSessionId]);
 
   // Load draft from localStorage on mount
   useEffect(() => {

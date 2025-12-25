@@ -43,6 +43,10 @@ const mockResumeSession = mock<(...args: any[]) => Promise<any>>(() =>
     interrupt: mockInterrupt,
   })
 );
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockLoadSession = mock<(sessionId: string) => Promise<any>>(() =>
+  Promise.resolve(null)
+);
 
 // Mock note capture
 const mockCaptureToDaily = mock<
@@ -76,6 +80,7 @@ void mock.module("../vault-manager", () => ({
 void mock.module("../session-manager", () => ({
   createSession: mockCreateSession,
   resumeSession: mockResumeSession,
+  loadSession: mockLoadSession,
   SessionError: class SessionError extends Error {
     constructor(
       message: string,
@@ -906,9 +911,17 @@ describe("WebSocket Handler", () => {
   // ===========================================================================
 
   describe("resume_session", () => {
-    test("sets session ID and sends session_ready", async () => {
+    test("sets session ID and sends session_ready when session exists", async () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
+      // Mock loadSession to return valid session metadata
+      mockLoadSession.mockResolvedValue({
+        id: "old-session-123",
+        vaultId: "test-vault",
+        vaultPath: "/tmp/test-vault",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+      });
 
       const handler = createWebSocketHandler();
       const ws = createMockWebSocket();
@@ -934,6 +947,67 @@ describe("WebSocket Handler", () => {
 
       const state = handler.getState();
       expect(state.currentSessionId).toBe("old-session-123");
+    });
+
+    test("sends error if session not found", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockLoadSession.mockResolvedValue(null);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Try to resume non-existent session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "nonexistent" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("SESSION_NOT_FOUND");
+      }
+    });
+
+    test("sends error if session belongs to different vault", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      // Session belongs to a different vault
+      mockLoadSession.mockResolvedValue({
+        id: "other-session",
+        vaultId: "other-vault",
+        vaultPath: "/tmp/other-vault",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Try to resume session from different vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "other-session" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("SESSION_INVALID");
+      }
     });
 
     test("sends error if no vault selected", async () => {

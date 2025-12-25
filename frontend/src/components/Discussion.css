@@ -39,12 +39,12 @@
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
-  animation: float 6s ease-in-out infinite;
+  animation: float 5s ease-in-out infinite;
   margin-bottom: var(--space-6);
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0); }
+  0%, 100% { transform: translateY(5px); }
   50% { transform: translateY(-10px); }
 }
 

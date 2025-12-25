@@ -27,7 +27,7 @@
   /* Synthwave accent colors */
   --color-accent-pink: #ff6b9d;
   --color-accent-purple: #a855f7;
-  --color-accent-cyan: #22d3ee;
+  --color-accent-cyan: #74E4FFFF;
 
   /* Aliases for component compatibility */
   --color-bg: var(--color-background);
@@ -40,6 +40,7 @@
 
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
+  --gradient-primary-bg: linear-gradient(135deg, #543285 0%, #401625 100%);
   --gradient-secondary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
   --gradient-surface: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
 

@@ -15,6 +15,22 @@ const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
 
 /**
+ * Formats a date string as a relative date (Today, Yesterday, or the date).
+ */
+function formatRelativeDate(dateStr: string): string {
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+  if (dateStr === todayStr) return "Today";
+  if (dateStr === yesterdayStr) return "Yesterday";
+  return dateStr;
+}
+
+/**
  * Props for NoteCapture component.
  */
 export interface NoteCaptureProps {
@@ -48,12 +64,14 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasSentVaultSelectionRef = useRef(false);
+  const hasRequestedRecentNotesRef = useRef(false);
 
-  const { vault } = useSession();
+  const { vault, recentNotes, setRecentNotes } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
+    hasRequestedRecentNotesRef.current = false;
   }, []);
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
@@ -74,6 +92,17 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       hasSentVaultSelectionRef.current = true;
     }
   }, [connectionStatus, vault, sendMessage]);
+
+  // Request recent notes after server confirms vault selection
+  useEffect(() => {
+    if (
+      lastMessage?.type === "session_ready" &&
+      !hasRequestedRecentNotesRef.current
+    ) {
+      sendMessage({ type: "get_recent_notes" });
+      hasRequestedRecentNotesRef.current = true;
+    }
+  }, [lastMessage, sendMessage]);
 
   // Load draft from localStorage on mount
   useEffect(() => {
@@ -101,8 +130,18 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
 
       showToast("success", `Note saved at ${lastMessage.timestamp}`);
       onCaptured?.();
+
+      // Refresh recent notes
+      sendMessage({ type: "get_recent_notes" });
     }
-  }, [lastMessage, isSubmitting, onCaptured]);
+  }, [lastMessage, isSubmitting, onCaptured, sendMessage]);
+
+  // Handle recent_notes response
+  useEffect(() => {
+    if (lastMessage?.type === "recent_notes") {
+      setRecentNotes(lastMessage.notes);
+    }
+  }, [lastMessage, setRecentNotes]);
 
   // Handle error response
   useEffect(() => {
@@ -211,6 +250,29 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
           {isSubmitting ? "Saving..." : "Capture Note"}
         </button>
       </form>
+
+      {recentNotes.length > 0 && (
+        <section className="recent-notes" aria-label="Recent notes">
+          <h3 className="recent-notes__heading">Recent</h3>
+          <div className="recent-notes__list">
+            {recentNotes.map((note) => {
+              const relativeDate = formatRelativeDate(note.date);
+              const showDate = relativeDate !== "Today";
+              return (
+                <article key={note.id} className="recent-notes__card">
+                  <p className="recent-notes__text">{note.text}</p>
+                  <div className="recent-notes__meta">
+                    <time className="recent-notes__time">{note.time}</time>
+                    {showDate && (
+                      <span className="recent-notes__date">{relativeDate}</span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {toast.visible && (
         <div

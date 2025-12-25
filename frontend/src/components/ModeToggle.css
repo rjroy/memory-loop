@@ -49,8 +49,9 @@
 }
 
 .mode-toggle__segment--selected {
-  background: var(--gradient-primary);
-  color: white;
+  background: var(--gradient-primary-bg);
+  color: var(--color-accent-cyan);
+  font-weight: var(--font-weight-bold);
   box-shadow: var(--glow-purple);
   transition: all 0.3s var(--ease-bounce);
 }

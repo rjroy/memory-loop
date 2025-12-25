@@ -165,7 +165,12 @@
   color: var(--color-accent-cyan);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin: 0;
+  padding: var(--spacing-xs);
+  background:  var(--glass-bg);
+  border: 1px solid var(--glass-border-accent);
+  border-radius: var(--radius-sm);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow);
 }
 
 .recent-notes__list {

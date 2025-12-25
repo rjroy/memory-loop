@@ -371,3 +371,37 @@ select {
   color: var(--color-text-secondary);
   line-height: var(--line-height-relaxed);
 }
+
+/* ============================================
+   Scrollbar Styling (Dark Synthwave Theme)
+   ============================================ */
+
+/* Modern standard (Firefox, Chrome 121+) */
+* {
+  scrollbar-color: var(--color-surface-elevated) var(--color-background);
+  scrollbar-width: thin;
+}
+
+/* Webkit browsers (older Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-elevated);
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-background);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--color-background);
+}

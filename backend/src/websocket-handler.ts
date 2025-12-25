@@ -19,7 +19,7 @@ import {
   SessionError,
   type SessionQueryResult,
 } from "./session-manager";
-import { captureToDaily } from "./note-capture";
+import { captureToDaily, getRecentNotes } from "./note-capture";
 import {
   listDirectory,
   readMarkdownFile,
@@ -229,6 +229,9 @@ export class WebSocketHandler {
         break;
       case "read_file":
         await this.handleReadFile(ws, message.path);
+        break;
+      case "get_recent_notes":
+        await this.handleGetRecentNotes(ws);
         break;
     }
   }
@@ -736,6 +739,37 @@ export class WebSocketHandler {
           error instanceof Error ? error.message : "Failed to read file";
         this.sendError(ws, "INTERNAL_ERROR", message);
       }
+    }
+  }
+
+  /**
+   * Handles get_recent_notes message.
+   * Returns recent captured notes from the vault inbox.
+   */
+  private async handleGetRecentNotes(ws: WebSocketLike): Promise<void> {
+    log.info("Getting recent notes");
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for recent notes");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const notes = await getRecentNotes(this.state.currentVault, 5);
+      log.info(`Found ${notes.length} recent notes`);
+      this.send(ws, {
+        type: "recent_notes",
+        notes,
+      });
+    } catch (error) {
+      log.error("Failed to get recent notes", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to get recent notes";
+      this.sendError(ws, "INTERNAL_ERROR", message);
     }
   }
 }

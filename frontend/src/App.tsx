@@ -72,7 +72,7 @@ function ConfirmDialog({ isOpen, onConfirm, onCancel }: ConfirmDialogProps): Rea
             className="confirm-dialog__btn confirm-dialog__btn--confirm"
             onClick={onConfirm}
           >
-            New Session
+            New
           </button>
         </div>
       </div>
@@ -104,7 +104,10 @@ function MainContent(): React.ReactNode {
     <>
       <header className="app-header">
         <div className="app-header__left">
-          <h1 className="app-title">Memory Loop</h1>
+          <div className="app-title-row">
+            <img src="/images/logo.webp" alt="" className="app-logo" aria-hidden="true" />
+            <h1 className="app-title">Memory Loop</h1>
+          </div>
           {vault && (
             <span className="app-vault-name">{vault.name}</span>
           )}
@@ -119,7 +122,7 @@ function MainContent(): React.ReactNode {
             onClick={handleNewSession}
             aria-label="Start new session"
           >
-            New Session
+            New
           </button>
         </div>
       </header>

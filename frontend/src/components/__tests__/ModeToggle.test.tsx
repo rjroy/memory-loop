@@ -1,7 +1,7 @@
 /**
  * Tests for ModeToggle component
  *
- * Tests mode switching and visual states for Note, Discussion, and Browse modes.
+ * Tests mode switching and visual states for Note, Chat, and Browse modes.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -54,11 +54,11 @@ afterEach(() => {
 
 describe("ModeToggle", () => {
   describe("rendering", () => {
-    it("renders Note, Discussion, and Browse options", () => {
+    it("renders Note, Chat, and Browse options", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
       expect(screen.getByText("Note")).toBeDefined();
-      expect(screen.getByText("Discussion")).toBeDefined();
+      expect(screen.getByText("Chat")).toBeDefined();
       expect(screen.getByText("Browse")).toBeDefined();
     });
 
@@ -77,7 +77,7 @@ describe("ModeToggle", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
       const noteTab = screen.getByText("Note").closest("button");
-      const discussionTab = screen.getByText("Discussion").closest("button");
+      const discussionTab = screen.getByText("Chat").closest("button");
 
       expect(noteTab?.getAttribute("aria-selected")).toBe("true");
       expect(discussionTab?.getAttribute("aria-selected")).toBe("false");
@@ -92,10 +92,10 @@ describe("ModeToggle", () => {
   });
 
   describe("mode switching", () => {
-    it("switches to Discussion when clicked", () => {
+    it("switches to Chat when clicked", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
-      const discussionTab = screen.getByText("Discussion").closest("button");
+      const discussionTab = screen.getByText("Chat").closest("button");
       fireEvent.click(discussionTab!);
 
       expect(discussionTab?.getAttribute("aria-selected")).toBe("true");
@@ -105,8 +105,8 @@ describe("ModeToggle", () => {
     it("switches back to Note when clicked", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
-      // First switch to Discussion
-      const discussionTab = screen.getByText("Discussion").closest("button");
+      // First switch to Chat
+      const discussionTab = screen.getByText("Chat").closest("button");
       fireEvent.click(discussionTab!);
 
       // Then switch back to Note
@@ -144,8 +144,8 @@ describe("ModeToggle", () => {
       const noteTab = screen.getByText("Note").closest("button");
       expect(noteTab?.getAttribute("aria-selected")).toBe("true");
 
-      // Switch to Discussion
-      const discussionTab = screen.getByText("Discussion").closest("button");
+      // Switch to Chat
+      const discussionTab = screen.getByText("Chat").closest("button");
       fireEvent.click(discussionTab!);
       expect(discussionTab?.getAttribute("aria-selected")).toBe("true");
 
@@ -165,7 +165,7 @@ describe("ModeToggle", () => {
       render(<ModeToggle disabled />, { wrapper: TestWrapper });
 
       const noteTab = screen.getByText("Note").closest("button");
-      const discussionTab = screen.getByText("Discussion").closest("button");
+      const discussionTab = screen.getByText("Chat").closest("button");
       const browseTab = screen.getByText("Browse").closest("button");
 
       expect(noteTab?.hasAttribute("disabled")).toBe(true);
@@ -176,7 +176,7 @@ describe("ModeToggle", () => {
     it("does not switch mode when disabled", () => {
       render(<ModeToggle disabled />, { wrapper: TestWrapper });
 
-      const discussionTab = screen.getByText("Discussion").closest("button");
+      const discussionTab = screen.getByText("Chat").closest("button");
       fireEvent.click(discussionTab!);
 
       // Note should still be selected

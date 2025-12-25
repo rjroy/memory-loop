@@ -11,6 +11,33 @@
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
+  background-color: var(--color-background);
+  position: relative;
+}
+
+/* Synthwave background - always visible */
+.app::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background-image: url('/images/vault-bg.webp');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Ensure all content sits above background */
+.app > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* ============================================
@@ -27,8 +54,15 @@
   justify-content: space-between;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
-  background-color: var(--color-bg);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--glass-border);
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .app-header {
+    background-color: var(--color-surface);
+  }
 }
 
 .app-header__left {
@@ -37,12 +71,36 @@
   min-width: 0;
 }
 
+.app-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.app-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
 .app-title {
-  font-size: var(--text-lg);
-  font-weight: var(--font-bold);
-  color: var(--color-text);
+  font-family: var(--font-family-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-weight-normal);
   margin: 0;
   white-space: nowrap;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Tablet and up - larger logo */
+@media (min-width: 768px) {
+  .app-logo {
+    width: 32px;
+    height: 32px;
+  }
 }
 
 .app-vault-name {
@@ -97,22 +155,25 @@
   }
 
   .app-header__left {
-    flex: 0 0 auto;
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .app-header__center {
     order: 0;
     width: auto;
-    flex: 1;
+    flex: 0 0 auto;
     justify-content: center;
   }
 
   .app-header__right {
-    flex: 0 0 auto;
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: flex-end;
   }
 
   .app-title {
-    font-size: var(--text-xl);
+    font-size: var(--font-size-3xl);
   }
 
   .app-new-session-btn {
@@ -124,7 +185,7 @@
 /* Desktop and up */
 @media (min-width: 1024px) {
   .app-header {
-    padding: var(--spacing-md) var(--spacing-xl);
+    padding: var(--spacing-md) var(--space-8);
   }
 }
 
@@ -171,9 +232,14 @@
   width: 100%;
   max-width: 400px;
   padding: var(--spacing-lg);
-  background-color: var(--color-bg);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border-hover);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(168, 85, 247, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
   animation: slide-up 0.2s ease;
 }
 
@@ -190,15 +256,16 @@
 
 .confirm-dialog__title {
   margin: 0 0 var(--spacing-sm);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
 
 .confirm-dialog__message {
   margin: 0 0 var(--spacing-lg);
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
-  line-height: 1.5;
+  line-height: var(--line-height-relaxed);
 }
 
 .confirm-dialog__actions {
@@ -228,21 +295,15 @@
 }
 
 .confirm-dialog__btn--confirm {
-  background-color: var(--color-primary);
+  background: var(--gradient-primary);
   color: white;
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
 }
 
 .confirm-dialog__btn--confirm:hover {
-  background-color: var(--color-primary-hover);
+  box-shadow: var(--glow-purple);
 }
 
 .confirm-dialog__btn:active {
   transform: scale(0.98);
-}
-
-/* Dark mode dialog shadow */
-@media (prefers-color-scheme: dark) {
-  .confirm-dialog {
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
-  }
 }

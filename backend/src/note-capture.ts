@@ -6,9 +6,9 @@
  * vault's inbox directory.
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { VaultInfo } from "@memory-loop/shared";
+import type { VaultInfo, RecentNoteEntry } from "@memory-loop/shared";
 import { getVaultInboxPath, directoryExists, fileExists } from "./vault-manager";
 
 /**
@@ -292,4 +292,117 @@ export async function captureToDaily(
       error: `Unexpected error during capture: ${message}`,
     };
   }
+}
+
+/**
+ * Parses capture entries from a daily note's content.
+ * Extracts entries in the format "- [HH:MM] text" from the ## Capture section.
+ *
+ * @param content - The note content to parse
+ * @returns Array of parsed entries with time, text, and line number
+ */
+export function parseCaptureSectionEntries(
+  content: string
+): Array<{ time: string; text: string; lineNum: number }> {
+  const normalized = normalizeLineEndings(content);
+  const { found, insertPosition } = findCaptureSection(normalized);
+
+  if (!found) {
+    return [];
+  }
+
+  // Find the start of the Capture section content
+  const captureHeaderIndex = normalized.indexOf("## Capture");
+  if (captureHeaderIndex === -1) {
+    return [];
+  }
+
+  // Extract section content (from after header to insert position)
+  const sectionStart = normalized.indexOf("\n", captureHeaderIndex) + 1;
+  const sectionContent = normalized.slice(sectionStart, insertPosition);
+
+  // Parse entries line by line
+  const lines = sectionContent.split("\n");
+  const entries: Array<{ time: string; text: string; lineNum: number }> = [];
+
+  // Calculate starting line number
+  const linesBeforeSection = normalized.slice(0, sectionStart).split("\n").length;
+
+  // Pattern: "- [HH:MM] text"
+  const entryPattern = /^- \[(\d{2}:\d{2})\] (.+)$/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(entryPattern);
+    if (match) {
+      entries.push({
+        time: match[1],
+        text: match[2],
+        lineNum: linesBeforeSection + i,
+      });
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Retrieves the most recent captured notes from a vault's inbox.
+ * Reads daily note files and extracts entries from their ## Capture sections.
+ *
+ * @param vault - The vault to read notes from
+ * @param limit - Maximum number of notes to return (default: 5)
+ * @returns Array of recent note entries, newest first
+ */
+export async function getRecentNotes(
+  vault: VaultInfo,
+  limit: number = 5
+): Promise<RecentNoteEntry[]> {
+  const inboxPath = getVaultInboxPath(vault);
+
+  // Check if inbox directory exists
+  if (!(await directoryExists(inboxPath))) {
+    return [];
+  }
+
+  // List all files in inbox
+  const files = await readdir(inboxPath);
+
+  // Filter for daily note files (YYYY-MM-DD.md) and sort descending (newest first)
+  const dailyNotePattern = /^\d{4}-\d{2}-\d{2}\.md$/;
+  const dailyNoteFiles = files
+    .filter((f) => dailyNotePattern.test(f))
+    .sort((a, b) => b.localeCompare(a));
+
+  const allEntries: RecentNoteEntry[] = [];
+
+  // Read each file until we have enough entries
+  for (const filename of dailyNoteFiles) {
+    if (allEntries.length >= limit) {
+      break;
+    }
+
+    const date = filename.replace(".md", "");
+    const filePath = join(inboxPath, filename);
+
+    try {
+      const content = await readFile(filePath, "utf-8");
+      const entries = parseCaptureSectionEntries(content);
+
+      // Add entries in reverse order (most recent first within the file)
+      for (let i = entries.length - 1; i >= 0 && allEntries.length < limit; i--) {
+        const entry = entries[i];
+        allEntries.push({
+          id: `${date}-${entry.time}-${entry.lineNum}`,
+          text: entry.text,
+          time: entry.time,
+          date,
+        });
+      }
+    } catch {
+      // Skip files that can't be read
+      continue;
+    }
+  }
+
+  return allEntries;
 }

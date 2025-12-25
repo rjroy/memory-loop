@@ -19,6 +19,8 @@ export {
   ErrorCodeSchema,
   // File browser schemas
   FileEntrySchema,
+  // Recent notes schemas
+  RecentNoteEntrySchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -29,6 +31,7 @@ export {
   PingMessageSchema,
   ListDirectoryMessageSchema,
   ReadFileMessageSchema,
+  GetRecentNotesMessageSchema,
   ClientMessageSchema,
   // Server -> Client schemas
   VaultListMessageSchema,
@@ -44,6 +47,7 @@ export {
   PongMessageSchema,
   DirectoryListingMessageSchema,
   FileContentMessageSchema,
+  RecentNotesMessageSchema,
   ServerMessageSchema,
   // Validation utilities
   parseClientMessage,
@@ -56,6 +60,8 @@ export {
 export type {
   // File browser types
   FileEntry,
+  // Recent notes types
+  RecentNoteEntry,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,
@@ -66,6 +72,7 @@ export type {
   PingMessage,
   ListDirectoryMessage,
   ReadFileMessage,
+  GetRecentNotesMessage,
   ClientMessage,
   // Server message types
   VaultListMessage,
@@ -81,5 +88,6 @@ export type {
   PongMessage,
   DirectoryListingMessage,
   FileContentMessage,
+  RecentNotesMessage,
   ServerMessage,
 } from "./protocol.js";

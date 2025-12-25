@@ -6,23 +6,88 @@
  */
 
 /* ============================================
+   Self-hosted Fonts
+   ============================================ */
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-Italic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-Medium.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: italic;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-MediumItalic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-Bold.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-BoldItalic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Great Vibes";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/Great_Vibes/GreatVibes-Regular.ttf") format("truetype");
+}
+
+/* ============================================
    CSS Custom Properties (Design Tokens)
    ============================================ */
 
 :root {
-  /* Colors - Light theme */
-  --color-background: #ffffff;
-  --color-surface: #f8f9fa;
-  --color-surface-elevated: #ffffff;
-  --color-text-primary: #1a1a2e;
-  --color-text-secondary: #4a4a68;
-  --color-text-muted: #8a8aa3;
-  --color-accent: #6366f1;
-  --color-accent-hover: #4f46e5;
-  --color-border: #e2e4e9;
-  --color-error: #ef4444;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
+  /* Colors - Dark synthwave theme */
+  --color-background: #0f0f1a;
+  --color-surface: #1a1a2e;
+  --color-surface-elevated: #252540;
+  --color-text-primary: #f0f0f5;
+  --color-text-secondary: #b8b8d0;
+  --color-text-muted: #6a6a8a;
+  --color-accent: #a855f7;
+  --color-accent-hover: #9333ea;
+  --color-border: #2d2d4a;
+  --color-error: #f87171;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+
+  /* Synthwave accent colors */
+  --color-accent-pink: #ff6b9d;
+  --color-accent-purple: #a855f7;
+  --color-accent-cyan: #74E4FFFF;
 
   /* Aliases for component compatibility */
   --color-bg: var(--color-background);
@@ -30,8 +95,34 @@
   --color-text: var(--color-text-primary);
   --color-primary: var(--color-accent);
   --color-primary-hover: var(--color-accent-hover);
-  --color-primary-light: #e0e7ff;
-  --color-error-light: #fef2f2;
+  --color-primary-light: #312e81;
+  --color-error-light: #450a0a;
+
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
+  --gradient-primary-bg: linear-gradient(135deg, #543285 0%, #401625 100%);
+  --gradient-secondary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
+  --gradient-surface: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(26, 26, 46, 0.8);
+  --glass-border: rgba(168, 85, 247, 0.25);
+  --glass-border-hover: rgba(168, 85, 247, 0.5);
+  --glass-blur: 10px;
+  --glass-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  --glass-shadow-hover:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 24px rgba(168, 85, 247, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+
+  /* Glow effects */
+  --glow-purple: 0 0 20px rgba(168, 85, 247, 0.4);
+  --glow-pink: 0 0 20px rgba(255, 107, 157, 0.4);
+  --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.4);
+  --glow-success: 0 0 20px rgba(74, 222, 128, 0.3);
 
   /* Spacing scale (4px base) */
   --space-1: 0.25rem;   /* 4px */
@@ -45,9 +136,21 @@
   --space-12: 3rem;     /* 48px */
   --space-16: 4rem;     /* 64px */
 
+  /* Spacing aliases (semantic names) */
+  --spacing-xs: var(--space-1);  /* 4px */
+  --spacing-sm: var(--space-2);  /* 8px */
+  --spacing-md: var(--space-4);  /* 16px */
+  --spacing-lg: var(--space-6);  /* 24px */
+
+  /* Additional color aliases */
+  --color-bg-tertiary: var(--color-surface-elevated);
+  --color-warning-light: #78350f;
+  --color-warning-dark: #b45309;
+
   /* Typography */
-  --font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-family: "Ubuntu", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-family-display: "Great Vibes", "Brush Script MT", "Segoe Script", cursive;
   --font-family-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     monospace;
 
@@ -69,6 +172,17 @@
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
 
+  /* Typography aliases */
+  --text-xs: var(--font-size-xs);
+  --text-sm: var(--font-size-sm);
+  --text-base: var(--font-size-base);
+  --text-lg: var(--font-size-lg);
+  --text-xl: var(--font-size-xl);
+  --text-2xl: var(--font-size-2xl);
+  --font-medium: var(--font-weight-medium);
+  --font-semibold: var(--font-weight-semibold);
+  --font-mono: var(--font-family-mono);
+
   /* Border radius */
   --radius-sm: 0.25rem;  /* 4px */
   --radius-md: 0.5rem;   /* 8px */
@@ -89,6 +203,10 @@
   --transition-normal: 200ms ease;
   --transition-slow: 300ms ease;
 
+  /* Animation timing */
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
   /* Responsive breakpoints (for reference in JS/documentation) */
   --breakpoint-mobile: 320px;
   --breakpoint-tablet: 768px;
@@ -100,35 +218,6 @@
   --container-desktop: 960px;
 }
 
-/* ============================================
-   Dark Theme (prefers-color-scheme)
-   ============================================ */
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background: #0f0f1a;
-    --color-surface: #1a1a2e;
-    --color-surface-elevated: #252540;
-    --color-text-primary: #f0f0f5;
-    --color-text-secondary: #b8b8d0;
-    --color-text-muted: #6a6a8a;
-    --color-accent: #818cf8;
-    --color-accent-hover: #6366f1;
-    --color-border: #2d2d4a;
-    --color-error: #f87171;
-    --color-success: #4ade80;
-    --color-warning: #fbbf24;
-
-    /* Aliases for component compatibility */
-    --color-bg: var(--color-background);
-    --color-bg-secondary: var(--color-surface);
-    --color-text: var(--color-text-primary);
-    --color-primary: var(--color-accent);
-    --color-primary-hover: var(--color-accent-hover);
-    --color-primary-light: #312e81;
-    --color-error-light: #450a0a;
-  }
-}
 
 /* ============================================
    CSS Reset & Base Styles
@@ -256,4 +345,26 @@ select {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Typography utilities */
+.text-meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.text-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.text-caption {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
 }

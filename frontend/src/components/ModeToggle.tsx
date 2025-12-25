@@ -29,7 +29,7 @@ interface ModeOption {
  */
 const modes: ModeOption[] = [
   { value: "note", label: "Note" },
-  { value: "discussion", label: "Discussion" },
+  { value: "discussion", label: "Chat" },
   { value: "browse", label: "Browse" },
 ];
 

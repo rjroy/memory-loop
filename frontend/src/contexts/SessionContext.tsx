@@ -13,7 +13,7 @@ import React, {
   useEffect,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry } from "@memory-loop/shared";
 
 /**
  * Application mode: note capture, discussion, or browse.
@@ -70,6 +70,8 @@ export interface SessionState {
   messages: ConversationMessage[];
   /** Browser state for file browsing mode */
   browser: BrowserState;
+  /** Recent captured notes for note mode */
+  recentNotes: RecentNoteEntry[];
 }
 
 /**
@@ -104,6 +106,8 @@ export interface SessionActions {
   setFileLoading: (isLoading: boolean) => void;
   /** Clear all browser state (cache, expanded dirs, current file) */
   clearBrowserState: () => void;
+  /** Set recent notes */
+  setRecentNotes: (notes: RecentNoteEntry[]) => void;
 }
 
 /**
@@ -140,7 +144,8 @@ type SessionAction =
   | { type: "SET_FILE_CONTENT"; content: string; truncated: boolean }
   | { type: "SET_FILE_ERROR"; error: string }
   | { type: "SET_FILE_LOADING"; isLoading: boolean }
-  | { type: "CLEAR_BROWSER_STATE" };
+  | { type: "CLEAR_BROWSER_STATE" }
+  | { type: "SET_RECENT_NOTES"; notes: RecentNoteEntry[] };
 
 /**
  * Generates a unique message ID.
@@ -181,6 +186,8 @@ function sessionReducer(
         messages: [],
         // Clear browser state when switching vaults (REQ-F-23)
         browser: createInitialBrowserState(),
+        // Clear recent notes when switching vaults
+        recentNotes: [],
       };
 
     case "SET_SESSION_ID":
@@ -312,6 +319,12 @@ function sessionReducer(
         browser: createInitialBrowserState(),
       };
 
+    case "SET_RECENT_NOTES":
+      return {
+        ...state,
+        recentNotes: action.notes,
+      };
+
     default:
       return state;
   }
@@ -326,6 +339,7 @@ const initialState: SessionState = {
   mode: "note",
   messages: [],
   browser: createInitialBrowserState(),
+  recentNotes: [],
 };
 
 /**
@@ -535,6 +549,10 @@ export function SessionProvider({
     dispatch({ type: "CLEAR_BROWSER_STATE" });
   }, []);
 
+  const setRecentNotes = useCallback((notes: RecentNoteEntry[]) => {
+    dispatch({ type: "SET_RECENT_NOTES", notes });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -551,6 +569,7 @@ export function SessionProvider({
     setFileError,
     setFileLoading,
     clearBrowserState,
+    setRecentNotes,
   };
 
   return (

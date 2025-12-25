@@ -108,6 +108,7 @@
   --glass-bg: rgba(26, 26, 46, 0.8);
   --glass-border: rgba(168, 85, 247, 0.25);
   --glass-border-hover: rgba(168, 85, 247, 0.5);
+  --glass-border-accent: rgba(85, 168, 247, 0.5);
   --glass-blur: 10px;
   --glass-shadow:
     0 4px 24px rgba(0, 0, 0, 0.3),

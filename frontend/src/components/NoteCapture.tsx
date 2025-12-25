@@ -253,7 +253,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
 
       {recentNotes.length > 0 && (
         <section className="recent-notes" aria-label="Recent notes">
-          <h3 className="recent-notes__heading">Recent</h3>
+          <h3><span className="recent-notes__heading">Recent</span></h3>
           <div className="recent-notes__list">
             {recentNotes.map((note) => {
               const relativeDate = formatRelativeDate(note.date);

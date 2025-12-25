@@ -9,7 +9,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--color-bg);
+  background: transparent;
 }
 
 .markdown-viewer--empty {
@@ -29,24 +29,41 @@
   flex-wrap: wrap;
   gap: var(--spacing-xs);
   padding: var(--spacing-sm) var(--spacing-md);
-  background-color: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--glass-bg-tertiary);
+  backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--glass-border);
   font-size: var(--text-sm);
   min-height: 44px;
 }
 
+@supports not (backdrop-filter: blur(10px)) {
+  .markdown-viewer__breadcrumb {
+    background-color: var(--color-surface);
+  }
+}
+
 .markdown-viewer__breadcrumb-item {
-  background: none;
-  border: none;
+  background: transparent;
+  border: 1px solid transparent;
   padding: var(--spacing-xs) var(--spacing-sm);
   color: var(--color-primary);
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: background-color 0.15s ease;
+  border-radius: var(--radius-md);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.3s ease;
 }
 
 .markdown-viewer__breadcrumb-item:hover {
-  background-color: var(--color-primary-light);
+  background: rgba(168, 85, 247, 0.1);
+  border-color: var(--glass-border);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.1);
+}
+
+@media (hover: none) {
+  .markdown-viewer__breadcrumb-item:hover {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
 }
 
 .markdown-viewer__breadcrumb-separator {
@@ -73,6 +90,7 @@
   overflow-y: auto;
   padding: var(--spacing-md) var(--spacing-lg);
   line-height: 1.6;
+  background-color: var(--glass-bg);
 }
 
 /* Markdown element styling */
@@ -128,15 +146,17 @@
   margin: 1em 0;
   padding: var(--spacing-sm) var(--spacing-md);
   border-left: 4px solid var(--color-primary);
-  background-color: var(--color-bg-secondary);
+  background: rgba(168, 85, 247, 0.08);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   color: var(--color-text-secondary);
 }
 
 .markdown-viewer__content pre {
   margin: 1em 0;
   padding: var(--spacing-md);
-  background-color: var(--color-bg-secondary);
-  border-radius: var(--radius-md);
+  background: rgba(15, 15, 26, 0.6);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
@@ -145,8 +165,8 @@
 .markdown-viewer__content code {
   font-family: var(--font-mono);
   font-size: 0.9em;
-  background-color: var(--color-bg-secondary);
-  padding: 0.1em 0.3em;
+  background: rgba(168, 85, 247, 0.1);
+  padding: 0.15em 0.4em;
   border-radius: var(--radius-sm);
 }
 
@@ -167,7 +187,7 @@
 .markdown-viewer__content hr {
   margin: 2em 0;
   border: none;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--glass-border);
 }
 
 .markdown-viewer__content img {
@@ -181,17 +201,19 @@
   width: 100%;
   border-collapse: collapse;
   margin: 1em 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .markdown-viewer__content th,
 .markdown-viewer__content td {
   padding: var(--spacing-sm);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--glass-border);
   text-align: left;
 }
 
 .markdown-viewer__content th {
-  background-color: var(--color-bg-secondary);
+  background: rgba(168, 85, 247, 0.1);
   font-weight: var(--font-semibold);
 }
 
@@ -213,7 +235,7 @@
 }
 
 .markdown-viewer__wiki-link:hover {
-  background-color: var(--color-primary-light);
+  background: rgba(168, 85, 247, 0.15);
 }
 
 .markdown-viewer__wiki-link--broken {
@@ -259,13 +281,13 @@
   height: 1em;
   background: linear-gradient(
     90deg,
-    var(--color-bg-secondary) 25%,
-    var(--color-bg-tertiary) 50%,
-    var(--color-bg-secondary) 75%
+    rgba(168, 85, 247, 0.05) 25%,
+    rgba(168, 85, 247, 0.12) 50%,
+    rgba(168, 85, 247, 0.05) 75%
   );
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.5s infinite;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   margin-bottom: var(--spacing-sm);
 }
 

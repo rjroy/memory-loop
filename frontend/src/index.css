@@ -105,14 +105,14 @@
 
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
-  --gradient-primary-bg: linear-gradient(135deg, #543285 0%, #401625 100%);
+  --gradient-primary-dim: linear-gradient(135deg, #7038A6 0%, #B34B6E 100%);
   --gradient-secondary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
   --gradient-surface: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
 
   /* Glassmorphism */
-  --glass-bg: rgba(26, 26, 46, 0.8);
-  --glass-bg-secondary: rgba(92, 52, 92, 0.8);
-  --glass-bg-tertiary: rgba(60, 100, 100, 0.8);
+  --glass-bg: rgba(26, 29, 46, 0.8);
+  --glass-bg-secondary: rgba(46, 26, 40, 0.8);
+  --glass-bg-tertiary: rgba(26, 40, 46, 0.8);
   --glass-border: rgba(168, 85, 247, 0.25);
   --glass-border-hover: rgba(168, 85, 247, 0.5);
   --glass-border-accent: rgba(85, 168, 247, 0.5);

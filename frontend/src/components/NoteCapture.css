@@ -9,6 +9,7 @@
   flex-direction: column;
   height: 100%;
   padding: var(--spacing-md);
+  overflow-y: auto;
 }
 
 .note-capture__form {

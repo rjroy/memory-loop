@@ -94,11 +94,14 @@
   /* Aliases for component compatibility */
   --color-bg: var(--color-background);
   --color-bg-secondary: var(--color-surface);
+  --color-bg-tertiary: var(--color-surface-elevated);
   --color-text: var(--color-text-primary);
   --color-primary: var(--color-accent);
   --color-primary-hover: var(--color-accent-hover);
   --color-primary-light: #312e81;
   --color-error-light: #450a0a;
+  --color-warning-light: #78350f;
+  --color-warning-dark: #b45309;
 
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
@@ -108,6 +111,8 @@
 
   /* Glassmorphism */
   --glass-bg: rgba(26, 26, 46, 0.8);
+  --glass-bg-secondary: rgba(92, 52, 92, 0.8);
+  --glass-bg-tertiary: rgba(60, 100, 100, 0.8);
   --glass-border: rgba(168, 85, 247, 0.25);
   --glass-border-hover: rgba(168, 85, 247, 0.5);
   --glass-border-accent: rgba(85, 168, 247, 0.5);
@@ -144,11 +149,6 @@
   --spacing-sm: var(--space-2);  /* 8px */
   --spacing-md: var(--space-4);  /* 16px */
   --spacing-lg: var(--space-6);  /* 24px */
-
-  /* Additional color aliases */
-  --color-bg-tertiary: var(--color-surface-elevated);
-  --color-warning-light: #78350f;
-  --color-warning-dark: #b45309;
 
   /* Typography */
   --font-family: "Ubuntu", system-ui, -apple-system, BlinkMacSystemFont,

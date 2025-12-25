@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
-import { useSession, useServerMessageHandler, loadVaultSession } from "../contexts/SessionContext";
+import { useSession, useServerMessageHandler } from "../contexts/SessionContext";
 import { MessageBubble } from "./MessageBubble";
 import "./Discussion.css";
 
@@ -38,14 +38,12 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasSentVaultSelectionRef = useRef(false);
-  const awaitingResumeRef = useRef(false);
 
-  const { vault, messages, addMessage, setSessionId } = useSession();
+  const { vault, messages, sessionId, addMessage } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
-    awaitingResumeRef.current = false;
   }, []);
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
@@ -53,43 +51,52 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   });
   const handleServerMessage = useServerMessageHandler();
 
-  // Send vault selection when WebSocket connects (initial or reconnect)
+  // Send vault selection or resume session when WebSocket connects (initial or reconnect)
   useEffect(() => {
     if (
       connectionStatus === "connected" &&
       vault &&
       !hasSentVaultSelectionRef.current
     ) {
-      sendMessage({
-        type: "select_vault",
-        vaultId: vault.id,
-      });
       hasSentVaultSelectionRef.current = true;
-      awaitingResumeRef.current = true; // We'll check for session to resume
-    }
-  }, [connectionStatus, vault, sendMessage]);
 
-  // Handle session_ready after reconnect - send resume_session if we have a stored session
-  useEffect(() => {
-    if (
-      lastMessage?.type === "session_ready" &&
-      awaitingResumeRef.current &&
-      vault
-    ) {
-      awaitingResumeRef.current = false;
-
-      if (!lastMessage.sessionId) {
-        // Response to select_vault (empty sessionId) - check for session to resume
-        const persisted = loadVaultSession(vault.id);
-        if (persisted?.sessionId) {
-          sendMessage({ type: "resume_session", sessionId: persisted.sessionId });
-        }
+      // If we have a sessionId from context, use API to verify it exists
+      // and send resume_session. Otherwise just select vault.
+      if (sessionId) {
+        // We have a session - resume it
+        console.log(`[Discussion] Resuming session on reconnect: ${sessionId.slice(0, 8)}...`);
+        sendMessage({ type: "resume_session", sessionId });
       } else {
-        // Resume succeeded or we got a new session ID
-        setSessionId(lastMessage.sessionId);
+        // No session yet - check API for existing session
+        void (async () => {
+          try {
+            const response = await fetch(`/api/sessions/${vault.id}`);
+            const data = (await response.json()) as { sessionId: string | null };
+
+            if (data.sessionId) {
+              console.log(`[Discussion] Found existing session: ${data.sessionId.slice(0, 8)}...`);
+              sendMessage({ type: "resume_session", sessionId: data.sessionId });
+            } else {
+              console.log(`[Discussion] No existing session, selecting vault: ${vault.id}`);
+              sendMessage({ type: "select_vault", vaultId: vault.id });
+            }
+          } catch (err) {
+            console.warn("[Discussion] Failed to check session, selecting vault:", err);
+            sendMessage({ type: "select_vault", vaultId: vault.id });
+          }
+        })();
       }
     }
-  }, [lastMessage, vault, sendMessage, setSessionId]);
+  }, [connectionStatus, vault, sessionId, sendMessage]);
+
+  // Handle errors during resume - fall back to select_vault
+  useEffect(() => {
+    if (lastMessage?.type === "error" && lastMessage.code === "SESSION_NOT_FOUND" && vault) {
+      // Session no longer exists on server, start fresh
+      console.log("[Discussion] Session not found, starting fresh");
+      sendMessage({ type: "select_vault", vaultId: vault.id });
+    }
+  }, [lastMessage, vault, sendMessage]);
 
   // Load draft from localStorage on mount
   useEffect(() => {

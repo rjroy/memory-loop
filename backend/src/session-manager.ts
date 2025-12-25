@@ -193,6 +193,9 @@ export async function loadSession(
       );
     }
 
+    // Migration: default messages to empty array for old session files
+    metadata.messages = metadata.messages ?? [];
+
     return metadata;
   } catch (error) {
     if (error instanceof SessionError) {
@@ -280,6 +283,68 @@ export async function touchSession(sessionId: string): Promise<void> {
     metadata.lastActiveAt = new Date().toISOString();
     await saveSession(metadata);
   }
+}
+
+/**
+ * Gets the session ID for a vault, if one exists.
+ *
+ * @param vaultId - The vault ID to look up
+ * @returns The session ID, or null if no session exists for this vault
+ */
+export async function getSessionForVault(
+  vaultId: string
+): Promise<string | null> {
+  try {
+    const sessionsDir = await getSessionsDir();
+
+    if (!(await directoryExists(sessionsDir))) {
+      return null;
+    }
+
+    const files = await readdir(sessionsDir);
+
+    for (const file of files) {
+      if (!file.endsWith(".json")) {
+        continue;
+      }
+
+      const sessionId = file.slice(0, -5); // Remove .json extension
+      const metadata = await loadSession(sessionId);
+
+      if (metadata && metadata.vaultId === vaultId) {
+        return sessionId;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Appends a message to a session's conversation history.
+ *
+ * @param sessionId - The session ID
+ * @param message - The message to append
+ * @throws SessionError if session not found
+ */
+export async function appendMessage(
+  sessionId: string,
+  message: { id: string; role: "user" | "assistant"; content: string; timestamp: string }
+): Promise<void> {
+  const metadata = await loadSession(sessionId);
+  if (!metadata) {
+    throw new SessionError(
+      `Session "${sessionId}" not found`,
+      "SESSION_NOT_FOUND"
+    );
+  }
+
+  metadata.messages.push(message);
+  metadata.lastActiveAt = new Date().toISOString();
+  await saveSession(metadata);
+  log.info(`[Session] Appended ${message.role} message to session ${sessionId.slice(0, 8)}...`);
 }
 
 /**
@@ -382,6 +447,7 @@ export async function createSession(
       vaultPath: vault.path,
       createdAt: now,
       lastActiveAt: now,
+      messages: [],
     };
     await saveSession(metadata);
     log.info("Session metadata saved");

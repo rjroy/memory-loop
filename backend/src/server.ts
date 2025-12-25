@@ -19,6 +19,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { discoverVaults, VaultsDirError } from "./vault-manager";
 import { createWebSocketHandler } from "./websocket-handler";
 import { isPathWithinVault } from "./file-browser";
+import { getSessionForVault } from "./session-manager";
 import { serverLog as log } from "./logger";
 
 /**
@@ -108,6 +109,13 @@ export const createApp = () => {
       // Re-throw unexpected errors
       throw error;
     }
+  });
+
+  // Session lookup endpoint - returns sessionId if a session exists for this vault
+  app.get("/api/sessions/:vaultId", async (c) => {
+    const vaultId = c.req.param("vaultId");
+    const sessionId = await getSessionForVault(vaultId);
+    return c.json({ sessionId });
   });
 
   // Vault asset serving endpoint

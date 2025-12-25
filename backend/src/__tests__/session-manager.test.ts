@@ -61,6 +61,7 @@ function createMockMetadata(
     vaultPath: "/tmp/test-vault",
     createdAt: "2025-01-01T00:00:00.000Z",
     lastActiveAt: "2025-01-01T00:00:00.000Z",
+    messages: [],
     ...overrides,
   };
 }

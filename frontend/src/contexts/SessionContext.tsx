@@ -2,7 +2,7 @@
  * Session Context
  *
  * Manages application session state: current vault, session ID, mode, and messages.
- * Persists session ID to localStorage for resume across page refreshes.
+ * Messages are sourced from the server on session resume - no localStorage persistence.
  */
 
 import React, {
@@ -13,7 +13,7 @@ import React, {
   useEffect,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, ConversationMessageProtocol } from "@memory-loop/shared";
 
 /**
  * Application mode: note capture, discussion, or browse.
@@ -92,8 +92,8 @@ export interface SessionActions {
   clearMessages: () => void;
   /** Start a new session */
   startNewSession: () => void;
-  /** Restore a session with messages from persistence */
-  restoreSession: (sessionId: string, messages: ConversationMessage[]) => void;
+  /** Set messages from server (on session resume) */
+  setMessages: (messages: ConversationMessageProtocol[]) => void;
   /** Set the current browsing path */
   setCurrentPath: (path: string) => void;
   /** Toggle directory expand/collapse state */
@@ -124,23 +124,10 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 
 /**
  * localStorage keys for persisting state.
+ * Note: Session messages are NOT persisted locally - server is source of truth.
  */
-const STORAGE_KEY_SESSIONS = "memory-loop:sessions";
 const STORAGE_KEY_VAULT = "memory-loop:vaultId";
 const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";
-
-/**
- * Persisted session data for a vault.
- */
-export interface PersistedVaultSession {
-  sessionId: string;
-  messages: ConversationMessage[];
-}
-
-/**
- * Map of vault IDs to their persisted sessions.
- */
-type PersistedSessionsMap = Record<string, PersistedVaultSession>;
 
 /**
  * Action types for reducer.
@@ -153,7 +140,7 @@ type SessionAction =
   | { type: "UPDATE_LAST_MESSAGE"; content: string; isStreaming?: boolean }
   | { type: "CLEAR_MESSAGES" }
   | { type: "START_NEW_SESSION" }
-  | { type: "RESTORE_SESSION"; sessionId: string; messages: ConversationMessage[] }
+  | { type: "SET_MESSAGES"; messages: ConversationMessageProtocol[] }
   | { type: "SET_CURRENT_PATH"; path: string }
   | { type: "TOGGLE_DIRECTORY"; path: string }
   | { type: "CACHE_DIRECTORY"; path: string; entries: FileEntry[] }
@@ -253,11 +240,10 @@ function sessionReducer(
         messages: [],
       };
 
-    case "RESTORE_SESSION":
-      console.log(`[Session] Restoring: session=${action.sessionId.slice(0, 8)}... messages=${action.messages.length}`);
+    case "SET_MESSAGES":
+      console.log(`[Session] Setting messages from server: ${action.messages.length}`);
       return {
         ...state,
-        sessionId: action.sessionId,
         messages: action.messages.map((msg) => ({
           ...msg,
           // Ensure timestamps are Date objects (may be strings from JSON)
@@ -371,31 +357,6 @@ const initialState: SessionState = {
 };
 
 /**
- * Loads all persisted sessions from localStorage.
- */
-function loadAllSessions(): PersistedSessionsMap {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_SESSIONS);
-    if (!stored) return {};
-    return JSON.parse(stored) as PersistedSessionsMap;
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Loads persisted session for a specific vault.
- */
-export function loadVaultSession(vaultId: string): PersistedVaultSession | null {
-  const sessions = loadAllSessions();
-  const session = sessions[vaultId] ?? null;
-  if (session) {
-    console.log(`[Session] Loaded persisted: vault=${vaultId} session=${session.sessionId.slice(0, 8)}... messages=${session.messages.length}`);
-  }
-  return session;
-}
-
-/**
  * Loads persisted vault ID from localStorage.
  */
 function loadPersistedVaultId(): string | null {
@@ -403,37 +364,6 @@ function loadPersistedVaultId(): string | null {
     return localStorage.getItem(STORAGE_KEY_VAULT);
   } catch {
     return null;
-  }
-}
-
-/**
- * Persists session data for a vault to localStorage.
- */
-function persistVaultSession(
-  vaultId: string,
-  sessionId: string,
-  messages: ConversationMessage[]
-): void {
-  try {
-    const sessions = loadAllSessions();
-    sessions[vaultId] = { sessionId, messages };
-    localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(sessions));
-  } catch {
-    // Ignore storage errors (quota exceeded, etc.)
-  }
-}
-
-/**
- * Clears persisted session for a vault.
- */
-export function clearVaultSession(vaultId: string): void {
-  console.log(`[Session] Clearing persisted session for vault=${vaultId}`);
-  try {
-    const sessions = loadAllSessions();
-    delete sessions[vaultId];
-    localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(sessions));
-  } catch {
-    // Ignore storage errors
   }
 }
 
@@ -491,14 +421,6 @@ export function SessionProvider({
   initialVaults,
 }: SessionProviderProps): React.ReactNode {
   const [state, dispatch] = useReducer(sessionReducer, initialState);
-
-  // Persist session data (sessionId + messages) when they change
-  useEffect(() => {
-    if (state.vault && state.sessionId) {
-      console.log(`[Session] Persisting: vault=${state.vault.id} session=${state.sessionId.slice(0, 8)}... messages=${state.messages.length}`);
-      persistVaultSession(state.vault.id, state.sessionId, state.messages);
-    }
-  }, [state.vault, state.sessionId, state.messages]);
 
   // Persist vault ID when it changes
   useEffect(() => {
@@ -574,15 +496,11 @@ export function SessionProvider({
 
   const startNewSession = useCallback(() => {
     dispatch({ type: "START_NEW_SESSION" });
-    // Clear persisted session for current vault
-    if (state.vault) {
-      clearVaultSession(state.vault.id);
-    }
-  }, [state.vault]);
+  }, []);
 
-  const restoreSession = useCallback(
-    (sessionId: string, messages: ConversationMessage[]) => {
-      dispatch({ type: "RESTORE_SESSION", sessionId, messages });
+  const setMessages = useCallback(
+    (messages: ConversationMessageProtocol[]) => {
+      dispatch({ type: "SET_MESSAGES", messages });
     },
     []
   );
@@ -629,7 +547,7 @@ export function SessionProvider({
     updateLastMessage,
     clearMessages,
     startNewSession,
-    restoreSession,
+    setMessages,
     setCurrentPath,
     toggleDirectory,
     cacheDirectory,
@@ -662,7 +580,7 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { setSessionId, addMessage, updateLastMessage } = useSession();
+  const { setSessionId, setMessages, addMessage, updateLastMessage } = useSession();
 
   return useCallback(
     (message: ServerMessage) => {
@@ -670,6 +588,10 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         case "session_ready":
           if (message.sessionId) {
             setSessionId(message.sessionId);
+          }
+          // If server sent messages (resuming session), replace local state
+          if (message.messages && message.messages.length > 0) {
+            setMessages(message.messages);
           }
           break;
 
@@ -697,6 +619,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           break;
       }
     },
-    [setSessionId, addMessage, updateLastMessage]
+    [setSessionId, setMessages, addMessage, updateLastMessage]
   );
 }

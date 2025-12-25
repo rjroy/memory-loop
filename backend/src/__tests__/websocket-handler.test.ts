@@ -47,6 +47,10 @@ const mockResumeSession = mock<(...args: any[]) => Promise<any>>(() =>
 const mockLoadSession = mock<(sessionId: string) => Promise<any>>(() =>
   Promise.resolve(null)
 );
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockAppendMessage = mock<(...args: any[]) => Promise<void>>(() =>
+  Promise.resolve()
+);
 
 // Mock note capture
 const mockCaptureToDaily = mock<
@@ -81,6 +85,7 @@ void mock.module("../session-manager", () => ({
   createSession: mockCreateSession,
   resumeSession: mockResumeSession,
   loadSession: mockLoadSession,
+  appendMessage: mockAppendMessage,
   SessionError: class SessionError extends Error {
     constructor(
       message: string,
@@ -193,6 +198,8 @@ describe("WebSocket Handler", () => {
     mockGetVaultById.mockReset();
     mockCreateSession.mockReset();
     mockResumeSession.mockReset();
+    mockLoadSession.mockReset();
+    mockAppendMessage.mockReset();
     mockCaptureToDaily.mockReset();
     mockInterrupt.mockReset();
     mockListDirectory.mockReset();
@@ -201,6 +208,8 @@ describe("WebSocket Handler", () => {
     // Set default mock implementations
     mockDiscoverVaults.mockResolvedValue([]);
     mockGetVaultById.mockResolvedValue(null);
+    mockLoadSession.mockResolvedValue(null);
+    mockAppendMessage.mockResolvedValue();
     mockCaptureToDaily.mockResolvedValue({
       success: true,
       timestamp: "2025-01-01T12:00:00.000Z",
@@ -921,6 +930,7 @@ describe("WebSocket Handler", () => {
         vaultPath: "/tmp/test-vault",
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
+        messages: [],
       });
 
       const handler = createWebSocketHandler();
@@ -986,6 +996,7 @@ describe("WebSocket Handler", () => {
         vaultPath: "/tmp/other-vault",
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
+        messages: [],
       });
 
       const handler = createWebSocketHandler();
@@ -1010,7 +1021,51 @@ describe("WebSocket Handler", () => {
       }
     });
 
-    test("sends error if no vault selected", async () => {
+    test("resumes session and sets vault when no vault pre-selected", async () => {
+      // Session exists with valid vault
+      mockLoadSession.mockResolvedValue({
+        id: "session-123",
+        vaultId: "test-vault",
+        vaultPath: "/tmp/test-vault",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        messages: [],
+      });
+      mockGetVaultById.mockResolvedValue(createMockVault());
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Resume without selecting vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "session-123" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("session_ready");
+      if (message?.type === "session_ready") {
+        expect(message.sessionId).toBe("session-123");
+        expect(message.vaultId).toBe("test-vault");
+      }
+
+      const state = handler.getState();
+      expect(state.currentVault?.id).toBe("test-vault");
+      expect(state.currentSessionId).toBe("session-123");
+    });
+
+    test("sends error if session vault no longer exists", async () => {
+      // Session exists but vault was deleted
+      mockLoadSession.mockResolvedValue({
+        id: "session-123",
+        vaultId: "deleted-vault",
+        vaultPath: "/tmp/deleted-vault",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        messages: [],
+      });
+      mockGetVaultById.mockResolvedValue(null);
+
       const handler = createWebSocketHandler();
       const ws = createMockWebSocket();
 

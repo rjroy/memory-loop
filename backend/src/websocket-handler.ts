@@ -17,6 +17,7 @@ import {
   createSession,
   resumeSession,
   loadSession,
+  appendMessage,
   SessionError,
   type SessionQueryResult,
 } from "./session-manager";
@@ -398,15 +399,35 @@ export class WebSocketHandler {
         });
       }
 
+      // Save user message to session before streaming response
+      const userMessageId = generateMessageId();
+      await appendMessage(queryResult.sessionId, {
+        id: userMessageId,
+        role: "user",
+        content: text,
+        timestamp: new Date().toISOString(),
+      });
+
       // Send response_start
       this.send(ws, { type: "response_start", messageId });
 
-      // Stream events from SDK
+      // Stream events from SDK and accumulate response
       log.info("Streaming SDK events...");
-      await this.streamEvents(ws, messageId, queryResult);
+      const responseContent = await this.streamEvents(ws, messageId, queryResult);
 
       // Send response_end
       this.send(ws, { type: "response_end", messageId });
+
+      // Save assistant message to session after streaming completes
+      if (responseContent.length > 0) {
+        await appendMessage(queryResult.sessionId, {
+          id: messageId,
+          role: "assistant",
+          content: responseContent,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
       log.info("Discussion complete");
 
       // Clear active query after completion
@@ -458,6 +479,7 @@ export class WebSocketHandler {
   /**
    * Streams SDK events to the client.
    * Maps SDK event types to WebSocket protocol messages.
+   * Returns the accumulated response text for persistence.
    *
    * The SDK emits various event types. We handle the ones relevant to our protocol:
    * - assistant: Contains message with content blocks
@@ -468,7 +490,9 @@ export class WebSocketHandler {
     ws: WebSocketLike,
     messageId: string,
     queryResult: SessionQueryResult
-  ): Promise<void> {
+  ): Promise<string> {
+    const responseChunks: string[] = [];
+
     for await (const event of queryResult.events) {
       // Check if connection is still open (readyState === 1)
       if (ws.readyState !== 1) {
@@ -484,29 +508,40 @@ export class WebSocketHandler {
       // Handle different event types
       if (eventType === "assistant") {
         // Text content from assistant message
-        this.handleAssistantEvent(ws, messageId, rawEvent);
+        const text = this.handleAssistantEvent(ws, messageId, rawEvent);
+        if (text) {
+          responseChunks.push(text);
+        }
       } else if (eventType === "stream_event") {
         // Streaming events (deltas, tool progress, etc.)
-        this.handleStreamEvent(ws, messageId, rawEvent);
+        const text = this.handleStreamEvent(ws, messageId, rawEvent);
+        if (text) {
+          responseChunks.push(text);
+        }
       } else if (eventType === "result") {
         // Result events contain tool usage info
         this.handleResultEvent(ws, rawEvent);
       }
       // Ignore other event types (system, user, auth_status, etc.)
     }
+
+    return responseChunks.join("");
   }
 
   /**
    * Handles assistant events containing message content.
+   * Returns extracted text content for accumulation.
    */
   private handleAssistantEvent(
     ws: WebSocketLike,
     messageId: string,
     event: Record<string, unknown>
-  ): void {
+  ): string {
     const message = event.message as
       | { content?: Array<{ type: string; text?: string }> }
       | undefined;
+
+    const textParts: string[] = [];
 
     if (message?.content) {
       for (const block of message.content) {
@@ -516,21 +551,25 @@ export class WebSocketHandler {
             messageId,
             content: block.text,
           });
+          textParts.push(block.text);
         }
       }
     }
+
+    return textParts.join("");
   }
 
   /**
    * Handles streaming events containing deltas.
+   * Returns extracted text content for accumulation.
    */
   private handleStreamEvent(
     ws: WebSocketLike,
     messageId: string,
     event: Record<string, unknown>
-  ): void {
+  ): string {
     const streamEvent = event.event as Record<string, unknown> | undefined;
-    if (!streamEvent) return;
+    if (!streamEvent) return "";
 
     const streamType = streamEvent.type as string | undefined;
 
@@ -544,8 +583,11 @@ export class WebSocketHandler {
           messageId,
           content: delta.text,
         });
+        return delta.text;
       }
     }
+
+    return "";
   }
 
   /**
@@ -598,23 +640,14 @@ export class WebSocketHandler {
 
   /**
    * Handles resume_session message.
-   * Loads an existing session for the current vault.
-   * Validates that the session exists and belongs to the current vault.
+   * Loads an existing session and sets up the vault from session metadata.
+   * This allows resume_session to work without a prior select_vault call.
    */
   private async handleResumeSession(
     ws: WebSocketLike,
     sessionId: string
   ): Promise<void> {
-    if (!this.state.currentVault) {
-      this.sendError(
-        ws,
-        "VAULT_NOT_FOUND",
-        "No vault selected. Send select_vault first."
-      );
-      return;
-    }
-
-    // Load session metadata and validate it belongs to this vault
+    // Load session metadata first
     try {
       const metadata = await loadSession(sessionId);
 
@@ -624,7 +657,8 @@ export class WebSocketHandler {
         return;
       }
 
-      if (metadata.vaultId !== this.state.currentVault.id) {
+      // If vault is already set, validate it matches the session
+      if (this.state.currentVault && metadata.vaultId !== this.state.currentVault.id) {
         log.warn(
           `Session ${sessionId} belongs to vault ${metadata.vaultId}, not ${this.state.currentVault.id}`
         );
@@ -636,13 +670,29 @@ export class WebSocketHandler {
         return;
       }
 
+      // If no vault set, look up the vault from the session's vaultId
+      if (!this.state.currentVault) {
+        const vault = await getVaultById(metadata.vaultId);
+        if (!vault) {
+          log.warn(`Vault ${metadata.vaultId} from session not found`);
+          this.sendError(ws, "VAULT_NOT_FOUND", "Session's vault no longer exists");
+          return;
+        }
+        this.state.currentVault = vault;
+        log.info(`Set vault from session: ${vault.name}`);
+      }
+
       // Store the session ID - actual SDK resume happens on next discussion_message
       this.state.currentSessionId = sessionId;
 
+      log.info(`Resuming session ${sessionId} with ${metadata.messages.length} messages`);
+
+      // Send session_ready with conversation history for frontend to display
       this.send(ws, {
         type: "session_ready",
         sessionId,
         vaultId: this.state.currentVault.id,
+        messages: metadata.messages,
       });
     } catch (error) {
       log.error("Failed to load session for validation", error);

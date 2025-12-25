@@ -58,6 +58,8 @@ export {
 
 // Protocol message types (inferred from Zod schemas)
 export type {
+  // Conversation message type (for session messages)
+  ConversationMessageProtocol,
   // File browser types
   FileEntry,
   // Recent notes types

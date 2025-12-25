@@ -6,6 +6,66 @@
  */
 
 /* ============================================
+   Self-hosted Fonts
+   ============================================ */
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-Italic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-Medium.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: italic;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-MediumItalic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-Bold.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Ubuntu";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/font-families/Ubuntu/Ubuntu-BoldItalic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Great Vibes";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/Great_Vibes/GreatVibes-Regular.ttf") format("truetype");
+}
+
+/* ============================================
    CSS Custom Properties (Design Tokens)
    ============================================ */
 
@@ -90,7 +150,7 @@
   /* Typography */
   --font-family: "Ubuntu", system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-family-display: "Great Vibes", cursive;
+  --font-family-display: "Great Vibes", "Brush Script MT", "Segoe Script", cursive;
   --font-family-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     monospace;
 

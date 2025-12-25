@@ -66,6 +66,17 @@
   --space-12: 3rem;     /* 48px */
   --space-16: 4rem;     /* 64px */
 
+  /* Spacing aliases (semantic names) */
+  --spacing-xs: var(--space-1);  /* 4px */
+  --spacing-sm: var(--space-2);  /* 8px */
+  --spacing-md: var(--space-4);  /* 16px */
+  --spacing-lg: var(--space-6);  /* 24px */
+
+  /* Additional color aliases */
+  --color-bg-tertiary: var(--color-surface-elevated);
+  --color-warning-light: #78350f;
+  --color-warning-dark: #b45309;
+
   /* Typography */
   --font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -89,6 +100,17 @@
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
+
+  /* Typography aliases */
+  --text-xs: var(--font-size-xs);
+  --text-sm: var(--font-size-sm);
+  --text-base: var(--font-size-base);
+  --text-lg: var(--font-size-lg);
+  --text-xl: var(--font-size-xl);
+  --text-2xl: var(--font-size-2xl);
+  --font-medium: var(--font-weight-medium);
+  --font-semibold: var(--font-weight-semibold);
+  --font-mono: var(--font-family-mono);
 
   /* Border radius */
   --radius-sm: 0.25rem;  /* 4px */

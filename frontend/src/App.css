@@ -184,7 +184,7 @@
 /* Desktop and up */
 @media (min-width: 1024px) {
   .app-header {
-    padding: var(--spacing-md) var(--spacing-xl);
+    padding: var(--spacing-md) var(--space-8);
   }
 }
 

@@ -129,7 +129,10 @@
 
 .message-bubble--assistant .message-bubble__text h1:first-child,
 .message-bubble--assistant .message-bubble__text h2:first-child,
-.message-bubble--assistant .message-bubble__text h3:first-child {
+.message-bubble--assistant .message-bubble__text h3:first-child,
+.message-bubble--assistant .message-bubble__text h4:first-child,
+.message-bubble--assistant .message-bubble__text h5:first-child,
+.message-bubble--assistant .message-bubble__text h6:first-child {
   margin-top: 0;
 }
 

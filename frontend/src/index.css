@@ -87,27 +87,32 @@
   --color-warning: #fbbf24;
 
   /* Synthwave accent colors */
-  --color-accent-pink: #ff6b9d;
+  --color-accent-pink: #ee6492;
   --color-accent-purple: #a855f7;
-  --color-accent-cyan: #74E4FFFF;
+  --color-accent-cyan: #6fd5fa;
 
   /* Aliases for component compatibility */
   --color-bg: var(--color-background);
   --color-bg-secondary: var(--color-surface);
+  --color-bg-tertiary: var(--color-surface-elevated);
   --color-text: var(--color-text-primary);
   --color-primary: var(--color-accent);
   --color-primary-hover: var(--color-accent-hover);
   --color-primary-light: #312e81;
   --color-error-light: #450a0a;
+  --color-warning-light: #78350f;
+  --color-warning-dark: #b45309;
 
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
-  --gradient-primary-bg: linear-gradient(135deg, #543285 0%, #401625 100%);
+  --gradient-primary-dim: linear-gradient(135deg, #7038A6 0%, #B34B6E 100%);
   --gradient-secondary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
   --gradient-surface: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
 
   /* Glassmorphism */
-  --glass-bg: rgba(26, 26, 46, 0.8);
+  --glass-bg: rgba(26, 29, 46, 0.8);
+  --glass-bg-secondary: rgba(46, 26, 40, 0.8);
+  --glass-bg-tertiary: rgba(26, 40, 46, 0.8);
   --glass-border: rgba(168, 85, 247, 0.25);
   --glass-border-hover: rgba(168, 85, 247, 0.5);
   --glass-border-accent: rgba(85, 168, 247, 0.5);
@@ -144,11 +149,6 @@
   --spacing-sm: var(--space-2);  /* 8px */
   --spacing-md: var(--space-4);  /* 16px */
   --spacing-lg: var(--space-6);  /* 24px */
-
-  /* Additional color aliases */
-  --color-bg-tertiary: var(--color-surface-elevated);
-  --color-warning-light: #78350f;
-  --color-warning-dark: #b45309;
 
   /* Typography */
   --font-family: "Ubuntu", system-ui, -apple-system, BlinkMacSystemFont,

@@ -43,6 +43,14 @@ const mockResumeSession = mock<(...args: any[]) => Promise<any>>(() =>
     interrupt: mockInterrupt,
   })
 );
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockLoadSession = mock<(sessionId: string) => Promise<any>>(() =>
+  Promise.resolve(null)
+);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockAppendMessage = mock<(...args: any[]) => Promise<void>>(() =>
+  Promise.resolve()
+);
 
 // Mock note capture
 const mockCaptureToDaily = mock<
@@ -76,6 +84,8 @@ void mock.module("../vault-manager", () => ({
 void mock.module("../session-manager", () => ({
   createSession: mockCreateSession,
   resumeSession: mockResumeSession,
+  loadSession: mockLoadSession,
+  appendMessage: mockAppendMessage,
   SessionError: class SessionError extends Error {
     constructor(
       message: string,
@@ -188,6 +198,8 @@ describe("WebSocket Handler", () => {
     mockGetVaultById.mockReset();
     mockCreateSession.mockReset();
     mockResumeSession.mockReset();
+    mockLoadSession.mockReset();
+    mockAppendMessage.mockReset();
     mockCaptureToDaily.mockReset();
     mockInterrupt.mockReset();
     mockListDirectory.mockReset();
@@ -196,6 +208,8 @@ describe("WebSocket Handler", () => {
     // Set default mock implementations
     mockDiscoverVaults.mockResolvedValue([]);
     mockGetVaultById.mockResolvedValue(null);
+    mockLoadSession.mockResolvedValue(null);
+    mockAppendMessage.mockResolvedValue();
     mockCaptureToDaily.mockResolvedValue({
       success: true,
       timestamp: "2025-01-01T12:00:00.000Z",
@@ -906,9 +920,18 @@ describe("WebSocket Handler", () => {
   // ===========================================================================
 
   describe("resume_session", () => {
-    test("sets session ID and sends session_ready", async () => {
+    test("sets session ID and sends session_ready when session exists", async () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
+      // Mock loadSession to return valid session metadata
+      mockLoadSession.mockResolvedValue({
+        id: "old-session-123",
+        vaultId: "test-vault",
+        vaultPath: "/tmp/test-vault",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        messages: [],
+      });
 
       const handler = createWebSocketHandler();
       const ws = createMockWebSocket();
@@ -936,7 +959,113 @@ describe("WebSocket Handler", () => {
       expect(state.currentSessionId).toBe("old-session-123");
     });
 
-    test("sends error if no vault selected", async () => {
+    test("sends error if session not found", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockLoadSession.mockResolvedValue(null);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Try to resume non-existent session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "nonexistent" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("SESSION_NOT_FOUND");
+      }
+    });
+
+    test("sends error if session belongs to different vault", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      // Session belongs to a different vault
+      mockLoadSession.mockResolvedValue({
+        id: "other-session",
+        vaultId: "other-vault",
+        vaultPath: "/tmp/other-vault",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        messages: [],
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Try to resume session from different vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "other-session" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("SESSION_INVALID");
+      }
+    });
+
+    test("resumes session and sets vault when no vault pre-selected", async () => {
+      // Session exists with valid vault
+      mockLoadSession.mockResolvedValue({
+        id: "session-123",
+        vaultId: "test-vault",
+        vaultPath: "/tmp/test-vault",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        messages: [],
+      });
+      mockGetVaultById.mockResolvedValue(createMockVault());
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Resume without selecting vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "session-123" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("session_ready");
+      if (message?.type === "session_ready") {
+        expect(message.sessionId).toBe("session-123");
+        expect(message.vaultId).toBe("test-vault");
+      }
+
+      const state = handler.getState();
+      expect(state.currentVault?.id).toBe("test-vault");
+      expect(state.currentSessionId).toBe("session-123");
+    });
+
+    test("sends error if session vault no longer exists", async () => {
+      // Session exists but vault was deleted
+      mockLoadSession.mockResolvedValue({
+        id: "session-123",
+        vaultId: "deleted-vault",
+        vaultPath: "/tmp/deleted-vault",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        messages: [],
+      });
+      mockGetVaultById.mockResolvedValue(null);
+
       const handler = createWebSocketHandler();
       const ws = createMockWebSocket();
 
@@ -949,6 +1078,26 @@ describe("WebSocket Handler", () => {
       expect(message?.type).toBe("error");
       if (message?.type === "error") {
         expect(message.code).toBe("VAULT_NOT_FOUND");
+      }
+    });
+
+    test("sends error if loadSession throws an exception", async () => {
+      // Simulate storage failure or corruption
+      mockLoadSession.mockRejectedValue(new Error("Storage read failed"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "corrupted-session" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("SESSION_NOT_FOUND");
+        expect(message.message).toBe("Failed to load session");
       }
     });
   });

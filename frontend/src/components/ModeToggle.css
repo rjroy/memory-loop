@@ -49,7 +49,7 @@
 }
 
 .mode-toggle__segment--selected {
-  background: var(--gradient-primary-bg);
+  background: var(--gradient-primary-dim);
   color: var(--color-accent-cyan);
   font-weight: var(--font-weight-bold);
   box-shadow: var(--glow-purple);

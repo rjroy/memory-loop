@@ -134,16 +134,26 @@ describe("SessionContext", () => {
       expect(result.current.sessionId).toBe("session-abc");
     });
 
-    it("persists session ID to localStorage", () => {
+    it("does not persist session ID to localStorage (server is source of truth)", () => {
       const { result } = renderHook(() => useSession(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper([testVault]),
       });
 
+      // First select a vault
+      act(() => {
+        result.current.selectVault(testVault);
+      });
+
+      // Then set session ID
       act(() => {
         result.current.setSessionId("session-xyz");
       });
 
-      expect(localStorage.getItem("memory-loop:sessionId")).toBe("session-xyz");
+      // Session is NOT stored locally - server is source of truth
+      const stored = localStorage.getItem("memory-loop:sessions");
+      expect(stored).toBeNull();
+      // But sessionId is in context state
+      expect(result.current.sessionId).toBe("session-xyz");
     });
   });
 
@@ -300,20 +310,9 @@ describe("SessionContext", () => {
   });
 
   describe("persistence (writing)", () => {
-    // Note: Loading tests skipped due to happy-dom timing issues with React effects.
-    // Loading functionality is tested via E2E tests.
-
-    it("persists session ID when set", () => {
-      const { result } = renderHook(() => useSession(), {
-        wrapper: createWrapper(),
-      });
-
-      act(() => {
-        result.current.setSessionId("session-to-persist");
-      });
-
-      expect(localStorage.getItem("memory-loop:sessionId")).toBe("session-to-persist");
-    });
+    // Note: Session messages are no longer persisted to localStorage.
+    // The server is the source of truth for session data.
+    // Only vault ID and browser path are persisted locally.
 
     it("persists vault ID when selected", () => {
       const { result } = renderHook(() => useSession(), {
@@ -327,22 +326,34 @@ describe("SessionContext", () => {
       expect(localStorage.getItem("memory-loop:vaultId")).toBe("test-vault");
     });
 
-    it("removes session ID from storage on startNewSession", () => {
+    it("clears session state on startNewSession", () => {
       const { result } = renderHook(() => useSession(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper([testVault]),
+      });
+
+      // First select a vault and set session
+      act(() => {
+        result.current.selectVault(testVault);
       });
 
       act(() => {
         result.current.setSessionId("session-123");
       });
 
-      expect(localStorage.getItem("memory-loop:sessionId")).toBe("session-123");
+      act(() => {
+        result.current.addMessage({ role: "user", content: "hello" });
+      });
 
+      expect(result.current.sessionId).toBe("session-123");
+      expect(result.current.messages.length).toBe(1);
+
+      // Start new session should clear state
       act(() => {
         result.current.startNewSession();
       });
 
-      expect(localStorage.getItem("memory-loop:sessionId")).toBeNull();
+      expect(result.current.sessionId).toBeNull();
+      expect(result.current.messages).toEqual([]);
     });
   });
 
@@ -365,6 +376,35 @@ describe("SessionContext", () => {
       });
 
       expect(result.current.session.sessionId).toBe("new-session");
+    });
+
+    it("handles session_ready with messages (resume)", () => {
+      const { result } = renderHook(
+        () => ({
+          session: useSession(),
+          handler: useServerMessageHandler(),
+        }),
+        { wrapper: createWrapper() }
+      );
+
+      const messages = [
+        { id: "msg-1", role: "user" as const, content: "hello", timestamp: "2025-01-01T12:00:00Z" },
+        { id: "msg-2", role: "assistant" as const, content: "hi there", timestamp: "2025-01-01T12:00:01Z" },
+      ];
+
+      act(() => {
+        result.current.handler({
+          type: "session_ready",
+          sessionId: "resumed-session",
+          vaultId: "vault-1",
+          messages,
+        });
+      });
+
+      expect(result.current.session.sessionId).toBe("resumed-session");
+      expect(result.current.session.messages.length).toBe(2);
+      expect(result.current.session.messages[0].content).toBe("hello");
+      expect(result.current.session.messages[1].content).toBe("hi there");
     });
 
     it("handles response_start message", () => {

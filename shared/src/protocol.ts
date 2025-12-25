@@ -67,6 +67,16 @@ export const RecentNoteEntrySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD format"),
 });
 
+/**
+ * Schema for a conversation message in session history
+ */
+export const ConversationMessageSchema = z.object({
+  id: z.string().min(1, "Message ID is required"),
+  role: z.enum(["user", "assistant"]),
+  content: z.string(),
+  timestamp: z.string().min(1, "Timestamp is required"),
+});
+
 // =============================================================================
 // Client -> Server Message Schemas
 // =============================================================================
@@ -180,11 +190,13 @@ export const VaultListMessageSchema = z.object({
 /**
  * Server confirms session is ready
  * Note: sessionId can be empty when vault is first selected (session created lazily)
+ * When resuming a session, messages contains the conversation history.
  */
 export const SessionReadyMessageSchema = z.object({
   type: z.literal("session_ready"),
   sessionId: z.string(), // Can be empty - session created on first discussion_message
   vaultId: z.string().min(1),
+  messages: z.array(ConversationMessageSchema).optional(), // Sent on resume
 });
 
 /**
@@ -319,6 +331,9 @@ export type FileEntry = z.infer<typeof FileEntrySchema>;
 
 // Recent notes types
 export type RecentNoteEntry = z.infer<typeof RecentNoteEntrySchema>;
+
+// Conversation message type
+export type ConversationMessageProtocol = z.infer<typeof ConversationMessageSchema>;
 
 // Client message types
 export type SelectVaultMessage = z.infer<typeof SelectVaultMessageSchema>;

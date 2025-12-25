@@ -3,6 +3,7 @@
  *
  * Displays available vaults for the user to select.
  * Handles loading state, empty state, and vault selection.
+ * Uses API to check for existing sessions before connecting.
  */
 
 import { useEffect, useState } from "react";
@@ -28,8 +29,10 @@ type LoadingState = "loading" | "loaded" | "error";
  * Vault selection screen component.
  *
  * Fetches vaults from /api/vaults on mount and displays them as cards.
- * When a vault is selected, sends select_vault message via WebSocket
- * and calls onReady when session_ready is received.
+ * When a vault is selected:
+ * 1. Checks /api/sessions/:vaultId for existing session
+ * 2. Sends resume_session or select_vault accordingly
+ * 3. Server sends session_ready with messages if resuming
  */
 export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [vaults, setVaults] = useState<VaultInfo[]>([]);
@@ -37,7 +40,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [error, setError] = useState<string | null>(null);
   const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
 
-  const { selectVault, setSessionId, vault: currentVault } = useSession();
+  const { selectVault, vault: currentVault } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
 
   // Fetch vaults on mount
@@ -73,30 +76,69 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   }, [lastMessage, vaults.length]);
 
   // Handle session ready message
+  // Note: useServerMessageHandler handles sessionId and messages from session_ready
   useEffect(() => {
     if (lastMessage?.type === "session_ready" && selectedVaultId) {
-      // Session is ready, update session context
       const vault = vaults.find((v) => v.id === selectedVaultId);
-      if (vault) {
-        selectVault(vault);
-        if (lastMessage.sessionId) {
-          setSessionId(lastMessage.sessionId);
-        }
+      if (!vault) return;
+
+      // Session is ready - update context and notify parent
+      selectVault(vault);
+      setSelectedVaultId(null);
+      onReady?.();
+    }
+  }, [lastMessage, selectedVaultId, vaults, selectVault, onReady]);
+
+  // Handle errors during vault selection
+  useEffect(() => {
+    if (lastMessage?.type === "error" && selectedVaultId) {
+      // If resume failed (SESSION_NOT_FOUND), start fresh
+      if (lastMessage.code === "SESSION_NOT_FOUND") {
+        // Send select_vault to start a new session
+        sendMessage({ type: "select_vault", vaultId: selectedVaultId });
+      } else {
+        // Other error - show to user
+        setError(lastMessage.message);
         setSelectedVaultId(null);
-        onReady?.();
       }
     }
-  }, [lastMessage, selectedVaultId, vaults, selectVault, setSessionId, onReady]);
+  }, [lastMessage, selectedVaultId, sendMessage]);
 
-  // Handle vault card click
-  function handleVaultClick(vault: VaultInfo) {
+  // Handle vault card click - check for existing session via API
+  async function handleVaultClick(vault: VaultInfo) {
     if (connectionStatus !== "connected") {
       setError("Not connected to server. Please wait...");
       return;
     }
 
     setSelectedVaultId(vault.id);
-    sendMessage({ type: "select_vault", vaultId: vault.id });
+    setError(null);
+
+    try {
+      // Check if server has an existing session for this vault
+      const response = await fetch(`/api/sessions/${vault.id}`);
+      if (!response.ok) {
+        // Non-2xx status - fall back to starting a new session
+        console.warn(`[VaultSelect] Session check failed with status ${response.status}, starting fresh`);
+        sendMessage({ type: "select_vault", vaultId: vault.id });
+        return;
+      }
+      const data = (await response.json()) as { sessionId: string | null };
+
+      if (data.sessionId) {
+        // Resume existing session - server will send messages
+        console.log(`[VaultSelect] Resuming session: ${data.sessionId.slice(0, 8)}...`);
+        sendMessage({ type: "resume_session", sessionId: data.sessionId });
+      } else {
+        // No existing session - start new
+        console.log(`[VaultSelect] Starting new session for vault: ${vault.id}`);
+        sendMessage({ type: "select_vault", vaultId: vault.id });
+      }
+    } catch (err) {
+      // API error - fall back to select_vault
+      console.warn("[VaultSelect] Failed to check session, starting fresh:", err);
+      sendMessage({ type: "select_vault", vaultId: vault.id });
+    }
   }
 
   // Render loading state
@@ -196,7 +238,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
               className={`vault-select__card ${
                 selectedVaultId === vault.id ? "vault-select__card--loading" : ""
               } ${currentVault?.id === vault.id ? "vault-select__card--selected" : ""}`}
-              onClick={() => handleVaultClick(vault)}
+              onClick={() => void handleVaultClick(vault)}
               disabled={selectedVaultId !== null}
               role="option"
               aria-selected={currentVault?.id === vault.id}

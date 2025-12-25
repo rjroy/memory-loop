@@ -23,6 +23,23 @@ export interface VaultInfo {
 }
 
 /**
+ * A message in the conversation history.
+ *
+ * Stored server-side in session files and sent to frontend on resume.
+ *
+ * @property id - Unique message ID
+ * @property role - Who sent the message
+ * @property content - Message text content
+ * @property timestamp - ISO 8601 timestamp
+ */
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
+/**
  * Metadata for a Claude Agent SDK session.
  *
  * Session data is stored in `.memory-loop/sessions/` as JSON files.
@@ -33,6 +50,7 @@ export interface VaultInfo {
  * @property vaultPath - Absolute path to the vault
  * @property createdAt - ISO 8601 timestamp of session creation
  * @property lastActiveAt - ISO 8601 timestamp of last activity
+ * @property messages - Conversation history for this session
  */
 export interface SessionMetadata {
   id: string;
@@ -40,6 +58,7 @@ export interface SessionMetadata {
   vaultPath: string;
   createdAt: string;
   lastActiveAt: string;
+  messages: ConversationMessage[];
 }
 
 /**

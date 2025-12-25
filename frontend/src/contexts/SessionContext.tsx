@@ -2,7 +2,7 @@
  * Session Context
  *
  * Manages application session state: current vault, session ID, mode, and messages.
- * Persists session ID to localStorage for resume across page refreshes.
+ * Messages are sourced from the server on session resume - no localStorage persistence.
  */
 
 import React, {
@@ -13,7 +13,7 @@ import React, {
   useEffect,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, ConversationMessageProtocol } from "@memory-loop/shared";
 
 /**
  * Application mode: note capture, discussion, or browse.
@@ -92,6 +92,8 @@ export interface SessionActions {
   clearMessages: () => void;
   /** Start a new session */
   startNewSession: () => void;
+  /** Set messages from server (on session resume) */
+  setMessages: (messages: ConversationMessageProtocol[]) => void;
   /** Set the current browsing path */
   setCurrentPath: (path: string) => void;
   /** Toggle directory expand/collapse state */
@@ -122,8 +124,8 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 
 /**
  * localStorage keys for persisting state.
+ * Note: Session messages are NOT persisted locally - server is source of truth.
  */
-const STORAGE_KEY_SESSION = "memory-loop:sessionId";
 const STORAGE_KEY_VAULT = "memory-loop:vaultId";
 const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";
 
@@ -138,6 +140,7 @@ type SessionAction =
   | { type: "UPDATE_LAST_MESSAGE"; content: string; isStreaming?: boolean }
   | { type: "CLEAR_MESSAGES" }
   | { type: "START_NEW_SESSION" }
+  | { type: "SET_MESSAGES"; messages: ConversationMessageProtocol[] }
   | { type: "SET_CURRENT_PATH"; path: string }
   | { type: "TOGGLE_DIRECTORY"; path: string }
   | { type: "CACHE_DIRECTORY"; path: string; entries: FileEntry[] }
@@ -235,6 +238,17 @@ function sessionReducer(
         ...state,
         sessionId: null,
         messages: [],
+      };
+
+    case "SET_MESSAGES":
+      console.log(`[Session] Setting messages from server: ${action.messages.length}`);
+      return {
+        ...state,
+        messages: action.messages.map((msg) => ({
+          ...msg,
+          // Ensure timestamps are Date objects (may be strings from JSON)
+          timestamp: new Date(msg.timestamp),
+        })),
       };
 
     case "SET_CURRENT_PATH":
@@ -343,17 +357,6 @@ const initialState: SessionState = {
 };
 
 /**
- * Loads persisted session ID from localStorage.
- */
-function loadPersistedSessionId(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY_SESSION);
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Loads persisted vault ID from localStorage.
  */
 function loadPersistedVaultId(): string | null {
@@ -361,21 +364,6 @@ function loadPersistedVaultId(): string | null {
     return localStorage.getItem(STORAGE_KEY_VAULT);
   } catch {
     return null;
-  }
-}
-
-/**
- * Persists session ID to localStorage.
- */
-function persistSessionId(sessionId: string | null): void {
-  try {
-    if (sessionId) {
-      localStorage.setItem(STORAGE_KEY_SESSION, sessionId);
-    } else {
-      localStorage.removeItem(STORAGE_KEY_SESSION);
-    }
-  } catch {
-    // Ignore storage errors
   }
 }
 
@@ -434,11 +422,6 @@ export function SessionProvider({
 }: SessionProviderProps): React.ReactNode {
   const [state, dispatch] = useReducer(sessionReducer, initialState);
 
-  // Persist session ID when it changes
-  useEffect(() => {
-    persistSessionId(state.sessionId);
-  }, [state.sessionId]);
-
   // Persist vault ID when it changes
   useEffect(() => {
     if (state.vault) {
@@ -452,13 +435,9 @@ export function SessionProvider({
   }, [state.browser.currentPath]);
 
   // Load persisted state on mount only
+  // Note: Session restoration (sessionId + messages) is handled by VaultSelect
+  // after sending resume_session to the server
   useEffect(() => {
-    // Load persisted session ID
-    const persistedSessionId = loadPersistedSessionId();
-    if (persistedSessionId) {
-      dispatch({ type: "SET_SESSION_ID", sessionId: persistedSessionId });
-    }
-
     // Load persisted vault if vaults are provided
     if (initialVaults && initialVaults.length > 0) {
       const persistedVaultId = loadPersistedVaultId();
@@ -517,8 +496,14 @@ export function SessionProvider({
 
   const startNewSession = useCallback(() => {
     dispatch({ type: "START_NEW_SESSION" });
-    persistSessionId(null);
   }, []);
+
+  const setMessages = useCallback(
+    (messages: ConversationMessageProtocol[]) => {
+      dispatch({ type: "SET_MESSAGES", messages });
+    },
+    []
+  );
 
   // Browser action creators
   const setCurrentPath = useCallback((path: string) => {
@@ -562,6 +547,7 @@ export function SessionProvider({
     updateLastMessage,
     clearMessages,
     startNewSession,
+    setMessages,
     setCurrentPath,
     toggleDirectory,
     cacheDirectory,
@@ -594,7 +580,7 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { setSessionId, addMessage, updateLastMessage } = useSession();
+  const { setSessionId, setMessages, addMessage, updateLastMessage } = useSession();
 
   return useCallback(
     (message: ServerMessage) => {
@@ -602,6 +588,10 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         case "session_ready":
           if (message.sessionId) {
             setSessionId(message.sessionId);
+          }
+          // If server sent messages (resuming session), replace local state
+          if (message.messages && message.messages.length > 0) {
+            setMessages(message.messages);
           }
           break;
 
@@ -629,6 +619,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           break;
       }
     },
-    [setSessionId, addMessage, updateLastMessage]
+    [setSessionId, setMessages, addMessage, updateLastMessage]
   );
 }

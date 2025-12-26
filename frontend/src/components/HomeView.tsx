@@ -87,6 +87,8 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
   }, [connectionStatus, vault, sendMessage]);
 
   // Request recent activity and goals after server confirms vault selection
+  // Note: Goals are only requested if vault has goalsPath set during discovery.
+  // If user creates goals.md after vault selection, they must reselect the vault.
   useEffect(() => {
     if (lastMessage?.type === "session_ready") {
       if (!hasRequestedRecentActivityRef.current) {

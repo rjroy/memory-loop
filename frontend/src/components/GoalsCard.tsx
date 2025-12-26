@@ -17,14 +17,10 @@ import "./GoalsCard.css";
  * - Returns null if no goals file exists in the vault
  */
 export function GoalsCard(): React.ReactNode {
-  const { goals, vault } = useSession();
+  const { goals } = useSession();
 
-  // Don't render if vault has no goals file or goals haven't loaded
+  // Don't render if no goals data (either no goals file or not yet loaded)
   if (goals === null) {
-    // Check if vault has a goals path configured - if so, show loading placeholder
-    if (vault?.goalsPath) {
-      return null; // Goals are loading, will render once setGoals is called
-    }
     return null;
   }
 
@@ -40,9 +36,13 @@ export function GoalsCard(): React.ReactNode {
   return (
     <section className="goals-card" aria-label="Goals">
       <h3 className="goals-card__heading">Goals</h3>
-      <ul className="goals-card__list">
+      <ul className="goals-card__list" role="list">
         {incompleteGoals.map((goal, index) => (
-          <li key={`incomplete-${index}`} className="goals-card__item">
+          <li
+            key={`incomplete-${index}`}
+            className="goals-card__item"
+            aria-label={`Incomplete: ${goal.text}`}
+          >
             <span className="goals-card__checkbox" aria-hidden="true">
               ○
             </span>
@@ -53,6 +53,7 @@ export function GoalsCard(): React.ReactNode {
           <li
             key={`completed-${index}`}
             className="goals-card__item goals-card__item--completed"
+            aria-label={`Completed: ${goal.text}`}
           >
             <span className="goals-card__checkbox" aria-hidden="true">
               ●

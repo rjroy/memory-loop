@@ -549,6 +549,8 @@ export interface SessionProviderProps {
   initialRecentNotes?: RecentNoteEntry[];
   /** Optional initial recent discussions (for testing) */
   initialRecentDiscussions?: RecentDiscussionEntry[];
+  /** Optional initial goals (for testing) */
+  initialGoals?: GoalItem[] | null;
 }
 
 /**
@@ -559,11 +561,13 @@ export function SessionProvider({
   initialVaults,
   initialRecentNotes,
   initialRecentDiscussions,
+  initialGoals,
 }: SessionProviderProps): React.ReactNode {
   const [state, dispatch] = useReducer(sessionReducer, {
     ...initialState,
     recentNotes: initialRecentNotes ?? [],
     recentDiscussions: initialRecentDiscussions ?? [],
+    goals: initialGoals ?? null,
   });
 
   // Persist vault ID when it changes

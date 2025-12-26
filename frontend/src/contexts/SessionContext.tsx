@@ -584,6 +584,8 @@ export function SessionProvider({
 
   // Track if pinned folders have been loaded for current vault
   const pinnedFoldersLoadedRef = useRef<string | null>(null);
+  // Track if we just dispatched SET_PINNED_FOLDERS and state hasn't updated yet
+  const justLoadedPinsRef = useRef(false);
 
   // Load pinned folders when vault changes (must run before persist effect)
   useEffect(() => {
@@ -591,6 +593,7 @@ export function SessionProvider({
       const pinnedFolders = loadPinnedFolders(state.vault.id);
       pinnedFoldersLoadedRef.current = state.vault.id;
       if (pinnedFolders.length > 0) {
+        justLoadedPinsRef.current = true;
         dispatch({ type: "SET_PINNED_FOLDERS", paths: pinnedFolders });
       }
     }
@@ -600,6 +603,12 @@ export function SessionProvider({
   // Only persist after initial load is complete for this vault
   useEffect(() => {
     if (state.vault && pinnedFoldersLoadedRef.current === state.vault.id) {
+      // Skip the persist that runs before SET_PINNED_FOLDERS takes effect
+      // (state is still [] but we just loaded non-empty pins from storage)
+      if (justLoadedPinsRef.current) {
+        justLoadedPinsRef.current = false;
+        return;
+      }
       persistPinnedFolders(state.vault.id, state.browser.pinnedFolders);
     }
   }, [state.vault, state.browser.pinnedFolders]);

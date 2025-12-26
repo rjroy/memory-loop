@@ -404,10 +404,10 @@ export async function touchSession(sessionId: string): Promise<void> {
 }
 
 /**
- * Gets the session ID for a vault, if one exists.
+ * Gets the most recent session ID for a vault, if one exists.
  *
  * @param vaultId - The vault ID to look up
- * @returns The session ID, or null if no session exists for this vault
+ * @returns The most recent session ID, or null if no session exists for this vault
  */
 export async function getSessionForVault(
   vaultId: string
@@ -421,6 +421,8 @@ export async function getSessionForVault(
 
     const files = await readdir(sessionsDir);
 
+    let mostRecentSession: { id: string; lastActiveAt: Date } | null = null;
+
     for (const file of files) {
       if (!file.endsWith(".json")) {
         continue;
@@ -430,11 +432,14 @@ export async function getSessionForVault(
       const metadata = await loadSession(sessionId);
 
       if (metadata && metadata.vaultId === vaultId) {
-        return sessionId;
+        const lastActiveAt = new Date(metadata.lastActiveAt);
+        if (!mostRecentSession || lastActiveAt > mostRecentSession.lastActiveAt) {
+          mostRecentSession = { id: sessionId, lastActiveAt };
+        }
       }
     }
 
-    return null;
+    return mostRecentSession?.id ?? null;
   } catch {
     return null;
   }

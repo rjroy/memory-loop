@@ -141,6 +141,24 @@ void mock.module("../file-browser", () => ({
   FileBrowserError: MockFileBrowserError,
 }));
 
+// Mock inspiration manager
+const mockGetInspiration = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (vaultPath: string) => Promise<{
+    contextual: { text: string; attribution?: string } | null;
+    quote: { text: string; attribution?: string };
+  }>
+>(() =>
+  Promise.resolve({
+    contextual: null,
+    quote: { text: "Default quote", attribution: "Test" },
+  })
+);
+
+void mock.module("../inspiration-manager", () => ({
+  getInspiration: mockGetInspiration,
+}));
+
 // Import handler after mocks are set up
 import {
   WebSocketHandler,
@@ -218,6 +236,7 @@ describe("WebSocket Handler", () => {
     mockInterrupt.mockReset();
     mockListDirectory.mockReset();
     mockReadMarkdownFile.mockReset();
+    mockGetInspiration.mockReset();
 
     // Set default mock implementations
     mockDiscoverVaults.mockResolvedValue([]);
@@ -233,6 +252,10 @@ describe("WebSocket Handler", () => {
     mockGetRecentSessions.mockResolvedValue([]);
     mockListDirectory.mockResolvedValue([]);
     mockReadMarkdownFile.mockResolvedValue({ content: "", truncated: false });
+    mockGetInspiration.mockResolvedValue({
+      contextual: null,
+      quote: { text: "Default quote", attribution: "Test" },
+    });
   });
 
   afterEach(async () => {
@@ -1925,6 +1948,139 @@ describe("WebSocket Handler", () => {
         expect(message.code).toBe("INTERNAL_ERROR");
         expect(message.message).toContain("Disk read error");
       }
+    });
+  });
+
+  // ===========================================================================
+  // get_inspiration Handler Tests
+  // ===========================================================================
+
+  describe("get_inspiration", () => {
+    test("returns error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_inspiration" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+      }
+    });
+
+    test("calls getInspiration with vault path", async () => {
+      const vault = createMockVault({ path: "/test/vault/path" });
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_inspiration" })
+      );
+
+      expect(mockGetInspiration).toHaveBeenCalledWith("/test/vault/path");
+    });
+
+    test("returns inspiration with contextual and quote", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetInspiration.mockResolvedValue({
+        contextual: { text: "What's on your mind today?", attribution: undefined },
+        quote: { text: "Carpe diem", attribution: "Horace" },
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_inspiration" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("inspiration");
+      if (message?.type === "inspiration") {
+        expect(message.contextual).toEqual({
+          text: "What's on your mind today?",
+          attribution: undefined,
+        });
+        expect(message.quote).toEqual({
+          text: "Carpe diem",
+          attribution: "Horace",
+        });
+      }
+    });
+
+    test("returns inspiration with null contextual", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetInspiration.mockResolvedValue({
+        contextual: null,
+        quote: { text: "Stay curious", attribution: "Einstein" },
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_inspiration" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("inspiration");
+      if (message?.type === "inspiration") {
+        expect(message.contextual).toBeNull();
+        expect(message.quote.text).toBe("Stay curious");
+      }
+    });
+
+    test("silently handles errors without sending error to client", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetInspiration.mockRejectedValue(new Error("Generation failed"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_inspiration" })
+      );
+
+      // The last message should be session_ready from vault selection,
+      // NOT an error message - errors are silently logged
+      const messages = ws.getMessages();
+      const hasErrorMessage = messages.some(
+        (m) => m.type === "error" && "message" in m && m.message.includes("Generation")
+      );
+      expect(hasErrorMessage).toBe(false);
     });
   });
 });

@@ -29,6 +29,7 @@ import {
   FileBrowserError,
 } from "./file-browser";
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk";
+import { getInspiration } from "./inspiration-manager";
 import { wsLog as log } from "./logger";
 
 /**
@@ -241,6 +242,9 @@ export class WebSocketHandler {
         break;
       case "get_goals":
         await this.handleGetGoals(ws);
+        break;
+      case "get_inspiration":
+        await this.handleGetInspiration(ws);
         break;
     }
   }
@@ -944,6 +948,40 @@ export class WebSocketHandler {
       const message =
         error instanceof Error ? error.message : "Failed to get goals";
       this.sendError(ws, "INTERNAL_ERROR", message);
+    }
+  }
+
+  /**
+   * Handles get_inspiration message.
+   * Returns contextual prompt and inspirational quote.
+   * Errors are logged but not sent to client (inspiration is optional).
+   */
+  private async handleGetInspiration(ws: WebSocketLike): Promise<void> {
+    log.info("Getting inspiration");
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for inspiration");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const result = await getInspiration(this.state.currentVault.path);
+      log.info(
+        `Inspiration fetched: contextual=${result.contextual !== null}, quote="${result.quote.text.slice(0, 30)}..."`
+      );
+      this.send(ws, {
+        type: "inspiration",
+        contextual: result.contextual,
+        quote: result.quote,
+      });
+    } catch (error) {
+      // Log errors but don't send error response - inspiration is optional
+      log.error("Failed to get inspiration (continuing silently)", error);
+      // Don't send error to client per REQ-NF-3 (graceful degradation)
     }
   }
 }

@@ -14,7 +14,7 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalItem } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection } from "@memory-loop/shared";
 
 /**
  * Application mode: home, note capture, discussion, or browse.
@@ -80,7 +80,7 @@ export interface SessionState {
   /** Recent discussion sessions for note mode */
   recentDiscussions: RecentDiscussionEntry[];
   /** Goals from vault's goals.md file (null if no goals file exists) */
-  goals: GoalItem[] | null;
+  goals: GoalSection[] | null;
 }
 
 /**
@@ -130,7 +130,7 @@ export interface SessionActions {
   /** Set recent discussions */
   setRecentDiscussions: (discussions: RecentDiscussionEntry[]) => void;
   /** Set goals from vault's goals.md file */
-  setGoals: (goals: GoalItem[] | null) => void;
+  setGoals: (goals: GoalSection[] | null) => void;
 }
 
 /**
@@ -177,7 +177,7 @@ type SessionAction =
   | { type: "PIN_FOLDER"; path: string }
   | { type: "UNPIN_FOLDER"; path: string }
   | { type: "SET_PINNED_FOLDERS"; paths: string[] }
-  | { type: "SET_GOALS"; goals: GoalItem[] | null };
+  | { type: "SET_GOALS"; goals: GoalSection[] | null };
 
 /**
  * Generates a unique message ID.
@@ -550,7 +550,7 @@ export interface SessionProviderProps {
   /** Optional initial recent discussions (for testing) */
   initialRecentDiscussions?: RecentDiscussionEntry[];
   /** Optional initial goals (for testing) */
-  initialGoals?: GoalItem[] | null;
+  initialGoals?: GoalSection[] | null;
 }
 
 /**
@@ -729,7 +729,7 @@ export function SessionProvider({
     dispatch({ type: "SET_RECENT_DISCUSSIONS", discussions });
   }, []);
 
-  const setGoals = useCallback((goals: GoalItem[] | null) => {
+  const setGoals = useCallback((goals: GoalSection[] | null) => {
     dispatch({ type: "SET_GOALS", goals });
   }, []);
 

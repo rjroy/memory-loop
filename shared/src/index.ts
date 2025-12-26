@@ -24,7 +24,7 @@ export {
   // Recent discussion schemas
   RecentDiscussionEntrySchema,
   // Goals schemas
-  GoalItemSchema,
+  GoalSectionSchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -75,7 +75,7 @@ export type {
   // Recent discussion types
   RecentDiscussionEntry,
   // Goal types
-  GoalItem,
+  GoalSection,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

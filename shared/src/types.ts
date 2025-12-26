@@ -13,6 +13,7 @@
  * @property path - Relative path for display in UI
  * @property hasClaudeMd - Whether the vault has a CLAUDE.md file
  * @property inboxPath - Resolved inbox location for daily notes
+ * @property goalsPath - Path to goals.md if it exists (e.g., "06_Metadata/memory-loop/goals.md")
  */
 export interface VaultInfo {
   id: string;
@@ -20,6 +21,7 @@ export interface VaultInfo {
   path: string;
   hasClaudeMd: boolean;
   inboxPath: string;
+  goalsPath?: string;
 }
 
 /**

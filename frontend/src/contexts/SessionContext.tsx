@@ -14,7 +14,7 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalItem } from "@memory-loop/shared";
 
 /**
  * Application mode: home, note capture, discussion, or browse.
@@ -79,6 +79,8 @@ export interface SessionState {
   recentNotes: RecentNoteEntry[];
   /** Recent discussion sessions for note mode */
   recentDiscussions: RecentDiscussionEntry[];
+  /** Goals from vault's goals.md file (null if no goals file exists) */
+  goals: GoalItem[] | null;
 }
 
 /**
@@ -127,6 +129,8 @@ export interface SessionActions {
   unpinFolder: (path: string) => void;
   /** Set recent discussions */
   setRecentDiscussions: (discussions: RecentDiscussionEntry[]) => void;
+  /** Set goals from vault's goals.md file */
+  setGoals: (goals: GoalItem[] | null) => void;
 }
 
 /**
@@ -172,7 +176,8 @@ type SessionAction =
   | { type: "SET_RECENT_DISCUSSIONS"; discussions: RecentDiscussionEntry[] }
   | { type: "PIN_FOLDER"; path: string }
   | { type: "UNPIN_FOLDER"; path: string }
-  | { type: "SET_PINNED_FOLDERS"; paths: string[] };
+  | { type: "SET_PINNED_FOLDERS"; paths: string[] }
+  | { type: "SET_GOALS"; goals: GoalItem[] | null };
 
 /**
  * Generates a unique message ID.
@@ -217,6 +222,8 @@ function sessionReducer(
         // Clear recent activity when switching vaults
         recentNotes: [],
         recentDiscussions: [],
+        // Clear goals when switching vaults
+        goals: null,
       };
 
     case "CLEAR_VAULT":
@@ -228,6 +235,7 @@ function sessionReducer(
         browser: createInitialBrowserState(),
         recentNotes: [],
         recentDiscussions: [],
+        goals: null,
       };
 
     case "SET_SESSION_ID":
@@ -422,6 +430,12 @@ function sessionReducer(
         recentDiscussions: action.discussions,
       };
 
+    case "SET_GOALS":
+      return {
+        ...state,
+        goals: action.goals,
+      };
+
     default:
       return state;
   }
@@ -439,6 +453,7 @@ const initialState: SessionState = {
   browser: createInitialBrowserState(),
   recentNotes: [],
   recentDiscussions: [],
+  goals: null,
 };
 
 /**
@@ -710,6 +725,10 @@ export function SessionProvider({
     dispatch({ type: "SET_RECENT_DISCUSSIONS", discussions });
   }, []);
 
+  const setGoals = useCallback((goals: GoalItem[] | null) => {
+    dispatch({ type: "SET_GOALS", goals });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -733,6 +752,7 @@ export function SessionProvider({
     pinFolder,
     unpinFolder,
     setRecentDiscussions,
+    setGoals,
   };
 
   return (

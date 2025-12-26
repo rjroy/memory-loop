@@ -12,7 +12,7 @@ import type {
   ErrorCode,
 } from "@memory-loop/shared";
 import { safeParseClientMessage } from "@memory-loop/shared";
-import { discoverVaults, getVaultById } from "./vault-manager";
+import { discoverVaults, getVaultById, getVaultGoals } from "./vault-manager";
 import {
   createSession,
   resumeSession,
@@ -238,6 +238,9 @@ export class WebSocketHandler {
         break;
       case "get_recent_activity":
         await this.handleGetRecentActivity(ws);
+        break;
+      case "get_goals":
+        await this.handleGetGoals(ws);
         break;
     }
   }
@@ -909,6 +912,37 @@ export class WebSocketHandler {
       log.error("Failed to get recent activity", error);
       const message =
         error instanceof Error ? error.message : "Failed to get recent activity";
+      this.sendError(ws, "INTERNAL_ERROR", message);
+    }
+  }
+
+  /**
+   * Handles get_goals message.
+   * Returns goals from the vault's goals.md file.
+   */
+  private async handleGetGoals(ws: WebSocketLike): Promise<void> {
+    log.info("Getting goals");
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for goals");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const goals = await getVaultGoals(this.state.currentVault);
+      log.info(`Found ${goals?.length ?? 0} goals`);
+      this.send(ws, {
+        type: "goals",
+        goals,
+      });
+    } catch (error) {
+      log.error("Failed to get goals", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to get goals";
       this.sendError(ws, "INTERNAL_ERROR", message);
     }
   }

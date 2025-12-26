@@ -38,7 +38,7 @@ The visual language is **on point**. The question is which *functional* elements
 
 **Mockup suggests:** Central hub showing recent activity, quick actions, at-a-glance widgets
 
-**Recommendation: ADAPT**
+**Recommendation: ADAPT** ✔
 
 A dashboard makes sense, but not as a feature-silo launcher. Instead:
 
@@ -52,13 +52,16 @@ A dashboard makes sense, but not as a feature-silo launcher. Instead:
 
 **Complexity:** Medium - Mostly UI composition of existing data
 
+> **Reviewer Response**:
+> - Managing token usage is important. *Conversation starters* could be a dated file that is updated daily(hourly?) at most. Then referenced for the display. It should be added to the vault. By convention directory `06_Metadata` holds these types of files. `06_Metadata/memory-loop/` seems like a good place for these type of things.
+
 ---
 
 ### 2. Categories / Favorites / Tags
 
 **Mockup suggests:** Left sidebar with organizational taxonomy
 
-**Recommendation: SKIP**
+**Recommendation: SKIP** ✔
 
 This directly competes with Obsidian's native organization:
 - Obsidian has folders, tags, bookmarks, canvas, and plugins for organization
@@ -73,7 +76,7 @@ This directly competes with Obsidian's native organization:
 
 **Mockup suggests:** Dedicated task panel with checkboxes
 
-**Recommendation: ADAPT (carefully)**
+**Recommendation: ADAPT (carefully)** ✔
 
 Tasks are tricky. Obsidian users often use:
 - Dataview queries for task aggregation
@@ -93,13 +96,16 @@ This leverages AI understanding without creating data duplication.
 
 **Complexity:** Low - This is prompt engineering, not feature building
 
+> **Reviewer Response**:
+> - Agreed. Let's start simple. Based on my usage and needs we can have a seperate design pass after we get the basic interface in.
+
 ---
 
 ### 4. Inspiration Layer
 
 **Mockup suggests:** "Inspiration of the Day" quote widget
 
-**Recommendation: ADAPT**
+**Recommendation: ADAPT** ✔
 
 Generic motivational quotes feel like padding. But *contextual* inspiration is different.
 
@@ -118,13 +124,16 @@ These appear on the Home view or as subtle suggestions in Note Mode.
 
 **Alternative (simpler):** Random vault excerpt. Pull a paragraph from a random note and display it. "Remember this?" - serendipitous rediscovery without AI cost.
 
+> **Reviewer Response**:
+> - Managing token usage is important. *Inspirational quotes* could be two files with sets of inspiration. One which is general historical quotes of inspiration that is gathered and added to in-frequently (maybe automaticaly?). The other could be updated/created based on usage. The key is that we should not regenerate the quotes on each refresh of the page. Then referenced for the display. It should be added to the vault. By convention directory `06_Metadata` holds these types of files. `06_Metadata/memory-loop/` seems like a good place for these type of things.
+
 ---
 
 ### 5. Goal Tracker
 
 **Mockup suggests:** Dedicated goal management area
 
-**Recommendation: SKIP (but enable via AI)**
+**Recommendation: SKIP (but enable via AI)** (see below)
 
 Goals are personal and varied. Some people want OKRs, others want habits, others want "someday/maybe" lists. Building a goal system means picking one model and alienating users with different mental models.
 
@@ -135,13 +144,16 @@ Goals are personal and varied. Some people want OKRs, others want habits, others
 
 Claude can parse the vault for goal-related content. The user doesn't need a special "goal" data type.
 
+> **Reviewer Response**:
+> I have an idea. Much like I've suggested above, we could create a `06_Metadata/memory-loop/goals.md`. This would be a file the UX could display. The memory-loop system prompt could have a reference to it, but not be told to update it. The goal there would be to allow the discussion thread to say something like "Sounds like a plan. Should I update your goals?".
+
 ---
 
 ### 6. Reminders / Notifications
 
 **Mockup suggests:** Reminders section in sidebar
 
-**Recommendation: SKIP**
+**Recommendation: SKIP** ✔
 
 Memory Loop is a web app without native notification infrastructure. Implementing reminders requires:
 - Backend scheduler
@@ -162,7 +174,7 @@ This is significant infrastructure for a feature users already have via:
 
 **Mockup suggests:** Rich note editor with formatting, images, save/edit modes
 
-**Recommendation: SKIP**
+**Recommendation: SKIP** ✔
 
 Memory Loop's Note Mode is intentionally **capture-focused**, not editor-focused:
 - Quick thought → append to daily note → done
@@ -181,7 +193,7 @@ Expanding into rich editing would mean:
 
 **Mockup suggests:** Sidebar shortcuts to specific areas (Idea Vault, Goal Tracker)
 
-**Recommendation: ADAPT**
+**Recommendation: ADAPT** ✔
 
 While we're skipping dedicated "Idea Vault" and "Goal Tracker" features, the concept of **pinned paths** in Browse Mode has merit.
 
@@ -204,7 +216,7 @@ These appear at the top of Browse Mode's tree, always visible.
 
 **Mockup suggests:** Horizontal card row with categorized recent items
 
-**Recommendation: ENHANCE**
+**Recommendation: ENHANCE** ✔
 
 Current implementation shows recent captures. The mockup shows recent notes as categorized cards with thumbnails.
 
@@ -224,7 +236,7 @@ Current implementation shows recent captures. The mockup shows recent notes as c
 
 **Mockup suggests:** User avatar, account settings
 
-**Recommendation: DEFER**
+**Recommendation: DEFER** ✔
 
 Current Memory Loop has no user accounts - it's session-based per device. Adding accounts enables:
 - Cross-device session sync

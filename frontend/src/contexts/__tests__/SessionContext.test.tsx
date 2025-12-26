@@ -59,7 +59,8 @@ describe("SessionContext", () => {
 
       expect(result.current.vault).toBeNull();
       expect(result.current.sessionId).toBeNull();
-      expect(result.current.mode).toBe("note");
+      expect(result.current.sessionStartTime).toBeNull();
+      expect(result.current.mode).toBe("home");
       expect(result.current.messages).toEqual([]);
     });
 
@@ -158,9 +159,15 @@ describe("SessionContext", () => {
   });
 
   describe("setMode", () => {
-    it("switches between note and discussion modes", () => {
+    it("switches between all modes", () => {
       const { result } = renderHook(() => useSession(), {
         wrapper: createWrapper(),
+      });
+
+      expect(result.current.mode).toBe("home");
+
+      act(() => {
+        result.current.setMode("note");
       });
 
       expect(result.current.mode).toBe("note");
@@ -172,10 +179,16 @@ describe("SessionContext", () => {
       expect(result.current.mode).toBe("discussion");
 
       act(() => {
-        result.current.setMode("note");
+        result.current.setMode("browse");
       });
 
-      expect(result.current.mode).toBe("note");
+      expect(result.current.mode).toBe("browse");
+
+      act(() => {
+        result.current.setMode("home");
+      });
+
+      expect(result.current.mode).toBe("home");
     });
   });
 

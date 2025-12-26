@@ -400,6 +400,7 @@ export class WebSocketHandler {
           type: "session_ready",
           sessionId: queryResult.sessionId,
           vaultId: this.state.currentVault.id,
+          createdAt: new Date().toISOString(), // Session was just created
         });
       }
 
@@ -697,6 +698,7 @@ export class WebSocketHandler {
         sessionId,
         vaultId: this.state.currentVault.id,
         messages: metadata.messages,
+        createdAt: metadata.createdAt,
       });
     } catch (error) {
       log.error("Failed to load session for validation", error);

@@ -17,9 +17,9 @@ import React, {
 import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol } from "@memory-loop/shared";
 
 /**
- * Application mode: note capture, discussion, or browse.
+ * Application mode: home, note capture, discussion, or browse.
  */
-export type AppMode = "note" | "discussion" | "browse";
+export type AppMode = "home" | "note" | "discussion" | "browse";
 
 /**
  * Browser state for vault file browsing.
@@ -67,6 +67,8 @@ export interface SessionState {
   vault: VaultInfo | null;
   /** Current session ID (from server) */
   sessionId: string | null;
+  /** Session start timestamp (from server) */
+  sessionStartTime: Date | null;
   /** Current application mode */
   mode: AppMode;
   /** Conversation history for discussion mode */
@@ -89,6 +91,8 @@ export interface SessionActions {
   clearVault: () => void;
   /** Set the session ID */
   setSessionId: (sessionId: string) => void;
+  /** Set the session start time */
+  setSessionStartTime: (timestamp: Date) => void;
   /** Set the application mode */
   setMode: (mode: AppMode) => void;
   /** Add a message to conversation history */
@@ -150,6 +154,7 @@ type SessionAction =
   | { type: "SELECT_VAULT"; vault: VaultInfo }
   | { type: "CLEAR_VAULT" }
   | { type: "SET_SESSION_ID"; sessionId: string }
+  | { type: "SET_SESSION_START_TIME"; timestamp: Date }
   | { type: "SET_MODE"; mode: AppMode }
   | { type: "ADD_MESSAGE"; message: ConversationMessage }
   | { type: "UPDATE_LAST_MESSAGE"; content: string; isStreaming?: boolean }
@@ -229,6 +234,12 @@ function sessionReducer(
       return {
         ...state,
         sessionId: action.sessionId,
+      };
+
+    case "SET_SESSION_START_TIME":
+      return {
+        ...state,
+        sessionStartTime: action.timestamp,
       };
 
     case "SET_MODE":
@@ -422,7 +433,8 @@ function sessionReducer(
 const initialState: SessionState = {
   vault: null,
   sessionId: null,
-  mode: "note",
+  sessionStartTime: null,
+  mode: "home",
   messages: [],
   browser: createInitialBrowserState(),
   recentNotes: [],
@@ -609,6 +621,10 @@ export function SessionProvider({
     dispatch({ type: "SET_SESSION_ID", sessionId });
   }, []);
 
+  const setSessionStartTime = useCallback((timestamp: Date) => {
+    dispatch({ type: "SET_SESSION_START_TIME", timestamp });
+  }, []);
+
   const setMode = useCallback((mode: AppMode) => {
     dispatch({ type: "SET_MODE", mode });
   }, []);
@@ -699,6 +715,7 @@ export function SessionProvider({
     selectVault,
     clearVault,
     setSessionId,
+    setSessionStartTime,
     setMode,
     addMessage,
     updateLastMessage,
@@ -740,7 +757,7 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { setSessionId, setMessages, addMessage, updateLastMessage } = useSession();
+  const { setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage } = useSession();
 
   return useCallback(
     (message: ServerMessage) => {
@@ -748,6 +765,10 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         case "session_ready":
           if (message.sessionId) {
             setSessionId(message.sessionId);
+          }
+          // If server sent createdAt (session start time), update state
+          if (message.createdAt) {
+            setSessionStartTime(new Date(message.createdAt));
           }
           // If server sent messages (resuming session), replace local state
           if (message.messages && message.messages.length > 0) {
@@ -779,6 +800,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           break;
       }
     },
-    [setSessionId, setMessages, addMessage, updateLastMessage]
+    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage]
   );
 }

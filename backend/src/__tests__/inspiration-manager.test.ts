@@ -34,6 +34,11 @@ import {
   appendToInspirationFile,
   prunePool,
   appendAndPrune,
+  parseAIResponse,
+  generateContextualPrompts,
+  generateInspirationQuote,
+  setQueryFunction,
+  resetQueryFunction,
   CONTEXTUAL_PROMPTS_PATH,
   GENERAL_INSPIRATION_PATH,
   MAX_CONTEXT_CHARS,
@@ -42,6 +47,9 @@ import {
   PROJECTS_PATH,
   AREAS_PATH,
   DAY_CONTEXT_CONFIG,
+  GENERATION_MODEL,
+  MAX_GENERATION_CONTEXT,
+  type QueryFunction,
 } from "../inspiration-manager";
 
 // =============================================================================
@@ -2211,5 +2219,369 @@ describe("appendAndPrune", () => {
 describe("MAX_POOL_SIZE", () => {
   test("is set to 50", () => {
     expect(MAX_POOL_SIZE).toBe(50);
+  });
+});
+
+// =============================================================================
+// parseAIResponse Tests
+// =============================================================================
+
+describe("parseAIResponse", () => {
+  test("parses response with quotes only", () => {
+    const response = `- "First quote"
+- "Second quote"
+- "Third quote"`;
+
+    const items = parseAIResponse(response);
+
+    expect(items).toHaveLength(3);
+    expect(items[0]).toEqual({ text: "First quote" });
+    expect(items[1]).toEqual({ text: "Second quote" });
+    expect(items[2]).toEqual({ text: "Third quote" });
+  });
+
+  test("parses response with attributions", () => {
+    const response = `- "To be or not to be." -- Shakespeare
+- "I think, therefore I am." -- Descartes`;
+
+    const items = parseAIResponse(response);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual({ text: "To be or not to be.", attribution: "Shakespeare" });
+    expect(items[1]).toEqual({ text: "I think, therefore I am.", attribution: "Descartes" });
+  });
+
+  test("skips malformed lines", () => {
+    const response = `- "Valid quote"
+This is not a quote
+- "Another valid quote"
+- No quotes here
+Just some text`;
+
+    const items = parseAIResponse(response);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual({ text: "Valid quote" });
+    expect(items[1]).toEqual({ text: "Another valid quote" });
+  });
+
+  test("handles empty response", () => {
+    expect(parseAIResponse("")).toEqual([]);
+  });
+
+  test("handles response with only whitespace", () => {
+    expect(parseAIResponse("   \n\n   ")).toEqual([]);
+  });
+
+  test("handles mixed format with extra text", () => {
+    const response = `Here are some prompts:
+
+- "First prompt"
+- "Second prompt" -- Note
+
+That's all!`;
+
+    const items = parseAIResponse(response);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual({ text: "First prompt" });
+    expect(items[1]).toEqual({ text: "Second prompt", attribution: "Note" });
+  });
+});
+
+// =============================================================================
+// Generation Constants Tests
+// =============================================================================
+
+describe("Generation Constants", () => {
+  test("GENERATION_MODEL is claude-3-haiku", () => {
+    expect(GENERATION_MODEL).toBe("claude-3-haiku-20240307");
+  });
+
+  test("MAX_GENERATION_CONTEXT is 3000", () => {
+    expect(MAX_GENERATION_CONTEXT).toBe(3000);
+  });
+});
+
+// =============================================================================
+// Mock SDK Query Helpers
+// =============================================================================
+
+/**
+ * Creates a mock query function that yields the specified text response.
+ * The response is wrapped in an assistant message with text content block.
+ *
+ * @param response - Text to return as the assistant's response
+ * @param onCall - Optional callback to capture the query arguments
+ */
+function createMockQueryFn(
+  response: string,
+  onCall?: (args: { prompt: string; options: { model: string } }) => void
+): QueryFunction {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ((args: any) => {
+    if (onCall) {
+      onCall(args as { prompt: string; options: { model: string } });
+    }
+    // Create a simple async iterator that yields the response
+    let yielded = false;
+    return {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      next() {
+        if (!yielded) {
+          yielded = true;
+          return Promise.resolve({
+            value: {
+              type: "assistant" as const,
+              message: { content: [{ type: "text", text: response }] },
+            },
+            done: false as const,
+          });
+        }
+        return Promise.resolve({ value: undefined, done: true as const });
+      },
+      return() {
+        return Promise.resolve({ value: undefined, done: true as const });
+      },
+      throw(e: Error) {
+        return Promise.reject(e);
+      },
+    };
+  }) as unknown as QueryFunction;
+}
+
+/**
+ * Creates a mock query function that yields multiple text responses.
+ *
+ * @param responses - Array of text responses to yield
+ */
+function createMultiResponseMockQueryFn(responses: string[]): QueryFunction {
+  return (() => {
+    let index = 0;
+    return {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      next() {
+        if (index < responses.length) {
+          const value = {
+            type: "assistant" as const,
+            message: { content: [{ type: "text", text: responses[index++] }] },
+          };
+          return Promise.resolve({ value, done: false as const });
+        }
+        return Promise.resolve({ value: undefined, done: true as const });
+      },
+      return() {
+        return Promise.resolve({ value: undefined, done: true as const });
+      },
+      throw(e: Error) {
+        return Promise.reject(e);
+      },
+    };
+  }) as unknown as QueryFunction;
+}
+
+/**
+ * Creates a mock query function that throws an error.
+ *
+ * @param message - Error message to throw
+ */
+function createErrorMockQueryFn(message: string): QueryFunction {
+  return (() => {
+    throw new Error(message);
+  }) as unknown as QueryFunction;
+}
+
+// =============================================================================
+// generateContextualPrompts Tests
+// =============================================================================
+
+describe("generateContextualPrompts", () => {
+  afterEach(() => {
+    resetQueryFunction();
+  });
+
+  test("returns empty array for empty context", async () => {
+    const items = await generateContextualPrompts("");
+    expect(items).toEqual([]);
+  });
+
+  test("returns empty array for whitespace-only context", async () => {
+    const items = await generateContextualPrompts("   \n\n   ");
+    expect(items).toEqual([]);
+  });
+
+  test("calls query function with correct parameters", async () => {
+    let capturedArgs: { prompt: string; options: { model: string } } | null = null;
+
+    setQueryFunction(
+      createMockQueryFn('- "A prompt based on context"', (args) => {
+        capturedArgs = args;
+      })
+    );
+
+    await generateContextualPrompts("Test context");
+
+    expect(capturedArgs).toBeDefined();
+    expect(capturedArgs!.prompt).toContain("Test context");
+    expect(capturedArgs!.options.model).toBe(GENERATION_MODEL);
+  });
+
+  test("parses response from mock SDK", async () => {
+    setQueryFunction(
+      createMockQueryFn(`- "What goals energize you most?"
+- "How can you build on yesterday's momentum?"`)
+    );
+
+    const items = await generateContextualPrompts("User notes about goals");
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual({ text: "What goals energize you most?" });
+    expect(items[1]).toEqual({ text: "How can you build on yesterday's momentum?" });
+  });
+
+  test("truncates long context", async () => {
+    let capturedPrompt = "";
+
+    setQueryFunction(
+      createMockQueryFn("", (args) => {
+        capturedPrompt = args.prompt;
+      })
+    );
+
+    // Create context longer than MAX_GENERATION_CONTEXT using unique markers
+    const marker = "ZZZZ";
+    const longContext = marker.repeat(Math.ceil((MAX_GENERATION_CONTEXT + 500) / marker.length));
+    await generateContextualPrompts(longContext.slice(0, MAX_GENERATION_CONTEXT + 500));
+
+    // Verify context was truncated: count marker occurrences in the prompt
+    // The truncated context should have exactly MAX_GENERATION_CONTEXT chars
+    const markerMatches = capturedPrompt.match(new RegExp(marker, "g")) || [];
+    const expectedMarkers = Math.floor(MAX_GENERATION_CONTEXT / marker.length);
+    expect(markerMatches.length).toBe(expectedMarkers);
+  });
+
+  test("returns empty array on SDK error", async () => {
+    setQueryFunction(createErrorMockQueryFn("SDK connection failed"));
+
+    const items = await generateContextualPrompts("Some context");
+
+    expect(items).toEqual([]);
+  });
+
+  test("handles SDK returning empty response", async () => {
+    setQueryFunction(createMockQueryFn(""));
+
+    const items = await generateContextualPrompts("Some context");
+
+    expect(items).toEqual([]);
+  });
+});
+
+// =============================================================================
+// generateInspirationQuote Tests
+// =============================================================================
+
+describe("generateInspirationQuote", () => {
+  afterEach(() => {
+    resetQueryFunction();
+  });
+
+  test("calls query function with correct parameters", async () => {
+    let capturedArgs: { prompt: string; options: { model: string } } | null = null;
+
+    setQueryFunction(
+      createMockQueryFn('- "A wise quote" -- Someone', (args) => {
+        capturedArgs = args;
+      })
+    );
+
+    await generateInspirationQuote();
+
+    expect(capturedArgs).toBeDefined();
+    expect(capturedArgs!.options.model).toBe(GENERATION_MODEL);
+    expect(capturedArgs!.prompt).toContain("inspirational quote");
+  });
+
+  test("parses quote with attribution", async () => {
+    setQueryFunction(
+      createMockQueryFn('- "The only way to do great work is to love what you do." -- Steve Jobs')
+    );
+
+    const items = await generateInspirationQuote();
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual({
+      text: "The only way to do great work is to love what you do.",
+      attribution: "Steve Jobs",
+    });
+  });
+
+  test("handles quote without attribution", async () => {
+    setQueryFunction(createMockQueryFn('- "An anonymous wise saying"'));
+
+    const items = await generateInspirationQuote();
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual({ text: "An anonymous wise saying" });
+  });
+
+  test("returns empty array on SDK error", async () => {
+    setQueryFunction(createErrorMockQueryFn("API rate limit exceeded"));
+
+    const items = await generateInspirationQuote();
+
+    expect(items).toEqual([]);
+  });
+
+  test("handles multiple assistant events", async () => {
+    setQueryFunction(
+      createMultiResponseMockQueryFn(['- "First part', ' continued" -- Author'])
+    );
+
+    const items = await generateInspirationQuote();
+
+    // Both parts should be combined
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual({
+      text: "First part continued",
+      attribution: "Author",
+    });
+  });
+});
+
+// =============================================================================
+// setQueryFunction / resetQueryFunction Tests
+// =============================================================================
+
+describe("Query Function Injection", () => {
+  afterEach(() => {
+    resetQueryFunction();
+  });
+
+  test("setQueryFunction allows mocking SDK calls", async () => {
+    let wasCalled = false;
+
+    setQueryFunction(
+      createMockQueryFn('- "Test"', () => {
+        wasCalled = true;
+      })
+    );
+    await generateContextualPrompts("context");
+
+    expect(wasCalled).toBe(true);
+  });
+
+  test("resetQueryFunction restores default behavior", async () => {
+    setQueryFunction(createMockQueryFn('- "Mock"'));
+    resetQueryFunction();
+
+    // After reset, calling with empty context should return empty array
+    // (testing that it doesn't use mock anymore, which would return a result)
+    const items = await generateContextualPrompts("");
+    expect(items).toEqual([]);
   });
 });

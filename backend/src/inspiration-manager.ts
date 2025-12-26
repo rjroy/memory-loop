@@ -14,6 +14,7 @@
 
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
 // =============================================================================
 // File Path Constants
@@ -718,4 +719,214 @@ export async function appendAndPrune(
 ): Promise<void> {
   await appendToInspirationFile(filePath, entries, weekNumber);
   await prunePool(filePath, maxSize);
+}
+
+// =============================================================================
+// AI Generation Functions
+// =============================================================================
+
+/** Model to use for generation (cost-efficient) */
+export const GENERATION_MODEL = "claude-3-haiku-20240307";
+
+/** Maximum context characters for generation prompts */
+export const MAX_GENERATION_CONTEXT = 3000;
+
+/**
+ * Prompt template for generating contextual prompts.
+ * Uses vault content as context to create personalized reflection questions.
+ */
+export const CONTEXTUAL_PROMPT_TEMPLATE = `Based on the following content from the user's notes, generate exactly 5 thought-provoking prompts that encourage reflection, action, or deeper thinking about the topics mentioned.
+
+Requirements:
+- Each prompt should be 1-2 sentences
+- Reference specific topics, themes, or ideas from the content
+- Focus on actionable reflection or creative exploration
+- Be encouraging and positive in tone
+- Make them personally relevant to the user's apparent interests
+
+Format your response as a markdown list with each prompt quoted:
+- "Prompt text here"
+- "Another prompt"
+...
+
+User's recent notes:
+---
+{context}
+---
+
+Generate 5 prompts:`;
+
+/**
+ * Prompt template for generating inspirational quotes.
+ * Draws from historical wisdom and timeless advice.
+ */
+export const QUOTE_PROMPT_TEMPLATE = `Generate 1 inspirational quote from historical wisdom, philosophy, literature, or timeless advice. The quote should be:
+
+Requirements:
+- From a known historical figure, philosopher, author, or cultural tradition
+- Timeless and universally applicable
+- Thought-provoking and encouraging
+- Include accurate attribution (author name, or tradition/source if author is unknown)
+
+Format your response as a single markdown list item with attribution:
+- "Quote text here" -- Attribution
+
+Generate 1 quote:`;
+
+/**
+ * Type for the SDK query function to allow mocking in tests
+ */
+export type QueryFunction = typeof query;
+
+/**
+ * Default query function (real SDK).
+ * Can be overridden in tests using setQueryFunction.
+ */
+let queryFn: QueryFunction = query;
+
+/**
+ * Set the query function (for testing with mocks)
+ *
+ * @param fn - The query function to use
+ */
+export function setQueryFunction(fn: QueryFunction): void {
+  queryFn = fn;
+}
+
+/**
+ * Reset the query function to the real SDK (for cleanup after tests)
+ */
+export function resetQueryFunction(): void {
+  queryFn = query;
+}
+
+/**
+ * Collect full text response from an SDK query result.
+ * Iterates through all events and extracts text from assistant messages.
+ *
+ * @param queryResult - The async generator from query()
+ * @returns Full text response
+ */
+async function collectResponse(
+  queryResult: ReturnType<QueryFunction>
+): Promise<string> {
+  const responseParts: string[] = [];
+
+  for await (const event of queryResult) {
+    // Cast to unknown for flexible property checking
+    // The SDK types are more constrained than runtime events
+    const rawEvent = event as unknown as Record<string, unknown>;
+    const eventType = rawEvent.type as string;
+
+    if (eventType === "assistant") {
+      // Extract text from assistant message content blocks
+      const message = rawEvent.message as
+        | { content?: Array<{ type: string; text?: string }> }
+        | undefined;
+
+      if (message?.content) {
+        for (const block of message.content) {
+          if (block.type === "text" && block.text) {
+            responseParts.push(block.text);
+          }
+        }
+      }
+    }
+  }
+
+  return responseParts.join("");
+}
+
+/**
+ * Parse AI response into inspiration items.
+ * Expects markdown list format: - "text" or - "text" -- attribution
+ *
+ * @param response - The raw AI response
+ * @returns Array of parsed inspiration items
+ */
+export function parseAIResponse(response: string): InspirationItem[] {
+  const items: InspirationItem[] = [];
+
+  for (const line of response.split("\n")) {
+    const item = parseInspirationLine(line.trim());
+    if (item) {
+      items.push(item);
+    }
+  }
+
+  return items;
+}
+
+/**
+ * Generate contextual prompts based on vault content.
+ *
+ * REQ-F-12: Generate 5 new contextual prompts per generation cycle
+ * REQ-NF-2: Use Claude Haiku model for cost efficiency
+ *
+ * @param context - Vault content for context (from gatherDayContext)
+ * @returns Array of generated prompts (may be empty on error)
+ */
+export async function generateContextualPrompts(
+  context: string
+): Promise<InspirationItem[]> {
+  // Skip if no context provided
+  if (!context || !context.trim()) {
+    return [];
+  }
+
+  // Truncate context if too long
+  const truncatedContext = context.slice(0, MAX_GENERATION_CONTEXT);
+
+  // Build the prompt
+  const prompt = CONTEXTUAL_PROMPT_TEMPLATE.replace("{context}", truncatedContext);
+
+  try {
+    const queryResult = queryFn({
+      prompt,
+      options: {
+        model: GENERATION_MODEL,
+        maxTurns: 1,
+        allowedTools: [], // No tools needed for generation
+      },
+    });
+
+    const response = await collectResponse(queryResult);
+    return parseAIResponse(response);
+  } catch (error) {
+    // Log error but return empty (graceful handling per REQ-NF-3)
+    console.error("[inspiration-manager] Failed to generate contextual prompts:", error);
+    return [];
+  }
+}
+
+/**
+ * Generate an inspirational quote from historical wisdom.
+ *
+ * REQ-F-21: Generate 1 new inspirational quote per week
+ * REQ-F-25: Draw from Claude's knowledge of historical quotes
+ * REQ-NF-2: Use Claude Haiku model for cost efficiency
+ *
+ * @returns Array with one generated quote (may be empty on error)
+ */
+export async function generateInspirationQuote(): Promise<InspirationItem[]> {
+  try {
+    const queryResult = queryFn({
+      prompt: QUOTE_PROMPT_TEMPLATE,
+      options: {
+        model: GENERATION_MODEL,
+        maxTurns: 1,
+        allowedTools: [], // No tools needed for generation
+      },
+    });
+
+    const response = await collectResponse(queryResult);
+    const items = parseAIResponse(response);
+
+    // Only return the first quote (we only want 1)
+    return items.slice(0, 1);
+  } catch (error) {
+    // Log error but return empty (graceful handling per REQ-NF-3)
+    console.error("[inspiration-manager] Failed to generate inspiration quote:", error);
+    return [];
+  }
 }

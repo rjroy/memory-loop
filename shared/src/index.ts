@@ -25,6 +25,10 @@ export {
   RecentDiscussionEntrySchema,
   // Goals schemas
   GoalSectionSchema,
+  // Inspiration schemas
+  InspirationItemSchema,
+  GetInspirationMessageSchema,
+  InspirationMessageSchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -76,6 +80,10 @@ export type {
   RecentDiscussionEntry,
   // Goal types
   GoalSection,
+  // Inspiration types
+  InspirationItem,
+  GetInspirationMessage,
+  InspirationMessage,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

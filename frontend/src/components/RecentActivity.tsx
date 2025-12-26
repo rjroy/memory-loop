@@ -115,7 +115,9 @@ export function RecentActivity({
 
       {hasCaptures && (
         <div className="recent-activity__section">
-          <h4 className="recent-activity__section-title">Captures</h4>
+          <h4 className="recent-activity__section-title">
+            <span className="recent-activity__heading">Captures</span>
+          </h4>
           <div className="recent-activity__list">
             {recentNotes.map((note) => (
               <CaptureCard
@@ -130,7 +132,9 @@ export function RecentActivity({
 
       {hasDiscussions && (
         <div className="recent-activity__section">
-          <h4 className="recent-activity__section-title">Discussions</h4>
+          <h4 className="recent-activity__section-title">
+            <span className="recent-activity__heading">Discussions</span>
+          </h4>
           <div className="recent-activity__list">
             {recentDiscussions.map((discussion) => (
               <DiscussionCard

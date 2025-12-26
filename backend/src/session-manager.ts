@@ -379,6 +379,65 @@ export async function getRecentSessions(
 }
 
 /**
+ * Prunes old sessions for a vault, keeping only the most recent ones.
+ *
+ * @param vaultId - The vault ID to prune sessions for
+ * @param keepCount - Number of sessions to keep (default: 5)
+ */
+export async function pruneOldSessions(
+  vaultId: string,
+  keepCount = 5
+): Promise<void> {
+  try {
+    const sessionsDir = await getSessionsDir();
+
+    if (!(await directoryExists(sessionsDir))) {
+      return;
+    }
+
+    const files = await readdir(sessionsDir);
+    const sessions: { sessionId: string; lastActive: Date; filePath: string }[] = [];
+
+    for (const file of files) {
+      if (!file.endsWith(".json")) {
+        continue;
+      }
+
+      const sessionId = file.slice(0, -5);
+      try {
+        const metadata = await loadSession(sessionId);
+
+        if (metadata && metadata.vaultId === vaultId) {
+          sessions.push({
+            sessionId,
+            lastActive: new Date(metadata.lastActiveAt),
+            filePath: join(sessionsDir, file),
+          });
+        }
+      } catch {
+        // Skip corrupted session files
+      }
+    }
+
+    // Sort by last activity, most recent first
+    sessions.sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime());
+
+    // Delete sessions beyond the keep count
+    const sessionsToDelete = sessions.slice(keepCount);
+    for (const session of sessionsToDelete) {
+      try {
+        await unlink(session.filePath);
+        log.info(`Pruned old session: ${session.sessionId}`);
+      } catch {
+        log.warn(`Failed to delete session file: ${session.filePath}`);
+      }
+    }
+  } catch (error) {
+    log.warn("Failed to prune old sessions", error);
+  }
+}
+
+/**
  * Truncates a string to a maximum length, adding ellipsis if truncated.
  */
 function truncatePreview(text: string, maxLength: number): string {
@@ -581,6 +640,9 @@ export async function createSession(
     };
     await saveSession(metadata);
     log.info("Session metadata saved");
+
+    // Prune old sessions to keep only the most recent 5
+    await pruneOldSessions(vault.id);
 
     // Return wrapped result
     return {

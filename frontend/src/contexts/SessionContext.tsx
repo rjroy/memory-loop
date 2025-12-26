@@ -80,6 +80,8 @@ export interface SessionState {
 export interface SessionActions {
   /** Select a vault */
   selectVault: (vault: VaultInfo) => void;
+  /** Clear the current vault (return to vault selection) */
+  clearVault: () => void;
   /** Set the session ID */
   setSessionId: (sessionId: string) => void;
   /** Set the application mode */
@@ -134,6 +136,7 @@ const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";
  */
 type SessionAction =
   | { type: "SELECT_VAULT"; vault: VaultInfo }
+  | { type: "CLEAR_VAULT" }
   | { type: "SET_SESSION_ID"; sessionId: string }
   | { type: "SET_MODE"; mode: AppMode }
   | { type: "ADD_MESSAGE"; message: ConversationMessage }
@@ -190,6 +193,16 @@ function sessionReducer(
         // Clear browser state when switching vaults (REQ-F-23)
         browser: createInitialBrowserState(),
         // Clear recent notes when switching vaults
+        recentNotes: [],
+      };
+
+    case "CLEAR_VAULT":
+      return {
+        ...state,
+        vault: null,
+        sessionId: null,
+        messages: [],
+        browser: createInitialBrowserState(),
         recentNotes: [],
       };
 
@@ -461,6 +474,11 @@ export function SessionProvider({
     dispatch({ type: "SELECT_VAULT", vault });
   }, []);
 
+  const clearVault = useCallback(() => {
+    dispatch({ type: "CLEAR_VAULT" });
+    persistVaultId(null);
+  }, []);
+
   const setSessionId = useCallback((sessionId: string) => {
     dispatch({ type: "SET_SESSION_ID", sessionId });
   }, []);
@@ -541,6 +559,7 @@ export function SessionProvider({
   const value: SessionContextValue = {
     ...state,
     selectVault,
+    clearVault,
     setSessionId,
     setMode,
     addMessage,

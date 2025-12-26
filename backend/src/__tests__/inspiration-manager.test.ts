@@ -21,8 +21,21 @@ import {
   isWeekday,
   isContextualGenerationNeeded,
   isQuoteGenerationNeeded,
+  getDayType,
+  formatDateForDailyNote,
+  getDateWithOffset,
+  readDailyNote,
+  readFolderIndex,
+  getSubfolders,
+  gatherDayContext,
+  truncateContext,
   CONTEXTUAL_PROMPTS_PATH,
   GENERAL_INSPIRATION_PATH,
+  MAX_CONTEXT_CHARS,
+  INBOX_PATH,
+  PROJECTS_PATH,
+  AREAS_PATH,
+  DAY_CONTEXT_CONFIG,
 } from "../inspiration-manager";
 
 // =============================================================================
@@ -1435,5 +1448,462 @@ describe("isContextualGenerationNeeded direct calls", () => {
     // If weekday: true (generated yesterday, not today)
     // If weekend: false (no generation on weekends)
     expect(result).toBe(isCurrentlyWeekday);
+  });
+});
+
+// =============================================================================
+// getDayType Tests
+// =============================================================================
+
+describe("getDayType", () => {
+  test("returns 'weekend' for Sunday", () => {
+    // 2025-12-28 is a Sunday
+    const sunday = new Date(2025, 11, 28);
+    expect(getDayType(sunday)).toBe("weekend");
+  });
+
+  test("returns 'weekend' for Saturday", () => {
+    // 2025-12-27 is a Saturday
+    const saturday = new Date(2025, 11, 27);
+    expect(getDayType(saturday)).toBe("weekend");
+  });
+
+  test("returns 'monday' for Monday", () => {
+    // 2025-12-29 is a Monday
+    const monday = new Date(2025, 11, 29);
+    expect(getDayType(monday)).toBe("monday");
+  });
+
+  test("returns 'midweek' for Tuesday", () => {
+    // 2025-12-30 is a Tuesday
+    const tuesday = new Date(2025, 11, 30);
+    expect(getDayType(tuesday)).toBe("midweek");
+  });
+
+  test("returns 'midweek' for Wednesday", () => {
+    // 2025-12-31 is a Wednesday
+    const wednesday = new Date(2025, 11, 31);
+    expect(getDayType(wednesday)).toBe("midweek");
+  });
+
+  test("returns 'midweek' for Thursday", () => {
+    // 2025-12-25 is a Thursday
+    const thursday = new Date(2025, 11, 25);
+    expect(getDayType(thursday)).toBe("midweek");
+  });
+
+  test("returns 'friday' for Friday", () => {
+    // 2025-12-26 is a Friday
+    const friday = new Date(2025, 11, 26);
+    expect(getDayType(friday)).toBe("friday");
+  });
+});
+
+// =============================================================================
+// formatDateForDailyNote Tests
+// =============================================================================
+
+describe("formatDateForDailyNote", () => {
+  test("formats date as YYYY-MM-DD", () => {
+    const date = new Date(2025, 11, 26); // December 26, 2025
+    expect(formatDateForDailyNote(date)).toBe("2025-12-26");
+  });
+
+  test("pads single-digit month and day with zeros", () => {
+    const date = new Date(2025, 0, 5); // January 5, 2025
+    expect(formatDateForDailyNote(date)).toBe("2025-01-05");
+  });
+
+  test("handles year boundaries", () => {
+    const date = new Date(2024, 11, 31); // December 31, 2024
+    expect(formatDateForDailyNote(date)).toBe("2024-12-31");
+  });
+});
+
+// =============================================================================
+// getDateWithOffset Tests
+// =============================================================================
+
+describe("getDateWithOffset", () => {
+  test("returns same date for offset 0", () => {
+    const date = new Date(2025, 11, 26);
+    const result = getDateWithOffset(date, 0);
+    expect(result.getFullYear()).toBe(2025);
+    expect(result.getMonth()).toBe(11);
+    expect(result.getDate()).toBe(26);
+  });
+
+  test("returns previous day for offset -1", () => {
+    const date = new Date(2025, 11, 26);
+    const result = getDateWithOffset(date, -1);
+    expect(formatDateForDailyNote(result)).toBe("2025-12-25");
+  });
+
+  test("returns previous week for offset -7", () => {
+    const date = new Date(2025, 11, 26);
+    const result = getDateWithOffset(date, -7);
+    expect(formatDateForDailyNote(result)).toBe("2025-12-19");
+  });
+
+  test("returns next day for offset 1", () => {
+    const date = new Date(2025, 11, 26);
+    const result = getDateWithOffset(date, 1);
+    expect(formatDateForDailyNote(result)).toBe("2025-12-27");
+  });
+
+  test("handles month boundary crossing", () => {
+    const date = new Date(2025, 0, 1); // January 1, 2025
+    const result = getDateWithOffset(date, -1);
+    expect(formatDateForDailyNote(result)).toBe("2024-12-31");
+  });
+
+  test("does not mutate original date", () => {
+    const date = new Date(2025, 11, 26);
+    getDateWithOffset(date, -5);
+    expect(date.getDate()).toBe(26);
+  });
+});
+
+// =============================================================================
+// readDailyNote Tests
+// =============================================================================
+
+describe("readDailyNote", () => {
+  let testVault: string;
+
+  beforeEach(async () => {
+    testVault = join(tmpdir(), `test-vault-daily-${Date.now()}`);
+    await mkdir(join(testVault, INBOX_PATH), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(testVault, { recursive: true, force: true });
+  });
+
+  test("reads existing daily note", async () => {
+    const content = "# 2025-12-26\n\nSome notes here.";
+    await writeFile(join(testVault, INBOX_PATH, "2025-12-26.md"), content);
+
+    const result = await readDailyNote(testVault, "2025-12-26");
+    expect(result).toBe(content);
+  });
+
+  test("returns null for missing daily note", async () => {
+    const result = await readDailyNote(testVault, "2025-12-25");
+    expect(result).toBeNull();
+  });
+
+  test("returns null when inbox directory missing", async () => {
+    const emptyVault = join(tmpdir(), `empty-vault-${Date.now()}`);
+    await mkdir(emptyVault, { recursive: true });
+
+    try {
+      const result = await readDailyNote(emptyVault, "2025-12-26");
+      expect(result).toBeNull();
+    } finally {
+      await rm(emptyVault, { recursive: true, force: true });
+    }
+  });
+});
+
+// =============================================================================
+// readFolderIndex Tests
+// =============================================================================
+
+describe("readFolderIndex", () => {
+  let testFolder: string;
+
+  beforeEach(async () => {
+    testFolder = join(tmpdir(), `test-folder-${Date.now()}`);
+    await mkdir(testFolder, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(testFolder, { recursive: true, force: true });
+  });
+
+  test("reads README.md if present", async () => {
+    const content = "# Project README\n\nThis is a project.";
+    await writeFile(join(testFolder, "README.md"), content);
+
+    const result = await readFolderIndex(testFolder);
+    expect(result).toBe(content);
+  });
+
+  test("reads index.md if README.md missing", async () => {
+    const content = "# Project Index\n\nThis is an index.";
+    await writeFile(join(testFolder, "index.md"), content);
+
+    const result = await readFolderIndex(testFolder);
+    expect(result).toBe(content);
+  });
+
+  test("prefers README.md over index.md", async () => {
+    const readmeContent = "# README content";
+    const indexContent = "# Index content";
+    await writeFile(join(testFolder, "README.md"), readmeContent);
+    await writeFile(join(testFolder, "index.md"), indexContent);
+
+    const result = await readFolderIndex(testFolder);
+    expect(result).toBe(readmeContent);
+  });
+
+  test("returns null when neither file exists", async () => {
+    const result = await readFolderIndex(testFolder);
+    expect(result).toBeNull();
+  });
+
+  test("returns null for non-existent folder", async () => {
+    const result = await readFolderIndex("/non/existent/folder");
+    expect(result).toBeNull();
+  });
+});
+
+// =============================================================================
+// getSubfolders Tests
+// =============================================================================
+
+describe("getSubfolders", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `test-subfolders-${Date.now()}`);
+    await mkdir(testDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  test("returns subfolder paths", async () => {
+    await mkdir(join(testDir, "project-a"));
+    await mkdir(join(testDir, "project-b"));
+
+    const result = await getSubfolders(testDir);
+    expect(result).toHaveLength(2);
+    expect(result).toContain(join(testDir, "project-a"));
+    expect(result).toContain(join(testDir, "project-b"));
+  });
+
+  test("ignores files", async () => {
+    await mkdir(join(testDir, "folder-a"));
+    await writeFile(join(testDir, "file.md"), "content");
+
+    const result = await getSubfolders(testDir);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(join(testDir, "folder-a"));
+  });
+
+  test("returns empty array for empty directory", async () => {
+    const result = await getSubfolders(testDir);
+    expect(result).toHaveLength(0);
+  });
+
+  test("returns empty array for non-existent directory", async () => {
+    const result = await getSubfolders("/non/existent/dir");
+    expect(result).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// truncateContext Tests
+// =============================================================================
+
+describe("truncateContext", () => {
+  const createItem = (content: string, daysAgo: number) => {
+    const date = new Date();
+    date.setDate(date.getDate() - daysAgo);
+    return { date, content, source: `test-${daysAgo}` };
+  };
+
+  test("joins all items when within budget", () => {
+    const items = [createItem("short", 2), createItem("text", 1)];
+    const result = truncateContext(items, 100);
+    expect(result).toBe("short\n\n---\n\ntext");
+  });
+
+  test("removes oldest items first when over budget", () => {
+    const items = [
+      createItem("oldest content", 3),
+      createItem("middle content", 2),
+      createItem("newest content", 1),
+    ];
+    // Budget only allows one item
+    const result = truncateContext(items, 20);
+    expect(result).toBe("newest content");
+  });
+
+  test("returns truncated single item if all items exceed budget", () => {
+    const items = [createItem("this is a long content string", 1)];
+    const result = truncateContext(items, 10);
+    // Should take last 10 chars: "ent string"
+    expect(result).toBe("ent string");
+  });
+
+  test("handles empty array", () => {
+    const result = truncateContext([], 100);
+    expect(result).toBe("");
+  });
+
+  test("uses separator between items", () => {
+    const items = [createItem("a", 2), createItem("b", 1)];
+    const result = truncateContext(items, 100);
+    expect(result).toContain("\n\n---\n\n");
+  });
+});
+
+// =============================================================================
+// gatherDayContext Tests
+// =============================================================================
+
+describe("gatherDayContext", () => {
+  let testVault: string;
+
+  beforeEach(async () => {
+    testVault = join(tmpdir(), `test-vault-context-${Date.now()}`);
+    await mkdir(join(testVault, INBOX_PATH), { recursive: true });
+    await mkdir(join(testVault, PROJECTS_PATH, "project-a"), { recursive: true });
+    await mkdir(join(testVault, AREAS_PATH, "area-1"), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(testVault, { recursive: true, force: true });
+  });
+
+  describe("weekend behavior", () => {
+    test("returns empty string on Saturday", async () => {
+      // 2025-12-27 is a Saturday
+      const saturday = new Date(2025, 11, 27);
+      const result = await gatherDayContext(testVault, saturday);
+      expect(result).toBe("");
+    });
+
+    test("returns empty string on Sunday", async () => {
+      // 2025-12-28 is a Sunday
+      const sunday = new Date(2025, 11, 28);
+      const result = await gatherDayContext(testVault, sunday);
+      expect(result).toBe("");
+    });
+  });
+
+  describe("midweek behavior (Tue-Thu)", () => {
+    test("reads previous day's daily note on Tuesday", async () => {
+      // 2025-12-30 is a Tuesday, so should read 2025-12-29 (Monday)
+      const tuesday = new Date(2025, 11, 30);
+      const mondayContent = "# Monday notes\n\nSome content.";
+      await writeFile(join(testVault, INBOX_PATH, "2025-12-29.md"), mondayContent);
+
+      const result = await gatherDayContext(testVault, tuesday);
+      expect(result).toBe(mondayContent);
+    });
+
+    test("returns empty when previous day note missing", async () => {
+      const tuesday = new Date(2025, 11, 30);
+      const result = await gatherDayContext(testVault, tuesday);
+      expect(result).toBe("");
+    });
+  });
+
+  describe("monday behavior", () => {
+    test("reads previous week's notes + projects", async () => {
+      // 2025-12-29 is a Monday
+      const monday = new Date(2025, 11, 29);
+
+      // Create a note from previous week (e.g., 2025-12-23)
+      const noteContent = "# Previous week note";
+      await writeFile(join(testVault, INBOX_PATH, "2025-12-23.md"), noteContent);
+
+      // Create a project README
+      const projectContent = "# Project A README";
+      await writeFile(join(testVault, PROJECTS_PATH, "project-a", "README.md"), projectContent);
+
+      const result = await gatherDayContext(testVault, monday);
+      expect(result).toContain("Previous week note");
+      expect(result).toContain("Project A README");
+    });
+  });
+
+  describe("friday behavior", () => {
+    test("reads current week's notes + areas", async () => {
+      // 2025-12-26 is a Friday
+      const friday = new Date(2025, 11, 26);
+
+      // Create current week notes (Mon-Fri: Dec 22-26)
+      const wednesdayContent = "# Wednesday notes";
+      await writeFile(join(testVault, INBOX_PATH, "2025-12-24.md"), wednesdayContent);
+
+      // Create an area README
+      const areaContent = "# Area 1 README";
+      await writeFile(join(testVault, AREAS_PATH, "area-1", "README.md"), areaContent);
+
+      const result = await gatherDayContext(testVault, friday);
+      expect(result).toContain("Wednesday notes");
+      expect(result).toContain("Area 1 README");
+    });
+  });
+
+  describe("content limits", () => {
+    test("returns empty when no content found", async () => {
+      const tuesday = new Date(2025, 11, 30);
+      const result = await gatherDayContext(testVault, tuesday);
+      expect(result).toBe("");
+    });
+
+    test("truncates content when exceeding MAX_CONTEXT_CHARS", async () => {
+      // 2025-12-26 is a Friday - will read Mon-Fri notes
+      const friday = new Date(2025, 11, 26);
+
+      // Create large content that exceeds limit
+      const largeContent = "x".repeat(2000);
+      for (let i = -4; i <= 0; i++) {
+        const date = new Date(2025, 11, 26 + i);
+        const dateStr = formatDateForDailyNote(date);
+        await writeFile(join(testVault, INBOX_PATH, `${dateStr}.md`), largeContent);
+      }
+
+      const result = await gatherDayContext(testVault, friday);
+      // Should be truncated to MAX_CONTEXT_CHARS or less
+      expect(result.length).toBeLessThanOrEqual(MAX_CONTEXT_CHARS + 100); // Allow for separators
+    });
+  });
+});
+
+// =============================================================================
+// DAY_CONTEXT_CONFIG Tests
+// =============================================================================
+
+describe("DAY_CONTEXT_CONFIG", () => {
+  test("monday config has 7 days of daily notes", () => {
+    const config = DAY_CONTEXT_CONFIG.monday;
+    expect(config.dailyNoteDays).toHaveLength(7);
+    expect(config.dailyNoteDays).toEqual([-7, -6, -5, -4, -3, -2, -1]);
+  });
+
+  test("monday config includes projects folder", () => {
+    const config = DAY_CONTEXT_CONFIG.monday;
+    expect(config.additionalFolder).toBe(PROJECTS_PATH);
+  });
+
+  test("midweek config has only previous day", () => {
+    const config = DAY_CONTEXT_CONFIG.midweek;
+    expect(config.dailyNoteDays).toEqual([-1]);
+    expect(config.additionalFolder).toBeUndefined();
+  });
+
+  test("friday config has 5 days (Mon-Fri)", () => {
+    const config = DAY_CONTEXT_CONFIG.friday;
+    expect(config.dailyNoteDays).toHaveLength(5);
+    expect(config.dailyNoteDays).toEqual([-4, -3, -2, -1, 0]);
+  });
+
+  test("friday config includes areas folder", () => {
+    const config = DAY_CONTEXT_CONFIG.friday;
+    expect(config.additionalFolder).toBe(AREAS_PATH);
+  });
+
+  test("weekend config has empty days", () => {
+    const config = DAY_CONTEXT_CONFIG.weekend;
+    expect(config.dailyNoteDays).toHaveLength(0);
+    expect(config.additionalFolder).toBeUndefined();
   });
 });

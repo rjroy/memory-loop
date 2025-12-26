@@ -12,7 +12,8 @@
  * - "Quote text without attribution"
  */
 
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 // =============================================================================
 // File Path Constants
@@ -161,6 +162,290 @@ export async function isQuoteGenerationNeeded(
 
   // Generation needed if NOT the same week
   return !sameWeek;
+}
+
+// =============================================================================
+// Context Gathering Configuration
+// =============================================================================
+
+/** Maximum context size in characters (~800 tokens at ~4 chars/token) */
+export const MAX_CONTEXT_CHARS = 3200;
+
+/** Path to inbox folder containing daily notes */
+export const INBOX_PATH = "00_Inbox";
+
+/** Path to projects folder */
+export const PROJECTS_PATH = "01_Projects";
+
+/** Path to areas folder */
+export const AREAS_PATH = "02_Areas";
+
+/**
+ * Day type for context configuration
+ * - monday: Previous week's notes + projects
+ * - midweek: Previous day's note (Tue-Thu)
+ * - friday: Current week's notes + areas
+ * - weekend: No generation (Saturday-Sunday)
+ */
+export type DayType = "monday" | "midweek" | "friday" | "weekend";
+
+/**
+ * Context configuration for each day type
+ */
+export interface DayContextConfig {
+  /** Days of daily notes to include (relative to today, negative = past) */
+  dailyNoteDays: number[];
+  /** Additional folder to scan for README/index.md files */
+  additionalFolder?: string;
+}
+
+/**
+ * Mapping of day types to their context gathering configuration
+ *
+ * REQ-F-15: Day-specific context for contextual generation
+ * REQ-F-18: Easily configurable day-to-context mapping
+ */
+export const DAY_CONTEXT_CONFIG: Record<DayType, DayContextConfig> = {
+  // Monday: Previous week's daily notes (7 days) + projects
+  monday: {
+    dailyNoteDays: [-7, -6, -5, -4, -3, -2, -1],
+    additionalFolder: PROJECTS_PATH,
+  },
+  // Tuesday-Thursday: Previous day's daily note only
+  midweek: {
+    dailyNoteDays: [-1],
+  },
+  // Friday: Current week's daily notes (Mon-Fri) + areas
+  friday: {
+    dailyNoteDays: [-4, -3, -2, -1, 0],
+    additionalFolder: AREAS_PATH,
+  },
+  // Weekend: No context (generation doesn't run)
+  weekend: {
+    dailyNoteDays: [],
+  },
+};
+
+// =============================================================================
+// Context Gathering Functions
+// =============================================================================
+
+/**
+ * Get the day type for a given date
+ *
+ * @param date - The date to check
+ * @returns DayType for the given day
+ */
+export function getDayType(date: Date): DayType {
+  const day = date.getDay();
+  // 0 = Sunday, 1 = Monday, ..., 5 = Friday, 6 = Saturday
+  if (day === 0 || day === 6) return "weekend";
+  if (day === 1) return "monday";
+  if (day === 5) return "friday";
+  return "midweek";
+}
+
+/**
+ * Format a date as YYYY-MM-DD for daily note filename
+ *
+ * @param date - The date to format
+ * @returns Formatted date string
+ */
+export function formatDateForDailyNote(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get a date offset by a number of days from a base date
+ *
+ * @param baseDate - The starting date
+ * @param dayOffset - Number of days to offset (negative = past)
+ * @returns New date with offset applied
+ */
+export function getDateWithOffset(baseDate: Date, dayOffset: number): Date {
+  const result = new Date(baseDate);
+  result.setDate(result.getDate() + dayOffset);
+  return result;
+}
+
+/**
+ * Read a daily note file from the inbox
+ *
+ * @param vaultPath - Path to the vault root
+ * @param dateStr - Date string in YYYY-MM-DD format
+ * @returns File content or null if not found
+ */
+export async function readDailyNote(
+  vaultPath: string,
+  dateStr: string
+): Promise<string | null> {
+  const filePath = join(vaultPath, INBOX_PATH, `${dateStr}.md`);
+  try {
+    return await readFile(filePath, "utf-8");
+  } catch {
+    // File doesn't exist or can't be read - return null gracefully
+    return null;
+  }
+}
+
+/**
+ * Read README.md or index.md from a project/area folder
+ *
+ * @param folderPath - Path to the project/area folder
+ * @returns File content or null if not found
+ */
+export async function readFolderIndex(
+  folderPath: string
+): Promise<string | null> {
+  // Try README.md first, then index.md (per REQ-F-17)
+  for (const filename of ["README.md", "index.md"]) {
+    const filePath = join(folderPath, filename);
+    try {
+      return await readFile(filePath, "utf-8");
+    } catch {
+      // Continue to next filename
+    }
+  }
+  return null;
+}
+
+/**
+ * Get all subfolder paths within a directory
+ *
+ * @param dirPath - Path to the directory
+ * @returns Array of subfolder paths
+ */
+export async function getSubfolders(dirPath: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(dirPath, entry.name));
+  } catch {
+    // Directory doesn't exist or can't be read
+    return [];
+  }
+}
+
+/**
+ * Content item with date for ordering
+ */
+interface ContentItem {
+  date: Date;
+  content: string;
+  source: string;
+}
+
+/**
+ * Gather context for contextual prompt generation based on day of week
+ *
+ * REQ-F-15: Day-specific context gathering
+ * REQ-F-16: Daily notes in 00_Inbox/ with YYYY-MM-DD.md pattern
+ * REQ-F-17: Project/area README or index files
+ * REQ-NF-2: Cap context at ~800 tokens (~3200 chars)
+ *
+ * @param vaultPath - Path to the vault root
+ * @param today - Optional date override for testing (defaults to now)
+ * @returns Gathered context string, empty if no content found
+ */
+export async function gatherDayContext(
+  vaultPath: string,
+  today: Date = new Date()
+): Promise<string> {
+  const dayType = getDayType(today);
+  const config = DAY_CONTEXT_CONFIG[dayType];
+
+  // Weekend returns empty (no generation)
+  if (dayType === "weekend") {
+    return "";
+  }
+
+  const contentItems: ContentItem[] = [];
+
+  // Gather daily notes
+  for (const dayOffset of config.dailyNoteDays) {
+    const targetDate = getDateWithOffset(today, dayOffset);
+    const dateStr = formatDateForDailyNote(targetDate);
+    const content = await readDailyNote(vaultPath, dateStr);
+
+    if (content && content.trim()) {
+      contentItems.push({
+        date: targetDate,
+        content: content.trim(),
+        source: `Daily Note: ${dateStr}`,
+      });
+    }
+  }
+
+  // Gather additional folder content (projects/areas)
+  if (config.additionalFolder) {
+    const folderPath = join(vaultPath, config.additionalFolder);
+    const subfolders = await getSubfolders(folderPath);
+
+    for (const subfolder of subfolders) {
+      const content = await readFolderIndex(subfolder);
+      if (content && content.trim()) {
+        // Use today's date for ordering (folder content is less time-specific)
+        contentItems.push({
+          date: today,
+          content: content.trim(),
+          source: `Folder: ${subfolder}`,
+        });
+      }
+    }
+  }
+
+  // No content found - return empty string gracefully
+  if (contentItems.length === 0) {
+    return "";
+  }
+
+  // Sort by date (oldest first) for truncation
+  contentItems.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Build context string, truncating oldest first if over budget
+  return truncateContext(contentItems, MAX_CONTEXT_CHARS);
+}
+
+/**
+ * Truncate context to fit within character budget
+ *
+ * Strategy: Remove oldest content first until within budget.
+ * If a single item exceeds budget, truncate it from the beginning.
+ *
+ * @param items - Content items sorted by date (oldest first)
+ * @param maxChars - Maximum total characters
+ * @returns Truncated context string
+ */
+export function truncateContext(items: ContentItem[], maxChars: number): string {
+  // Calculate total size
+  let totalChars = items.reduce((sum, item) => sum + item.content.length, 0);
+
+  // If already within budget, join all
+  if (totalChars <= maxChars) {
+    return items.map((item) => item.content).join("\n\n---\n\n");
+  }
+
+  // Need to truncate - start removing oldest items
+  const result = [...items];
+  while (result.length > 0 && totalChars > maxChars) {
+    const oldest = result.shift()!;
+    totalChars -= oldest.content.length;
+  }
+
+  // If all items removed and we still need content, use last item truncated
+  if (result.length === 0 && items.length > 0) {
+    const lastItem = items[items.length - 1];
+    // Take the last maxChars characters (most recent content)
+    const truncated = lastItem.content.slice(-maxChars);
+    return truncated;
+  }
+
+  // Join remaining items
+  return result.map((item) => item.content).join("\n\n---\n\n");
 }
 
 /**

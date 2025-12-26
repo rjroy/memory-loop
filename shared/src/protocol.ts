@@ -216,6 +216,7 @@ export const SessionReadyMessageSchema = z.object({
   sessionId: z.string(), // Can be empty - session created on first discussion_message
   vaultId: z.string().min(1),
   messages: z.array(ConversationMessageSchema).optional(), // Sent on resume
+  createdAt: z.string().optional(), // ISO 8601 timestamp of session creation
 });
 
 /**

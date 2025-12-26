@@ -14,6 +14,7 @@ import React, { useState } from "react";
 import { SessionProvider, useSession } from "./contexts/SessionContext";
 import { VaultSelect } from "./components/VaultSelect";
 import { ModeToggle } from "./components/ModeToggle";
+import { HomeView } from "./components/HomeView";
 import { NoteCapture } from "./components/NoteCapture";
 import { Discussion } from "./components/Discussion";
 import { BrowseMode } from "./components/BrowseMode";
@@ -159,6 +160,7 @@ function MainContent(): React.ReactNode {
       </header>
 
       <main className="app-main">
+        {mode === "home" && <HomeView />}
         {mode === "note" && <NoteCapture />}
         {mode === "discussion" && <Discussion />}
         {mode === "browse" && <BrowseMode />}

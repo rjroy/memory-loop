@@ -9,7 +9,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -29,9 +29,15 @@ import {
   getSubfolders,
   gatherDayContext,
   truncateContext,
+  formatInspirationItem,
+  formatGenerationMarker,
+  appendToInspirationFile,
+  prunePool,
+  appendAndPrune,
   CONTEXTUAL_PROMPTS_PATH,
   GENERAL_INSPIRATION_PATH,
   MAX_CONTEXT_CHARS,
+  MAX_POOL_SIZE,
   INBOX_PATH,
   PROJECTS_PATH,
   AREAS_PATH,
@@ -1905,5 +1911,305 @@ describe("DAY_CONTEXT_CONFIG", () => {
     const config = DAY_CONTEXT_CONFIG.weekend;
     expect(config.dailyNoteDays).toHaveLength(0);
     expect(config.additionalFolder).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// formatInspirationItem Tests
+// =============================================================================
+
+describe("formatInspirationItem", () => {
+  test("formats item without attribution", () => {
+    const item = { text: "This is a quote" };
+    expect(formatInspirationItem(item)).toBe('- "This is a quote"');
+  });
+
+  test("formats item with attribution", () => {
+    const item = { text: "This is a quote", attribution: "Author Name" };
+    expect(formatInspirationItem(item)).toBe('- "This is a quote" -- Author Name');
+  });
+
+  test("handles quotes with special characters", () => {
+    const item = { text: "Isn't it wonderful?", attribution: "Someone" };
+    expect(formatInspirationItem(item)).toBe('- "Isn\'t it wonderful?" -- Someone');
+  });
+
+  test("handles empty attribution as undefined", () => {
+    const item = { text: "Just text", attribution: undefined };
+    expect(formatInspirationItem(item)).toBe('- "Just text"');
+  });
+});
+
+// =============================================================================
+// formatGenerationMarker Tests
+// =============================================================================
+
+describe("formatGenerationMarker", () => {
+  test("formats marker without week number", () => {
+    const date = new Date(2025, 11, 26);
+    const result = formatGenerationMarker(date);
+    expect(result).toBe("<!-- last-generated: 2025-12-26 -->");
+  });
+
+  test("formats marker with week number", () => {
+    const date = new Date(2025, 11, 26);
+    const result = formatGenerationMarker(date, 52);
+    expect(result).toBe("<!-- last-generated: 2025-12-26 (week 52) -->");
+  });
+
+  test("handles single-digit week number", () => {
+    const date = new Date(2025, 0, 5);
+    const result = formatGenerationMarker(date, 2);
+    expect(result).toBe("<!-- last-generated: 2025-01-05 (week 2) -->");
+  });
+
+  test("handles week 0 (edge case)", () => {
+    const date = new Date(2025, 0, 1);
+    const result = formatGenerationMarker(date, 0);
+    expect(result).toBe("<!-- last-generated: 2025-01-01 (week 0) -->");
+  });
+});
+
+// =============================================================================
+// appendToInspirationFile Tests
+// =============================================================================
+
+describe("appendToInspirationFile", () => {
+  let testDir: string;
+  let testFile: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `test-append-${Date.now()}`);
+    testFile = join(testDir, "test-inspiration.md");
+  });
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  test("creates directory if missing", async () => {
+    const entries = [{ text: "New quote", attribution: "Author" }];
+    await appendToInspirationFile(testFile, entries);
+
+    const content = await readFile(testFile, "utf-8");
+    expect(content).toContain("New quote");
+  });
+
+  test("creates file with generation marker", async () => {
+    const entries = [{ text: "Quote text" }];
+    await appendToInspirationFile(testFile, entries);
+
+    const content = await readFile(testFile, "utf-8");
+    expect(content).toMatch(/<!-- last-generated: \d{4}-\d{2}-\d{2} -->/);
+  });
+
+  test("creates file with week number marker", async () => {
+    const entries = [{ text: "Quote text" }];
+    await appendToInspirationFile(testFile, entries, 52);
+
+    const content = await readFile(testFile, "utf-8");
+    expect(content).toMatch(/<!-- last-generated: \d{4}-\d{2}-\d{2} \(week 52\) -->/);
+  });
+
+  test("preserves existing entries when appending", async () => {
+    // Create initial file
+    await mkdir(testDir, { recursive: true });
+    const initialContent = `<!-- last-generated: 2025-12-25 -->\n\n- "First quote"\n`;
+    await writeFile(testFile, initialContent);
+
+    // Append new entries
+    const entries = [{ text: "Second quote" }];
+    await appendToInspirationFile(testFile, entries);
+
+    const content = await readFile(testFile, "utf-8");
+    expect(content).toContain("First quote");
+    expect(content).toContain("Second quote");
+  });
+
+  test("updates generation marker to current date", async () => {
+    // Create initial file with old date
+    await mkdir(testDir, { recursive: true });
+    const initialContent = `<!-- last-generated: 2024-01-01 -->\n\n- "Old quote"\n`;
+    await writeFile(testFile, initialContent);
+
+    // Append new entries
+    const entries = [{ text: "New quote" }];
+    await appendToInspirationFile(testFile, entries);
+
+    const content = await readFile(testFile, "utf-8");
+    // Should have today's date, not the old one
+    expect(content).not.toContain("2024-01-01");
+    expect(content).toMatch(/\d{4}-\d{2}-\d{2}/);
+  });
+
+  test("handles multiple entries", async () => {
+    const entries = [
+      { text: "Quote 1", attribution: "Author 1" },
+      { text: "Quote 2", attribution: "Author 2" },
+      { text: "Quote 3" },
+    ];
+    await appendToInspirationFile(testFile, entries);
+
+    const content = await readFile(testFile, "utf-8");
+    expect(content).toContain("Quote 1");
+    expect(content).toContain("Quote 2");
+    expect(content).toContain("Quote 3");
+    expect(content).toContain("Author 1");
+    expect(content).toContain("Author 2");
+  });
+});
+
+// =============================================================================
+// prunePool Tests
+// =============================================================================
+
+describe("prunePool", () => {
+  let testDir: string;
+  let testFile: string;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `test-prune-${Date.now()}`);
+    testFile = join(testDir, "test-inspiration.md");
+    await mkdir(testDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  test("does nothing when pool is under limit", async () => {
+    const content = `<!-- last-generated: 2025-12-26 -->\n\n- "Quote 1"\n- "Quote 2"\n`;
+    await writeFile(testFile, content);
+
+    await prunePool(testFile, 5);
+
+    const result = await readFile(testFile, "utf-8");
+    expect(result).toContain("Quote 1");
+    expect(result).toContain("Quote 2");
+  });
+
+  test("does nothing when pool is at limit", async () => {
+    const quotes = Array.from({ length: 5 }, (_, i) => `- "Quote ${i + 1}"`).join("\n");
+    const content = `<!-- last-generated: 2025-12-26 -->\n\n${quotes}\n`;
+    await writeFile(testFile, content);
+
+    await prunePool(testFile, 5);
+
+    const result = await readFile(testFile, "utf-8");
+    for (let i = 1; i <= 5; i++) {
+      expect(result).toContain(`Quote ${i}`);
+    }
+  });
+
+  test("removes oldest entries when over limit", async () => {
+    // Use distinct names to avoid substring matching issues
+    const quotes = Array.from({ length: 10 }, (_, i) => `- "Item-${String(i + 1).padStart(2, "0")}"`).join("\n");
+    const content = `<!-- last-generated: 2025-12-26 -->\n\n${quotes}\n`;
+    await writeFile(testFile, content);
+
+    await prunePool(testFile, 5);
+
+    const result = await readFile(testFile, "utf-8");
+    // Should keep only the last 5 (items 06-10)
+    expect(result).not.toContain("Item-01");
+    expect(result).not.toContain("Item-05");
+    expect(result).toContain("Item-06");
+    expect(result).toContain("Item-10");
+  });
+
+  test("preserves week number in marker", async () => {
+    const quotes = Array.from({ length: 10 }, (_, i) => `- "Quote ${i + 1}"`).join("\n");
+    const content = `<!-- last-generated: 2025-12-26 (week 52) -->\n\n${quotes}\n`;
+    await writeFile(testFile, content);
+
+    await prunePool(testFile, 5);
+
+    const result = await readFile(testFile, "utf-8");
+    expect(result).toMatch(/\(week 52\)/);
+  });
+
+  test("uses MAX_POOL_SIZE by default", async () => {
+    // Create more than MAX_POOL_SIZE entries
+    const quotes = Array.from(
+      { length: MAX_POOL_SIZE + 10 },
+      (_, i) => `- "Quote ${i + 1}"`
+    ).join("\n");
+    const content = `<!-- last-generated: 2025-12-26 -->\n\n${quotes}\n`;
+    await writeFile(testFile, content);
+
+    await prunePool(testFile);
+
+    const parsed = await parseInspirationFile(testFile);
+    expect(parsed.items.length).toBe(MAX_POOL_SIZE);
+  });
+
+  test("handles missing file gracefully", async () => {
+    // Should not throw - just complete successfully
+    await prunePool(join(testDir, "nonexistent.md"), 5);
+    // If we get here without throwing, the test passes
+  });
+});
+
+// =============================================================================
+// appendAndPrune Tests
+// =============================================================================
+
+describe("appendAndPrune", () => {
+  let testDir: string;
+  let testFile: string;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `test-append-prune-${Date.now()}`);
+    testFile = join(testDir, "test-inspiration.md");
+    await mkdir(testDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  test("appends and prunes in one operation", async () => {
+    // Start with 48 entries
+    const initial = Array.from({ length: 48 }, (_, i) => `- "Old ${i + 1}"`).join("\n");
+    await writeFile(testFile, `<!-- last-generated: 2025-12-25 -->\n\n${initial}\n`);
+
+    // Add 5 more (total 53, over the 50 limit)
+    const newEntries = Array.from({ length: 5 }, (_, i) => ({
+      text: `New ${i + 1}`,
+    }));
+    await appendAndPrune(testFile, newEntries);
+
+    const parsed = await parseInspirationFile(testFile);
+    expect(parsed.items.length).toBe(MAX_POOL_SIZE); // Should be 50
+    expect(parsed.items.some((i) => i.text === "New 5")).toBe(true);
+  });
+
+  test("respects custom maxSize", async () => {
+    const initial = Array.from({ length: 8 }, (_, i) => `- "Old ${i + 1}"`).join("\n");
+    await writeFile(testFile, `<!-- last-generated: 2025-12-25 -->\n\n${initial}\n`);
+
+    const newEntries = [{ text: "New 1" }, { text: "New 2" }];
+    await appendAndPrune(testFile, newEntries, undefined, 5);
+
+    const parsed = await parseInspirationFile(testFile);
+    expect(parsed.items.length).toBe(5);
+  });
+
+  test("passes week number to file writing", async () => {
+    const entries = [{ text: "Quote 1" }];
+    await appendAndPrune(testFile, entries, 52);
+
+    const content = await readFile(testFile, "utf-8");
+    expect(content).toContain("(week 52)");
+  });
+});
+
+// =============================================================================
+// MAX_POOL_SIZE Tests
+// =============================================================================
+
+describe("MAX_POOL_SIZE", () => {
+  test("is set to 50", () => {
+    expect(MAX_POOL_SIZE).toBe(50);
   });
 });

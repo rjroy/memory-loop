@@ -12,8 +12,8 @@
  * - "Quote text without attribution"
  */
 
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 // =============================================================================
 // File Path Constants
@@ -170,6 +170,9 @@ export async function isQuoteGenerationNeeded(
 
 /** Maximum context size in characters (~800 tokens at ~4 chars/token) */
 export const MAX_CONTEXT_CHARS = 3200;
+
+/** Maximum entries in each inspiration pool (REQ-F-19, REQ-F-24) */
+export const MAX_POOL_SIZE = 50;
 
 /** Path to inbox folder containing daily notes */
 export const INBOX_PATH = "00_Inbox";
@@ -587,4 +590,132 @@ export function parseInspirationContent(content: string): ParsedInspirationFile 
   }
 
   return { lastGenerated, weekNumber, items };
+}
+
+// =============================================================================
+// Pool Management Functions
+// =============================================================================
+
+/**
+ * Format an inspiration item as a markdown list entry
+ *
+ * @param item - The inspiration item to format
+ * @returns Formatted markdown string (e.g., `- "Quote text" -- Source`)
+ */
+export function formatInspirationItem(item: InspirationItem): string {
+  if (item.attribution) {
+    return `- "${item.text}" -- ${item.attribution}`;
+  }
+  return `- "${item.text}"`;
+}
+
+/**
+ * Format a generation marker
+ *
+ * @param date - The generation date
+ * @param weekNumber - Optional week number for quote files
+ * @returns Formatted marker (e.g., `<!-- last-generated: 2025-12-26 -->`)
+ */
+export function formatGenerationMarker(
+  date: Date,
+  weekNumber?: number
+): string {
+  const dateStr = formatDateForDailyNote(date);
+  if (weekNumber !== undefined) {
+    return `<!-- last-generated: ${dateStr} (week ${weekNumber}) -->`;
+  }
+  return `<!-- last-generated: ${dateStr} -->`;
+}
+
+/**
+ * Append new entries to an inspiration file
+ *
+ * REQ-F-13: Append generated prompts (don't overwrite existing)
+ * REQ-F-20: Create directory if it doesn't exist
+ *
+ * @param filePath - Path to the inspiration file
+ * @param entries - New entries to append
+ * @param weekNumber - Optional week number for quote files
+ * @returns Promise that resolves when file is written
+ */
+export async function appendToInspirationFile(
+  filePath: string,
+  entries: InspirationItem[],
+  weekNumber?: number
+): Promise<void> {
+  // Ensure directory exists (REQ-F-20)
+  const dir = dirname(filePath);
+  await mkdir(dir, { recursive: true });
+
+  // Read existing content
+  const parsed = await parseInspirationFile(filePath);
+
+  // Combine existing items with new entries
+  const allItems = [...parsed.items, ...entries];
+
+  // Format the new file content
+  const today = new Date();
+  const marker = formatGenerationMarker(today, weekNumber);
+  const itemLines = allItems.map(formatInspirationItem).join("\n");
+
+  const content = `${marker}\n\n${itemLines}\n`;
+
+  await writeFile(filePath, content, "utf-8");
+}
+
+/**
+ * Prune an inspiration pool to stay within size limit
+ *
+ * REQ-F-19: Limit contextual prompt pool to 50 entries
+ * REQ-F-24: Limit inspiration pool to 50 entries
+ *
+ * Removes oldest entries first (from the beginning of the list).
+ *
+ * @param filePath - Path to the inspiration file
+ * @param maxSize - Maximum number of entries to keep (default: MAX_POOL_SIZE)
+ * @returns Promise that resolves when pruning is complete
+ */
+export async function prunePool(
+  filePath: string,
+  maxSize: number = MAX_POOL_SIZE
+): Promise<void> {
+  const parsed = await parseInspirationFile(filePath);
+
+  // No pruning needed if within limit
+  if (parsed.items.length <= maxSize) {
+    return;
+  }
+
+  // Keep only the newest entries (from the end)
+  const prunedItems = parsed.items.slice(-maxSize);
+
+  // Format the new file content
+  const today = new Date();
+  const marker = formatGenerationMarker(today, parsed.weekNumber);
+  const itemLines = prunedItems.map(formatInspirationItem).join("\n");
+
+  const content = `${marker}\n\n${itemLines}\n`;
+
+  await writeFile(filePath, content, "utf-8");
+}
+
+/**
+ * Append entries to file and prune if over limit
+ *
+ * Convenience function that combines append and prune operations.
+ * This is the main function to use when adding generated content.
+ *
+ * @param filePath - Path to the inspiration file
+ * @param entries - New entries to append
+ * @param weekNumber - Optional week number for quote files
+ * @param maxSize - Maximum pool size (default: MAX_POOL_SIZE)
+ */
+export async function appendAndPrune(
+  filePath: string,
+  entries: InspirationItem[],
+  weekNumber?: number,
+  maxSize: number = MAX_POOL_SIZE
+): Promise<void> {
+  await appendToInspirationFile(filePath, entries, weekNumber);
+  await prunePool(filePath, maxSize);
 }

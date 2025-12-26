@@ -5,10 +5,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
+import React, { type ReactNode } from "react";
 import { Discussion } from "../Discussion";
-import { SessionProvider } from "../../contexts/SessionContext";
+import { SessionProvider, useSession } from "../../contexts/SessionContext";
 import type { ServerMessage, ClientMessage, VaultInfo } from "@memory-loop/shared";
 
 // Mock WebSocket
@@ -117,6 +117,58 @@ describe("Discussion", () => {
           type: "select_vault",
           vaultId: "vault-1",
         });
+      });
+    });
+  });
+
+  describe("new session", () => {
+    it("sends new_session when sessionId is cleared", async () => {
+      // Create a wrapper that can trigger startNewSession
+      let triggerNewSession: (() => void) | null = null;
+      let triggerSetSessionId: ((id: string) => void) | null = null;
+
+      function NewSessionTrigger() {
+        const { startNewSession, setSessionId } = useSession();
+        triggerNewSession = startNewSession;
+        triggerSetSessionId = setSessionId;
+        return null;
+      }
+
+      function TestWrapperWithTrigger({ children }: { children: ReactNode }) {
+        return (
+          <SessionProvider initialVaults={[testVault]}>
+            <NewSessionTrigger />
+            {children}
+          </SessionProvider>
+        );
+      }
+
+      render(<Discussion />, { wrapper: TestWrapperWithTrigger });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Set up initial sessionId
+      act(() => {
+        triggerSetSessionId!("existing-session-123");
+      });
+
+      // Clear messages from initial connection
+      sentMessages.length = 0;
+
+      // Now trigger startNewSession
+      expect(triggerNewSession).not.toBeNull();
+      act(() => {
+        triggerNewSession!();
+      });
+
+      // Should send new_session message to backend
+      await waitFor(() => {
+        const newSessionMessages = sentMessages.filter(
+          (m) => m.type === "new_session"
+        );
+        expect(newSessionMessages.length).toBe(1);
       });
     });
   });

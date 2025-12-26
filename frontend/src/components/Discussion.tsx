@@ -38,6 +38,7 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasSentVaultSelectionRef = useRef(false);
+  const prevSessionIdRef = useRef<string | null>(null);
 
   const { vault, messages, sessionId, addMessage, startNewSession } = useSession();
 
@@ -94,6 +95,24 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
       }
     }
   }, [connectionStatus, vault, sessionId, sendMessage]);
+
+  // Detect when sessionId is cleared (user clicked "New" button) and notify backend
+  useEffect(() => {
+    // Only send new_session if we had a session before and now it's null
+    if (
+      prevSessionIdRef.current !== null &&
+      sessionId === null &&
+      vault &&
+      connectionStatus === "connected"
+    ) {
+      console.log("[Discussion] Session cleared, sending new_session to backend");
+      sendMessage({ type: "new_session" });
+      // Reset so vault selection effect can run fresh when session_ready arrives
+      hasSentVaultSelectionRef.current = false;
+    }
+    // Always update the ref to track current sessionId
+    prevSessionIdRef.current = sessionId;
+  }, [sessionId, vault, connectionStatus, sendMessage]);
 
   // Handle errors during resume - fall back to select_vault
   useEffect(() => {

@@ -379,6 +379,65 @@ export async function getRecentSessions(
 }
 
 /**
+ * Prunes old sessions for a vault, keeping only the most recent ones.
+ *
+ * @param vaultId - The vault ID to prune sessions for
+ * @param keepCount - Number of sessions to keep (default: 5)
+ */
+export async function pruneOldSessions(
+  vaultId: string,
+  keepCount = 5
+): Promise<void> {
+  try {
+    const sessionsDir = await getSessionsDir();
+
+    if (!(await directoryExists(sessionsDir))) {
+      return;
+    }
+
+    const files = await readdir(sessionsDir);
+    const sessions: { sessionId: string; lastActive: Date; filePath: string }[] = [];
+
+    for (const file of files) {
+      if (!file.endsWith(".json")) {
+        continue;
+      }
+
+      const sessionId = file.slice(0, -5);
+      try {
+        const metadata = await loadSession(sessionId);
+
+        if (metadata && metadata.vaultId === vaultId) {
+          sessions.push({
+            sessionId,
+            lastActive: new Date(metadata.lastActiveAt),
+            filePath: join(sessionsDir, file),
+          });
+        }
+      } catch {
+        // Skip corrupted session files
+      }
+    }
+
+    // Sort by last activity, most recent first
+    sessions.sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime());
+
+    // Delete sessions beyond the keep count
+    const sessionsToDelete = sessions.slice(keepCount);
+    for (const session of sessionsToDelete) {
+      try {
+        await unlink(session.filePath);
+        log.info(`Pruned old session: ${session.sessionId}`);
+      } catch {
+        log.warn(`Failed to delete session file: ${session.filePath}`);
+      }
+    }
+  } catch (error) {
+    log.warn("Failed to prune old sessions", error);
+  }
+}
+
+/**
  * Truncates a string to a maximum length, adding ellipsis if truncated.
  */
 function truncatePreview(text: string, maxLength: number): string {
@@ -404,10 +463,10 @@ export async function touchSession(sessionId: string): Promise<void> {
 }
 
 /**
- * Gets the session ID for a vault, if one exists.
+ * Gets the most recent session ID for a vault, if one exists.
  *
  * @param vaultId - The vault ID to look up
- * @returns The session ID, or null if no session exists for this vault
+ * @returns The most recent session ID, or null if no session exists for this vault
  */
 export async function getSessionForVault(
   vaultId: string
@@ -421,20 +480,36 @@ export async function getSessionForVault(
 
     const files = await readdir(sessionsDir);
 
+    let mostRecentSession: { id: string; lastActiveAt: Date } | null = null;
+
     for (const file of files) {
       if (!file.endsWith(".json")) {
         continue;
       }
 
       const sessionId = file.slice(0, -5); // Remove .json extension
-      const metadata = await loadSession(sessionId);
+
+      let metadata;
+      try {
+        metadata = await loadSession(sessionId);
+      } catch {
+        // Skip corrupted session files
+        continue;
+      }
 
       if (metadata && metadata.vaultId === vaultId) {
-        return sessionId;
+        const lastActiveAt = new Date(metadata.lastActiveAt);
+        if (Number.isNaN(lastActiveAt.getTime())) {
+          // Skip sessions with invalid timestamps
+          continue;
+        }
+        if (!mostRecentSession || lastActiveAt > mostRecentSession.lastActiveAt) {
+          mostRecentSession = { id: sessionId, lastActiveAt };
+        }
       }
     }
 
-    return null;
+    return mostRecentSession?.id ?? null;
   } catch {
     return null;
   }
@@ -576,6 +651,9 @@ export async function createSession(
     };
     await saveSession(metadata);
     log.info("Session metadata saved");
+
+    // Prune old sessions in background (non-blocking, errors logged internally)
+    void pruneOldSessions(vault.id);
 
     // Return wrapped result
     return {

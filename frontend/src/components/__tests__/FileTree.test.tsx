@@ -386,14 +386,15 @@ describe("FileTree", () => {
       expect(screen.getByText("Pin to top")).toBeDefined();
     });
 
-    it("does not show context menu on right-click of file", () => {
+    it("shows context menu on right-click of file", () => {
       const cache = new Map<string, FileEntry[]>([["", testFiles]]);
       render(<FileTree />, { wrapper: createTestWrapper(cache) });
 
       const readmeButton = screen.getByText("README.md").closest("button");
       fireEvent.contextMenu(readmeButton!);
 
-      expect(screen.queryByRole("menu")).toBeNull();
+      expect(screen.getByRole("menu")).toBeDefined();
+      expect(screen.getByText("Pin to top")).toBeDefined();
     });
 
     it("pins folder when clicking Pin to top", () => {
@@ -413,6 +414,24 @@ describe("FileTree", () => {
       // Pinned section should contain docs folder
       const pinnedSection = container.querySelector(".file-tree__pinned-section");
       expect(pinnedSection?.textContent).toContain("docs");
+    });
+
+    it("pins file when clicking Pin to top", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const { container } = render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click to open context menu on a file
+      const readmeButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(readmeButton!);
+
+      // Click pin option
+      const pinButton = screen.getByText("Pin to top");
+      fireEvent.click(pinButton);
+
+      // Should show pinned section with the file
+      expect(screen.getByText("Pinned")).toBeDefined();
+      const pinnedSection = container.querySelector(".file-tree__pinned-section");
+      expect(pinnedSection?.textContent).toContain("README.md");
     });
 
     it("shows Unpin folder option for already pinned folders", () => {

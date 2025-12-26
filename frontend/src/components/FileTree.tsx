@@ -95,17 +95,17 @@ function TreeNode({
   }
 
   function handleContextMenu(e: React.MouseEvent) {
-    if (isDirectory && onContextMenu) {
+    if (onContextMenu) {
       e.preventDefault();
       e.stopPropagation();
-      onContextMenu(entry.path, true, e);
+      onContextMenu(entry.path, isDirectory, e);
     }
   }
 
   function handleTouchStart(e: React.TouchEvent) {
-    if (isDirectory && onContextMenu) {
+    if (onContextMenu) {
       longPressTimer.current = setTimeout(() => {
-        onContextMenu(entry.path, true, e);
+        onContextMenu(entry.path, isDirectory, e);
       }, 500);
     }
   }
@@ -270,11 +270,12 @@ function PinIcon(): React.ReactNode {
 }
 
 /**
- * Context menu state for folder pin/unpin actions.
+ * Context menu state for pin/unpin actions.
  */
 interface ContextMenuState {
   isOpen: boolean;
   path: string;
+  isDirectory: boolean;
   x: number;
   y: number;
 }
@@ -295,6 +296,7 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     isOpen: false,
     path: "",
+    isDirectory: false,
     x: 0,
     y: 0,
   });
@@ -311,9 +313,9 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
   // Get root entries
   const rootEntries = directoryCache.get("") ?? [];
 
-  // Get pinned folder entries from cache or create placeholder entries
+  // Get pinned entries from cache or create placeholder entries
   const pinnedEntries: FileEntry[] = pinnedFolders.map((path) => {
-    // Check if folder exists in any cached directory
+    // Check if entry exists in any cached directory
     const parentPath = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : "";
     const cachedParent = directoryCache.get(parentPath);
     const cachedEntry = cachedParent?.find((e) => e.path === path);
@@ -322,12 +324,14 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
       return cachedEntry;
     }
 
-    // Create a placeholder entry for pinned folder not yet loaded
+    // Create a placeholder entry for pinned item not yet loaded
     const name = path.includes("/") ? path.substring(path.lastIndexOf("/") + 1) : path;
+    // Heuristic: if name has extension, it's likely a file
+    const hasExtension = name.includes(".") && !name.startsWith(".");
     return {
       name,
       path,
-      type: "directory" as const,
+      type: hasExtension ? "file" as const : "directory" as const,
     };
   });
 
@@ -349,24 +353,48 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
   }
 
   const handleContextMenu = useCallback(
-    (path: string, _isDirectory: boolean, event: React.MouseEvent | React.TouchEvent) => {
-      let x: number;
-      let y: number;
+    (path: string, isDirectory: boolean, event: React.MouseEvent | React.TouchEvent) => {
+      let clientX: number;
+      let clientY: number;
 
       if ("touches" in event) {
-        // Touch event - use touch position
         const touch = event.touches[0] || event.changedTouches[0];
-        x = touch?.clientX ?? 0;
-        y = touch?.clientY ?? 0;
+        clientX = touch?.clientX ?? 0;
+        clientY = touch?.clientY ?? 0;
       } else {
-        // Mouse event
-        x = event.clientX;
-        y = event.clientY;
+        clientX = event.clientX;
+        clientY = event.clientY;
+      }
+
+      // Convert viewport coordinates to file-tree-relative coordinates
+      // (backdrop-filter on parent creates new containing block for position:fixed)
+      const target = event.target as HTMLElement;
+      const fileTree = target.closest(".file-tree");
+      const menuWidth = 180;
+      const menuHeight = 50;
+
+      let x = clientX;
+      let y = clientY;
+
+      if (fileTree) {
+        const rect = fileTree.getBoundingClientRect();
+        // Convert to container-relative coordinates
+        x = clientX - rect.left;
+        y = clientY - rect.top;
+
+        // Keep menu within container bounds
+        if (x + menuWidth > rect.width) {
+          x = Math.max(0, x - menuWidth);
+        }
+        if (y + menuHeight > rect.height) {
+          y = Math.max(0, rect.height - menuHeight - 8);
+        }
       }
 
       setContextMenu({
         isOpen: true,
         path,
+        isDirectory,
         x,
         y,
       });

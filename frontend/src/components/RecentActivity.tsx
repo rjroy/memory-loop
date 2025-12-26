@@ -14,15 +14,26 @@ import type { RecentNoteEntry, RecentDiscussionEntry, ClientMessage } from "@mem
 import "./RecentActivity.css";
 
 /**
+ * Formats a Date as YYYY-MM-DD in local timezone.
+ * Must match backend's formatDateForFilename for consistent comparison.
+ */
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Formats a date string as a relative date (Today, Yesterday, or the date).
  */
 function formatRelativeDate(dateStr: string): string {
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = formatLocalDate(today);
 
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+  const yesterdayStr = formatLocalDate(yesterday);
 
   if (dateStr === todayStr) return "Today";
   if (dateStr === yesterdayStr) return "Yesterday";

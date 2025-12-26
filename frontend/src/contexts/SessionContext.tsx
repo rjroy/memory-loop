@@ -518,6 +518,10 @@ export interface SessionProviderProps {
   children: ReactNode;
   /** Optional initial vault list for auto-selecting persisted vault */
   initialVaults?: VaultInfo[];
+  /** Optional initial recent notes (for testing) */
+  initialRecentNotes?: RecentNoteEntry[];
+  /** Optional initial recent discussions (for testing) */
+  initialRecentDiscussions?: RecentDiscussionEntry[];
 }
 
 /**
@@ -526,8 +530,14 @@ export interface SessionProviderProps {
 export function SessionProvider({
   children,
   initialVaults,
+  initialRecentNotes,
+  initialRecentDiscussions,
 }: SessionProviderProps): React.ReactNode {
-  const [state, dispatch] = useReducer(sessionReducer, initialState);
+  const [state, dispatch] = useReducer(sessionReducer, {
+    ...initialState,
+    recentNotes: initialRecentNotes ?? [],
+    recentDiscussions: initialRecentDiscussions ?? [],
+  });
 
   // Persist vault ID when it changes
   useEffect(() => {

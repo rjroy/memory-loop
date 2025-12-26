@@ -15,6 +15,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { SessionMetadata, VaultInfo, RecentDiscussionEntry } from "@memory-loop/shared";
 import { directoryExists, fileExists } from "./vault-manager";
+import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 import { sessionLog as log } from "./logger";
 
 /**
@@ -334,13 +335,18 @@ export async function getRecentSessions(
       }
 
       const sessionId = file.slice(0, -5);
-      const metadata = await loadSession(sessionId);
+      try {
+        const metadata = await loadSession(sessionId);
 
-      if (metadata && metadata.vaultId === vaultId && metadata.messages.length > 0) {
-        sessions.push({
-          metadata,
-          lastActive: new Date(metadata.lastActiveAt),
-        });
+        if (metadata && metadata.vaultId === vaultId && metadata.messages.length > 0) {
+          sessions.push({
+            metadata,
+            lastActive: new Date(metadata.lastActiveAt),
+          });
+        }
+      } catch {
+        // Skip corrupted session files
+        log.debug(`Skipping corrupted session file: ${file}`);
       }
     }
 
@@ -362,8 +368,8 @@ export async function getRecentSessions(
       return {
         sessionId: metadata.id,
         preview,
-        time: formatTime(lastActive),
-        date: formatDate(lastActive),
+        time: formatTimeForTimestamp(lastActive),
+        date: formatDateForFilename(lastActive),
         messageCount: metadata.messages.length,
       };
     });
@@ -382,25 +388,6 @@ function truncatePreview(text: string, maxLength: number): string {
     return firstLine;
   }
   return firstLine.slice(0, maxLength - 1) + "…";
-}
-
-/**
- * Formats a date as HH:MM in local timezone.
- */
-function formatTime(date: Date): string {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
-}
-
-/**
- * Formats a date as YYYY-MM-DD in local timezone.
- */
-function formatDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 /**

@@ -69,6 +69,16 @@ const mockCaptureToDaily = mock<
   })
 );
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGetRecentNotes = mock<(...args: any[]) => Promise<any[]>>(() =>
+  Promise.resolve([])
+);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGetRecentSessions = mock<(...args: any[]) => Promise<any[]>>(() =>
+  Promise.resolve([])
+);
+
 // Apply mocks
 void mock.module("../vault-manager", () => ({
   discoverVaults: mockDiscoverVaults,
@@ -86,6 +96,7 @@ void mock.module("../session-manager", () => ({
   resumeSession: mockResumeSession,
   loadSession: mockLoadSession,
   appendMessage: mockAppendMessage,
+  getRecentSessions: mockGetRecentSessions,
   SessionError: class SessionError extends Error {
     constructor(
       message: string,
@@ -99,6 +110,7 @@ void mock.module("../session-manager", () => ({
 
 void mock.module("../note-capture", () => ({
   captureToDaily: mockCaptureToDaily,
+  getRecentNotes: mockGetRecentNotes,
 }));
 
 // Mock file browser functions
@@ -201,6 +213,8 @@ describe("WebSocket Handler", () => {
     mockLoadSession.mockReset();
     mockAppendMessage.mockReset();
     mockCaptureToDaily.mockReset();
+    mockGetRecentNotes.mockReset();
+    mockGetRecentSessions.mockReset();
     mockInterrupt.mockReset();
     mockListDirectory.mockReset();
     mockReadMarkdownFile.mockReset();
@@ -215,6 +229,8 @@ describe("WebSocket Handler", () => {
       timestamp: "2025-01-01T12:00:00.000Z",
       notePath: "",
     });
+    mockGetRecentNotes.mockResolvedValue([]);
+    mockGetRecentSessions.mockResolvedValue([]);
     mockListDirectory.mockResolvedValue([]);
     mockReadMarkdownFile.mockResolvedValue({ content: "", truncated: false });
   });
@@ -654,6 +670,160 @@ describe("WebSocket Handler", () => {
       if (message?.type === "error") {
         expect(message.code).toBe("NOTE_CAPTURE_FAILED");
         expect(message.message).toContain("Failed to write file");
+      }
+    });
+  });
+
+  // ===========================================================================
+  // get_recent_activity Handler Tests
+  // ===========================================================================
+
+  describe("get_recent_activity", () => {
+    test("returns error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_recent_activity" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("returns both captures and discussions", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetRecentNotes.mockResolvedValue([
+        { id: "note-1", text: "First note", time: "10:30", date: "2025-01-15" },
+        { id: "note-2", text: "Second note", time: "11:45", date: "2025-01-15" },
+      ]);
+      mockGetRecentSessions.mockResolvedValue([
+        { sessionId: "session-1", preview: "Hello", time: "09:00", date: "2025-01-15", messageCount: 5 },
+      ]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_recent_activity" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("recent_activity");
+      if (message?.type === "recent_activity") {
+        expect(message.captures).toHaveLength(2);
+        expect(message.discussions).toHaveLength(1);
+        expect(message.captures[0].text).toBe("First note");
+        expect(message.discussions[0].sessionId).toBe("session-1");
+      }
+    });
+
+    test("returns empty arrays when no activity exists", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetRecentNotes.mockResolvedValue([]);
+      mockGetRecentSessions.mockResolvedValue([]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_recent_activity" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("recent_activity");
+      if (message?.type === "recent_activity") {
+        expect(message.captures).toEqual([]);
+        expect(message.discussions).toEqual([]);
+      }
+    });
+
+    test("calls getRecentNotes with vault and limit", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetRecentNotes.mockResolvedValue([]);
+      mockGetRecentSessions.mockResolvedValue([]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_recent_activity" })
+      );
+
+      expect(mockGetRecentNotes).toHaveBeenCalledWith(vault, 5);
+    });
+
+    test("calls getRecentSessions with vault ID and limit", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetRecentNotes.mockResolvedValue([]);
+      mockGetRecentSessions.mockResolvedValue([]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_recent_activity" })
+      );
+
+      expect(mockGetRecentSessions).toHaveBeenCalledWith(vault.id, 5);
+    });
+
+    test("handles errors gracefully", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetRecentNotes.mockRejectedValue(new Error("Filesystem error"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_recent_activity" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toContain("Filesystem error");
       }
     });
   });

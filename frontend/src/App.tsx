@@ -20,15 +20,25 @@ import { BrowseMode } from "./components/BrowseMode";
 import "./App.css";
 
 /**
- * Confirmation dialog for new session.
+ * Confirmation dialog component.
  */
 interface ConfirmDialogProps {
   isOpen: boolean;
+  title: string;
+  message: string;
+  confirmLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-function ConfirmDialog({ isOpen, onConfirm, onCancel }: ConfirmDialogProps): React.ReactNode {
+function ConfirmDialog({
+  isOpen,
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: ConfirmDialogProps): React.ReactNode {
   if (!isOpen) return null;
 
   function handleBackdropClick(e: React.MouseEvent) {
@@ -54,10 +64,10 @@ function ConfirmDialog({ isOpen, onConfirm, onCancel }: ConfirmDialogProps): Rea
     >
       <div className="confirm-dialog">
         <h2 id="confirm-dialog-title" className="confirm-dialog__title">
-          Start New Session?
+          {title}
         </h2>
         <p className="confirm-dialog__message">
-          This will clear the current conversation. Your notes are already saved to the vault.
+          {message}
         </p>
         <div className="confirm-dialog__actions">
           <button
@@ -72,7 +82,7 @@ function ConfirmDialog({ isOpen, onConfirm, onCancel }: ConfirmDialogProps): Rea
             className="confirm-dialog__btn confirm-dialog__btn--confirm"
             onClick={onConfirm}
           >
-            New
+            {confirmLabel}
           </button>
         </div>
       </div>
@@ -81,23 +91,37 @@ function ConfirmDialog({ isOpen, onConfirm, onCancel }: ConfirmDialogProps): Rea
 }
 
 /**
+ * Dialog types for confirmation.
+ */
+type DialogType = "newSession" | "changeVault" | null;
+
+/**
  * Main app content when a vault is selected.
  */
 function MainContent(): React.ReactNode {
-  const { mode, vault, startNewSession } = useSession();
-  const [showConfirm, setShowConfirm] = useState(false);
+  const { mode, vault, startNewSession, clearVault } = useSession();
+  const [activeDialog, setActiveDialog] = useState<DialogType>(null);
 
   function handleNewSession() {
-    setShowConfirm(true);
+    setActiveDialog("newSession");
+  }
+
+  function handleChangeVault() {
+    setActiveDialog("changeVault");
   }
 
   function handleConfirmNewSession() {
     startNewSession();
-    setShowConfirm(false);
+    setActiveDialog(null);
   }
 
-  function handleCancelNewSession() {
-    setShowConfirm(false);
+  function handleConfirmChangeVault() {
+    clearVault();
+    setActiveDialog(null);
+  }
+
+  function handleCancelDialog() {
+    setActiveDialog(null);
   }
 
   return (
@@ -109,7 +133,14 @@ function MainContent(): React.ReactNode {
             <h1 className="app-title">Memory Loop</h1>
           </div>
           {vault && (
-            <span className="app-vault-name">{vault.name}</span>
+            <button
+              type="button"
+              className="app-vault-btn"
+              onClick={handleChangeVault}
+              aria-label="Change vault"
+            >
+              {vault.name}
+            </button>
           )}
         </div>
         <div className="app-header__center">
@@ -134,9 +165,21 @@ function MainContent(): React.ReactNode {
       </main>
 
       <ConfirmDialog
-        isOpen={showConfirm}
+        isOpen={activeDialog === "newSession"}
+        title="Start New Session?"
+        message="This will clear the current conversation. Your notes are already saved to the vault."
+        confirmLabel="New"
         onConfirm={handleConfirmNewSession}
-        onCancel={handleCancelNewSession}
+        onCancel={handleCancelDialog}
+      />
+
+      <ConfirmDialog
+        isOpen={activeDialog === "changeVault"}
+        title="Change Vault?"
+        message="This will return to vault selection. Your current session will be preserved and can be resumed later."
+        confirmLabel="Change"
+        onConfirm={handleConfirmChangeVault}
+        onCancel={handleCancelDialog}
       />
     </>
   );
@@ -148,6 +191,13 @@ function MainContent(): React.ReactNode {
 function AppShell(): React.ReactNode {
   const { vault } = useSession();
   const [isReady, setIsReady] = useState(false);
+
+  // Reset isReady when vault is cleared
+  React.useEffect(() => {
+    if (!vault) {
+      setIsReady(false);
+    }
+  }, [vault]);
 
   // Show vault selection until a vault is selected and session is ready
   if (!vault || !isReady) {

@@ -309,6 +309,110 @@ describe("SessionContext", () => {
 
   });
 
+  describe("clearVault", () => {
+    it("clears the current vault", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+      });
+
+      expect(result.current.vault).toEqual(testVault);
+
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.vault).toBeNull();
+    });
+
+    it("clears session ID and messages", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setSessionId("session-123");
+        result.current.addMessage({ role: "user", content: "Hello" });
+      });
+
+      expect(result.current.sessionId).toBe("session-123");
+      expect(result.current.messages.length).toBe(1);
+
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.vault).toBeNull();
+      expect(result.current.sessionId).toBeNull();
+      expect(result.current.messages).toEqual([]);
+    });
+
+    it("clears browser state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setCurrentPath("folder");
+        result.current.toggleDirectory("folder");
+        result.current.cacheDirectory("folder", [{ name: "file.md", type: "file" as const, path: "folder/file.md" }]);
+      });
+
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.browser.currentPath).toBe("");
+      expect(result.current.browser.expandedDirs.size).toBe(0);
+      expect(result.current.browser.directoryCache.size).toBe(0);
+    });
+
+    it("clears recent notes", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setRecentNotes([
+          { id: "note-1", text: "Note 1", time: "12:00", date: "2025-01-01" },
+          { id: "note-2", text: "Note 2", time: "12:01", date: "2025-01-01" },
+        ]);
+      });
+
+      expect(result.current.recentNotes.length).toBe(2);
+
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.recentNotes).toEqual([]);
+    });
+
+    it("removes vault ID from localStorage", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+      });
+
+      expect(localStorage.getItem("memory-loop:vaultId")).toBe("test-vault");
+
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(localStorage.getItem("memory-loop:vaultId")).toBeNull();
+    });
+  });
+
   describe("persistence (writing)", () => {
     // Note: Session messages are no longer persisted to localStorage.
     // The server is the source of truth for session data.

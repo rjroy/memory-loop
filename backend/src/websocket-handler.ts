@@ -933,11 +933,11 @@ export class WebSocketHandler {
     }
 
     try {
-      const goals = await getVaultGoals(this.state.currentVault);
-      log.info(`Found ${goals?.length ?? 0} goals`);
+      const sections = await getVaultGoals(this.state.currentVault);
+      log.info(`Found ${sections?.length ?? 0} goal sections`);
       this.send(ws, {
         type: "goals",
-        goals,
+        sections,
       });
     } catch (error) {
       log.error("Failed to get goals", error);

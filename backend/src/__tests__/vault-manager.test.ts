@@ -594,118 +594,158 @@ describe("Edge Cases", () => {
 
 describe("Goals Feature", () => {
   describe("parseGoals", () => {
-    test("parses incomplete goals from Active section", () => {
+    test("parses multiple sections from headers", () => {
       const content = `# Goals
 
 ## Active
 
 - [ ] Learn TypeScript
 - [ ] Build a web app
-- [ ] Write tests
 
 ## Completed
 
 - [x] Set up project
 `;
-      const goals = parseGoals(content);
-      expect(goals).toHaveLength(3);
-      expect(goals[0]).toEqual({ text: "Learn TypeScript", completed: false });
-      expect(goals[1]).toEqual({ text: "Build a web app", completed: false });
-      expect(goals[2]).toEqual({ text: "Write tests", completed: false });
+      const sections = parseGoals(content);
+      expect(sections).toHaveLength(2);
+      expect(sections[0]).toEqual({
+        title: "Active",
+        items: ["Learn TypeScript", "Build a web app"],
+        hasMore: false,
+      });
+      expect(sections[1]).toEqual({
+        title: "Completed",
+        items: ["Set up project"],
+        hasMore: false,
+      });
     });
 
-    test("parses completed goals in Active section", () => {
-      const content = `## Active
+    test("strips checkbox prefixes from items", () => {
+      const content = `## Tasks
 
 - [x] Completed task
 - [ ] Incomplete task
 - [X] Also completed (uppercase)
 `;
-      const goals = parseGoals(content);
-      expect(goals).toHaveLength(3);
-      expect(goals[0]).toEqual({ text: "Completed task", completed: true });
-      expect(goals[1]).toEqual({ text: "Incomplete task", completed: false });
-      expect(goals[2]).toEqual({ text: "Also completed (uppercase)", completed: true });
+      const sections = parseGoals(content);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].items).toEqual([
+        "Completed task",
+        "Incomplete task",
+        "Also completed (uppercase)",
+      ]);
     });
 
-    test("ignores goals outside Active section", () => {
-      const content = `## Backlog
+    test("strips list markers from items", () => {
+      const content = `## Tasks
 
-- [ ] Future task
-
-## Active
-
-- [ ] Current task
-
-## Done
-
-- [x] Past task
+- Regular list item
+* Asterisk item
+Plain text item
 `;
-      const goals = parseGoals(content);
-      expect(goals).toHaveLength(1);
-      expect(goals[0]).toEqual({ text: "Current task", completed: false });
+      const sections = parseGoals(content);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].items).toEqual([
+        "Regular list item",
+        "Asterisk item",
+        "Plain text item",
+      ]);
     });
 
-    test("handles asterisk list items", () => {
-      const content = `## Active
+    test("handles any header level", () => {
+      const content = `# Level 1
 
-* [ ] Asterisk task
-* [x] Completed asterisk
+Item 1
+
+## Level 2
+
+Item 2
+
+### Level 3
+
+Item 3
 `;
-      const goals = parseGoals(content);
-      expect(goals).toHaveLength(2);
-      expect(goals[0]).toEqual({ text: "Asterisk task", completed: false });
-      expect(goals[1]).toEqual({ text: "Completed asterisk", completed: true });
+      const sections = parseGoals(content);
+      expect(sections).toHaveLength(3);
+      expect(sections[0].title).toBe("Level 1");
+      expect(sections[1].title).toBe("Level 2");
+      expect(sections[2].title).toBe("Level 3");
     });
 
-    test("returns empty array when no Active section", () => {
-      const content = `# Goals
+    test("content before first header goes to default Goals section", () => {
+      const content = `First item
+Second item
 
-## Completed
+## Later Section
 
-- [x] Done task
+Third item
 `;
-      const goals = parseGoals(content);
-      expect(goals).toHaveLength(0);
+      const sections = parseGoals(content);
+      expect(sections).toHaveLength(2);
+      expect(sections[0]).toEqual({
+        title: "Goals",
+        items: ["First item", "Second item"],
+        hasMore: false,
+      });
+      expect(sections[1]).toEqual({
+        title: "Later Section",
+        items: ["Third item"],
+        hasMore: false,
+      });
     });
 
     test("returns empty array for empty content", () => {
-      const goals = parseGoals("");
-      expect(goals).toHaveLength(0);
+      const sections = parseGoals("");
+      expect(sections).toHaveLength(0);
     });
 
-    test("ignores non-checkbox list items", () => {
-      const content = `## Active
+    test("limits items to 9 per section and sets hasMore", () => {
+      const content = `## Many Items
 
-- Regular list item
-- [ ] Checkbox item
-- Another regular item
+Item 1
+Item 2
+Item 3
+Item 4
+Item 5
+Item 6
+Item 7
+Item 8
+Item 9
+Item 10
+Item 11
 `;
-      const goals = parseGoals(content);
-      expect(goals).toHaveLength(1);
-      expect(goals[0]).toEqual({ text: "Checkbox item", completed: false });
+      const sections = parseGoals(content);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].items).toHaveLength(9);
+      expect(sections[0].items[8]).toBe("Item 9");
+      expect(sections[0].hasMore).toBe(true);
     });
 
-    test("handles case-insensitive Active header", () => {
-      const content = `## active
+    test("ignores empty lines", () => {
+      const content = `## Tasks
 
-- [ ] Lowercase header task
+Item 1
+
+Item 2
+
+
+Item 3
 `;
-      const goals = parseGoals(content);
-      expect(goals).toHaveLength(1);
-      expect(goals[0]).toEqual({ text: "Lowercase header task", completed: false });
+      const sections = parseGoals(content);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].items).toEqual(["Item 1", "Item 2", "Item 3"]);
     });
 
-    test("ignores empty checkbox items", () => {
-      const content = `## Active
+    test("ignores empty list items", () => {
+      const content = `## Tasks
 
-- [ ]
-- [ ] Valid task
-- [ ]
+-
+- Valid task
+-
 `;
-      const goals = parseGoals(content);
-      expect(goals).toHaveLength(1);
-      expect(goals[0]).toEqual({ text: "Valid task", completed: false });
+      const sections = parseGoals(content);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].items).toEqual(["Valid task"]);
     });
   });
 
@@ -801,11 +841,14 @@ describe("Goals Feature", () => {
         goalsPath: GOALS_FILE_PATH,
       };
 
-      const goals = await getVaultGoals(vault);
-      expect(goals).not.toBeNull();
-      expect(goals).toHaveLength(2);
-      expect(goals![0]).toEqual({ text: "First goal", completed: false });
-      expect(goals![1]).toEqual({ text: "Second goal (done)", completed: true });
+      const sections = await getVaultGoals(vault);
+      expect(sections).not.toBeNull();
+      expect(sections).toHaveLength(1);
+      expect(sections![0]).toEqual({
+        title: "Active",
+        items: ["First goal", "Second goal (done)"],
+        hasMore: false,
+      });
     });
 
     test("returns null when file is missing despite goalsPath being set", async () => {

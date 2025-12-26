@@ -1,7 +1,7 @@
 /**
  * Tests for GoalsCard component
  *
- * Tests rendering of goals, separation of incomplete/completed, and accessibility.
+ * Tests rendering of goal sections, items, and accessibility.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -9,17 +9,24 @@ import { render, screen, cleanup } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { GoalsCard } from "../GoalsCard";
 import { SessionProvider } from "../../contexts/SessionContext";
-import type { GoalItem } from "@memory-loop/shared";
+import type { GoalSection } from "@memory-loop/shared";
 
 // Test data
-const mockGoals: GoalItem[] = [
-  { text: "Learn TypeScript", completed: false },
-  { text: "Build a web app", completed: false },
-  { text: "Set up project", completed: true },
+const mockSections: GoalSection[] = [
+  {
+    title: "Active",
+    items: ["Learn TypeScript", "Build a web app"],
+    hasMore: false,
+  },
+  {
+    title: "Backlog",
+    items: ["Set up project"],
+    hasMore: false,
+  },
 ];
 
 // Wrapper with providers
-function createTestWrapper(goals: GoalItem[] | null) {
+function createTestWrapper(goals: GoalSection[] | null) {
   return function TestWrapper({ children }: { children: ReactNode }) {
     return (
       <SessionProvider initialGoals={goals}>
@@ -55,18 +62,26 @@ describe("GoalsCard", () => {
       expect(container.firstChild).toBeNull();
     });
 
-    it("renders goals section with heading", () => {
+    it("renders goals section with region", () => {
       render(<GoalsCard />, {
-        wrapper: createTestWrapper(mockGoals),
+        wrapper: createTestWrapper(mockSections),
       });
 
       expect(screen.getByRole("region", { name: "Goals" })).toBeDefined();
-      expect(screen.getByText("Goals")).toBeDefined();
     });
 
-    it("renders all goal texts", () => {
+    it("renders section titles", () => {
       render(<GoalsCard />, {
-        wrapper: createTestWrapper(mockGoals),
+        wrapper: createTestWrapper(mockSections),
+      });
+
+      expect(screen.getByText("Active")).toBeDefined();
+      expect(screen.getByText("Backlog")).toBeDefined();
+    });
+
+    it("renders all item texts", () => {
+      render(<GoalsCard />, {
+        wrapper: createTestWrapper(mockSections),
       });
 
       expect(screen.getByText("Learn TypeScript")).toBeDefined();
@@ -75,107 +90,72 @@ describe("GoalsCard", () => {
     });
   });
 
-  describe("goal ordering", () => {
-    it("renders incomplete goals before completed goals", () => {
-      render(<GoalsCard />, {
-        wrapper: createTestWrapper(mockGoals),
-      });
-
-      const listItems = screen.getAllByRole("listitem");
-      expect(listItems).toHaveLength(3);
-
-      // First two should be incomplete
-      expect(listItems[0].getAttribute("aria-label")).toContain("Incomplete");
-      expect(listItems[1].getAttribute("aria-label")).toContain("Incomplete");
-      // Last should be completed
-      expect(listItems[2].getAttribute("aria-label")).toContain("Completed");
-    });
-
-    it("handles all incomplete goals", () => {
-      const incompleteOnly: GoalItem[] = [
-        { text: "Task 1", completed: false },
-        { text: "Task 2", completed: false },
+  describe("hasMore indicator", () => {
+    it("shows ... when section has more items", () => {
+      const sectionsWithMore: GoalSection[] = [
+        {
+          title: "Many Items",
+          items: ["Item 1", "Item 2"],
+          hasMore: true,
+        },
       ];
 
       render(<GoalsCard />, {
-        wrapper: createTestWrapper(incompleteOnly),
+        wrapper: createTestWrapper(sectionsWithMore),
       });
 
-      const listItems = screen.getAllByRole("listitem");
-      expect(listItems).toHaveLength(2);
-      expect(listItems[0].getAttribute("aria-label")).toContain("Incomplete");
-      expect(listItems[1].getAttribute("aria-label")).toContain("Incomplete");
+      expect(screen.getByText("...")).toBeDefined();
     });
 
-    it("handles all completed goals", () => {
-      const completedOnly: GoalItem[] = [
-        { text: "Done 1", completed: true },
-        { text: "Done 2", completed: true },
-      ];
-
+    it("does not show ... when section has no more items", () => {
       render(<GoalsCard />, {
-        wrapper: createTestWrapper(completedOnly),
+        wrapper: createTestWrapper(mockSections),
       });
 
-      const listItems = screen.getAllByRole("listitem");
-      expect(listItems).toHaveLength(2);
-      expect(listItems[0].getAttribute("aria-label")).toContain("Completed");
-      expect(listItems[1].getAttribute("aria-label")).toContain("Completed");
+      expect(screen.queryByText("...")).toBeNull();
     });
   });
 
   describe("accessibility", () => {
     it("has accessible section with aria-label", () => {
       render(<GoalsCard />, {
-        wrapper: createTestWrapper(mockGoals),
+        wrapper: createTestWrapper(mockSections),
       });
 
       const section = screen.getByRole("region", { name: "Goals" });
       expect(section).toBeDefined();
     });
 
-    it("has aria-labels on list items indicating completion status", () => {
+    it("has aria-labels on list items", () => {
       render(<GoalsCard />, {
-        wrapper: createTestWrapper(mockGoals),
+        wrapper: createTestWrapper(mockSections),
       });
 
-      // Check incomplete goals have correct aria-label
-      const incompleteItem = screen.getByLabelText("Incomplete: Learn TypeScript");
-      expect(incompleteItem).toBeDefined();
-
-      // Check completed goals have correct aria-label
-      const completedItem = screen.getByLabelText("Completed: Set up project");
-      expect(completedItem).toBeDefined();
+      const item = screen.getByLabelText("Learn TypeScript");
+      expect(item).toBeDefined();
     });
 
-    it("hides visual checkboxes from screen readers", () => {
+    it("hides visual bullets from screen readers", () => {
       render(<GoalsCard />, {
-        wrapper: createTestWrapper(mockGoals),
+        wrapper: createTestWrapper(mockSections),
       });
 
-      // The checkbox symbols should have aria-hidden
-      const checkboxes = document.querySelectorAll('[aria-hidden="true"]');
-      expect(checkboxes.length).toBeGreaterThan(0);
+      const bullets = document.querySelectorAll('[aria-hidden="true"]');
+      expect(bullets.length).toBeGreaterThan(0);
     });
   });
 
-  describe("visual indicators", () => {
-    it("applies completed modifier class to completed goals", () => {
+  describe("multiple sections", () => {
+    it("renders each section with its own heading and list", () => {
       render(<GoalsCard />, {
-        wrapper: createTestWrapper(mockGoals),
+        wrapper: createTestWrapper(mockSections),
       });
 
-      const completedItem = screen.getByLabelText("Completed: Set up project");
-      expect(completedItem.className).toContain("goals-card__item--completed");
-    });
+      const headings = screen.getAllByRole("heading", { level: 3 });
+      expect(headings).toHaveLength(2);
 
-    it("does not apply completed modifier to incomplete goals", () => {
-      render(<GoalsCard />, {
-        wrapper: createTestWrapper(mockGoals),
-      });
-
-      const incompleteItem = screen.getByLabelText("Incomplete: Learn TypeScript");
-      expect(incompleteItem.className).not.toContain("goals-card__item--completed");
+      const lists = screen.getAllByRole("list");
+      expect(lists).toHaveLength(2);
     });
   });
 });

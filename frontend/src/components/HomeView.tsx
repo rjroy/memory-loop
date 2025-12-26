@@ -113,7 +113,7 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
   // Handle goals response
   useEffect(() => {
     if (lastMessage?.type === "goals") {
-      setGoals(lastMessage.goals);
+      setGoals(lastMessage.sections);
     }
   }, [lastMessage, setGoals]);
 

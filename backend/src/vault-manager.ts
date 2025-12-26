@@ -313,63 +313,90 @@ export function getVaultInboxPath(vault: VaultInfo): string {
 }
 
 /**
- * A single goal item parsed from goals.md.
+ * Maximum number of items to show per section.
  */
-export interface GoalItem {
-  text: string;
-  completed: boolean;
+const MAX_ITEMS_PER_SECTION = 9;
+
+/**
+ * A section of goals parsed from goals.md.
+ */
+export interface GoalSection {
+  title: string;
+  items: string[];
+  hasMore: boolean;
 }
 
 /**
  * Parses goals from a goals.md file.
- * Extracts checkbox items from the "Active" section (## Active header).
- * Returns goals with completed status based on [x] vs [ ] syntax.
+ * Treats any markdown header as a section title.
+ * Each non-blank line is an item (list prefixes are stripped).
+ * Items are limited to 9 per section.
  *
  * @param content - The content of goals.md
- * @returns Array of goal items from the Active section
+ * @returns Array of goal sections
  */
-export function parseGoals(content: string): GoalItem[] {
+export function parseGoals(content: string): GoalSection[] {
   const lines = content.split("\n");
-  const goals: GoalItem[] = [];
+  const sections: GoalSection[] = [];
 
-  let inActiveSection = false;
+  let currentSection: GoalSection = { title: "Goals", items: [], hasMore: false };
 
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // Check for section headers
-    if (trimmed.startsWith("## ")) {
-      const headerText = trimmed.slice(3).trim().toLowerCase();
-      inActiveSection = headerText === "active";
-      continue;
-    }
-
-    // Only parse goals in the Active section
-    if (!inActiveSection) {
-      continue;
-    }
-
-    // Parse checkbox items: - [ ] or - [x]
-    const checkboxMatch = trimmed.match(/^[-*]\s*\[([ xX])\]\s*(.+)$/);
-    if (checkboxMatch) {
-      const completed = checkboxMatch[1].toLowerCase() === "x";
-      const text = checkboxMatch[2].trim();
-      if (text) {
-        goals.push({ text, completed });
+    // Check for any header level (# ## ### etc)
+    const headerMatch = trimmed.match(/^#+\s+(.+)$/);
+    if (headerMatch) {
+      // Save previous section if it has items
+      if (currentSection.items.length > 0) {
+        sections.push(currentSection);
       }
+      // Start new section
+      currentSection = { title: headerMatch[1].trim(), items: [], hasMore: false };
+      continue;
+    }
+
+    // Skip blank lines
+    if (!trimmed) {
+      continue;
+    }
+
+    // Strip list prefixes: "- [ ] ", "- [x] ", "- ", "* ", etc.
+    let itemText = trimmed;
+    // Match: optional list marker (- or *), optional checkbox, then content
+    const listMatch = trimmed.match(/^[-*]\s*(?:\[[ xX]\]\s*)?(.*)$/);
+    if (listMatch) {
+      itemText = listMatch[1].trim();
+    }
+
+    // Skip empty items
+    if (!itemText) {
+      continue;
+    }
+
+    // Add item if under limit, otherwise mark hasMore
+    if (currentSection.items.length < MAX_ITEMS_PER_SECTION) {
+      currentSection.items.push(itemText);
+    } else {
+      currentSection.hasMore = true;
     }
   }
 
-  return goals;
+  // Don't forget the last section
+  if (currentSection.items.length > 0) {
+    sections.push(currentSection);
+  }
+
+  return sections;
 }
 
 /**
  * Reads and parses goals from a vault's goals.md file.
  *
  * @param vault - The VaultInfo object
- * @returns Array of goal items, or null if no goals file exists
+ * @returns Array of goal sections, or null if no goals file exists
  */
-export async function getVaultGoals(vault: VaultInfo): Promise<GoalItem[] | null> {
+export async function getVaultGoals(vault: VaultInfo): Promise<GoalSection[] | null> {
   if (!vault.goalsPath) {
     return null;
   }

@@ -1,7 +1,7 @@
 /**
  * GoalsCard Component Styles
  *
- * Displays active goals with glassmorphism styling consistent with HomeView.
+ * Displays goals with glassmorphism styling consistent with HomeView.
  */
 
 .goals-card {
@@ -20,13 +20,21 @@
   }
 }
 
+.goals-card__section {
+  margin-bottom: var(--spacing-md);
+}
+
+.goals-card__section:last-child {
+  margin-bottom: 0;
+}
+
 .goals-card__heading {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
   color: var(--color-accent-pink);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin: 0 0 var(--spacing-md) 0;
+  margin: 0 0 var(--spacing-sm) 0;
 }
 
 .goals-card__list {
@@ -35,7 +43,7 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
 }
 
 .goals-card__item {
@@ -47,27 +55,23 @@
   line-height: var(--line-height-normal);
 }
 
-.goals-card__item--completed {
-  color: var(--color-text-muted);
-}
-
-.goals-card__item--completed .goals-card__text {
-  text-decoration: line-through;
-}
-
-.goals-card__checkbox {
+.goals-card__bullet {
   flex-shrink: 0;
   font-size: var(--text-sm);
-  color: var(--color-accent-pink);
-  line-height: var(--line-height-normal);
-}
-
-.goals-card__item--completed .goals-card__checkbox {
   color: var(--color-text-muted);
+  line-height: var(--line-height-normal);
 }
 
 .goals-card__text {
   flex: 1;
+}
+
+.goals-card__item--more {
+  color: var(--color-text-muted);
+}
+
+.goals-card__text--more {
+  font-style: italic;
 }
 
 /* Mobile adjustments for blur performance */

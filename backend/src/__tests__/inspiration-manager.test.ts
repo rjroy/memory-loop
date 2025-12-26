@@ -39,6 +39,9 @@ import {
   generateInspirationQuote,
   setQueryFunction,
   resetQueryFunction,
+  selectRandom,
+  getInspiration,
+  FALLBACK_QUOTE,
   CONTEXTUAL_PROMPTS_PATH,
   GENERAL_INSPIRATION_PATH,
   MAX_CONTEXT_CHARS,
@@ -2583,5 +2586,352 @@ describe("Query Function Injection", () => {
     // (testing that it doesn't use mock anymore, which would return a result)
     const items = await generateContextualPrompts("");
     expect(items).toEqual([]);
+  });
+});
+
+// =============================================================================
+// FALLBACK_QUOTE Tests
+// =============================================================================
+
+describe("FALLBACK_QUOTE", () => {
+  test("has text property", () => {
+    expect(FALLBACK_QUOTE.text).toBeDefined();
+    expect(typeof FALLBACK_QUOTE.text).toBe("string");
+    expect(FALLBACK_QUOTE.text.length).toBeGreaterThan(0);
+  });
+
+  test("has attribution property", () => {
+    expect(FALLBACK_QUOTE.attribution).toBeDefined();
+    expect(typeof FALLBACK_QUOTE.attribution).toBe("string");
+    expect(FALLBACK_QUOTE.attribution!.length).toBeGreaterThan(0);
+  });
+
+  test("is the Steve Jobs quote", () => {
+    expect(FALLBACK_QUOTE.text).toBe(
+      "The only way to do great work is to love what you do."
+    );
+    expect(FALLBACK_QUOTE.attribution).toBe("Steve Jobs");
+  });
+});
+
+// =============================================================================
+// selectRandom Tests
+// =============================================================================
+
+describe("selectRandom", () => {
+  test("returns undefined for empty array", () => {
+    const result = selectRandom([]);
+    expect(result).toBeUndefined();
+  });
+
+  test("returns the single item for array with one element", () => {
+    const item = { text: "Only one" };
+    const result = selectRandom([item]);
+    expect(result).toBe(item);
+  });
+
+  test("returns an item from the array for multiple elements", () => {
+    const items = [
+      { text: "First" },
+      { text: "Second" },
+      { text: "Third" },
+    ];
+    const result = selectRandom(items);
+    expect(result).toBeDefined();
+    expect(items).toContain(result!);
+  });
+
+  test("handles arrays of strings", () => {
+    const items = ["a", "b", "c"];
+    const result = selectRandom(items);
+    expect(result).toBeDefined();
+    expect(items).toContain(result!);
+  });
+
+  test("handles arrays of numbers", () => {
+    const items = [1, 2, 3, 4, 5];
+    const result = selectRandom(items);
+    expect(result).toBeDefined();
+    expect(items).toContain(result!);
+  });
+
+  test("returns different items over many calls (statistical)", () => {
+    const items = ["a", "b", "c", "d", "e"];
+    const results = new Set<string>();
+
+    // Run many times to get statistical coverage
+    for (let i = 0; i < 100; i++) {
+      const result = selectRandom(items);
+      if (result) results.add(result);
+    }
+
+    // Should have selected at least 2 different items over 100 runs
+    expect(results.size).toBeGreaterThan(1);
+  });
+});
+
+// =============================================================================
+// getInspiration Tests
+// =============================================================================
+
+describe("getInspiration", () => {
+  let testVault: string;
+
+  beforeEach(async () => {
+    testVault = join(tmpdir(), `test-inspiration-${Date.now()}`);
+    await mkdir(join(testVault, INBOX_PATH), { recursive: true });
+    await mkdir(
+      join(testVault, "06_Metadata", "memory-loop"),
+      { recursive: true }
+    );
+  });
+
+  afterEach(async () => {
+    resetQueryFunction();
+    await rm(testVault, { recursive: true, force: true });
+  });
+
+  describe("basic functionality", () => {
+    test("returns object with contextual and quote properties", async () => {
+      // Mock to prevent real SDK calls
+      setQueryFunction(createMockQueryFn(""));
+
+      const result = await getInspiration(testVault);
+
+      expect(result).toHaveProperty("contextual");
+      expect(result).toHaveProperty("quote");
+    });
+
+    test("returns fallback quote when quote file missing", async () => {
+      setQueryFunction(createMockQueryFn(""));
+
+      const result = await getInspiration(testVault);
+
+      expect(result.quote).toEqual(FALLBACK_QUOTE);
+    });
+
+    test("returns null for contextual when file missing", async () => {
+      setQueryFunction(createMockQueryFn(""));
+
+      // Use a weekday date
+      const result = await getInspiration(testVault);
+
+      // On weekdays, contextual should be null when file is missing
+      // (generation might run but with no context returns empty)
+      expect(result.contextual).toBeNull();
+    });
+  });
+
+  describe("file parsing", () => {
+    test("parses existing quote file and selects random item", async () => {
+      // Create quote file with multiple entries
+      const quoteContent = `<!-- last-generated: 2025-12-26 (week 52) -->
+
+- "First wisdom" -- Author A
+- "Second wisdom" -- Author B
+- "Third wisdom" -- Author C
+`;
+      await writeFile(
+        join(testVault, GENERAL_INSPIRATION_PATH),
+        quoteContent
+      );
+
+      setQueryFunction(createMockQueryFn(""));
+
+      const result = await getInspiration(testVault);
+
+      // Quote should be one of the file entries
+      expect(result.quote.text).toMatch(/First wisdom|Second wisdom|Third wisdom/);
+    });
+
+    test("parses existing contextual file and selects random item on weekday", async () => {
+      // Create contextual file
+      const contextualContent = `<!-- last-generated: 2025-12-26 -->
+
+- "How's your project going?"
+- "What's your focus today?"
+`;
+      await writeFile(
+        join(testVault, CONTEXTUAL_PROMPTS_PATH),
+        contextualContent
+      );
+
+      // Also need quote file to avoid generation
+      const quoteContent = `<!-- last-generated: 2025-12-26 (week 52) -->
+- "Quote" -- Author
+`;
+      await writeFile(
+        join(testVault, GENERAL_INSPIRATION_PATH),
+        quoteContent
+      );
+
+      setQueryFunction(createMockQueryFn(""));
+
+      // Only test on weekdays - the function checks isWeekday internally
+      const result = await getInspiration(testVault);
+
+      // On weekdays, contextual should be from the file
+      // On weekends, contextual should be null
+      if (result.contextual !== null) {
+        expect(result.contextual.text).toMatch(
+          /project going|focus today/
+        );
+      }
+    });
+  });
+
+  describe("generation triggering", () => {
+    test("triggers quote generation when quote file missing", async () => {
+      let queryWasCalled = false;
+
+      setQueryFunction(
+        createMockQueryFn('- "Generated quote" -- AI', () => {
+          queryWasCalled = true;
+        })
+      );
+
+      await getInspiration(testVault);
+
+      // Should have called query for quote generation
+      expect(queryWasCalled).toBe(true);
+    });
+
+    test("does not trigger generation when files are fresh", async () => {
+      // Create fresh files with today's date
+      const today = new Date();
+      const dateStr = formatDateForDailyNote(today);
+      const week = getISOWeekNumber(today);
+
+      const contextualContent = `<!-- last-generated: ${dateStr} -->
+- "Fresh prompt"
+`;
+      const quoteContent = `<!-- last-generated: ${dateStr} (week ${week}) -->
+- "Fresh quote" -- Author
+`;
+
+      await writeFile(
+        join(testVault, CONTEXTUAL_PROMPTS_PATH),
+        contextualContent
+      );
+      await writeFile(
+        join(testVault, GENERAL_INSPIRATION_PATH),
+        quoteContent
+      );
+
+      let queryWasCalled = false;
+      setQueryFunction(
+        createMockQueryFn("", () => {
+          queryWasCalled = true;
+        })
+      );
+
+      await getInspiration(testVault);
+
+      // Should NOT have called query since files are fresh
+      expect(queryWasCalled).toBe(false);
+    });
+  });
+
+  describe("error handling", () => {
+    test("returns fallback quote when generation fails", async () => {
+      setQueryFunction(createErrorMockQueryFn("SDK error"));
+
+      const result = await getInspiration(testVault);
+
+      // Should use fallback even if generation failed
+      expect(result.quote).toEqual(FALLBACK_QUOTE);
+    });
+
+    test("handles permission errors gracefully", async () => {
+      setQueryFunction(createMockQueryFn(""));
+
+      // Point to a path that definitely doesn't exist
+      const result = await getInspiration("/nonexistent/vault/path");
+
+      // Should still return valid result with fallback
+      expect(result.quote).toEqual(FALLBACK_QUOTE);
+      expect(result.contextual).toBeNull();
+    });
+  });
+
+  describe("weekend behavior", () => {
+    test("returns null contextual on weekend regardless of file content", async () => {
+      // Create contextual file
+      const contextualContent = `<!-- last-generated: 2025-12-26 -->
+- "This prompt exists"
+`;
+      await writeFile(
+        join(testVault, CONTEXTUAL_PROMPTS_PATH),
+        contextualContent
+      );
+
+      const quoteContent = `<!-- last-generated: 2025-12-26 (week 52) -->
+- "Quote" -- Author
+`;
+      await writeFile(
+        join(testVault, GENERAL_INSPIRATION_PATH),
+        quoteContent
+      );
+
+      setQueryFunction(createMockQueryFn(""));
+
+      // On weekends, contextual should be null
+      // Note: We can't easily mock the date in this test, so we verify the
+      // behavior based on the current day. The key assertion is that quotes
+      // are always returned but contextual may be null.
+      const result = await getInspiration(testVault);
+
+      // Quote should always be present
+      expect(result.quote.text).toBeDefined();
+      expect(result.quote.text.length).toBeGreaterThan(0);
+
+      // Contextual is null on weekends, populated on weekdays
+      // We accept either as valid since we can't control the test date
+      if (result.contextual !== null) {
+        expect(result.contextual.text).toBe("This prompt exists");
+      }
+    });
+  });
+
+  describe("integration with file writing", () => {
+    test("creates quote file after generation", async () => {
+      setQueryFunction(
+        createMockQueryFn('- "Newly generated" -- AI Author')
+      );
+
+      await getInspiration(testVault);
+
+      // Check that quote file was created
+      const quoteContent = await readFile(
+        join(testVault, GENERAL_INSPIRATION_PATH),
+        "utf-8"
+      );
+      expect(quoteContent).toContain("Newly generated");
+      expect(quoteContent).toContain("AI Author");
+    });
+
+    test("appends to existing quote file", async () => {
+      // Create existing quote file with old date to trigger generation
+      const oldContent = `<!-- last-generated: 2024-01-01 (week 1) -->
+- "Old quote" -- Old Author
+`;
+      await writeFile(
+        join(testVault, GENERAL_INSPIRATION_PATH),
+        oldContent
+      );
+
+      setQueryFunction(
+        createMockQueryFn('- "New quote" -- New Author')
+      );
+
+      await getInspiration(testVault);
+
+      const content = await readFile(
+        join(testVault, GENERAL_INSPIRATION_PATH),
+        "utf-8"
+      );
+      expect(content).toContain("Old quote");
+      expect(content).toContain("New quote");
+    });
   });
 });

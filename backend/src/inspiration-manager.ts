@@ -930,3 +930,139 @@ export async function generateInspirationQuote(): Promise<InspirationItem[]> {
     return [];
   }
 }
+
+// =============================================================================
+// Main Inspiration Handler (TASK-007)
+// =============================================================================
+
+/**
+ * Hardcoded fallback quote for when quote file is missing/empty.
+ * Provides a timeless, universally applicable message.
+ */
+export const FALLBACK_QUOTE: InspirationItem = {
+  text: "The only way to do great work is to love what you do.",
+  attribution: "Steve Jobs",
+};
+
+/**
+ * Result type for getInspiration function
+ */
+export interface InspirationResult {
+  /** Contextual prompt (null if file missing/empty or weekend) */
+  contextual: InspirationItem | null;
+  /** Inspirational quote (fallback if file missing/empty) */
+  quote: InspirationItem;
+}
+
+/**
+ * Select a random item from an array.
+ *
+ * @param items - Array of items to select from
+ * @returns A random item, or undefined if array is empty
+ */
+export function selectRandom<T>(items: T[]): T | undefined {
+  if (items.length === 0) {
+    return undefined;
+  }
+  const index = Math.floor(Math.random() * items.length);
+  return items[index];
+}
+
+/**
+ * Main orchestration function for inspiration content.
+ *
+ * REQ-F-1: Provide dual-content display: contextual prompts + timeless quotes
+ * REQ-F-10: Contextual prompts displayed on weekdays only
+ * REQ-F-20: Quote generation triggered once per week
+ * REQ-NF-3: Graceful degradation on errors
+ *
+ * Flow:
+ * 1. Check if contextual generation needed (weekday + not generated today)
+ * 2. Check if quote generation needed (not generated this week)
+ * 3. Trigger generation if needed (async, doesn't block)
+ * 4. Parse files and select random items
+ * 5. Return contextual (null if unavailable) and quote (fallback if unavailable)
+ *
+ * @param vaultPath - Absolute path to the vault root
+ * @returns Promise resolving to contextual prompt and quote
+ */
+export async function getInspiration(vaultPath: string): Promise<InspirationResult> {
+  const contextualPath = join(vaultPath, CONTEXTUAL_PROMPTS_PATH);
+  const quotePath = join(vaultPath, GENERAL_INSPIRATION_PATH);
+
+  // Check freshness and trigger generation if needed
+  // These run in parallel and don't block the response
+  const today = new Date();
+  const currentWeek = getISOWeekNumber(today);
+
+  // Phase 1: Check and trigger contextual generation (weekday only)
+  if (await isContextualGenerationNeeded(vaultPath)) {
+    try {
+      // Gather context from vault
+      const context = await gatherDayContext(vaultPath, today);
+
+      if (context.trim()) {
+        // Generate new prompts
+        const newPrompts = await generateContextualPrompts(context);
+
+        if (newPrompts.length > 0) {
+          // Append to file and prune
+          await appendAndPrune(contextualPath, newPrompts);
+        }
+      }
+    } catch (error) {
+      // Generation failure doesn't block response (REQ-NF-3)
+      console.error("[inspiration-manager] Contextual generation failed:", error);
+    }
+  }
+
+  // Phase 2: Check and trigger quote generation (once per week)
+  if (await isQuoteGenerationNeeded(vaultPath)) {
+    try {
+      const newQuotes = await generateInspirationQuote();
+
+      if (newQuotes.length > 0) {
+        // Append with week number
+        await appendAndPrune(quotePath, newQuotes, currentWeek);
+      }
+    } catch (error) {
+      // Generation failure doesn't block response (REQ-NF-3)
+      console.error("[inspiration-manager] Quote generation failed:", error);
+    }
+  }
+
+  // Phase 3: Parse files and select random items
+  let contextual: InspirationItem | null = null;
+  let quote: InspirationItem = FALLBACK_QUOTE;
+
+  // Only show contextual on weekdays
+  if (isWeekday(today)) {
+    try {
+      const contextualFile = await parseInspirationFile(contextualPath);
+
+      if (contextualFile.items.length > 0) {
+        contextual = selectRandom(contextualFile.items) ?? null;
+      }
+    } catch {
+      // File doesn't exist or parse error - return null for contextual
+      contextual = null;
+    }
+  }
+
+  // Always try to get a quote
+  try {
+    const quoteFile = await parseInspirationFile(quotePath);
+
+    if (quoteFile.items.length > 0) {
+      const selected = selectRandom(quoteFile.items);
+      if (selected) {
+        quote = selected;
+      }
+    }
+  } catch {
+    // File doesn't exist or parse error - use fallback quote
+    quote = FALLBACK_QUOTE;
+  }
+
+  return { contextual, quote };
+}

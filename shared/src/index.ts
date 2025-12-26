@@ -21,6 +21,8 @@ export {
   FileEntrySchema,
   // Recent notes schemas
   RecentNoteEntrySchema,
+  // Recent discussion schemas
+  RecentDiscussionEntrySchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -32,6 +34,7 @@ export {
   ListDirectoryMessageSchema,
   ReadFileMessageSchema,
   GetRecentNotesMessageSchema,
+  GetRecentActivityMessageSchema,
   ClientMessageSchema,
   // Server -> Client schemas
   VaultListMessageSchema,
@@ -48,6 +51,7 @@ export {
   DirectoryListingMessageSchema,
   FileContentMessageSchema,
   RecentNotesMessageSchema,
+  RecentActivityMessageSchema,
   ServerMessageSchema,
   // Validation utilities
   parseClientMessage,
@@ -64,6 +68,8 @@ export type {
   FileEntry,
   // Recent notes types
   RecentNoteEntry,
+  // Recent discussion types
+  RecentDiscussionEntry,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,
@@ -75,6 +81,7 @@ export type {
   ListDirectoryMessage,
   ReadFileMessage,
   GetRecentNotesMessage,
+  GetRecentActivityMessage,
   ClientMessage,
   // Server message types
   VaultListMessage,
@@ -91,5 +98,6 @@ export type {
   DirectoryListingMessage,
   FileContentMessage,
   RecentNotesMessage,
+  RecentActivityMessage,
   ServerMessage,
 } from "./protocol.js";

@@ -13,7 +13,7 @@ import {
   type SDKMessage,
   type Options,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { SessionMetadata, VaultInfo } from "@memory-loop/shared";
+import type { SessionMetadata, VaultInfo, RecentDiscussionEntry } from "@memory-loop/shared";
 import { directoryExists, fileExists } from "./vault-manager";
 import { sessionLog as log } from "./logger";
 
@@ -305,6 +305,102 @@ export async function listSessionsByVault(vaultId: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Gets recent discussion sessions for a vault, sorted by last activity.
+ *
+ * @param vaultId - The vault ID to filter by
+ * @param limit - Maximum number of discussions to return (default 5)
+ * @returns Array of RecentDiscussionEntry objects, sorted by most recent first
+ */
+export async function getRecentSessions(
+  vaultId: string,
+  limit = 5
+): Promise<RecentDiscussionEntry[]> {
+  try {
+    const sessionsDir = await getSessionsDir();
+
+    if (!(await directoryExists(sessionsDir))) {
+      return [];
+    }
+
+    const files = await readdir(sessionsDir);
+    const sessions: { metadata: SessionMetadata; lastActive: Date }[] = [];
+
+    for (const file of files) {
+      if (!file.endsWith(".json")) {
+        continue;
+      }
+
+      const sessionId = file.slice(0, -5);
+      const metadata = await loadSession(sessionId);
+
+      if (metadata && metadata.vaultId === vaultId && metadata.messages.length > 0) {
+        sessions.push({
+          metadata,
+          lastActive: new Date(metadata.lastActiveAt),
+        });
+      }
+    }
+
+    // Sort by last activity, most recent first
+    sessions.sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime());
+
+    // Take the top N sessions
+    const topSessions = sessions.slice(0, limit);
+
+    // Format for UI
+    return topSessions.map(({ metadata }) => {
+      const lastActive = new Date(metadata.lastActiveAt);
+      // Find first user message for preview
+      const firstUserMessage = metadata.messages.find((m) => m.role === "user");
+      const preview = firstUserMessage
+        ? truncatePreview(firstUserMessage.content, 100)
+        : "Discussion";
+
+      return {
+        sessionId: metadata.id,
+        preview,
+        time: formatTime(lastActive),
+        date: formatDate(lastActive),
+        messageCount: metadata.messages.length,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Truncates a string to a maximum length, adding ellipsis if truncated.
+ */
+function truncatePreview(text: string, maxLength: number): string {
+  // Take first line only
+  const firstLine = text.split("\n")[0].trim();
+  if (firstLine.length <= maxLength) {
+    return firstLine;
+  }
+  return firstLine.slice(0, maxLength - 1) + "…";
+}
+
+/**
+ * Formats a date as HH:MM in local timezone.
+ */
+function formatTime(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+/**
+ * Formats a date as YYYY-MM-DD in local timezone.
+ */
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 /**

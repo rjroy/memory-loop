@@ -18,6 +18,7 @@ import {
   resumeSession,
   loadSession,
   appendMessage,
+  getRecentSessions,
   SessionError,
   type SessionQueryResult,
 } from "./session-manager";
@@ -234,6 +235,9 @@ export class WebSocketHandler {
         break;
       case "get_recent_notes":
         await this.handleGetRecentNotes(ws);
+        break;
+      case "get_recent_activity":
+        await this.handleGetRecentActivity(ws);
         break;
     }
   }
@@ -868,6 +872,41 @@ export class WebSocketHandler {
       log.error("Failed to get recent notes", error);
       const message =
         error instanceof Error ? error.message : "Failed to get recent notes";
+      this.sendError(ws, "INTERNAL_ERROR", message);
+    }
+  }
+
+  /**
+   * Handles get_recent_activity message.
+   * Returns both recent captured notes and recent discussions.
+   */
+  private async handleGetRecentActivity(ws: WebSocketLike): Promise<void> {
+    log.info("Getting recent activity");
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for recent activity");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const [captures, discussions] = await Promise.all([
+        getRecentNotes(this.state.currentVault, 5),
+        getRecentSessions(this.state.currentVault.id, 5),
+      ]);
+      log.info(`Found ${captures.length} captures and ${discussions.length} discussions`);
+      this.send(ws, {
+        type: "recent_activity",
+        captures,
+        discussions,
+      });
+    } catch (error) {
+      log.error("Failed to get recent activity", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to get recent activity";
       this.sendError(ws, "INTERNAL_ERROR", message);
     }
   }

@@ -68,6 +68,17 @@ export const RecentNoteEntrySchema = z.object({
 });
 
 /**
+ * Schema for a recent discussion entry (session summary)
+ */
+export const RecentDiscussionEntrySchema = z.object({
+  sessionId: z.string().min(1, "Session ID is required"),
+  preview: z.string(),
+  time: z.string().regex(/^\d{2}:\d{2}$/, "Time must be HH:MM format"),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD format"),
+  messageCount: z.number().int().min(0),
+});
+
+/**
  * Schema for a conversation message in session history
  */
 export const ConversationMessageSchema = z.object({
@@ -160,6 +171,13 @@ export const GetRecentNotesMessageSchema = z.object({
 });
 
 /**
+ * Client requests recent activity (captures + discussions) from the vault
+ */
+export const GetRecentActivityMessageSchema = z.object({
+  type: z.literal("get_recent_activity"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -173,6 +191,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ListDirectoryMessageSchema,
   ReadFileMessageSchema,
   GetRecentNotesMessageSchema,
+  GetRecentActivityMessageSchema,
 ]);
 
 // =============================================================================
@@ -303,6 +322,15 @@ export const RecentNotesMessageSchema = z.object({
 });
 
 /**
+ * Server sends recent activity (captures + discussions) from the vault
+ */
+export const RecentActivityMessageSchema = z.object({
+  type: z.literal("recent_activity"),
+  captures: z.array(RecentNoteEntrySchema),
+  discussions: z.array(RecentDiscussionEntrySchema),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -320,6 +348,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   DirectoryListingMessageSchema,
   FileContentMessageSchema,
   RecentNotesMessageSchema,
+  RecentActivityMessageSchema,
 ]);
 
 // =============================================================================
@@ -331,6 +360,9 @@ export type FileEntry = z.infer<typeof FileEntrySchema>;
 
 // Recent notes types
 export type RecentNoteEntry = z.infer<typeof RecentNoteEntrySchema>;
+
+// Recent discussion types
+export type RecentDiscussionEntry = z.infer<typeof RecentDiscussionEntrySchema>;
 
 // Conversation message type
 export type ConversationMessageProtocol = z.infer<typeof ConversationMessageSchema>;
@@ -346,6 +378,7 @@ export type PingMessage = z.infer<typeof PingMessageSchema>;
 export type ListDirectoryMessage = z.infer<typeof ListDirectoryMessageSchema>;
 export type ReadFileMessage = z.infer<typeof ReadFileMessageSchema>;
 export type GetRecentNotesMessage = z.infer<typeof GetRecentNotesMessageSchema>;
+export type GetRecentActivityMessage = z.infer<typeof GetRecentActivityMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -363,6 +396,7 @@ export type PongMessage = z.infer<typeof PongMessageSchema>;
 export type DirectoryListingMessage = z.infer<typeof DirectoryListingMessageSchema>;
 export type FileContentMessage = z.infer<typeof FileContentMessageSchema>;
 export type RecentNotesMessage = z.infer<typeof RecentNotesMessageSchema>;
+export type RecentActivityMessage = z.infer<typeof RecentActivityMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

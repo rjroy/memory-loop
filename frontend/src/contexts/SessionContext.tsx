@@ -14,7 +14,7 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, ConversationMessageProtocol } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol } from "@memory-loop/shared";
 
 /**
  * Application mode: note capture, discussion, or browse.
@@ -75,6 +75,8 @@ export interface SessionState {
   browser: BrowserState;
   /** Recent captured notes for note mode */
   recentNotes: RecentNoteEntry[];
+  /** Recent discussion sessions for note mode */
+  recentDiscussions: RecentDiscussionEntry[];
 }
 
 /**
@@ -119,6 +121,8 @@ export interface SessionActions {
   pinFolder: (path: string) => void;
   /** Unpin a folder */
   unpinFolder: (path: string) => void;
+  /** Set recent discussions */
+  setRecentDiscussions: (discussions: RecentDiscussionEntry[]) => void;
 }
 
 /**
@@ -160,6 +164,7 @@ type SessionAction =
   | { type: "SET_FILE_LOADING"; isLoading: boolean }
   | { type: "CLEAR_BROWSER_STATE" }
   | { type: "SET_RECENT_NOTES"; notes: RecentNoteEntry[] }
+  | { type: "SET_RECENT_DISCUSSIONS"; discussions: RecentDiscussionEntry[] }
   | { type: "PIN_FOLDER"; path: string }
   | { type: "UNPIN_FOLDER"; path: string }
   | { type: "SET_PINNED_FOLDERS"; paths: string[] };
@@ -204,8 +209,9 @@ function sessionReducer(
         messages: [],
         // Clear browser state when switching vaults (REQ-F-23)
         browser: createInitialBrowserState(),
-        // Clear recent notes when switching vaults
+        // Clear recent activity when switching vaults
         recentNotes: [],
+        recentDiscussions: [],
       };
 
     case "CLEAR_VAULT":
@@ -216,6 +222,7 @@ function sessionReducer(
         messages: [],
         browser: createInitialBrowserState(),
         recentNotes: [],
+        recentDiscussions: [],
       };
 
     case "SET_SESSION_ID":
@@ -398,6 +405,12 @@ function sessionReducer(
         },
       };
 
+    case "SET_RECENT_DISCUSSIONS":
+      return {
+        ...state,
+        recentDiscussions: action.discussions,
+      };
+
     default:
       return state;
   }
@@ -413,6 +426,7 @@ const initialState: SessionState = {
   messages: [],
   browser: createInitialBrowserState(),
   recentNotes: [],
+  recentDiscussions: [],
 };
 
 /**
@@ -666,6 +680,10 @@ export function SessionProvider({
     dispatch({ type: "UNPIN_FOLDER", path });
   }, []);
 
+  const setRecentDiscussions = useCallback((discussions: RecentDiscussionEntry[]) => {
+    dispatch({ type: "SET_RECENT_DISCUSSIONS", discussions });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -687,6 +705,7 @@ export function SessionProvider({
     setRecentNotes,
     pinFolder,
     unpinFolder,
+    setRecentDiscussions,
   };
 
   return (

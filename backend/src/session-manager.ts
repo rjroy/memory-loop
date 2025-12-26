@@ -488,10 +488,21 @@ export async function getSessionForVault(
       }
 
       const sessionId = file.slice(0, -5); // Remove .json extension
-      const metadata = await loadSession(sessionId);
+
+      let metadata;
+      try {
+        metadata = await loadSession(sessionId);
+      } catch {
+        // Skip corrupted session files
+        continue;
+      }
 
       if (metadata && metadata.vaultId === vaultId) {
         const lastActiveAt = new Date(metadata.lastActiveAt);
+        if (Number.isNaN(lastActiveAt.getTime())) {
+          // Skip sessions with invalid timestamps
+          continue;
+        }
         if (!mostRecentSession || lastActiveAt > mostRecentSession.lastActiveAt) {
           mostRecentSession = { id: sessionId, lastActiveAt };
         }
@@ -641,8 +652,8 @@ export async function createSession(
     await saveSession(metadata);
     log.info("Session metadata saved");
 
-    // Prune old sessions to keep only the most recent 5
-    await pruneOldSessions(vault.id);
+    // Prune old sessions in background (non-blocking, errors logged internally)
+    void pruneOldSessions(vault.id);
 
     // Return wrapped result
     return {

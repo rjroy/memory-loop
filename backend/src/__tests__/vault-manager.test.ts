@@ -15,10 +15,14 @@ import {
   VaultsDirError,
   DEFAULT_INBOX_PATH,
   INBOX_PATTERNS,
+  GOALS_FILE_PATH,
   directoryExists,
   fileExists,
   detectInboxPath,
+  detectGoalsPath,
   parseVault,
+  parseGoals,
+  getVaultGoals,
 } from "../vault-manager";
 import type { VaultInfo } from "@memory-loop/shared";
 
@@ -581,5 +585,289 @@ describe("Edge Cases", () => {
     } catch {
       // Symlinks may not be supported on all platforms, skip this test
     }
+  });
+});
+
+// =============================================================================
+// Goals Feature Tests
+// =============================================================================
+
+describe("Goals Feature", () => {
+  describe("parseGoals", () => {
+    test("parses incomplete goals from Active section", () => {
+      const content = `# Goals
+
+## Active
+
+- [ ] Learn TypeScript
+- [ ] Build a web app
+- [ ] Write tests
+
+## Completed
+
+- [x] Set up project
+`;
+      const goals = parseGoals(content);
+      expect(goals).toHaveLength(3);
+      expect(goals[0]).toEqual({ text: "Learn TypeScript", completed: false });
+      expect(goals[1]).toEqual({ text: "Build a web app", completed: false });
+      expect(goals[2]).toEqual({ text: "Write tests", completed: false });
+    });
+
+    test("parses completed goals in Active section", () => {
+      const content = `## Active
+
+- [x] Completed task
+- [ ] Incomplete task
+- [X] Also completed (uppercase)
+`;
+      const goals = parseGoals(content);
+      expect(goals).toHaveLength(3);
+      expect(goals[0]).toEqual({ text: "Completed task", completed: true });
+      expect(goals[1]).toEqual({ text: "Incomplete task", completed: false });
+      expect(goals[2]).toEqual({ text: "Also completed (uppercase)", completed: true });
+    });
+
+    test("ignores goals outside Active section", () => {
+      const content = `## Backlog
+
+- [ ] Future task
+
+## Active
+
+- [ ] Current task
+
+## Done
+
+- [x] Past task
+`;
+      const goals = parseGoals(content);
+      expect(goals).toHaveLength(1);
+      expect(goals[0]).toEqual({ text: "Current task", completed: false });
+    });
+
+    test("handles asterisk list items", () => {
+      const content = `## Active
+
+* [ ] Asterisk task
+* [x] Completed asterisk
+`;
+      const goals = parseGoals(content);
+      expect(goals).toHaveLength(2);
+      expect(goals[0]).toEqual({ text: "Asterisk task", completed: false });
+      expect(goals[1]).toEqual({ text: "Completed asterisk", completed: true });
+    });
+
+    test("returns empty array when no Active section", () => {
+      const content = `# Goals
+
+## Completed
+
+- [x] Done task
+`;
+      const goals = parseGoals(content);
+      expect(goals).toHaveLength(0);
+    });
+
+    test("returns empty array for empty content", () => {
+      const goals = parseGoals("");
+      expect(goals).toHaveLength(0);
+    });
+
+    test("ignores non-checkbox list items", () => {
+      const content = `## Active
+
+- Regular list item
+- [ ] Checkbox item
+- Another regular item
+`;
+      const goals = parseGoals(content);
+      expect(goals).toHaveLength(1);
+      expect(goals[0]).toEqual({ text: "Checkbox item", completed: false });
+    });
+
+    test("handles case-insensitive Active header", () => {
+      const content = `## active
+
+- [ ] Lowercase header task
+`;
+      const goals = parseGoals(content);
+      expect(goals).toHaveLength(1);
+      expect(goals[0]).toEqual({ text: "Lowercase header task", completed: false });
+    });
+
+    test("ignores empty checkbox items", () => {
+      const content = `## Active
+
+- [ ]
+- [ ] Valid task
+- [ ]
+`;
+      const goals = parseGoals(content);
+      expect(goals).toHaveLength(1);
+      expect(goals[0]).toEqual({ text: "Valid task", completed: false });
+    });
+  });
+
+  describe("detectGoalsPath", () => {
+    let testDir: string;
+
+    beforeEach(async () => {
+      testDir = join(tmpdir(), `goals-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      await mkdir(testDir, { recursive: true });
+    });
+
+    afterEach(async () => {
+      try {
+        await rm(testDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+
+    test("returns goals path when file exists", async () => {
+      const goalsDir = join(testDir, "06_Metadata", "memory-loop");
+      await mkdir(goalsDir, { recursive: true });
+      await writeFile(join(goalsDir, "goals.md"), "# Goals\n\n## Active\n");
+
+      const goalsPath = await detectGoalsPath(testDir);
+      expect(goalsPath).toBe(GOALS_FILE_PATH);
+    });
+
+    test("returns undefined when file does not exist", async () => {
+      const goalsPath = await detectGoalsPath(testDir);
+      expect(goalsPath).toBeUndefined();
+    });
+
+    test("returns undefined when directory exists but file does not", async () => {
+      const goalsDir = join(testDir, "06_Metadata", "memory-loop");
+      await mkdir(goalsDir, { recursive: true });
+
+      const goalsPath = await detectGoalsPath(testDir);
+      expect(goalsPath).toBeUndefined();
+    });
+  });
+
+  describe("getVaultGoals", () => {
+    let testDir: string;
+
+    beforeEach(async () => {
+      testDir = join(tmpdir(), `vault-goals-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      await mkdir(testDir, { recursive: true });
+    });
+
+    afterEach(async () => {
+      try {
+        await rm(testDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+
+    test("returns null when vault has no goalsPath", async () => {
+      const vault: VaultInfo = {
+        id: "test-vault",
+        name: "Test Vault",
+        path: testDir,
+        hasClaudeMd: true,
+        inboxPath: "00_Inbox",
+        goalsPath: undefined,
+      };
+
+      const goals = await getVaultGoals(vault);
+      expect(goals).toBeNull();
+    });
+
+    test("returns parsed goals when file exists", async () => {
+      const goalsDir = join(testDir, "06_Metadata", "memory-loop");
+      await mkdir(goalsDir, { recursive: true });
+      await writeFile(
+        join(goalsDir, "goals.md"),
+        `# Goals
+
+## Active
+
+- [ ] First goal
+- [x] Second goal (done)
+`
+      );
+
+      const vault: VaultInfo = {
+        id: "test-vault",
+        name: "Test Vault",
+        path: testDir,
+        hasClaudeMd: true,
+        inboxPath: "00_Inbox",
+        goalsPath: GOALS_FILE_PATH,
+      };
+
+      const goals = await getVaultGoals(vault);
+      expect(goals).not.toBeNull();
+      expect(goals).toHaveLength(2);
+      expect(goals![0]).toEqual({ text: "First goal", completed: false });
+      expect(goals![1]).toEqual({ text: "Second goal (done)", completed: true });
+    });
+
+    test("returns null when file is missing despite goalsPath being set", async () => {
+      const vault: VaultInfo = {
+        id: "test-vault",
+        name: "Test Vault",
+        path: testDir,
+        hasClaudeMd: true,
+        inboxPath: "00_Inbox",
+        goalsPath: GOALS_FILE_PATH,
+      };
+
+      const goals = await getVaultGoals(vault);
+      expect(goals).toBeNull();
+    });
+  });
+
+  describe("parseVault with goals", () => {
+    let testDir: string;
+    const originalVaultsDir = process.env.VAULTS_DIR;
+
+    beforeEach(async () => {
+      testDir = join(tmpdir(), `vault-parse-goals-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      await mkdir(testDir, { recursive: true });
+      process.env.VAULTS_DIR = testDir;
+    });
+
+    afterEach(async () => {
+      if (originalVaultsDir === undefined) {
+        delete process.env.VAULTS_DIR;
+      } else {
+        process.env.VAULTS_DIR = originalVaultsDir;
+      }
+      try {
+        await rm(testDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+
+    test("includes goalsPath when goals.md exists", async () => {
+      const vaultDir = join(testDir, "test-vault");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Test Vault");
+
+      const goalsDir = join(vaultDir, "06_Metadata", "memory-loop");
+      await mkdir(goalsDir, { recursive: true });
+      await writeFile(join(goalsDir, "goals.md"), "# Goals\n\n## Active\n");
+
+      const vault = await parseVault(testDir, "test-vault");
+      expect(vault).not.toBeNull();
+      expect(vault!.goalsPath).toBe(GOALS_FILE_PATH);
+    });
+
+    test("goalsPath is undefined when goals.md does not exist", async () => {
+      const vaultDir = join(testDir, "test-vault");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Test Vault");
+
+      const vault = await parseVault(testDir, "test-vault");
+      expect(vault).not.toBeNull();
+      expect(vault!.goalsPath).toBeUndefined();
+    });
   });
 });

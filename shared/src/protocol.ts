@@ -20,6 +20,7 @@ export const VaultInfoSchema = z.object({
   path: z.string().min(1, "Vault path is required"),
   hasClaudeMd: z.boolean(),
   inboxPath: z.string().min(1, "Inbox path is required"),
+  goalsPath: z.string().optional(),
 });
 
 // =============================================================================
@@ -178,6 +179,13 @@ export const GetRecentActivityMessageSchema = z.object({
 });
 
 /**
+ * Client requests goals from the vault's goals.md file
+ */
+export const GetGoalsMessageSchema = z.object({
+  type: z.literal("get_goals"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -192,6 +200,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ReadFileMessageSchema,
   GetRecentNotesMessageSchema,
   GetRecentActivityMessageSchema,
+  GetGoalsMessageSchema,
 ]);
 
 // =============================================================================
@@ -332,6 +341,23 @@ export const RecentActivityMessageSchema = z.object({
 });
 
 /**
+ * Schema for a single goal item parsed from goals.md
+ */
+export const GoalItemSchema = z.object({
+  text: z.string(),
+  completed: z.boolean(),
+});
+
+/**
+ * Server sends goals from the vault's goals.md file
+ * Returns null for goals if the file doesn't exist
+ */
+export const GoalsMessageSchema = z.object({
+  type: z.literal("goals"),
+  goals: z.array(GoalItemSchema).nullable(),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -350,6 +376,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   FileContentMessageSchema,
   RecentNotesMessageSchema,
   RecentActivityMessageSchema,
+  GoalsMessageSchema,
 ]);
 
 // =============================================================================
@@ -380,6 +407,7 @@ export type ListDirectoryMessage = z.infer<typeof ListDirectoryMessageSchema>;
 export type ReadFileMessage = z.infer<typeof ReadFileMessageSchema>;
 export type GetRecentNotesMessage = z.infer<typeof GetRecentNotesMessageSchema>;
 export type GetRecentActivityMessage = z.infer<typeof GetRecentActivityMessageSchema>;
+export type GetGoalsMessage = z.infer<typeof GetGoalsMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -398,6 +426,8 @@ export type DirectoryListingMessage = z.infer<typeof DirectoryListingMessageSche
 export type FileContentMessage = z.infer<typeof FileContentMessageSchema>;
 export type RecentNotesMessage = z.infer<typeof RecentNotesMessageSchema>;
 export type RecentActivityMessage = z.infer<typeof RecentActivityMessageSchema>;
+export type GoalItem = z.infer<typeof GoalItemSchema>;
+export type GoalsMessage = z.infer<typeof GoalsMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useCallback } from "react";
 import { useSession, type AppMode } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { RecentActivity } from "./RecentActivity";
+import { GoalsCard } from "./GoalsCard";
 import "./HomeView.css";
 
 /**
@@ -52,15 +53,18 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
     setMode,
     setRecentNotes,
     setRecentDiscussions,
+    setGoals,
   } = useSession();
 
   const hasSentVaultSelectionRef = useRef(false);
   const hasRequestedRecentActivityRef = useRef(false);
+  const hasRequestedGoalsRef = useRef(false);
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
     hasRequestedRecentActivityRef.current = false;
+    hasRequestedGoalsRef.current = false;
   }, []);
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
@@ -82,16 +86,21 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
     }
   }, [connectionStatus, vault, sendMessage]);
 
-  // Request recent activity after server confirms vault selection
+  // Request recent activity and goals after server confirms vault selection
+  // Note: Goals are only requested if vault has goalsPath set during discovery.
+  // If user creates goals.md after vault selection, they must reselect the vault.
   useEffect(() => {
-    if (
-      lastMessage?.type === "session_ready" &&
-      !hasRequestedRecentActivityRef.current
-    ) {
-      sendMessage({ type: "get_recent_activity" });
-      hasRequestedRecentActivityRef.current = true;
+    if (lastMessage?.type === "session_ready") {
+      if (!hasRequestedRecentActivityRef.current) {
+        sendMessage({ type: "get_recent_activity" });
+        hasRequestedRecentActivityRef.current = true;
+      }
+      if (!hasRequestedGoalsRef.current && vault?.goalsPath) {
+        sendMessage({ type: "get_goals" });
+        hasRequestedGoalsRef.current = true;
+      }
     }
-  }, [lastMessage, sendMessage]);
+  }, [lastMessage, sendMessage, vault?.goalsPath]);
 
   // Handle recent_activity response
   useEffect(() => {
@@ -100,6 +109,13 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
       setRecentDiscussions(lastMessage.discussions);
     }
   }, [lastMessage, setRecentNotes, setRecentDiscussions]);
+
+  // Handle goals response
+  useEffect(() => {
+    if (lastMessage?.type === "goals") {
+      setGoals(lastMessage.goals);
+    }
+  }, [lastMessage, setGoals]);
 
   // Quick action handlers
   function handleCaptureThought() {
@@ -171,6 +187,9 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
           <span className="home-view__action-label">Browse vault</span>
         </button>
       </section>
+
+      {/* Goals */}
+      <GoalsCard />
 
       {/* Recent Activity */}
       <RecentActivity sendMessage={sendMessage} />

@@ -26,6 +26,12 @@ export class VaultsDirError extends Error {
 export const DEFAULT_INBOX_PATH = "00_Inbox";
 
 /**
+ * Expected path for goals.md file within the vault.
+ * Uses the 06_Metadata/memory-loop convention for vault metadata.
+ */
+export const GOALS_FILE_PATH = "06_Metadata/memory-loop/goals.md";
+
+/**
  * Common inbox directory patterns to detect.
  * Checked in order; first match is used.
  */
@@ -127,6 +133,20 @@ export async function detectInboxPath(vaultPath: string): Promise<string> {
 }
 
 /**
+ * Detects the goals.md file path for a vault.
+ *
+ * @param vaultPath - Absolute path to the vault directory
+ * @returns The goals file path if it exists, or undefined
+ */
+export async function detectGoalsPath(vaultPath: string): Promise<string | undefined> {
+  const goalsFullPath = join(vaultPath, GOALS_FILE_PATH);
+  if (await fileExists(goalsFullPath)) {
+    return GOALS_FILE_PATH;
+  }
+  return undefined;
+}
+
+/**
  * Reads and parses a single vault directory.
  * Returns null if the directory is not a valid vault (no CLAUDE.md).
  *
@@ -169,12 +189,16 @@ export async function parseVault(
   // Detect inbox path
   const inboxPath = await detectInboxPath(vaultPath);
 
+  // Detect goals.md file
+  const goalsPath = await detectGoalsPath(vaultPath);
+
   return {
     id: dirName,
     name,
     path: vaultPath,
     hasClaudeMd,
     inboxPath,
+    goalsPath,
   };
 }
 
@@ -286,4 +310,77 @@ export async function getVaultById(vaultId: string): Promise<VaultInfo | null> {
  */
 export function getVaultInboxPath(vault: VaultInfo): string {
   return join(vault.path, vault.inboxPath);
+}
+
+/**
+ * A single goal item parsed from goals.md.
+ */
+export interface GoalItem {
+  text: string;
+  completed: boolean;
+}
+
+/**
+ * Parses goals from a goals.md file.
+ * Extracts checkbox items from the "Active" section (## Active header).
+ * Returns goals with completed status based on [x] vs [ ] syntax.
+ *
+ * @param content - The content of goals.md
+ * @returns Array of goal items from the Active section
+ */
+export function parseGoals(content: string): GoalItem[] {
+  const lines = content.split("\n");
+  const goals: GoalItem[] = [];
+
+  let inActiveSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Check for section headers
+    if (trimmed.startsWith("## ")) {
+      const headerText = trimmed.slice(3).trim().toLowerCase();
+      inActiveSection = headerText === "active";
+      continue;
+    }
+
+    // Only parse goals in the Active section
+    if (!inActiveSection) {
+      continue;
+    }
+
+    // Parse checkbox items: - [ ] or - [x]
+    const checkboxMatch = trimmed.match(/^[-*]\s*\[([ xX])\]\s*(.+)$/);
+    if (checkboxMatch) {
+      const completed = checkboxMatch[1].toLowerCase() === "x";
+      const text = checkboxMatch[2].trim();
+      if (text) {
+        goals.push({ text, completed });
+      }
+    }
+  }
+
+  return goals;
+}
+
+/**
+ * Reads and parses goals from a vault's goals.md file.
+ *
+ * @param vault - The VaultInfo object
+ * @returns Array of goal items, or null if no goals file exists
+ */
+export async function getVaultGoals(vault: VaultInfo): Promise<GoalItem[] | null> {
+  if (!vault.goalsPath) {
+    return null;
+  }
+
+  const goalsFullPath = join(vault.path, vault.goalsPath);
+
+  try {
+    const content = await readFile(goalsFullPath, "utf-8");
+    return parseGoals(content);
+  } catch {
+    log.warn(`Failed to read goals file: ${goalsFullPath}`);
+    return null;
+  }
 }

@@ -375,6 +375,7 @@ describe("MarkdownViewer", () => {
     });
 
     it("sanitizes onclick handlers", () => {
+      // react-markdown escapes raw HTML by default, so the anchor won't render as HTML
       const content = '<a href="#" onclick="alert(\'xss\')">Click</a>';
       const { container } = render(<MarkdownViewer />, {
         wrapper: createTestWrapper({
@@ -383,8 +384,10 @@ describe("MarkdownViewer", () => {
         }),
       });
 
+      // Either no anchor exists (raw HTML escaped) or it has no onclick
       const link = container.querySelector("a");
-      expect(link?.getAttribute("onclick")).toBeNull();
+      const hasNoOnclick = !link || link.getAttribute("onclick") === null;
+      expect(hasNoOnclick).toBe(true);
     });
   });
 });

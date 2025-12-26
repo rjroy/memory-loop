@@ -5,9 +5,9 @@
  * and proper handling of images and external links.
  */
 
-import { useMemo, useCallback } from "react";
-import { marked, type Renderer, type Tokens } from "marked";
-import DOMPurify from "dompurify";
+import { useMemo, useCallback, type ReactNode, type ComponentProps } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useSession } from "../contexts/SessionContext";
 import "./MarkdownViewer.css";
 
@@ -27,85 +27,80 @@ export interface MarkdownViewerProps {
 const WIKI_LINK_PATTERN = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
 /**
- * Parses wiki-links in text and returns HTML with clickable links.
+ * Parses text for wiki-links and returns an array of text and link elements.
  */
-function parseWikiLinks(text: string): string {
-  return text.replace(WIKI_LINK_PATTERN, (_match, target: string, display?: string) => {
-    const displayText = display ?? target;
-    // Add .md extension if not present
+function parseWikiLinks(
+  text: string,
+  onLinkClick: (target: string) => void
+): ReactNode[] {
+  const result: ReactNode[] = [];
+  let lastIndex = 0;
+
+  // Use matchAll to avoid regex state issues
+  for (const match of text.matchAll(WIKI_LINK_PATTERN)) {
+    // Add text before this match
+    if (match.index !== undefined && match.index > lastIndex) {
+      result.push(text.slice(lastIndex, match.index));
+    }
+
+    const target = match[1];
+    const display = match[2] ?? target;
     const targetPath = target.endsWith(".md") ? target : `${target}.md`;
-    return `<a href="#" class="markdown-viewer__wiki-link" data-wiki-target="${targetPath}">${displayText}</a>`;
-  });
+
+    result.push(
+      <a
+        key={`wiki-${match.index}`}
+        href="#"
+        className="markdown-viewer__wiki-link"
+        data-wiki-target={targetPath}
+        onClick={(e) => {
+          e.preventDefault();
+          onLinkClick(targetPath);
+        }}
+      >
+        {display}
+      </a>
+    );
+
+    lastIndex = (match.index ?? 0) + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    result.push(text.slice(lastIndex));
+  }
+
+  return result.length > 0 ? result : [text];
 }
 
 /**
- * Creates a custom marked renderer for our needs.
+ * Recursively processes children to parse wiki-links in text nodes.
  */
-function createRenderer(assetBaseUrl: string): Partial<Renderer> {
-  return {
-    // Handle images - prepend asset base URL for relative paths
-    image({ href, title, text }: Tokens.Image): string {
-      const isRelative = href && !href.startsWith("http://") && !href.startsWith("https://") && !href.startsWith("data:");
-      const src = isRelative ? `${assetBaseUrl}/${href}` : href;
-      const titleAttr = title ? ` title="${title}"` : "";
-      return `<img src="${src}" alt="${text}"${titleAttr} loading="lazy" />`;
-    },
+function processChildren(
+  children: ReactNode,
+  onLinkClick: (target: string) => void
+): ReactNode {
+  if (typeof children === "string") {
+    const parsed = parseWikiLinks(children, onLinkClick);
+    return parsed.length === 1 ? parsed[0] : parsed;
+  }
 
-    // Handle links - add target="_blank" for external URLs
-    link({ href, title, tokens }: Tokens.Link): string {
-      const text = this.parser?.parseInline(tokens) ?? "";
-      const isExternal = href?.startsWith("http://") || href?.startsWith("https://");
-      const titleAttr = title ? ` title="${title}"` : "";
-
-      if (isExternal) {
-        return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer" class="markdown-viewer__external-link">${text}</a>`;
+  if (Array.isArray(children)) {
+    const processed: ReactNode[] = children.map((child, i): ReactNode => {
+      if (typeof child === "string") {
+        const parsed = parseWikiLinks(child, onLinkClick);
+        return parsed.length === 1 ? (
+          <span key={i}>{parsed[0]}</span>
+        ) : (
+          <span key={i}>{parsed}</span>
+        );
       }
+      return child as ReactNode;
+    });
+    return processed;
+  }
 
-      return `<a href="${href}"${titleAttr}>${text}</a>`;
-    },
-
-    // Handle paragraphs - parse wiki-links in text content
-    paragraph({ tokens }: Tokens.Paragraph): string {
-      const text = this.parser?.parseInline(tokens) ?? "";
-      return `<p>${parseWikiLinks(text)}</p>\n`;
-    },
-
-    // Handle list items - parse wiki-links
-    listitem({ tokens }: Tokens.ListItem): string {
-      const text = this.parser?.parse(tokens) ?? "";
-      return `<li>${parseWikiLinks(text)}</li>\n`;
-    },
-
-    // Handle headings - parse wiki-links
-    heading({ tokens, depth }: Tokens.Heading): string {
-      const text = this.parser?.parseInline(tokens) ?? "";
-      return `<h${depth}>${parseWikiLinks(text)}</h${depth}>\n`;
-    },
-  };
-}
-
-/**
- * Configure DOMPurify to allow our custom attributes and classes.
- */
-function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
-    ADD_ATTR: ["data-wiki-target", "target", "rel"],
-    ADD_TAGS: [],
-    ALLOWED_TAGS: [
-      "h1", "h2", "h3", "h4", "h5", "h6",
-      "p", "br", "hr",
-      "ul", "ol", "li",
-      "blockquote", "pre", "code",
-      "a", "img",
-      "strong", "em", "del", "s",
-      "table", "thead", "tbody", "tr", "th", "td",
-      "div", "span",
-    ],
-    ALLOWED_ATTR: [
-      "href", "src", "alt", "title", "class",
-      "target", "rel", "data-wiki-target", "loading",
-    ],
-  });
+  return children;
 }
 
 /**
@@ -117,7 +112,7 @@ function Breadcrumb({
 }: {
   path: string;
   onNavigate: (path: string) => void;
-}): React.ReactNode {
+}): ReactNode {
   const segments = path.split("/").filter(Boolean);
 
   if (segments.length === 0) {
@@ -163,7 +158,7 @@ function Breadcrumb({
 /**
  * Loading skeleton for markdown content.
  */
-function LoadingSkeleton(): React.ReactNode {
+function LoadingSkeleton(): ReactNode {
   return (
     <div className="markdown-viewer__skeleton" aria-label="Loading content">
       <div className="markdown-viewer__skeleton-line markdown-viewer__skeleton-line--heading" />
@@ -177,57 +172,115 @@ function LoadingSkeleton(): React.ReactNode {
 }
 
 /**
+ * Creates custom react-markdown components with wiki-link and asset handling.
+ */
+function createMarkdownComponents(
+  assetBaseUrl: string,
+  onWikiLinkClick: (target: string) => void
+) {
+  return {
+    // Handle links - external links get target="_blank", wiki-links are handled in text
+    a: ({ href, children, ...props }: ComponentProps<"a">) => {
+      const isExternal = href?.startsWith("http://") || href?.startsWith("https://");
+
+      if (isExternal) {
+        return (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="markdown-viewer__external-link"
+            {...props}
+          >
+            {children}
+          </a>
+        );
+      }
+
+      return (
+        <a href={href} {...props}>
+          {children}
+        </a>
+      );
+    },
+
+    // Handle images - prepend asset base URL for relative paths
+    img: ({ src, alt, ...props }: ComponentProps<"img">) => {
+      const isRelative =
+        src &&
+        !src.startsWith("http://") &&
+        !src.startsWith("https://") &&
+        !src.startsWith("data:");
+      const resolvedSrc = isRelative ? `${assetBaseUrl}/${src}` : src;
+
+      return <img src={resolvedSrc} alt={alt} loading="lazy" {...props} />;
+    },
+
+    // Handle paragraphs - parse wiki-links
+    p: ({ children, ...props }: ComponentProps<"p">) => (
+      <p {...props}>{processChildren(children, onWikiLinkClick)}</p>
+    ),
+
+    // Handle list items - parse wiki-links
+    li: ({ children, ...props }: ComponentProps<"li">) => (
+      <li {...props}>{processChildren(children, onWikiLinkClick)}</li>
+    ),
+
+    // Handle headings - parse wiki-links
+    h1: ({ children, ...props }: ComponentProps<"h1">) => (
+      <h1 {...props}>{processChildren(children, onWikiLinkClick)}</h1>
+    ),
+    h2: ({ children, ...props }: ComponentProps<"h2">) => (
+      <h2 {...props}>{processChildren(children, onWikiLinkClick)}</h2>
+    ),
+    h3: ({ children, ...props }: ComponentProps<"h3">) => (
+      <h3 {...props}>{processChildren(children, onWikiLinkClick)}</h3>
+    ),
+    h4: ({ children, ...props }: ComponentProps<"h4">) => (
+      <h4 {...props}>{processChildren(children, onWikiLinkClick)}</h4>
+    ),
+    h5: ({ children, ...props }: ComponentProps<"h5">) => (
+      <h5 {...props}>{processChildren(children, onWikiLinkClick)}</h5>
+    ),
+    h6: ({ children, ...props }: ComponentProps<"h6">) => (
+      <h6 {...props}>{processChildren(children, onWikiLinkClick)}</h6>
+    ),
+  };
+}
+
+/**
  * MarkdownViewer renders vault file content with:
- * - Markdown formatting via marked
+ * - Markdown formatting via react-markdown
  * - Wiki-link parsing and navigation
  * - Breadcrumb navigation
  * - Truncation warnings
  * - Loading states
- * - XSS protection via DOMPurify
+ * - Built-in XSS protection (react-markdown sanitizes by default)
  */
 export function MarkdownViewer({
   onNavigate,
   assetBaseUrl = "/vault/assets",
-}: MarkdownViewerProps): React.ReactNode {
+}: MarkdownViewerProps): ReactNode {
   const { browser, setCurrentPath } = useSession();
-  const { currentPath, currentFileContent, currentFileTruncated, fileError, isLoading } = browser;
+  const { currentPath, currentFileContent, currentFileTruncated, fileError, isLoading } =
+    browser;
 
-  // Create marked instance with custom renderer and sanitize output
-  const htmlContent = useMemo(() => {
-    if (!currentFileContent) return "";
-
-    const renderer = createRenderer(assetBaseUrl);
-    marked.use({ renderer });
-
-    try {
-      const rawHtml = marked.parse(currentFileContent) as string;
-      // Sanitize the HTML to prevent XSS attacks
-      return sanitizeHtml(rawHtml);
-    } catch {
-      return sanitizeHtml(`<p class="markdown-viewer__error">Failed to parse markdown</p>`);
-    }
-  }, [currentFileContent, assetBaseUrl]);
-
-  // Handle clicks on wiki-links
-  const handleContentClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement;
-      const wikiLink = target.closest<HTMLAnchorElement>(".markdown-viewer__wiki-link");
-
-      if (wikiLink) {
-        e.preventDefault();
-        const targetPath = wikiLink.dataset.wikiTarget;
-        if (targetPath) {
-          // Resolve relative path from current directory
-          const currentDir = currentPath.includes("/")
-            ? currentPath.substring(0, currentPath.lastIndexOf("/"))
-            : "";
-          const resolvedPath = currentDir ? `${currentDir}/${targetPath}` : targetPath;
-          onNavigate?.(resolvedPath);
-        }
-      }
+  // Handle wiki-link clicks - resolve relative paths
+  const handleWikiLinkClick = useCallback(
+    (targetPath: string) => {
+      const currentDir = currentPath.includes("/")
+        ? currentPath.substring(0, currentPath.lastIndexOf("/"))
+        : "";
+      const resolvedPath = currentDir ? `${currentDir}/${targetPath}` : targetPath;
+      onNavigate?.(resolvedPath);
     },
     [currentPath, onNavigate]
+  );
+
+  // Create markdown components with current handlers
+  const components = useMemo(
+    () => createMarkdownComponents(assetBaseUrl, handleWikiLinkClick),
+    [assetBaseUrl, handleWikiLinkClick]
   );
 
   // Handle breadcrumb navigation
@@ -285,11 +338,11 @@ export function MarkdownViewer({
         </div>
       )}
 
-      <div
-        className="markdown-viewer__content"
-        onClick={handleContentClick}
-        dangerouslySetInnerHTML={{ __html: htmlContent }}
-      />
+      <div className="markdown-viewer__content">
+        <Markdown remarkPlugins={[remarkGfm]} components={components}>
+          {currentFileContent}
+        </Markdown>
+      </div>
     </div>
   );
 }

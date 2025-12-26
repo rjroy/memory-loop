@@ -373,4 +373,156 @@ describe("FileTree", () => {
       expect(subStyle).toContain("padding-left: 28px");
     });
   });
+
+  describe("pinned folders", () => {
+    it("shows context menu on right-click of directory", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      const docsButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(docsButton!);
+
+      expect(screen.getByRole("menu")).toBeDefined();
+      expect(screen.getByText("Pin to top")).toBeDefined();
+    });
+
+    it("does not show context menu on right-click of file", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      const readmeButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(readmeButton!);
+
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("pins folder when clicking Pin to top", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const { container } = render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click to open context menu
+      const docsButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(docsButton!);
+
+      // Click pin option
+      const pinButton = screen.getByText("Pin to top");
+      fireEvent.click(pinButton);
+
+      // Should show pinned section
+      expect(screen.getByText("Pinned")).toBeDefined();
+      // Pinned section should contain docs folder
+      const pinnedSection = container.querySelector(".file-tree__pinned-section");
+      expect(pinnedSection?.textContent).toContain("docs");
+    });
+
+    it("shows Unpin folder option for already pinned folders", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const { container } = render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // First pin the folder
+      const docsButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(docsButton!);
+      fireEvent.click(screen.getByText("Pin to top"));
+
+      // Right-click the pinned folder in the pinned section
+      const pinnedSection = container.querySelector(".file-tree__pinned-section");
+      const pinnedDocsButton = pinnedSection?.querySelector("button");
+      fireEvent.contextMenu(pinnedDocsButton!);
+
+      expect(screen.getByText("Unpin folder")).toBeDefined();
+    });
+
+    it("unpins folder when clicking Unpin folder", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const { container } = render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Pin the folder first
+      const docsButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(docsButton!);
+      fireEvent.click(screen.getByText("Pin to top"));
+
+      // Verify pinned section exists
+      expect(container.querySelector(".file-tree__pinned-section")).toBeDefined();
+
+      // Right-click and unpin
+      const pinnedSection = container.querySelector(".file-tree__pinned-section");
+      const pinnedDocsButton = pinnedSection?.querySelector("button");
+      fireEvent.contextMenu(pinnedDocsButton!);
+      fireEvent.click(screen.getByText("Unpin folder"));
+
+      // Pinned section should be gone
+      expect(container.querySelector(".file-tree__pinned-section")).toBeNull();
+    });
+
+    it("closes context menu when clicking outside", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Open context menu
+      const docsButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(docsButton!);
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      // Click outside
+      fireEvent.mouseDown(document.body);
+
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("closes context menu on Escape key", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Open context menu
+      const docsButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(docsButton!);
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      // Press Escape
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("shows pin indicator on pinned folders in main tree", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const { container } = render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Pin the folder
+      const docsButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(docsButton!);
+      fireEvent.click(screen.getByText("Pin to top"));
+
+      // Check for pin indicator in main tree
+      const mainTree = container.querySelector(".file-tree__root");
+      const pinnedItem = mainTree?.querySelector(".file-tree__item--pinned");
+      expect(pinnedItem).toBeDefined();
+      expect(pinnedItem?.querySelector(".file-tree__pin-indicator")).toBeDefined();
+    });
+
+    it("allows expanding pinned folders", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", testFiles],
+        ["docs", docsFiles],
+      ]);
+      const { container } = render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Pin the folder
+      const docsButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(docsButton!);
+      fireEvent.click(screen.getByText("Pin to top"));
+
+      // Click on the pinned folder to expand it
+      const pinnedSection = container.querySelector(".file-tree__pinned-section");
+      const pinnedDocsButton = pinnedSection?.querySelector("button");
+      fireEvent.click(pinnedDocsButton!);
+
+      // Should show children under the pinned folder (may appear in both sections)
+      // Use getAllByText since expansion state is shared between pinned and main tree
+      const guideElements = screen.getAllByText("guide.md");
+      const apiElements = screen.getAllByText("api.md");
+      expect(guideElements.length).toBeGreaterThan(0);
+      expect(apiElements.length).toBeGreaterThan(0);
+    });
+  });
 });

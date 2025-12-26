@@ -167,7 +167,7 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
           className="home-view__action home-view__action--browse"
           onClick={handleBrowseVault}
         >
-          <span className="home-view__action-icon">:</span>
+          <span className="home-view__action-icon">☰</span>
           <span className="home-view__action-label">Browse vault</span>
         </button>
       </section>

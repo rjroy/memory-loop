@@ -13,8 +13,9 @@ import {
   type SDKMessage,
   type Options,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { SessionMetadata, VaultInfo } from "@memory-loop/shared";
+import type { SessionMetadata, VaultInfo, RecentDiscussionEntry } from "@memory-loop/shared";
 import { directoryExists, fileExists } from "./vault-manager";
+import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 import { sessionLog as log } from "./logger";
 
 /**
@@ -305,6 +306,88 @@ export async function listSessionsByVault(vaultId: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Gets recent discussion sessions for a vault, sorted by last activity.
+ *
+ * @param vaultId - The vault ID to filter by
+ * @param limit - Maximum number of discussions to return (default 5)
+ * @returns Array of RecentDiscussionEntry objects, sorted by most recent first
+ */
+export async function getRecentSessions(
+  vaultId: string,
+  limit = 5
+): Promise<RecentDiscussionEntry[]> {
+  try {
+    const sessionsDir = await getSessionsDir();
+
+    if (!(await directoryExists(sessionsDir))) {
+      return [];
+    }
+
+    const files = await readdir(sessionsDir);
+    const sessions: { metadata: SessionMetadata; lastActive: Date }[] = [];
+
+    for (const file of files) {
+      if (!file.endsWith(".json")) {
+        continue;
+      }
+
+      const sessionId = file.slice(0, -5);
+      try {
+        const metadata = await loadSession(sessionId);
+
+        if (metadata && metadata.vaultId === vaultId && metadata.messages.length > 0) {
+          sessions.push({
+            metadata,
+            lastActive: new Date(metadata.lastActiveAt),
+          });
+        }
+      } catch {
+        // Skip corrupted session files
+        log.debug(`Skipping corrupted session file: ${file}`);
+      }
+    }
+
+    // Sort by last activity, most recent first
+    sessions.sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime());
+
+    // Take the top N sessions
+    const topSessions = sessions.slice(0, limit);
+
+    // Format for UI
+    return topSessions.map(({ metadata }) => {
+      const lastActive = new Date(metadata.lastActiveAt);
+      // Find first user message for preview
+      const firstUserMessage = metadata.messages.find((m) => m.role === "user");
+      const preview = firstUserMessage
+        ? truncatePreview(firstUserMessage.content, 100)
+        : "Discussion";
+
+      return {
+        sessionId: metadata.id,
+        preview,
+        time: formatTimeForTimestamp(lastActive),
+        date: formatDateForFilename(lastActive),
+        messageCount: metadata.messages.length,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Truncates a string to a maximum length, adding ellipsis if truncated.
+ */
+function truncatePreview(text: string, maxLength: number): string {
+  // Take first line only
+  const firstLine = text.split("\n")[0].trim();
+  if (firstLine.length <= maxLength) {
+    return firstLine;
+  }
+  return firstLine.slice(0, maxLength - 1) + "…";
 }
 
 /**

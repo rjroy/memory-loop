@@ -28,6 +28,7 @@ import {
   loadSession,
   deleteSession,
   listSessionsByVault,
+  getRecentSessions,
   touchSession,
   SessionError,
   mapSdkError,
@@ -471,6 +472,208 @@ describe("Session Manager", () => {
 
       expect(sessions).toHaveLength(1);
       expect(sessions).toContain("valid");
+    });
+  });
+
+  describe("getRecentSessions", () => {
+    test("returns empty array for non-existent directory", async () => {
+      const sessions = await getRecentSessions("any-vault");
+      expect(sessions).toEqual([]);
+    });
+
+    test("returns sessions sorted by last activity (most recent first)", async () => {
+      await saveSession(createMockMetadata({
+        id: "old-session",
+        vaultId: "vault-a",
+        lastActiveAt: "2025-01-01T00:00:00.000Z",
+        messages: [{ id: "1", role: "user", content: "Old message", timestamp: "2025-01-01T00:00:00.000Z" }],
+      }));
+      await saveSession(createMockMetadata({
+        id: "new-session",
+        vaultId: "vault-a",
+        lastActiveAt: "2025-06-15T12:00:00.000Z",
+        messages: [{ id: "2", role: "user", content: "New message", timestamp: "2025-06-15T12:00:00.000Z" }],
+      }));
+      await saveSession(createMockMetadata({
+        id: "mid-session",
+        vaultId: "vault-a",
+        lastActiveAt: "2025-03-10T08:00:00.000Z",
+        messages: [{ id: "3", role: "user", content: "Mid message", timestamp: "2025-03-10T08:00:00.000Z" }],
+      }));
+
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions).toHaveLength(3);
+      expect(sessions[0].sessionId).toBe("new-session");
+      expect(sessions[1].sessionId).toBe("mid-session");
+      expect(sessions[2].sessionId).toBe("old-session");
+    });
+
+    test("respects limit parameter", async () => {
+      for (let i = 0; i < 10; i++) {
+        await saveSession(createMockMetadata({
+          id: `session-${i}`,
+          vaultId: "vault-a",
+          lastActiveAt: new Date(2025, 0, i + 1).toISOString(),
+          messages: [{ id: `${i}`, role: "user", content: `Message ${i}`, timestamp: new Date().toISOString() }],
+        }));
+      }
+
+      const sessions = await getRecentSessions("vault-a", 3);
+
+      expect(sessions).toHaveLength(3);
+    });
+
+    test("filters by vault ID", async () => {
+      await saveSession(createMockMetadata({
+        id: "vault-a-session",
+        vaultId: "vault-a",
+        messages: [{ id: "1", role: "user", content: "A message", timestamp: new Date().toISOString() }],
+      }));
+      await saveSession(createMockMetadata({
+        id: "vault-b-session",
+        vaultId: "vault-b",
+        messages: [{ id: "2", role: "user", content: "B message", timestamp: new Date().toISOString() }],
+      }));
+
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].sessionId).toBe("vault-a-session");
+    });
+
+    test("ignores sessions with no messages", async () => {
+      await saveSession(createMockMetadata({
+        id: "has-messages",
+        vaultId: "vault-a",
+        messages: [{ id: "1", role: "user", content: "Hello", timestamp: new Date().toISOString() }],
+      }));
+      await saveSession(createMockMetadata({
+        id: "no-messages",
+        vaultId: "vault-a",
+        messages: [],
+      }));
+
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].sessionId).toBe("has-messages");
+    });
+
+    test("uses first user message as preview", async () => {
+      await saveSession(createMockMetadata({
+        id: "preview-test",
+        vaultId: "vault-a",
+        messages: [
+          { id: "1", role: "user", content: "First user question", timestamp: new Date().toISOString() },
+          { id: "2", role: "assistant", content: "Response", timestamp: new Date().toISOString() },
+          { id: "3", role: "user", content: "Second question", timestamp: new Date().toISOString() },
+        ],
+      }));
+
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions[0].preview).toBe("First user question");
+    });
+
+    test("truncates long previews to 100 characters", async () => {
+      const longMessage = "A".repeat(150);
+      await saveSession(createMockMetadata({
+        id: "long-preview",
+        vaultId: "vault-a",
+        messages: [{ id: "1", role: "user", content: longMessage, timestamp: new Date().toISOString() }],
+      }));
+
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions[0].preview.length).toBe(100);
+      expect(sessions[0].preview.endsWith("…")).toBe(true);
+    });
+
+    test("uses first line only for preview", async () => {
+      await saveSession(createMockMetadata({
+        id: "multiline-preview",
+        vaultId: "vault-a",
+        messages: [{ id: "1", role: "user", content: "First line\nSecond line\nThird line", timestamp: new Date().toISOString() }],
+      }));
+
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions[0].preview).toBe("First line");
+    });
+
+    test("returns messageCount correctly", async () => {
+      await saveSession(createMockMetadata({
+        id: "count-test",
+        vaultId: "vault-a",
+        messages: [
+          { id: "1", role: "user", content: "Q1", timestamp: new Date().toISOString() },
+          { id: "2", role: "assistant", content: "A1", timestamp: new Date().toISOString() },
+          { id: "3", role: "user", content: "Q2", timestamp: new Date().toISOString() },
+        ],
+      }));
+
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions[0].messageCount).toBe(3);
+    });
+
+    test("formats time and date from lastActiveAt", async () => {
+      await saveSession(createMockMetadata({
+        id: "time-test",
+        vaultId: "vault-a",
+        lastActiveAt: "2025-06-15T14:30:00.000Z",
+        messages: [{ id: "1", role: "user", content: "Hello", timestamp: new Date().toISOString() }],
+      }));
+
+      const sessions = await getRecentSessions("vault-a");
+
+      // Time and date will be in local timezone, so we just verify they're strings
+      expect(typeof sessions[0].time).toBe("string");
+      expect(typeof sessions[0].date).toBe("string");
+      expect(sessions[0].time).toMatch(/^\d{2}:\d{2}$/);
+      expect(sessions[0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    test("handles corrupted session files gracefully", async () => {
+      await saveSession(createMockMetadata({
+        id: "valid-session",
+        vaultId: "vault-a",
+        messages: [{ id: "1", role: "user", content: "Hello", timestamp: new Date().toISOString() }],
+      }));
+      await writeFile(join(sessionsDir, "corrupted.json"), "not valid json");
+
+      // Should not throw, should return valid sessions
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].sessionId).toBe("valid-session");
+    });
+
+    test("ignores non-JSON files", async () => {
+      await saveSession(createMockMetadata({
+        id: "valid",
+        vaultId: "vault-a",
+        messages: [{ id: "1", role: "user", content: "Hello", timestamp: new Date().toISOString() }],
+      }));
+      await writeFile(join(sessionsDir, "not-a-session.txt"), "text content");
+
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].sessionId).toBe("valid");
+    });
+
+    test("returns 'Discussion' as preview when no user messages", async () => {
+      await saveSession(createMockMetadata({
+        id: "assistant-only",
+        vaultId: "vault-a",
+        messages: [{ id: "1", role: "assistant", content: "Hello", timestamp: new Date().toISOString() }],
+      }));
+
+      const sessions = await getRecentSessions("vault-a");
+
+      expect(sessions[0].preview).toBe("Discussion");
     });
   });
 

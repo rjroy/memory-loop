@@ -11,6 +11,7 @@ import React, {
   useReducer,
   useCallback,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, ConversationMessageProtocol } from "@memory-loop/shared";
@@ -38,6 +39,8 @@ export interface BrowserState {
   fileError: string | null;
   /** Whether a file operation is in progress */
   isLoading: boolean;
+  /** Pinned folder paths for quick access */
+  pinnedFolders: string[];
 }
 
 /**
@@ -112,6 +115,10 @@ export interface SessionActions {
   clearBrowserState: () => void;
   /** Set recent notes */
   setRecentNotes: (notes: RecentNoteEntry[]) => void;
+  /** Pin a folder for quick access */
+  pinFolder: (path: string) => void;
+  /** Unpin a folder */
+  unpinFolder: (path: string) => void;
 }
 
 /**
@@ -130,6 +137,7 @@ const SessionContext = createContext<SessionContextValue | null>(null);
  */
 const STORAGE_KEY_VAULT = "memory-loop:vaultId";
 const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";
+const STORAGE_KEY_PINNED_FOLDERS_PREFIX = "memory-loop:pinnedFolders:";
 
 /**
  * Action types for reducer.
@@ -151,7 +159,10 @@ type SessionAction =
   | { type: "SET_FILE_ERROR"; error: string }
   | { type: "SET_FILE_LOADING"; isLoading: boolean }
   | { type: "CLEAR_BROWSER_STATE" }
-  | { type: "SET_RECENT_NOTES"; notes: RecentNoteEntry[] };
+  | { type: "SET_RECENT_NOTES"; notes: RecentNoteEntry[] }
+  | { type: "PIN_FOLDER"; path: string }
+  | { type: "UNPIN_FOLDER"; path: string }
+  | { type: "SET_PINNED_FOLDERS"; paths: string[] };
 
 /**
  * Generates a unique message ID.
@@ -172,6 +183,7 @@ function createInitialBrowserState(): BrowserState {
     currentFileTruncated: false,
     fileError: null,
     isLoading: false,
+    pinnedFolders: [],
   };
 }
 
@@ -352,6 +364,40 @@ function sessionReducer(
         recentNotes: action.notes,
       };
 
+    case "PIN_FOLDER": {
+      // Don't add duplicates
+      if (state.browser.pinnedFolders.includes(action.path)) {
+        return state;
+      }
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          pinnedFolders: [...state.browser.pinnedFolders, action.path],
+        },
+      };
+    }
+
+    case "UNPIN_FOLDER":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          pinnedFolders: state.browser.pinnedFolders.filter(
+            (p) => p !== action.path
+          ),
+        },
+      };
+
+    case "SET_PINNED_FOLDERS":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          pinnedFolders: action.paths,
+        },
+      };
+
     default:
       return state;
   }
@@ -418,6 +464,40 @@ function persistBrowserPath(path: string): void {
 }
 
 /**
+ * Loads pinned folders for a specific vault from localStorage.
+ */
+function loadPinnedFolders(vaultId: string): string[] {
+  try {
+    const stored = localStorage.getItem(
+      STORAGE_KEY_PINNED_FOLDERS_PREFIX + vaultId
+    );
+    if (stored) {
+      const parsed: unknown = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((p): p is string => typeof p === "string");
+      }
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return [];
+}
+
+/**
+ * Persists pinned folders for a specific vault to localStorage.
+ */
+function persistPinnedFolders(vaultId: string, paths: string[]): void {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY_PINNED_FOLDERS_PREFIX + vaultId,
+      JSON.stringify(paths)
+    );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+/**
  * Props for SessionProvider.
  */
 export interface SessionProviderProps {
@@ -446,6 +526,28 @@ export function SessionProvider({
   useEffect(() => {
     persistBrowserPath(state.browser.currentPath);
   }, [state.browser.currentPath]);
+
+  // Track if pinned folders have been loaded for current vault
+  const pinnedFoldersLoadedRef = useRef<string | null>(null);
+
+  // Load pinned folders when vault changes (must run before persist effect)
+  useEffect(() => {
+    if (state.vault && pinnedFoldersLoadedRef.current !== state.vault.id) {
+      const pinnedFolders = loadPinnedFolders(state.vault.id);
+      pinnedFoldersLoadedRef.current = state.vault.id;
+      if (pinnedFolders.length > 0) {
+        dispatch({ type: "SET_PINNED_FOLDERS", paths: pinnedFolders });
+      }
+    }
+  }, [state.vault?.id]);
+
+  // Persist pinned folders when they change (per vault)
+  // Only persist after initial load is complete for this vault
+  useEffect(() => {
+    if (state.vault && pinnedFoldersLoadedRef.current === state.vault.id) {
+      persistPinnedFolders(state.vault.id, state.browser.pinnedFolders);
+    }
+  }, [state.vault, state.browser.pinnedFolders]);
 
   // Load persisted state on mount only
   // Note: Session restoration (sessionId + messages) is handled by VaultSelect
@@ -556,6 +658,14 @@ export function SessionProvider({
     dispatch({ type: "SET_RECENT_NOTES", notes });
   }, []);
 
+  const pinFolder = useCallback((path: string) => {
+    dispatch({ type: "PIN_FOLDER", path });
+  }, []);
+
+  const unpinFolder = useCallback((path: string) => {
+    dispatch({ type: "UNPIN_FOLDER", path });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -575,6 +685,8 @@ export function SessionProvider({
     setFileLoading,
     clearBrowserState,
     setRecentNotes,
+    pinFolder,
+    unpinFolder,
   };
 
   return (

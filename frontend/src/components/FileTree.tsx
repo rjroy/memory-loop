@@ -2,9 +2,10 @@
  * FileTree Component
  *
  * Collapsible file tree for navigating vault directories.
- * Supports lazy-loading, expand/collapse, and file selection.
+ * Supports lazy-loading, expand/collapse, file selection, and pinned folders.
  */
 
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { FileEntry } from "@memory-loop/shared";
 import { useSession } from "../contexts/SessionContext";
 import "./FileTree.css";
@@ -28,13 +29,16 @@ interface TreeNodeProps {
   isExpanded: boolean;
   isLoading: boolean;
   isSelected: boolean;
+  isPinned?: boolean;
   children: FileEntry[];
   onToggle: (path: string) => void;
   onSelect: (path: string, isDirectory: boolean) => void;
+  onContextMenu?: (path: string, isDirectory: boolean, event: React.MouseEvent | React.TouchEvent) => void;
   expandedDirs: Set<string>;
   directoryCache: Map<string, FileEntry[]>;
   loadingDirs: Set<string>;
   currentPath: string;
+  pinnedFolders?: string[];
 }
 
 /**
@@ -46,16 +50,29 @@ function TreeNode({
   isExpanded,
   isLoading,
   isSelected,
+  isPinned,
   children,
   onToggle,
   onSelect,
+  onContextMenu,
   expandedDirs,
   directoryCache,
   loadingDirs,
   currentPath,
+  pinnedFolders,
 }: TreeNodeProps): React.ReactNode {
   const isDirectory = entry.type === "directory";
   const isEmpty = isExpanded && !isLoading && children.length === 0;
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup long press timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+    };
+  }, []);
 
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation();
@@ -77,16 +94,50 @@ function TreeNode({
     }
   }
 
+  function handleContextMenu(e: React.MouseEvent) {
+    if (onContextMenu) {
+      e.preventDefault();
+      e.stopPropagation();
+      onContextMenu(entry.path, isDirectory, e);
+    }
+  }
+
+  function handleTouchStart(e: React.TouchEvent) {
+    if (onContextMenu) {
+      longPressTimer.current = setTimeout(() => {
+        onContextMenu(entry.path, isDirectory, e);
+      }, 500);
+    }
+  }
+
+  function handleTouchEnd() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  function handleTouchMove() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
   return (
     <li className="file-tree__node" role="treeitem" aria-expanded={isDirectory ? isExpanded : undefined}>
       <button
         type="button"
         className={`file-tree__item ${isSelected ? "file-tree__item--selected" : ""} ${
           isDirectory ? "file-tree__item--directory" : "file-tree__item--file"
-        }`}
+        } ${isPinned ? "file-tree__item--pinned" : ""}`}
         style={{ paddingLeft: `${12 + depth * 16}px` }}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
+        onContextMenu={handleContextMenu}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchMove={handleTouchMove}
         aria-selected={isSelected}
       >
         {isDirectory && (
@@ -102,6 +153,11 @@ function TreeNode({
           {isDirectory ? <FolderIcon /> : <FileIcon />}
         </span>
         <span className="file-tree__name">{entry.name}</span>
+        {isPinned && (
+          <span className="file-tree__pin-indicator" aria-label="Pinned">
+            <PinIcon />
+          </span>
+        )}
       </button>
 
       {isDirectory && isExpanded && (
@@ -117,13 +173,16 @@ function TreeNode({
                 isExpanded={expandedDirs.has(child.path)}
                 isLoading={loadingDirs.has(child.path)}
                 isSelected={currentPath === child.path}
+                isPinned={pinnedFolders?.includes(child.path)}
                 children={directoryCache.get(child.path) ?? []}
                 onToggle={onToggle}
                 onSelect={onSelect}
+                onContextMenu={onContextMenu}
                 expandedDirs={expandedDirs}
                 directoryCache={directoryCache}
                 loadingDirs={loadingDirs}
                 currentPath={currentPath}
+                pinnedFolders={pinnedFolders}
               />
             ))
           )}
@@ -192,6 +251,36 @@ function FileIcon(): React.ReactNode {
 }
 
 /**
+ * Pin icon for pinned folders.
+ */
+function PinIcon(): React.ReactNode {
+  return (
+    <svg
+      className="file-tree__icon-svg file-tree__pin-icon"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="currentColor"
+      strokeWidth="1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 2L9.5 9.5L2 12L9.5 14.5L12 22L14.5 14.5L22 12L14.5 9.5L12 2Z" />
+    </svg>
+  );
+}
+
+/**
+ * Context menu state for pin/unpin actions.
+ */
+interface ContextMenuState {
+  isOpen: boolean;
+  path: string;
+  isDirectory: boolean;
+  x: number;
+  y: number;
+}
+
+/**
  * FileTree displays a navigable tree of vault files and directories.
  *
  * Features:
@@ -199,10 +288,19 @@ function FileIcon(): React.ReactNode {
  * - File selection for viewing markdown content
  * - Visual feedback for loading and selected states
  * - Touch-friendly with 44px minimum height targets
+ * - Pinned folders for quick access
  */
 export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): React.ReactNode {
-  const { browser, toggleDirectory, setCurrentPath } = useSession();
-  const { currentPath, expandedDirs, directoryCache, isLoading } = browser;
+  const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
+  const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    isOpen: false,
+    path: "",
+    isDirectory: false,
+    x: 0,
+    y: 0,
+  });
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Track which directories are currently loading
   // For now we just use isLoading for the overall state
@@ -214,6 +312,28 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
 
   // Get root entries
   const rootEntries = directoryCache.get("") ?? [];
+
+  // Get pinned entries from cache or create placeholder entries
+  const pinnedEntries: FileEntry[] = pinnedFolders.map((path) => {
+    // Check if entry exists in any cached directory
+    const parentPath = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : "";
+    const cachedParent = directoryCache.get(parentPath);
+    const cachedEntry = cachedParent?.find((e) => e.path === path);
+
+    if (cachedEntry) {
+      return cachedEntry;
+    }
+
+    // Create a placeholder entry for pinned item not yet loaded
+    const name = path.includes("/") ? path.substring(path.lastIndexOf("/") + 1) : path;
+    // Heuristic: if name has extension, it's likely a file
+    const hasExtension = name.includes(".") && !name.startsWith(".");
+    return {
+      name,
+      path,
+      type: hasExtension ? "file" as const : "directory" as const,
+    };
+  });
 
   function handleToggle(path: string) {
     // Toggle the directory expansion state
@@ -231,6 +351,103 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
       onFileSelect?.(path);
     }
   }
+
+  const handleContextMenu = useCallback(
+    (path: string, isDirectory: boolean, event: React.MouseEvent | React.TouchEvent) => {
+      let clientX: number;
+      let clientY: number;
+
+      if ("touches" in event) {
+        const touch = event.touches[0] || event.changedTouches[0];
+        clientX = touch?.clientX ?? 0;
+        clientY = touch?.clientY ?? 0;
+      } else {
+        clientX = event.clientX;
+        clientY = event.clientY;
+      }
+
+      // Convert viewport coordinates to file-tree-relative coordinates
+      // (backdrop-filter on parent creates new containing block for position:fixed)
+      const target = event.target as HTMLElement;
+      const fileTree = target.closest(".file-tree");
+      const menuWidth = 180;
+      const menuHeight = 50;
+
+      let x = clientX;
+      let y = clientY;
+
+      if (fileTree) {
+        const rect = fileTree.getBoundingClientRect();
+        // Convert to container-relative coordinates
+        x = clientX - rect.left;
+        y = clientY - rect.top;
+
+        // Keep menu within container bounds
+        if (x + menuWidth > rect.width) {
+          x = Math.max(0, x - menuWidth);
+        }
+        if (y + menuHeight > rect.height) {
+          y = Math.max(0, rect.height - menuHeight - 8);
+        }
+      }
+
+      setContextMenu({
+        isOpen: true,
+        path,
+        isDirectory,
+        x,
+        y,
+      });
+    },
+    []
+  );
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu((prev) => ({ ...prev, isOpen: false }));
+  }, []);
+
+  const handlePinFolder = useCallback(() => {
+    pinFolder(contextMenu.path);
+    closeContextMenu();
+  }, [contextMenu.path, pinFolder, closeContextMenu]);
+
+  const handleUnpinFolder = useCallback(() => {
+    unpinFolder(contextMenu.path);
+    closeContextMenu();
+  }, [contextMenu.path, unpinFolder, closeContextMenu]);
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(event.target as Node)
+      ) {
+        closeContextMenu();
+      }
+    }
+
+    if (contextMenu.isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [contextMenu.isOpen, closeContextMenu]);
+
+  // Close context menu on escape key
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    }
+
+    if (contextMenu.isOpen) {
+      document.addEventListener("keydown", handleEscape);
+      return () => document.removeEventListener("keydown", handleEscape);
+    }
+  }, [contextMenu.isOpen, closeContextMenu]);
+
+  const isPinned = pinnedFolders.includes(contextMenu.path);
 
   // Show loading state for root
   if (isLoading && rootEntries.length === 0) {
@@ -255,6 +472,39 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
 
   return (
     <nav className="file-tree" aria-label="Vault files">
+      {/* Pinned folders section */}
+      {pinnedEntries.length > 0 && (
+        <div className="file-tree__pinned-section">
+          <h3 className="file-tree__pinned-header">
+            <PinIcon />
+            <span>Pinned</span>
+          </h3>
+          <ul className="file-tree__pinned-list" role="tree">
+            {pinnedEntries.map((entry) => (
+              <TreeNode
+                key={`pinned-${entry.path}`}
+                entry={entry}
+                depth={0}
+                isExpanded={expandedDirs.has(entry.path)}
+                isLoading={loadingDirs.has(entry.path)}
+                isSelected={currentPath === entry.path}
+                isPinned={true}
+                children={directoryCache.get(entry.path) ?? []}
+                onToggle={handleToggle}
+                onSelect={handleSelect}
+                onContextMenu={handleContextMenu}
+                expandedDirs={expandedDirs}
+                directoryCache={directoryCache}
+                loadingDirs={loadingDirs}
+                currentPath={currentPath}
+                pinnedFolders={pinnedFolders}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Main file tree */}
       <ul className="file-tree__root" role="tree">
         {rootEntries.map((entry) => (
           <TreeNode
@@ -264,16 +514,42 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
             isExpanded={expandedDirs.has(entry.path)}
             isLoading={loadingDirs.has(entry.path)}
             isSelected={currentPath === entry.path}
+            isPinned={pinnedFolders.includes(entry.path)}
             children={directoryCache.get(entry.path) ?? []}
             onToggle={handleToggle}
             onSelect={handleSelect}
+            onContextMenu={handleContextMenu}
             expandedDirs={expandedDirs}
             directoryCache={directoryCache}
             loadingDirs={loadingDirs}
             currentPath={currentPath}
+            pinnedFolders={pinnedFolders}
           />
         ))}
       </ul>
+
+      {/* Context menu */}
+      {contextMenu.isOpen && (
+        <div
+          ref={contextMenuRef}
+          className="file-tree__context-menu"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+          role="menu"
+        >
+          <button
+            type="button"
+            className="file-tree__context-menu-item"
+            onClick={isPinned ? handleUnpinFolder : handlePinFolder}
+            role="menuitem"
+          >
+            <PinIcon />
+            <span>{isPinned ? "Unpin folder" : "Pin to top"}</span>
+          </button>
+        </div>
+      )}
     </nav>
   );
 }

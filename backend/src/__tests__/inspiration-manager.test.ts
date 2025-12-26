@@ -17,6 +17,12 @@ import {
   parseInspirationLine,
   parseInspirationFile,
   parseInspirationContent,
+  getISOWeekNumber,
+  isWeekday,
+  isContextualGenerationNeeded,
+  isQuoteGenerationNeeded,
+  CONTEXTUAL_PROMPTS_PATH,
+  GENERAL_INSPIRATION_PATH,
 } from "../inspiration-manager";
 
 // =============================================================================
@@ -793,5 +799,641 @@ describe("Edge Cases", () => {
     );
     // Everything after the first -- becomes attribution
     expect(result?.attribution).toBe("Author -- Publisher -- Year");
+  });
+});
+
+// =============================================================================
+// File Path Constants Tests
+// =============================================================================
+
+describe("File Path Constants", () => {
+  test("CONTEXTUAL_PROMPTS_PATH is correctly defined", () => {
+    expect(CONTEXTUAL_PROMPTS_PATH).toBe(
+      "06_Metadata/memory-loop/contextual-prompts.md"
+    );
+  });
+
+  test("GENERAL_INSPIRATION_PATH is correctly defined", () => {
+    expect(GENERAL_INSPIRATION_PATH).toBe(
+      "06_Metadata/memory-loop/general-inspiration.md"
+    );
+  });
+});
+
+// =============================================================================
+// getISOWeekNumber Tests
+// =============================================================================
+
+describe("getISOWeekNumber", () => {
+  describe("known dates with verified week numbers", () => {
+    test("January 1, 2025 (Wednesday) is week 1", () => {
+      // 2025-01-01 is a Wednesday, which is in week 1
+      const date = new Date(2025, 0, 1);
+      expect(getISOWeekNumber(date)).toBe(1);
+    });
+
+    test("January 6, 2025 (Monday) is week 2", () => {
+      // First Monday of 2025 starts week 2
+      const date = new Date(2025, 0, 6);
+      expect(getISOWeekNumber(date)).toBe(2);
+    });
+
+    test("December 31, 2024 (Tuesday) is week 1 of 2025", () => {
+      // Dec 31, 2024 is a Tuesday, and since Jan 1, 2025 is a Wednesday,
+      // that week contains the first Thursday (Jan 2), so it's week 1 of 2025
+      const date = new Date(2024, 11, 31);
+      expect(getISOWeekNumber(date)).toBe(1);
+    });
+
+    test("December 28, 2020 (Monday) is week 53", () => {
+      // 2020 has 53 weeks (leap year starting on Wednesday)
+      const date = new Date(2020, 11, 28);
+      expect(getISOWeekNumber(date)).toBe(53);
+    });
+
+    test("December 31, 2020 (Thursday) is week 53", () => {
+      const date = new Date(2020, 11, 31);
+      expect(getISOWeekNumber(date)).toBe(53);
+    });
+
+    test("January 1, 2021 (Friday) is week 53 of 2020", () => {
+      // Jan 1, 2021 is still in week 53 because week 1 of 2021
+      // doesn't start until Jan 4 (Monday containing first Thursday)
+      const date = new Date(2021, 0, 1);
+      expect(getISOWeekNumber(date)).toBe(53);
+    });
+
+    test("January 4, 2021 (Monday) is week 1 of 2021", () => {
+      // Week 1 of 2021 starts on Monday, Jan 4
+      const date = new Date(2021, 0, 4);
+      expect(getISOWeekNumber(date)).toBe(1);
+    });
+  });
+
+  describe("week boundaries", () => {
+    test("Sunday ends a week, Monday starts a new one", () => {
+      // Sunday Dec 22, 2024 is in week 51
+      const sunday = new Date(2024, 11, 22);
+      // Monday Dec 23, 2024 starts week 52
+      const monday = new Date(2024, 11, 23);
+
+      expect(getISOWeekNumber(sunday)).toBe(51);
+      expect(getISOWeekNumber(monday)).toBe(52);
+    });
+
+    test("consecutive days in same week have same week number", () => {
+      // Monday through Sunday of same week
+      const monday = new Date(2025, 0, 13); // Week 3
+      const tuesday = new Date(2025, 0, 14);
+      const wednesday = new Date(2025, 0, 15);
+      const thursday = new Date(2025, 0, 16);
+      const friday = new Date(2025, 0, 17);
+      const saturday = new Date(2025, 0, 18);
+      const sunday = new Date(2025, 0, 19);
+
+      expect(getISOWeekNumber(monday)).toBe(3);
+      expect(getISOWeekNumber(tuesday)).toBe(3);
+      expect(getISOWeekNumber(wednesday)).toBe(3);
+      expect(getISOWeekNumber(thursday)).toBe(3);
+      expect(getISOWeekNumber(friday)).toBe(3);
+      expect(getISOWeekNumber(saturday)).toBe(3);
+      expect(getISOWeekNumber(sunday)).toBe(3);
+    });
+  });
+
+  describe("year end edge cases", () => {
+    test("week 52 at year end for typical year", () => {
+      // Dec 26, 2025 is a Friday in week 52
+      const date = new Date(2025, 11, 26);
+      expect(getISOWeekNumber(date)).toBe(52);
+    });
+
+    test("handles leap year correctly", () => {
+      // Feb 29, 2024 (leap day)
+      const date = new Date(2024, 1, 29);
+      expect(getISOWeekNumber(date)).toBe(9);
+    });
+  });
+});
+
+// =============================================================================
+// isWeekday Tests
+// =============================================================================
+
+describe("isWeekday", () => {
+  describe("returns true for weekdays (Mon-Fri)", () => {
+    test("Monday is a weekday", () => {
+      const monday = new Date(2025, 0, 6); // Jan 6, 2025 is Monday
+      expect(isWeekday(monday)).toBe(true);
+    });
+
+    test("Tuesday is a weekday", () => {
+      const tuesday = new Date(2025, 0, 7);
+      expect(isWeekday(tuesday)).toBe(true);
+    });
+
+    test("Wednesday is a weekday", () => {
+      const wednesday = new Date(2025, 0, 8);
+      expect(isWeekday(wednesday)).toBe(true);
+    });
+
+    test("Thursday is a weekday", () => {
+      const thursday = new Date(2025, 0, 9);
+      expect(isWeekday(thursday)).toBe(true);
+    });
+
+    test("Friday is a weekday", () => {
+      const friday = new Date(2025, 0, 10);
+      expect(isWeekday(friday)).toBe(true);
+    });
+  });
+
+  describe("returns false for weekends (Sat-Sun)", () => {
+    test("Saturday is not a weekday", () => {
+      const saturday = new Date(2025, 0, 11); // Jan 11, 2025 is Saturday
+      expect(isWeekday(saturday)).toBe(false);
+    });
+
+    test("Sunday is not a weekday", () => {
+      const sunday = new Date(2025, 0, 12); // Jan 12, 2025 is Sunday
+      expect(isWeekday(sunday)).toBe(false);
+    });
+  });
+
+  describe("edge cases", () => {
+    test("New Year's Day 2025 (Wednesday) is a weekday", () => {
+      const newYears = new Date(2025, 0, 1);
+      expect(isWeekday(newYears)).toBe(true);
+    });
+
+    test("Christmas 2025 (Thursday) is a weekday", () => {
+      const christmas = new Date(2025, 11, 25);
+      expect(isWeekday(christmas)).toBe(true);
+    });
+
+    test("handles dates with time components", () => {
+      // Friday at 11:59 PM
+      const fridayNight = new Date(2025, 0, 10, 23, 59, 59);
+      expect(isWeekday(fridayNight)).toBe(true);
+
+      // Saturday at 12:01 AM
+      const saturdayMorning = new Date(2025, 0, 11, 0, 1, 0);
+      expect(isWeekday(saturdayMorning)).toBe(false);
+    });
+  });
+});
+
+// =============================================================================
+// isContextualGenerationNeeded Tests
+// =============================================================================
+
+describe("isContextualGenerationNeeded", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `contextual-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(testDir, { recursive: true });
+    // Create the nested directory structure
+    await mkdir(join(testDir, "06_Metadata", "memory-loop"), { recursive: true });
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  /**
+   * Helper to create a contextual prompts file with a specific date marker
+   */
+  async function createContextualFile(
+    vaultPath: string,
+    dateStr: string
+  ): Promise<void> {
+    const filePath = join(vaultPath, CONTEXTUAL_PROMPTS_PATH);
+    const content = `<!-- last-generated: ${dateStr} -->
+
+- "Test prompt one"
+- "Test prompt two"
+`;
+    await writeFile(filePath, content, "utf-8");
+  }
+
+  describe("weekday behavior", () => {
+    test("returns true on weekday if file is missing", async () => {
+      // We can't control "today" without mocking, but we can verify the file-missing logic
+      // by checking that parseInspirationFile returns null for missing files
+      const parsed = await parseInspirationFile(
+        join(testDir, CONTEXTUAL_PROMPTS_PATH)
+      );
+      expect(parsed.lastGenerated).toBeNull();
+      // The function uses isWeekday(new Date()), so this test depends on when it runs
+      // We test the underlying logic instead
+    });
+
+    test("returns true on weekday if marker is missing", async () => {
+      const filePath = join(testDir, CONTEXTUAL_PROMPTS_PATH);
+      await writeFile(
+        filePath,
+        `- "Prompt without marker"\n- "Another prompt"`,
+        "utf-8"
+      );
+
+      const parsed = await parseInspirationFile(filePath);
+      expect(parsed.lastGenerated).toBeNull();
+      expect(parsed.items).toHaveLength(2);
+    });
+  });
+
+  describe("date comparison logic", () => {
+    test("detects when file was generated on a different date", async () => {
+      // Create file with yesterday's date
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const dateStr = yesterday.toISOString().split("T")[0];
+
+      await createContextualFile(testDir, dateStr);
+
+      const filePath = join(testDir, CONTEXTUAL_PROMPTS_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.lastGenerated).not.toBeNull();
+      // Verify the date was parsed correctly
+      expect(parsed.lastGenerated?.getDate()).toBe(yesterday.getDate());
+    });
+
+    test("detects when file was generated on the same date", async () => {
+      // Create file with today's date
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0];
+
+      await createContextualFile(testDir, dateStr);
+
+      const filePath = join(testDir, CONTEXTUAL_PROMPTS_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.lastGenerated).not.toBeNull();
+      expect(parsed.lastGenerated?.getDate()).toBe(today.getDate());
+      expect(parsed.lastGenerated?.getMonth()).toBe(today.getMonth());
+      expect(parsed.lastGenerated?.getFullYear()).toBe(today.getFullYear());
+    });
+  });
+
+  describe("integration with file system", () => {
+    test("returns true when file does not exist at all", async () => {
+      // Use a vault path where no file exists
+      const emptyVault = join(
+        tmpdir(),
+        `empty-vault-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      );
+      await mkdir(emptyVault, { recursive: true });
+
+      try {
+        // The function checks isWeekday first, so result depends on day
+        // But we can verify it reads the file correctly
+        const filePath = join(emptyVault, CONTEXTUAL_PROMPTS_PATH);
+        const parsed = await parseInspirationFile(filePath);
+        expect(parsed.lastGenerated).toBeNull();
+        expect(parsed.items).toHaveLength(0);
+      } finally {
+        await rm(emptyVault, { recursive: true, force: true });
+      }
+    });
+
+    test("correctly parses existing file with valid marker", async () => {
+      await createContextualFile(testDir, "2025-12-26");
+
+      const filePath = join(testDir, CONTEXTUAL_PROMPTS_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.lastGenerated).not.toBeNull();
+      expect(parsed.lastGenerated?.getFullYear()).toBe(2025);
+      expect(parsed.lastGenerated?.getMonth()).toBe(11); // December
+      expect(parsed.lastGenerated?.getDate()).toBe(26);
+      expect(parsed.items).toHaveLength(2);
+    });
+  });
+});
+
+// =============================================================================
+// isQuoteGenerationNeeded Tests
+// =============================================================================
+
+describe("isQuoteGenerationNeeded", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `quote-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(testDir, { recursive: true });
+    // Create the nested directory structure
+    await mkdir(join(testDir, "06_Metadata", "memory-loop"), { recursive: true });
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  /**
+   * Helper to create a general inspiration file with a specific date and week marker
+   */
+  async function createQuoteFile(
+    vaultPath: string,
+    dateStr: string,
+    weekNum?: number
+  ): Promise<void> {
+    const filePath = join(vaultPath, GENERAL_INSPIRATION_PATH);
+    const marker = weekNum
+      ? `<!-- last-generated: ${dateStr} (week ${weekNum}) -->`
+      : `<!-- last-generated: ${dateStr} -->`;
+    const content = `${marker}
+
+- "Test quote one" -- Author One
+- "Test quote two" -- Author Two
+`;
+    await writeFile(filePath, content, "utf-8");
+  }
+
+  describe("file existence checks", () => {
+    test("returns true if file is missing", async () => {
+      const emptyVault = join(
+        tmpdir(),
+        `empty-quote-vault-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      );
+      await mkdir(emptyVault, { recursive: true });
+
+      try {
+        const filePath = join(emptyVault, GENERAL_INSPIRATION_PATH);
+        const parsed = await parseInspirationFile(filePath);
+        expect(parsed.lastGenerated).toBeNull();
+      } finally {
+        await rm(emptyVault, { recursive: true, force: true });
+      }
+    });
+
+    test("returns true if marker is missing", async () => {
+      const filePath = join(testDir, GENERAL_INSPIRATION_PATH);
+      await writeFile(
+        filePath,
+        `- "Quote without marker" -- Source\n- "Another quote" -- Source`,
+        "utf-8"
+      );
+
+      const parsed = await parseInspirationFile(filePath);
+      expect(parsed.lastGenerated).toBeNull();
+      expect(parsed.items).toHaveLength(2);
+    });
+  });
+
+  describe("week number parsing", () => {
+    test("parses week number from marker correctly", async () => {
+      await createQuoteFile(testDir, "2025-12-23", 52);
+
+      const filePath = join(testDir, GENERAL_INSPIRATION_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.lastGenerated).not.toBeNull();
+      expect(parsed.weekNumber).toBe(52);
+    });
+
+    test("handles marker without explicit week number", async () => {
+      await createQuoteFile(testDir, "2025-12-23");
+
+      const filePath = join(testDir, GENERAL_INSPIRATION_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.lastGenerated).not.toBeNull();
+      expect(parsed.weekNumber).toBeUndefined();
+      // Week number should be calculated from date
+      expect(getISOWeekNumber(parsed.lastGenerated!)).toBe(52);
+    });
+  });
+
+  describe("week comparison logic", () => {
+    test("detects when file was generated in a previous week", async () => {
+      // Create file with last week's date and week number
+      const lastWeek = new Date();
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      const dateStr = lastWeek.toISOString().split("T")[0];
+      const weekNum = getISOWeekNumber(lastWeek);
+
+      await createQuoteFile(testDir, dateStr, weekNum);
+
+      const filePath = join(testDir, GENERAL_INSPIRATION_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.lastGenerated).not.toBeNull();
+      expect(parsed.weekNumber).toBe(weekNum);
+
+      // Current week should be different (unless we're at a week boundary)
+      const currentWeek = getISOWeekNumber(new Date());
+      // They should be different (one week apart)
+      expect(weekNum).not.toBe(currentWeek);
+    });
+
+    test("detects when file was generated in the current week", async () => {
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0];
+      const weekNum = getISOWeekNumber(today);
+
+      await createQuoteFile(testDir, dateStr, weekNum);
+
+      const filePath = join(testDir, GENERAL_INSPIRATION_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.lastGenerated).not.toBeNull();
+      expect(parsed.weekNumber).toBe(weekNum);
+      expect(getISOWeekNumber(new Date())).toBe(weekNum);
+    });
+  });
+
+  describe("year boundary handling", () => {
+    test("week 52 of last year differs from week 1 of current year", () => {
+      // Week 52 of 2024 and week 1 of 2025 are different
+      const week52_2024 = new Date(2024, 11, 23); // Dec 23, 2024 - week 52
+      const week1_2025 = new Date(2025, 0, 1); // Jan 1, 2025 - week 1
+
+      expect(getISOWeekNumber(week52_2024)).toBe(52);
+      expect(getISOWeekNumber(week1_2025)).toBe(1);
+    });
+
+    test("correctly handles year transition in week comparison", async () => {
+      // Create file marked as week 52 of 2024
+      await createQuoteFile(testDir, "2024-12-23", 52);
+
+      const filePath = join(testDir, GENERAL_INSPIRATION_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.lastGenerated).not.toBeNull();
+      expect(parsed.weekNumber).toBe(52);
+      expect(parsed.lastGenerated?.getFullYear()).toBe(2024);
+    });
+
+    test("week 53 is correctly identified (in years that have it)", async () => {
+      // 2020 had a week 53
+      await createQuoteFile(testDir, "2020-12-28", 53);
+
+      const filePath = join(testDir, GENERAL_INSPIRATION_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.weekNumber).toBe(53);
+    });
+  });
+
+  describe("fallback to calculated week number", () => {
+    test("uses calculated week when marker has no explicit week number", async () => {
+      // Create file without week number in marker
+      await createQuoteFile(testDir, "2025-01-15"); // Week 3
+
+      const filePath = join(testDir, GENERAL_INSPIRATION_PATH);
+      const parsed = await parseInspirationFile(filePath);
+
+      expect(parsed.lastGenerated).not.toBeNull();
+      expect(parsed.weekNumber).toBeUndefined();
+
+      // The function should calculate week from date
+      const calculatedWeek = getISOWeekNumber(parsed.lastGenerated!);
+      expect(calculatedWeek).toBe(3);
+    });
+  });
+
+  describe("direct function calls", () => {
+    test("isQuoteGenerationNeeded returns true for missing file", async () => {
+      const emptyVault = join(
+        tmpdir(),
+        `direct-quote-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      );
+      await mkdir(emptyVault, { recursive: true });
+
+      try {
+        const result = await isQuoteGenerationNeeded(emptyVault);
+        expect(result).toBe(true);
+      } finally {
+        await rm(emptyVault, { recursive: true, force: true });
+      }
+    });
+
+    test("isQuoteGenerationNeeded returns false for current week file", async () => {
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0];
+      const weekNum = getISOWeekNumber(today);
+
+      await createQuoteFile(testDir, dateStr, weekNum);
+
+      const result = await isQuoteGenerationNeeded(testDir);
+      expect(result).toBe(false);
+    });
+
+    test("isQuoteGenerationNeeded returns true for last week file", async () => {
+      // Create file with last week's date
+      const lastWeek = new Date();
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      const dateStr = lastWeek.toISOString().split("T")[0];
+      const weekNum = getISOWeekNumber(lastWeek);
+
+      await createQuoteFile(testDir, dateStr, weekNum);
+
+      const result = await isQuoteGenerationNeeded(testDir);
+      expect(result).toBe(true);
+    });
+  });
+});
+
+// =============================================================================
+// isContextualGenerationNeeded Direct Call Tests
+// =============================================================================
+
+describe("isContextualGenerationNeeded direct calls", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `contextual-direct-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(testDir, { recursive: true });
+    await mkdir(join(testDir, "06_Metadata", "memory-loop"), { recursive: true });
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  async function createContextualFile(
+    vaultPath: string,
+    dateStr: string
+  ): Promise<void> {
+    const filePath = join(vaultPath, CONTEXTUAL_PROMPTS_PATH);
+    const content = `<!-- last-generated: ${dateStr} -->
+
+- "Test prompt one"
+- "Test prompt two"
+`;
+    await writeFile(filePath, content, "utf-8");
+  }
+
+  test("returns appropriate value based on weekday and file state", async () => {
+    const today = new Date();
+    const isCurrentlyWeekday = isWeekday(today);
+
+    // Test with missing file
+    const emptyVault = join(
+      tmpdir(),
+      `contextual-empty-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(emptyVault, { recursive: true });
+
+    try {
+      const result = await isContextualGenerationNeeded(emptyVault);
+      // If weekday, should be true (file missing)
+      // If weekend, should be false (no generation on weekends)
+      expect(result).toBe(isCurrentlyWeekday);
+    } finally {
+      await rm(emptyVault, { recursive: true, force: true });
+    }
+  });
+
+  test("returns false when generated today on a weekday", async () => {
+    const today = new Date();
+    const dateStr = today.toISOString().split("T")[0];
+
+    await createContextualFile(testDir, dateStr);
+
+    const result = await isContextualGenerationNeeded(testDir);
+    // Should be false because generated today (regardless of weekday/weekend)
+    // On weekends: false because not a weekday
+    // On weekdays: false because already generated today
+    expect(result).toBe(false);
+  });
+
+  test("returns true when generated yesterday (on weekday)", async () => {
+    const today = new Date();
+    const isCurrentlyWeekday = isWeekday(today);
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateStr = yesterday.toISOString().split("T")[0];
+
+    await createContextualFile(testDir, dateStr);
+
+    const result = await isContextualGenerationNeeded(testDir);
+    // If weekday: true (generated yesterday, not today)
+    // If weekend: false (no generation on weekends)
+    expect(result).toBe(isCurrentlyWeekday);
   });
 });

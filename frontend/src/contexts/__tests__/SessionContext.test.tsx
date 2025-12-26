@@ -909,4 +909,145 @@ describe("SessionContext", () => {
       expect(result.current.mode).toBe("browse");
     });
   });
+
+  describe("discussionPrefill", () => {
+    it("provides initial state with discussionPrefill null", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.discussionPrefill).toBeNull();
+    });
+
+    it("setDiscussionPrefill sets the prefill text", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setDiscussionPrefill("What does this mean?");
+      });
+
+      expect(result.current.discussionPrefill).toBe("What does this mean?");
+    });
+
+    it("setDiscussionPrefill(null) clears the prefill", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setDiscussionPrefill("Some text");
+      });
+
+      expect(result.current.discussionPrefill).toBe("Some text");
+
+      act(() => {
+        result.current.setDiscussionPrefill(null);
+      });
+
+      expect(result.current.discussionPrefill).toBeNull();
+    });
+
+    it("prefill is cleared when vault changes (selectVault)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setDiscussionPrefill("Discussion about this vault");
+      });
+
+      expect(result.current.discussionPrefill).toBe("Discussion about this vault");
+
+      // Switch to different vault
+      act(() => {
+        result.current.selectVault(testVault2);
+      });
+
+      expect(result.current.discussionPrefill).toBeNull();
+    });
+
+    it("prefill is cleared when vault is cleared (clearVault)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setDiscussionPrefill("Some prefill text");
+      });
+
+      expect(result.current.discussionPrefill).toBe("Some prefill text");
+
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.discussionPrefill).toBeNull();
+    });
+
+    it("prefill is NOT persisted to localStorage (transient state)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setDiscussionPrefill("This should not be persisted");
+      });
+
+      expect(result.current.discussionPrefill).toBe("This should not be persisted");
+
+      // Check localStorage doesn't contain prefill
+      const allKeys = Object.keys(localStorage);
+      const prefillKeys = allKeys.filter((key) => key.includes("prefill") || key.includes("Prefill"));
+      expect(prefillKeys.length).toBe(0);
+    });
+
+    it("prefill is preserved when switching modes", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setDiscussionPrefill("Prefill for discussion");
+      });
+
+      // Switch to discussion mode
+      act(() => {
+        result.current.setMode("discussion");
+      });
+
+      expect(result.current.discussionPrefill).toBe("Prefill for discussion");
+
+      // Switch to note mode
+      act(() => {
+        result.current.setMode("note");
+      });
+
+      expect(result.current.discussionPrefill).toBe("Prefill for discussion");
+    });
+
+    it("prefill can be updated multiple times", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setDiscussionPrefill("First");
+      });
+      expect(result.current.discussionPrefill).toBe("First");
+
+      act(() => {
+        result.current.setDiscussionPrefill("Second");
+      });
+      expect(result.current.discussionPrefill).toBe("Second");
+
+      act(() => {
+        result.current.setDiscussionPrefill("Third");
+      });
+      expect(result.current.discussionPrefill).toBe("Third");
+    });
+  });
 });

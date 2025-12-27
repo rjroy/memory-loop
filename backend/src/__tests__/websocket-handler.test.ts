@@ -860,14 +860,14 @@ describe("WebSocket Handler", () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
 
-      // Create mock events
+      // Create mock events using stream_event (not assistant, which doesn't send chunks)
       const events = [
         { type: "system", subtype: "init", session_id: "new-session" },
         {
-          type: "assistant",
-          session_id: "new-session",
-          message: {
-            content: [{ type: "text", text: "Hello there!" }],
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            delta: { type: "text_delta", text: "Hello there!" },
           },
         },
       ];

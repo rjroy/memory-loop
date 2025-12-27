@@ -518,13 +518,10 @@ export class WebSocketHandler {
       const eventType = rawEvent.type as string;
 
       // Handle different event types
-      if (eventType === "assistant") {
-        // Text content from assistant message
-        const text = this.handleAssistantEvent(ws, messageId, rawEvent);
-        if (text) {
-          responseChunks.push(text);
-        }
-      } else if (eventType === "stream_event") {
+      // NOTE: We skip "assistant" events for text accumulation. The SDK emits
+      // stream_event deltas for incremental text, then an assistant event with
+      // the full content. Processing both would cause duplicate text.
+      if (eventType === "stream_event") {
         // Streaming events (deltas, tool progress, etc.)
         const text = this.handleStreamEvent(ws, messageId, rawEvent);
         if (text) {
@@ -538,37 +535,6 @@ export class WebSocketHandler {
     }
 
     return responseChunks.join("");
-  }
-
-  /**
-   * Handles assistant events containing message content.
-   * Returns extracted text content for accumulation.
-   */
-  private handleAssistantEvent(
-    ws: WebSocketLike,
-    messageId: string,
-    event: Record<string, unknown>
-  ): string {
-    const message = event.message as
-      | { content?: Array<{ type: string; text?: string }> }
-      | undefined;
-
-    const textParts: string[] = [];
-
-    if (message?.content) {
-      for (const block of message.content) {
-        if (block.type === "text" && block.text) {
-          this.send(ws, {
-            type: "response_chunk",
-            messageId,
-            content: block.text,
-          });
-          textParts.push(block.text);
-        }
-      }
-    }
-
-    return textParts.join("");
   }
 
   /**

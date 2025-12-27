@@ -88,12 +88,13 @@ export function isWeekday(date: Date): boolean {
 /**
  * Check if contextual prompt generation is needed
  *
- * Returns true if ALL of the following are true:
- * - It's a weekday (Mon-Fri)
- * - AND one of:
- *   - File doesn't exist
- *   - Generation marker is missing
- *   - Not generated today (different date)
+ * Returns true if ANY of the following are true:
+ * - File doesn't exist
+ * - Generation marker is missing
+ * - Not generated today (different date)
+ *
+ * Note: Generation runs every day including weekends.
+ * Weekdays get work-reflection prompts, weekends get creative prompts.
  *
  * @param vaultPath - Path to the vault root
  * @returns true if generation is needed, false otherwise
@@ -102,11 +103,6 @@ export async function isContextualGenerationNeeded(
   vaultPath: string
 ): Promise<boolean> {
   const today = new Date();
-
-  // Only generate on weekdays (Mon-Fri)
-  if (!isWeekday(today)) {
-    return false;
-  }
 
   const filePath = `${vaultPath}/${CONTEXTUAL_PROMPTS_PATH}`;
   const parsed = await parseInspirationFile(filePath);
@@ -224,9 +220,10 @@ export const DAY_CONTEXT_CONFIG: Record<DayType, DayContextConfig> = {
     dailyNoteDays: [-4, -3, -2, -1, 0],
     additionalFolder: AREAS_PATH,
   },
-  // Weekend: No context (generation doesn't run)
+  // Weekend: Light context from projects for creative nudge
   weekend: {
     dailyNoteDays: [],
+    additionalFolder: PROJECTS_PATH,
   },
 };
 
@@ -361,11 +358,6 @@ export async function gatherDayContext(
 ): Promise<string> {
   const dayType = getDayType(today);
   const config = DAY_CONTEXT_CONFIG[dayType];
-
-  // Weekend returns empty (no generation)
-  if (dayType === "weekend") {
-    return "";
-  }
 
   const contentItems: ContentItem[] = [];
 
@@ -757,6 +749,29 @@ User's recent notes:
 Generate 5 prompts:`;
 
 /**
+ * Prompt template for generating weekend prompts.
+ * Focuses on creativity, imagination, and non-work exploration.
+ * Vault context is provided as a light nudge, not deep reflection.
+ */
+export const WEEKEND_PROMPT_TEMPLATE = `Generate exactly 5 creative prompts for weekend exploration and imagination. These should help someone step away from their usual work mindset and think differently.
+
+Requirements:
+- Focus on creativity, curiosity, play, and imagination
+- Encourage thinking outside normal routines
+- NOT about productivity, tasks, or work reflection
+- Each prompt should be 1-2 sentences
+- Be inviting and spark curiosity
+
+{context_nudge}
+
+Format your response as a markdown list with each prompt quoted:
+- "Prompt text here"
+- "Another prompt"
+...
+
+Generate 5 creative prompts:`;
+
+/**
  * Prompt template for generating inspirational quotes.
  * Uses vault context to select relevant quotes from appropriate domains.
  */
@@ -903,6 +918,48 @@ export async function generateContextualPrompts(
 }
 
 /**
+ * Generate creative weekend prompts focused on imagination and exploration.
+ *
+ * Uses vault context as a light nudge (project themes) rather than deep reflection.
+ *
+ * @param context - Optional vault content for light context nudge
+ * @returns Array of generated creative prompts (may be empty on error)
+ */
+export async function generateWeekendPrompts(
+  context?: string
+): Promise<InspirationItem[]> {
+  try {
+    // Build context nudge - just a hint about their interests, not detailed content
+    let contextNudge: string;
+    if (context && context.trim()) {
+      // Extract just project/area names or high-level themes
+      contextNudge =
+        "The person works on various projects and interests. Feel free to occasionally draw loose inspiration from themes of creativity, learning, or personal growth - but keep prompts general and playful, not work-specific.";
+    } else {
+      contextNudge =
+        "Generate general creative prompts suitable for anyone looking to think differently on a weekend.";
+    }
+
+    const prompt = WEEKEND_PROMPT_TEMPLATE.replace("{context_nudge}", contextNudge);
+
+    const queryResult = queryFn({
+      prompt,
+      options: {
+        model: GENERATION_MODEL,
+        maxTurns: 1,
+        allowedTools: [],
+      },
+    });
+
+    const response = await collectResponse(queryResult);
+    return parseAIResponse(response);
+  } catch (error) {
+    console.error("[inspiration-manager] Failed to generate weekend prompts:", error);
+    return [];
+  }
+}
+
+/**
  * Generate an inspirational quote relevant to the user's work context.
  *
  * REQ-F-21: Generate 1 new inspirational quote per week
@@ -989,14 +1046,14 @@ export function selectRandom<T>(items: T[]): T | undefined {
  * Main orchestration function for inspiration content.
  *
  * REQ-F-1: Provide dual-content display: contextual prompts + timeless quotes
- * REQ-F-10: Contextual prompts displayed on weekdays only
+ * Weekdays show reflection prompts, weekends show creative/imagination prompts
  * REQ-F-20: Quote generation triggered once per week
  * REQ-NF-3: Graceful degradation on errors
  *
  * Flow:
- * 1. Check if contextual generation needed (weekday + not generated today)
+ * 1. Check if contextual generation needed (not generated today)
  * 2. Check if quote generation needed (not generated this week)
- * 3. Trigger generation if needed (async, doesn't block)
+ * 3. Trigger generation if needed (weekday: reflection prompts, weekend: creative prompts)
  * 4. Parse files and select random items
  * 5. Return contextual (null if unavailable) and quote (fallback if unavailable)
  *
@@ -1025,10 +1082,23 @@ export async function getInspiration(vaultPath: string): Promise<InspirationResu
     }
   }
 
-  // Phase 1: Trigger contextual generation (weekday only)
-  if (needsContextual && context.trim()) {
+  // Phase 1: Trigger contextual generation
+  // Weekdays: reflection prompts based on vault content
+  // Weekends: creative/imagination prompts with light context nudge
+  if (needsContextual) {
     try {
-      const newPrompts = await generateContextualPrompts(context);
+      const dayType = getDayType(today);
+      let newPrompts: InspirationItem[];
+
+      if (dayType === "weekend") {
+        // Weekend: creative prompts (context is optional nudge)
+        newPrompts = await generateWeekendPrompts(context);
+      } else {
+        // Weekday: reflection prompts (requires context)
+        newPrompts = context.trim()
+          ? await generateContextualPrompts(context)
+          : [];
+      }
 
       if (newPrompts.length > 0) {
         await appendAndPrune(contextualPath, newPrompts);
@@ -1057,18 +1127,16 @@ export async function getInspiration(vaultPath: string): Promise<InspirationResu
   let contextual: InspirationItem | null = null;
   let quote: InspirationItem = FALLBACK_QUOTE;
 
-  // Only show contextual on weekdays
-  if (isWeekday(today)) {
-    try {
-      const contextualFile = await parseInspirationFile(contextualPath);
+  // Show contextual prompts every day (weekdays: reflection, weekends: creative)
+  try {
+    const contextualFile = await parseInspirationFile(contextualPath);
 
-      if (contextualFile.items.length > 0) {
-        contextual = selectRandom(contextualFile.items) ?? null;
-      }
-    } catch {
-      // File doesn't exist or parse error - return null for contextual
-      contextual = null;
+    if (contextualFile.items.length > 0) {
+      contextual = selectRandom(contextualFile.items) ?? null;
     }
+  } catch {
+    // File doesn't exist or parse error - return null for contextual
+    contextual = null;
   }
 
   // Always try to get a quote

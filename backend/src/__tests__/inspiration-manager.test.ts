@@ -37,6 +37,7 @@ import {
   parseAIResponse,
   generateContextualPrompts,
   generateInspirationQuote,
+  generateWeekendPrompts,
   setQueryFunction,
   resetQueryFunction,
   selectRandom,
@@ -1417,10 +1418,7 @@ describe("isContextualGenerationNeeded direct calls", () => {
     await writeFile(filePath, content, "utf-8");
   }
 
-  test("returns appropriate value based on weekday and file state", async () => {
-    const today = new Date();
-    const isCurrentlyWeekday = isWeekday(today);
-
+  test("returns true when file is missing (any day)", async () => {
     // Test with missing file
     const emptyVault = join(
       tmpdir(),
@@ -1430,9 +1428,8 @@ describe("isContextualGenerationNeeded direct calls", () => {
 
     try {
       const result = await isContextualGenerationNeeded(emptyVault);
-      // If weekday, should be true (file missing)
-      // If weekend, should be false (no generation on weekends)
-      expect(result).toBe(isCurrentlyWeekday);
+      // Should be true because file is missing (generation runs every day)
+      expect(result).toBe(true);
     } finally {
       await rm(emptyVault, { recursive: true, force: true });
     }
@@ -1451,10 +1448,7 @@ describe("isContextualGenerationNeeded direct calls", () => {
     expect(result).toBe(false);
   });
 
-  test("returns true when generated yesterday (on weekday)", async () => {
-    const today = new Date();
-    const isCurrentlyWeekday = isWeekday(today);
-
+  test("returns true when generated yesterday (any day)", async () => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const dateStr = yesterday.toISOString().split("T")[0];
@@ -1462,9 +1456,8 @@ describe("isContextualGenerationNeeded direct calls", () => {
     await createContextualFile(testDir, dateStr);
 
     const result = await isContextualGenerationNeeded(testDir);
-    // If weekday: true (generated yesterday, not today)
-    // If weekend: false (no generation on weekends)
-    expect(result).toBe(isCurrentlyWeekday);
+    // Should be true because generated yesterday (generation runs every day)
+    expect(result).toBe(true);
   });
 });
 
@@ -1918,10 +1911,11 @@ describe("DAY_CONTEXT_CONFIG", () => {
     expect(config.additionalFolder).toBe(AREAS_PATH);
   });
 
-  test("weekend config has empty days", () => {
+  test("weekend config has empty days but includes projects for context nudge", () => {
     const config = DAY_CONTEXT_CONFIG.weekend;
     expect(config.dailyNoteDays).toHaveLength(0);
-    expect(config.additionalFolder).toBeUndefined();
+    // Weekend uses projects for light context nudge in creative prompts
+    expect(config.additionalFolder).toBe(PROJECTS_PATH);
   });
 });
 
@@ -2553,6 +2547,94 @@ describe("generateInspirationQuote", () => {
       text: "First part continued",
       attribution: "Author",
     });
+  });
+});
+
+// =============================================================================
+// generateWeekendPrompts Tests
+// =============================================================================
+
+describe("generateWeekendPrompts", () => {
+  afterEach(() => {
+    resetQueryFunction();
+  });
+
+  test("calls query function with correct parameters", async () => {
+    let capturedArgs: { prompt: string; options: { model: string } } | null = null;
+
+    setQueryFunction(
+      createMockQueryFn('- "A creative prompt"', (args) => {
+        capturedArgs = args;
+      })
+    );
+
+    await generateWeekendPrompts();
+
+    expect(capturedArgs).toBeDefined();
+    expect(capturedArgs!.options.model).toBe(GENERATION_MODEL);
+    expect(capturedArgs!.prompt).toContain("creative prompts");
+    expect(capturedArgs!.prompt).toContain("imagination");
+  });
+
+  test("parses multiple creative prompts", async () => {
+    setQueryFunction(
+      createMockQueryFn(`- "What would you create if you had no constraints?"
+- "If you could learn any skill instantly, what would it be?"
+- "Describe your perfect lazy day"`)
+    );
+
+    const items = await generateWeekendPrompts();
+
+    expect(items).toHaveLength(3);
+    expect(items[0]).toEqual({ text: "What would you create if you had no constraints?" });
+    expect(items[1]).toEqual({ text: "If you could learn any skill instantly, what would it be?" });
+  });
+
+  test("works without context (general creative prompts)", async () => {
+    let capturedPrompt = "";
+
+    setQueryFunction(
+      createMockQueryFn('- "A creative prompt"', (args) => {
+        capturedPrompt = args.prompt;
+      })
+    );
+
+    await generateWeekendPrompts();
+
+    // Should include fallback nudge for no context
+    expect(capturedPrompt).toContain("anyone looking to think differently");
+  });
+
+  test("works with context (uses light nudge)", async () => {
+    let capturedPrompt = "";
+
+    setQueryFunction(
+      createMockQueryFn('- "A creative prompt"', (args) => {
+        capturedPrompt = args.prompt;
+      })
+    );
+
+    await generateWeekendPrompts("Some vault context about projects");
+
+    // Should include light nudge about interests, not the actual content
+    expect(capturedPrompt).toContain("various projects");
+    expect(capturedPrompt).not.toContain("Some vault context");
+  });
+
+  test("returns empty array on SDK error", async () => {
+    setQueryFunction(createErrorMockQueryFn("SDK error"));
+
+    const items = await generateWeekendPrompts();
+
+    expect(items).toEqual([]);
+  });
+
+  test("handles empty SDK response", async () => {
+    setQueryFunction(createMockQueryFn(""));
+
+    const items = await generateWeekendPrompts();
+
+    expect(items).toEqual([]);
   });
 });
 

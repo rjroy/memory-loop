@@ -40,7 +40,15 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const prevSessionIdRef = useRef<string | null>(null);
 
-  const { vault, messages, sessionId, addMessage, startNewSession } = useSession();
+  const {
+    vault,
+    messages,
+    sessionId,
+    addMessage,
+    startNewSession,
+    discussionPrefill,
+    setDiscussionPrefill,
+  } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -124,13 +132,23 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
     }
   }, [lastMessage, vault, sendMessage, startNewSession]);
 
-  // Load draft from localStorage on mount
+  // Load prefill or draft on mount - prefill takes precedence over localStorage draft
+  // Using a ref to capture the initial prefill value avoids needing to suppress exhaustive-deps
+  const initialPrefillRef = useRef(discussionPrefill);
   useEffect(() => {
-    const draft = localStorage.getItem(STORAGE_KEY);
-    if (draft) {
-      setInput(draft);
+    const initialPrefill = initialPrefillRef.current;
+    if (initialPrefill) {
+      // Prefill from inspiration card takes precedence
+      setInput(initialPrefill);
+      setDiscussionPrefill(null);
+    } else {
+      // Fall back to localStorage draft
+      const draft = localStorage.getItem(STORAGE_KEY);
+      if (draft) {
+        setInput(draft);
+      }
     }
-  }, []);
+  }, [setDiscussionPrefill]);
 
   // Save draft to localStorage on input change
   useEffect(() => {

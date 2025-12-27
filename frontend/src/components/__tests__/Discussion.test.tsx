@@ -398,4 +398,137 @@ describe("Discussion", () => {
       });
     });
   });
+
+  describe("prefill from inspiration", () => {
+    // Shared test helpers - using a controlled wrapper that preserves SessionProvider state
+    let setPrefillFn: ((text: string | null) => void) | null = null;
+    let getPrefillFn: (() => string | null) | null = null;
+    let setShowDiscussionFn: ((show: boolean) => void) | null = null;
+
+    function ControlledWrapper() {
+      const [showDiscussion, setShowDiscussion] = React.useState(false);
+      const { setDiscussionPrefill, discussionPrefill } = useSession();
+
+      // Expose functions to test
+      setPrefillFn = setDiscussionPrefill;
+      getPrefillFn = () => discussionPrefill;
+      setShowDiscussionFn = setShowDiscussion;
+
+      return showDiscussion ? <Discussion /> : null;
+    }
+
+    it("populates input with prefill text on mount", async () => {
+      render(
+        <SessionProvider initialVaults={[testVault]}>
+          <ControlledWrapper />
+        </SessionProvider>
+      );
+
+      // Set prefill before mounting Discussion
+      act(() => {
+        setPrefillFn!("What excites you today?");
+      });
+
+      // Mount Discussion
+      act(() => {
+        setShowDiscussionFn!(true);
+      });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const input = screen.getByRole("textbox");
+      expect((input as HTMLTextAreaElement).value).toBe("What excites you today?");
+    });
+
+    it("clears prefill from context after populating input", async () => {
+      render(
+        <SessionProvider initialVaults={[testVault]}>
+          <ControlledWrapper />
+        </SessionProvider>
+      );
+
+      // Set prefill
+      act(() => {
+        setPrefillFn!("Reflect on this...");
+      });
+
+      // Mount Discussion
+      act(() => {
+        setShowDiscussionFn!(true);
+      });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Verify input has the prefill
+      const input = screen.getByRole("textbox");
+      expect((input as HTMLTextAreaElement).value).toBe("Reflect on this...");
+
+      // Verify prefill was cleared from context
+      await waitFor(() => {
+        expect(getPrefillFn!()).toBeNull();
+      });
+    });
+
+    it("prefill takes precedence over localStorage draft", async () => {
+      // Set draft in localStorage
+      localStorage.setItem("memory-loop-discussion-draft", "Draft message");
+
+      render(
+        <SessionProvider initialVaults={[testVault]}>
+          <ControlledWrapper />
+        </SessionProvider>
+      );
+
+      // Set prefill
+      act(() => {
+        setPrefillFn!("Prefill message");
+      });
+
+      // Mount Discussion
+      act(() => {
+        setShowDiscussionFn!(true);
+      });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const input = screen.getByRole("textbox");
+      // Prefill should win over draft
+      expect((input as HTMLTextAreaElement).value).toBe("Prefill message");
+    });
+
+    it("does not auto-submit prefill (user must click send)", async () => {
+      render(
+        <SessionProvider initialVaults={[testVault]}>
+          <ControlledWrapper />
+        </SessionProvider>
+      );
+
+      act(() => {
+        setPrefillFn!("Some prefill");
+      });
+
+      // Clear any sent messages before mounting Discussion
+      sentMessages.length = 0;
+
+      act(() => {
+        setShowDiscussionFn!(true);
+      });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Should not have sent discussion_message
+      const discussionMessages = sentMessages.filter(
+        (m) => m.type === "discussion_message"
+      );
+      expect(discussionMessages.length).toBe(0);
+    });
+  });
 });

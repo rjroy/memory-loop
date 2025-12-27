@@ -72,14 +72,16 @@ export function RecentActivity({
     setCurrentPath,
   } = useSession();
 
-  // Handle view capture click - navigate to browse mode
+  // Handle view capture click - open the daily note file in browse mode
   const handleViewCapture = useCallback(
     (date: string) => {
       if (onViewCapture) {
         onViewCapture(date);
       } else {
-        // Default: navigate to the inbox folder and switch to browse mode
-        setCurrentPath(vault?.inboxPath ?? "");
+        // Navigate to the specific daily note file
+        const inboxPath = vault?.inboxPath ?? "";
+        const filePath = inboxPath ? `${inboxPath}/${date}.md` : `${date}.md`;
+        setCurrentPath(filePath);
         setMode("browse");
       }
     },
@@ -176,7 +178,7 @@ function CaptureCard({ note, onView }: CaptureCardProps): React.ReactNode {
           type="button"
           className="recent-activity__action"
           onClick={onView}
-          aria-label="View in browse mode"
+          aria-label="View note"
         >
           View
         </button>

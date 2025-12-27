@@ -186,7 +186,7 @@ describe("RecentActivity", () => {
         wrapper: createTestWrapper(mockCaptures, []),
       });
 
-      const viewButtons = screen.getAllByRole("button", { name: /view in browse mode/i });
+      const viewButtons = screen.getAllByRole("button", { name: /view note/i });
       fireEvent.click(viewButtons[0]);
 
       expect(onViewCapture).toHaveBeenCalledWith("2025-01-15");
@@ -228,7 +228,7 @@ describe("RecentActivity", () => {
         wrapper: createTestWrapper(mockCaptures, []),
       });
 
-      const viewButtons = screen.getAllByRole("button", { name: /view in browse mode/i });
+      const viewButtons = screen.getAllByRole("button", { name: /view note/i });
       expect(viewButtons).toHaveLength(2);
     });
   });

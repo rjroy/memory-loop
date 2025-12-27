@@ -57,6 +57,20 @@ export function InspirationCard({
 
   return (
     <section className="inspiration-card" aria-label="Inspiration">
+      <button
+        type="button"
+        className="inspiration-card__item inspiration-card__quote"
+        onClick={() => handleClick(quote.text)}
+        aria-label="Use this quote for discussion"
+      >
+        <p className="inspiration-card__text">&ldquo;{quote.text}&rdquo;</p>
+        {quote.attribution && (
+          <span className="inspiration-card__attribution">
+            -- {quote.attribution}
+          </span>
+        )}
+      </button>
+
       {contextual && (
         <button
           type="button"
@@ -72,20 +86,6 @@ export function InspirationCard({
           )}
         </button>
       )}
-
-      <button
-        type="button"
-        className="inspiration-card__item inspiration-card__quote"
-        onClick={() => handleClick(quote.text)}
-        aria-label="Use this quote for discussion"
-      >
-        <p className="inspiration-card__text">&ldquo;{quote.text}&rdquo;</p>
-        {quote.attribution && (
-          <span className="inspiration-card__attribution">
-            -- {quote.attribution}
-          </span>
-        )}
-      </button>
     </section>
   );
 }

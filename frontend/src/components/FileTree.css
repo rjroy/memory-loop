@@ -80,6 +80,12 @@
   font-size: var(--text-sm);
   color: var(--color-text);
   transition: background-color 0.2s ease, box-shadow 0.3s ease;
+
+  /* Prevent iOS long-press behaviors that conflict with custom context menu */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 
 .file-tree__item:hover {

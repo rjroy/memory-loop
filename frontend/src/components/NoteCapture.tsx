@@ -8,7 +8,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useSession } from "../contexts/SessionContext";
-import { RecentActivity } from "./RecentActivity";
 import "./NoteCapture.css";
 
 const STORAGE_KEY = "memory-loop-draft";
@@ -49,14 +48,12 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasSentVaultSelectionRef = useRef(false);
-  const hasRequestedRecentActivityRef = useRef(false);
 
-  const { vault, setRecentNotes, setRecentDiscussions } = useSession();
+  const { vault } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
-    hasRequestedRecentActivityRef.current = false;
   }, []);
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
@@ -77,25 +74,6 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       hasSentVaultSelectionRef.current = true;
     }
   }, [connectionStatus, vault, sendMessage]);
-
-  // Request recent activity after server confirms vault selection
-  useEffect(() => {
-    if (
-      lastMessage?.type === "session_ready" &&
-      !hasRequestedRecentActivityRef.current
-    ) {
-      sendMessage({ type: "get_recent_activity" });
-      hasRequestedRecentActivityRef.current = true;
-    }
-  }, [lastMessage, sendMessage]);
-
-  // Handle recent_activity response
-  useEffect(() => {
-    if (lastMessage?.type === "recent_activity") {
-      setRecentNotes(lastMessage.captures);
-      setRecentDiscussions(lastMessage.discussions);
-    }
-  }, [lastMessage, setRecentNotes, setRecentDiscussions]);
 
   // Load draft from localStorage on mount
   useEffect(() => {
@@ -124,7 +102,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       showToast("success", `Note saved at ${lastMessage.timestamp}`);
       onCaptured?.();
 
-      // Refresh recent activity (RecentActivity component will handle the response)
+      // Refresh recent activity for HomeView
       sendMessage({ type: "get_recent_activity" });
     }
   }, [lastMessage, isSubmitting, onCaptured, sendMessage]);
@@ -236,8 +214,6 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
           {isSubmitting ? "Saving..." : "Capture Note"}
         </button>
       </form>
-
-      <RecentActivity sendMessage={sendMessage} />
 
       {toast.visible && (
         <div

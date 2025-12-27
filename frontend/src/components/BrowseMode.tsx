@@ -71,6 +71,33 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
     }
   }, [vault, hasSessionReady, browser.directoryCache, sendMessage, setFileLoading]);
 
+  // Auto-load file when currentPath is set externally (e.g., from RecentActivity View button)
+  // Only load if we have a file path and no content loaded yet
+  const hasAutoLoadedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const path = browser.currentPath;
+
+    // Reset auto-load ref when blocked so same file can be loaded again on future navigation
+    if (
+      !hasSessionReady ||
+      !path ||
+      !path.endsWith(".md") ||
+      browser.currentFileContent !== null ||
+      browser.fileError ||
+      browser.isLoading
+    ) {
+      hasAutoLoadedRef.current = null;
+      return;
+    }
+
+    // Only auto-load .md files that haven't been auto-loaded for this path yet
+    if (hasAutoLoadedRef.current !== path) {
+      hasAutoLoadedRef.current = path;
+      setFileLoading(true);
+      sendMessage({ type: "read_file", path });
+    }
+  }, [hasSessionReady, browser.currentPath, browser.currentFileContent, browser.fileError, browser.isLoading, sendMessage, setFileLoading]);
+
   // Handle server messages for directory listing and file content
   useEffect(() => {
     if (!lastMessage) return;

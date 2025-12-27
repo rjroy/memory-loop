@@ -151,7 +151,7 @@ const SessionContext = createContext<SessionContextValue | null>(null);
  * localStorage keys for persisting state.
  * Note: Session messages are NOT persisted locally - server is source of truth.
  */
-const STORAGE_KEY_VAULT = "memory-loop:vaultId";
+export const STORAGE_KEY_VAULT = "memory-loop:vaultId";
 const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";
 const STORAGE_KEY_PINNED_FOLDERS_PREFIX = "memory-loop:pinnedFolders:";
 

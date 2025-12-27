@@ -275,5 +275,113 @@ describe("VaultSelect", () => {
         expect(onReady).toHaveBeenCalled();
       });
     });
+
+    it("auto-resumes session from localStorage on page refresh", async () => {
+      // Set persisted vault ID before rendering
+      localStorage.setItem("memory-loop:vaultId", "vault-1");
+
+      const onReady = mock(() => {});
+
+      render(<VaultSelect onReady={onReady} />, { wrapper: TestWrapper });
+
+      // Wait for vaults to load and auto-resume to trigger
+      await waitFor(() => {
+        // Should have sent select_vault for auto-resume
+        const selectMessages = sentMessages.filter(
+          (m) => m.type === "select_vault" && m.vaultId === "vault-1"
+        );
+        expect(selectMessages.length).toBeGreaterThan(0);
+      });
+
+      // Simulate session_ready from server
+      await waitFor(() => {
+        const ws = wsInstances[0];
+        ws.simulateMessage({
+          type: "session_ready",
+          sessionId: "session-123",
+          vaultId: "vault-1",
+        });
+      });
+
+      await waitFor(() => {
+        expect(onReady).toHaveBeenCalled();
+      });
+    });
+
+    it("does not auto-resume if no vault in localStorage", async () => {
+      // Ensure localStorage is empty
+      localStorage.clear();
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      // Wait for vaults to load
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Give time for auto-resume effect to run (if it would)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Should not have sent any messages automatically
+      expect(sentMessages.length).toBe(0);
+    });
+
+    it("does not auto-resume if localStorage vault ID is not in vault list", async () => {
+      // Set a vault ID that doesn't exist in testVaults
+      localStorage.setItem("memory-loop:vaultId", "nonexistent-vault");
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      // Wait for vaults to load
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Give time for auto-resume effect to run (if it would)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Should not have sent any messages automatically
+      expect(sentMessages.length).toBe(0);
+    });
+
+    it("sends resume_session when existing session found during auto-resume", async () => {
+      localStorage.setItem("memory-loop:vaultId", "vault-1");
+
+      // Mock both vaults API and sessions API
+      // @ts-expect-error - mocking fetch with URL handling
+      globalThis.fetch = (url: string) => {
+        if (url === "/api/vaults") {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ vaults: testVaults }),
+          });
+        }
+        if (url === "/api/sessions/vault-1") {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ sessionId: "existing-session-123" }),
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      };
+
+      const onReady = mock(() => {});
+
+      render(<VaultSelect onReady={onReady} />, { wrapper: TestWrapper });
+
+      // Wait for auto-resume to send resume_session
+      await waitFor(() => {
+        const resumeMessages = sentMessages.filter(
+          (m) => m.type === "resume_session"
+        );
+        expect(resumeMessages.length).toBe(1);
+        expect(resumeMessages[0]).toEqual({
+          type: "resume_session",
+          sessionId: "existing-session-123",
+        });
+      });
+    });
   });
 });

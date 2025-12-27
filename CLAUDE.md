@@ -2,79 +2,89 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
-
-Memory Loop is a full-stack TypeScript monorepo providing a mobile-friendly web interface for interacting with Obsidian vaults via Claude AI. It has two modes: **Note Capture** for quick notes and **Discussion** for AI-powered conversations.
-
-## Development Commands
+## Commands
 
 ```bash
-# Root level (runs across all workspaces)
-bun run dev        # Start backend (3000) + frontend (5173) with hot reload
-bun run build      # Build all workspaces
-bun run lint       # ESLint across all packages
-bun run test       # All tests (339 tests)
-bun run typecheck  # TypeScript checking
+# Development
+bun install            # Install dependencies
+bun run dev            # Start both frontend (Vite) and backend with hot reload
+bun run --cwd backend dev   # Backend only
+bun run --cwd frontend dev  # Frontend only
 
-# Run single test file
-bun test src/__tests__/note-capture.test.ts
+# Testing
+bun run test           # Run all tests (backend + frontend)
+bun run --cwd backend test  # Backend tests only
+bun run --cwd frontend test # Frontend tests only
+bun test path/to/file.test.ts  # Single test file
 
-# Test with mock SDK (no API calls)
-MOCK_SDK=true bun run dev
+# Type checking and linting
+bun run typecheck      # TypeScript checking across all workspaces
+bun run lint           # ESLint across all workspaces
+
+# Production
+bun run build          # Build frontend (backend runs from source)
+./scripts/launch.sh    # Run production server
 ```
 
 ## Architecture
 
+Memory Loop is a mobile-friendly web interface for interacting with Obsidian vaults via Claude AI.
+
+### Monorepo Structure
+
 ```
-memory-loop/
-├── backend/     # Hono server + Claude Agent SDK
-├── frontend/    # React 19 + Vite
-└── shared/      # Protocol definitions (Zod schemas)
+backend/     # Hono server + Claude Agent SDK (runs from TypeScript source)
+frontend/    # React 19 + Vite SPA
+shared/      # Zod schemas for WebSocket protocol (type-safe message validation)
 ```
 
-**Backend (Hono + Bun):**
-- `server.ts` - Hono app with routes and middleware
-- `websocket-handler.ts` - Connection state, message routing
-- `vault-manager.ts` - Vault discovery, validates CLAUDE.md presence
-- `session-manager.ts` - Persists session metadata, manages SDK instances
-- `note-capture.ts` - Daily note creation in `YYYY-MM-DD.md` format
+### Communication Pattern
 
-**Frontend (React + Vite):**
-- `SessionContext.tsx` - State management (vault, mode, session)
-- `useWebSocket.ts` - Real-time communication with backend
-- Components: VaultSelect, ModeToggle, NoteCapture, Discussion, MessageBubble, ToolDisplay
+Frontend and backend communicate over **WebSocket** with Zod-validated message schemas:
 
-**Shared:**
-- `protocol.ts` - Zod schemas for WebSocket messages (discriminated unions)
-- `types.ts` - VaultInfo, SessionMetadata, ErrorCode interfaces
+- **`shared/src/protocol.ts`** - All message schemas (ClientMessage, ServerMessage discriminated unions)
+- **`backend/src/websocket-handler.ts`** - Server-side message routing
+- **`frontend/src/hooks/useWebSocket.ts`** - Client connection with auto-reconnect
+- **`frontend/src/contexts/SessionContext.tsx`** - Client state management (useReducer pattern)
 
-## WebSocket Protocol
+Messages are validated on both ends using `safeParseClientMessage()` and `safeParseServerMessage()`.
 
-Client → Server: `select_vault`, `capture_note`, `discussion_message`, `resume_session`, `new_session`, `abort`, `ping`
+### Backend Modules
 
-Server → Client: `vault_list`, `session_ready`, `note_captured`, `response_start/chunk/end`, `tool_start/input/end`, `error`, `pong`
+- **`server.ts`** - Hono app setup, routes, WebSocket upgrade
+- **`websocket-handler.ts`** - Message routing to domain handlers
+- **`session-manager.ts`** - Claude Agent SDK session lifecycle
+- **`vault-manager.ts`** - Vault discovery, goals parsing
+- **`note-capture.ts`** - Daily note appending with timestamps
+- **`file-browser.ts`** - Directory listing, file reading with security validation
+- **`inspiration-manager.ts`** - Context-aware prompts and quotes
+
+### Frontend Modes
+
+Four modes managed by `SessionContext`:
+- **Home** - Dashboard with goals, inspiration, recent activity
+- **Note** - Quick capture to daily notes
+- **Discussion** - AI chat with streaming responses and tool display
+- **Browse** - File tree navigation and markdown viewing
+
+### Vault Requirements
+
+Each vault needs a `CLAUDE.md` at root. Optional structure:
+- `00_Inbox/` - Daily notes destination
+- Goals section in `CLAUDE.md` - Displayed on Home dashboard
+- `06_Metadata/memory-loop/` - Inspiration prompt sources
 
 ## Environment Variables
 
 ```bash
-VAULTS_DIR=/path/to/vaults     # Required
-PORT=3000                       # Optional (default 3000)
-HOST=0.0.0.0                    # Optional (default 0.0.0.0 for remote access)
-MOCK_SDK=true                   # Optional (testing without API)
+VAULTS_DIR=/path/to/vaults  # Required: directory containing vaults
+PORT=3000                   # Backend port
+HOST=0.0.0.0               # Bind address
+MOCK_SDK=true              # Test without API calls
 ```
 
-## Testing
+## Testing Patterns
 
-- Backend: Bun test with filesystem mocking (temp directories)
-- Frontend: Bun test + @testing-library/react + happy-dom
-- Preload setup in `frontend/bunfig.toml` configures happy-dom
-
-## Key Patterns
-
-- **Strict TypeScript** with `noEmit` (Bun handles transpilation)
-- **No backend bundling** - runs from source (`bun run src/index.ts`) because Claude Agent SDK resolves paths relative to the running script
-- **ESLint 9 flat config** with TypeScript-ESLint projectService
-- **Zod validation** with `safeParse` for untrusted input
-- **Custom error classes** with `.code` property (e.g., `VAULT_NOT_FOUND`)
-- **Sessions** stored in `.memory-loop/sessions/` as JSON
-- **Daily notes** appended under `## Capture` section
+- Backend tests use filesystem operations in temp directories
+- Frontend tests use `@testing-library/react` + happy-dom
+- Mock the WebSocket and SDK for isolation

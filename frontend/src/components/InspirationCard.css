@@ -83,9 +83,9 @@
   display: block;
   margin-top: var(--spacing-xs);
   font-family: var(--font-family-display);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--color-text-secondary);
-  font-style: italic;
+  font-style: normal;
 }
 
 /* Loading skeleton */

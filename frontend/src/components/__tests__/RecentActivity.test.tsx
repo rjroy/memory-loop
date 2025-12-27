@@ -74,7 +74,7 @@ describe("RecentActivity", () => {
         wrapper: createTestWrapper(mockCaptures, []),
       });
 
-      expect(screen.getByText("Captures")).toBeDefined();
+      expect(screen.getByText("Recent: Captures")).toBeDefined();
       expect(screen.getByText("First capture")).toBeDefined();
       expect(screen.getByText("Second capture")).toBeDefined();
     });
@@ -84,7 +84,7 @@ describe("RecentActivity", () => {
         wrapper: createTestWrapper([], mockDiscussions),
       });
 
-      expect(screen.getByText("Discussions")).toBeDefined();
+      expect(screen.getByText("Recent: Discussions")).toBeDefined();
       expect(screen.getByText("How do I use this?")).toBeDefined();
       expect(screen.getByText("Another question")).toBeDefined();
     });
@@ -94,8 +94,8 @@ describe("RecentActivity", () => {
         wrapper: createTestWrapper(mockCaptures, mockDiscussions),
       });
 
-      expect(screen.getByText("Captures")).toBeDefined();
-      expect(screen.getByText("Discussions")).toBeDefined();
+      expect(screen.getByText("Recent: Captures")).toBeDefined();
+      expect(screen.getByText("Recent: Discussions")).toBeDefined();
       expect(screen.getByText("First capture")).toBeDefined();
       expect(screen.getByText("How do I use this?")).toBeDefined();
     });

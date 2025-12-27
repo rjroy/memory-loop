@@ -2,11 +2,11 @@
  * HomeView Component
  *
  * Default landing view when a vault is selected.
- * Displays session context, quick actions, and recent activity.
+ * Displays session context, goals, inspiration, and recent activity.
  */
 
 import React, { useEffect, useRef, useCallback, useState } from "react";
-import { useSession, type AppMode } from "../contexts/SessionContext";
+import { useSession } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { RecentActivity } from "./RecentActivity";
 import { GoalsCard } from "./GoalsCard";
@@ -33,26 +33,16 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Props for HomeView component.
- */
-export interface HomeViewProps {
-  /** Optional callback when mode changes */
-  onModeChange?: (mode: AppMode) => void;
-}
-
-/**
- * Home view with session context, quick actions, and recent activity.
+ * Home view with session context and recent activity.
  *
  * - Shows vault name and session stats
- * - Provides quick action buttons to switch modes
- * - Displays recent captures and discussions
+ * - Displays goals, inspiration, and recent activity
  */
-export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
+export function HomeView(): React.ReactNode {
   const {
     vault,
     sessionStartTime,
     messages,
-    setMode,
     setRecentNotes,
     setRecentDiscussions,
     setGoals,
@@ -141,22 +131,6 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
       setInspirationLoading(false);
     }
   }, [lastMessage]);
-
-  // Quick action handlers
-  function handleCaptureThought() {
-    setMode("note");
-    onModeChange?.("note");
-  }
-
-  function handleAskClaude() {
-    setMode("discussion");
-    onModeChange?.("discussion");
-  }
-
-  function handleBrowseVault() {
-    setMode("browse");
-    onModeChange?.("browse");
-  }
 
   // Calculate session duration
   const sessionDuration = sessionStartTime

@@ -1,11 +1,11 @@
 /**
  * Tests for HomeView Component
  *
- * Tests rendering, quick actions, and accessibility.
+ * Tests rendering and accessibility.
  */
 
-import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { describe, it, expect, beforeEach } from "bun:test";
+import { render, screen, cleanup } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { HomeView } from "../HomeView";
 import { SessionProvider } from "../../contexts/SessionContext";
@@ -46,36 +46,6 @@ describe("HomeView", () => {
       render(<HomeView />, { wrapper: Wrapper });
 
       expect(screen.getByLabelText("Session context")).toBeTruthy();
-      expect(screen.getByLabelText("Quick actions")).toBeTruthy();
-    });
-  });
-
-  describe("mode change callback", () => {
-    it("calls onModeChange when capture button is clicked", () => {
-      const mockOnModeChange = mock(() => {});
-      render(<HomeView onModeChange={mockOnModeChange} />, { wrapper: Wrapper });
-
-      fireEvent.click(screen.getByText("Capture thought"));
-
-      expect(mockOnModeChange).toHaveBeenCalledWith("note");
-    });
-
-    it("calls onModeChange when chat button is clicked", () => {
-      const mockOnModeChange = mock(() => {});
-      render(<HomeView onModeChange={mockOnModeChange} />, { wrapper: Wrapper });
-
-      fireEvent.click(screen.getByText("Ask Claude"));
-
-      expect(mockOnModeChange).toHaveBeenCalledWith("discussion");
-    });
-
-    it("calls onModeChange when browse button is clicked", () => {
-      const mockOnModeChange = mock(() => {});
-      render(<HomeView onModeChange={mockOnModeChange} />, { wrapper: Wrapper });
-
-      fireEvent.click(screen.getByText("Browse vault"));
-
-      expect(mockOnModeChange).toHaveBeenCalledWith("browse");
     });
   });
 

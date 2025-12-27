@@ -100,4 +100,14 @@ describe("HomeView", () => {
       expect(mockOnModeChange).toHaveBeenCalledWith("browse");
     });
   });
+
+  describe("inspiration", () => {
+    it("does not render InspirationCard when no inspiration data", () => {
+      // Initially, no inspiration data is loaded
+      render(<HomeView />, { wrapper: Wrapper });
+
+      // InspirationCard has aria-label="Inspiration" so we can check for its absence
+      expect(screen.queryByLabelText("Inspiration")).toBeNull();
+    });
+  });
 });

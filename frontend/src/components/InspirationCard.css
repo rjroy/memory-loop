@@ -1,0 +1,154 @@
+/**
+ * InspirationCard Component Styles
+ *
+ * Displays contextual prompts and quotes with glassmorphism styling.
+ * Uses BEM naming convention for clarity.
+ */
+
+.inspiration-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+/* Clickable item container */
+.inspiration-card__item {
+  width: 100%;
+  padding: var(--spacing-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+}
+
+.inspiration-card__item:hover {
+  border-color: var(--glass-border-hover);
+  box-shadow: var(--glass-shadow-hover);
+}
+
+.inspiration-card__item:active {
+  transform: scale(0.98);
+}
+
+/* Prompt variant - cyan accent */
+.inspiration-card__prompt {
+  border-left: 3px solid var(--color-accent-cyan);
+}
+
+.inspiration-card__prompt:hover {
+  border-left-color: var(--color-accent-cyan);
+  box-shadow: var(--glow-cyan);
+}
+
+/* Quote variant - purple accent */
+.inspiration-card__quote {
+  border-left: 3px solid var(--color-accent);
+}
+
+.inspiration-card__quote:hover {
+  border-left-color: var(--color-accent);
+  box-shadow: var(--glow-purple);
+}
+
+/* Text content */
+.inspiration-card__text {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: var(--line-height-relaxed);
+  margin: 0;
+}
+
+/* Attribution */
+.inspiration-card__attribution {
+  display: block;
+  margin-top: var(--spacing-xs);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+/* Loading skeleton */
+.inspiration-card--loading {
+  padding: var(--spacing-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+}
+
+.inspiration-card__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.inspiration-card__skeleton-line {
+  height: 1em;
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--glass-border) 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: shimmer 1.5s infinite;
+}
+
+.inspiration-card__skeleton-line--short {
+  width: 60%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Fallback for browsers without backdrop-filter */
+@supports not (backdrop-filter: blur(10px)) {
+  .inspiration-card__item {
+    background-color: var(--color-surface);
+  }
+  .inspiration-card--loading {
+    background-color: var(--color-surface);
+  }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .inspiration-card__skeleton-line {
+    animation: none;
+    background: var(--glass-border);
+  }
+}
+
+/* Touch device adjustments */
+@media (hover: none) {
+  .inspiration-card__item:hover {
+    border-color: var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .inspiration-card__prompt:hover {
+    box-shadow: var(--glass-shadow);
+  }
+
+  .inspiration-card__quote:hover {
+    box-shadow: var(--glass-shadow);
+  }
+}
+
+/* Mobile adjustments */
+@media (max-width: 767px) {
+  .inspiration-card__item {
+    backdrop-filter: blur(4px);
+    min-height: 48px; /* Touch-friendly target */
+  }
+}

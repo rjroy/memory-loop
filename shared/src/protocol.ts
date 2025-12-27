@@ -186,6 +186,13 @@ export const GetGoalsMessageSchema = z.object({
 });
 
 /**
+ * Client requests inspiration (contextual prompt and quote)
+ */
+export const GetInspirationMessageSchema = z.object({
+  type: z.literal("get_inspiration"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -201,6 +208,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   GetRecentNotesMessageSchema,
   GetRecentActivityMessageSchema,
   GetGoalsMessageSchema,
+  GetInspirationMessageSchema,
 ]);
 
 // =============================================================================
@@ -360,6 +368,24 @@ export const GoalsMessageSchema = z.object({
 });
 
 /**
+ * Schema for an inspiration item (used for both contextual prompts and quotes)
+ */
+export const InspirationItemSchema = z.object({
+  text: z.string().min(1, "Inspiration text is required"),
+  attribution: z.string().optional(),
+});
+
+/**
+ * Server sends inspiration (contextual prompt and quote)
+ * contextual is null if the prompts file is missing/empty
+ */
+export const InspirationMessageSchema = z.object({
+  type: z.literal("inspiration"),
+  contextual: InspirationItemSchema.nullable(),
+  quote: InspirationItemSchema,
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -379,6 +405,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   RecentNotesMessageSchema,
   RecentActivityMessageSchema,
   GoalsMessageSchema,
+  InspirationMessageSchema,
 ]);
 
 // =============================================================================
@@ -410,6 +437,7 @@ export type ReadFileMessage = z.infer<typeof ReadFileMessageSchema>;
 export type GetRecentNotesMessage = z.infer<typeof GetRecentNotesMessageSchema>;
 export type GetRecentActivityMessage = z.infer<typeof GetRecentActivityMessageSchema>;
 export type GetGoalsMessage = z.infer<typeof GetGoalsMessageSchema>;
+export type GetInspirationMessage = z.infer<typeof GetInspirationMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -430,6 +458,8 @@ export type RecentNotesMessage = z.infer<typeof RecentNotesMessageSchema>;
 export type RecentActivityMessage = z.infer<typeof RecentActivityMessageSchema>;
 export type GoalSection = z.infer<typeof GoalSectionSchema>;
 export type GoalsMessage = z.infer<typeof GoalsMessageSchema>;
+export type InspirationItem = z.infer<typeof InspirationItemSchema>;
+export type InspirationMessage = z.infer<typeof InspirationMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

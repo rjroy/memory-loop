@@ -5,11 +5,13 @@
  * Displays session context, quick actions, and recent activity.
  */
 
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback, useState } from "react";
 import { useSession, type AppMode } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { RecentActivity } from "./RecentActivity";
 import { GoalsCard } from "./GoalsCard";
+import { InspirationCard } from "./InspirationCard";
+import type { InspirationItem } from "@memory-loop/shared";
 import "./HomeView.css";
 
 /**
@@ -59,12 +61,22 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const hasRequestedRecentActivityRef = useRef(false);
   const hasRequestedGoalsRef = useRef(false);
+  const hasRequestedInspirationRef = useRef(false);
+
+  // Inspiration state
+  const [inspirationLoading, setInspirationLoading] = useState(true);
+  const [inspirationContextual, setInspirationContextual] =
+    useState<InspirationItem | null>(null);
+  const [inspirationQuote, setInspirationQuote] =
+    useState<InspirationItem | null>(null);
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
     hasRequestedRecentActivityRef.current = false;
     hasRequestedGoalsRef.current = false;
+    hasRequestedInspirationRef.current = false;
+    setInspirationLoading(true);
   }, []);
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
@@ -86,7 +98,7 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
     }
   }, [connectionStatus, vault, sendMessage]);
 
-  // Request recent activity and goals after server confirms vault selection
+  // Request recent activity, goals, and inspiration after server confirms vault selection
   // Note: Goals are only requested if vault has goalsPath set during discovery.
   // If user creates goals.md after vault selection, they must reselect the vault.
   useEffect(() => {
@@ -98,6 +110,10 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
       if (!hasRequestedGoalsRef.current && vault?.goalsPath) {
         sendMessage({ type: "get_goals" });
         hasRequestedGoalsRef.current = true;
+      }
+      if (!hasRequestedInspirationRef.current) {
+        sendMessage({ type: "get_inspiration" });
+        hasRequestedInspirationRef.current = true;
       }
     }
   }, [lastMessage, sendMessage, vault?.goalsPath]);
@@ -116,6 +132,15 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
       setGoals(lastMessage.sections);
     }
   }, [lastMessage, setGoals]);
+
+  // Handle inspiration response
+  useEffect(() => {
+    if (lastMessage?.type === "inspiration") {
+      setInspirationContextual(lastMessage.contextual);
+      setInspirationQuote(lastMessage.quote);
+      setInspirationLoading(false);
+    }
+  }, [lastMessage]);
 
   // Quick action handlers
   function handleCaptureThought() {
@@ -159,6 +184,15 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
           </div>
         </div>
       </section>
+
+      {/* Inspiration */}
+      {inspirationQuote && (
+        <InspirationCard
+          contextual={inspirationContextual}
+          quote={inspirationQuote}
+          isLoading={inspirationLoading}
+        />
+      )}
 
       {/* Quick Actions */}
       <section className="home-view__quick-actions" aria-label="Quick actions">

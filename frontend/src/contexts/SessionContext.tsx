@@ -81,6 +81,8 @@ export interface SessionState {
   recentDiscussions: RecentDiscussionEntry[];
   /** Goals from vault's goals.md file (null if no goals file exists) */
   goals: GoalSection[] | null;
+  /** Pre-filled text for discussion mode (from inspiration click) */
+  discussionPrefill: string | null;
 }
 
 /**
@@ -131,6 +133,8 @@ export interface SessionActions {
   setRecentDiscussions: (discussions: RecentDiscussionEntry[]) => void;
   /** Set goals from vault's goals.md file */
   setGoals: (goals: GoalSection[] | null) => void;
+  /** Set discussion prefill text (from inspiration click) */
+  setDiscussionPrefill: (text: string | null) => void;
 }
 
 /**
@@ -177,7 +181,8 @@ type SessionAction =
   | { type: "PIN_FOLDER"; path: string }
   | { type: "UNPIN_FOLDER"; path: string }
   | { type: "SET_PINNED_FOLDERS"; paths: string[] }
-  | { type: "SET_GOALS"; goals: GoalSection[] | null };
+  | { type: "SET_GOALS"; goals: GoalSection[] | null }
+  | { type: "SET_DISCUSSION_PREFILL"; text: string | null };
 
 /**
  * Generates a unique message ID.
@@ -224,6 +229,8 @@ function sessionReducer(
         recentDiscussions: [],
         // Clear goals when switching vaults
         goals: null,
+        // Clear discussion prefill when switching vaults (transient state)
+        discussionPrefill: null,
       };
 
     case "CLEAR_VAULT":
@@ -236,6 +243,7 @@ function sessionReducer(
         recentNotes: [],
         recentDiscussions: [],
         goals: null,
+        discussionPrefill: null,
       };
 
     case "SET_SESSION_ID":
@@ -436,6 +444,12 @@ function sessionReducer(
         goals: action.goals,
       };
 
+    case "SET_DISCUSSION_PREFILL":
+      return {
+        ...state,
+        discussionPrefill: action.text,
+      };
+
     default:
       return state;
   }
@@ -454,6 +468,7 @@ const initialState: SessionState = {
   recentNotes: [],
   recentDiscussions: [],
   goals: null,
+  discussionPrefill: null,
 };
 
 /**
@@ -742,6 +757,10 @@ export function SessionProvider({
     dispatch({ type: "SET_GOALS", goals });
   }, []);
 
+  const setDiscussionPrefill = useCallback((text: string | null) => {
+    dispatch({ type: "SET_DISCUSSION_PREFILL", text });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -766,6 +785,7 @@ export function SessionProvider({
     unpinFolder,
     setRecentDiscussions,
     setGoals,
+    setDiscussionPrefill,
   };
 
   return (

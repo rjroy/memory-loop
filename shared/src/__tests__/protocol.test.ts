@@ -19,6 +19,7 @@ import {
   PingMessageSchema,
   ListDirectoryMessageSchema,
   ReadFileMessageSchema,
+  GetInspirationMessageSchema,
   // Server message schemas
   ServerMessageSchema,
   VaultListMessageSchema,
@@ -34,6 +35,8 @@ import {
   PongMessageSchema,
   DirectoryListingMessageSchema,
   FileContentMessageSchema,
+  InspirationItemSchema,
+  InspirationMessageSchema,
   // Supporting schemas
   VaultInfoSchema,
   ErrorCodeSchema,
@@ -328,6 +331,20 @@ describe("Client -> Server Messages", () => {
     });
   });
 
+  describe("GetInspirationMessageSchema", () => {
+    test("accepts valid get_inspiration message", () => {
+      const msg = { type: "get_inspiration" as const };
+      const result = GetInspirationMessageSchema.parse(msg);
+      expect(result.type).toBe("get_inspiration");
+    });
+
+    test("ignores extra fields", () => {
+      const msg = { type: "get_inspiration", extra: "ignored" };
+      const result = GetInspirationMessageSchema.parse(msg);
+      expect(result.type).toBe("get_inspiration");
+    });
+  });
+
   describe("ClientMessageSchema (discriminated union)", () => {
     test("parses all client message types", () => {
       const messages = [
@@ -340,6 +357,7 @@ describe("Client -> Server Messages", () => {
         { type: "ping" },
         { type: "list_directory", path: "" },
         { type: "read_file", path: "note.md" },
+        { type: "get_inspiration" },
       ];
 
       for (const msg of messages) {
@@ -724,6 +742,139 @@ describe("Server -> Client Messages", () => {
     });
   });
 
+  describe("InspirationItemSchema", () => {
+    test("accepts valid item with text only", () => {
+      const item = { text: "What would make today great?" };
+      const result = InspirationItemSchema.parse(item);
+      expect(result.text).toBe("What would make today great?");
+      expect(result.attribution).toBeUndefined();
+    });
+
+    test("accepts valid item with text and attribution", () => {
+      const item = {
+        text: "The only way to do great work is to love what you do.",
+        attribution: "Steve Jobs",
+      };
+      const result = InspirationItemSchema.parse(item);
+      expect(result.text).toBe("The only way to do great work is to love what you do.");
+      expect(result.attribution).toBe("Steve Jobs");
+    });
+
+    test("accepts empty attribution string", () => {
+      const item = { text: "Some inspiration", attribution: "" };
+      const result = InspirationItemSchema.parse(item);
+      expect(result.attribution).toBe("");
+    });
+
+    test("rejects empty text", () => {
+      const item = { text: "" };
+      expect(() => InspirationItemSchema.parse(item)).toThrow(ZodError);
+    });
+
+    test("rejects missing text", () => {
+      const item = { attribution: "Someone" };
+      expect(() => InspirationItemSchema.parse(item)).toThrow(ZodError);
+    });
+
+    test("rejects wrong text type", () => {
+      const item = { text: 123 };
+      expect(() => InspirationItemSchema.parse(item)).toThrow(ZodError);
+    });
+  });
+
+  describe("InspirationMessageSchema", () => {
+    test("accepts valid message with contextual and quote", () => {
+      const msg = {
+        type: "inspiration" as const,
+        contextual: { text: "What would make today great?" },
+        quote: {
+          text: "The only way to do great work is to love what you do.",
+          attribution: "Steve Jobs",
+        },
+      };
+      const result = InspirationMessageSchema.parse(msg);
+      expect(result.type).toBe("inspiration");
+      expect(result.contextual?.text).toBe("What would make today great?");
+      expect(result.quote.text).toBe("The only way to do great work is to love what you do.");
+      expect(result.quote.attribution).toBe("Steve Jobs");
+    });
+
+    test("accepts valid message with null contextual (file missing/empty)", () => {
+      const msg = {
+        type: "inspiration" as const,
+        contextual: null,
+        quote: { text: "Stay hungry, stay foolish.", attribution: "Steve Jobs" },
+      };
+      const result = InspirationMessageSchema.parse(msg);
+      expect(result.type).toBe("inspiration");
+      expect(result.contextual).toBeNull();
+      expect(result.quote.text).toBe("Stay hungry, stay foolish.");
+    });
+
+    test("accepts quote without attribution", () => {
+      const msg = {
+        type: "inspiration" as const,
+        contextual: null,
+        quote: { text: "Just do it." },
+      };
+      const result = InspirationMessageSchema.parse(msg);
+      expect(result.quote.attribution).toBeUndefined();
+    });
+
+    test("accepts contextual with attribution", () => {
+      const msg = {
+        type: "inspiration" as const,
+        contextual: { text: "What would make today great?", attribution: "Daily Prompt" },
+        quote: { text: "Carpe diem." },
+      };
+      const result = InspirationMessageSchema.parse(msg);
+      expect(result.contextual?.attribution).toBe("Daily Prompt");
+    });
+
+    test("rejects missing quote", () => {
+      const msg = {
+        type: "inspiration",
+        contextual: null,
+      };
+      expect(() => InspirationMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing contextual field", () => {
+      const msg = {
+        type: "inspiration",
+        quote: { text: "Some quote" },
+      };
+      expect(() => InspirationMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects empty quote text", () => {
+      const msg = {
+        type: "inspiration",
+        contextual: null,
+        quote: { text: "" },
+      };
+      expect(() => InspirationMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects wrong contextual type (not object or null)", () => {
+      const msg = {
+        type: "inspiration",
+        contextual: "not an object",
+        quote: { text: "Some quote" },
+      };
+      expect(() => InspirationMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects wrong type literal", () => {
+      const msg = {
+        type: "wrong_type",
+        contextual: null,
+        quote: { text: "Some quote" },
+      };
+      expect(() => InspirationMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ServerMessageSchema (discriminated union)", () => {
     test("parses all server message types", () => {
       const messages = [
@@ -751,6 +902,12 @@ describe("Server -> Client Messages", () => {
         { type: "pong" },
         { type: "directory_listing", path: "", entries: [] },
         { type: "file_content", path: "note.md", content: "test", truncated: false },
+        { type: "inspiration", contextual: null, quote: { text: "Carpe diem." } },
+        {
+          type: "inspiration",
+          contextual: { text: "What would make today great?" },
+          quote: { text: "Stay hungry.", attribution: "Steve Jobs" },
+        },
       ];
 
       for (const msg of messages) {

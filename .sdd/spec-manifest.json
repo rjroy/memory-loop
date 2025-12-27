@@ -1,6 +1,6 @@
 {
   "generated_at": "2025-12-26T12:30:00Z",
-  "project_root": "/home/rjroy/Projects/memory-loop",
+  "project_root": ".",
   "parent_spec": {
     "path": "memory-loop",
     "description": "Memory Loop - Mobile-friendly Obsidian vault interface with Claude AI",

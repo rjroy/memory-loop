@@ -66,7 +66,7 @@ As a Memory Loop user, I want to quickly switch between different application mo
 
 - Do NOT allow mode switching when component is disabled (disabled prop is true)
 - Do NOT trigger state updates when clicking the already-selected mode
-- Do NOT clear browser state when switching between modes (REQ-F-22 in SessionContext)
+- Do NOT clear browser state when switching between modes
 - Do NOT clear vault selection when switching modes
 - Do NOT persist mode state to localStorage (mode resets to "home" on page reload)
 - Do NOT render mode toggle before vault is selected

@@ -22,7 +22,7 @@ A mobile-friendly web interface for interacting with Obsidian vaults via Claude 
 
 - [Bun](https://bun.sh) v1.1+
 - One or more Obsidian vaults (or directories with `CLAUDE.md`)
-- Anthropic API key (for Claude AI features)
+- Claude Code CLI configured (for AI features via OAuth)
 
 ## Quick Start
 

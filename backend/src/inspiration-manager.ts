@@ -758,15 +758,18 @@ Generate 5 prompts:`;
 
 /**
  * Prompt template for generating inspirational quotes.
- * Draws from historical wisdom and timeless advice.
+ * Uses vault context to select relevant quotes from appropriate domains.
  */
-export const QUOTE_PROMPT_TEMPLATE = `Generate 1 inspirational quote from historical wisdom, philosophy, literature, or timeless advice. The quote should be:
+export const QUOTE_PROMPT_TEMPLATE = `Generate 1 inspirational quote that would resonate with someone based on the themes in their recent notes.
+
+{context_section}
 
 Requirements:
-- From a known historical figure, philosopher, author, or cultural tradition
-- Timeless and universally applicable
-- Thought-provoking and encouraging
-- Include accurate attribution (author name, or tradition/source if author is unknown)
+- Select a quote relevant to the themes, challenges, or interests evident in the notes
+- Draw from appropriate domains: if notes mention leadership, draw from management wisdom; if technical work, draw from engineering leaders; if creative work, from artists and creators
+- Good sources include: industry pioneers, technical leaders, authors, historical figures - whoever is most relevant
+- The quote should feel personally applicable, not generic
+- Include accurate attribution
 
 Format your response as a single markdown list item with attribution:
 - "Quote text here" -- Attribution
@@ -900,18 +903,32 @@ export async function generateContextualPrompts(
 }
 
 /**
- * Generate an inspirational quote from historical wisdom.
+ * Generate an inspirational quote relevant to the user's work context.
  *
  * REQ-F-21: Generate 1 new inspirational quote per week
  * REQ-F-25: Draw from Claude's knowledge of historical quotes
  * REQ-NF-2: Use Claude Haiku model for cost efficiency
  *
+ * @param context - Optional vault content for context-aware quote selection
  * @returns Array with one generated quote (may be empty on error)
  */
-export async function generateInspirationQuote(): Promise<InspirationItem[]> {
+export async function generateInspirationQuote(
+  context?: string
+): Promise<InspirationItem[]> {
   try {
+    // Build context section based on whether context is provided
+    let contextSection: string;
+    if (context && context.trim()) {
+      const truncatedContext = context.slice(0, MAX_GENERATION_CONTEXT);
+      contextSection = `The user's recent notes:\n---\n${truncatedContext}\n---`;
+    } else {
+      contextSection = "No recent notes available. Generate a timeless, universally applicable quote about growth, learning, or perseverance.";
+    }
+
+    const prompt = QUOTE_PROMPT_TEMPLATE.replace("{context_section}", contextSection);
+
     const queryResult = queryFn({
-      prompt: QUOTE_PROMPT_TEMPLATE,
+      prompt,
       options: {
         model: GENERATION_MODEL,
         maxTurns: 1,
@@ -991,24 +1008,30 @@ export async function getInspiration(vaultPath: string): Promise<InspirationResu
   const quotePath = join(vaultPath, GENERAL_INSPIRATION_PATH);
 
   // Check freshness and trigger generation if needed
-  // These run in parallel and don't block the response
   const today = new Date();
   const currentWeek = getISOWeekNumber(today);
 
-  // Phase 1: Check and trigger contextual generation (weekday only)
-  if (await isContextualGenerationNeeded(vaultPath)) {
+  // Check what generation is needed
+  const needsContextual = await isContextualGenerationNeeded(vaultPath);
+  const needsQuote = await isQuoteGenerationNeeded(vaultPath);
+
+  // Gather context once if either generation needs it
+  let context = "";
+  if (needsContextual || needsQuote) {
     try {
-      // Gather context from vault
-      const context = await gatherDayContext(vaultPath, today);
+      context = await gatherDayContext(vaultPath, today);
+    } catch (error) {
+      console.error("[inspiration-manager] Failed to gather context:", error);
+    }
+  }
 
-      if (context.trim()) {
-        // Generate new prompts
-        const newPrompts = await generateContextualPrompts(context);
+  // Phase 1: Trigger contextual generation (weekday only)
+  if (needsContextual && context.trim()) {
+    try {
+      const newPrompts = await generateContextualPrompts(context);
 
-        if (newPrompts.length > 0) {
-          // Append to file and prune
-          await appendAndPrune(contextualPath, newPrompts);
-        }
+      if (newPrompts.length > 0) {
+        await appendAndPrune(contextualPath, newPrompts);
       }
     } catch (error) {
       // Generation failure doesn't block response (REQ-NF-3)
@@ -1016,13 +1039,12 @@ export async function getInspiration(vaultPath: string): Promise<InspirationResu
     }
   }
 
-  // Phase 2: Check and trigger quote generation (once per week)
-  if (await isQuoteGenerationNeeded(vaultPath)) {
+  // Phase 2: Trigger quote generation (once per week, context-aware)
+  if (needsQuote) {
     try {
-      const newQuotes = await generateInspirationQuote();
+      const newQuotes = await generateInspirationQuote(context);
 
       if (newQuotes.length > 0) {
-        // Append with week number
         await appendAndPrune(quotePath, newQuotes, currentWeek);
       }
     } catch (error) {

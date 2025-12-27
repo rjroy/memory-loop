@@ -6,9 +6,9 @@
  * Uses API to check for existing sessions before connecting.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { VaultInfo } from "@memory-loop/shared";
-import { useSession } from "../contexts/SessionContext";
+import { useSession, STORAGE_KEY_VAULT } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import "./VaultSelect.css";
 
@@ -43,6 +43,9 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const { selectVault, vault: currentVault } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
 
+  // Track whether we've attempted auto-resume from localStorage
+  const hasAttemptedAutoResumeRef = useRef(false);
+
   // Fetch vaults on mount
   useEffect(() => {
     async function fetchVaults() {
@@ -74,6 +77,55 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       }
     }
   }, [lastMessage, vaults.length]);
+
+  // Auto-resume session from localStorage on page refresh
+  useEffect(() => {
+    // Only attempt once per component mount
+    if (hasAttemptedAutoResumeRef.current) return;
+
+    // Wait until vaults are loaded and connection is ready
+    if (loadingState !== "loaded" || vaults.length === 0) return;
+    if (connectionStatus !== "connected") return;
+
+    // Check for persisted vault ID
+    const persistedVaultId = localStorage.getItem(STORAGE_KEY_VAULT);
+    if (!persistedVaultId) return;
+
+    // Find the vault in the list
+    const vault = vaults.find((v) => v.id === persistedVaultId);
+    if (!vault) return;
+
+    // Mark as attempted and trigger auto-resume
+    hasAttemptedAutoResumeRef.current = true;
+    console.log(`[VaultSelect] Auto-resuming vault: ${vault.id}`);
+
+    // Trigger the same flow as handleVaultClick
+    setSelectedVaultId(vault.id);
+
+    // Check for existing session and resume/create
+    void (async () => {
+      try {
+        const response = await fetch(`/api/sessions/${vault.id}`);
+        if (!response.ok) {
+          console.warn(`[VaultSelect] Session check failed with status ${response.status}, starting fresh`);
+          sendMessage({ type: "select_vault", vaultId: vault.id });
+          return;
+        }
+        const data = (await response.json()) as { sessionId: string | null };
+
+        if (data.sessionId) {
+          console.log(`[VaultSelect] Auto-resuming session: ${data.sessionId.slice(0, 8)}...`);
+          sendMessage({ type: "resume_session", sessionId: data.sessionId });
+        } else {
+          console.log(`[VaultSelect] Starting new session for auto-resumed vault: ${vault.id}`);
+          sendMessage({ type: "select_vault", vaultId: vault.id });
+        }
+      } catch (err) {
+        console.warn("[VaultSelect] Failed to check session during auto-resume:", err);
+        sendMessage({ type: "select_vault", vaultId: vault.id });
+      }
+    })();
+  }, [loadingState, vaults.length, connectionStatus, sendMessage]);
 
   // Handle session ready message
   // Note: useServerMessageHandler handles sessionId and messages from session_ready

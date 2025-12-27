@@ -275,6 +275,14 @@ function sessionReducer(
       if (state.messages.length === 0) return state;
       const messages = [...state.messages];
       const lastMessage = messages[messages.length - 1];
+      // Only update streaming assistant messages to prevent race condition
+      // where response_chunk arrives before response_start is committed to state
+      if (lastMessage.role !== "assistant") {
+        console.warn(
+          "[SessionContext] UPDATE_LAST_MESSAGE ignored: last message is not an assistant message"
+        );
+        return state;
+      }
       messages[messages.length - 1] = {
         ...lastMessage,
         content: lastMessage.content + action.content,

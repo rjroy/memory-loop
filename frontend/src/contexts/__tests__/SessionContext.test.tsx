@@ -616,6 +616,59 @@ describe("SessionContext", () => {
 
       expect(result.current.session.messages[0].isStreaming).toBe(false);
     });
+
+    it("updateLastMessage does not corrupt user message (race condition fix)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Add a user message
+      act(() => {
+        result.current.addMessage({
+          role: "user",
+          content: "Hello",
+        });
+      });
+
+      // Simulate race condition: response_chunk arrives before response_start
+      // This should NOT append to the user message
+      act(() => {
+        result.current.updateLastMessage("This should not appear");
+      });
+
+      // User message should remain unchanged
+      expect(result.current.messages.length).toBe(1);
+      expect(result.current.messages[0].role).toBe("user");
+      expect(result.current.messages[0].content).toBe("Hello");
+    });
+
+    it("updateLastMessage only updates assistant messages", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Add user message then assistant message
+      act(() => {
+        result.current.addMessage({
+          role: "user",
+          content: "Hello",
+        });
+        result.current.addMessage({
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+        });
+      });
+
+      // This should update the assistant message
+      act(() => {
+        result.current.updateLastMessage("Hi there!");
+      });
+
+      expect(result.current.messages.length).toBe(2);
+      expect(result.current.messages[0].content).toBe("Hello");
+      expect(result.current.messages[1].content).toBe("Hi there!");
+    });
   });
 
   describe("browser state", () => {

@@ -43,17 +43,19 @@ export interface UseWebSocketOptions {
   autoReconnect?: boolean;
   /** Callback fired when reconnecting (not on initial connection) */
   onReconnect?: () => void;
+  /** Callback fired for every received message (prevents race conditions) */
+  onMessage?: (message: ServerMessage) => void;
 }
 
 /**
- * Default configuration values (excludes optional callback).
+ * Default configuration values (excludes optional callbacks).
  */
 const DEFAULT_OPTIONS = {
   url: "/ws",
   initialDelay: 1000,
   maxDelay: 30000,
   autoReconnect: true,
-} satisfies Omit<Required<UseWebSocketOptions>, "onReconnect">;
+} satisfies Omit<Required<UseWebSocketOptions>, "onReconnect" | "onMessage">;
 
 /**
  * Builds the WebSocket URL from a path.
@@ -98,11 +100,13 @@ export function useWebSocket(
   const mountedRef = useRef(true);
   const hasConnectedOnceRef = useRef(false);
   const onReconnectRef = useRef(config.onReconnect);
+  const onMessageRef = useRef(config.onMessage);
 
-  // Keep onReconnect ref in sync with latest callback
+  // Keep callback refs in sync with latest callbacks
   useEffect(() => {
     onReconnectRef.current = config.onReconnect;
-  }, [config.onReconnect]);
+    onMessageRef.current = config.onMessage;
+  }, [config.onReconnect, config.onMessage]);
 
   /**
    * Clears any pending reconnect timeout.
@@ -187,6 +191,9 @@ export function useWebSocket(
         const result = safeParseServerMessage(data);
 
         if (result.success) {
+          // Call onMessage callback first (guaranteed for every message)
+          onMessageRef.current?.(result.data);
+          // Then update state (may batch/race with other updates)
           setLastMessage(result.data);
         } else {
           console.warn("Invalid server message:", result.error);

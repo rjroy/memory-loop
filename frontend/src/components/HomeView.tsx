@@ -11,7 +11,11 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { RecentActivity } from "./RecentActivity";
 import { GoalsCard } from "./GoalsCard";
 import { InspirationCard } from "./InspirationCard";
-import type { InspirationItem } from "@memory-loop/shared";
+import type {
+  ClientMessage,
+  InspirationItem,
+  ServerMessage,
+} from "@memory-loop/shared";
 import "./HomeView.css";
 
 /**
@@ -53,12 +57,62 @@ export function HomeView(): React.ReactNode {
   const hasRequestedGoalsRef = useRef(false);
   const hasRequestedInspirationRef = useRef(false);
 
+  // Keep vault ref in sync for use in callbacks
+  const vaultRef = useRef(vault);
+  useEffect(() => {
+    vaultRef.current = vault;
+  }, [vault]);
+
   // Inspiration state
   const [inspirationLoading, setInspirationLoading] = useState(true);
   const [inspirationContextual, setInspirationContextual] =
     useState<InspirationItem | null>(null);
   const [inspirationQuote, setInspirationQuote] =
     useState<InspirationItem | null>(null);
+
+  // Ref for sendMessage to use in callbacks without stale closure
+  const sendMessageRef = useRef<((msg: ClientMessage) => void) | null>(null);
+
+  // Handle all incoming messages in a single callback (prevents race conditions)
+  const handleMessage = useCallback(
+    (message: ServerMessage) => {
+      switch (message.type) {
+        case "session_ready":
+          // Request recent activity, goals, and inspiration after server confirms vault selection
+          // Note: Goals are only requested if vault has goalsPath set during discovery.
+          // If user creates goals.md after vault selection, they must reselect the vault.
+          if (!hasRequestedRecentActivityRef.current) {
+            sendMessageRef.current?.({ type: "get_recent_activity" });
+            hasRequestedRecentActivityRef.current = true;
+          }
+          if (!hasRequestedGoalsRef.current && vaultRef.current?.goalsPath) {
+            sendMessageRef.current?.({ type: "get_goals" });
+            hasRequestedGoalsRef.current = true;
+          }
+          if (!hasRequestedInspirationRef.current) {
+            sendMessageRef.current?.({ type: "get_inspiration" });
+            hasRequestedInspirationRef.current = true;
+          }
+          break;
+
+        case "recent_activity":
+          setRecentNotes(message.captures);
+          setRecentDiscussions(message.discussions);
+          break;
+
+        case "goals":
+          setGoals(message.sections);
+          break;
+
+        case "inspiration":
+          setInspirationContextual(message.contextual);
+          setInspirationQuote(message.quote);
+          setInspirationLoading(false);
+          break;
+      }
+    },
+    [setRecentNotes, setRecentDiscussions, setGoals]
+  );
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -69,9 +123,15 @@ export function HomeView(): React.ReactNode {
     setInspirationLoading(true);
   }, []);
 
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
+  const { sendMessage, connectionStatus } = useWebSocket({
     onReconnect: handleReconnect,
+    onMessage: handleMessage,
   });
+
+  // Keep sendMessage ref in sync
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
 
   // Send vault selection when WebSocket connects (initial or reconnect)
   useEffect(() => {
@@ -87,50 +147,6 @@ export function HomeView(): React.ReactNode {
       hasSentVaultSelectionRef.current = true;
     }
   }, [connectionStatus, vault, sendMessage]);
-
-  // Request recent activity, goals, and inspiration after server confirms vault selection
-  // Note: Goals are only requested if vault has goalsPath set during discovery.
-  // If user creates goals.md after vault selection, they must reselect the vault.
-  useEffect(() => {
-    if (lastMessage?.type === "session_ready") {
-      if (!hasRequestedRecentActivityRef.current) {
-        sendMessage({ type: "get_recent_activity" });
-        hasRequestedRecentActivityRef.current = true;
-      }
-      if (!hasRequestedGoalsRef.current && vault?.goalsPath) {
-        sendMessage({ type: "get_goals" });
-        hasRequestedGoalsRef.current = true;
-      }
-      if (!hasRequestedInspirationRef.current) {
-        sendMessage({ type: "get_inspiration" });
-        hasRequestedInspirationRef.current = true;
-      }
-    }
-  }, [lastMessage, sendMessage, vault?.goalsPath]);
-
-  // Handle recent_activity response
-  useEffect(() => {
-    if (lastMessage?.type === "recent_activity") {
-      setRecentNotes(lastMessage.captures);
-      setRecentDiscussions(lastMessage.discussions);
-    }
-  }, [lastMessage, setRecentNotes, setRecentDiscussions]);
-
-  // Handle goals response
-  useEffect(() => {
-    if (lastMessage?.type === "goals") {
-      setGoals(lastMessage.sections);
-    }
-  }, [lastMessage, setGoals]);
-
-  // Handle inspiration response
-  useEffect(() => {
-    if (lastMessage?.type === "inspiration") {
-      setInspirationContextual(lastMessage.contextual);
-      setInspirationQuote(lastMessage.quote);
-      setInspirationLoading(false);
-    }
-  }, [lastMessage]);
 
   // Calculate session duration
   const sessionDuration = sessionStartTime

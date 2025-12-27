@@ -71,6 +71,7 @@
 }
 
 .recent-activity__card {
+  width: 100%;
   padding: var(--spacing-md);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
@@ -80,6 +81,19 @@
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* Tablet and up: up to 3 cards per row */
+@media (min-width: 768px) {
+  .recent-activity__list {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .recent-activity__card {
+    flex: 1 1 calc(33.333% - var(--spacing-sm));
+    min-width: 250px;
+  }
+}
+
 .recent-activity__card:hover {
   border-color: var(--glass-border-hover);
   box-shadow: var(--glass-shadow-hover);
@@ -87,10 +101,12 @@
 
 .recent-activity__card--capture {
   border-left: 3px solid var(--color-accent-cyan);
+  background: var(--glass-bg-cyan);
 }
 
 .recent-activity__card--discussion {
   border-left: 3px solid var(--color-accent);
+  background: var(--glass-bg-purple);
 }
 
 @supports not (backdrop-filter: blur(10px)) {

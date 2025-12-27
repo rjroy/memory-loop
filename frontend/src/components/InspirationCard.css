@@ -25,6 +25,19 @@
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
 }
 
+/* Tablet and up: up to 3 items per row */
+@media (min-width: 768px) {
+  .inspiration-card {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .inspiration-card__item {
+    flex: 1 1 calc(33.333% - var(--spacing-sm));
+    min-width: 200px;
+  }
+}
+
 .inspiration-card__item:hover {
   border-color: var(--glass-border-hover);
   box-shadow: var(--glass-shadow-hover);
@@ -37,6 +50,7 @@
 /* Prompt variant - cyan accent */
 .inspiration-card__prompt {
   border-left: 3px solid var(--color-accent-cyan);
+  background: var(--glass-bg-cyan);
 }
 
 .inspiration-card__prompt:hover {
@@ -47,6 +61,7 @@
 /* Quote variant - purple accent */
 .inspiration-card__quote {
   border-left: 3px solid var(--color-accent);
+  background: var(--glass-bg-purple);
 }
 
 .inspiration-card__quote:hover {

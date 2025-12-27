@@ -143,8 +143,10 @@
 
   /* Glassmorphism */
   --glass-bg: rgba(26, 29, 46, 0.8);
-  --glass-bg-secondary: rgba(46, 26, 40, 0.8);
-  --glass-bg-tertiary: rgba(26, 40, 46, 0.8);
+  --glass-bg-purple: rgba(46, 26, 40, 0.8);
+  --glass-bg-cyan: rgba(26, 40, 46, 0.8);
+  --glass-bg-secondary: var(--glass-bg-purple);
+  --glass-bg-tertiary: var(--glass-bg-cyan);
   --glass-border: rgba(168, 85, 247, 0.25);
   --glass-border-hover: rgba(168, 85, 247, 0.5);
   --glass-border-accent: rgba(85, 168, 247, 0.5);

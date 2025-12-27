@@ -1,174 +1,158 @@
 # Memory Loop
 
-A mobile-friendly web interface for interacting with your Obsidian vaults via Claude AI. Capture thoughts quickly or have deep discussions about your notes—from any device on your local network.
+A mobile-friendly web interface for interacting with Obsidian vaults via Claude AI. Capture thoughts, have AI-powered conversations, and browse your notes—from any device.
 
-## What is it?
+## Features
 
-Memory Loop is a lightweight web application that connects your Obsidian vaults (or any directory with a `CLAUDE.md` configuration) to Claude AI. It provides two interaction modes:
+**Four integrated modes:**
 
-- **Note Mode**: Quick capture of thoughts that get appended to your daily note
-- **Discussion Mode**: Full conversational AI with access to read, search, and modify your vault
+- **Home** — Dashboard showing your goals, AI-generated inspiration, and recent activity
+- **Note** — Quick capture that appends to daily notes with timestamps
+- **Chat** — AI conversations powered by Claude, with full vault access
+- **View** — Browse and read your vault's markdown files
 
-The app runs on your local network and works great on phones, tablets, and desktops.
+**Designed for mobile:**
 
-## Why use it?
-
-- **Mobile access to Claude Code capabilities** without needing a terminal
-- **Quick thought capture** that automatically goes to the right place in your vault
-- **Full AI-powered discussions** about your notes, with tool transparency
-- **Session persistence** - pick up where you left off, even after switching devices
-- **Vault-aware** - respects your `CLAUDE.md` instructions and `.claude/` configurations
+- Touch-friendly UI with 44px+ tap targets
+- Works on any screen size (320px and up)
+- Draft persistence across sessions
+- Responsive navigation bar
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) v1.1+
-- One or more directories with `CLAUDE.md` files (e.g., Obsidian vaults)
+- One or more Obsidian vaults (or directories with `CLAUDE.md`)
+- Anthropic API key (for Claude AI features)
+
+## Quick Start
+
+```bash
+# Clone and install
+git clone <repo-url>
+cd memory-loop
+bun install
+
+# Configure
+cp .env.example .env
+# Edit .env with your VAULTS_DIR path
+
+# Run
+bun run dev
+```
+
+Open http://localhost:5173 in your browser.
 
 ## Configuration
 
 ### Environment Variables
 
-Create a `.env` file in the project root:
-
 ```bash
-# Required: Path to directory containing your vaults
-VAULTS_DIR=/path/to/your/vaults
+# Required: Directory containing your vaults
+VAULTS_DIR=/path/to/vaults
 
-# Optional: Server port (default: 3000)
-PORT=3000
+# Optional
+PORT=3000              # Backend port (default: 3000)
+HOST=0.0.0.0           # Bind address (default: 0.0.0.0)
+MOCK_SDK=true          # Test without API calls
 ```
 
-### Vault Structure
+### Vault Requirements
 
-Each vault should be a subdirectory of `VAULTS_DIR` containing a `CLAUDE.md` file:
+Each vault needs a `CLAUDE.md` file at its root:
 
 ```
-/path/to/your/vaults/
-├── personal-notes/
-│   ├── CLAUDE.md          # Required - vault instructions for Claude
-│   ├── .claude/           # Optional - commands, skills, settings
-│   └── ...your notes...
-├── work-vault/
-│   ├── CLAUDE.md
+/path/to/vaults/
+├── my-vault/
+│   ├── CLAUDE.md              # Required
+│   ├── 00_Inbox/              # Where daily notes go
 │   └── ...
+└── another-vault/
+    └── CLAUDE.md
 ```
 
-The `CLAUDE.md` file tells Claude how to interact with your vault. Memory Loop will respect these instructions.
+Optional vault structure for full feature support:
+- `00_Inbox/` — Daily notes location (configurable)
+- Goals section in `CLAUDE.md` — Displayed on Home dashboard
+- `06_Metadata/memory-loop/` — Inspiration prompt sources
 
-## Installation
+## Usage
+
+### Select a Vault
+
+On first load, choose which vault to work with. Only vaults with `CLAUDE.md` appear.
+
+### Home Dashboard
+
+After selecting a vault, you land on Home:
+- **Goals** — Extracted from your `CLAUDE.md`
+- **Inspiration** — AI-generated prompts and curated quotes
+- **Recent Activity** — Quick access to recent captures and discussions
+
+Tap any item in Recent Activity to jump directly to it.
+
+### Note Capture
+
+Quick capture for fleeting thoughts:
+- Type and tap Capture (or press Enter)
+- Notes append to `YYYY-MM-DD.md` with `HH:MM` timestamps
+- Draft persists if you navigate away
+
+### Chat
+
+AI-powered discussions about your vault:
+- Claude can read, search, and reference your files
+- Tool usage displayed inline (expandable)
+- Sessions persist and can be resumed
+- Tap "New" for a fresh session
+
+### View
+
+Browse your vault's file structure:
+- Navigate folders, read markdown files
+- Wiki-links work (click to navigate)
+- Syntax highlighting for code blocks
+
+## Commands
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd memory-loop
-
-# Install dependencies
-bun install
-
-# Set up environment
-cp .env.example .env  # Then edit with your values
-```
-
-## Running
-
-### Development
-
-```bash
-bun run dev
-```
-
-This starts both the backend (port 3000) and frontend (port 5173) with hot reload.
-
-Open http://localhost:5173 in your browser.
-
-### Development with Mock AI
-
-To test without using API credits:
-
-```bash
-MOCK_SDK=true bun run dev
+bun run dev        # Start dev servers (backend + frontend)
+bun run build      # Build for production
+bun run test       # Run tests (339 tests)
+bun run typecheck  # TypeScript checking
+bun run lint       # ESLint
 ```
 
 ### Production
 
 ```bash
-# Type-check and build frontend
 bun run build
-
-# Start server (runs backend from source, serves built frontend)
 ./scripts/launch.sh
 ```
 
-**Note:** The backend runs directly from TypeScript source (not bundled). This is required because the Claude Agent SDK resolves paths relative to the running script location.
+The backend runs from TypeScript source (not bundled) because Claude Agent SDK requires it.
 
-### Other Commands
+## Network Access
+
+Access from other devices on your network:
 
 ```bash
-bun run test       # Run all tests (339 tests)
-bun run typecheck  # TypeScript type checking
-bun run lint       # ESLint
+# Find your local IP
+hostname -I | awk '{print $1}'
+
+# Access from phone/tablet
+http://YOUR_IP:5173
 ```
-
-## Usage
-
-### 1. Select a Vault
-
-On load, you'll see a list of available vaults (directories with `CLAUDE.md` in your `VAULTS_DIR`). Tap one to connect.
-
-### 2. Note Mode (Default)
-
-- Type your thought in the text area
-- Tap "Capture" to append it to today's daily note
-- Notes go to `YYYY-MM-DD.md` under the `## Capture` section
-- The daily note is created automatically if it doesn't exist
-
-### 3. Discussion Mode
-
-- Tap "Discussion" to switch modes
-- Have a full conversation with Claude about your vault
-- Claude can read, search, and modify files
-- Tool usage is shown transparently (expand to see details)
-- Use slash commands from your vault's `.claude/commands/` directory
-
-### 4. Session Management
-
-- Your session persists across page refreshes
-- Tap "New Session" to start fresh
-- Sessions are stored in `.memory-loop/` in your vault
 
 ## Architecture
 
 ```
 memory-loop/
-├── backend/          # Hono server + Claude Agent SDK
-│   └── src/
-│       ├── index.ts              # Server entry point
-│       ├── websocket-handler.ts  # WebSocket message handling
-│       ├── vault-manager.ts      # Vault discovery and validation
-│       ├── session-manager.ts    # Session persistence
-│       └── note-capture.ts       # Daily note operations
-├── frontend/         # React + Vite
-│   └── src/
-│       ├── App.tsx               # Main app shell
-│       ├── components/           # UI components
-│       ├── context/              # Session state management
-│       └── hooks/                # WebSocket hook
-└── shared/           # Shared types and protocol
-    └── src/
-        └── protocol.ts           # Zod schemas for messages
+├── backend/        # Hono server + Claude Agent SDK
+├── frontend/       # React 19 + Vite
+└── shared/         # Zod schemas for WebSocket protocol
 ```
 
-## Network Access
-
-To access from other devices on your network, find your machine's local IP:
-
-```bash
-# Linux/macOS
-ip addr | grep "inet " | grep -v 127.0.0.1
-
-# Then access from phone/tablet
-http://YOUR_IP:5173
-```
+Communication happens over WebSocket with typed message schemas.
 
 ## License
 

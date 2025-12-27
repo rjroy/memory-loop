@@ -65,6 +65,38 @@
   src: url("/font-families/Great_Vibes/GreatVibes-Regular.ttf") format("truetype");
 }
 
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/Space_Mono/SpaceMono-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Space Mono";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/Space_Mono/SpaceMono-Italic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/font-families/Space_Mono/SpaceMono-Bold.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Space Mono";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/font-families/Space_Mono/SpaceMono-BoldItalic.ttf") format("truetype");
+}
+
 /* ============================================
    CSS Custom Properties (Design Tokens)
    ============================================ */
@@ -154,8 +186,8 @@
   --font-family: "Ubuntu", system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-family-display: "Great Vibes", "Brush Script MT", "Segoe Script", cursive;
-  --font-family-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    monospace;
+  --font-family-mono: "Space Mono", ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Consolas, monospace;
 
   --font-size-xs: 0.75rem;   /* 12px */
   --font-size-sm: 0.875rem;  /* 14px */
@@ -298,6 +330,7 @@ button,
   min-width: var(--touch-target-min);
 }
 
+button,
 input,
 textarea,
 select {

@@ -41,28 +41,6 @@ describe("HomeView", () => {
     });
   });
 
-  describe("quick actions", () => {
-    it("renders all three quick action buttons", () => {
-      render(<HomeView />, { wrapper: Wrapper });
-
-      expect(screen.getByText("Capture thought")).toBeTruthy();
-      expect(screen.getByText("Ask Claude")).toBeTruthy();
-      expect(screen.getByText("Browse vault")).toBeTruthy();
-    });
-
-    it("quick action buttons are clickable", () => {
-      render(<HomeView />, { wrapper: Wrapper });
-
-      const captureButton = screen.getByRole("button", { name: /capture thought/i });
-      const chatButton = screen.getByRole("button", { name: /ask claude/i });
-      const browseButton = screen.getByRole("button", { name: /browse vault/i });
-
-      expect(captureButton).toBeTruthy();
-      expect(chatButton).toBeTruthy();
-      expect(browseButton).toBeTruthy();
-    });
-  });
-
   describe("accessibility", () => {
     it("has proper section landmarks", () => {
       render(<HomeView />, { wrapper: Wrapper });

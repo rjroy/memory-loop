@@ -10,13 +10,30 @@
   flex-direction: column;
   gap: var(--spacing-md);
 }
-.recent-activity h1 { font-size: var(--font-size-xl); }
-.recent-activity h2 { font-size: var(--font-size-lg); }
-.recent-activity h3 { font-size: var(--font-size-base); }
-.recent-activity h4 { font-size: var(--font-size-sm); }
-.recent-activity h5 { font-size: var(--font-size-xs); }
-.recent-activity h6 { font-size: var(--font-size-xs); }
 
+.recent-activity h1 {
+  font-size: var(--font-size-xl);
+}
+
+.recent-activity h2 {
+  font-size: var(--font-size-lg);
+}
+
+.recent-activity h3 {
+  font-size: var(--font-size-base);
+}
+
+.recent-activity h4 {
+  font-size: var(--font-size-sm);
+}
+
+.recent-activity h5 {
+  font-size: var(--font-size-xs);
+}
+
+.recent-activity h6 {
+  font-size: var(--font-size-xs);
+}
 
 .recent-activity__heading {
   font-weight: var(--font-weight-bold);

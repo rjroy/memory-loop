@@ -111,15 +111,12 @@ export function RecentActivity({
 
   return (
     <section className="recent-activity" aria-label="Recent activity">
-      <h3>
-        <span className="recent-activity__heading">Recent</span>
-      </h3>
 
       {hasCaptures && (
         <div className="recent-activity__section">
-          <h4 className="recent-activity__section-title">
-            <span className="recent-activity__heading">Captures</span>
-          </h4>
+          <h3 className="recent-activity__section-title">
+            <span className="recent-activity__heading">Recent: Captures</span>
+          </h3>
           <div className="recent-activity__list">
             {recentNotes.map((note) => (
               <CaptureCard
@@ -134,9 +131,9 @@ export function RecentActivity({
 
       {hasDiscussions && (
         <div className="recent-activity__section">
-          <h4 className="recent-activity__section-title">
-            <span className="recent-activity__heading">Discussions</span>
-          </h4>
+          <h3 className="recent-activity__section-title">
+            <span className="recent-activity__heading">Recent: Discussions</span>
+          </h3>
           <div className="recent-activity__list">
             {recentDiscussions.map((discussion) => (
               <DiscussionCard

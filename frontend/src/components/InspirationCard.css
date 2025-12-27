@@ -57,6 +57,7 @@
 /* Text content */
 .inspiration-card__text {
   font-size: var(--text-sm);
+  font-family: var(--font-family-mono);
   color: var(--color-text);
   line-height: var(--line-height-relaxed);
   margin: 0;
@@ -66,6 +67,7 @@
 .inspiration-card__attribution {
   display: block;
   margin-top: var(--spacing-xs);
+  font-family: var(--font-family-display);
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
   font-style: italic;

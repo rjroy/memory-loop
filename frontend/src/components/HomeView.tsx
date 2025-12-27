@@ -194,34 +194,6 @@ export function HomeView({ onModeChange }: HomeViewProps): React.ReactNode {
         />
       )}
 
-      {/* Quick Actions */}
-      <section className="home-view__quick-actions" aria-label="Quick actions">
-        <button
-          type="button"
-          className="home-view__action home-view__action--capture"
-          onClick={handleCaptureThought}
-        >
-          <span className="home-view__action-icon">+</span>
-          <span className="home-view__action-label">Capture thought</span>
-        </button>
-        <button
-          type="button"
-          className="home-view__action home-view__action--chat"
-          onClick={handleAskClaude}
-        >
-          <span className="home-view__action-icon">?</span>
-          <span className="home-view__action-label">Ask Claude</span>
-        </button>
-        <button
-          type="button"
-          className="home-view__action home-view__action--browse"
-          onClick={handleBrowseVault}
-        >
-          <span className="home-view__action-icon">☰</span>
-          <span className="home-view__action-label">Browse vault</span>
-        </button>
-      </section>
-
       {/* Goals */}
       <GoalsCard />
 

@@ -29,9 +29,9 @@ interface ModeOption {
  */
 const modes: ModeOption[] = [
   { value: "home", label: "Home" },
-  { value: "note", label: "Note" },
-  { value: "discussion", label: "Chat" },
-  { value: "browse", label: "View" },
+  { value: "note", label: "Capture" },
+  { value: "discussion", label: "Think" },
+  { value: "browse", label: "Recall" },
 ];
 
 /**

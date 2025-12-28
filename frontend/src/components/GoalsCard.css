@@ -8,9 +8,9 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/images/bg-pink.png');
+  background-image: url('/images/bg-pink.webp');
   background-size: cover;
-  background-position: center bottom;
+  background-position: center center;
   border-radius: inherit;
   opacity: 0.2;
   z-index: -1;

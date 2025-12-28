@@ -94,26 +94,17 @@ function ConfirmDialog({
 /**
  * Dialog types for confirmation.
  */
-type DialogType = "newSession" | "changeVault" | null;
+type DialogType = "changeVault" | null;
 
 /**
  * Main app content when a vault is selected.
  */
 function MainContent(): React.ReactNode {
-  const { mode, vault, startNewSession, clearVault } = useSession();
+  const { mode, vault, clearVault } = useSession();
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
-
-  function handleNewSession() {
-    setActiveDialog("newSession");
-  }
 
   function handleChangeVault() {
     setActiveDialog("changeVault");
-  }
-
-  function handleConfirmNewSession() {
-    startNewSession();
-    setActiveDialog(null);
   }
 
   function handleConfirmChangeVault() {
@@ -148,14 +139,7 @@ function MainContent(): React.ReactNode {
           <ModeToggle />
         </div>
         <div className="app-header__right">
-          <button
-            type="button"
-            className="app-new-session-btn"
-            onClick={handleNewSession}
-            aria-label="Start new session"
-          >
-            New
-          </button>
+          {/* New session button moved to Discussion component */}
         </div>
       </header>
 
@@ -165,15 +149,6 @@ function MainContent(): React.ReactNode {
         {mode === "discussion" && <Discussion />}
         {mode === "browse" && <BrowseMode />}
       </main>
-
-      <ConfirmDialog
-        isOpen={activeDialog === "newSession"}
-        title="Start New Session?"
-        message="This will clear the current conversation. Your notes are already saved to the vault."
-        confirmLabel="New"
-        onConfirm={handleConfirmNewSession}
-        onCancel={handleCancelDialog}
-      />
 
       <ConfirmDialog
         isOpen={activeDialog === "changeVault"}

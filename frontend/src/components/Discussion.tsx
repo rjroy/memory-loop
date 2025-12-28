@@ -37,6 +37,7 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [showNewSessionDialog, setShowNewSessionDialog] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -261,8 +262,33 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   const isDisabled = isSubmitting || connectionStatus !== "connected" || !vault;
   const showSlashHint = isSlashCommand(input);
 
+  function handleNewSessionClick() {
+    setShowNewSessionDialog(true);
+  }
+
+  function handleConfirmNewSession() {
+    startNewSession();
+    setShowNewSessionDialog(false);
+  }
+
+  function handleCancelNewSession() {
+    setShowNewSessionDialog(false);
+  }
+
   return (
     <div className="discussion">
+      <div className="discussion__header">
+        <button
+          type="button"
+          className="discussion__new-btn"
+          onClick={handleNewSessionClick}
+          aria-label="Start new session"
+          title="New session"
+        >
+          +
+        </button>
+      </div>
+
       <div className="discussion__messages" role="list" aria-label="Conversation">
         {messages.length === 0 ? (
           <div className="discussion__empty">
@@ -320,6 +346,45 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
           </button>
         </div>
       </form>
+
+      {showNewSessionDialog && (
+        <div
+          className="discussion__dialog-backdrop"
+          onClick={handleCancelNewSession}
+          onKeyDown={(e) => e.key === "Escape" && handleCancelNewSession()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-session-dialog-title"
+        >
+          <div
+            className="discussion__dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="new-session-dialog-title" className="discussion__dialog-title">
+              Start New Session?
+            </h2>
+            <p className="discussion__dialog-message">
+              This will clear the current conversation. Your notes are already saved to the vault.
+            </p>
+            <div className="discussion__dialog-actions">
+              <button
+                type="button"
+                className="discussion__dialog-btn discussion__dialog-btn--cancel"
+                onClick={handleCancelNewSession}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="discussion__dialog-btn discussion__dialog-btn--confirm"
+                onClick={handleConfirmNewSession}
+              >
+                New
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

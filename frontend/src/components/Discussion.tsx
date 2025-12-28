@@ -275,7 +275,7 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
             value={input}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
+            placeholder="Explore. Challenge. Refine. Your vault awaits..."
             disabled={isSubmitting}
             rows={1}
             aria-label="Message input"

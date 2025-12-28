@@ -48,6 +48,21 @@ class MockWebSocket {
 let wsInstances: MockWebSocket[] = [];
 let sentMessages: ClientMessage[] = [];
 const originalWebSocket = globalThis.WebSocket;
+const originalMatchMedia = globalThis.matchMedia;
+
+// Mock matchMedia for touch device detection
+function createMatchMediaMock(matches: boolean) {
+  return (query: string): MediaQueryList => ({
+    matches: query === "(hover: none)" ? matches : false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => true,
+  });
+}
 
 const testVault: VaultInfo = {
   id: "vault-1",
@@ -75,11 +90,15 @@ beforeEach(() => {
 
   // @ts-expect-error - mocking WebSocket
   globalThis.WebSocket = MockWebSocket;
+
+  // Default to desktop (non-touch) for tests
+  globalThis.matchMedia = createMatchMediaMock(false);
 });
 
 afterEach(() => {
   cleanup();
   globalThis.WebSocket = originalWebSocket;
+  globalThis.matchMedia = originalMatchMedia;
 });
 
 describe("Discussion", () => {
@@ -265,7 +284,8 @@ describe("Discussion", () => {
       });
     });
 
-    it("submits on Enter key", async () => {
+    it("submits on Enter key on desktop", async () => {
+      // Default mock is desktop (non-touch)
       render(<Discussion />, { wrapper: TestWrapper });
 
       await waitFor(() => {
@@ -283,6 +303,28 @@ describe("Discussion", () => {
           text: "Hello Claude",
         });
       });
+    });
+
+    it("does not submit on Enter key on touch devices", async () => {
+      // Mock touch device
+      globalThis.matchMedia = createMatchMediaMock(true);
+
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const input = screen.getByRole("textbox");
+
+      fireEvent.change(input, { target: { value: "Hello Claude" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      // Should not have sent discussion_message - only select_vault
+      const discussionMessages = sentMessages.filter(
+        (m) => m.type === "discussion_message"
+      );
+      expect(discussionMessages.length).toBe(0);
     });
 
     it("does not submit on Shift+Enter", async () => {

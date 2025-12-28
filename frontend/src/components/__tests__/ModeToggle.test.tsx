@@ -1,7 +1,7 @@
 /**
  * Tests for ModeToggle component
  *
- * Tests mode switching and visual states for Note, Chat, and View modes.
+ * Tests mode switching and visual states for Ground, Capture, Think, and Recall modes.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -54,7 +54,7 @@ afterEach(() => {
 
 describe("ModeToggle", () => {
   describe("rendering", () => {
-    it("renders Home, Note, Chat, and View options", () => {
+    it("renders Ground, Capture, Think, and Recall options", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
       expect(screen.getByText("Ground")).toBeDefined();
@@ -93,7 +93,7 @@ describe("ModeToggle", () => {
   });
 
   describe("mode switching", () => {
-    it("switches to Chat when clicked", () => {
+    it("switches to Think when clicked", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
       const discussionTab = screen.getByText("Think").closest("button");
@@ -103,7 +103,7 @@ describe("ModeToggle", () => {
       expect(discussionTab?.className).toContain("mode-toggle__segment--selected");
     });
 
-    it("switches back to Note when clicked", () => {
+    it("switches back to Capture when clicked", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
       // First switch to Think
@@ -128,7 +128,7 @@ describe("ModeToggle", () => {
       expect(noteTab?.getAttribute("aria-selected")).toBe("true");
     });
 
-    it("switches to View when clicked", () => {
+    it("switches to Recall when clicked", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
       const browseTab = screen.getByText("Recall").closest("button");

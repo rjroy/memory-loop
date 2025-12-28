@@ -62,5 +62,7 @@ log "Frontend build complete"
 log "Starting backend server..."
 cd "$PROJECT_ROOT/backend"
 
-# Run backend, redirect stdout to log, stderr to both log and terminal
-exec bun run start >> "$LOG_FILE" 2> >(tee -a "$LOG_FILE" >&2)
+# Run backend, redirect stdout to log
+# prevent SIGHUP from killing the server
+exec nohup bun run start 2>&1 >> "$LOG_FILE" &
+

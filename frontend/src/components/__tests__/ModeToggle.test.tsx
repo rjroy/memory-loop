@@ -57,7 +57,7 @@ describe("ModeToggle", () => {
     it("renders Home, Note, Chat, and View options", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
-      expect(screen.getByText("Home")).toBeDefined();
+      expect(screen.getByText("Ground")).toBeDefined();
       expect(screen.getByText("Capture")).toBeDefined();
       expect(screen.getByText("Think")).toBeDefined();
       expect(screen.getByText("Recall")).toBeDefined();
@@ -77,7 +77,7 @@ describe("ModeToggle", () => {
     it("shows Home as selected by default", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
-      const homeTab = screen.getByText("Home").closest("button");
+      const homeTab = screen.getByText("Ground").closest("button");
       const noteTab = screen.getByText("Capture").closest("button");
 
       expect(homeTab?.getAttribute("aria-selected")).toBe("true");
@@ -87,7 +87,7 @@ describe("ModeToggle", () => {
     it("applies selected class to active mode", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
-      const homeTab = screen.getByText("Home").closest("button");
+      const homeTab = screen.getByText("Ground").closest("button");
       expect(homeTab?.className).toContain("mode-toggle__segment--selected");
     });
   });
@@ -142,7 +142,7 @@ describe("ModeToggle", () => {
       render(<ModeToggle />, { wrapper: TestWrapper });
 
       // Start at Home
-      const homeTab = screen.getByText("Home").closest("button");
+      const homeTab = screen.getByText("Ground").closest("button");
       expect(homeTab?.getAttribute("aria-selected")).toBe("true");
 
       // Switch to Capture
@@ -170,7 +170,7 @@ describe("ModeToggle", () => {
     it("disables all buttons when disabled prop is true", () => {
       render(<ModeToggle disabled />, { wrapper: TestWrapper });
 
-      const homeTab = screen.getByText("Home").closest("button");
+      const homeTab = screen.getByText("Ground").closest("button");
       const noteTab = screen.getByText("Capture").closest("button");
       const discussionTab = screen.getByText("Think").closest("button");
       const browseTab = screen.getByText("Recall").closest("button");
@@ -188,7 +188,7 @@ describe("ModeToggle", () => {
       fireEvent.click(discussionTab!);
 
       // Home should still be selected
-      const homeTab = screen.getByText("Home").closest("button");
+      const homeTab = screen.getByText("Ground").closest("button");
       expect(homeTab?.getAttribute("aria-selected")).toBe("true");
     });
   });

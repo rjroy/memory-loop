@@ -13,6 +13,8 @@
 
 /* Clickable item container */
 .inspiration-card__item {
+  position: relative;
+  isolation: isolate;
   width: 100%;
   padding: var(--spacing-md);
   background: var(--glass-bg);
@@ -53,6 +55,18 @@
   background: var(--glass-bg-cyan);
 }
 
+.inspiration-card__prompt::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/images/bg-cyan.png');
+  background-size: cover;
+  background-position: center bottom;
+  border-radius: inherit;
+  opacity: 0.2;
+  z-index: -1;
+}
+
 .inspiration-card__prompt:hover {
   border-left-color: var(--color-accent-cyan);
   box-shadow: var(--glow-cyan);
@@ -62,6 +76,18 @@
 .inspiration-card__quote {
   border-left: 3px solid var(--color-accent);
   background: var(--glass-bg-purple);
+}
+
+.inspiration-card__quote::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/images/bg-purple.png');
+  background-size: cover;
+  background-position: center bottom;
+  border-radius: inherit;
+  opacity: 0.2;
+  z-index: -1;
 }
 
 .inspiration-card__quote:hover {

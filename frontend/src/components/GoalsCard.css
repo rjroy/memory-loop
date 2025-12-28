@@ -4,7 +4,21 @@
  * Displays goals with glassmorphism styling consistent with HomeView.
  */
 
+.goals-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/images/bg-pink.png');
+  background-size: cover;
+  background-position: center bottom;
+  border-radius: inherit;
+  opacity: 0.2;
+  z-index: -1;
+}
+
 .goals-card {
+  position: relative;
+  isolation: isolate;
   padding: var(--spacing-lg);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);

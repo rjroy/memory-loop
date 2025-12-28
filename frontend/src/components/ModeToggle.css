@@ -26,8 +26,8 @@
 .mode-toggle__segment {
   flex: 1;
   min-height: 44px;
-  min-width: 56px;
-  padding: var(--spacing-sm) var(--spacing-md);
+  min-width: 9ch;
+  padding: var(--spacing-sm) var(--spacing-sm);
   border: none;
   border-radius: var(--radius-lg);
   background-color: transparent;

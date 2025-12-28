@@ -28,10 +28,10 @@ interface ModeOption {
  * Available mode options.
  */
 const modes: ModeOption[] = [
-  { value: "home", label: "Home" },
-  { value: "note", label: "Note" },
-  { value: "discussion", label: "Chat" },
-  { value: "browse", label: "View" },
+  { value: "home", label: "Ground" },
+  { value: "note", label: "Capture" },
+  { value: "discussion", label: "Think" },
+  { value: "browse", label: "Recall" },
 ];
 
 /**

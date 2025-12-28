@@ -87,6 +87,8 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   useEffect(() => {
     if (content) {
       localStorage.setItem(STORAGE_KEY, content);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
     }
   }, [content]);
 

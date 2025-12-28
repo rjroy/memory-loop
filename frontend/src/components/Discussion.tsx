@@ -36,6 +36,7 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   const [input, setInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -51,6 +52,17 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
     discussionPrefill,
     setDiscussionPrefill,
   } = useSession();
+
+  // Detect touch-only devices (no hover capability)
+  // On touch devices, Enter adds newlines; send button is the only way to submit
+  useEffect(() => {
+    const query = window.matchMedia("(hover: none)");
+    setIsTouchDevice(query.matches);
+
+    const handler = (e: MediaQueryListEvent) => setIsTouchDevice(e.matches);
+    query.addEventListener("change", handler);
+    return () => query.removeEventListener("change", handler);
+  }, []);
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -234,8 +246,9 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Submit on Enter (without Shift)
-    if (e.key === "Enter" && !e.shiftKey) {
+    // On touch devices, Enter always adds a newline (no keyboard shortcut to submit)
+    // On desktop, Enter submits and Shift+Enter adds a newline
+    if (e.key === "Enter" && !e.shiftKey && !isTouchDevice) {
       e.preventDefault();
       handleSubmit(e);
     }

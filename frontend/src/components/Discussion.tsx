@@ -203,6 +203,8 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   useEffect(() => {
     if (input) {
       localStorage.setItem(STORAGE_KEY, input);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
     }
   }, [input]);
 

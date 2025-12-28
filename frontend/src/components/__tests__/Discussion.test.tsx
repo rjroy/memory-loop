@@ -319,6 +319,49 @@ describe("Discussion", () => {
       });
     });
 
+    it("handles response_chunk without response_start (race condition fix)", async () => {
+      // This tests the fix for when chunks arrive without a preceding response_start,
+      // which can happen when clicking "New" during an active response
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const ws = wsInstances[wsInstances.length - 1];
+
+      // User sends a message
+      const input = screen.getByRole("textbox");
+      const button = screen.getByRole("button", { name: /send/i });
+
+      fireEvent.change(input, { target: { value: "Hello" } });
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hello")).toBeDefined();
+      });
+
+      // Server sends chunk directly WITHOUT response_start (simulates race condition)
+      act(() => {
+        ws.simulateMessage({ type: "response_chunk", messageId: "msg-1", content: "Response without start" });
+      });
+
+      // Content should still appear (fix creates assistant message automatically)
+      await waitFor(() => {
+        expect(screen.getByText("Response without start")).toBeDefined();
+      });
+
+      // Server ends response
+      act(() => {
+        ws.simulateMessage({ type: "response_end", messageId: "msg-1" });
+      });
+
+      // Content should remain visible after response ends
+      await waitFor(() => {
+        expect(screen.getByText("Response without start")).toBeDefined();
+      });
+    });
+
     it("clears input after submission", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
 

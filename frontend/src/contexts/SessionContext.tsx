@@ -854,7 +854,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
 
         case "response_chunk": {
           // Check if we have a streaming assistant message to update
-          // If not, create one first (handles case where response_start was missed, e.g., on session resume)
+          // If not, create one first (handles race condition when clicking "New" during an active response)
           const currentMessages = messagesRef.current;
           const lastMessage = currentMessages[currentMessages.length - 1];
           if (!lastMessage || lastMessage.role !== "assistant" || !lastMessage.isStreaming) {

@@ -35,6 +35,7 @@ export interface DiscussionProps {
 export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   const [input, setInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -227,6 +228,9 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
     setInput("");
     localStorage.removeItem(STORAGE_KEY);
     setIsSubmitting(true);
+
+    // Blur input to collapse it back to single row
+    inputRef.current?.blur();
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -271,10 +275,12 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
         <div className="discussion__input-row">
           <textarea
             ref={inputRef}
-            className="discussion__input"
+            className={`discussion__input${isFocused ? " discussion__input--expanded" : ""}`}
             value={input}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
             placeholder="Explore. Challenge. Refine. Your vault awaits..."
             disabled={isSubmitting}
             rows={1}

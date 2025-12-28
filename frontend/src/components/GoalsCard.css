@@ -8,7 +8,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/images/bg-pink.png');
+  background-image: url('/images/bg-pink.webp');
   background-size: cover;
   background-position: center bottom;
   border-radius: inherit;

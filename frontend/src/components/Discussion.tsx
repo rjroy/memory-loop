@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import type { ServerMessage } from "@memory-loop/shared";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useSession, useServerMessageHandler } from "../contexts/SessionContext";
 import { MessageBubble } from "./MessageBubble";
@@ -55,10 +56,44 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
     hasSentVaultSelectionRef.current = false;
   }, []);
 
+  const handleServerMessage = useServerMessageHandler();
+
+  // Keep ref to onToolUse callback to avoid stale closures while keeping onMessage stable
+  const onToolUseRef = useRef(onToolUse);
+  useEffect(() => {
+    onToolUseRef.current = onToolUse;
+  }, [onToolUse]);
+
+  // Process incoming server messages via callback to ensure every message is handled
+  // This prevents race conditions where React batches state updates and drops chunks
+  const handleMessage = useCallback(
+    (message: ServerMessage) => {
+      // Process streaming messages (response_start, response_chunk, response_end)
+      handleServerMessage(message);
+
+      // Handle response end - clear submitting state
+      // Note: setIsSubmitting is stable (from useState), no ref needed
+      if (message.type === "response_end") {
+        setIsSubmitting(false);
+      }
+
+      // Handle tool use
+      if (message.type === "tool_start") {
+        onToolUseRef.current?.(message.toolName, message.toolUseId);
+      }
+
+      // Handle errors
+      if (message.type === "error") {
+        setIsSubmitting(false);
+      }
+    },
+    [handleServerMessage]
+  );
+
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
     onReconnect: handleReconnect,
+    onMessage: handleMessage,
   });
-  const handleServerMessage = useServerMessageHandler();
 
   // Send vault selection or resume session when WebSocket connects (initial or reconnect)
   useEffect(() => {
@@ -156,28 +191,6 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
       localStorage.setItem(STORAGE_KEY, input);
     }
   }, [input]);
-
-  // Process incoming server messages
-  useEffect(() => {
-    if (lastMessage) {
-      handleServerMessage(lastMessage);
-
-      // Handle response end - clear submitting state
-      if (lastMessage.type === "response_end") {
-        setIsSubmitting(false);
-      }
-
-      // Handle tool use
-      if (lastMessage.type === "tool_start") {
-        onToolUse?.(lastMessage.toolName, lastMessage.toolUseId);
-      }
-
-      // Handle errors
-      if (lastMessage.type === "error") {
-        setIsSubmitting(false);
-      }
-    }
-  }, [lastMessage, handleServerMessage, onToolUse]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {

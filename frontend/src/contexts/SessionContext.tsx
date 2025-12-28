@@ -818,7 +818,13 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage } = useSession();
+  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage } = useSession();
+
+  // Use ref to access current messages in callback without causing re-renders
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   return useCallback(
     (message: ServerMessage) => {
@@ -846,10 +852,22 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           });
           break;
 
-        case "response_chunk":
-          // Append to current streaming message
-          updateLastMessage(message.content, true);
+        case "response_chunk": {
+          // Check if we have a streaming assistant message to update
+          // If not, create one first (handles case where response_start was missed, e.g., on session resume)
+          const currentMessages = messagesRef.current;
+          const lastMessage = currentMessages[currentMessages.length - 1];
+          if (!lastMessage || lastMessage.role !== "assistant" || !lastMessage.isStreaming) {
+            addMessage({
+              role: "assistant",
+              content: message.content,
+              isStreaming: true,
+            });
+          } else {
+            updateLastMessage(message.content, true);
+          }
           break;
+        }
 
         case "response_end":
           // Mark message as complete

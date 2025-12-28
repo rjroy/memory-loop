@@ -266,6 +266,59 @@ describe("Discussion", () => {
       });
     });
 
+    it("shows streaming response from server", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const ws = wsInstances[wsInstances.length - 1];
+
+      // User sends a message
+      const input = screen.getByRole("textbox");
+      const button = screen.getByRole("button", { name: /send/i });
+
+      fireEvent.change(input, { target: { value: "Hello" } });
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hello")).toBeDefined();
+      });
+
+      // Server starts streaming response
+      act(() => {
+        ws.simulateMessage({ type: "response_start", messageId: "msg-1" });
+      });
+
+      // Streaming cursor should appear (assistant message with isStreaming: true)
+      await waitFor(() => {
+        const cursor = screen.queryByText("▊");
+        expect(cursor).not.toBeNull();
+      });
+
+      // Server sends a chunk
+      act(() => {
+        ws.simulateMessage({ type: "response_chunk", messageId: "msg-1", content: "Hi there!" });
+      });
+
+      // Content should appear
+      await waitFor(() => {
+        expect(screen.getByText("Hi there!")).toBeDefined();
+      });
+
+      // Server ends response
+      act(() => {
+        ws.simulateMessage({ type: "response_end", messageId: "msg-1" });
+      });
+
+      // Cursor should disappear
+      await waitFor(() => {
+        const cursor = screen.queryByText("▊");
+        expect(cursor).toBeNull();
+      });
+    });
+
     it("clears input after submission", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
 

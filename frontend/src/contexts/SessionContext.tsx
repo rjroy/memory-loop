@@ -83,6 +83,8 @@ export interface SessionState {
   goals: GoalSection[] | null;
   /** Pre-filled text for discussion mode (from inspiration click) */
   discussionPrefill: string | null;
+  /** Session ID pending resume (set by RecentActivity, consumed by Discussion) */
+  pendingSessionId: string | null;
 }
 
 /**
@@ -135,6 +137,8 @@ export interface SessionActions {
   setGoals: (goals: GoalSection[] | null) => void;
   /** Set discussion prefill text (from inspiration click) */
   setDiscussionPrefill: (text: string | null) => void;
+  /** Set pending session ID for resume (called by RecentActivity) */
+  setPendingSessionId: (sessionId: string | null) => void;
 }
 
 /**
@@ -182,7 +186,8 @@ type SessionAction =
   | { type: "UNPIN_FOLDER"; path: string }
   | { type: "SET_PINNED_FOLDERS"; paths: string[] }
   | { type: "SET_GOALS"; goals: GoalSection[] | null }
-  | { type: "SET_DISCUSSION_PREFILL"; text: string | null };
+  | { type: "SET_DISCUSSION_PREFILL"; text: string | null }
+  | { type: "SET_PENDING_SESSION_ID"; sessionId: string | null };
 
 /**
  * Generates a unique message ID.
@@ -458,6 +463,12 @@ function sessionReducer(
         discussionPrefill: action.text,
       };
 
+    case "SET_PENDING_SESSION_ID":
+      return {
+        ...state,
+        pendingSessionId: action.sessionId,
+      };
+
     default:
       return state;
   }
@@ -477,6 +488,7 @@ const initialState: SessionState = {
   recentDiscussions: [],
   goals: null,
   discussionPrefill: null,
+  pendingSessionId: null,
 };
 
 /**
@@ -769,6 +781,10 @@ export function SessionProvider({
     dispatch({ type: "SET_DISCUSSION_PREFILL", text });
   }, []);
 
+  const setPendingSessionId = useCallback((sessionId: string | null) => {
+    dispatch({ type: "SET_PENDING_SESSION_ID", sessionId });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -794,6 +810,7 @@ export function SessionProvider({
     setRecentDiscussions,
     setGoals,
     setDiscussionPrefill,
+    setPendingSessionId,
   };
 
   return (
@@ -818,7 +835,7 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage } = useSession();
+  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId } = useSession();
 
   // Use ref to access current messages in callback without causing re-renders
   const messagesRef = useRef(messages);
@@ -841,6 +858,8 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           if (message.messages && message.messages.length > 0) {
             setMessages(message.messages);
           }
+          // Clear pending session ID (resume complete)
+          setPendingSessionId(null);
           break;
 
         case "response_start":
@@ -879,6 +898,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           break;
       }
     },
-    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage]
+    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId]
   );
 }

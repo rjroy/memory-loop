@@ -122,6 +122,7 @@
   --color-accent-pink: #ee6492;
   --color-accent-purple: #a855f7;
   --color-accent-cyan: #6fd5fa;
+  --color-accent-orange: #faa46f;
 
   /* Aliases for component compatibility */
   --color-bg: var(--color-background);
@@ -145,6 +146,7 @@
   --glass-bg: rgba(26, 29, 46, 0.8);
   --glass-bg-purple: rgba(46, 26, 40, 0.8);
   --glass-bg-cyan: rgba(26, 40, 46, 0.8);
+  --glass-bg-orange: rgba(46, 40, 26, 0.8);
   --glass-bg-secondary: var(--glass-bg-purple);
   --glass-bg-tertiary: var(--glass-bg-cyan);
   --glass-border: rgba(168, 85, 247, 0.25);
@@ -164,6 +166,7 @@
   --glow-purple: 0 0 20px rgba(168, 85, 247, 0.4);
   --glow-pink: 0 0 20px rgba(255, 107, 157, 0.4);
   --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.4);
+  --glow-orange: 0 0 20px rgba(238, 163, 34, 0.4);
   --glow-success: 0 0 20px rgba(74, 222, 128, 0.3);
 
   /* Spacing scale (4px base) */

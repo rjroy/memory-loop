@@ -53,6 +53,7 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
     discussionPrefill,
     setDiscussionPrefill,
     pendingSessionId,
+    setPendingSessionId,
   } = useSession();
 
   // Detect touch-only devices (no hover capability)
@@ -181,12 +182,13 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   // Handle errors during resume - fall back to select_vault
   useEffect(() => {
     if (lastMessage?.type === "error" && lastMessage.code === "SESSION_NOT_FOUND" && vault) {
-      // Session no longer exists on server, clear stale sessionId and start fresh
+      // Session no longer exists on server, clear stale state and start fresh
       console.log("[Discussion] Session not found, starting fresh");
       startNewSession();
+      setPendingSessionId(null); // Clear pending to prevent retry on reconnect
       sendMessage({ type: "select_vault", vaultId: vault.id });
     }
-  }, [lastMessage, vault, sendMessage, startNewSession]);
+  }, [lastMessage, vault, sendMessage, startNewSession, setPendingSessionId]);
 
   // Load prefill or draft on mount - prefill takes precedence over localStorage draft
   // Using a ref to capture the initial prefill value avoids needing to suppress exhaustive-deps

@@ -537,6 +537,170 @@ describe("Discussion", () => {
     });
   });
 
+  describe("session resume from pendingSessionId", () => {
+    // Tests for the pendingSessionId flow when RecentActivity triggers a resume
+    let setPendingSessionIdFn: ((id: string | null) => void) | null = null;
+    let setShowDiscussionFn: ((show: boolean) => void) | null = null;
+
+    function PendingSessionWrapper() {
+      const [showDiscussion, setShowDiscussion] = React.useState(false);
+      const { setPendingSessionId } = useSession();
+
+      setPendingSessionIdFn = setPendingSessionId;
+      setShowDiscussionFn = setShowDiscussion;
+
+      return showDiscussion ? <Discussion /> : null;
+    }
+
+    it("sends resume_session when pendingSessionId is set before mount", async () => {
+      render(
+        <SessionProvider initialVaults={[testVault]}>
+          <PendingSessionWrapper />
+        </SessionProvider>
+      );
+
+      // Set pendingSessionId before mounting Discussion (simulates RecentActivity click)
+      act(() => {
+        setPendingSessionIdFn!("pending-session-abc123");
+      });
+
+      // Clear messages before mounting Discussion
+      sentMessages.length = 0;
+
+      // Mount Discussion
+      act(() => {
+        setShowDiscussionFn!(true);
+      });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Should send resume_session with the pendingSessionId
+      await waitFor(() => {
+        const resumeMessages = sentMessages.filter(
+          (m) => m.type === "resume_session"
+        );
+        expect(resumeMessages.length).toBe(1);
+        expect(resumeMessages[0]).toEqual({
+          type: "resume_session",
+          sessionId: "pending-session-abc123",
+        });
+      });
+    });
+
+    it("pendingSessionId takes priority over existing sessionId", async () => {
+      let setSessionIdFn: ((id: string) => void) | null = null;
+
+      function PriorityTestWrapper() {
+        const [showDiscussion, setShowDiscussion] = React.useState(false);
+        const { setPendingSessionId, setSessionId } = useSession();
+
+        setPendingSessionIdFn = setPendingSessionId;
+        setSessionIdFn = setSessionId;
+        setShowDiscussionFn = setShowDiscussion;
+
+        return showDiscussion ? <Discussion /> : null;
+      }
+
+      render(
+        <SessionProvider initialVaults={[testVault]}>
+          <PriorityTestWrapper />
+        </SessionProvider>
+      );
+
+      // Set both an existing sessionId AND a pendingSessionId
+      act(() => {
+        setSessionIdFn!("existing-session-111");
+        setPendingSessionIdFn!("pending-session-222");
+      });
+
+      sentMessages.length = 0;
+
+      act(() => {
+        setShowDiscussionFn!(true);
+      });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Should resume the PENDING session, not the existing one
+      await waitFor(() => {
+        const resumeMessages = sentMessages.filter(
+          (m) => m.type === "resume_session"
+        );
+        expect(resumeMessages.length).toBe(1);
+        expect(resumeMessages[0]).toEqual({
+          type: "resume_session",
+          sessionId: "pending-session-222",
+        });
+      });
+    });
+
+    it("clears pendingSessionId on SESSION_NOT_FOUND error", async () => {
+      let getPendingSessionIdFn: (() => string | null) | null = null;
+
+      function ErrorTestWrapper() {
+        const [showDiscussion, setShowDiscussion] = React.useState(false);
+        const { setPendingSessionId, pendingSessionId } = useSession();
+
+        setPendingSessionIdFn = setPendingSessionId;
+        getPendingSessionIdFn = () => pendingSessionId;
+        setShowDiscussionFn = setShowDiscussion;
+
+        return showDiscussion ? <Discussion /> : null;
+      }
+
+      render(
+        <SessionProvider initialVaults={[testVault]}>
+          <ErrorTestWrapper />
+        </SessionProvider>
+      );
+
+      // Set pendingSessionId
+      act(() => {
+        setPendingSessionIdFn!("invalid-session-xyz");
+      });
+
+      // Mount Discussion
+      act(() => {
+        setShowDiscussionFn!(true);
+      });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const ws = wsInstances[wsInstances.length - 1];
+
+      // Verify pendingSessionId is set
+      expect(getPendingSessionIdFn!()).toBe("invalid-session-xyz");
+
+      // Server responds with SESSION_NOT_FOUND error
+      act(() => {
+        ws.simulateMessage({
+          type: "error",
+          code: "SESSION_NOT_FOUND",
+          message: "Session not found",
+        });
+      });
+
+      // pendingSessionId should be cleared to prevent retry on reconnect
+      await waitFor(() => {
+        expect(getPendingSessionIdFn!()).toBeNull();
+      });
+
+      // Should have sent select_vault as fallback
+      await waitFor(() => {
+        const selectVaultMessages = sentMessages.filter(
+          (m) => m.type === "select_vault"
+        );
+        expect(selectVaultMessages.length).toBeGreaterThan(0);
+      });
+    });
+  });
+
   describe("prefill from inspiration", () => {
     // Shared test helpers - using a controlled wrapper that preserves SessionProvider state
     let setPrefillFn: ((text: string | null) => void) | null = null;

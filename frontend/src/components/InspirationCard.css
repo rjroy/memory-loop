@@ -74,15 +74,15 @@
 
 /* Quote variant - purple accent */
 .inspiration-card__quote {
-  border-left: 3px solid var(--color-accent);
-  background: var(--glass-bg-purple);
+  border-left: 3px solid var(--color-accent-orange);
+  background: var(--glass-bg-orange);
 }
 
 .inspiration-card__quote::before {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/images/bg-purple.webp');
+  background-image: url('/images/bg-orange.webp');
   background-size: cover;
   background-position: center center;
   border-radius: inherit;
@@ -91,8 +91,8 @@
 }
 
 .inspiration-card__quote:hover {
-  border-left-color: var(--color-accent);
-  box-shadow: var(--glow-purple);
+  border-left-color: var(--color-accent-orange);
+  box-shadow: var(--glow-orange);
 }
 
 /* Text content */

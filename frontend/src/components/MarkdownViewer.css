@@ -29,7 +29,7 @@
   flex-wrap: wrap;
   gap: var(--spacing-xs);
   padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--glass-bg-tertiary);
+  background: var(--glass-bg-orange);
   backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--glass-border);
   font-size: var(--text-sm);

@@ -10,7 +10,7 @@
 
 import React, { useCallback } from "react";
 import { useSession } from "../contexts/SessionContext";
-import type { RecentNoteEntry, RecentDiscussionEntry, ClientMessage } from "@memory-loop/shared";
+import type { RecentNoteEntry, RecentDiscussionEntry } from "@memory-loop/shared";
 import "./RecentActivity.css";
 
 /**
@@ -48,8 +48,6 @@ export interface RecentActivityProps {
   onResumeDiscussion?: (sessionId: string) => void;
   /** Callback when user wants to view a capture in browse mode */
   onViewCapture?: (date: string) => void;
-  /** Function to send WebSocket messages (from parent's useWebSocket) */
-  sendMessage?: (message: ClientMessage) => void;
 }
 
 /**
@@ -62,7 +60,6 @@ export interface RecentActivityProps {
 export function RecentActivity({
   onResumeDiscussion,
   onViewCapture,
-  sendMessage,
 }: RecentActivityProps): React.ReactNode {
   const {
     vault,
@@ -70,6 +67,7 @@ export function RecentActivity({
     recentDiscussions,
     setMode,
     setCurrentPath,
+    setPendingSessionId,
   } = useSession();
 
   // Handle view capture click - open the daily note file in browse mode
@@ -93,13 +91,14 @@ export function RecentActivity({
     (sessionId: string) => {
       if (onResumeDiscussion) {
         onResumeDiscussion(sessionId);
-      } else if (sendMessage) {
-        // Default: send resume_session and switch to discussion mode
-        sendMessage({ type: "resume_session", sessionId });
+      } else {
+        // Set pending session ID so Discussion can send resume_session when it mounts
+        // This avoids a race condition where Discussion would send its own session management
+        setPendingSessionId(sessionId);
         setMode("discussion");
       }
     },
-    [onResumeDiscussion, sendMessage, setMode]
+    [onResumeDiscussion, setPendingSessionId, setMode]
   );
 
   const hasCaptures = recentNotes.length > 0;

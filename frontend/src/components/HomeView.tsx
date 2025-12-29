@@ -188,7 +188,7 @@ export function HomeView(): React.ReactNode {
       <GoalsCard />
 
       {/* Recent Activity */}
-      <RecentActivity sendMessage={sendMessage} />
+      <RecentActivity />
     </div>
   );
 }

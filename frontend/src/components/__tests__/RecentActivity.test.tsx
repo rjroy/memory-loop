@@ -8,8 +8,19 @@ import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { RecentActivity } from "../RecentActivity";
-import { SessionProvider } from "../../contexts/SessionContext";
+import { SessionProvider, useSession } from "../../contexts/SessionContext";
 import type { VaultInfo, RecentNoteEntry, RecentDiscussionEntry } from "@memory-loop/shared";
+
+// Helper component to capture context state changes
+let capturedMode: string | null = null;
+let capturedPendingSessionId: string | null = null;
+
+function ContextCapture(): null {
+  const { mode, pendingSessionId } = useSession();
+  capturedMode = mode;
+  capturedPendingSessionId = pendingSessionId;
+  return null;
+}
 
 // Test data
 const testVault: VaultInfo = {
@@ -34,7 +45,8 @@ const mockDiscussions: RecentDiscussionEntry[] = [
 // to avoid the SELECT_VAULT action from clearing the initial values
 function createTestWrapper(
   captures: RecentNoteEntry[] = [],
-  discussions: RecentDiscussionEntry[] = []
+  discussions: RecentDiscussionEntry[] = [],
+  includeContextCapture = false
 ) {
   return function TestWrapper({ children }: { children: ReactNode }) {
     return (
@@ -43,6 +55,7 @@ function createTestWrapper(
         initialRecentNotes={captures}
         initialRecentDiscussions={discussions}
       >
+        {includeContextCapture && <ContextCapture />}
         {children}
       </SessionProvider>
     );
@@ -51,6 +64,9 @@ function createTestWrapper(
 
 beforeEach(() => {
   localStorage.clear();
+  // Reset captured context values
+  capturedMode = null;
+  capturedPendingSessionId = null;
   // Don't pre-select vault for these tests - we want to test RecentActivity
   // rendering with data, not vault selection behavior
 });
@@ -205,20 +221,17 @@ describe("RecentActivity", () => {
       expect(onResumeDiscussion).toHaveBeenCalledWith("session-1");
     });
 
-    it("calls sendMessage with resume_session when no custom handler", () => {
-      const sendMessage = mock(() => {});
-
-      render(<RecentActivity sendMessage={sendMessage} />, {
-        wrapper: createTestWrapper([], mockDiscussions),
+    it("sets pendingSessionId and mode when no custom handler", () => {
+      render(<RecentActivity />, {
+        wrapper: createTestWrapper([], mockDiscussions, true),
       });
 
       const resumeButtons = screen.getAllByRole("button", { name: /resume discussion/i });
       fireEvent.click(resumeButtons[0]);
 
-      expect(sendMessage).toHaveBeenCalledWith({
-        type: "resume_session",
-        sessionId: "session-1",
-      });
+      // Verify context state was updated
+      expect(capturedPendingSessionId).toBe("session-1");
+      expect(capturedMode).toBe("discussion");
     });
   });
 

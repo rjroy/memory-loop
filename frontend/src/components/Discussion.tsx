@@ -52,6 +52,8 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
     startNewSession,
     discussionPrefill,
     setDiscussionPrefill,
+    pendingSessionId,
+    setPendingSessionId,
   } = useSession();
 
   // Detect touch-only devices (no hover capability)
@@ -118,40 +120,46 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
     ) {
       hasSentVaultSelectionRef.current = true;
 
-      // If we have a sessionId from context, use API to verify it exists
-      // and send resume_session. Otherwise just select vault.
+      // Priority 1: If RecentActivity set a pendingSessionId, resume that session
+      if (pendingSessionId) {
+        console.log(`[Discussion] Resuming pending session: ${pendingSessionId.slice(0, 8)}...`);
+        sendMessage({ type: "resume_session", sessionId: pendingSessionId });
+        return;
+      }
+
+      // Priority 2: If we have a current sessionId, resume it (e.g., on reconnect)
       if (sessionId) {
-        // We have a session - resume it
         console.log(`[Discussion] Resuming session on reconnect: ${sessionId.slice(0, 8)}...`);
         sendMessage({ type: "resume_session", sessionId });
-      } else {
-        // No session yet - check API for existing session
-        void (async () => {
-          try {
-            const response = await fetch(`/api/sessions/${vault.id}`);
-            if (!response.ok) {
-              // Non-2xx status - fall back to selecting vault
-              console.warn(`[Discussion] Session check failed with status ${response.status}, selecting vault`);
-              sendMessage({ type: "select_vault", vaultId: vault.id });
-              return;
-            }
-            const data = (await response.json()) as { sessionId: string | null };
+        return;
+      }
 
-            if (data.sessionId) {
-              console.log(`[Discussion] Found existing session: ${data.sessionId.slice(0, 8)}...`);
-              sendMessage({ type: "resume_session", sessionId: data.sessionId });
-            } else {
-              console.log(`[Discussion] No existing session, selecting vault: ${vault.id}`);
-              sendMessage({ type: "select_vault", vaultId: vault.id });
-            }
-          } catch (err) {
-            console.warn("[Discussion] Failed to check session, selecting vault:", err);
+      // Priority 3: Check API for existing session, or start fresh
+      void (async () => {
+        try {
+          const response = await fetch(`/api/sessions/${vault.id}`);
+          if (!response.ok) {
+            // Non-2xx status - fall back to selecting vault
+            console.warn(`[Discussion] Session check failed with status ${response.status}, selecting vault`);
+            sendMessage({ type: "select_vault", vaultId: vault.id });
+            return;
+          }
+          const data = (await response.json()) as { sessionId: string | null };
+
+          if (data.sessionId) {
+            console.log(`[Discussion] Found existing session: ${data.sessionId.slice(0, 8)}...`);
+            sendMessage({ type: "resume_session", sessionId: data.sessionId });
+          } else {
+            console.log(`[Discussion] No existing session, selecting vault: ${vault.id}`);
             sendMessage({ type: "select_vault", vaultId: vault.id });
           }
-        })();
-      }
+        } catch (err) {
+          console.warn("[Discussion] Failed to check session, selecting vault:", err);
+          sendMessage({ type: "select_vault", vaultId: vault.id });
+        }
+      })();
     }
-  }, [connectionStatus, vault, sessionId, sendMessage]);
+  }, [connectionStatus, vault, sessionId, pendingSessionId, sendMessage]);
 
   // Detect when sessionId is cleared (user clicked "New" button) and notify backend
   useEffect(() => {
@@ -174,12 +182,13 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   // Handle errors during resume - fall back to select_vault
   useEffect(() => {
     if (lastMessage?.type === "error" && lastMessage.code === "SESSION_NOT_FOUND" && vault) {
-      // Session no longer exists on server, clear stale sessionId and start fresh
+      // Session no longer exists on server, clear stale state and start fresh
       console.log("[Discussion] Session not found, starting fresh");
       startNewSession();
+      setPendingSessionId(null); // Clear pending to prevent retry on reconnect
       sendMessage({ type: "select_vault", vaultId: vault.id });
     }
-  }, [lastMessage, vault, sendMessage, startNewSession]);
+  }, [lastMessage, vault, sendMessage, startNewSession, setPendingSessionId]);
 
   // Load prefill or draft on mount - prefill takes precedence over localStorage draft
   // Using a ref to capture the initial prefill value avoids needing to suppress exhaustive-deps

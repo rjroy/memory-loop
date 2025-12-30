@@ -176,6 +176,20 @@
   height: 20px;
 }
 
+/* Stop button state - red/warning appearance */
+.discussion__send--stop {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+.discussion__send--stop:hover:not(:disabled) {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+}
+
+.discussion__stop-icon {
+  width: 16px;
+  height: 16px;
+}
+
 .discussion__send-spinner {
   width: 20px;
   height: 20px;

@@ -765,7 +765,7 @@ export class WebSocketHandler {
     }
 
     try {
-      const entries = await listDirectory(this.state.currentVault.path, path);
+      const entries = await listDirectory(this.state.currentVault.contentRoot, path);
       log.info(`Found ${entries.length} entries in ${path || "/"}`);
       this.send(ws, {
         type: "directory_listing",
@@ -804,7 +804,7 @@ export class WebSocketHandler {
     }
 
     try {
-      const result = await readMarkdownFile(this.state.currentVault.path, path);
+      const result = await readMarkdownFile(this.state.currentVault.contentRoot, path);
       log.info(`File read: ${path} (truncated: ${result.truncated})`);
       this.send(ws, {
         type: "file_content",
@@ -845,7 +845,7 @@ export class WebSocketHandler {
     }
 
     try {
-      await writeMarkdownFile(this.state.currentVault.path, path, content);
+      await writeMarkdownFile(this.state.currentVault.contentRoot, path, content);
       log.info(`File written: ${path} (${content.length} bytes)`);
       this.send(ws, {
         type: "file_written",

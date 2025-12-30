@@ -70,6 +70,8 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
+    // Reset submitting state - any in-flight request was interrupted
+    setIsSubmitting(false);
   }, []);
 
   const handleServerMessage = useServerMessageHandler();

@@ -5,7 +5,13 @@
  * and proper handling of images and external links.
  */
 
-import { useMemo, useCallback, type ReactNode, type ComponentProps } from "react";
+import {
+  useMemo,
+  useCallback,
+  type ReactNode,
+  type ComponentProps,
+  type KeyboardEvent,
+} from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useSession } from "../contexts/SessionContext";
@@ -19,6 +25,8 @@ export interface MarkdownViewerProps {
   onNavigate?: (path: string) => void;
   /** Base URL for vault assets (images) */
   assetBaseUrl?: string;
+  /** Callback to save file content in adjust mode (wired by parent to WebSocket) */
+  onSave?: (content: string) => void;
 }
 
 /**
@@ -255,15 +263,32 @@ function createMarkdownComponents(
  * - Breadcrumb navigation
  * - Truncation warnings
  * - Loading states
+ * - Adjust mode for inline editing (REQ-F-1 to REQ-F-6)
  * - Built-in XSS protection (react-markdown sanitizes by default)
  */
 export function MarkdownViewer({
   onNavigate,
   assetBaseUrl = "/vault/assets",
+  onSave,
 }: MarkdownViewerProps): ReactNode {
-  const { browser, setCurrentPath } = useSession();
-  const { currentPath, currentFileContent, currentFileTruncated, fileError, isLoading } =
-    browser;
+  const {
+    browser,
+    setCurrentPath,
+    startAdjust,
+    updateAdjustContent,
+    cancelAdjust,
+  } = useSession();
+  const {
+    currentPath,
+    currentFileContent,
+    currentFileTruncated,
+    fileError,
+    isLoading,
+    isAdjusting,
+    adjustContent,
+    adjustError,
+    isSaving,
+  } = browser;
 
   // Handle wiki-link clicks - resolve relative paths
   const handleWikiLinkClick = useCallback(
@@ -294,6 +319,30 @@ export function MarkdownViewer({
     },
     [setCurrentPath, onNavigate]
   );
+
+  // Handle Escape key in adjust mode (REQ-F-6)
+  const handleTextareaKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelAdjust();
+      }
+    },
+    [cancelAdjust]
+  );
+
+  // Handle textarea content change
+  const handleContentChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      updateAdjustContent(event.target.value);
+    },
+    [updateAdjustContent]
+  );
+
+  // Handle save button click
+  const handleSave = useCallback(() => {
+    onSave?.(adjustContent);
+  }, [onSave, adjustContent]);
 
   // Loading state
   if (isLoading) {
@@ -328,9 +377,75 @@ export function MarkdownViewer({
     );
   }
 
+  // Adjust mode - show textarea for editing (REQ-F-2, REQ-F-3)
+  if (isAdjusting) {
+    return (
+      <div className="markdown-viewer markdown-viewer--adjusting">
+        <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
+
+        {/* Header with Save/Cancel buttons (REQ-F-3) */}
+        <div className="markdown-viewer__adjust-header">
+          <div className="markdown-viewer__adjust-actions">
+            <button
+              type="button"
+              className="markdown-viewer__adjust-btn markdown-viewer__adjust-btn--save"
+              onClick={handleSave}
+              disabled={isSaving}
+              aria-label="Save changes"
+            >
+              {isSaving ? "Saving..." : "Save"}
+            </button>
+            <button
+              type="button"
+              className="markdown-viewer__adjust-btn markdown-viewer__adjust-btn--cancel"
+              onClick={cancelAdjust}
+              disabled={isSaving}
+              aria-label="Cancel editing"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        {/* Error message display (REQ-F-14) */}
+        {adjustError && (
+          <div className="markdown-viewer__adjust-error" role="alert">
+            {adjustError}
+          </div>
+        )}
+
+        {/* Textarea for editing (REQ-F-2, REQ-NF-2) */}
+        <div className="markdown-viewer__adjust-content">
+          <textarea
+            className="markdown-viewer__adjust-textarea"
+            value={adjustContent}
+            onChange={handleContentChange}
+            onKeyDown={handleTextareaKeyDown}
+            disabled={isSaving}
+            autoFocus
+            aria-label="File content editor"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Normal view mode with Adjust button (REQ-F-1)
   return (
     <div className="markdown-viewer">
       <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
+
+      {/* Header with Adjust button (REQ-F-1) */}
+      <div className="markdown-viewer__view-header">
+        <button
+          type="button"
+          className="markdown-viewer__adjust-btn"
+          onClick={startAdjust}
+          aria-label="Adjust file"
+        >
+          Adjust
+        </button>
+      </div>
 
       {currentFileTruncated && (
         <div className="markdown-viewer__truncation-warning" role="alert">

@@ -31,6 +31,7 @@
   color: var(--color-text);
   border: 1px solid var(--glass-border);
   border-bottom-right-radius: var(--radius-sm);
+  backdrop-filter: blur(var(--glass-blur));
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -41,9 +42,16 @@
   color: var(--color-text);
   border: 1px solid var(--glass-border);
   border-bottom-left-radius: var(--radius-sm);
+  backdrop-filter: blur(var(--glass-blur));
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .message-bubble__content {
+    background-color: var(--color-surface);
+  }
 }
 
 .message-bubble__text {
@@ -165,6 +173,14 @@
 
 .message-bubble--assistant .message-bubble__time {
   text-align: left;
+}
+
+/* Mobile adjustments for blur performance */
+@media (max-width: 767px) {
+  .message-bubble--user .message-bubble__content,
+  .message-bubble--assistant .message-bubble__content {
+    backdrop-filter: blur(4px);
+  }
 }
 
 /* Tablet and up - narrower bubbles */

@@ -7,8 +7,11 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { fileExists } from "./vault-manager";
+import { createLogger } from "./logger";
+
+const log = createLogger("VaultConfig");
 
 /**
  * Configuration file name.
@@ -67,7 +70,7 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
 
     // Validate it's an object
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      console.warn(`[vault-config] Invalid config format in ${configPath}: expected object`);
+      log.warn(`Invalid config format in ${configPath}: expected object`);
       return {};
     }
 
@@ -91,7 +94,7 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
   } catch (error) {
     // JSON parse error or read error
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[vault-config] Failed to load config from ${configPath}: ${message}`);
+    log.warn(`Failed to load config from ${configPath}: ${message}`);
     return {};
   }
 }
@@ -102,10 +105,26 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
  * @param vaultPath - Absolute path to the vault root directory
  * @param config - Vault configuration
  * @returns Absolute path to the content root
+ * @throws Error if contentRoot attempts path traversal outside vault
  */
 export function resolveContentRoot(vaultPath: string, config: VaultConfig): string {
   if (config.contentRoot) {
-    return join(vaultPath, config.contentRoot);
+    // Reject absolute paths outright
+    if (config.contentRoot.startsWith("/")) {
+      log.warn(`Absolute path rejected in contentRoot: ${config.contentRoot}`);
+      return vaultPath;
+    }
+
+    const resolved = normalize(join(vaultPath, config.contentRoot));
+    const normalizedVaultPath = normalize(vaultPath);
+
+    // Ensure resolved path is within vault boundary
+    if (!resolved.startsWith(normalizedVaultPath + "/") && resolved !== normalizedVaultPath) {
+      log.warn(`Path traversal attempt in contentRoot: ${config.contentRoot}`);
+      return vaultPath;
+    }
+
+    return resolved;
   }
   return vaultPath;
 }

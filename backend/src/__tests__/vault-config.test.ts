@@ -205,6 +205,26 @@ describe("vault-config", () => {
       const result = resolveContentRoot("/vault/path", { contentRoot: "" });
       expect(result).toBe("/vault/path");
     });
+
+    test("rejects path traversal with ..", () => {
+      const result = resolveContentRoot("/vault/path", { contentRoot: "../outside" });
+      expect(result).toBe("/vault/path");
+    });
+
+    test("rejects path traversal with nested ..", () => {
+      const result = resolveContentRoot("/vault/path", { contentRoot: "content/../../outside" });
+      expect(result).toBe("/vault/path");
+    });
+
+    test("rejects absolute path traversal", () => {
+      const result = resolveContentRoot("/vault/path", { contentRoot: "/etc/passwd" });
+      expect(result).toBe("/vault/path");
+    });
+
+    test("allows paths that contain .. but resolve within vault", () => {
+      const result = resolveContentRoot("/vault/path", { contentRoot: "content/../other" });
+      expect(result).toBe("/vault/path/other");
+    });
   });
 
   describe("resolveMetadataPath", () => {

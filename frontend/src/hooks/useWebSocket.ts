@@ -101,6 +101,8 @@ export function useWebSocket(
   const hasConnectedOnceRef = useRef(false);
   const onReconnectRef = useRef(config.onReconnect);
   const onMessageRef = useRef(config.onMessage);
+  // Track if we need to reconnect when page becomes visible
+  const pendingReconnectRef = useRef(false);
 
   // Keep callback refs in sync with latest callbacks
   useEffect(() => {
@@ -120,10 +122,17 @@ export function useWebSocket(
 
   /**
    * Schedules a reconnection attempt with exponential backoff.
+   * Defers reconnection until the page is visible to save battery on mobile.
    */
   const scheduleReconnect = useCallback(
     (connect: () => void) => {
       if (!config.autoReconnect || !mountedRef.current) {
+        return;
+      }
+
+      // If page is hidden, defer reconnect until visible
+      if (document.visibilityState === "hidden") {
+        pendingReconnectRef.current = true;
         return;
       }
 
@@ -247,6 +256,25 @@ export function useWebSocket(
       }
     };
   }, [connect, clearReconnectTimeout]);
+
+  // Handle visibility change - reconnect when page becomes visible if needed
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" &&
+        pendingReconnectRef.current &&
+        mountedRef.current
+      ) {
+        pendingReconnectRef.current = false;
+        connect();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [connect]);
 
   return {
     sendMessage,

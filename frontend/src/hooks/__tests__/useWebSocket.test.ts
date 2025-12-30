@@ -395,4 +395,126 @@ describe("useWebSocket", () => {
       warnSpy.mockRestore();
     });
   });
+
+  describe("visibility-aware reconnect", () => {
+    it("defers reconnect when page is hidden", async () => {
+      // Mock visibilityState inline for test isolation
+      let visibility = "visible";
+      Object.defineProperty(document, "visibilityState", {
+        get: () => visibility,
+        configurable: true,
+      });
+
+      const { unmount } = renderHook(() =>
+        useWebSocket({ initialDelay: 10, autoReconnect: true })
+      );
+
+      act(() => {
+        instances[0].simulateOpen();
+      });
+
+      expect(instances.length).toBe(1);
+
+      // Page becomes hidden before disconnect
+      visibility = "hidden";
+
+      act(() => {
+        instances[0].simulateClose();
+      });
+
+      // Wait - should NOT create new instance while hidden
+      await new Promise((r) => setTimeout(r, 50));
+      expect(instances.length).toBe(1);
+
+      // Cleanup
+      unmount();
+    });
+
+    it("reconnects when page becomes visible after deferred disconnect", async () => {
+      // Mock visibilityState inline for test isolation
+      let visibility = "visible";
+      Object.defineProperty(document, "visibilityState", {
+        get: () => visibility,
+        configurable: true,
+      });
+
+      const { result, unmount } = renderHook(() =>
+        useWebSocket({ initialDelay: 10, autoReconnect: true })
+      );
+
+      act(() => {
+        instances[0].simulateOpen();
+      });
+
+      expect(result.current.connectionStatus).toBe("connected");
+
+      // Page becomes hidden
+      visibility = "hidden";
+
+      act(() => {
+        instances[0].simulateClose();
+      });
+
+      expect(result.current.connectionStatus).toBe("disconnected");
+
+      // Verify no reconnect while hidden
+      await new Promise((r) => setTimeout(r, 30));
+      expect(instances.length).toBe(1);
+
+      // Page becomes visible and dispatch event
+      visibility = "visible";
+
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+
+      // Should reconnect now (connect is called synchronously on visibility change)
+      await waitFor(
+        () => {
+          expect(instances.length).toBe(2);
+        },
+        { timeout: 100 }
+      );
+
+      // Cleanup to ensure event listeners are removed
+      unmount();
+    });
+
+    it("calls onReconnect callback on reconnection", async () => {
+      let reconnectCount = 0;
+      const onReconnect = () => {
+        reconnectCount++;
+      };
+
+      renderHook(() =>
+        useWebSocket({ initialDelay: 10, autoReconnect: true, onReconnect })
+      );
+
+      // First connection - onReconnect should NOT be called
+      act(() => {
+        instances[0].simulateOpen();
+      });
+      expect(reconnectCount).toBe(0);
+
+      // Disconnect and reconnect
+      act(() => {
+        instances[0].simulateClose();
+      });
+
+      await waitFor(
+        () => {
+          expect(instances.length).toBe(2);
+        },
+        { timeout: 100 }
+      );
+
+      // Open the new connection
+      act(() => {
+        instances[1].simulateOpen();
+      });
+
+      // onReconnect should be called on reconnection
+      expect(reconnectCount).toBe(1);
+    });
+  });
 });

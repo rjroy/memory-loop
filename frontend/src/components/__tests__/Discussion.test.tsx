@@ -703,6 +703,153 @@ describe("Discussion", () => {
     });
   });
 
+  describe("abort functionality", () => {
+    it("shows stop button when submitting", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const input = screen.getByRole("textbox");
+      const button = screen.getByRole("button", { name: /send/i });
+
+      // Submit a message
+      fireEvent.change(input, { target: { value: "Hello Claude" } });
+      fireEvent.click(button);
+
+      // Button should now show "Stop response" label
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
+      });
+    });
+
+    it("sends abort message when stop button is clicked", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const input = screen.getByRole("textbox");
+      const button = screen.getByRole("button", { name: /send/i });
+
+      // Submit a message
+      fireEvent.change(input, { target: { value: "Hello Claude" } });
+      fireEvent.click(button);
+
+      // Wait for stop button to appear
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
+      });
+
+      // Clear sent messages to isolate the abort
+      sentMessages.length = 0;
+
+      // Click stop button
+      const stopButton = screen.getByRole("button", { name: /stop response/i });
+      fireEvent.click(stopButton);
+
+      // Should have sent abort message
+      await waitFor(() => {
+        expect(sentMessages).toContainEqual({ type: "abort" });
+      });
+    });
+
+    it("reverts to send button after abort", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const input = screen.getByRole("textbox");
+      const button = screen.getByRole("button", { name: /send/i });
+
+      // Submit a message
+      fireEvent.change(input, { target: { value: "Hello Claude" } });
+      fireEvent.click(button);
+
+      // Wait for stop button
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
+      });
+
+      // Click stop button
+      const stopButton = screen.getByRole("button", { name: /stop response/i });
+      fireEvent.click(stopButton);
+
+      // Should revert to send button
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /send/i })).toBeDefined();
+      });
+    });
+
+    it("stop button is enabled even when disconnected during submission", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const ws = wsInstances[wsInstances.length - 1];
+      const input = screen.getByRole("textbox");
+      const button = screen.getByRole("button", { name: /send/i });
+
+      // Submit a message
+      fireEvent.change(input, { target: { value: "Hello Claude" } });
+      fireEvent.click(button);
+
+      // Wait for stop button
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
+      });
+
+      // Simulate disconnect
+      ws.readyState = MockWebSocket.CLOSED;
+      act(() => {
+        if (ws.onclose) ws.onclose(new Event("close"));
+      });
+
+      // Stop button should still be clickable (not disabled)
+      const stopButton = screen.getByRole("button", { name: /stop response/i });
+      expect(stopButton.hasAttribute("disabled")).toBe(false);
+    });
+
+    it("reverts to send button on response_end", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const ws = wsInstances[wsInstances.length - 1];
+      const input = screen.getByRole("textbox");
+      const button = screen.getByRole("button", { name: /send/i });
+
+      // Submit a message
+      fireEvent.change(input, { target: { value: "Hello Claude" } });
+      fireEvent.click(button);
+
+      // Wait for stop button
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
+      });
+
+      // Server sends response_end
+      act(() => {
+        ws.simulateMessage({ type: "response_start", messageId: "msg-1" });
+        ws.simulateMessage({ type: "response_chunk", messageId: "msg-1", content: "Hi!" });
+        ws.simulateMessage({ type: "response_end", messageId: "msg-1" });
+      });
+
+      // Should revert to send button
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /send/i })).toBeDefined();
+      });
+    });
+  });
+
   describe("prefill from inspiration", () => {
     // Shared test helpers - using a controlled wrapper that preserves SessionProvider state
     let setPrefillFn: ((text: string | null) => void) | null = null;

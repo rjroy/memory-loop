@@ -266,11 +266,17 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
     }
   }
 
+  function handleAbort() {
+    if (!isSubmitting) return;
+    sendMessage({ type: "abort" });
+    setIsSubmitting(false);
+  }
+
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setInput(e.target.value);
   }
 
-  const isDisabled = isSubmitting || connectionStatus !== "connected" || !vault;
+  const isDisconnected = connectionStatus !== "connected" || !vault;
   const showSlashHint = isSlashCommand(input);
 
   function handleNewSessionClick() {
@@ -337,13 +343,21 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
             aria-label="Message input"
           />
           <button
-            type="submit"
-            className="discussion__send"
-            disabled={isDisabled || !input.trim()}
-            aria-label="Send message"
+            type={isSubmitting ? "button" : "submit"}
+            className={`discussion__send${isSubmitting ? " discussion__send--stop" : ""}`}
+            disabled={!isSubmitting && (isDisconnected || !input.trim())}
+            onClick={isSubmitting ? handleAbort : undefined}
+            aria-label={isSubmitting ? "Stop response" : "Send message"}
           >
             {isSubmitting ? (
-              <span className="discussion__send-spinner" aria-hidden="true" />
+              <svg
+                className="discussion__stop-icon"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <rect x="6" y="6" width="12" height="12" rx="1" />
+              </svg>
             ) : (
               <svg
                 className="discussion__send-icon"

@@ -75,6 +75,26 @@ Optional vault structure for full feature support:
 - Goals section in `CLAUDE.md` — Displayed on Home dashboard
 - `06_Metadata/memory-loop/` — Inspiration prompt sources
 
+### Per-Vault Configuration
+
+Create a `.memory-loop.json` file at the vault root to customize paths:
+
+```json
+{
+  "contentRoot": "content",
+  "inboxPath": "journal",
+  "metadataPath": "meta/memory-loop"
+}
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `contentRoot` | Subdirectory containing vault content (useful for Quartz sites) | `""` (vault root) |
+| `inboxPath` | Directory for daily notes, relative to contentRoot | Auto-detected or `00_Inbox` |
+| `metadataPath` | Directory for inspiration sources, relative to contentRoot | `06_Metadata/memory-loop` |
+
+All paths are relative to the vault root. Path traversal outside the vault is rejected for security.
+
 ## Usage
 
 ### Select a Vault

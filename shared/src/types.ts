@@ -10,17 +10,21 @@
  *
  * @property id - Directory name (unique identifier)
  * @property name - Human-readable name from CLAUDE.md title or fallback to id
- * @property path - Relative path for display in UI
+ * @property path - Absolute path to the vault root directory
  * @property hasClaudeMd - Whether the vault has a CLAUDE.md file
- * @property inboxPath - Resolved inbox location for daily notes
- * @property goalsPath - Path to goals.md if it exists (e.g., "06_Metadata/memory-loop/goals.md")
+ * @property contentRoot - Absolute path to content root (may differ from path if configured)
+ * @property inboxPath - Resolved inbox location for daily notes (relative to contentRoot)
+ * @property metadataPath - Path to metadata directory (relative to contentRoot)
+ * @property goalsPath - Path to goals.md if it exists (relative to contentRoot)
  */
 export interface VaultInfo {
   id: string;
   name: string;
   path: string;
   hasClaudeMd: boolean;
+  contentRoot: string;
   inboxPath: string;
+  metadataPath: string;
   goalsPath?: string;
 }
 

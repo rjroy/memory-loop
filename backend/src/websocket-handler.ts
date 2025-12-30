@@ -935,7 +935,7 @@ export class WebSocketHandler {
     }
 
     try {
-      const result = await getInspiration(this.state.currentVault.path);
+      const result = await getInspiration(this.state.currentVault);
       log.info(
         `Inspiration fetched: contextual=${result.contextual !== null}, quote="${result.quote.text.slice(0, 30)}..."`
       );

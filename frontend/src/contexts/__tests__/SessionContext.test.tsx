@@ -39,7 +39,9 @@ const testVault: VaultInfo = {
   name: "Test Vault",
   path: "/path/to/vault",
   hasClaudeMd: true,
-  inboxPath: "/path/to/vault/inbox",
+  contentRoot: "/path/to/vault",
+  inboxPath: "inbox",
+  metadataPath: "06_Metadata/memory-loop",
 };
 
 const testVault2: VaultInfo = {
@@ -47,7 +49,9 @@ const testVault2: VaultInfo = {
   name: "Another Vault",
   path: "/path/to/vault2",
   hasClaudeMd: false,
-  inboxPath: "/path/to/vault2/inbox",
+  contentRoot: "/path/to/vault2",
+  inboxPath: "inbox",
+  metadataPath: "06_Metadata/memory-loop",
 };
 
 describe("SessionContext", () => {

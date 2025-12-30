@@ -253,7 +253,9 @@ describe("useWebSocket", () => {
             name: "Test",
             path: "/test",
             hasClaudeMd: false,
-            inboxPath: "/test/inbox",
+            contentRoot: "/test",
+            inboxPath: "inbox",
+            metadataPath: "06_Metadata/memory-loop",
           },
         ],
       };

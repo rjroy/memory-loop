@@ -533,7 +533,9 @@ describe("captureToDaily Integration", () => {
       name: "Test Vault",
       path: testDir,
       hasClaudeMd: true,
+      contentRoot: testDir,
       inboxPath: "00_Inbox",
+      metadataPath: "06_Metadata/memory-loop",
     };
   });
 
@@ -754,7 +756,9 @@ describe("Edge Cases", () => {
       name: "Test Vault",
       path: testDir,
       hasClaudeMd: true,
+      contentRoot: testDir,
       inboxPath: "00_Inbox",
+      metadataPath: "06_Metadata/memory-loop",
     };
   });
 

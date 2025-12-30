@@ -470,7 +470,9 @@ describe("Filesystem Integration", () => {
         name: "Test Vault",
         path: "/vaults/test-vault",
         hasClaudeMd: true,
+        contentRoot: "/vaults/test-vault",
         inboxPath: "00_Inbox",
+        metadataPath: "06_Metadata/memory-loop",
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/00_Inbox");
@@ -482,10 +484,26 @@ describe("Filesystem Integration", () => {
         name: "Test Vault",
         path: "/vaults/test-vault",
         hasClaudeMd: true,
+        contentRoot: "/vaults/test-vault",
         inboxPath: "Custom/Inbox",
+        metadataPath: "06_Metadata/memory-loop",
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/Custom/Inbox");
+    });
+
+    test("works with configured contentRoot", () => {
+      const vault: VaultInfo = {
+        id: "test-vault",
+        name: "Test Vault",
+        path: "/vaults/test-vault",
+        hasClaudeMd: true,
+        contentRoot: "/vaults/test-vault/content",
+        inboxPath: "00_Inbox",
+        metadataPath: "06_Metadata/memory-loop",
+      };
+
+      expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/content/00_Inbox");
     });
   });
 });
@@ -770,12 +788,12 @@ Item 3
       await mkdir(goalsDir, { recursive: true });
       await writeFile(join(goalsDir, "goals.md"), "# Goals\n\n## Active\n");
 
-      const goalsPath = await detectGoalsPath(testDir);
+      const goalsPath = await detectGoalsPath(testDir, {});
       expect(goalsPath).toBe(GOALS_FILE_PATH);
     });
 
     test("returns undefined when file does not exist", async () => {
-      const goalsPath = await detectGoalsPath(testDir);
+      const goalsPath = await detectGoalsPath(testDir, {});
       expect(goalsPath).toBeUndefined();
     });
 
@@ -783,8 +801,17 @@ Item 3
       const goalsDir = join(testDir, "06_Metadata", "memory-loop");
       await mkdir(goalsDir, { recursive: true });
 
-      const goalsPath = await detectGoalsPath(testDir);
+      const goalsPath = await detectGoalsPath(testDir, {});
       expect(goalsPath).toBeUndefined();
+    });
+
+    test("uses custom metadata path from config", async () => {
+      const goalsDir = join(testDir, "custom-metadata");
+      await mkdir(goalsDir, { recursive: true });
+      await writeFile(join(goalsDir, "goals.md"), "# Goals\n\n## Active\n");
+
+      const goalsPath = await detectGoalsPath(testDir, { metadataPath: "custom-metadata" });
+      expect(goalsPath).toBe("custom-metadata/goals.md");
     });
   });
 
@@ -810,7 +837,9 @@ Item 3
         name: "Test Vault",
         path: testDir,
         hasClaudeMd: true,
+        contentRoot: testDir,
         inboxPath: "00_Inbox",
+        metadataPath: "06_Metadata/memory-loop",
         goalsPath: undefined,
       };
 
@@ -837,7 +866,9 @@ Item 3
         name: "Test Vault",
         path: testDir,
         hasClaudeMd: true,
+        contentRoot: testDir,
         inboxPath: "00_Inbox",
+        metadataPath: "06_Metadata/memory-loop",
         goalsPath: GOALS_FILE_PATH,
       };
 
@@ -857,7 +888,9 @@ Item 3
         name: "Test Vault",
         path: testDir,
         hasClaudeMd: true,
+        contentRoot: testDir,
         inboxPath: "00_Inbox",
+        metadataPath: "06_Metadata/memory-loop",
         goalsPath: GOALS_FILE_PATH,
       };
 

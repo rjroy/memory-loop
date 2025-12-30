@@ -20,6 +20,7 @@ import {
   ListDirectoryMessageSchema,
   ReadFileMessageSchema,
   GetInspirationMessageSchema,
+  WriteFileMessageSchema,
   // Server message schemas
   ServerMessageSchema,
   VaultListMessageSchema,
@@ -37,6 +38,7 @@ import {
   FileContentMessageSchema,
   InspirationItemSchema,
   InspirationMessageSchema,
+  FileWrittenMessageSchema,
   // Supporting schemas
   VaultInfoSchema,
   ErrorCodeSchema,
@@ -345,6 +347,86 @@ describe("Client -> Server Messages", () => {
     });
   });
 
+  describe("WriteFileMessageSchema", () => {
+    test("accepts valid write_file message with path and content", () => {
+      const msg = {
+        type: "write_file" as const,
+        path: "notes/my-note.md",
+        content: "# My Note\n\nSome content here.",
+      };
+      const result = WriteFileMessageSchema.parse(msg);
+      expect(result.type).toBe("write_file");
+      expect(result.path).toBe("notes/my-note.md");
+      expect(result.content).toBe("# My Note\n\nSome content here.");
+    });
+
+    test("accepts empty content (clearing file)", () => {
+      const msg = {
+        type: "write_file" as const,
+        path: "notes/empty.md",
+        content: "",
+      };
+      const result = WriteFileMessageSchema.parse(msg);
+      expect(result.content).toBe("");
+    });
+
+    test("accepts multiline content", () => {
+      const msg = {
+        type: "write_file" as const,
+        path: "notes/multiline.md",
+        content: "Line 1\nLine 2\nLine 3\n\n## Section\n\n- Item 1\n- Item 2",
+      };
+      const result = WriteFileMessageSchema.parse(msg);
+      expect(result.content).toContain("Line 1\nLine 2");
+    });
+
+    test("accepts very long content", () => {
+      const longContent = "a".repeat(100000);
+      const msg = {
+        type: "write_file" as const,
+        path: "notes/large.md",
+        content: longContent,
+      };
+      const result = WriteFileMessageSchema.parse(msg);
+      expect(result.content.length).toBe(100000);
+    });
+
+    test("accepts unicode content", () => {
+      const msg = {
+        type: "write_file" as const,
+        path: "notes/unicode.md",
+        content: "Unicode: \u{1F600} \u{1F4DA} \u{2764} \u{1F680}",
+      };
+      const result = WriteFileMessageSchema.parse(msg);
+      expect(result.content).toContain("\u{1F600}");
+    });
+
+    test("rejects empty path", () => {
+      const msg = { type: "write_file", path: "", content: "test content" };
+      expect(() => WriteFileMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing path", () => {
+      const msg = { type: "write_file", content: "test content" };
+      expect(() => WriteFileMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing content", () => {
+      const msg = { type: "write_file", path: "notes/test.md" };
+      expect(() => WriteFileMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string path", () => {
+      const msg = { type: "write_file", path: 123, content: "test" };
+      expect(() => WriteFileMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string content", () => {
+      const msg = { type: "write_file", path: "notes/test.md", content: 123 };
+      expect(() => WriteFileMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ClientMessageSchema (discriminated union)", () => {
     test("parses all client message types", () => {
       const messages = [
@@ -358,6 +440,7 @@ describe("Client -> Server Messages", () => {
         { type: "list_directory", path: "" },
         { type: "read_file", path: "note.md" },
         { type: "get_inspiration" },
+        { type: "write_file", path: "note.md", content: "test" },
       ];
 
       for (const msg of messages) {
@@ -875,6 +958,61 @@ describe("Server -> Client Messages", () => {
     });
   });
 
+  describe("FileWrittenMessageSchema", () => {
+    test("accepts valid file_written message", () => {
+      const msg = {
+        type: "file_written" as const,
+        path: "notes/my-note.md",
+        success: true as const,
+      };
+      const result = FileWrittenMessageSchema.parse(msg);
+      expect(result.type).toBe("file_written");
+      expect(result.path).toBe("notes/my-note.md");
+      expect(result.success).toBe(true);
+    });
+
+    test("accepts nested path", () => {
+      const msg = {
+        type: "file_written" as const,
+        path: "deep/nested/folder/note.md",
+        success: true as const,
+      };
+      const result = FileWrittenMessageSchema.parse(msg);
+      expect(result.path).toBe("deep/nested/folder/note.md");
+    });
+
+    test("rejects empty path", () => {
+      const msg = { type: "file_written", path: "", success: true };
+      expect(() => FileWrittenMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing path", () => {
+      const msg = { type: "file_written", success: true };
+      expect(() => FileWrittenMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects success: false", () => {
+      // success must be literal true - failures use error messages
+      const msg = { type: "file_written", path: "note.md", success: false };
+      expect(() => FileWrittenMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing success field", () => {
+      const msg = { type: "file_written", path: "note.md" };
+      expect(() => FileWrittenMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-boolean success", () => {
+      const msg = { type: "file_written", path: "note.md", success: "true" };
+      expect(() => FileWrittenMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string path", () => {
+      const msg = { type: "file_written", path: 123, success: true };
+      expect(() => FileWrittenMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ServerMessageSchema (discriminated union)", () => {
     test("parses all server message types", () => {
       const messages = [
@@ -908,6 +1046,7 @@ describe("Server -> Client Messages", () => {
           contextual: { text: "What would make today great?" },
           quote: { text: "Stay hungry.", attribution: "Steve Jobs" },
         },
+        { type: "file_written", path: "note.md", success: true },
       ];
 
       for (const msg of messages) {

@@ -1141,4 +1141,451 @@ describe("SessionContext", () => {
       expect(result.current.discussionPrefill).toBe("Third");
     });
   });
+
+  describe("adjust mode state", () => {
+    it("provides initial adjust state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(false);
+      expect(result.current.browser.adjustContent).toBe("");
+      expect(result.current.browser.adjustError).toBeNull();
+      expect(result.current.browser.isSaving).toBe(false);
+    });
+
+    it("startAdjust copies currentFileContent to adjustContent and sets isAdjusting", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up file content first
+      act(() => {
+        result.current.setFileContent("# Hello World\n\nThis is content.", false);
+      });
+
+      expect(result.current.browser.currentFileContent).toBe("# Hello World\n\nThis is content.");
+
+      // Enter adjust mode
+      act(() => {
+        result.current.startAdjust();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.adjustContent).toBe("# Hello World\n\nThis is content.");
+      expect(result.current.browser.adjustError).toBeNull();
+      expect(result.current.browser.isSaving).toBe(false);
+    });
+
+    it("startAdjust handles null currentFileContent", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // currentFileContent is null by default
+      expect(result.current.browser.currentFileContent).toBeNull();
+
+      // Enter adjust mode
+      act(() => {
+        result.current.startAdjust();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.adjustContent).toBe("");
+    });
+
+    it("startAdjust clears previous adjustError", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up a previous error state
+      act(() => {
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.saveError("Previous error");
+      });
+
+      expect(result.current.browser.adjustError).toBe("Previous error");
+
+      // Start adjust again should clear the error
+      act(() => {
+        result.current.startAdjust();
+      });
+
+      expect(result.current.browser.adjustError).toBeNull();
+    });
+
+    it("updateAdjustContent updates the content being edited", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Enter adjust mode
+      act(() => {
+        result.current.setFileContent("# Original", false);
+        result.current.startAdjust();
+      });
+
+      expect(result.current.browser.adjustContent).toBe("# Original");
+
+      // Update content
+      act(() => {
+        result.current.updateAdjustContent("# Modified content");
+      });
+
+      expect(result.current.browser.adjustContent).toBe("# Modified content");
+    });
+
+    it("cancelAdjust clears all adjust state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state
+      act(() => {
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.updateAdjustContent("# Modified");
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.adjustContent).toBe("# Modified");
+
+      // Cancel
+      act(() => {
+        result.current.cancelAdjust();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(false);
+      expect(result.current.browser.adjustContent).toBe("");
+      expect(result.current.browser.adjustError).toBeNull();
+      expect(result.current.browser.isSaving).toBe(false);
+    });
+
+    it("startSave sets isSaving and clears adjustError", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state with an error
+      act(() => {
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.saveError("Previous error");
+      });
+
+      expect(result.current.browser.adjustError).toBe("Previous error");
+
+      // Start save
+      act(() => {
+        result.current.startSave();
+      });
+
+      expect(result.current.browser.isSaving).toBe(true);
+      expect(result.current.browser.adjustError).toBeNull();
+    });
+
+    it("saveSuccess clears all adjust state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state with saving in progress
+      act(() => {
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.updateAdjustContent("# Modified");
+        result.current.startSave();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.isSaving).toBe(true);
+
+      // Save success
+      act(() => {
+        result.current.saveSuccess();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(false);
+      expect(result.current.browser.adjustContent).toBe("");
+      expect(result.current.browser.adjustError).toBeNull();
+      expect(result.current.browser.isSaving).toBe(false);
+    });
+
+    it("saveError sets error and preserves adjustContent (REQ-F-15)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state with saving in progress
+      act(() => {
+        result.current.setFileContent("# Original", false);
+        result.current.startAdjust();
+        result.current.updateAdjustContent("# Modified content that user typed");
+        result.current.startSave();
+      });
+
+      expect(result.current.browser.isSaving).toBe(true);
+      expect(result.current.browser.adjustContent).toBe("# Modified content that user typed");
+
+      // Save error
+      act(() => {
+        result.current.saveError("Permission denied");
+      });
+
+      expect(result.current.browser.isSaving).toBe(false);
+      expect(result.current.browser.adjustError).toBe("Permission denied");
+      // Critical: content must be preserved for retry/copy
+      expect(result.current.browser.adjustContent).toBe("# Modified content that user typed");
+      // Should still be in adjust mode
+      expect(result.current.browser.isAdjusting).toBe(true);
+    });
+
+    it("setCurrentPath clears adjust state when navigating (REQ-F-9)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state
+      act(() => {
+        result.current.setCurrentPath("folder/file.md");
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.updateAdjustContent("# Modified");
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.adjustContent).toBe("# Modified");
+
+      // Navigate to different file
+      act(() => {
+        result.current.setCurrentPath("folder/other.md");
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(false);
+      expect(result.current.browser.adjustContent).toBe("");
+      expect(result.current.browser.adjustError).toBeNull();
+      expect(result.current.browser.isSaving).toBe(false);
+    });
+
+    it("setCurrentPath clears adjust error when navigating", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state with error
+      act(() => {
+        result.current.setCurrentPath("folder/file.md");
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.saveError("Some error");
+      });
+
+      expect(result.current.browser.adjustError).toBe("Some error");
+
+      // Navigate to different file
+      act(() => {
+        result.current.setCurrentPath("folder/other.md");
+      });
+
+      expect(result.current.browser.adjustError).toBeNull();
+    });
+
+    it("clearBrowserState clears adjust state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state
+      act(() => {
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.updateAdjustContent("# Modified");
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+
+      // Clear browser state
+      act(() => {
+        result.current.clearBrowserState();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(false);
+      expect(result.current.browser.adjustContent).toBe("");
+      expect(result.current.browser.adjustError).toBeNull();
+      expect(result.current.browser.isSaving).toBe(false);
+    });
+
+    it("selectVault clears adjust state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.updateAdjustContent("# Modified");
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+
+      // Switch vault
+      act(() => {
+        result.current.selectVault(testVault2);
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(false);
+      expect(result.current.browser.adjustContent).toBe("");
+      expect(result.current.browser.adjustError).toBeNull();
+      expect(result.current.browser.isSaving).toBe(false);
+    });
+
+    it("clearVault clears adjust state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.updateAdjustContent("# Modified");
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+
+      // Clear vault
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(false);
+      expect(result.current.browser.adjustContent).toBe("");
+    });
+
+    it("adjust state is preserved when switching modes", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up adjust state in browse mode
+      act(() => {
+        result.current.setMode("browse");
+        result.current.setFileContent("# Test", false);
+        result.current.startAdjust();
+        result.current.updateAdjustContent("# Modified");
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.adjustContent).toBe("# Modified");
+
+      // Switch to discussion mode
+      act(() => {
+        result.current.setMode("discussion");
+      });
+
+      // Adjust state should be preserved
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.adjustContent).toBe("# Modified");
+
+      // Switch back to browse mode
+      act(() => {
+        result.current.setMode("browse");
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.adjustContent).toBe("# Modified");
+    });
+
+    it("full adjust workflow: edit, save success", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Load file
+      act(() => {
+        result.current.setCurrentPath("notes/test.md");
+        result.current.setFileContent("# Original content", false);
+      });
+
+      // Enter adjust mode
+      act(() => {
+        result.current.startAdjust();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.adjustContent).toBe("# Original content");
+
+      // Edit content
+      act(() => {
+        result.current.updateAdjustContent("# Updated content");
+      });
+
+      expect(result.current.browser.adjustContent).toBe("# Updated content");
+
+      // Start save
+      act(() => {
+        result.current.startSave();
+      });
+
+      expect(result.current.browser.isSaving).toBe(true);
+
+      // Save success
+      act(() => {
+        result.current.saveSuccess();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(false);
+      expect(result.current.browser.isSaving).toBe(false);
+      expect(result.current.browser.adjustContent).toBe("");
+    });
+
+    it("full adjust workflow: edit, save error, retry", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Load file and start adjusting
+      act(() => {
+        result.current.setCurrentPath("notes/test.md");
+        result.current.setFileContent("# Original", false);
+        result.current.startAdjust();
+        result.current.updateAdjustContent("# Modified");
+      });
+
+      // First save attempt fails
+      act(() => {
+        result.current.startSave();
+      });
+
+      act(() => {
+        result.current.saveError("Network error");
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(true);
+      expect(result.current.browser.isSaving).toBe(false);
+      expect(result.current.browser.adjustError).toBe("Network error");
+      expect(result.current.browser.adjustContent).toBe("# Modified");
+
+      // Retry save
+      act(() => {
+        result.current.startSave();
+      });
+
+      expect(result.current.browser.adjustError).toBeNull();
+      expect(result.current.browser.isSaving).toBe(true);
+
+      // Second attempt succeeds
+      act(() => {
+        result.current.saveSuccess();
+      });
+
+      expect(result.current.browser.isAdjusting).toBe(false);
+      expect(result.current.browser.adjustError).toBeNull();
+    });
+  });
 });

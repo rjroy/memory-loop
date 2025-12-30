@@ -195,6 +195,16 @@ export const GetInspirationMessageSchema = z.object({
 });
 
 /**
+ * Client requests to write content to a markdown file in the vault
+ * Path is relative to vault root and must end with .md
+ */
+export const WriteFileMessageSchema = z.object({
+  type: z.literal("write_file"),
+  path: z.string().min(1, "File path is required"),
+  content: z.string(), // Empty string is valid (clearing file)
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -211,6 +221,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   GetRecentActivityMessageSchema,
   GetGoalsMessageSchema,
   GetInspirationMessageSchema,
+  WriteFileMessageSchema,
 ]);
 
 // =============================================================================
@@ -388,6 +399,15 @@ export const InspirationMessageSchema = z.object({
 });
 
 /**
+ * Server confirms file was written successfully
+ */
+export const FileWrittenMessageSchema = z.object({
+  type: z.literal("file_written"),
+  path: z.string().min(1, "File path is required"),
+  success: z.literal(true),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -408,6 +428,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   RecentActivityMessageSchema,
   GoalsMessageSchema,
   InspirationMessageSchema,
+  FileWrittenMessageSchema,
 ]);
 
 // =============================================================================
@@ -440,6 +461,7 @@ export type GetRecentNotesMessage = z.infer<typeof GetRecentNotesMessageSchema>;
 export type GetRecentActivityMessage = z.infer<typeof GetRecentActivityMessageSchema>;
 export type GetGoalsMessage = z.infer<typeof GetGoalsMessageSchema>;
 export type GetInspirationMessage = z.infer<typeof GetInspirationMessageSchema>;
+export type WriteFileMessage = z.infer<typeof WriteFileMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -462,6 +484,7 @@ export type GoalSection = z.infer<typeof GoalSectionSchema>;
 export type GoalsMessage = z.infer<typeof GoalsMessageSchema>;
 export type InspirationItem = z.infer<typeof InspirationItemSchema>;
 export type InspirationMessage = z.infer<typeof InspirationMessageSchema>;
+export type FileWrittenMessage = z.infer<typeof FileWrittenMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

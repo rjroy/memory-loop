@@ -125,6 +125,8 @@ export interface SessionActions {
   setFileLoading: (isLoading: boolean) => void;
   /** Clear all browser state (cache, expanded dirs, current file) */
   clearBrowserState: () => void;
+  /** Clear only directory cache and expanded dirs (preserves pinned folders) */
+  clearDirectoryCache: () => void;
   /** Set recent notes */
   setRecentNotes: (notes: RecentNoteEntry[]) => void;
   /** Pin a folder for quick access */
@@ -180,6 +182,7 @@ type SessionAction =
   | { type: "SET_FILE_ERROR"; error: string }
   | { type: "SET_FILE_LOADING"; isLoading: boolean }
   | { type: "CLEAR_BROWSER_STATE" }
+  | { type: "CLEAR_DIRECTORY_CACHE" }
   | { type: "SET_RECENT_NOTES"; notes: RecentNoteEntry[] }
   | { type: "SET_RECENT_DISCUSSIONS"; discussions: RecentDiscussionEntry[] }
   | { type: "PIN_FOLDER"; path: string }
@@ -403,6 +406,16 @@ function sessionReducer(
       return {
         ...state,
         browser: createInitialBrowserState(),
+      };
+
+    case "CLEAR_DIRECTORY_CACHE":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          directoryCache: new Map(),
+          expandedDirs: new Set(),
+        },
       };
 
     case "SET_RECENT_NOTES":
@@ -757,6 +770,10 @@ export function SessionProvider({
     dispatch({ type: "CLEAR_BROWSER_STATE" });
   }, []);
 
+  const clearDirectoryCache = useCallback(() => {
+    dispatch({ type: "CLEAR_DIRECTORY_CACHE" });
+  }, []);
+
   const setRecentNotes = useCallback((notes: RecentNoteEntry[]) => {
     dispatch({ type: "SET_RECENT_NOTES", notes });
   }, []);
@@ -804,6 +821,7 @@ export function SessionProvider({
     setFileError,
     setFileLoading,
     clearBrowserState,
+    clearDirectoryCache,
     setRecentNotes,
     pinFolder,
     unpinFolder,

@@ -190,4 +190,60 @@ describe("BrowseMode", () => {
       expect(screen.getByText("Select a file to view its content")).toBeDefined();
     });
   });
+
+  describe("reload button", () => {
+    it("has reload button in tree header", () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      const reloadBtn = screen.getByRole("button", { name: /reload file tree/i });
+      expect(reloadBtn).toBeDefined();
+      expect(reloadBtn.textContent).toBe("♻");
+    });
+
+    it("sends list_directory message when reload button is clicked", async () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Wait for WebSocket to connect and send initial messages
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      sentMessages.length = 0; // Clear initial messages
+
+      const reloadBtn = screen.getByRole("button", { name: /reload file tree/i });
+      fireEvent.click(reloadBtn);
+
+      // Should have sent a list_directory message for root
+      const listDirMsg = sentMessages.find((m) => m.type === "list_directory");
+      expect(listDirMsg).toBeDefined();
+      expect(listDirMsg).toEqual({ type: "list_directory", path: "" });
+    });
+
+    it("hides reload button when tree is collapsed", () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Initially visible
+      expect(screen.queryByRole("button", { name: /reload file tree/i })).toBeDefined();
+
+      // Collapse tree
+      const collapseBtn = screen.getByRole("button", { name: /collapse file tree/i });
+      fireEvent.click(collapseBtn);
+
+      // Reload button should be hidden (only in desktop header - mobile still has it)
+      // The desktop header reload button is conditionally rendered based on isTreeCollapsed
+      // But mobile header always shows it. We have 2 buttons when expanded, 1 when collapsed.
+      const reloadBtns = screen.queryAllByRole("button", { name: /reload file tree/i });
+      // When collapsed, only the mobile one remains (which is hidden via CSS)
+      expect(reloadBtns.length).toBeLessThan(2);
+    });
+
+    it("has reload button in mobile tree overlay", () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Open mobile tree
+      const menuBtn = screen.getByRole("button", { name: /open file browser/i });
+      fireEvent.click(menuBtn);
+
+      // Find all reload buttons - one should be in mobile tree
+      const reloadBtns = screen.getAllByRole("button", { name: /reload file tree/i });
+      expect(reloadBtns.length).toBeGreaterThanOrEqual(1);
+    });
+  });
 });

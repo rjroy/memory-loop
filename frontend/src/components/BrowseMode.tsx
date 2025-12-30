@@ -36,7 +36,7 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  const { browser, vault, cacheDirectory, setFileContent, setFileError, setFileLoading } = useSession();
+  const { browser, vault, cacheDirectory, clearBrowserState, setFileContent, setFileError, setFileLoading } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -165,6 +165,13 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
     setIsTreeCollapsed((prev) => !prev);
   }, []);
 
+  // Reload file tree (clear cache and refetch root)
+  const handleReload = useCallback(() => {
+    clearBrowserState();
+    setFileLoading(true);
+    sendMessage({ type: "list_directory", path: "" });
+  }, [clearBrowserState, setFileLoading, sendMessage]);
+
   // Toggle mobile tree overlay
   const toggleMobileTree = useCallback(() => {
     setIsMobileTreeOpen((prev) => !prev);
@@ -181,15 +188,27 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
       <aside className="browse-mode__tree-pane">
         <div className="browse-mode__tree-header">
           <h2 className="browse-mode__tree-title">Files</h2>
-          <button
-            type="button"
-            className="browse-mode__collapse-btn"
-            onClick={toggleTreeCollapse}
-            aria-label={isTreeCollapsed ? "Expand file tree" : "Collapse file tree"}
-            aria-expanded={!isTreeCollapsed}
-          >
-            <CollapseIcon isCollapsed={isTreeCollapsed} />
-          </button>
+          <div className="browse-mode__header-actions">
+            {!isTreeCollapsed && (
+              <button
+                type="button"
+                className="browse-mode__reload-btn"
+                onClick={handleReload}
+                aria-label="Reload file tree"
+              >
+                ♻
+              </button>
+            )}
+            <button
+              type="button"
+              className="browse-mode__collapse-btn"
+              onClick={toggleTreeCollapse}
+              aria-label={isTreeCollapsed ? "Expand file tree" : "Collapse file tree"}
+              aria-expanded={!isTreeCollapsed}
+            >
+              <CollapseIcon isCollapsed={isTreeCollapsed} />
+            </button>
+          </div>
         </div>
         {!isTreeCollapsed && (
           <div className="browse-mode__tree-content">
@@ -229,14 +248,24 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
           <aside className="browse-mode__mobile-tree">
             <div className="browse-mode__mobile-tree-header">
               <h2 className="browse-mode__tree-title">Files</h2>
-              <button
-                type="button"
-                className="browse-mode__close-btn"
-                onClick={closeMobileTree}
-                aria-label="Close file browser"
-              >
-                <CloseIcon />
-              </button>
+              <div className="browse-mode__header-actions">
+                <button
+                  type="button"
+                  className="browse-mode__reload-btn"
+                  onClick={handleReload}
+                  aria-label="Reload file tree"
+                >
+                  ♻
+                </button>
+                <button
+                  type="button"
+                  className="browse-mode__close-btn"
+                  onClick={closeMobileTree}
+                  aria-label="Close file browser"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
             </div>
             <div className="browse-mode__tree-content">
               <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />

@@ -36,7 +36,7 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  const { browser, vault, cacheDirectory, clearBrowserState, setFileContent, setFileError, setFileLoading } = useSession();
+  const { browser, vault, cacheDirectory, clearDirectoryCache, setFileContent, setFileError, setFileLoading } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -165,12 +165,12 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
     setIsTreeCollapsed((prev) => !prev);
   }, []);
 
-  // Reload file tree (clear cache and refetch root)
+  // Reload file tree (clear cache and refetch root, preserves pinned folders)
   const handleReload = useCallback(() => {
-    clearBrowserState();
+    clearDirectoryCache();
     setFileLoading(true);
     sendMessage({ type: "list_directory", path: "" });
-  }, [clearBrowserState, setFileLoading, sendMessage]);
+  }, [clearDirectoryCache, setFileLoading, sendMessage]);
 
   // Toggle mobile tree overlay
   const toggleMobileTree = useCallback(() => {

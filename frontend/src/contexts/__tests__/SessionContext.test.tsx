@@ -909,6 +909,40 @@ describe("SessionContext", () => {
       expect(result.current.browser.currentFileTruncated).toBe(false);
     });
 
+    it("clearDirectoryCache clears cache but preserves pinned folders", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up browser state including pinned folders
+      act(() => {
+        result.current.setCurrentPath("folder/subfolder");
+        result.current.toggleDirectory("folder");
+        result.current.cacheDirectory("folder", [{ name: "file.md", type: "file" as const, path: "folder/file.md" }]);
+        result.current.setFileContent("# Test", true);
+        result.current.pinFolder("pinned-folder");
+      });
+
+      // Verify pinned folder is set
+      expect(result.current.browser.pinnedFolders).toContain("pinned-folder");
+
+      // Clear directory cache only
+      act(() => {
+        result.current.clearDirectoryCache();
+      });
+
+      // Directory cache and expanded dirs should be cleared
+      expect(result.current.browser.expandedDirs.size).toBe(0);
+      expect(result.current.browser.directoryCache.size).toBe(0);
+
+      // Pinned folders should be preserved
+      expect(result.current.browser.pinnedFolders).toContain("pinned-folder");
+
+      // Current path and file content should also be preserved
+      expect(result.current.browser.currentPath).toBe("folder/subfolder");
+      expect(result.current.browser.currentFileContent).toBe("# Test");
+    });
+
     it("selectVault clears browser state (REQ-F-23)", () => {
       const { result } = renderHook(() => useSession(), {
         wrapper: createWrapper(),

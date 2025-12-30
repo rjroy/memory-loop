@@ -15,18 +15,43 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { VaultInfo } from "@memory-loop/shared";
 
 // =============================================================================
 // File Path Constants
 // =============================================================================
 
-/** Path to contextual prompts file relative to vault root */
+/** Filename for contextual prompts */
+export const CONTEXTUAL_PROMPTS_FILENAME = "contextual-prompts.md";
+
+/** Filename for general inspiration */
+export const GENERAL_INSPIRATION_FILENAME = "general-inspiration.md";
+
+/** @deprecated Use vault.metadataPath + CONTEXTUAL_PROMPTS_FILENAME instead */
 export const CONTEXTUAL_PROMPTS_PATH =
   "06_Metadata/memory-loop/contextual-prompts.md";
 
-/** Path to general inspiration file relative to vault root */
+/** @deprecated Use vault.metadataPath + GENERAL_INSPIRATION_FILENAME instead */
 export const GENERAL_INSPIRATION_PATH =
   "06_Metadata/memory-loop/general-inspiration.md";
+
+// =============================================================================
+// Path Resolution Helpers
+// =============================================================================
+
+/**
+ * Gets the absolute path to the contextual prompts file for a vault.
+ */
+export function getContextualPromptsPath(vault: VaultInfo): string {
+  return join(vault.contentRoot, vault.metadataPath, CONTEXTUAL_PROMPTS_FILENAME);
+}
+
+/**
+ * Gets the absolute path to the general inspiration file for a vault.
+ */
+export function getGeneralInspirationPath(vault: VaultInfo): string {
+  return join(vault.contentRoot, vault.metadataPath, GENERAL_INSPIRATION_FILENAME);
+}
 
 // =============================================================================
 // Date Utility Functions
@@ -96,15 +121,15 @@ export function isWeekday(date: Date): boolean {
  * Note: Generation runs every day including weekends.
  * Weekdays get work-reflection prompts, weekends get creative prompts.
  *
- * @param vaultPath - Path to the vault root
+ * @param vault - VaultInfo object
  * @returns true if generation is needed, false otherwise
  */
 export async function isContextualGenerationNeeded(
-  vaultPath: string
+  vault: VaultInfo
 ): Promise<boolean> {
   const today = new Date();
 
-  const filePath = `${vaultPath}/${CONTEXTUAL_PROMPTS_PATH}`;
+  const filePath = getContextualPromptsPath(vault);
   const parsed = await parseInspirationFile(filePath);
 
   // If file missing or no marker, generation is needed
@@ -131,17 +156,17 @@ export async function isContextualGenerationNeeded(
  * - Generation marker is missing
  * - Not generated this ISO week (different week or year)
  *
- * @param vaultPath - Path to the vault root
+ * @param vault - VaultInfo object
  * @returns true if generation is needed, false otherwise
  */
 export async function isQuoteGenerationNeeded(
-  vaultPath: string
+  vault: VaultInfo
 ): Promise<boolean> {
   const today = new Date();
   const currentWeek = getISOWeekNumber(today);
   const currentYear = today.getFullYear();
 
-  const filePath = `${vaultPath}/${GENERAL_INSPIRATION_PATH}`;
+  const filePath = getGeneralInspirationPath(vault);
   const parsed = await parseInspirationFile(filePath);
 
   // If file missing or no marker, generation is needed
@@ -275,15 +300,15 @@ export function getDateWithOffset(baseDate: Date, dayOffset: number): Date {
 /**
  * Read a daily note file from the inbox
  *
- * @param vaultPath - Path to the vault root
+ * @param vault - VaultInfo object
  * @param dateStr - Date string in YYYY-MM-DD format
  * @returns File content or null if not found
  */
 export async function readDailyNote(
-  vaultPath: string,
+  vault: VaultInfo,
   dateStr: string
 ): Promise<string | null> {
-  const filePath = join(vaultPath, INBOX_PATH, `${dateStr}.md`);
+  const filePath = join(vault.contentRoot, vault.inboxPath, `${dateStr}.md`);
   try {
     return await readFile(filePath, "utf-8");
   } catch {
@@ -344,16 +369,16 @@ interface ContentItem {
  * Gather context for contextual prompt generation based on day of week
  *
  * REQ-F-15: Day-specific context gathering
- * REQ-F-16: Daily notes in 00_Inbox/ with YYYY-MM-DD.md pattern
+ * REQ-F-16: Daily notes in inbox with YYYY-MM-DD.md pattern
  * REQ-F-17: Project/area README or index files
  * REQ-NF-2: Cap context at ~800 tokens (~3200 chars)
  *
- * @param vaultPath - Path to the vault root
+ * @param vault - VaultInfo object
  * @param today - Optional date override for testing (defaults to now)
  * @returns Gathered context string, empty if no content found
  */
 export async function gatherDayContext(
-  vaultPath: string,
+  vault: VaultInfo,
   today: Date = new Date()
 ): Promise<string> {
   const dayType = getDayType(today);
@@ -365,7 +390,7 @@ export async function gatherDayContext(
   for (const dayOffset of config.dailyNoteDays) {
     const targetDate = getDateWithOffset(today, dayOffset);
     const dateStr = formatDateForDailyNote(targetDate);
-    const content = await readDailyNote(vaultPath, dateStr);
+    const content = await readDailyNote(vault, dateStr);
 
     if (content && content.trim()) {
       contentItems.push({
@@ -378,7 +403,7 @@ export async function gatherDayContext(
 
   // Gather additional folder content (projects/areas)
   if (config.additionalFolder) {
-    const folderPath = join(vaultPath, config.additionalFolder);
+    const folderPath = join(vault.contentRoot, config.additionalFolder);
     const subfolders = await getSubfolders(folderPath);
 
     for (const subfolder of subfolders) {
@@ -1057,26 +1082,26 @@ export function selectRandom<T>(items: T[]): T | undefined {
  * 4. Parse files and select random items
  * 5. Return contextual (null if unavailable) and quote (fallback if unavailable)
  *
- * @param vaultPath - Absolute path to the vault root
+ * @param vault - VaultInfo object
  * @returns Promise resolving to contextual prompt and quote
  */
-export async function getInspiration(vaultPath: string): Promise<InspirationResult> {
-  const contextualPath = join(vaultPath, CONTEXTUAL_PROMPTS_PATH);
-  const quotePath = join(vaultPath, GENERAL_INSPIRATION_PATH);
+export async function getInspiration(vault: VaultInfo): Promise<InspirationResult> {
+  const contextualPath = getContextualPromptsPath(vault);
+  const quotePath = getGeneralInspirationPath(vault);
 
   // Check freshness and trigger generation if needed
   const today = new Date();
   const currentWeek = getISOWeekNumber(today);
 
   // Check what generation is needed
-  const needsContextual = await isContextualGenerationNeeded(vaultPath);
-  const needsQuote = await isQuoteGenerationNeeded(vaultPath);
+  const needsContextual = await isContextualGenerationNeeded(vault);
+  const needsQuote = await isQuoteGenerationNeeded(vault);
 
   // Gather context once if either generation needs it
   let context = "";
   if (needsContextual || needsQuote) {
     try {
-      context = await gatherDayContext(vaultPath, today);
+      context = await gatherDayContext(vault, today);
     } catch (error) {
       console.error("[inspiration-manager] Failed to gather context:", error);
     }

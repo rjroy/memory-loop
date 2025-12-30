@@ -175,12 +175,16 @@ import {
  * Creates a mock VaultInfo object.
  */
 function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
+  const path = overrides.path ?? "/tmp/test-vault";
+  const contentRoot = overrides.contentRoot ?? path;
   return {
     id: "test-vault",
     name: "Test Vault",
-    path: "/tmp/test-vault",
+    path,
     hasClaudeMd: true,
+    contentRoot,
     inboxPath: "00_Inbox",
+    metadataPath: "06_Metadata/memory-loop",
     ...overrides,
   };
 }
@@ -1972,7 +1976,7 @@ describe("WebSocket Handler", () => {
       }
     });
 
-    test("calls getInspiration with vault path", async () => {
+    test("calls getInspiration with vault info", async () => {
       const vault = createMockVault({ path: "/test/vault/path" });
       mockGetVaultById.mockResolvedValue(vault);
 
@@ -1989,7 +1993,7 @@ describe("WebSocket Handler", () => {
         JSON.stringify({ type: "get_inspiration" })
       );
 
-      expect(mockGetInspiration).toHaveBeenCalledWith("/test/vault/path");
+      expect(mockGetInspiration).toHaveBeenCalledWith(vault);
     });
 
     test("returns inspiration with contextual and quote", async () => {

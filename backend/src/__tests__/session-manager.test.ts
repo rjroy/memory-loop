@@ -43,12 +43,16 @@ import {
 // =============================================================================
 
 function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
+  const path = overrides.path ?? "/tmp/test-vault";
+  const contentRoot = overrides.contentRoot ?? path;
   return {
     id: "test-vault",
     name: "Test Vault",
-    path: "/tmp/test-vault",
+    path,
     hasClaudeMd: true,
+    contentRoot,
     inboxPath: "00_Inbox",
+    metadataPath: "06_Metadata/memory-loop",
     ...overrides,
   };
 }

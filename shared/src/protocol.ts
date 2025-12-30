@@ -19,7 +19,9 @@ export const VaultInfoSchema = z.object({
   name: z.string().min(1, "Vault name is required"),
   path: z.string().min(1, "Vault path is required"),
   hasClaudeMd: z.boolean(),
+  contentRoot: z.string().min(1, "Content root is required"),
   inboxPath: z.string().min(1, "Inbox path is required"),
+  metadataPath: z.string().min(1, "Metadata path is required"),
   goalsPath: z.string().optional(),
 });
 

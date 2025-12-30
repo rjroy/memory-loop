@@ -12,6 +12,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createMockVault } from "./test-helpers";
 import {
   parseGenerationMarker,
   parseInspirationLine,
@@ -1341,17 +1342,18 @@ describe("isQuoteGenerationNeeded", () => {
 
   describe("direct function calls", () => {
     test("isQuoteGenerationNeeded returns true for missing file", async () => {
-      const emptyVault = join(
+      const emptyVaultPath = join(
         tmpdir(),
         `direct-quote-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
       );
-      await mkdir(emptyVault, { recursive: true });
+      await mkdir(emptyVaultPath, { recursive: true });
 
       try {
-        const result = await isQuoteGenerationNeeded(emptyVault);
+        const vault = createMockVault({ path: emptyVaultPath, contentRoot: emptyVaultPath });
+        const result = await isQuoteGenerationNeeded(vault);
         expect(result).toBe(true);
       } finally {
-        await rm(emptyVault, { recursive: true, force: true });
+        await rm(emptyVaultPath, { recursive: true, force: true });
       }
     });
 
@@ -1362,7 +1364,8 @@ describe("isQuoteGenerationNeeded", () => {
 
       await createQuoteFile(testDir, dateStr, weekNum);
 
-      const result = await isQuoteGenerationNeeded(testDir);
+      const vault = createMockVault({ path: testDir, contentRoot: testDir });
+      const result = await isQuoteGenerationNeeded(vault);
       expect(result).toBe(false);
     });
 
@@ -1375,7 +1378,8 @@ describe("isQuoteGenerationNeeded", () => {
 
       await createQuoteFile(testDir, dateStr, weekNum);
 
-      const result = await isQuoteGenerationNeeded(testDir);
+      const vault = createMockVault({ path: testDir, contentRoot: testDir });
+      const result = await isQuoteGenerationNeeded(vault);
       expect(result).toBe(true);
     });
   });
@@ -1420,18 +1424,19 @@ describe("isContextualGenerationNeeded direct calls", () => {
 
   test("returns true when file is missing (any day)", async () => {
     // Test with missing file
-    const emptyVault = join(
+    const emptyVaultPath = join(
       tmpdir(),
       `contextual-empty-${Date.now()}-${Math.random().toString(36).slice(2)}`
     );
-    await mkdir(emptyVault, { recursive: true });
+    await mkdir(emptyVaultPath, { recursive: true });
 
     try {
-      const result = await isContextualGenerationNeeded(emptyVault);
+      const vault = createMockVault({ path: emptyVaultPath, contentRoot: emptyVaultPath });
+      const result = await isContextualGenerationNeeded(vault);
       // Should be true because file is missing (generation runs every day)
       expect(result).toBe(true);
     } finally {
-      await rm(emptyVault, { recursive: true, force: true });
+      await rm(emptyVaultPath, { recursive: true, force: true });
     }
   });
 
@@ -1441,7 +1446,8 @@ describe("isContextualGenerationNeeded direct calls", () => {
 
     await createContextualFile(testDir, dateStr);
 
-    const result = await isContextualGenerationNeeded(testDir);
+    const vault = createMockVault({ path: testDir, contentRoot: testDir });
+    const result = await isContextualGenerationNeeded(vault);
     // Should be false because generated today (regardless of weekday/weekend)
     // On weekends: false because not a weekday
     // On weekdays: false because already generated today
@@ -1455,7 +1461,8 @@ describe("isContextualGenerationNeeded direct calls", () => {
 
     await createContextualFile(testDir, dateStr);
 
-    const result = await isContextualGenerationNeeded(testDir);
+    const vault = createMockVault({ path: testDir, contentRoot: testDir });
+    const result = await isContextualGenerationNeeded(vault);
     // Should be true because generated yesterday (generation runs every day)
     expect(result).toBe(true);
   });
@@ -1594,24 +1601,27 @@ describe("readDailyNote", () => {
     const content = "# 2025-12-26\n\nSome notes here.";
     await writeFile(join(testVault, INBOX_PATH, "2025-12-26.md"), content);
 
-    const result = await readDailyNote(testVault, "2025-12-26");
+    const vault = createMockVault({ path: testVault, contentRoot: testVault, inboxPath: INBOX_PATH });
+    const result = await readDailyNote(vault, "2025-12-26");
     expect(result).toBe(content);
   });
 
   test("returns null for missing daily note", async () => {
-    const result = await readDailyNote(testVault, "2025-12-25");
+    const vault = createMockVault({ path: testVault, contentRoot: testVault, inboxPath: INBOX_PATH });
+    const result = await readDailyNote(vault, "2025-12-25");
     expect(result).toBeNull();
   });
 
   test("returns null when inbox directory missing", async () => {
-    const emptyVault = join(tmpdir(), `empty-vault-${Date.now()}`);
-    await mkdir(emptyVault, { recursive: true });
+    const emptyVaultPath = join(tmpdir(), `empty-vault-${Date.now()}`);
+    await mkdir(emptyVaultPath, { recursive: true });
 
     try {
-      const result = await readDailyNote(emptyVault, "2025-12-26");
+      const vault = createMockVault({ path: emptyVaultPath, contentRoot: emptyVaultPath, inboxPath: INBOX_PATH });
+      const result = await readDailyNote(vault, "2025-12-26");
       expect(result).toBeNull();
     } finally {
-      await rm(emptyVault, { recursive: true, force: true });
+      await rm(emptyVaultPath, { recursive: true, force: true });
     }
   });
 });
@@ -1780,18 +1790,25 @@ describe("gatherDayContext", () => {
     await rm(testVault, { recursive: true, force: true });
   });
 
+  // Helper to create vault for these tests
+  function createTestVault() {
+    return createMockVault({ path: testVault, contentRoot: testVault, inboxPath: INBOX_PATH });
+  }
+
   describe("weekend behavior", () => {
     test("returns empty string on Saturday", async () => {
       // 2025-12-27 is a Saturday
       const saturday = new Date(2025, 11, 27);
-      const result = await gatherDayContext(testVault, saturday);
+      const vault = createTestVault();
+      const result = await gatherDayContext(vault, saturday);
       expect(result).toBe("");
     });
 
     test("returns empty string on Sunday", async () => {
       // 2025-12-28 is a Sunday
       const sunday = new Date(2025, 11, 28);
-      const result = await gatherDayContext(testVault, sunday);
+      const vault = createTestVault();
+      const result = await gatherDayContext(vault, sunday);
       expect(result).toBe("");
     });
   });
@@ -1803,13 +1820,15 @@ describe("gatherDayContext", () => {
       const mondayContent = "# Monday notes\n\nSome content.";
       await writeFile(join(testVault, INBOX_PATH, "2025-12-29.md"), mondayContent);
 
-      const result = await gatherDayContext(testVault, tuesday);
+      const vault = createTestVault();
+      const result = await gatherDayContext(vault, tuesday);
       expect(result).toBe(mondayContent);
     });
 
     test("returns empty when previous day note missing", async () => {
       const tuesday = new Date(2025, 11, 30);
-      const result = await gatherDayContext(testVault, tuesday);
+      const vault = createTestVault();
+      const result = await gatherDayContext(vault, tuesday);
       expect(result).toBe("");
     });
   });
@@ -1827,7 +1846,8 @@ describe("gatherDayContext", () => {
       const projectContent = "# Project A README";
       await writeFile(join(testVault, PROJECTS_PATH, "project-a", "README.md"), projectContent);
 
-      const result = await gatherDayContext(testVault, monday);
+      const vault = createTestVault();
+      const result = await gatherDayContext(vault, monday);
       expect(result).toContain("Previous week note");
       expect(result).toContain("Project A README");
     });
@@ -1846,7 +1866,8 @@ describe("gatherDayContext", () => {
       const areaContent = "# Area 1 README";
       await writeFile(join(testVault, AREAS_PATH, "area-1", "README.md"), areaContent);
 
-      const result = await gatherDayContext(testVault, friday);
+      const vault = createTestVault();
+      const result = await gatherDayContext(vault, friday);
       expect(result).toContain("Wednesday notes");
       expect(result).toContain("Area 1 README");
     });
@@ -1855,7 +1876,8 @@ describe("gatherDayContext", () => {
   describe("content limits", () => {
     test("returns empty when no content found", async () => {
       const tuesday = new Date(2025, 11, 30);
-      const result = await gatherDayContext(testVault, tuesday);
+      const vault = createTestVault();
+      const result = await gatherDayContext(vault, tuesday);
       expect(result).toBe("");
     });
 
@@ -1871,7 +1893,8 @@ describe("gatherDayContext", () => {
         await writeFile(join(testVault, INBOX_PATH, `${dateStr}.md`), largeContent);
       }
 
-      const result = await gatherDayContext(testVault, friday);
+      const vault = createTestVault();
+      const result = await gatherDayContext(vault, friday);
       // Should be truncated to MAX_CONTEXT_CHARS or less
       expect(result.length).toBeLessThanOrEqual(MAX_CONTEXT_CHARS + 100); // Allow for separators
     });
@@ -2757,28 +2780,34 @@ describe("selectRandom", () => {
 // =============================================================================
 
 describe("getInspiration", () => {
-  let testVault: string;
+  let testVaultPath: string;
 
   beforeEach(async () => {
-    testVault = join(tmpdir(), `test-inspiration-${Date.now()}`);
-    await mkdir(join(testVault, INBOX_PATH), { recursive: true });
+    testVaultPath = join(tmpdir(), `test-inspiration-${Date.now()}`);
+    await mkdir(join(testVaultPath, INBOX_PATH), { recursive: true });
     await mkdir(
-      join(testVault, "06_Metadata", "memory-loop"),
+      join(testVaultPath, "06_Metadata", "memory-loop"),
       { recursive: true }
     );
   });
 
   afterEach(async () => {
     resetQueryFunction();
-    await rm(testVault, { recursive: true, force: true });
+    await rm(testVaultPath, { recursive: true, force: true });
   });
+
+  // Helper to create vault for these tests
+  function createTestVault() {
+    return createMockVault({ path: testVaultPath, contentRoot: testVaultPath, inboxPath: INBOX_PATH });
+  }
 
   describe("basic functionality", () => {
     test("returns object with contextual and quote properties", async () => {
       // Mock to prevent real SDK calls
       setQueryFunction(createMockQueryFn(""));
 
-      const result = await getInspiration(testVault);
+      const vault = createTestVault();
+      const result = await getInspiration(vault);
 
       expect(result).toHaveProperty("contextual");
       expect(result).toHaveProperty("quote");
@@ -2787,7 +2816,8 @@ describe("getInspiration", () => {
     test("returns fallback quote when quote file missing", async () => {
       setQueryFunction(createMockQueryFn(""));
 
-      const result = await getInspiration(testVault);
+      const vault = createTestVault();
+      const result = await getInspiration(vault);
 
       expect(result.quote).toEqual(FALLBACK_QUOTE);
     });
@@ -2796,7 +2826,8 @@ describe("getInspiration", () => {
       setQueryFunction(createMockQueryFn(""));
 
       // Use a weekday date
-      const result = await getInspiration(testVault);
+      const vault = createTestVault();
+      const result = await getInspiration(vault);
 
       // On weekdays, contextual should be null when file is missing
       // (generation might run but with no context returns empty)
@@ -2814,13 +2845,14 @@ describe("getInspiration", () => {
 - "Third wisdom" -- Author C
 `;
       await writeFile(
-        join(testVault, GENERAL_INSPIRATION_PATH),
+        join(testVaultPath, GENERAL_INSPIRATION_PATH),
         quoteContent
       );
 
       setQueryFunction(createMockQueryFn(""));
 
-      const result = await getInspiration(testVault);
+      const vault = createTestVault();
+      const result = await getInspiration(vault);
 
       // Quote should be one of the file entries
       expect(result.quote.text).toMatch(/First wisdom|Second wisdom|Third wisdom/);
@@ -2834,7 +2866,7 @@ describe("getInspiration", () => {
 - "What's your focus today?"
 `;
       await writeFile(
-        join(testVault, CONTEXTUAL_PROMPTS_PATH),
+        join(testVaultPath, CONTEXTUAL_PROMPTS_PATH),
         contextualContent
       );
 
@@ -2843,14 +2875,15 @@ describe("getInspiration", () => {
 - "Quote" -- Author
 `;
       await writeFile(
-        join(testVault, GENERAL_INSPIRATION_PATH),
+        join(testVaultPath, GENERAL_INSPIRATION_PATH),
         quoteContent
       );
 
       setQueryFunction(createMockQueryFn(""));
 
       // Only test on weekdays - the function checks isWeekday internally
-      const result = await getInspiration(testVault);
+      const vault = createTestVault();
+      const result = await getInspiration(vault);
 
       // On weekdays, contextual should be from the file
       // On weekends, contextual should be null
@@ -2872,7 +2905,8 @@ describe("getInspiration", () => {
         })
       );
 
-      await getInspiration(testVault);
+      const vault = createTestVault();
+      await getInspiration(vault);
 
       // Should have called query for quote generation
       expect(queryWasCalled).toBe(true);
@@ -2892,11 +2926,11 @@ describe("getInspiration", () => {
 `;
 
       await writeFile(
-        join(testVault, CONTEXTUAL_PROMPTS_PATH),
+        join(testVaultPath, CONTEXTUAL_PROMPTS_PATH),
         contextualContent
       );
       await writeFile(
-        join(testVault, GENERAL_INSPIRATION_PATH),
+        join(testVaultPath, GENERAL_INSPIRATION_PATH),
         quoteContent
       );
 
@@ -2907,7 +2941,8 @@ describe("getInspiration", () => {
         })
       );
 
-      await getInspiration(testVault);
+      const vault = createTestVault();
+      await getInspiration(vault);
 
       // Should NOT have called query since files are fresh
       expect(queryWasCalled).toBe(false);
@@ -2918,7 +2953,8 @@ describe("getInspiration", () => {
     test("returns fallback quote when generation fails", async () => {
       setQueryFunction(createErrorMockQueryFn("SDK error"));
 
-      const result = await getInspiration(testVault);
+      const vault = createTestVault();
+      const result = await getInspiration(vault);
 
       // Should use fallback even if generation failed
       expect(result.quote).toEqual(FALLBACK_QUOTE);
@@ -2928,7 +2964,11 @@ describe("getInspiration", () => {
       setQueryFunction(createMockQueryFn(""));
 
       // Point to a path that definitely doesn't exist
-      const result = await getInspiration("/nonexistent/vault/path");
+      const nonExistentVault = createMockVault({
+        path: "/nonexistent/vault/path",
+        contentRoot: "/nonexistent/vault/path",
+      });
+      const result = await getInspiration(nonExistentVault);
 
       // Should still return valid result with fallback
       expect(result.quote).toEqual(FALLBACK_QUOTE);
@@ -2943,7 +2983,7 @@ describe("getInspiration", () => {
 - "This prompt exists"
 `;
       await writeFile(
-        join(testVault, CONTEXTUAL_PROMPTS_PATH),
+        join(testVaultPath, CONTEXTUAL_PROMPTS_PATH),
         contextualContent
       );
 
@@ -2951,7 +2991,7 @@ describe("getInspiration", () => {
 - "Quote" -- Author
 `;
       await writeFile(
-        join(testVault, GENERAL_INSPIRATION_PATH),
+        join(testVaultPath, GENERAL_INSPIRATION_PATH),
         quoteContent
       );
 
@@ -2961,7 +3001,8 @@ describe("getInspiration", () => {
       // Note: We can't easily mock the date in this test, so we verify the
       // behavior based on the current day. The key assertion is that quotes
       // are always returned but contextual may be null.
-      const result = await getInspiration(testVault);
+      const vault = createTestVault();
+      const result = await getInspiration(vault);
 
       // Quote should always be present
       expect(result.quote.text).toBeDefined();
@@ -2981,11 +3022,12 @@ describe("getInspiration", () => {
         createMockQueryFn('- "Newly generated" -- AI Author')
       );
 
-      await getInspiration(testVault);
+      const vault = createTestVault();
+      await getInspiration(vault);
 
       // Check that quote file was created
       const quoteContent = await readFile(
-        join(testVault, GENERAL_INSPIRATION_PATH),
+        join(testVaultPath, GENERAL_INSPIRATION_PATH),
         "utf-8"
       );
       expect(quoteContent).toContain("Newly generated");
@@ -2998,7 +3040,7 @@ describe("getInspiration", () => {
 - "Old quote" -- Old Author
 `;
       await writeFile(
-        join(testVault, GENERAL_INSPIRATION_PATH),
+        join(testVaultPath, GENERAL_INSPIRATION_PATH),
         oldContent
       );
 
@@ -3006,10 +3048,11 @@ describe("getInspiration", () => {
         createMockQueryFn('- "New quote" -- New Author')
       );
 
-      await getInspiration(testVault);
+      const vault = createTestVault();
+      await getInspiration(vault);
 
       const content = await readFile(
-        join(testVault, GENERAL_INSPIRATION_PATH),
+        join(testVaultPath, GENERAL_INSPIRATION_PATH),
         "utf-8"
       );
       expect(content).toContain("Old quote");

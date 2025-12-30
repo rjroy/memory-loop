@@ -69,7 +69,9 @@ const testVault: VaultInfo = {
   name: "Test Vault",
   path: "/test/vault",
   hasClaudeMd: true,
-  inboxPath: "/test/vault/inbox",
+  contentRoot: "/test/vault",
+  inboxPath: "inbox",
+  metadataPath: "06_Metadata/memory-loop",
 };
 
 function TestWrapper({ children }: { children: ReactNode }) {

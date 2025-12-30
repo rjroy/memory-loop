@@ -9,6 +9,13 @@ import { readdir, readFile, stat, access } from "node:fs/promises";
 import { join } from "node:path";
 import type { VaultInfo } from "@memory-loop/shared";
 import { vaultLog as log } from "./logger";
+import {
+  loadVaultConfig,
+  resolveContentRoot,
+  resolveMetadataPath,
+  resolveGoalsPath,
+  type VaultConfig,
+} from "./vault-config";
 
 /**
  * Error thrown when VAULTS_DIR is not configured or inaccessible.
@@ -119,12 +126,12 @@ export function extractVaultName(content: string): string | null {
 /**
  * Detects the inbox path for a vault by checking common patterns.
  *
- * @param vaultPath - Absolute path to the vault directory
- * @returns The detected inbox path (relative to vault) or default
+ * @param contentRoot - Absolute path to the content root directory
+ * @returns The detected inbox path (relative to content root) or default
  */
-export async function detectInboxPath(vaultPath: string): Promise<string> {
+export async function detectInboxPath(contentRoot: string): Promise<string> {
   for (const pattern of INBOX_PATTERNS) {
-    const inboxFullPath = join(vaultPath, pattern);
+    const inboxFullPath = join(contentRoot, pattern);
     if (await directoryExists(inboxFullPath)) {
       return pattern;
     }
@@ -135,13 +142,18 @@ export async function detectInboxPath(vaultPath: string): Promise<string> {
 /**
  * Detects the goals.md file path for a vault.
  *
- * @param vaultPath - Absolute path to the vault directory
- * @returns The goals file path if it exists, or undefined
+ * @param contentRoot - Absolute path to the content root directory
+ * @param config - Vault configuration
+ * @returns The goals file path (relative to content root) if it exists, or undefined
  */
-export async function detectGoalsPath(vaultPath: string): Promise<string | undefined> {
-  const goalsFullPath = join(vaultPath, GOALS_FILE_PATH);
+export async function detectGoalsPath(
+  contentRoot: string,
+  config: VaultConfig
+): Promise<string | undefined> {
+  const goalsRelativePath = resolveGoalsPath(config);
+  const goalsFullPath = join(contentRoot, goalsRelativePath);
   if (await fileExists(goalsFullPath)) {
-    return GOALS_FILE_PATH;
+    return goalsRelativePath;
   }
   return undefined;
 }
@@ -174,6 +186,12 @@ export async function parseVault(
     return null;
   }
 
+  // Load vault configuration (if .memory-loop.json exists)
+  const config = await loadVaultConfig(vaultPath);
+
+  // Resolve content root (may be different from vault root)
+  const contentRoot = resolveContentRoot(vaultPath, config);
+
   // Extract vault name from CLAUDE.md
   let name = dirName; // Default to directory name
   try {
@@ -186,18 +204,23 @@ export async function parseVault(
     // Failed to read CLAUDE.md, use directory name
   }
 
-  // Detect inbox path
-  const inboxPath = await detectInboxPath(vaultPath);
+  // Detect or use configured inbox path
+  const inboxPath = config.inboxPath ?? (await detectInboxPath(contentRoot));
+
+  // Resolve metadata path from config
+  const metadataPath = resolveMetadataPath(config);
 
   // Detect goals.md file
-  const goalsPath = await detectGoalsPath(vaultPath);
+  const goalsPath = await detectGoalsPath(contentRoot, config);
 
   return {
     id: dirName,
     name,
     path: vaultPath,
     hasClaudeMd,
+    contentRoot,
     inboxPath,
+    metadataPath,
     goalsPath,
   };
 }
@@ -309,7 +332,17 @@ export async function getVaultById(vaultId: string): Promise<VaultInfo | null> {
  * @returns Absolute path to the inbox directory
  */
 export function getVaultInboxPath(vault: VaultInfo): string {
-  return join(vault.path, vault.inboxPath);
+  return join(vault.contentRoot, vault.inboxPath);
+}
+
+/**
+ * Gets the absolute path to a vault's metadata directory.
+ *
+ * @param vault - The VaultInfo object
+ * @returns Absolute path to the metadata directory
+ */
+export function getVaultMetadataPath(vault: VaultInfo): string {
+  return join(vault.contentRoot, vault.metadataPath);
 }
 
 /**
@@ -401,7 +434,7 @@ export async function getVaultGoals(vault: VaultInfo): Promise<GoalSection[] | n
     return null;
   }
 
-  const goalsFullPath = join(vault.path, vault.goalsPath);
+  const goalsFullPath = join(vault.contentRoot, vault.goalsPath);
 
   try {
     const content = await readFile(goalsFullPath, "utf-8");

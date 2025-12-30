@@ -68,14 +68,18 @@ const testVaults: VaultInfo[] = [
     name: "Personal Notes",
     path: "/home/user/notes",
     hasClaudeMd: true,
-    inboxPath: "/home/user/notes/inbox",
+    contentRoot: "/home/user/notes",
+    inboxPath: "inbox",
+    metadataPath: "06_Metadata/memory-loop",
   },
   {
     id: "vault-2",
     name: "Work",
     path: "/home/user/work",
     hasClaudeMd: false,
-    inboxPath: "/home/user/work/inbox",
+    contentRoot: "/home/user/work",
+    inboxPath: "inbox",
+    metadataPath: "06_Metadata/memory-loop",
   },
 ];
 

@@ -26,6 +26,7 @@ import { captureToDaily, getRecentNotes } from "./note-capture";
 import {
   listDirectory,
   readMarkdownFile,
+  writeMarkdownFile,
   FileBrowserError,
 } from "./file-browser";
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk";
@@ -233,6 +234,9 @@ export class WebSocketHandler {
         break;
       case "read_file":
         await this.handleReadFile(ws, message.path);
+        break;
+      case "write_file":
+        await this.handleWriteFile(ws, message.path, message.content);
         break;
       case "get_recent_notes":
         await this.handleGetRecentNotes(ws);
@@ -815,6 +819,46 @@ export class WebSocketHandler {
       } else {
         const message =
           error instanceof Error ? error.message : "Failed to read file";
+        this.sendError(ws, "INTERNAL_ERROR", message);
+      }
+    }
+  }
+
+  /**
+   * Handles write_file message.
+   * Writes content to a markdown file in the selected vault.
+   */
+  private async handleWriteFile(
+    ws: WebSocketLike,
+    path: string,
+    content: string
+  ): Promise<void> {
+    log.info(`Writing file: ${path}`);
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for file writing");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      await writeMarkdownFile(this.state.currentVault.path, path, content);
+      log.info(`File written: ${path} (${content.length} bytes)`);
+      this.send(ws, {
+        type: "file_written",
+        path,
+        success: true,
+      });
+    } catch (error) {
+      log.error("File writing failed", error);
+      if (error instanceof FileBrowserError) {
+        this.sendError(ws, error.code, error.message);
+      } else {
+        const message =
+          error instanceof Error ? error.message : "Failed to write file";
         this.sendError(ws, "INTERNAL_ERROR", message);
       }
     }

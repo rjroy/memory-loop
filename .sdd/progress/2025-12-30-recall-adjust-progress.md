@@ -12,13 +12,14 @@ authored_by:
 
 # Recall Tab Adjust Feature - Implementation Progress
 
-**Last Updated**: 2025-12-30 | **Status**: 0% complete (0 of 6 tasks)
+**Last Updated**: 2025-12-30 | **Status**: 33% complete (2 of 6 tasks)
 
 ## Current Session
-**Date**: 2025-12-30 | **Working On**: TASK-001, TASK-004 (Phase 1 - parallel) | **Blockers**: None
+**Date**: 2025-12-30 | **Working On**: TASK-002, TASK-003 (Phase 2 - Backend) | **Blockers**: None
 
 ## Completed Today
-- (none yet)
+- TASK-001: Add write_file/file_written Protocol Schemas ✅ (commit a65071d)
+- TASK-004: Extend BrowserState with Adjust Mode ✅ (commit a65071d)
 
 ## Discovered Issues
 - None
@@ -29,13 +30,13 @@ authored_by:
 
 ### Phase 1: Foundation (Parallel)
 
-**In Progress** 🚧
-- [ ] TASK-001: Add write_file/file_written Protocol Schemas (S)
-- [ ] TASK-004: Extend BrowserState with Adjust Mode (M)
+**Completed** ✅
+- [x] TASK-001: Add write_file/file_written Protocol Schemas (S) - *Completed 2025-12-30*
+- [x] TASK-004: Extend BrowserState with Adjust Mode (M) - *Completed 2025-12-30*
 
 ### Phase 2: Backend
 
-**Upcoming** ⏳
+**In Progress** 🚧
 - [ ] TASK-002: Add writeMarkdownFile() Function (S)
 - [ ] TASK-003: Add handleWriteFile() WebSocket Handler (S)
 
@@ -67,14 +68,15 @@ None yet.
 
 | Component | Status |
 |-----------|--------|
-| Protocol schemas | ⏳ Upcoming |
+| Protocol schemas | ✅ Complete (18 tests) |
 | file-browser.ts | ⏳ Upcoming |
 | websocket-handler.ts | ⏳ Upcoming |
-| SessionContext reducer | ⏳ Upcoming |
+| SessionContext reducer | ✅ Complete (22 tests) |
 | MarkdownViewer | ⏳ Upcoming |
 | Integration (BrowseMode) | ⏳ Upcoming |
 
 ---
 
 ## Notes for Next Session
-- Starting Phase 1 with TASK-001 and TASK-004 in parallel (no dependencies)
+- Phase 1 complete (TASK-001, TASK-004)
+- Starting Phase 2 with TASK-002 (writeMarkdownFile) and TASK-003 (WebSocket handler)

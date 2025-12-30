@@ -41,6 +41,14 @@ export interface BrowserState {
   isLoading: boolean;
   /** Pinned folder paths for quick access */
   pinnedFolders: string[];
+  /** Whether currently in adjust (edit) mode (REQ-F-7) */
+  isAdjusting: boolean;
+  /** Content being edited in adjust mode (REQ-F-8) */
+  adjustContent: string;
+  /** Error message if save operation failed (REQ-F-14) */
+  adjustError: string | null;
+  /** Whether a save operation is in progress */
+  isSaving: boolean;
 }
 
 /**
@@ -141,6 +149,18 @@ export interface SessionActions {
   setDiscussionPrefill: (text: string | null) => void;
   /** Set pending session ID for resume (called by RecentActivity) */
   setPendingSessionId: (sessionId: string | null) => void;
+  /** Enter adjust mode (copies currentFileContent to adjustContent) */
+  startAdjust: () => void;
+  /** Update the content being edited in adjust mode */
+  updateAdjustContent: (content: string) => void;
+  /** Cancel adjust mode and discard changes */
+  cancelAdjust: () => void;
+  /** Begin save operation (sets isSaving) */
+  startSave: () => void;
+  /** Save completed successfully */
+  saveSuccess: () => void;
+  /** Save failed with error (preserves adjustContent per REQ-F-15) */
+  saveError: (error: string) => void;
 }
 
 /**
@@ -190,7 +210,13 @@ type SessionAction =
   | { type: "SET_PINNED_FOLDERS"; paths: string[] }
   | { type: "SET_GOALS"; goals: GoalSection[] | null }
   | { type: "SET_DISCUSSION_PREFILL"; text: string | null }
-  | { type: "SET_PENDING_SESSION_ID"; sessionId: string | null };
+  | { type: "SET_PENDING_SESSION_ID"; sessionId: string | null }
+  | { type: "START_ADJUST" }
+  | { type: "UPDATE_ADJUST_CONTENT"; content: string }
+  | { type: "CANCEL_ADJUST" }
+  | { type: "START_SAVE" }
+  | { type: "SAVE_SUCCESS" }
+  | { type: "SAVE_ERROR"; error: string };
 
 /**
  * Generates a unique message ID.
@@ -212,6 +238,10 @@ function createInitialBrowserState(): BrowserState {
     fileError: null,
     isLoading: false,
     pinnedFolders: [],
+    isAdjusting: false,
+    adjustContent: "",
+    adjustError: null,
+    isSaving: false,
   };
 }
 
@@ -336,6 +366,11 @@ function sessionReducer(
           currentFileContent: null,
           currentFileTruncated: false,
           fileError: null,
+          // Clear adjust state when navigating (REQ-F-9)
+          isAdjusting: false,
+          adjustContent: "",
+          adjustError: null,
+          isSaving: false,
         },
       };
 
@@ -480,6 +515,73 @@ function sessionReducer(
       return {
         ...state,
         pendingSessionId: action.sessionId,
+      };
+
+    case "START_ADJUST":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          isAdjusting: true,
+          // Copy currentFileContent to adjustContent for editing
+          adjustContent: state.browser.currentFileContent ?? "",
+          adjustError: null,
+          isSaving: false,
+        },
+      };
+
+    case "UPDATE_ADJUST_CONTENT":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          adjustContent: action.content,
+        },
+      };
+
+    case "CANCEL_ADJUST":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          isAdjusting: false,
+          adjustContent: "",
+          adjustError: null,
+          isSaving: false,
+        },
+      };
+
+    case "START_SAVE":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          isSaving: true,
+          adjustError: null,
+        },
+      };
+
+    case "SAVE_SUCCESS":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          isAdjusting: false,
+          adjustContent: "",
+          adjustError: null,
+          isSaving: false,
+        },
+      };
+
+    case "SAVE_ERROR":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          isSaving: false,
+          // Preserve adjustContent on error (REQ-F-15)
+          adjustError: action.error,
+        },
       };
 
     default:
@@ -802,6 +904,31 @@ export function SessionProvider({
     dispatch({ type: "SET_PENDING_SESSION_ID", sessionId });
   }, []);
 
+  // Adjust mode action creators
+  const startAdjust = useCallback(() => {
+    dispatch({ type: "START_ADJUST" });
+  }, []);
+
+  const updateAdjustContent = useCallback((content: string) => {
+    dispatch({ type: "UPDATE_ADJUST_CONTENT", content });
+  }, []);
+
+  const cancelAdjust = useCallback(() => {
+    dispatch({ type: "CANCEL_ADJUST" });
+  }, []);
+
+  const startSave = useCallback(() => {
+    dispatch({ type: "START_SAVE" });
+  }, []);
+
+  const saveSuccess = useCallback(() => {
+    dispatch({ type: "SAVE_SUCCESS" });
+  }, []);
+
+  const saveError = useCallback((error: string) => {
+    dispatch({ type: "SAVE_ERROR", error });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -829,6 +956,12 @@ export function SessionProvider({
     setGoals,
     setDiscussionPrefill,
     setPendingSessionId,
+    startAdjust,
+    updateAdjustContent,
+    cancelAdjust,
+    startSave,
+    saveSuccess,
+    saveError,
   };
 
   return (

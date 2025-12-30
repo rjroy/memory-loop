@@ -331,3 +331,175 @@
     padding: var(--spacing-xs) var(--spacing-sm);
   }
 }
+
+/* ============================================
+   Adjust Mode Styles (REQ-NF-2, REQ-NF-4)
+   ============================================ */
+
+.markdown-viewer--adjusting {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* View header with Adjust button (REQ-F-1) */
+.markdown-viewer__view-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--glass-bg-tertiary);
+  border-bottom: 1px solid var(--glass-border);
+  min-height: 44px;
+}
+
+/* Adjust header with Save/Cancel buttons (REQ-F-3) */
+.markdown-viewer__adjust-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--glass-bg-tertiary);
+  border-bottom: 1px solid var(--glass-border);
+  min-height: 44px;
+}
+
+.markdown-viewer__adjust-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+/* Button styling matching BrowseMode (REQ-NF-4) */
+.markdown-viewer__adjust-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs) var(--spacing-md);
+  min-height: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.3s ease;
+}
+
+.markdown-viewer__adjust-btn:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.1);
+  border-color: var(--glass-border);
+  color: var(--color-text);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.15);
+}
+
+.markdown-viewer__adjust-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Save button - primary action styling */
+.markdown-viewer__adjust-btn--save {
+  background: rgba(168, 85, 247, 0.15);
+  border-color: var(--glass-border);
+  color: var(--color-primary);
+}
+
+.markdown-viewer__adjust-btn--save:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.25);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.2);
+}
+
+/* Cancel button - subtle styling */
+.markdown-viewer__adjust-btn--cancel {
+  color: var(--color-text-secondary);
+}
+
+@media (hover: none) {
+  .markdown-viewer__adjust-btn:hover:not(:disabled) {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .markdown-viewer__adjust-btn--save:hover:not(:disabled) {
+    background: rgba(168, 85, 247, 0.15);
+    border-color: var(--glass-border);
+    box-shadow: none;
+  }
+}
+
+/* Error message display (REQ-F-14) */
+.markdown-viewer__adjust-error {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: rgba(239, 68, 68, 0.1);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--color-error);
+  font-size: var(--text-sm);
+}
+
+/* Textarea container - fills viewport (REQ-NF-2) */
+.markdown-viewer__adjust-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--spacing-md);
+  min-height: 200px;
+}
+
+/* Textarea styling (REQ-NF-2) */
+.markdown-viewer__adjust-textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 200px;
+  padding: var(--spacing-md);
+  background: rgba(15, 15, 26, 0.6);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  resize: none;
+  overflow-y: auto;
+}
+
+.markdown-viewer__adjust-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
+}
+
+.markdown-viewer__adjust-textarea:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.markdown-viewer__adjust-textarea::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+/* Mobile adjustments for adjust mode */
+@media (max-width: 767px) {
+  .markdown-viewer__view-header,
+  .markdown-viewer__adjust-header {
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+
+  .markdown-viewer__adjust-content {
+    padding: var(--spacing-sm);
+  }
+
+  .markdown-viewer__adjust-textarea {
+    padding: var(--spacing-sm);
+  }
+
+  .markdown-viewer__adjust-btn {
+    min-height: 44px;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+}

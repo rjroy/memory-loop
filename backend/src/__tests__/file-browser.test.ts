@@ -7,7 +7,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -16,6 +16,7 @@ import {
   validatePath,
   listDirectory,
   readMarkdownFile,
+  writeMarkdownFile,
   MAX_FILE_SIZE,
   PathTraversalError,
   DirectoryNotFoundError,
@@ -726,5 +727,275 @@ describe("Performance", () => {
     expect(entries).toHaveLength(fileCount);
     // Should complete within 500ms for 100 files
     expect(duration).toBeLessThan(500);
+  });
+});
+
+// =============================================================================
+// File Writing Tests
+// =============================================================================
+
+describe("writeMarkdownFile", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("writes content to existing markdown file", async () => {
+    const originalContent = "# Original Content";
+    const newContent = "# Updated Content\n\nThis has been modified.";
+    await writeFile(join(testDir, "note.md"), originalContent);
+
+    await writeMarkdownFile(testDir, "note.md", newContent);
+
+    // Verify the file was actually written
+    const fileContent = await readFile(join(testDir, "note.md"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("writes to nested file", async () => {
+    await mkdir(join(testDir, "folder"));
+    await writeFile(join(testDir, "folder", "nested.md"), "original");
+
+    const newContent = "updated nested content";
+    await writeMarkdownFile(testDir, "folder/nested.md", newContent);
+
+    const fileContent = await readFile(join(testDir, "folder", "nested.md"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("writes empty content (clears file)", async () => {
+    await writeFile(join(testDir, "note.md"), "some content");
+
+    await writeMarkdownFile(testDir, "note.md", "");
+
+    const fileContent = await readFile(join(testDir, "note.md"), "utf-8");
+    expect(fileContent).toBe("");
+  });
+
+  test("throws InvalidFileTypeError for non-md file", async () => {
+    await writeFile(join(testDir, "image.png"), "binary content");
+
+    try {
+      await writeMarkdownFile(testDir, "image.png", "new content");
+      expect.unreachable("Should have thrown InvalidFileTypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileTypeError);
+      expect((error as InvalidFileTypeError).code).toBe("INVALID_FILE_TYPE");
+    }
+  });
+
+  test("throws InvalidFileTypeError for txt file", async () => {
+    await writeFile(join(testDir, "notes.txt"), "text content");
+
+    try {
+      await writeMarkdownFile(testDir, "notes.txt", "new content");
+      expect.unreachable("Should have thrown InvalidFileTypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileTypeError);
+    }
+  });
+
+  test("throws InvalidFileTypeError for file without extension", async () => {
+    await writeFile(join(testDir, "README"), "content");
+
+    try {
+      await writeMarkdownFile(testDir, "README", "new content");
+      expect.unreachable("Should have thrown InvalidFileTypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileTypeError);
+    }
+  });
+
+  test("throws FileNotFoundError for non-existent file", async () => {
+    try {
+      await writeMarkdownFile(testDir, "missing.md", "content");
+      expect.unreachable("Should have thrown FileNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileNotFoundError);
+      expect((error as FileNotFoundError).code).toBe("FILE_NOT_FOUND");
+    }
+  });
+
+  test("throws FileNotFoundError for directory (not file)", async () => {
+    await mkdir(join(testDir, "folder.md"));
+
+    try {
+      await writeMarkdownFile(testDir, "folder.md", "content");
+      expect.unreachable("Should have thrown FileNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileNotFoundError);
+    }
+  });
+
+  test("throws PathTraversalError for path outside vault", async () => {
+    try {
+      await writeMarkdownFile(testDir, "../../../etc/passwd.md", "malicious");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+      expect((error as PathTraversalError).code).toBe("PATH_TRAVERSAL");
+    }
+  });
+
+  test("throws PathTraversalError for parent traversal", async () => {
+    try {
+      await writeMarkdownFile(testDir, "../outside.md", "content");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("throws PathTraversalError for double-dot traversal within path", async () => {
+    await mkdir(join(testDir, "folder"));
+
+    try {
+      await writeMarkdownFile(testDir, "folder/../../outside.md", "content");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("rejects symlink files", async () => {
+    const realFile = join(testDir, "real.md");
+    const linkPath = join(testDir, "link.md");
+    await writeFile(realFile, "original content");
+
+    try {
+      await symlink(realFile, linkPath);
+
+      try {
+        await writeMarkdownFile(testDir, "link.md", "new content");
+        expect.unreachable("Should have thrown PathTraversalError");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PathTraversalError);
+      }
+
+      // Verify original file was NOT modified
+      const originalContent = await readFile(realFile, "utf-8");
+      expect(originalContent).toBe("original content");
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.includes("EPERM") ||
+          error.message.includes("operation not permitted"))
+      ) {
+        console.log("Skipping symlink test - not supported on this platform");
+        return;
+      }
+      throw error;
+    }
+  });
+
+  test("handles files with unicode content", async () => {
+    await writeFile(join(testDir, "unicode.md"), "original");
+
+    const newContent = "# Unicode Test\n\nEmoji: 🎉\nJapanese: 日本語\nArabic: العربية";
+    await writeMarkdownFile(testDir, "unicode.md", newContent);
+
+    const fileContent = await readFile(join(testDir, "unicode.md"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("handles file with spaces in name", async () => {
+    await writeFile(join(testDir, "my note file.md"), "original");
+
+    const newContent = "updated content";
+    await writeMarkdownFile(testDir, "my note file.md", newContent);
+
+    const fileContent = await readFile(join(testDir, "my note file.md"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("handles special characters in filenames", async () => {
+    const specialName = "note-with_special.chars(2025).md";
+    await writeFile(join(testDir, specialName), "original");
+
+    const newContent = "updated content";
+    await writeMarkdownFile(testDir, specialName, newContent);
+
+    const fileContent = await readFile(join(testDir, specialName), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("case-sensitive file extension check (.MD vs .md)", async () => {
+    // .MD should also be accepted (case-insensitive extension check)
+    await writeFile(join(testDir, "note.MD"), "original");
+
+    const newContent = "updated content";
+    await writeMarkdownFile(testDir, "note.MD", newContent);
+
+    const fileContent = await readFile(join(testDir, "note.MD"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("handles deeply nested directories", async () => {
+    const deepPath = join(testDir, "a", "b", "c", "d", "e");
+    await mkdir(deepPath, { recursive: true });
+    await writeFile(join(deepPath, "deep.md"), "original");
+
+    const newContent = "updated deep content";
+    await writeMarkdownFile(testDir, "a/b/c/d/e/deep.md", newContent);
+
+    const fileContent = await readFile(join(deepPath, "deep.md"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("preserves original content on validation error", async () => {
+    const originalContent = "# Important Content";
+    await writeFile(join(testDir, "important.md"), originalContent);
+
+    // Try to write with path traversal - should fail
+    try {
+      await writeMarkdownFile(testDir, "../important.md", "malicious");
+    } catch {
+      // Expected to throw
+    }
+
+    // Original file should be unchanged
+    const fileContent = await readFile(join(testDir, "important.md"), "utf-8");
+    expect(fileContent).toBe(originalContent);
+  });
+
+  test("handles file with only whitespace", async () => {
+    await writeFile(join(testDir, "whitespace.md"), "original");
+
+    const newContent = "   \n\n\t\t\n   ";
+    await writeMarkdownFile(testDir, "whitespace.md", newContent);
+
+    const fileContent = await readFile(join(testDir, "whitespace.md"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("handles paths with multiple slashes", async () => {
+    await mkdir(join(testDir, "a", "b"), { recursive: true });
+    await writeFile(join(testDir, "a", "b", "file.md"), "original");
+
+    // Multiple slashes should be normalized
+    const newContent = "updated content";
+    await writeMarkdownFile(testDir, "a//b//file.md", newContent);
+
+    const fileContent = await readFile(join(testDir, "a", "b", "file.md"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("handles Obsidian-style paths with forward slashes", async () => {
+    await mkdir(join(testDir, "Projects", "SubProject"), { recursive: true });
+    await writeFile(join(testDir, "Projects", "SubProject", "notes.md"), "original");
+
+    const newContent = "updated content";
+    await writeMarkdownFile(testDir, "Projects/SubProject/notes.md", newContent);
+
+    const fileContent = await readFile(
+      join(testDir, "Projects", "SubProject", "notes.md"),
+      "utf-8"
+    );
+    expect(fileContent).toBe(newContent);
   });
 });

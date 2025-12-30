@@ -5,7 +5,7 @@
  * All operations are restricted to the vault boundary to prevent path traversal attacks.
  */
 
-import { readdir, readFile, lstat, realpath } from "node:fs/promises";
+import { readdir, readFile, writeFile, lstat, realpath } from "node:fs/promises";
 import { join, resolve, extname } from "node:path";
 import type { FileEntry } from "@memory-loop/shared";
 import type { ErrorCode } from "@memory-loop/shared";
@@ -332,4 +332,63 @@ export async function readMarkdownFile(
     content: buffer.toString("utf-8"),
     truncated: false,
   };
+}
+
+// =============================================================================
+// File Writing
+// =============================================================================
+
+/**
+ * Writes content to a markdown file in the vault.
+ * Only allows writing to existing .md files within the vault boundary.
+ *
+ * @param vaultPath - Absolute path to the vault root
+ * @param relativePath - Path relative to vault root
+ * @param content - Content to write to the file
+ * @throws PathTraversalError if path escapes vault boundary
+ * @throws FileNotFoundError if file does not exist (no new file creation)
+ * @throws InvalidFileTypeError if file is not a .md file
+ */
+export async function writeMarkdownFile(
+  vaultPath: string,
+  relativePath: string,
+  content: string
+): Promise<void> {
+  log.debug(`Writing file: ${relativePath} in ${vaultPath}`);
+
+  // Validate file extension
+  const ext = extname(relativePath).toLowerCase();
+  if (ext !== ".md") {
+    throw new InvalidFileTypeError(
+      `Only markdown (.md) files can be written. Requested: ${ext || "(no extension)"}`
+    );
+  }
+
+  // Validate path is within vault
+  const targetPath = await validatePath(vaultPath, relativePath);
+
+  // Check if file exists and is not a symlink
+  try {
+    const stats = await lstat(targetPath);
+
+    if (stats.isSymbolicLink()) {
+      log.warn(`Symlink rejected for write: ${relativePath}`);
+      throw new PathTraversalError(
+        `Path "${relativePath}" is a symbolic link and cannot be written`
+      );
+    }
+
+    if (!stats.isFile()) {
+      throw new FileNotFoundError(`Path "${relativePath}" is not a file`);
+    }
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    throw new FileNotFoundError(`File "${relativePath}" does not exist`);
+  }
+
+  // Write content to file
+  await writeFile(targetPath, content, "utf-8");
+  log.debug(`Successfully wrote ${content.length} bytes to ${relativePath}`);
 }

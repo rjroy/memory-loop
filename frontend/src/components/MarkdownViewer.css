@@ -91,6 +91,13 @@
   padding: var(--spacing-md) var(--spacing-lg);
   line-height: 1.6;
   background-color: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .markdown-viewer__content {
+    background-color: var(--color-surface);
+  }
 }
 
 /* Markdown element styling */
@@ -325,10 +332,12 @@
 @media (max-width: 767px) {
   .markdown-viewer__content {
     padding: var(--spacing-sm) var(--spacing-md);
+    backdrop-filter: blur(4px);
   }
 
   .markdown-viewer__breadcrumb {
     padding: var(--spacing-xs) var(--spacing-sm);
+    backdrop-filter: blur(4px);
   }
 }
 

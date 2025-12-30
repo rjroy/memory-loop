@@ -12,6 +12,9 @@ import { FileTree } from "./FileTree";
 import { MarkdownViewer } from "./MarkdownViewer";
 import "./BrowseMode.css";
 
+/** Error codes that indicate save failure for adjust mode */
+const SAVE_ERROR_CODES = ["PATH_TRAVERSAL", "INVALID_FILE_TYPE", "FILE_NOT_FOUND", "INTERNAL_ERROR"] as const;
+
 /**
  * Props for BrowseMode component.
  */
@@ -36,7 +39,11 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  const { browser, vault, cacheDirectory, clearDirectoryCache, setFileContent, setFileError, setFileLoading } = useSession();
+  const { browser, vault, cacheDirectory, clearDirectoryCache, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError } = useSession();
+
+  // Track saving state in a ref to avoid stale closures in WebSocket message handler
+  const isSavingRef = useRef(browser.isSaving);
+  isSavingRef.current = browser.isSaving;
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -119,7 +126,12 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
         break;
 
       case "error":
-        if (
+        // Check if this is a save error (while in adjust mode)
+        // Use ref to get current saving state, avoiding stale closure issue
+        if (isSavingRef.current && SAVE_ERROR_CODES.includes(lastMessage.code as typeof SAVE_ERROR_CODES[number])) {
+          // Save failed - preserve content and show error (REQ-F-15)
+          saveError(lastMessage.message);
+        } else if (
           lastMessage.code === "FILE_NOT_FOUND" ||
           lastMessage.code === "DIRECTORY_NOT_FOUND" ||
           lastMessage.code === "INVALID_FILE_TYPE"
@@ -128,8 +140,16 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
         }
         setFileLoading(false);
         break;
+
+      case "file_written":
+        // File saved successfully - clear adjust state and refresh content
+        saveSuccess();
+        // Re-request file content to refresh the view with saved content
+        setFileLoading(true);
+        sendMessage({ type: "read_file", path: lastMessage.path });
+        break;
     }
-  }, [lastMessage, cacheDirectory, setFileContent, setFileError, setFileLoading]);
+  }, [lastMessage, cacheDirectory, setFileContent, setFileError, setFileLoading, saveSuccess, saveError, sendMessage]);
 
   // Handle directory load request from FileTree
   const handleLoadDirectory = useCallback(
@@ -158,6 +178,24 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
       }
     },
     [sendMessage, setFileLoading]
+  );
+
+  // Handle save from MarkdownViewer adjust mode
+  const handleSave = useCallback(
+    (content: string) => {
+      if (!browser.currentPath) return;
+
+      // Start save operation (sets isSaving state)
+      startSave();
+
+      // Send write_file message to backend
+      sendMessage({
+        type: "write_file",
+        path: browser.currentPath,
+        content,
+      });
+    },
+    [browser.currentPath, sendMessage, startSave]
   );
 
   // Toggle tree collapse state
@@ -233,7 +271,7 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
           </span>
         </div>
         <div className="browse-mode__viewer-content">
-          <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} />
+          <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} onSave={handleSave} />
         </div>
       </main>
 

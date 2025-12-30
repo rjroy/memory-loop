@@ -12,14 +12,17 @@ authored_by:
 
 # Recall Tab Adjust Feature - Implementation Progress
 
-**Last Updated**: 2025-12-30 | **Status**: 33% complete (2 of 6 tasks)
+**Last Updated**: 2025-12-30 | **Status**: 83% complete (5 of 6 tasks)
 
 ## Current Session
-**Date**: 2025-12-30 | **Working On**: TASK-002, TASK-003 (Phase 2 - Backend) | **Blockers**: None
+**Date**: 2025-12-30 | **Working On**: TASK-006 (Phase 4) | **Blockers**: None
 
 ## Completed Today
 - TASK-001: Add write_file/file_written Protocol Schemas ✅ (commit a65071d)
 - TASK-004: Extend BrowserState with Adjust Mode ✅ (commit a65071d)
+- TASK-002: Add writeMarkdownFile() Function ✅ (commit d6ec1d3)
+- TASK-003: Add handleWriteFile() WebSocket Handler ✅ (commit d6ec1d3)
+- TASK-005: Implement Adjust Mode UI in MarkdownViewer ✅ (commit f74b6f1)
 
 ## Discovered Issues
 - None
@@ -36,31 +39,31 @@ authored_by:
 
 ### Phase 2: Backend
 
-**In Progress** 🚧
-- [ ] TASK-002: Add writeMarkdownFile() Function (S)
-- [ ] TASK-003: Add handleWriteFile() WebSocket Handler (S)
+**Completed** ✅
+- [x] TASK-002: Add writeMarkdownFile() Function (S) - *Completed 2025-12-30*
+- [x] TASK-003: Add handleWriteFile() WebSocket Handler (S) - *Completed 2025-12-30*
 
 ### Phase 3: Frontend UI
 
-**Upcoming** ⏳
-- [ ] TASK-005: Implement Adjust Mode UI in MarkdownViewer (M)
+**Completed** ✅
+- [x] TASK-005: Implement Adjust Mode UI in MarkdownViewer (M) - *Completed 2025-12-30*
 
 ### Phase 4: Integration
 
-**Upcoming** ⏳
+**In Progress** 🚧
 - [ ] TASK-006: Wire Frontend to Backend and Integration Tests (M)
 
 ---
 
 ## Deviations from Plan
 
-None yet.
+None.
 
 ---
 
 ## Technical Discoveries
 
-None yet.
+None.
 
 ---
 
@@ -69,14 +72,14 @@ None yet.
 | Component | Status |
 |-----------|--------|
 | Protocol schemas | ✅ Complete (18 tests) |
-| file-browser.ts | ⏳ Upcoming |
-| websocket-handler.ts | ⏳ Upcoming |
+| file-browser.ts | ✅ Complete (24 tests) |
+| websocket-handler.ts | ✅ Complete (9 tests) |
 | SessionContext reducer | ✅ Complete (22 tests) |
-| MarkdownViewer | ⏳ Upcoming |
+| MarkdownViewer | ✅ Complete (51 tests) |
 | Integration (BrowseMode) | ⏳ Upcoming |
 
 ---
 
 ## Notes for Next Session
-- Phase 1 complete (TASK-001, TASK-004)
-- Starting Phase 2 with TASK-002 (writeMarkdownFile) and TASK-003 (WebSocket handler)
+- Phase 1, 2, & 3 complete (5 of 6 tasks)
+- Starting Phase 4 with TASK-006 (Integration)

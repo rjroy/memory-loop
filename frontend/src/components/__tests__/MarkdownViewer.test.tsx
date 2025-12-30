@@ -249,6 +249,25 @@ describe("MarkdownViewer", () => {
       expect(onNavigate).toHaveBeenCalledWith("docs/other-note.md");
     });
 
+    it("treats wiki-links with paths as absolute from vault root", () => {
+      // Wikilinks like [[folder/note]] are absolute from content root,
+      // not relative to current file (Obsidian behavior)
+      const content = "See [[02_Areas/Projects/index]] for more.";
+      const onNavigate = mock(() => {});
+      const { container } = render(<MarkdownViewer onNavigate={onNavigate} />, {
+        wrapper: createTestWrapper({
+          currentPath: "docs/nested/guide.md",
+          currentFileContent: content,
+        }),
+      });
+
+      const wikiLink = container.querySelector(".markdown-viewer__wiki-link");
+      fireEvent.click(wikiLink!);
+
+      // Should NOT prepend current dir - path with / is absolute
+      expect(onNavigate).toHaveBeenCalledWith("02_Areas/Projects/index.md");
+    });
+
     it("handles wiki-links with .md extension", () => {
       const content = "See [[other-note.md]] for more.";
       const { container } = render(<MarkdownViewer />, {

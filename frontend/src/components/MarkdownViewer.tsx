@@ -290,9 +290,17 @@ export function MarkdownViewer({
     isSaving,
   } = browser;
 
-  // Handle wiki-link clicks - resolve relative paths
+  // Handle wiki-link clicks - resolve paths
+  // Obsidian wikilinks with paths (containing /) are absolute from vault root
+  // Wikilinks without paths are relative to current directory
   const handleWikiLinkClick = useCallback(
     (targetPath: string) => {
+      // If target contains a path separator, treat as absolute from content root
+      if (targetPath.includes("/")) {
+        onNavigate?.(targetPath);
+        return;
+      }
+      // Otherwise, resolve relative to current directory
       const currentDir = currentPath.includes("/")
         ? currentPath.substring(0, currentPath.lastIndexOf("/"))
         : "";

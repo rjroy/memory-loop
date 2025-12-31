@@ -328,8 +328,8 @@ export function parseCaptureSectionEntries(
   // Calculate starting line number
   const linesBeforeSection = normalized.slice(0, sectionStart).split("\n").length;
 
-  // Pattern: "- [HH:MM] text"
-  const entryPattern = /^- \[(\d{2}:\d{2})\] (.+)$/;
+  // Pattern: "- [HH:MM] text" or "- [c] [HH:MM] text" (with optional checkbox)
+  const entryPattern = /^- (?:\[.\] )?\[(\d{2}:\d{2})\] (.+)$/;
 
   for (let i = 0; i < lines.length; i++) {
     const match = lines[i].match(entryPattern);

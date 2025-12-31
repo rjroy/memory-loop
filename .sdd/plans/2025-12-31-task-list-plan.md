@@ -294,9 +294,59 @@ No parameters. Server returns all tasks from configured directories.
 ## Testing Strategy
 
 ### Unit Tests
-- **task-manager.test.ts**: Task parsing regex, state cycling, file modification
+- **task-manager.test.ts**: Task parsing regex, state cycling
 - **protocol.ts**: Zod schema validation for new message types
 - **SessionContext**: TaskState reducer actions
+
+### Critical: File Modification Tests (task-manager.test.ts)
+
+The toggle operation modifies files. Incorrect implementation could corrupt user data. **Every test must verify the entire file content before and after modification.**
+
+**Line isolation tests** (verify ONLY target line changes):
+- Toggle task on line 1 of multi-line file → all other lines byte-identical
+- Toggle task on last line → all preceding lines byte-identical
+- Toggle task in middle → lines before and after byte-identical
+- Toggle only task in single-line file → file contains only the modified line
+
+**Edge case tests**:
+- Task with leading whitespace (indented): `  - [ ] Task` → preserve indentation
+- Task with trailing content: `- [ ] Task <!-- comment -->` → preserve trailing content
+- Task with special characters: `- [ ] Task with émojis 🔥 and "quotes"`
+- Task immediately after heading: `## Section\n- [ ] Task`
+- Task at EOF without trailing newline
+- Task at EOF with trailing newline → preserve trailing newline
+- Empty lines between tasks → preserve empty lines exactly
+
+**State cycle tests** (each transition):
+- ` ` → `x` → `/` → `?` → `b` → `f` → ` ` (full cycle)
+- Each state preserves task text exactly
+
+**Failure mode tests**:
+- Invalid line number (0, negative, beyond file length) → error, file unchanged
+- Line exists but isn't a task → error, file unchanged
+- Invalid state character in request → error, file unchanged
+- File becomes read-only between read and write → error, original preserved
+
+**Before/after verification pattern**:
+```typescript
+// Every toggle test must:
+const originalContent = await readFile(testFile, 'utf-8');
+const originalLines = originalContent.split('\n');
+
+await toggleTask(testFile, targetLine);
+
+const newContent = await readFile(testFile, 'utf-8');
+const newLines = newContent.split('\n');
+
+// Verify unchanged lines are byte-identical
+for (let i = 0; i < originalLines.length; i++) {
+  if (i !== targetLine - 1) {
+    expect(newLines[i]).toBe(originalLines[i]);
+  }
+}
+// Verify only checkbox character changed on target line
+expect(newLines[targetLine - 1]).toMatch(/^(\s*- \[)[x](].+)$/);
+```
 
 ### Integration Tests
 - **WebSocket flow**: get_tasks → tasks response with mock filesystem
@@ -312,6 +362,7 @@ No parameters. Server returns all tasks from configured directories.
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
+| **File corruption from incorrect toggle** | L | **H** | Extensive test suite (see Critical: File Modification Tests); before/after byte verification in every test; code review focus on line isolation |
 | Line number drift after file modification | M | M | Re-fetch tasks after toggle to resync; document that external edits require refresh |
 | Large vaults slow task loading | L | M | Profile scanning; consider caching if needed (not in MVP) |
 | Regex edge cases in task parsing | L | L | Comprehensive unit tests for various task formats |

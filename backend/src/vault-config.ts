@@ -44,12 +44,36 @@ export interface VaultConfig {
    * Default: "06_Metadata/memory-loop"
    */
   metadataPath?: string;
+
+  /**
+   * Path to projects directory.
+   * Relative to contentRoot.
+   * Default: "01_Projects"
+   */
+  projectPath?: string;
+
+  /**
+   * Path to areas directory.
+   * Relative to contentRoot.
+   * Default: "02_Areas"
+   */
+  areaPath?: string;
 }
 
 /**
  * Default metadata path relative to content root.
  */
 export const DEFAULT_METADATA_PATH = "06_Metadata/memory-loop";
+
+/**
+ * Default project path relative to content root.
+ */
+export const DEFAULT_PROJECT_PATH = "01_Projects";
+
+/**
+ * Default area path relative to content root.
+ */
+export const DEFAULT_AREA_PATH = "02_Areas";
 
 /**
  * Loads vault configuration from .memory-loop.json if it exists.
@@ -88,6 +112,14 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
 
     if (typeof obj.metadataPath === "string") {
       config.metadataPath = obj.metadataPath;
+    }
+
+    if (typeof obj.projectPath === "string") {
+      config.projectPath = obj.projectPath;
+    }
+
+    if (typeof obj.areaPath === "string") {
+      config.areaPath = obj.areaPath;
     }
 
     return config;
@@ -170,4 +202,24 @@ export function resolveContextualPromptsPath(config: VaultConfig): string {
 export function resolveGeneralInspirationPath(config: VaultConfig): string {
   const metadataPath = resolveMetadataPath(config);
   return join(metadataPath, "general-inspiration.md");
+}
+
+/**
+ * Resolves the projects directory path relative to content root.
+ *
+ * @param config - Vault configuration
+ * @returns Relative path to projects directory (from content root)
+ */
+export function resolveProjectPath(config: VaultConfig): string {
+  return config.projectPath ?? DEFAULT_PROJECT_PATH;
+}
+
+/**
+ * Resolves the areas directory path relative to content root.
+ *
+ * @param config - Vault configuration
+ * @returns Relative path to areas directory (from content root)
+ */
+export function resolveAreaPath(config: VaultConfig): string {
+  return config.areaPath ?? DEFAULT_AREA_PATH;
 }

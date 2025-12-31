@@ -14,12 +14,17 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry } from "@memory-loop/shared";
 
 /**
  * Application mode: home, note capture, discussion, or browse.
  */
 export type AppMode = "home" | "note" | "discussion" | "browse";
+
+/**
+ * View mode for the browse tab: files or tasks.
+ */
+export type BrowseViewMode = "files" | "tasks";
 
 /**
  * Browser state for vault file browsing.
@@ -49,6 +54,14 @@ export interface BrowserState {
   adjustError: string | null;
   /** Whether a save operation is in progress */
   isSaving: boolean;
+  /** Current view mode: files or tasks */
+  viewMode: BrowseViewMode;
+  /** Task list from configured directories */
+  tasks: TaskEntry[];
+  /** Whether task loading is in progress */
+  isTasksLoading: boolean;
+  /** Error message from task operations */
+  tasksError: string | null;
 }
 
 /**
@@ -161,6 +174,16 @@ export interface SessionActions {
   saveSuccess: () => void;
   /** Save failed with error (preserves adjustContent per REQ-F-15) */
   saveError: (error: string) => void;
+  /** Set the browse view mode (files or tasks) */
+  setViewMode: (mode: BrowseViewMode) => void;
+  /** Set tasks from server response */
+  setTasks: (tasks: TaskEntry[]) => void;
+  /** Set tasks loading state */
+  setTasksLoading: (isLoading: boolean) => void;
+  /** Set tasks error message */
+  setTasksError: (error: string | null) => void;
+  /** Update a single task (for optimistic updates) */
+  updateTask: (filePath: string, lineNumber: number, newState: string) => void;
 }
 
 /**
@@ -180,6 +203,7 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 export const STORAGE_KEY_VAULT = "memory-loop:vaultId";
 const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";
 const STORAGE_KEY_PINNED_FOLDERS_PREFIX = "memory-loop:pinnedFolders:";
+const STORAGE_KEY_VIEW_MODE = "memory-loop:viewMode";
 
 /**
  * Action types for reducer.
@@ -216,13 +240,44 @@ type SessionAction =
   | { type: "CANCEL_ADJUST" }
   | { type: "START_SAVE" }
   | { type: "SAVE_SUCCESS" }
-  | { type: "SAVE_ERROR"; error: string };
+  | { type: "SAVE_ERROR"; error: string }
+  | { type: "SET_VIEW_MODE"; mode: BrowseViewMode }
+  | { type: "SET_TASKS"; tasks: TaskEntry[] }
+  | { type: "SET_TASKS_LOADING"; isLoading: boolean }
+  | { type: "SET_TASKS_ERROR"; error: string | null }
+  | { type: "UPDATE_TASK"; filePath: string; lineNumber: number; newState: string };
 
 /**
  * Generates a unique message ID.
  */
 function generateMessageId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/**
+ * Loads persisted view mode from localStorage.
+ */
+function loadPersistedViewMode(): BrowseViewMode {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_VIEW_MODE);
+    if (stored === "tasks" || stored === "files") {
+      return stored;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return "files";
+}
+
+/**
+ * Persists view mode to localStorage.
+ */
+function persistViewMode(mode: BrowseViewMode): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_VIEW_MODE, mode);
+  } catch {
+    // Ignore storage errors
+  }
 }
 
 /**
@@ -242,6 +297,10 @@ function createInitialBrowserState(): BrowserState {
     adjustContent: "",
     adjustError: null,
     isSaving: false,
+    viewMode: loadPersistedViewMode(),
+    tasks: [],
+    isTasksLoading: false,
+    tasksError: null,
   };
 }
 
@@ -583,6 +642,63 @@ function sessionReducer(
           adjustError: action.error,
         },
       };
+
+    case "SET_VIEW_MODE":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          viewMode: action.mode,
+        },
+      };
+
+    case "SET_TASKS":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          tasks: action.tasks,
+          isTasksLoading: false,
+          tasksError: null,
+        },
+      };
+
+    case "SET_TASKS_LOADING":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          isTasksLoading: action.isLoading,
+          // Clear error when starting new operation
+          tasksError: action.isLoading ? null : state.browser.tasksError,
+        },
+      };
+
+    case "SET_TASKS_ERROR":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          tasksError: action.error,
+          isTasksLoading: false,
+        },
+      };
+
+    case "UPDATE_TASK": {
+      // Find and update the task by filePath and lineNumber (optimistic update)
+      const updatedTasks = state.browser.tasks.map((task) =>
+        task.filePath === action.filePath && task.lineNumber === action.lineNumber
+          ? { ...task, state: action.newState }
+          : task
+      );
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          tasks: updatedTasks,
+        },
+      };
+    }
 
     default:
       return state;
@@ -929,6 +1045,28 @@ export function SessionProvider({
     dispatch({ type: "SAVE_ERROR", error });
   }, []);
 
+  // Task-related action creators
+  const setViewMode = useCallback((mode: BrowseViewMode) => {
+    dispatch({ type: "SET_VIEW_MODE", mode });
+    persistViewMode(mode);
+  }, []);
+
+  const setTasks = useCallback((tasks: TaskEntry[]) => {
+    dispatch({ type: "SET_TASKS", tasks });
+  }, []);
+
+  const setTasksLoading = useCallback((isLoading: boolean) => {
+    dispatch({ type: "SET_TASKS_LOADING", isLoading });
+  }, []);
+
+  const setTasksError = useCallback((error: string | null) => {
+    dispatch({ type: "SET_TASKS_ERROR", error });
+  }, []);
+
+  const updateTask = useCallback((filePath: string, lineNumber: number, newState: string) => {
+    dispatch({ type: "UPDATE_TASK", filePath, lineNumber, newState });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -962,6 +1100,11 @@ export function SessionProvider({
     startSave,
     saveSuccess,
     saveError,
+    setViewMode,
+    setTasks,
+    setTasksLoading,
+    setTasksError,
+    updateTask,
   };
 
   return (

@@ -61,6 +61,21 @@ export const FileEntrySchema = z.object({
 });
 
 /**
+ * Schema for a task entry parsed from markdown files
+ * Tasks are lines matching /^\s*- \[(.)\] (.+)$/
+ */
+export const TaskEntrySchema = z.object({
+  /** Task text content (after checkbox) */
+  text: z.string(),
+  /** Checkbox state character: ' ', 'x', '/', '?', 'b', 'f' */
+  state: z.string().length(1, "State must be a single character"),
+  /** Relative file path from content root */
+  filePath: z.string().min(1, "File path is required"),
+  /** Line number in file (1-indexed) */
+  lineNumber: z.number().int().min(1, "Line number must be at least 1"),
+});
+
+/**
  * Schema for a recent note entry in the inbox
  */
 export const RecentNoteEntrySchema = z.object({
@@ -205,6 +220,23 @@ export const WriteFileMessageSchema = z.object({
 });
 
 /**
+ * Client requests task list from configured directories
+ */
+export const GetTasksMessageSchema = z.object({
+  type: z.literal("get_tasks"),
+});
+
+/**
+ * Client requests to toggle a task's checkbox state
+ * Server will cycle through states: ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
+ */
+export const ToggleTaskMessageSchema = z.object({
+  type: z.literal("toggle_task"),
+  filePath: z.string().min(1, "File path is required"),
+  lineNumber: z.number().int().min(1, "Line number must be at least 1"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -222,6 +254,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   GetGoalsMessageSchema,
   GetInspirationMessageSchema,
   WriteFileMessageSchema,
+  GetTasksMessageSchema,
+  ToggleTaskMessageSchema,
 ]);
 
 // =============================================================================
@@ -408,6 +442,29 @@ export const FileWrittenMessageSchema = z.object({
 });
 
 /**
+ * Server sends task list from configured directories
+ */
+export const TasksMessageSchema = z.object({
+  type: z.literal("tasks"),
+  tasks: z.array(TaskEntrySchema),
+  /** Count of incomplete tasks (state = ' ') for rollup display */
+  incomplete: z.number().int().min(0),
+  /** Total task count for rollup display */
+  total: z.number().int().min(0),
+});
+
+/**
+ * Server confirms task toggle was successful
+ */
+export const TaskToggledMessageSchema = z.object({
+  type: z.literal("task_toggled"),
+  filePath: z.string().min(1, "File path is required"),
+  lineNumber: z.number().int().min(1, "Line number must be at least 1"),
+  /** The new checkbox state character after toggle */
+  newState: z.string().length(1, "State must be a single character"),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -429,6 +486,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   GoalsMessageSchema,
   InspirationMessageSchema,
   FileWrittenMessageSchema,
+  TasksMessageSchema,
+  TaskToggledMessageSchema,
 ]);
 
 // =============================================================================
@@ -437,6 +496,9 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
 
 // File browser types
 export type FileEntry = z.infer<typeof FileEntrySchema>;
+
+// Task types
+export type TaskEntry = z.infer<typeof TaskEntrySchema>;
 
 // Recent notes types
 export type RecentNoteEntry = z.infer<typeof RecentNoteEntrySchema>;
@@ -462,6 +524,8 @@ export type GetRecentActivityMessage = z.infer<typeof GetRecentActivityMessageSc
 export type GetGoalsMessage = z.infer<typeof GetGoalsMessageSchema>;
 export type GetInspirationMessage = z.infer<typeof GetInspirationMessageSchema>;
 export type WriteFileMessage = z.infer<typeof WriteFileMessageSchema>;
+export type GetTasksMessage = z.infer<typeof GetTasksMessageSchema>;
+export type ToggleTaskMessage = z.infer<typeof ToggleTaskMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -485,6 +549,8 @@ export type GoalsMessage = z.infer<typeof GoalsMessageSchema>;
 export type InspirationItem = z.infer<typeof InspirationItemSchema>;
 export type InspirationMessage = z.infer<typeof InspirationMessageSchema>;
 export type FileWrittenMessage = z.infer<typeof FileWrittenMessageSchema>;
+export type TasksMessage = z.infer<typeof TasksMessageSchema>;
+export type TaskToggledMessage = z.infer<typeof TaskToggledMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

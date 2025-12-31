@@ -246,4 +246,60 @@ describe("BrowseMode", () => {
       expect(reloadBtns.length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe("view toggle", () => {
+    it("shows Files header by default", () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      expect(screen.getByText("Files")).toBeDefined();
+    });
+
+    it("toggles header text when clicked", () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Click the header to toggle to tasks view
+      const header = screen.getByRole("button", { name: /switch to tasks view/i });
+      fireEvent.click(header);
+
+      // Now should show Tasks
+      expect(screen.getByText("Tasks")).toBeDefined();
+    });
+
+    it("toggles back to files on second click", () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      const header = screen.getByRole("button", { name: /switch to tasks view/i });
+
+      // Toggle to tasks
+      fireEvent.click(header);
+      expect(screen.getByText("Tasks")).toBeDefined();
+
+      // Toggle back to files - need to find the button with the new label
+      const tasksHeader = screen.getByRole("button", { name: /switch to files view/i });
+      fireEvent.click(tasksHeader);
+      expect(screen.getByText("Files")).toBeDefined();
+    });
+
+    it("renders TaskList when in tasks view", () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Toggle to tasks view
+      const header = screen.getByRole("button", { name: /switch to tasks view/i });
+      fireEvent.click(header);
+
+      // TaskList should render with its empty state
+      expect(screen.getByText("No tasks found")).toBeDefined();
+    });
+
+    it("persists viewMode to localStorage", () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Toggle to tasks view
+      const header = screen.getByRole("button", { name: /switch to tasks view/i });
+      fireEvent.click(header);
+
+      // Check localStorage (key is "memory-loop:viewMode")
+      expect(localStorage.getItem("memory-loop:viewMode")).toBe("tasks");
+    });
+  });
 });

@@ -1,0 +1,224 @@
+/**
+ * TaskList Component Styles
+ *
+ * Mobile-first task list with touch-friendly targets.
+ * BEM naming parallel to FileTree.css.
+ */
+
+.task-list {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: transparent;
+  padding: var(--spacing-xs) 0;
+}
+
+.task-list--loading,
+.task-list--empty,
+.task-list--error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  color: var(--color-text-secondary);
+}
+
+.task-list__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.task-list__loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--glass-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: task-list-spin 1s linear infinite;
+}
+
+@keyframes task-list-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.task-list__empty-message,
+.task-list__error-message {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  font-style: italic;
+  margin: 0;
+}
+
+.task-list__error-message {
+  color: var(--color-error, #ef4444);
+}
+
+/* ============================================
+   Task Group
+   ============================================ */
+
+.task-list__group {
+  margin-bottom: var(--spacing-md);
+}
+
+.task-list__group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  margin: 0 var(--spacing-xs);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text);
+  background: rgba(168, 85, 247, 0.08);
+  border-radius: var(--radius-sm);
+}
+
+.task-list__group-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+.task-list__icon-svg {
+  width: 16px;
+  height: 16px;
+}
+
+.task-list__group-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-list__group-count {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  background: rgba(168, 85, 247, 0.15);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+/* ============================================
+   Task Items
+   ============================================ */
+
+.task-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.task-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+  min-height: 44px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  margin: 0 var(--spacing-xs);
+}
+
+.task-list__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  margin: -8px;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+
+  /* Prevent iOS long-press behaviors */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.task-list__toggle:hover {
+  background: rgba(168, 85, 247, 0.1);
+}
+
+.task-list__toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.task-list__toggle:active {
+  background: rgba(168, 85, 247, 0.2);
+}
+
+.task-list__indicator {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-text-secondary);
+}
+
+/* State-specific indicator colors */
+.task-list__indicator[data-state=" "] {
+  color: var(--color-text-secondary);
+}
+
+.task-list__indicator[data-state="x"] {
+  color: var(--color-success, #22c55e);
+}
+
+.task-list__indicator[data-state="/"] {
+  color: var(--color-warning, #f59e0b);
+}
+
+.task-list__indicator[data-state="?"] {
+  color: var(--color-info, #3b82f6);
+}
+
+.task-list__indicator[data-state="b"],
+.task-list__indicator[data-state="f"] {
+  /* Emojis have their own colors */
+  color: inherit;
+}
+
+.task-list__text {
+  flex: 1;
+  padding-top: 10px;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+/* ============================================
+   Mobile Responsiveness
+   ============================================ */
+
+/* Disable hover effects on touch devices */
+@media (hover: none) {
+  .task-list__toggle:hover {
+    background: transparent;
+  }
+}
+
+/* Slightly larger touch targets on small screens */
+@media (max-width: 480px) {
+  .task-list__item {
+    padding: var(--spacing-sm);
+  }
+
+  .task-list__group-header {
+    padding: var(--spacing-sm);
+  }
+}

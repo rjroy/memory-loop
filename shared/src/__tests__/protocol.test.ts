@@ -21,6 +21,8 @@ import {
   ReadFileMessageSchema,
   GetInspirationMessageSchema,
   WriteFileMessageSchema,
+  GetTasksMessageSchema,
+  ToggleTaskMessageSchema,
   // Server message schemas
   ServerMessageSchema,
   VaultListMessageSchema,
@@ -39,10 +41,13 @@ import {
   InspirationItemSchema,
   InspirationMessageSchema,
   FileWrittenMessageSchema,
+  TasksMessageSchema,
+  TaskToggledMessageSchema,
   // Supporting schemas
   VaultInfoSchema,
   ErrorCodeSchema,
   FileEntrySchema,
+  TaskEntrySchema,
   // Utilities
   parseClientMessage,
   parseServerMessage,
@@ -62,7 +67,9 @@ describe("VaultInfoSchema", () => {
       name: "My Vault",
       path: "/vaults/my-vault",
       hasClaudeMd: true,
+      contentRoot: "/vaults/my-vault",
       inboxPath: "00_Inbox",
+      metadataPath: "06_Metadata/memory-loop",
     };
 
     const result = VaultInfoSchema.parse(validVault);
@@ -79,7 +86,9 @@ describe("VaultInfoSchema", () => {
       name: "My Vault",
       path: "/vaults/my-vault",
       hasClaudeMd: true,
+      contentRoot: "/vaults/my-vault",
       inboxPath: "00_Inbox",
+      metadataPath: "06_Metadata/memory-loop",
     };
 
     expect(() => VaultInfoSchema.parse(invalidVault)).toThrow(ZodError);
@@ -187,6 +196,141 @@ describe("FileEntrySchema", () => {
   test("rejects invalid type", () => {
     const entry = { name: "file.md", type: "symlink", path: "file.md" };
     expect(() => FileEntrySchema.parse(entry)).toThrow(ZodError);
+  });
+});
+
+// =============================================================================
+// Task Entry Schema Tests
+// =============================================================================
+
+describe("TaskEntrySchema", () => {
+  test("accepts valid task entry with incomplete state", () => {
+    const task = {
+      text: "Buy groceries",
+      state: " ",
+      filePath: "00_Inbox/2025-01-01.md",
+      lineNumber: 5,
+    };
+    const result = TaskEntrySchema.parse(task);
+    expect(result.text).toBe("Buy groceries");
+    expect(result.state).toBe(" ");
+    expect(result.filePath).toBe("00_Inbox/2025-01-01.md");
+    expect(result.lineNumber).toBe(5);
+  });
+
+  test("accepts valid task entry with complete state", () => {
+    const task = {
+      text: "Finish project",
+      state: "x",
+      filePath: "01_Projects/project.md",
+      lineNumber: 10,
+    };
+    const result = TaskEntrySchema.parse(task);
+    expect(result.state).toBe("x");
+  });
+
+  test("accepts all valid task states", () => {
+    const validStates = [" ", "x", "/", "?", "b", "f"];
+    for (const state of validStates) {
+      const task = {
+        text: "Test task",
+        state,
+        filePath: "test.md",
+        lineNumber: 1,
+      };
+      expect(() => TaskEntrySchema.parse(task)).not.toThrow();
+    }
+  });
+
+  test("accepts empty text (edge case from regex capture)", () => {
+    // Empty text is technically valid - the regex could capture empty string
+    const task = {
+      text: "",
+      state: " ",
+      filePath: "test.md",
+      lineNumber: 1,
+    };
+    const result = TaskEntrySchema.parse(task);
+    expect(result.text).toBe("");
+  });
+
+  test("accepts task text with special characters", () => {
+    const task = {
+      text: "Task with emojis \u{1F525} and \"quotes\" and [links](url)",
+      state: " ",
+      filePath: "test.md",
+      lineNumber: 1,
+    };
+    const result = TaskEntrySchema.parse(task);
+    expect(result.text).toContain("\u{1F525}");
+  });
+
+  test("rejects state with more than one character", () => {
+    const task = {
+      text: "Test",
+      state: "xx",
+      filePath: "test.md",
+      lineNumber: 1,
+    };
+    expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
+  });
+
+  test("rejects state with zero characters", () => {
+    const task = {
+      text: "Test",
+      state: "",
+      filePath: "test.md",
+      lineNumber: 1,
+    };
+    expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
+  });
+
+  test("rejects empty filePath", () => {
+    const task = {
+      text: "Test",
+      state: " ",
+      filePath: "",
+      lineNumber: 1,
+    };
+    expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
+  });
+
+  test("rejects lineNumber less than 1", () => {
+    const task = {
+      text: "Test",
+      state: " ",
+      filePath: "test.md",
+      lineNumber: 0,
+    };
+    expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
+  });
+
+  test("rejects negative lineNumber", () => {
+    const task = {
+      text: "Test",
+      state: " ",
+      filePath: "test.md",
+      lineNumber: -1,
+    };
+    expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
+  });
+
+  test("rejects non-integer lineNumber", () => {
+    const task = {
+      text: "Test",
+      state: " ",
+      filePath: "test.md",
+      lineNumber: 1.5,
+    };
+    expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
+  });
+
+  test("rejects missing fields", () => {
+    const task = {
+      text: "Test",
+      state: " ",
+    };
+    expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
   });
 });
 
@@ -427,6 +571,84 @@ describe("Client -> Server Messages", () => {
     });
   });
 
+  describe("GetTasksMessageSchema", () => {
+    test("accepts valid get_tasks message", () => {
+      const msg = { type: "get_tasks" as const };
+      const result = GetTasksMessageSchema.parse(msg);
+      expect(result.type).toBe("get_tasks");
+    });
+
+    test("ignores extra fields", () => {
+      const msg = { type: "get_tasks", extra: "ignored" };
+      const result = GetTasksMessageSchema.parse(msg);
+      expect(result.type).toBe("get_tasks");
+    });
+  });
+
+  describe("ToggleTaskMessageSchema", () => {
+    test("accepts valid toggle_task message", () => {
+      const msg = {
+        type: "toggle_task" as const,
+        filePath: "00_Inbox/2025-01-01.md",
+        lineNumber: 5,
+      };
+      const result = ToggleTaskMessageSchema.parse(msg);
+      expect(result.type).toBe("toggle_task");
+      expect(result.filePath).toBe("00_Inbox/2025-01-01.md");
+      expect(result.lineNumber).toBe(5);
+    });
+
+    test("accepts nested file path", () => {
+      const msg = {
+        type: "toggle_task" as const,
+        filePath: "01_Projects/work/project-a/tasks.md",
+        lineNumber: 100,
+      };
+      const result = ToggleTaskMessageSchema.parse(msg);
+      expect(result.filePath).toBe("01_Projects/work/project-a/tasks.md");
+    });
+
+    test("rejects empty filePath", () => {
+      const msg = { type: "toggle_task", filePath: "", lineNumber: 5 };
+      expect(() => ToggleTaskMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects lineNumber less than 1", () => {
+      const msg = { type: "toggle_task", filePath: "test.md", lineNumber: 0 };
+      expect(() => ToggleTaskMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects negative lineNumber", () => {
+      const msg = { type: "toggle_task", filePath: "test.md", lineNumber: -1 };
+      expect(() => ToggleTaskMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-integer lineNumber", () => {
+      const msg = { type: "toggle_task", filePath: "test.md", lineNumber: 1.5 };
+      expect(() => ToggleTaskMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing filePath", () => {
+      const msg = { type: "toggle_task", lineNumber: 5 };
+      expect(() => ToggleTaskMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing lineNumber", () => {
+      const msg = { type: "toggle_task", filePath: "test.md" };
+      expect(() => ToggleTaskMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string filePath", () => {
+      const msg = { type: "toggle_task", filePath: 123, lineNumber: 5 };
+      expect(() => ToggleTaskMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-number lineNumber", () => {
+      const msg = { type: "toggle_task", filePath: "test.md", lineNumber: "5" };
+      expect(() => ToggleTaskMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ClientMessageSchema (discriminated union)", () => {
     test("parses all client message types", () => {
       const messages = [
@@ -441,6 +663,8 @@ describe("Client -> Server Messages", () => {
         { type: "read_file", path: "note.md" },
         { type: "get_inspiration" },
         { type: "write_file", path: "note.md", content: "test" },
+        { type: "get_tasks" },
+        { type: "toggle_task", filePath: "test.md", lineNumber: 1 },
       ];
 
       for (const msg of messages) {
@@ -483,14 +707,18 @@ describe("Server -> Client Messages", () => {
             name: "Vault 1",
             path: "/vaults/vault-1",
             hasClaudeMd: true,
+            contentRoot: "/vaults/vault-1",
             inboxPath: "00_Inbox",
+            metadataPath: "06_Metadata/memory-loop",
           },
           {
             id: "vault-2",
             name: "Vault 2",
             path: "/vaults/vault-2",
             hasClaudeMd: false,
+            contentRoot: "/vaults/vault-2",
             inboxPath: "Inbox",
+            metadataPath: "06_Metadata/memory-loop",
           },
         ],
       };
@@ -1013,6 +1241,202 @@ describe("Server -> Client Messages", () => {
     });
   });
 
+  describe("TasksMessageSchema", () => {
+    test("accepts valid tasks message with tasks", () => {
+      const msg = {
+        type: "tasks" as const,
+        tasks: [
+          { text: "Buy groceries", state: " ", filePath: "00_Inbox/today.md", lineNumber: 5 },
+          { text: "Finish report", state: "x", filePath: "01_Projects/work.md", lineNumber: 10 },
+        ],
+        incomplete: 1,
+        total: 2,
+      };
+      const result = TasksMessageSchema.parse(msg);
+      expect(result.type).toBe("tasks");
+      expect(result.tasks).toHaveLength(2);
+      expect(result.tasks[0].text).toBe("Buy groceries");
+      expect(result.tasks[0].state).toBe(" ");
+      expect(result.tasks[1].state).toBe("x");
+      expect(result.incomplete).toBe(1);
+      expect(result.total).toBe(2);
+    });
+
+    test("accepts empty tasks array", () => {
+      const msg = {
+        type: "tasks" as const,
+        tasks: [],
+        incomplete: 0,
+        total: 0,
+      };
+      const result = TasksMessageSchema.parse(msg);
+      expect(result.tasks).toHaveLength(0);
+      expect(result.incomplete).toBe(0);
+      expect(result.total).toBe(0);
+    });
+
+    test("accepts tasks with all valid states", () => {
+      const tasks = [" ", "x", "/", "?", "b", "f"].map((state, i) => ({
+        text: `Task ${i}`,
+        state,
+        filePath: "test.md",
+        lineNumber: i + 1,
+      }));
+      const msg = {
+        type: "tasks" as const,
+        tasks,
+        incomplete: 1,
+        total: 6,
+      };
+      const result = TasksMessageSchema.parse(msg);
+      expect(result.tasks).toHaveLength(6);
+    });
+
+    test("rejects invalid task in tasks array", () => {
+      const msg = {
+        type: "tasks",
+        tasks: [{ text: "Valid", state: "xx", filePath: "test.md", lineNumber: 1 }], // invalid state
+        incomplete: 0,
+        total: 1,
+      };
+      expect(() => TasksMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects negative incomplete count", () => {
+      const msg = {
+        type: "tasks",
+        tasks: [],
+        incomplete: -1,
+        total: 0,
+      };
+      expect(() => TasksMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects negative total count", () => {
+      const msg = {
+        type: "tasks",
+        tasks: [],
+        incomplete: 0,
+        total: -1,
+      };
+      expect(() => TasksMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-integer counts", () => {
+      const msg = {
+        type: "tasks",
+        tasks: [],
+        incomplete: 1.5,
+        total: 2,
+      };
+      expect(() => TasksMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing tasks field", () => {
+      const msg = { type: "tasks", incomplete: 0, total: 0 };
+      expect(() => TasksMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing incomplete field", () => {
+      const msg = { type: "tasks", tasks: [], total: 0 };
+      expect(() => TasksMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing total field", () => {
+      const msg = { type: "tasks", tasks: [], incomplete: 0 };
+      expect(() => TasksMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
+  describe("TaskToggledMessageSchema", () => {
+    test("accepts valid task_toggled message", () => {
+      const msg = {
+        type: "task_toggled" as const,
+        filePath: "00_Inbox/today.md",
+        lineNumber: 5,
+        newState: "x",
+      };
+      const result = TaskToggledMessageSchema.parse(msg);
+      expect(result.type).toBe("task_toggled");
+      expect(result.filePath).toBe("00_Inbox/today.md");
+      expect(result.lineNumber).toBe(5);
+      expect(result.newState).toBe("x");
+    });
+
+    test("accepts all valid newState values", () => {
+      const validStates = [" ", "x", "/", "?", "b", "f"];
+      for (const newState of validStates) {
+        const msg = {
+          type: "task_toggled" as const,
+          filePath: "test.md",
+          lineNumber: 1,
+          newState,
+        };
+        expect(() => TaskToggledMessageSchema.parse(msg)).not.toThrow();
+      }
+    });
+
+    test("rejects empty filePath", () => {
+      const msg = { type: "task_toggled", filePath: "", lineNumber: 5, newState: "x" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects lineNumber less than 1", () => {
+      const msg = { type: "task_toggled", filePath: "test.md", lineNumber: 0, newState: "x" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects negative lineNumber", () => {
+      const msg = { type: "task_toggled", filePath: "test.md", lineNumber: -1, newState: "x" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-integer lineNumber", () => {
+      const msg = { type: "task_toggled", filePath: "test.md", lineNumber: 1.5, newState: "x" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects newState with more than one character", () => {
+      const msg = { type: "task_toggled", filePath: "test.md", lineNumber: 1, newState: "xx" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects newState with zero characters", () => {
+      const msg = { type: "task_toggled", filePath: "test.md", lineNumber: 1, newState: "" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing filePath", () => {
+      const msg = { type: "task_toggled", lineNumber: 5, newState: "x" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing lineNumber", () => {
+      const msg = { type: "task_toggled", filePath: "test.md", newState: "x" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing newState", () => {
+      const msg = { type: "task_toggled", filePath: "test.md", lineNumber: 5 };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string filePath", () => {
+      const msg = { type: "task_toggled", filePath: 123, lineNumber: 5, newState: "x" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-number lineNumber", () => {
+      const msg = { type: "task_toggled", filePath: "test.md", lineNumber: "5", newState: "x" };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string newState", () => {
+      const msg = { type: "task_toggled", filePath: "test.md", lineNumber: 5, newState: 1 };
+      expect(() => TaskToggledMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ServerMessageSchema (discriminated union)", () => {
     test("parses all server message types", () => {
       const messages = [
@@ -1024,7 +1448,9 @@ describe("Server -> Client Messages", () => {
               name: "V1",
               path: "/v1",
               hasClaudeMd: true,
+              contentRoot: "/v1",
               inboxPath: "Inbox",
+              metadataPath: "06_Metadata/memory-loop",
             },
           ],
         },
@@ -1047,6 +1473,14 @@ describe("Server -> Client Messages", () => {
           quote: { text: "Stay hungry.", attribution: "Steve Jobs" },
         },
         { type: "file_written", path: "note.md", success: true },
+        { type: "tasks", tasks: [], incomplete: 0, total: 0 },
+        {
+          type: "tasks",
+          tasks: [{ text: "Buy milk", state: " ", filePath: "inbox.md", lineNumber: 1 }],
+          incomplete: 1,
+          total: 1,
+        },
+        { type: "task_toggled", filePath: "test.md", lineNumber: 5, newState: "x" },
       ];
 
       for (const msg of messages) {

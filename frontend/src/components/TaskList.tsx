@@ -5,7 +5,7 @@
  * Supports optimistic updates with rollback on error.
  */
 
-import { useMemo, useCallback, useRef } from "react";
+import { useMemo, useCallback, useRef, useState } from "react";
 import type { TaskEntry } from "@memory-loop/shared";
 import { useSession } from "../contexts/SessionContext";
 import "./TaskList.css";
@@ -16,6 +16,8 @@ import "./TaskList.css";
 export interface TaskListProps {
   /** Callback when a task is toggled */
   onToggleTask?: (filePath: string, lineNumber: number) => void;
+  /** Callback when a task's file is selected for viewing */
+  onFileSelect?: (path: string) => void;
 }
 
 /**
@@ -86,14 +88,18 @@ interface TaskGroupProps {
   filePath: string;
   tasks: TaskEntry[];
   onToggle: (filePath: string, lineNumber: number, currentState: string) => void;
+  onFileSelect?: (path: string) => void;
 }
 
 /**
  * TaskGroup displays tasks from a single file.
  */
-function TaskGroup({ filePath, tasks, onToggle }: TaskGroupProps): React.ReactNode {
-  // Calculate rollup count: incomplete (state = ' ') / total
-  const incompleteCount = tasks.filter((t) => t.state === " ").length;
+function TaskGroup({ filePath, tasks, onToggle, onFileSelect }: TaskGroupProps): React.ReactNode {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const { setCurrentPath } = useSession();
+
+  // Calculate rollup count: completed (state = 'x') / total
+  const completedCount = tasks.filter((t) => t.state === "x").length;
   const totalCount = tasks.length;
 
   // Extract just the filename for display
@@ -101,9 +107,27 @@ function TaskGroup({ filePath, tasks, onToggle }: TaskGroupProps): React.ReactNo
     ? filePath.substring(filePath.lastIndexOf("/") + 1)
     : filePath;
 
+  // Handle task text click to view the file
+  const handleTextClick = (taskFilePath: string) => {
+    setCurrentPath(taskFilePath);
+    onFileSelect?.(taskFilePath);
+  };
+
   return (
     <div className="task-list__group">
-      <div className="task-list__group-header">
+      <button
+        type="button"
+        className="task-list__group-header"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        aria-expanded={!isCollapsed}
+        aria-controls={`task-group-${filePath}`}
+      >
+        <span
+          className="task-list__group-chevron"
+          data-collapsed={isCollapsed}
+        >
+          <ChevronIcon />
+        </span>
         <span className="task-list__group-icon">
           <FileIcon />
         </span>
@@ -111,26 +135,35 @@ function TaskGroup({ filePath, tasks, onToggle }: TaskGroupProps): React.ReactNo
           {fileName}
         </span>
         <span className="task-list__group-count">
-          {incompleteCount} / {totalCount}
+          {completedCount} / {totalCount}
         </span>
-      </div>
-      <ul className="task-list__items">
-        {tasks.map((task) => (
-          <li key={`${task.filePath}:${task.lineNumber}`} className="task-list__item">
-            <button
-              type="button"
-              className="task-list__toggle"
-              onClick={() => onToggle(task.filePath, task.lineNumber, task.state)}
-              aria-label={`Toggle task: ${task.text} (currently ${getStateLabel(task.state)})`}
-            >
-              <span className="task-list__indicator" data-state={task.state}>
-                {getStateIndicator(task.state)}
-              </span>
-            </button>
-            <span className="task-list__text">{task.text}</span>
-          </li>
-        ))}
-      </ul>
+      </button>
+      {!isCollapsed && (
+        <ul className="task-list__items" id={`task-group-${filePath}`}>
+          {tasks.map((task) => (
+            <li key={`${task.filePath}:${task.lineNumber}`} className="task-list__item">
+              <button
+                type="button"
+                className="task-list__toggle"
+                onClick={() => onToggle(task.filePath, task.lineNumber, task.state)}
+                aria-label={`Toggle task: ${task.text} (currently ${getStateLabel(task.state)})`}
+              >
+                <span className="task-list__indicator" data-state={task.state}>
+                  {getStateIndicator(task.state)}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="task-list__text-btn"
+                onClick={() => handleTextClick(task.filePath)}
+                aria-label={`View file: ${task.filePath}`}
+              >
+                {task.text}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -156,6 +189,25 @@ function FileIcon(): React.ReactNode {
 }
 
 /**
+ * Chevron icon for collapse/expand indicator.
+ */
+function ChevronIcon(): React.ReactNode {
+  return (
+    <svg
+      className="task-list__icon-svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+/**
  * TaskList displays tasks grouped by source file with toggle indicators.
  *
  * Features:
@@ -166,7 +218,7 @@ function FileIcon(): React.ReactNode {
  * - Optimistic updates with rollback on error
  * - 44px minimum touch targets (REQ-NF-2)
  */
-export function TaskList({ onToggleTask }: TaskListProps): React.ReactNode {
+export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.ReactNode {
   const { browser, updateTask, setTasksError } = useSession();
   const { tasks, isTasksLoading, tasksError } = browser;
 
@@ -258,6 +310,7 @@ export function TaskList({ onToggleTask }: TaskListProps): React.ReactNode {
             filePath={filePath}
             tasks={fileTasks}
             onToggle={handleToggle}
+            onFileSelect={onFileSelect}
           />
         );
       })}

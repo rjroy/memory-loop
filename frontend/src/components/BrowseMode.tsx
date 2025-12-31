@@ -332,7 +332,7 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
             {viewMode === "files" ? (
               <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
             ) : (
-              <TaskList onToggleTask={handleToggleTask} />
+              <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
             )}
           </div>
         )}
@@ -399,7 +399,7 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
               {viewMode === "files" ? (
                 <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
               ) : (
-                <TaskList onToggleTask={handleToggleTask} />
+                <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
               )}
             </div>
           </aside>

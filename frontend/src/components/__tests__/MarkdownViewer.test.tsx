@@ -188,6 +188,170 @@ describe("MarkdownViewer", () => {
     });
   });
 
+  describe("frontmatter rendering", () => {
+    it("renders frontmatter as a table", () => {
+      const content = `---
+title: Test Note
+date: 2025-01-15
+---
+
+# Content`;
+      const { container } = render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      const frontmatterTable = container.querySelector(".markdown-viewer__frontmatter-table");
+      expect(frontmatterTable).toBeDefined();
+      expect(screen.getByText("title")).toBeDefined();
+      expect(screen.getByText("Test Note")).toBeDefined();
+      expect(screen.getByText("date")).toBeDefined();
+    });
+
+    it("renders markdown content after frontmatter", () => {
+      const content = `---
+title: Test
+---
+
+# Hello World`;
+      render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      expect(screen.getByRole("heading", { level: 1 })).toBeDefined();
+      expect(screen.getByText("Hello World")).toBeDefined();
+    });
+
+    it("does not render frontmatter as raw text", () => {
+      const content = `---
+title: Secret Title
+---
+
+# Visible Content`;
+      render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      // The raw --- delimiters should not appear in the content
+      const contentDiv = screen.getByText("Visible Content").closest(".markdown-viewer__content");
+      expect(contentDiv?.textContent).not.toContain("---");
+    });
+
+    it("handles array values in frontmatter", () => {
+      const content = `---
+tags: [javascript, react, testing]
+---
+
+# Content`;
+      render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      expect(screen.getByText("tags")).toBeDefined();
+      expect(screen.getByText("javascript, react, testing")).toBeDefined();
+    });
+
+    it("handles nested object values in frontmatter", () => {
+      const content = `---
+metadata:
+  author: John
+  version: "1.0"
+---
+
+# Content`;
+      render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      expect(screen.getByText("metadata")).toBeDefined();
+      // Nested objects are JSON stringified
+      expect(screen.getByText('{"author":"John","version":"1.0"}')).toBeDefined();
+    });
+
+    it("does not show frontmatter table when no frontmatter exists", () => {
+      const content = "# Just a heading\n\nSome content.";
+      const { container } = render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      const frontmatterTable = container.querySelector(".markdown-viewer__frontmatter-table");
+      expect(frontmatterTable).toBeNull();
+    });
+
+    it("handles empty frontmatter gracefully", () => {
+      const content = `---
+---
+
+# Content`;
+      const { container } = render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      // Empty frontmatter should not render a table
+      const frontmatterTable = container.querySelector(".markdown-viewer__frontmatter-table");
+      expect(frontmatterTable).toBeNull();
+      // Content should still render
+      expect(screen.getByRole("heading", { level: 1 })).toBeDefined();
+    });
+
+    it("handles malformed frontmatter gracefully", () => {
+      // Invalid YAML that gray-matter can't parse
+      const content = `---
+title: [unclosed bracket
+---
+
+# Content`;
+      render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      // Should still render something without crashing
+      expect(screen.getByText("Content")).toBeDefined();
+    });
+
+    it("frontmatter table has correct styling classes", () => {
+      const content = `---
+title: Test
+---
+
+# Content`;
+      const { container } = render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      expect(container.querySelector(".markdown-viewer__frontmatter")).toBeDefined();
+      expect(container.querySelector(".markdown-viewer__frontmatter-table")).toBeDefined();
+      expect(container.querySelector(".markdown-viewer__frontmatter-key")).toBeDefined();
+      expect(container.querySelector(".markdown-viewer__frontmatter-value")).toBeDefined();
+    });
+  });
+
   describe("wiki-links", () => {
     it("renders wiki-links as clickable elements", () => {
       const content = "See [[other-note]] for more.";

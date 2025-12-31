@@ -100,6 +100,41 @@
   }
 }
 
+/* Frontmatter table styling (GitHub-style) */
+.markdown-viewer__frontmatter {
+  margin-bottom: var(--spacing-lg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.markdown-viewer__frontmatter-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.markdown-viewer__frontmatter-table tr:not(:last-child) {
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.markdown-viewer__frontmatter-key {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(168, 85, 247, 0.08);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-medium);
+  text-align: left;
+  white-space: nowrap;
+  width: 1%;
+  vertical-align: top;
+}
+
+.markdown-viewer__frontmatter-value {
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--color-text);
+  word-break: break-word;
+}
+
 /* Markdown element styling */
 .markdown-viewer__content h1,
 .markdown-viewer__content h2,

@@ -14,6 +14,8 @@ import {
 } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkFrontmatter from "remark-frontmatter";
+import yaml from "js-yaml";
 import { useSession } from "../contexts/SessionContext";
 import "./MarkdownViewer.css";
 
@@ -180,6 +182,56 @@ function LoadingSkeleton(): ReactNode {
 }
 
 /**
+ * Formats a frontmatter value for display.
+ * Handles arrays, objects, and primitive values.
+ */
+function formatFrontmatterValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  if (value instanceof Date) {
+    return value.toLocaleDateString();
+  }
+  if (typeof value === "object" && value !== null) {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+/**
+ * FrontmatterTable renders YAML frontmatter as a styled table.
+ * Similar to how GitHub renders frontmatter in markdown files.
+ */
+function FrontmatterTable({
+  data,
+}: {
+  data: Record<string, unknown>;
+}): ReactNode {
+  const entries = Object.entries(data);
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="markdown-viewer__frontmatter">
+      <table className="markdown-viewer__frontmatter-table">
+        <tbody>
+          {entries.map(([key, value]) => (
+            <tr key={key}>
+              <th className="markdown-viewer__frontmatter-key">{key}</th>
+              <td className="markdown-viewer__frontmatter-value">
+                {formatFrontmatterValue(value)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
  * Creates custom react-markdown components with wiki-link and asset handling.
  */
 function createMarkdownComponents(
@@ -315,6 +367,44 @@ export function MarkdownViewer({
     () => createMarkdownComponents(assetBaseUrl, handleWikiLinkClick),
     [assetBaseUrl, handleWikiLinkClick]
   );
+
+  // Parse frontmatter from content using js-yaml (browser-compatible)
+  const { frontmatter, markdownContent } = useMemo(() => {
+    if (!currentFileContent) {
+      return { frontmatter: null, markdownContent: "" };
+    }
+
+    // Check for frontmatter: must start with --- on first line
+    if (!currentFileContent.startsWith("---")) {
+      return { frontmatter: null, markdownContent: currentFileContent };
+    }
+
+    // Find the closing --- delimiter
+    const endMatch = currentFileContent.indexOf("\n---", 3);
+    if (endMatch === -1) {
+      return { frontmatter: null, markdownContent: currentFileContent };
+    }
+
+    try {
+      // Extract YAML between delimiters
+      const yamlContent = currentFileContent.slice(4, endMatch);
+      const data = yaml.load(yamlContent) as Record<string, unknown> | null;
+
+      // Extract content after closing delimiter
+      const contentStart = endMatch + 4; // Skip \n---
+      const content = currentFileContent.slice(contentStart).replace(/^\n+/, "");
+
+      const hasFrontmatter = data !== null && typeof data === "object" && Object.keys(data).length > 0;
+
+      return {
+        frontmatter: hasFrontmatter ? data : null,
+        markdownContent: content,
+      };
+    } catch {
+      // If YAML parsing fails, render content as-is
+      return { frontmatter: null, markdownContent: currentFileContent };
+    }
+  }, [currentFileContent]);
 
   // Handle breadcrumb navigation
   const handleBreadcrumbNavigate = useCallback(
@@ -462,8 +552,12 @@ export function MarkdownViewer({
       )}
 
       <div className="markdown-viewer__content">
-        <Markdown remarkPlugins={[remarkGfm]} components={components}>
-          {currentFileContent}
+        {frontmatter && <FrontmatterTable data={frontmatter} />}
+        <Markdown
+          remarkPlugins={[remarkGfm, remarkFrontmatter]}
+          components={components}
+        >
+          {markdownContent}
         </Markdown>
       </div>
     </div>

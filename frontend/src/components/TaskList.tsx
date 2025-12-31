@@ -108,10 +108,13 @@ function TaskGroup({ filePath, tasks, onToggle, onFileSelect }: TaskGroupProps):
     : filePath;
 
   // Handle task text click to view the file
-  const handleTextClick = (taskFilePath: string) => {
-    setCurrentPath(taskFilePath);
-    onFileSelect?.(taskFilePath);
-  };
+  const handleTextClick = useCallback(
+    (taskFilePath: string) => {
+      setCurrentPath(taskFilePath);
+      onFileSelect?.(taskFilePath);
+    },
+    [setCurrentPath, onFileSelect]
+  );
 
   return (
     <div className="task-list__group">
@@ -120,7 +123,6 @@ function TaskGroup({ filePath, tasks, onToggle, onFileSelect }: TaskGroupProps):
         className="task-list__group-header"
         onClick={() => setIsCollapsed(!isCollapsed)}
         aria-expanded={!isCollapsed}
-        aria-controls={`task-group-${filePath}`}
       >
         <span
           className="task-list__group-chevron"
@@ -139,7 +141,7 @@ function TaskGroup({ filePath, tasks, onToggle, onFileSelect }: TaskGroupProps):
         </span>
       </button>
       {!isCollapsed && (
-        <ul className="task-list__items" id={`task-group-${filePath}`}>
+        <ul className="task-list__items">
           {tasks.map((task) => (
             <li key={`${task.filePath}:${task.lineNumber}`} className="task-list__item">
               <button

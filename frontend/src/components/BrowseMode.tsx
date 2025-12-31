@@ -7,8 +7,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "../contexts/SessionContext";
+import type { BrowseViewMode } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { FileTree } from "./FileTree";
+import { TaskList } from "./TaskList";
 import { MarkdownViewer } from "./MarkdownViewer";
 import "./BrowseMode.css";
 
@@ -39,11 +41,16 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  const { browser, vault, cacheDirectory, clearDirectoryCache, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError } = useSession();
+  const { browser, vault, cacheDirectory, clearDirectoryCache, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask } = useSession();
+
+  const { viewMode } = browser;
 
   // Track saving state in a ref to avoid stale closures in WebSocket message handler
   const isSavingRef = useRef(browser.isSaving);
   isSavingRef.current = browser.isSaving;
+
+  // Track pending task toggles for rollback on error
+  const pendingTaskTogglesRef = useRef<Map<string, string>>(new Map());
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -77,6 +84,14 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
       sendMessage({ type: "list_directory", path: "" });
     }
   }, [vault, hasSessionReady, browser.directoryCache, sendMessage, setFileLoading]);
+
+  // Load tasks when viewMode is "tasks"
+  useEffect(() => {
+    if (vault && hasSessionReady && viewMode === "tasks") {
+      setTasksLoading(true);
+      sendMessage({ type: "get_tasks" });
+    }
+  }, [vault, hasSessionReady, viewMode, sendMessage, setTasksLoading]);
 
   // Auto-load file when currentPath is set externally (e.g., from RecentActivity View button)
   // Only load if we have a file path and no content loaded yet
@@ -136,7 +151,19 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
           lastMessage.code === "DIRECTORY_NOT_FOUND" ||
           lastMessage.code === "INVALID_FILE_TYPE"
         ) {
-          setFileError(lastMessage.message);
+          // Check if this is a task toggle error - rollback optimistic update
+          if (pendingTaskTogglesRef.current.size > 0) {
+            // Rollback all pending task toggles and show error (REQ-F-24)
+            for (const [taskKey, originalState] of pendingTaskTogglesRef.current) {
+              const [filePath, lineNumberStr] = taskKey.split(":");
+              const lineNumber = parseInt(lineNumberStr, 10);
+              updateTask(filePath, lineNumber, originalState);
+            }
+            pendingTaskTogglesRef.current.clear();
+            setTasksError(lastMessage.message);
+          } else {
+            setFileError(lastMessage.message);
+          }
         }
         setFileLoading(false);
         break;
@@ -148,8 +175,22 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
         setFileLoading(true);
         sendMessage({ type: "read_file", path: lastMessage.path });
         break;
+
+      case "tasks":
+        // Task list received from server
+        setTasks(lastMessage.tasks);
+        break;
+
+      case "task_toggled": {
+        // Task toggle confirmed - clear from pending toggles
+        const taskKey = `${lastMessage.filePath}:${lastMessage.lineNumber}`;
+        pendingTaskTogglesRef.current.delete(taskKey);
+        // Update task with confirmed new state
+        updateTask(lastMessage.filePath, lastMessage.lineNumber, lastMessage.newState);
+        break;
+      }
     }
-  }, [lastMessage, cacheDirectory, setFileContent, setFileError, setFileLoading, saveSuccess, saveError, sendMessage]);
+  }, [lastMessage, cacheDirectory, setFileContent, setFileError, setFileLoading, saveSuccess, saveError, sendMessage, setTasks, updateTask, setTasksError]);
 
   // Handle directory load request from FileTree
   const handleLoadDirectory = useCallback(
@@ -220,12 +261,50 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
     setIsMobileTreeOpen(false);
   }, []);
 
+  // Toggle view mode between files and tasks
+  const toggleViewMode = useCallback(() => {
+    const newMode: BrowseViewMode = viewMode === "files" ? "tasks" : "files";
+    setViewMode(newMode);
+  }, [viewMode, setViewMode]);
+
+  // Handle task toggle from TaskList
+  const handleToggleTask = useCallback(
+    (filePath: string, lineNumber: number) => {
+      // Store original state for rollback (get from current tasks)
+      const task = browser.tasks.find(
+        (t) => t.filePath === filePath && t.lineNumber === lineNumber
+      );
+      if (task) {
+        const taskKey = `${filePath}:${lineNumber}`;
+        pendingTaskTogglesRef.current.set(taskKey, task.state);
+      }
+
+      // Send toggle request to server
+      sendMessage({
+        type: "toggle_task",
+        filePath,
+        lineNumber,
+      });
+    },
+    [browser.tasks, sendMessage]
+  );
+
+  // Get the view mode title text
+  const viewModeTitle = viewMode === "files" ? "Files" : "Tasks";
+
   return (
     <div className={`browse-mode ${isTreeCollapsed ? "browse-mode--tree-collapsed" : ""}`}>
       {/* Desktop tree pane */}
       <aside className="browse-mode__tree-pane">
         <div className="browse-mode__tree-header">
-          <h2 className="browse-mode__tree-title">Files</h2>
+          <button
+            type="button"
+            className="browse-mode__tree-title browse-mode__tree-title--clickable"
+            onClick={toggleViewMode}
+            aria-label={`Switch to ${viewMode === "files" ? "tasks" : "files"} view`}
+          >
+            {viewModeTitle}
+          </button>
           <div className="browse-mode__header-actions">
             {!isTreeCollapsed && (
               <button
@@ -250,7 +329,11 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
         </div>
         {!isTreeCollapsed && (
           <div className="browse-mode__tree-content">
-            <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
+            {viewMode === "files" ? (
+              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
+            ) : (
+              <TaskList onToggleTask={handleToggleTask} />
+            )}
           </div>
         )}
       </aside>
@@ -285,7 +368,14 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
           />
           <aside className="browse-mode__mobile-tree">
             <div className="browse-mode__mobile-tree-header">
-              <h2 className="browse-mode__tree-title">Files</h2>
+              <button
+                type="button"
+                className="browse-mode__tree-title browse-mode__tree-title--clickable"
+                onClick={toggleViewMode}
+                aria-label={`Switch to ${viewMode === "files" ? "tasks" : "files"} view`}
+              >
+                {viewModeTitle}
+              </button>
               <div className="browse-mode__header-actions">
                 <button
                   type="button"
@@ -306,7 +396,11 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
               </div>
             </div>
             <div className="browse-mode__tree-content">
-              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
+              {viewMode === "files" ? (
+                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
+              ) : (
+                <TaskList onToggleTask={handleToggleTask} />
+              )}
             </div>
           </aside>
         </>

@@ -1588,4 +1588,313 @@ describe("SessionContext", () => {
       expect(result.current.browser.adjustError).toBeNull();
     });
   });
+
+  describe("task state", () => {
+    it("provides initial task state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.browser.viewMode).toBe("files");
+      expect(result.current.browser.tasks).toEqual([]);
+      expect(result.current.browser.isTasksLoading).toBe(false);
+      expect(result.current.browser.tasksError).toBeNull();
+    });
+
+    it("setViewMode updates the view mode", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setViewMode("tasks");
+      });
+
+      expect(result.current.browser.viewMode).toBe("tasks");
+    });
+
+    it("setViewMode persists to localStorage", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setViewMode("tasks");
+      });
+
+      expect(localStorage.getItem("memory-loop:viewMode")).toBe("tasks");
+    });
+
+    it("setViewMode toggles back to files", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setViewMode("tasks");
+      });
+
+      expect(result.current.browser.viewMode).toBe("tasks");
+
+      act(() => {
+        result.current.setViewMode("files");
+      });
+
+      expect(result.current.browser.viewMode).toBe("files");
+    });
+
+    it("setTasks updates the task list", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const tasks = [
+        { text: "Task 1", state: " ", filePath: "folder/file.md", lineNumber: 1 },
+        { text: "Task 2", state: "x", filePath: "folder/file.md", lineNumber: 2 },
+      ];
+
+      act(() => {
+        result.current.setTasks(tasks);
+      });
+
+      expect(result.current.browser.tasks).toEqual(tasks);
+      expect(result.current.browser.isTasksLoading).toBe(false);
+      expect(result.current.browser.tasksError).toBeNull();
+    });
+
+    it("setTasksLoading updates loading state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setTasksLoading(true);
+      });
+
+      expect(result.current.browser.isTasksLoading).toBe(true);
+
+      act(() => {
+        result.current.setTasksLoading(false);
+      });
+
+      expect(result.current.browser.isTasksLoading).toBe(false);
+    });
+
+    it("setTasksLoading clears error when starting new operation", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setTasksError("Previous error");
+      });
+
+      expect(result.current.browser.tasksError).toBe("Previous error");
+
+      act(() => {
+        result.current.setTasksLoading(true);
+      });
+
+      expect(result.current.browser.tasksError).toBeNull();
+    });
+
+    it("setTasksError updates error state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setTasksError("Failed to load tasks");
+      });
+
+      expect(result.current.browser.tasksError).toBe("Failed to load tasks");
+      expect(result.current.browser.isTasksLoading).toBe(false);
+    });
+
+    it("setTasksError can clear error with null", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setTasksError("Some error");
+      });
+
+      expect(result.current.browser.tasksError).toBe("Some error");
+
+      act(() => {
+        result.current.setTasksError(null);
+      });
+
+      expect(result.current.browser.tasksError).toBeNull();
+    });
+
+    it("updateTask updates a single task by filePath and lineNumber", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const tasks = [
+        { text: "Task 1", state: " ", filePath: "folder/file.md", lineNumber: 1 },
+        { text: "Task 2", state: " ", filePath: "folder/file.md", lineNumber: 2 },
+        { text: "Task 3", state: " ", filePath: "other/file.md", lineNumber: 1 },
+      ];
+
+      act(() => {
+        result.current.setTasks(tasks);
+      });
+
+      // Update the second task
+      act(() => {
+        result.current.updateTask("folder/file.md", 2, "x");
+      });
+
+      expect(result.current.browser.tasks[0].state).toBe(" ");
+      expect(result.current.browser.tasks[1].state).toBe("x");
+      expect(result.current.browser.tasks[2].state).toBe(" ");
+    });
+
+    it("updateTask does not modify tasks if no match found", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const tasks = [
+        { text: "Task 1", state: " ", filePath: "folder/file.md", lineNumber: 1 },
+      ];
+
+      act(() => {
+        result.current.setTasks(tasks);
+      });
+
+      // Try to update non-existent task
+      act(() => {
+        result.current.updateTask("nonexistent.md", 99, "x");
+      });
+
+      expect(result.current.browser.tasks[0].state).toBe(" ");
+    });
+
+    it("updateTask supports full state cycle", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const tasks = [
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1 },
+      ];
+
+      act(() => {
+        result.current.setTasks(tasks);
+      });
+
+      // Cycle through all states
+      const states = ["x", "/", "?", "b", "f", " "];
+      for (const state of states) {
+        act(() => {
+          result.current.updateTask("file.md", 1, state);
+        });
+        expect(result.current.browser.tasks[0].state).toBe(state);
+      }
+    });
+
+    it("selectVault clears task state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up task state
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setViewMode("tasks");
+        result.current.setTasks([
+          { text: "Task", state: " ", filePath: "file.md", lineNumber: 1 },
+        ]);
+      });
+
+      expect(result.current.browser.tasks.length).toBe(1);
+
+      // Switch vault
+      act(() => {
+        result.current.selectVault(testVault2);
+      });
+
+      expect(result.current.browser.tasks).toEqual([]);
+      // viewMode is persisted, so it remains
+    });
+
+    it("clearVault clears task state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up task state
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setTasks([
+          { text: "Task", state: " ", filePath: "file.md", lineNumber: 1 },
+        ]);
+      });
+
+      expect(result.current.browser.tasks.length).toBe(1);
+
+      // Clear vault
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.browser.tasks).toEqual([]);
+    });
+
+    it("clearBrowserState clears task state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up task state
+      act(() => {
+        result.current.setTasks([
+          { text: "Task", state: " ", filePath: "file.md", lineNumber: 1 },
+        ]);
+        result.current.setTasksError("Some error");
+      });
+
+      expect(result.current.browser.tasks.length).toBe(1);
+      expect(result.current.browser.tasksError).toBe("Some error");
+
+      // Clear browser state
+      act(() => {
+        result.current.clearBrowserState();
+      });
+
+      expect(result.current.browser.tasks).toEqual([]);
+      expect(result.current.browser.tasksError).toBeNull();
+    });
+
+    it("viewMode is preserved when switching modes", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setViewMode("tasks");
+      });
+
+      expect(result.current.browser.viewMode).toBe("tasks");
+
+      // Switch application mode
+      act(() => {
+        result.current.setMode("discussion");
+      });
+
+      expect(result.current.browser.viewMode).toBe("tasks");
+
+      // Switch back to browse mode
+      act(() => {
+        result.current.setMode("browse");
+      });
+
+      expect(result.current.browser.viewMode).toBe("tasks");
+    });
+  });
 });

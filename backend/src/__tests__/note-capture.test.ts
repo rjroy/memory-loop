@@ -428,6 +428,43 @@ describe("parseCaptureSectionEntries", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].text).toBe("First section");
   });
+
+  test("parses unchecked task format - [ ] [HH:MM] text", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [ ] [10:00] Buy groceries\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toEqual({ time: "10:00", text: "Buy groceries", lineNum: 5 });
+  });
+
+  test("parses checked task format - [x] [HH:MM] text", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [x] [10:00] Completed task\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toEqual({ time: "10:00", text: "Completed task", lineNum: 5 });
+  });
+
+  test("parses any checkbox character - [c] [HH:MM] text", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [/] [10:00] In progress\n- [-] [11:00] Cancelled\n- [>] [12:00] Forwarded\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(3);
+    expect(entries[0].text).toBe("In progress");
+    expect(entries[1].text).toBe("Cancelled");
+    expect(entries[2].text).toBe("Forwarded");
+  });
+
+  test("parses mixed regular entries and task entries", () => {
+    const content = "# 2025-12-22\n\n## Capture\n\n- [08:00] Regular note\n- [ ] [09:00] Task to do\n- [x] [10:00] Completed task\n- [11:00] Another regular note\n";
+    const entries = parseCaptureSectionEntries(content);
+
+    expect(entries).toHaveLength(4);
+    expect(entries[0]).toEqual({ time: "08:00", text: "Regular note", lineNum: 5 });
+    expect(entries[1]).toEqual({ time: "09:00", text: "Task to do", lineNum: 6 });
+    expect(entries[2]).toEqual({ time: "10:00", text: "Completed task", lineNum: 7 });
+    expect(entries[3]).toEqual({ time: "11:00", text: "Another regular note", lineNum: 8 });
+  });
 });
 
 // =============================================================================

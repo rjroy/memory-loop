@@ -92,7 +92,7 @@ describe("TaskList", () => {
       expect(screen.getByText("file2.md")).toBeDefined();
     });
 
-    it("displays rollup count (incomplete / total) per file", () => {
+    it("displays rollup count (completed / total) per file", () => {
       const tasks: TaskEntry[] = [
         { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1 },
         { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2 },
@@ -105,8 +105,8 @@ describe("TaskList", () => {
         </SessionProvider>
       );
 
-      // 2 incomplete (space), 3 total
-      expect(screen.getByText("2 / 3")).toBeDefined();
+      // 1 completed (x), 3 total
+      expect(screen.getByText("1 / 3")).toBeDefined();
     });
   });
 

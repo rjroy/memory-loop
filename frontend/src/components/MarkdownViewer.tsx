@@ -15,7 +15,7 @@ import {
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
-import matter from "gray-matter";
+import yaml from "js-yaml";
 import { useSession } from "../contexts/SessionContext";
 import "./MarkdownViewer.css";
 
@@ -368,20 +368,40 @@ export function MarkdownViewer({
     [assetBaseUrl, handleWikiLinkClick]
   );
 
-  // Parse frontmatter from content using gray-matter
+  // Parse frontmatter from content using js-yaml (browser-compatible)
   const { frontmatter, markdownContent } = useMemo(() => {
     if (!currentFileContent) {
       return { frontmatter: null, markdownContent: "" };
     }
+
+    // Check for frontmatter: must start with --- on first line
+    if (!currentFileContent.startsWith("---")) {
+      return { frontmatter: null, markdownContent: currentFileContent };
+    }
+
+    // Find the closing --- delimiter
+    const endMatch = currentFileContent.indexOf("\n---", 3);
+    if (endMatch === -1) {
+      return { frontmatter: null, markdownContent: currentFileContent };
+    }
+
     try {
-      const { data, content } = matter(currentFileContent);
-      const hasFrontmatter = Object.keys(data).length > 0;
+      // Extract YAML between delimiters
+      const yamlContent = currentFileContent.slice(4, endMatch);
+      const data = yaml.load(yamlContent) as Record<string, unknown> | null;
+
+      // Extract content after closing delimiter
+      const contentStart = endMatch + 4; // Skip \n---
+      const content = currentFileContent.slice(contentStart).replace(/^\n+/, "");
+
+      const hasFrontmatter = data !== null && typeof data === "object" && Object.keys(data).length > 0;
+
       return {
-        frontmatter: hasFrontmatter ? (data as Record<string, unknown>) : null,
+        frontmatter: hasFrontmatter ? data : null,
         markdownContent: content,
       };
     } catch {
-      // If parsing fails, render content as-is
+      // If YAML parsing fails, render content as-is
       return { frontmatter: null, markdownContent: currentFileContent };
     }
   }, [currentFileContent]);

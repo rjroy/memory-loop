@@ -11,12 +11,16 @@ import { tmpdir } from "node:os";
 import {
   CONFIG_FILE_NAME,
   DEFAULT_METADATA_PATH,
+  DEFAULT_PROJECT_PATH,
+  DEFAULT_AREA_PATH,
   loadVaultConfig,
   resolveContentRoot,
   resolveMetadataPath,
   resolveGoalsPath,
   resolveContextualPromptsPath,
   resolveGeneralInspirationPath,
+  resolveProjectPath,
+  resolveAreaPath,
   type VaultConfig,
 } from "../vault-config";
 
@@ -48,6 +52,18 @@ describe("vault-config", () => {
   describe("DEFAULT_METADATA_PATH", () => {
     test("exports expected default metadata path", () => {
       expect(DEFAULT_METADATA_PATH).toBe("06_Metadata/memory-loop");
+    });
+  });
+
+  describe("DEFAULT_PROJECT_PATH", () => {
+    test("exports expected default project path", () => {
+      expect(DEFAULT_PROJECT_PATH).toBe("01_Projects");
+    });
+  });
+
+  describe("DEFAULT_AREA_PATH", () => {
+    test("exports expected default area path", () => {
+      expect(DEFAULT_AREA_PATH).toBe("02_Areas");
     });
   });
 
@@ -102,6 +118,43 @@ describe("vault-config", () => {
       expect(config).toEqual({ metadataPath: "meta" });
     });
 
+    test("loads config with only projectPath", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ projectPath: "projects" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual({ projectPath: "projects" });
+    });
+
+    test("loads config with only areaPath", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ areaPath: "areas" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual({ areaPath: "areas" });
+    });
+
+    test("loads config with all fields including projectPath and areaPath", async () => {
+      const configData: VaultConfig = {
+        contentRoot: "content",
+        inboxPath: "daily",
+        metadataPath: "meta/memory-loop",
+        projectPath: "custom_projects",
+        areaPath: "custom_areas",
+      };
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify(configData)
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual(configData);
+    });
+
     test("ignores non-string values for known fields", async () => {
       await writeFile(
         join(testDir, CONFIG_FILE_NAME),
@@ -109,6 +162,19 @@ describe("vault-config", () => {
           contentRoot: 123,
           inboxPath: null,
           metadataPath: ["array"],
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual({});
+    });
+
+    test("ignores non-string values for projectPath and areaPath", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          projectPath: 42,
+          areaPath: { nested: "object" },
         })
       );
 
@@ -287,6 +353,60 @@ describe("vault-config", () => {
     test("returns general-inspiration.md under custom metadata path", () => {
       const result = resolveGeneralInspirationPath({ metadataPath: "meta" });
       expect(result).toBe("meta/general-inspiration.md");
+    });
+  });
+
+  describe("resolveProjectPath", () => {
+    test("returns default when no projectPath configured", () => {
+      const result = resolveProjectPath({});
+      expect(result).toBe(DEFAULT_PROJECT_PATH);
+    });
+
+    test("returns default when projectPath is undefined", () => {
+      const result = resolveProjectPath({ projectPath: undefined });
+      expect(result).toBe(DEFAULT_PROJECT_PATH);
+    });
+
+    test("returns configured projectPath", () => {
+      const result = resolveProjectPath({ projectPath: "custom_projects" });
+      expect(result).toBe("custom_projects");
+    });
+
+    test("returns empty string when configured as empty", () => {
+      const result = resolveProjectPath({ projectPath: "" });
+      expect(result).toBe("");
+    });
+
+    test("handles nested project paths", () => {
+      const result = resolveProjectPath({ projectPath: "work/projects" });
+      expect(result).toBe("work/projects");
+    });
+  });
+
+  describe("resolveAreaPath", () => {
+    test("returns default when no areaPath configured", () => {
+      const result = resolveAreaPath({});
+      expect(result).toBe(DEFAULT_AREA_PATH);
+    });
+
+    test("returns default when areaPath is undefined", () => {
+      const result = resolveAreaPath({ areaPath: undefined });
+      expect(result).toBe(DEFAULT_AREA_PATH);
+    });
+
+    test("returns configured areaPath", () => {
+      const result = resolveAreaPath({ areaPath: "custom_areas" });
+      expect(result).toBe("custom_areas");
+    });
+
+    test("returns empty string when configured as empty", () => {
+      const result = resolveAreaPath({ areaPath: "" });
+      expect(result).toBe("");
+    });
+
+    test("handles nested area paths", () => {
+      const result = resolveAreaPath({ areaPath: "life/areas" });
+      expect(result).toBe("life/areas");
     });
   });
 });

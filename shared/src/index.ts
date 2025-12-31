@@ -19,6 +19,8 @@ export {
   ErrorCodeSchema,
   // File browser schemas
   FileEntrySchema,
+  // Task schemas
+  TaskEntrySchema,
   // Recent notes schemas
   RecentNoteEntrySchema,
   // Recent discussion schemas
@@ -74,6 +76,8 @@ export type {
   ConversationMessageProtocol,
   // File browser types
   FileEntry,
+  // Task types
+  TaskEntry,
   // Recent notes types
   RecentNoteEntry,
   // Recent discussion types

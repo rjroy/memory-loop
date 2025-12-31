@@ -165,6 +165,56 @@ void mock.module("../inspiration-manager", () => ({
   getInspiration: mockGetInspiration,
 }));
 
+// Mock task manager
+const mockGetAllTasks = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<{
+    tasks: Array<{
+      text: string;
+      state: string;
+      filePath: string;
+      lineNumber: number;
+    }>;
+    incomplete: number;
+    total: number;
+  }>
+>(() =>
+  Promise.resolve({
+    tasks: [],
+    incomplete: 0,
+    total: 0,
+  })
+);
+
+const mockToggleTask = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<{
+    success: boolean;
+    newState?: string;
+    error?: string;
+  }>
+>(() =>
+  Promise.resolve({
+    success: true,
+    newState: "x",
+  })
+);
+
+void mock.module("../task-manager", () => ({
+  getAllTasks: mockGetAllTasks,
+  toggleTask: mockToggleTask,
+}));
+
+// Mock vault config
+const mockLoadVaultConfig = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (vaultPath: string) => Promise<Record<string, string>>
+>(() => Promise.resolve({}));
+
+void mock.module("../vault-config", () => ({
+  loadVaultConfig: mockLoadVaultConfig,
+}));
+
 // Import handler after mocks are set up
 import {
   WebSocketHandler,
@@ -248,6 +298,9 @@ describe("WebSocket Handler", () => {
     mockReadMarkdownFile.mockReset();
     mockWriteMarkdownFile.mockReset();
     mockGetInspiration.mockReset();
+    mockGetAllTasks.mockReset();
+    mockToggleTask.mockReset();
+    mockLoadVaultConfig.mockReset();
 
     // Set default mock implementations
     mockDiscoverVaults.mockResolvedValue([]);
@@ -268,6 +321,16 @@ describe("WebSocket Handler", () => {
       contextual: null,
       quote: { text: "Default quote", attribution: "Test" },
     });
+    mockGetAllTasks.mockResolvedValue({
+      tasks: [],
+      incomplete: 0,
+      total: 0,
+    });
+    mockToggleTask.mockResolvedValue({
+      success: true,
+      newState: "x",
+    });
+    mockLoadVaultConfig.mockResolvedValue({});
   });
 
   afterEach(async () => {
@@ -2360,6 +2423,392 @@ describe("WebSocket Handler", () => {
         (m) => m.type === "error" && "message" in m && m.message.includes("Generation")
       );
       expect(hasErrorMessage).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // get_tasks Handler Tests
+  // ===========================================================================
+
+  describe("get_tasks handler", () => {
+    test("returns error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_tasks" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("returns tasks when vault selected", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetAllTasks.mockResolvedValue({
+        tasks: [
+          { text: "Buy groceries", state: " ", filePath: "00_Inbox/tasks.md", lineNumber: 5 },
+          { text: "Done item", state: "x", filePath: "00_Inbox/tasks.md", lineNumber: 6 },
+        ],
+        incomplete: 1,
+        total: 2,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_tasks" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("tasks");
+      if (message?.type === "tasks") {
+        expect(message.tasks).toHaveLength(2);
+        expect(message.incomplete).toBe(1);
+        expect(message.total).toBe(2);
+        expect(message.tasks[0].text).toBe("Buy groceries");
+        expect(message.tasks[0].state).toBe(" ");
+      }
+    });
+
+    test("returns empty array for empty vault", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetAllTasks.mockResolvedValue({
+        tasks: [],
+        incomplete: 0,
+        total: 0,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_tasks" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("tasks");
+      if (message?.type === "tasks") {
+        expect(message.tasks).toEqual([]);
+        expect(message.incomplete).toBe(0);
+        expect(message.total).toBe(0);
+      }
+    });
+
+    test("calls getAllTasks with vault contentRoot and config", async () => {
+      const vault = createMockVault({ contentRoot: "/tmp/test-vault/content" });
+      mockGetVaultById.mockResolvedValue(vault);
+      mockLoadVaultConfig.mockResolvedValue({
+        projectPath: "01_Projects",
+        areaPath: "02_Areas",
+      });
+      mockGetAllTasks.mockResolvedValue({
+        tasks: [],
+        incomplete: 0,
+        total: 0,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_tasks" })
+      );
+
+      expect(mockLoadVaultConfig).toHaveBeenCalledWith(vault.path);
+      expect(mockGetAllTasks).toHaveBeenCalledWith(
+        vault.contentRoot,
+        { projectPath: "01_Projects", areaPath: "02_Areas" }
+      );
+    });
+
+    test("handles errors gracefully", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetAllTasks.mockRejectedValue(new Error("Filesystem error"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_tasks" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toContain("Filesystem error");
+      }
+    });
+  });
+
+  // ===========================================================================
+  // toggle_task Handler Tests
+  // ===========================================================================
+
+  describe("toggle_task handler", () => {
+    test("returns error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "toggle_task", filePath: "tasks.md", lineNumber: 5 })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("toggles task and returns new state", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockToggleTask.mockResolvedValue({
+        success: true,
+        newState: "x",
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "toggle_task", filePath: "00_Inbox/tasks.md", lineNumber: 5 })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("task_toggled");
+      if (message?.type === "task_toggled") {
+        expect(message.filePath).toBe("00_Inbox/tasks.md");
+        expect(message.lineNumber).toBe(5);
+        expect(message.newState).toBe("x");
+      }
+
+      expect(mockToggleTask).toHaveBeenCalledWith(
+        vault.contentRoot,
+        "00_Inbox/tasks.md",
+        5
+      );
+    });
+
+    test("returns error for invalid path", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockToggleTask.mockResolvedValue({
+        success: false,
+        error: "Path outside vault",
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "toggle_task", filePath: "../etc/passwd", lineNumber: 1 })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("PATH_TRAVERSAL");
+      }
+    });
+
+    test("returns error for file not found", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockToggleTask.mockResolvedValue({
+        success: false,
+        error: "File not found: missing.md",
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "toggle_task", filePath: "missing.md", lineNumber: 1 })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("FILE_NOT_FOUND");
+      }
+    });
+
+    test("returns error for line that is not a task", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockToggleTask.mockResolvedValue({
+        success: false,
+        error: "Line 3 is not a task",
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "toggle_task", filePath: "note.md", lineNumber: 3 })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toContain("is not a task");
+      }
+    });
+
+    test("handles thrown FileBrowserError", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockToggleTask.mockRejectedValue(
+        new MockFileBrowserError("Path outside vault", "PATH_TRAVERSAL")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "toggle_task", filePath: "../etc/passwd", lineNumber: 1 })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("PATH_TRAVERSAL");
+      }
+    });
+
+    test("handles unexpected errors gracefully", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockToggleTask.mockRejectedValue(new Error("Disk write error"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "toggle_task", filePath: "tasks.md", lineNumber: 1 })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toContain("Disk write error");
+      }
+    });
+
+    test("cycles through all task states correctly", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Simulate state cycle: ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
+      const states = ["x", "/", "?", "b", "f", " "];
+      let stateIndex = 0;
+
+      mockToggleTask.mockImplementation(() => {
+        const newState = states[stateIndex];
+        stateIndex++;
+        return Promise.resolve({
+          success: true,
+          newState,
+        });
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Toggle multiple times and verify each state
+      for (const expectedState of states) {
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "toggle_task", filePath: "tasks.md", lineNumber: 1 })
+        );
+
+        const message = ws.getLastMessage();
+        expect(message?.type).toBe("task_toggled");
+        if (message?.type === "task_toggled") {
+          expect(message.newState).toBe(expectedState);
+        }
+      }
     });
   });
 });

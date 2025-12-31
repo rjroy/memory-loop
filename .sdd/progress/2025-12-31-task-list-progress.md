@@ -12,14 +12,18 @@ authored_by:
 
 # Task List - Implementation Progress
 
-**Last Updated**: 2025-12-31 | **Status**: 17% complete (2 of 12 tasks)
+**Last Updated**: 2025-12-31 | **Status**: 50% complete (6 of 12 tasks)
 
 ## Current Session
-**Date**: 2025-12-31 | **Working On**: TASK-003: Directory Scanning | **Blockers**: None
+**Date**: 2025-12-31 | **Working On**: TASK-007: Task State in SessionContext | **Blockers**: None
 
 ## Completed Today
 - TASK-001: Extend VaultConfig with Task Paths ✅
 - TASK-002: Add WebSocket Protocol Schemas ✅
+- TASK-003: Create Task Manager - Directory Scanning ✅
+- TASK-004: Create Task Manager - Task Parsing ✅
+- TASK-005: Create Task Manager - Task Toggle ✅
+- TASK-006: Add WebSocket Message Handlers ✅
 
 ## Discovered Issues
 - Fixed pre-existing test failures in protocol.test.ts (VaultInfoSchema tests missing required contentRoot/metadataPath fields)
@@ -36,11 +40,11 @@ authored_by:
 
 ### Phase 2: Backend Core (15 pts)
 
-**Upcoming** ⏳
-- [ ] TASK-003: Create Task Manager - Directory Scanning (M)
-- [ ] TASK-004: Create Task Manager - Task Parsing (M)
-- [ ] TASK-005: Create Task Manager - Task Toggle (L)
-- [ ] TASK-006: Add WebSocket Message Handlers (M)
+**Completed** ✅
+- [x] TASK-003: Create Task Manager - Directory Scanning (M) - *Completed 2025-12-31*
+- [x] TASK-004: Create Task Manager - Task Parsing (M) - *Completed 2025-12-31*
+- [x] TASK-005: Create Task Manager - Task Toggle (L) - *Completed 2025-12-31*
+- [x] TASK-006: Add WebSocket Message Handlers (M) - *Completed 2025-12-31*
 
 ### Phase 3: Frontend Core (14 pts)
 
@@ -74,12 +78,13 @@ None yet.
 |-----------|--------|
 | vault-config.ts | ✅ Complete (51 tests) |
 | protocol.ts | ✅ Complete (175 tests) |
-| task-manager.ts | ⏳ Pending |
+| task-manager.ts | ✅ Complete (119 tests) |
+| websocket-handler.ts | ✅ Complete (86 tests) |
 | TaskList.tsx | ⏳ Pending |
 | BrowseMode.tsx | ⏳ Pending |
 
 ---
 
 ## Notes for Next Session
-- Phase 1 complete
-- Ready for Phase 2: Backend Core (TASK-003 → TASK-006)
+- Phase 1 + Phase 2 complete
+- Ready for Phase 3: Frontend Core (TASK-007 → TASK-010)

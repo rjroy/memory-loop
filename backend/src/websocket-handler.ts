@@ -32,6 +32,8 @@ import {
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk";
 import { getInspiration } from "./inspiration-manager";
 import { wsLog as log } from "./logger";
+import { getAllTasks, toggleTask } from "./task-manager";
+import { loadVaultConfig } from "./vault-config";
 
 /**
  * WebSocket interface for sending messages.
@@ -249,6 +251,12 @@ export class WebSocketHandler {
         break;
       case "get_inspiration":
         await this.handleGetInspiration(ws);
+        break;
+      case "get_tasks":
+        await this.handleGetTasks(ws);
+        break;
+      case "toggle_task":
+        await this.handleToggleTask(ws, message.filePath, message.lineNumber);
         break;
     }
   }
@@ -992,6 +1000,102 @@ export class WebSocketHandler {
       // Log errors but don't send error response - inspiration is optional
       log.error("Failed to get inspiration (continuing silently)", error);
       // Don't send error to client per REQ-NF-3 (graceful degradation)
+    }
+  }
+
+  /**
+   * Handles get_tasks message.
+   * Returns all tasks from configured directories (inbox, projects, areas).
+   */
+  private async handleGetTasks(ws: WebSocketLike): Promise<void> {
+    log.info("Getting tasks");
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for tasks");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      // Load vault config to get directory paths
+      const config = await loadVaultConfig(this.state.currentVault.path);
+      const result = await getAllTasks(this.state.currentVault.contentRoot, config);
+      log.info(`Found ${result.total} tasks (${result.incomplete} incomplete)`);
+      this.send(ws, {
+        type: "tasks",
+        tasks: result.tasks,
+        incomplete: result.incomplete,
+        total: result.total,
+      });
+    } catch (error) {
+      log.error("Failed to get tasks", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to get tasks";
+      this.sendError(ws, "INTERNAL_ERROR", message);
+    }
+  }
+
+  /**
+   * Handles toggle_task message.
+   * Toggles the checkbox state of a task in a file.
+   * State cycle: ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
+   */
+  private async handleToggleTask(
+    ws: WebSocketLike,
+    filePath: string,
+    lineNumber: number
+  ): Promise<void> {
+    log.info(`Toggling task: ${filePath}:${lineNumber}`);
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for task toggle");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const result = await toggleTask(
+        this.state.currentVault.contentRoot,
+        filePath,
+        lineNumber
+      );
+
+      if (!result.success) {
+        log.warn(`Task toggle failed: ${result.error}`);
+        // Determine appropriate error code based on error message
+        let errorCode: "PATH_TRAVERSAL" | "FILE_NOT_FOUND" | "INTERNAL_ERROR" = "INTERNAL_ERROR";
+        if (result.error?.includes("Path outside") || result.error?.includes("path traversal")) {
+          errorCode = "PATH_TRAVERSAL";
+        } else if (result.error?.includes("not found") || result.error?.includes("File not found")) {
+          errorCode = "FILE_NOT_FOUND";
+        }
+        this.sendError(ws, errorCode, result.error ?? "Failed to toggle task");
+        return;
+      }
+
+      log.info(`Task toggled: ${filePath}:${lineNumber} -> '${result.newState}'`);
+      this.send(ws, {
+        type: "task_toggled",
+        filePath,
+        lineNumber,
+        newState: result.newState!,
+      });
+    } catch (error) {
+      log.error("Failed to toggle task", error);
+      // Check for FileBrowserError (path traversal, etc.)
+      if (error instanceof FileBrowserError) {
+        this.sendError(ws, error.code, error.message);
+      } else {
+        const message =
+          error instanceof Error ? error.message : "Failed to toggle task";
+        this.sendError(ws, "INTERNAL_ERROR", message);
+      }
     }
   }
 }

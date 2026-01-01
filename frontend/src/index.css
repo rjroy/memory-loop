@@ -145,6 +145,8 @@
   /* Glassmorphism */
   --glass-bg: rgba(26, 29, 46, 0.9);
   --glass-bg-purple: rgba(46, 26, 40, 0.85);
+  --glass-bg-purple-button: rgba(55, 34, 48, 0.85);
+  --glass-bg-purple-hover: rgba(81, 48, 71, 0.85);
   --glass-bg-cyan: rgba(26, 40, 46, 0.85);
   --glass-bg-orange: rgba(46, 40, 26, 0.85);
   --glass-bg-secondary: var(--glass-bg-purple);

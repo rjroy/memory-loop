@@ -21,9 +21,9 @@ Total Issues: 38 (Open: 6, Closed: 32)
 **Spec Analysis**: No dialog component spec exists. Implementation detail but may warrant spec if dialogs are user-facing features.
 
 ### #117 - Implement canUseTool
-**Status**: OPEN | **Coverage**: NOT COVERED
+**Status**: OPEN | **Coverage**: COVERED by `chat.md`
 **Summary**: Add canUseTool option to session-manager with frontend permission dialog
-**Spec Analysis**: chat.md covers tool display (REQ-F-17-22) but not tool permission prompts. This is a new feature requiring spec work.
+**Spec Refs**: REQ-F-23 to REQ-F-28 (Tool Permission section), Acceptance Tests #16-21
 
 ### #105 - Add support for mermaid diagrams to Markdown view
 **Status**: OPEN | **Coverage**: COVERED by `view.md`
@@ -187,17 +187,16 @@ These are bugs that existing specs should prevent. Specs define correct behavior
 
 | Category | Count |
 |----------|-------|
-| COVERED | 25 |
+| COVERED | 26 |
 | PARTIAL | 0 |
-| NOT COVERED (needs spec) | 4 |
+| NOT COVERED (needs spec) | 3 |
 | BUG FIX | 6 |
 | IMPLEMENTATION/INFRA | 3 |
 | **Total** | **38** |
 
-### Issues Needing Spec Work (4)
+### Issues Needing Spec Work (3)
 
 **Open - Need new specs or spec updates:**
-1. #117 - canUseTool permission dialog (NEW FEATURE)
-2. #103 - User vs project CLAUDE.md scope (CLARIFICATION)
-3. #118 - Dialog refactoring (may be implementation)
-4. #67 - Logging integration (infrastructure)
+1. #103 - User vs project CLAUDE.md scope (CLARIFICATION)
+2. #118 - Dialog refactoring (may be implementation)
+3. #67 - Logging integration (infrastructure)

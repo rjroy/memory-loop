@@ -2026,4 +2026,137 @@ describe("SessionContext", () => {
       expect(dialogKeys.length).toBe(0);
     });
   });
+
+  describe("wantsNewSession", () => {
+    it("provides initial state with wantsNewSession false", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.wantsNewSession).toBe(false);
+    });
+
+    it("startNewSession sets wantsNewSession to true", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setSessionId("old-session");
+      });
+
+      expect(result.current.wantsNewSession).toBe(false);
+
+      act(() => {
+        result.current.startNewSession();
+      });
+
+      expect(result.current.wantsNewSession).toBe(true);
+      expect(result.current.sessionId).toBeNull();
+      expect(result.current.messages).toEqual([]);
+    });
+
+    it("setSessionId clears wantsNewSession", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.startNewSession();
+      });
+
+      expect(result.current.wantsNewSession).toBe(true);
+
+      act(() => {
+        result.current.setSessionId("new-session-id");
+      });
+
+      expect(result.current.wantsNewSession).toBe(false);
+      expect(result.current.sessionId).toBe("new-session-id");
+    });
+
+    it("setPendingSessionId clears wantsNewSession (resume overrides new)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.startNewSession();
+      });
+
+      expect(result.current.wantsNewSession).toBe(true);
+
+      // User clicks "Resume" on a previous session
+      act(() => {
+        result.current.setPendingSessionId("resume-session-id");
+      });
+
+      expect(result.current.wantsNewSession).toBe(false);
+      expect(result.current.pendingSessionId).toBe("resume-session-id");
+    });
+
+    it("wantsNewSession is cleared when vault changes", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.startNewSession();
+      });
+
+      expect(result.current.wantsNewSession).toBe(true);
+
+      act(() => {
+        result.current.selectVault(testVault2);
+      });
+
+      expect(result.current.wantsNewSession).toBe(false);
+    });
+
+    it("wantsNewSession is cleared when vault is cleared", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.startNewSession();
+      });
+
+      expect(result.current.wantsNewSession).toBe(true);
+
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.wantsNewSession).toBe(false);
+    });
+
+    it("wantsNewSession persists across mode switches", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.startNewSession();
+      });
+
+      expect(result.current.wantsNewSession).toBe(true);
+
+      // Switch modes
+      act(() => {
+        result.current.setMode("home");
+      });
+
+      expect(result.current.wantsNewSession).toBe(true);
+
+      act(() => {
+        result.current.setMode("discussion");
+      });
+
+      expect(result.current.wantsNewSession).toBe(true);
+    });
+  });
 });

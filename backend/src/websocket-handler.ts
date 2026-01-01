@@ -550,6 +550,15 @@ export class WebSocketHandler {
       // Check if connection is still open (readyState === 1)
       if (ws.readyState !== 1) {
         log.debug("Connection closed during streaming, stopping");
+        // Mark all running tools as complete to prevent spinner on resume.
+        // Without this, tools saved with status "running" would show spinners
+        // forever when the session is resumed.
+        for (const tool of toolsMap.values()) {
+          if (tool.status === "running") {
+            tool.status = "complete";
+            tool.output = "[Connection closed before tool completed]";
+          }
+        }
         break;
       }
 

@@ -46,11 +46,13 @@ export function ConfirmDialog({
       className="confirm-dialog__backdrop"
       onClick={handleBackdropClick}
       onKeyDown={handleKeyDown}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
     >
-      <div className="confirm-dialog">
+      <div
+        className="confirm-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <h2 id={titleId} className="confirm-dialog__title">
           {title}
         </h2>

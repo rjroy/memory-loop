@@ -722,7 +722,7 @@ describe("Session Manager", () => {
       expect(callArgs).toBeDefined();
       expect(callArgs!.prompt).toBe("Hello");
       expect(callArgs!.options.cwd).toBe(vault.path);
-      expect(callArgs!.options.settingSources).toEqual(["project"]);
+      expect(callArgs!.options.settingSources).toEqual(["project", "user"]);
       expect(callArgs!.options.resume).toBeUndefined();
     });
 

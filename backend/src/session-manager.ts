@@ -45,8 +45,8 @@ export const DISCUSSION_MODE_OPTIONS: Partial<Options> = {
   ],
   // Auto-accept file edits - the user is working in their own vault
   permissionMode: "acceptEdits",
-  // Prevent runaway conversations (50 turns = ~100 messages)
-  maxTurns: 50,
+  // Prevent runaway conversations (100 turns = ~200 messages)
+  maxTurns: 100,
   // Hard cost cap as safety net ($2 is generous for a single conversation)
   maxBudgetUsd: 2.0,
   // Enable streaming for real-time response display
@@ -620,7 +620,7 @@ export async function createSession(
     const mergedOptions: Partial<Options> = {
       ...DISCUSSION_MODE_OPTIONS,
       cwd: vault.path,
-      settingSources: ["project"],
+      settingSources: ["project", "user"],
       ...options, // Caller options override defaults
     };
     log.debug("SDK options:", {
@@ -705,7 +705,7 @@ export async function resumeSession(
       ...DISCUSSION_MODE_OPTIONS,
       resume: sessionId,
       cwd: metadata.vaultPath,
-      settingSources: ["project"],
+      settingSources: ["project", "user"],
       ...options, // Caller options override defaults
     };
     log.debug("SDK options:", {

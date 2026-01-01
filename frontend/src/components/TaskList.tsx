@@ -224,13 +224,21 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
   const { browser, updateTask, setTasksError } = useSession();
   const { tasks, isTasksLoading, tasksError } = browser;
 
+  // State for hiding completed tasks
+  const [hideCompleted, setHideCompleted] = useState(false);
+
   // Track original states for rollback on error
   const pendingTogglesRef = useRef<Map<string, string>>(new Map());
 
-  // Group tasks by file path
+  // Filter and group tasks by file path
   const groupedTasks = useMemo(() => {
+    // Filter out completed tasks if hideCompleted is true
+    const filteredTasks = hideCompleted
+      ? tasks.filter((t) => t.state !== "x")
+      : tasks;
+
     const groups = new Map<string, TaskEntry[]>();
-    for (const task of tasks) {
+    for (const task of filteredTasks) {
       const existing = groups.get(task.filePath);
       if (existing) {
         existing.push(task);
@@ -243,7 +251,26 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
       taskList.sort((a, b) => a.lineNumber - b.lineNumber);
     }
     return groups;
-  }, [tasks]);
+  }, [tasks, hideCompleted]);
+
+  // Get file paths sorted by modification time (newest first)
+  // Must be before any early returns to maintain consistent hook ordering
+  const sortedFilePaths = useMemo(() => {
+    const paths = Array.from(groupedTasks.keys());
+    return paths.sort((a, b) => {
+      const tasksA = groupedTasks.get(a);
+      const tasksB = groupedTasks.get(b);
+      // Get mtime from first task in each group (all tasks in a file have same mtime)
+      const mtimeA = tasksA?.[0]?.fileMtime ?? 0;
+      const mtimeB = tasksB?.[0]?.fileMtime ?? 0;
+      // Sort descending (newest first)
+      return mtimeB - mtimeA;
+    });
+  }, [groupedTasks]);
+
+  // Calculate total counts for display (before early returns for consistent hook ordering)
+  const completedCount = tasks.filter((t) => t.state === "x").length;
+  const totalCount = tasks.length;
 
   // Handle task toggle with optimistic update
   const handleToggle = useCallback(
@@ -298,11 +325,21 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
     );
   }
 
-  // Get sorted file paths for consistent ordering
-  const sortedFilePaths = Array.from(groupedTasks.keys()).sort();
-
   return (
     <nav className="task-list" aria-label="Task list">
+      <div className="task-list__header">
+        <label className="task-list__hide-toggle">
+          <input
+            type="checkbox"
+            checked={hideCompleted}
+            onChange={(e) => setHideCompleted(e.target.checked)}
+          />
+          <span>Hide completed</span>
+        </label>
+        <span className="task-list__total-count">
+          {completedCount} / {totalCount}
+        </span>
+      </div>
       {sortedFilePaths.map((filePath) => {
         const fileTasks = groupedTasks.get(filePath);
         if (!fileTasks) return null;

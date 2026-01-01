@@ -6,7 +6,7 @@
  * Task format: /^\s*- \[(.)\] (.+)$/
  */
 
-import { readdir, readFile, writeFile, lstat } from "node:fs/promises";
+import { readdir, readFile, writeFile, lstat, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
 import type { TaskEntry } from "@memory-loop/shared";
 import { createLogger } from "./logger";
@@ -180,6 +180,18 @@ export async function parseTasksFromFile(
     throw error;
   }
 
+  // Get file modification time for sorting
+  let fileMtime: number;
+  try {
+    const stats = await stat(targetPath);
+    fileMtime = stats.mtimeMs;
+  } catch (error) {
+    log.warn(
+      `Error getting file stats ${relativePath}: ${error instanceof Error ? error.message : String(error)}`
+    );
+    fileMtime = 0;
+  }
+
   // Read file content
   let content: string;
   try {
@@ -211,6 +223,7 @@ export async function parseTasksFromFile(
         state,
         filePath: relativePath,
         lineNumber: i + 1, // 1-indexed
+        fileMtime,
       });
     }
   }

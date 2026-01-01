@@ -199,6 +199,35 @@
   box-shadow: var(--glow-purple);
 }
 
+.recent-activity__action--danger {
+  color: var(--color-error, #ff6b6b);
+  border-color: var(--color-error, #ff6b6b);
+}
+
+.recent-activity__action--danger:hover {
+  background: var(--color-error, #ff6b6b);
+  color: white;
+  box-shadow: 0 0 10px var(--color-error, #ff6b6b);
+}
+
+.recent-activity__action--danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: var(--color-text-muted);
+  border-color: var(--glass-border);
+}
+
+.recent-activity__action--danger:disabled:hover {
+  background: var(--glass-bg);
+  color: var(--color-text-muted);
+  box-shadow: none;
+}
+
+.recent-activity__actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
 /* Touch device adjustments */
 @media (hover: none) {
   .recent-activity__card:hover {
@@ -215,6 +244,12 @@
   .recent-activity__action--primary:hover {
     background: var(--glass-bg);
     color: var(--color-accent);
+    box-shadow: none;
+  }
+
+  .recent-activity__action--danger:hover {
+    background: var(--glass-bg);
+    color: var(--color-error, #ff6b6b);
     box-shadow: none;
   }
 

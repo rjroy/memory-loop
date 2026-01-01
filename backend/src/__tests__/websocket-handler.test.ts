@@ -52,6 +52,10 @@ const mockAppendMessage = mock<(...args: any[]) => Promise<void>>(() =>
   Promise.resolve()
 );
 
+const mockDeleteSession = mock<(sessionId: string) => Promise<boolean>>(() =>
+  Promise.resolve(true)
+);
+
 // Mock note capture
 const mockCaptureToDaily = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -97,6 +101,7 @@ void mock.module("../session-manager", () => ({
   loadSession: mockLoadSession,
   appendMessage: mockAppendMessage,
   getRecentSessions: mockGetRecentSessions,
+  deleteSession: mockDeleteSession,
   SessionError: class SessionError extends Error {
     constructor(
       message: string,
@@ -2980,6 +2985,122 @@ describe("WebSocket Handler", () => {
         if (message?.type === "task_toggled") {
           expect(message.newState).toBe(expectedState);
         }
+      }
+    });
+  });
+
+  describe("delete_session handler", () => {
+    test("deletes session and returns session_deleted message", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockDeleteSession.mockImplementation(() => Promise.resolve(true));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Delete a session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_session", sessionId: "session-to-delete" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("session_deleted");
+      if (message?.type === "session_deleted") {
+        expect(message.sessionId).toBe("session-to-delete");
+      }
+    });
+
+    test("returns SESSION_NOT_FOUND when session doesn't exist", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockDeleteSession.mockImplementation(() => Promise.resolve(false));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Try to delete non-existent session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_session", sessionId: "non-existent-session" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("SESSION_NOT_FOUND");
+      }
+    });
+
+    test("cannot delete currently active session", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Mock createSession to return a known session ID
+      mockCreateSession.mockResolvedValue({
+        sessionId: "active-session-id",
+        events: (async function* () {
+          yield { type: "system", session_id: "active-session-id" };
+        })(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Send a discussion message to create and activate a session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      // Wait for events to process
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Try to delete the active session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_session", sessionId: "active-session-id" })
+      );
+
+      const messages = ws.getMessages();
+      const errorMessage = messages.find(
+        (m: ServerMessage) => m.type === "error" && m.code === "SESSION_INVALID"
+      );
+      expect(errorMessage).toBeDefined();
+    });
+
+    test("validates sessionId is required", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_session" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
       }
     });
   });

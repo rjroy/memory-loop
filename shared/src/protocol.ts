@@ -251,6 +251,14 @@ export const ToggleTaskMessageSchema = z.object({
 });
 
 /**
+ * Client requests to delete a session
+ */
+export const DeleteSessionMessageSchema = z.object({
+  type: z.literal("delete_session"),
+  sessionId: z.string().min(1, "Session ID is required"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -270,6 +278,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   WriteFileMessageSchema,
   GetTasksMessageSchema,
   ToggleTaskMessageSchema,
+  DeleteSessionMessageSchema,
 ]);
 
 // =============================================================================
@@ -479,6 +488,14 @@ export const TaskToggledMessageSchema = z.object({
 });
 
 /**
+ * Server confirms session was deleted successfully
+ */
+export const SessionDeletedMessageSchema = z.object({
+  type: z.literal("session_deleted"),
+  sessionId: z.string().min(1, "Session ID is required"),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -502,6 +519,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   FileWrittenMessageSchema,
   TasksMessageSchema,
   TaskToggledMessageSchema,
+  SessionDeletedMessageSchema,
 ]);
 
 // =============================================================================
@@ -543,6 +561,7 @@ export type GetInspirationMessage = z.infer<typeof GetInspirationMessageSchema>;
 export type WriteFileMessage = z.infer<typeof WriteFileMessageSchema>;
 export type GetTasksMessage = z.infer<typeof GetTasksMessageSchema>;
 export type ToggleTaskMessage = z.infer<typeof ToggleTaskMessageSchema>;
+export type DeleteSessionMessage = z.infer<typeof DeleteSessionMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -568,6 +587,7 @@ export type InspirationMessage = z.infer<typeof InspirationMessageSchema>;
 export type FileWrittenMessage = z.infer<typeof FileWrittenMessageSchema>;
 export type TasksMessage = z.infer<typeof TasksMessageSchema>;
 export type TaskToggledMessage = z.infer<typeof TaskToggledMessageSchema>;
+export type SessionDeletedMessage = z.infer<typeof SessionDeletedMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

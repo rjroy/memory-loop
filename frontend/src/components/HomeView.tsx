@@ -50,6 +50,7 @@ export function HomeView(): React.ReactNode {
     setRecentNotes,
     setRecentDiscussions,
     setGoals,
+    removeDiscussion,
   } = useSession();
 
   const hasSentVaultSelectionRef = useRef(false);
@@ -109,9 +110,13 @@ export function HomeView(): React.ReactNode {
           setInspirationQuote(message.quote);
           setInspirationLoading(false);
           break;
+
+        case "session_deleted":
+          removeDiscussion(message.sessionId);
+          break;
       }
     },
-    [setRecentNotes, setRecentDiscussions, setGoals]
+    [setRecentNotes, setRecentDiscussions, setGoals, removeDiscussion]
   );
 
   // Callback to re-send vault selection on WebSocket reconnect
@@ -132,6 +137,14 @@ export function HomeView(): React.ReactNode {
   useEffect(() => {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
+
+  // Callback to delete a session
+  const handleDeleteSession = useCallback(
+    (sessionId: string) => {
+      sendMessage({ type: "delete_session", sessionId });
+    },
+    [sendMessage]
+  );
 
   // Send vault selection when WebSocket connects (initial or reconnect)
   useEffect(() => {
@@ -188,7 +201,7 @@ export function HomeView(): React.ReactNode {
       <GoalsCard />
 
       {/* Recent Activity */}
-      <RecentActivity />
+      <RecentActivity onDeleteSession={handleDeleteSession} />
     </div>
   );
 }

@@ -2,14 +2,15 @@
  * RecentActivity Component
  *
  * Displays both recent note captures and discussion sessions.
- * Provides quick actions: View in Browse for captures, Resume for discussions.
+ * Provides quick actions: View in Browse for captures, Resume/Delete for discussions.
  *
  * Note: This component reads data from SessionContext. The parent component
  * is responsible for fetching the data via WebSocket.
  */
 
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { useSession } from "../contexts/SessionContext";
+import { ConfirmDialog } from "./ConfirmDialog";
 import type { RecentNoteEntry, RecentDiscussionEntry } from "@memory-loop/shared";
 import "./RecentActivity.css";
 
@@ -48,6 +49,8 @@ export interface RecentActivityProps {
   onResumeDiscussion?: (sessionId: string) => void;
   /** Callback when user wants to view a capture in browse mode */
   onViewCapture?: (date: string) => void;
+  /** Callback when user confirms session deletion (parent handles WebSocket) */
+  onDeleteSession?: (sessionId: string) => void;
 }
 
 /**
@@ -56,19 +59,26 @@ export interface RecentActivityProps {
  * Reads data from SessionContext. Parent component is responsible for:
  * - Sending get_recent_activity message on mount/reconnect
  * - Handling recent_activity response and updating context
+ * - Sending delete_session message via onDeleteSession callback
+ * - Handling session_deleted response and calling removeDiscussion
  */
 export function RecentActivity({
   onResumeDiscussion,
   onViewCapture,
+  onDeleteSession,
 }: RecentActivityProps): React.ReactNode {
   const {
     vault,
     recentNotes,
     recentDiscussions,
+    sessionId,
     setMode,
     setCurrentPath,
     setPendingSessionId,
   } = useSession();
+
+  // State for delete confirmation dialog
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   // Handle view capture click - open the daily note file in browse mode
   const handleViewCapture = useCallback(
@@ -100,6 +110,24 @@ export function RecentActivity({
     },
     [onResumeDiscussion, setPendingSessionId, setMode]
   );
+
+  // Handle delete button click - show confirmation dialog
+  const handleDeleteClick = useCallback((deleteSessionId: string) => {
+    setPendingDeleteId(deleteSessionId);
+  }, []);
+
+  // Handle delete confirmation
+  const handleConfirmDelete = useCallback(() => {
+    if (pendingDeleteId && onDeleteSession) {
+      onDeleteSession(pendingDeleteId);
+      setPendingDeleteId(null);
+    }
+  }, [pendingDeleteId, onDeleteSession]);
+
+  // Handle delete cancellation
+  const handleCancelDelete = useCallback(() => {
+    setPendingDeleteId(null);
+  }, []);
 
   const hasCaptures = recentNotes.length > 0;
   const hasDiscussions = recentDiscussions.length > 0;
@@ -138,12 +166,23 @@ export function RecentActivity({
               <DiscussionCard
                 key={discussion.sessionId}
                 discussion={discussion}
+                isActive={discussion.sessionId === sessionId}
                 onResume={() => handleResumeDiscussion(discussion.sessionId)}
+                onDelete={() => handleDeleteClick(discussion.sessionId)}
               />
             ))}
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={pendingDeleteId !== null}
+        title="Delete Session?"
+        message="This cannot be undone! The session and its conversation history will be permanently deleted."
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+      />
     </section>
   );
 }
@@ -188,12 +227,16 @@ function CaptureCard({ note, onView }: CaptureCardProps): React.ReactNode {
  */
 interface DiscussionCardProps {
   discussion: RecentDiscussionEntry;
+  isActive: boolean;
   onResume: () => void;
+  onDelete: () => void;
 }
 
 function DiscussionCard({
   discussion,
+  isActive,
   onResume,
+  onDelete,
 }: DiscussionCardProps): React.ReactNode {
   const relativeDate = formatRelativeDate(discussion.date);
   const showDate = relativeDate !== "Today";
@@ -211,14 +254,26 @@ function DiscussionCard({
             {discussion.messageCount} messages
           </span>
         </div>
-        <button
-          type="button"
-          className="recent-activity__action recent-activity__action--primary"
-          onClick={onResume}
-          aria-label="Resume discussion"
-        >
-          Resume
-        </button>
+        <div className="recent-activity__actions">
+          <button
+            type="button"
+            className="recent-activity__action recent-activity__action--danger"
+            onClick={onDelete}
+            disabled={isActive}
+            aria-label={isActive ? "Cannot delete active session" : "Delete discussion"}
+            title={isActive ? "Cannot delete the active session" : "Delete this session"}
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            className="recent-activity__action recent-activity__action--primary"
+            onClick={onResume}
+            aria-label="Resume discussion"
+          >
+            Resume
+          </button>
+        </div>
       </div>
     </article>
   );

@@ -29,9 +29,13 @@
 .message-bubble--user .message-bubble__content {
   background-color: var(--glass-bg-secondary);
   color: var(--color-text);
-  border: 1px solid var(--glass-border);
+  border: 30px solid var(--glass-border);
   border-bottom-right-radius: var(--radius-sm);
   backdrop-filter: blur(var(--glass-blur));
+  border-image-source: url('/images/border.webp');
+  border-image-width: 70px;
+  border-image-outset: 6px;
+  border-image-slice: 24.7% 21.5% 26.7% 21.1% fill;
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -40,9 +44,13 @@
 .message-bubble--assistant .message-bubble__content {
   background: var(--glass-bg);
   color: var(--color-text);
-  border: 1px solid var(--glass-border);
+  border: 30px solid var(--glass-border);
   border-bottom-left-radius: var(--radius-sm);
   backdrop-filter: blur(var(--glass-blur));
+  border-image-source: url('/images/border.webp');
+  border-image-width: 70px;
+  border-image-outset: 6px;
+  border-image-slice: 24.7% 21.5% 26.7% 21.1% fill;
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);

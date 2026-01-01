@@ -110,6 +110,8 @@ export interface SessionState {
   pendingSessionId: string | null;
   /** Whether the new session confirmation dialog is shown (persists across tab switches) */
   showNewSessionDialog: boolean;
+  /** Whether user wants a new session (skip auto-resume on reconnect) */
+  wantsNewSession: boolean;
 }
 
 /**
@@ -345,6 +347,7 @@ function sessionReducer(
         // Clear transient UI state when switching vaults
         discussionPrefill: null,
         showNewSessionDialog: false,
+        wantsNewSession: false,
       };
 
     case "CLEAR_VAULT":
@@ -359,12 +362,14 @@ function sessionReducer(
         goals: null,
         discussionPrefill: null,
         showNewSessionDialog: false,
+        wantsNewSession: false,
       };
 
     case "SET_SESSION_ID":
       return {
         ...state,
         sessionId: action.sessionId,
+        wantsNewSession: false, // Clear when session is established
       };
 
     case "SET_SESSION_START_TIME":
@@ -420,6 +425,7 @@ function sessionReducer(
         ...state,
         sessionId: null,
         messages: [],
+        wantsNewSession: true,
       };
 
     case "SET_MESSAGES":
@@ -592,6 +598,8 @@ function sessionReducer(
       return {
         ...state,
         pendingSessionId: action.sessionId,
+        // Clear wantsNewSession - explicit resume request overrides "new session" intent
+        wantsNewSession: action.sessionId ? false : state.wantsNewSession,
       };
 
     case "SET_SHOW_NEW_SESSION_DIALOG":
@@ -806,6 +814,7 @@ const initialState: SessionState = {
   discussionPrefill: null,
   pendingSessionId: null,
   showNewSessionDialog: false,
+  wantsNewSession: false,
 };
 
 /**

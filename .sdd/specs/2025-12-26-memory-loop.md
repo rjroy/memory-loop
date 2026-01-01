@@ -17,6 +17,7 @@ child_specs:
   - memory-loop/2025-12-26-note-capture.md
   - memory-loop/2025-12-26-chat.md
   - memory-loop/2025-12-26-view.md
+  - memory-loop/2025-12-31-task-list.md
 ---
 
 # Memory Loop Specification
@@ -48,14 +49,14 @@ As an Obsidian user on a mobile device or away from my primary computer, I want 
 
 ## Feature Composition
 
-Memory Loop consists of 6 features that integrate through shared state and infrastructure:
+Memory Loop consists of 7 features that integrate through shared state and infrastructure:
 
 ### User Flow
 
 ```
 [Vault Selection] → [Home Dashboard] ⟷ [Navigation Bar] ⟷ [Note Capture]
                                                         ⟷ [Chat]
-                                                        ⟷ [View]
+                                                        ⟷ [View] ⟷ [Task List]
 ```
 
 1. **Vault Selection** (`2025-12-26-vault-selection.md`): Entry point. User selects which Obsidian vault to work with. Vaults must contain CLAUDE.md to be valid.
@@ -69,6 +70,8 @@ Memory Loop consists of 6 features that integrate through shared state and infra
 5. **Chat** (`2025-12-26-chat.md`): Discussion mode. AI conversations powered by Claude Agent SDK. Sessions persist and can be resumed. Tool use is displayed inline.
 
 6. **View** (`2025-12-26-view.md`): File browser mode. Navigate vault structure, read markdown files, follow wiki-links. Read-only access with security boundaries.
+
+7. **Task List** (`2025-12-31-task-list.md`): Task aggregation within View mode. Displays markdown tasks from inbox/projects/areas directories. Toggle between File Tree and Task List via header click.
 
 ### Shared State
 
@@ -88,6 +91,7 @@ All features share state through `SessionContext`:
 | Home → View | Click file path | Switches to view mode, navigates to file |
 | Chat → View | AI references a file | User can click to open in viewer |
 | View → Chat | User wants to discuss a file | Can reference current file in chat |
+| View ⟷ Task List | Click "Files" header | Toggles between File Tree and Task List |
 | Any → Home | Click Home in nav bar | Returns to dashboard |
 
 ## Functional Requirements
@@ -284,5 +288,6 @@ All features share state through `SessionContext`:
 - [Note Capture](memory-loop/2025-12-26-note-capture.md)
 - [Chat](memory-loop/2025-12-26-chat.md)
 - [View](memory-loop/2025-12-26-view.md)
+- [Task List](memory-loop/2025-12-31-task-list.md)
 
 **Next Phase**: Once approved, use `/spiral-grove:plan-generation` to create technical implementation plan.

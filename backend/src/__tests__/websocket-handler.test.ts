@@ -1029,10 +1029,12 @@ describe("WebSocket Handler", () => {
         JSON.stringify({ type: "discussion_message", text: "Second message" })
       );
 
-      // resumeSession should have been called
+      // resumeSession should have been called (with optional args)
       expect(mockResumeSession).toHaveBeenCalledWith(
         "first-session",
-        "Second message"
+        "Second message",
+        undefined, // no extra options
+        expect.any(Function) // tool permission callback
       );
     });
 

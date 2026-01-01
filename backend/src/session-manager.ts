@@ -553,6 +553,16 @@ export interface SessionQueryResult {
 }
 
 /**
+ * Callback to request tool permission from the user.
+ * Returns true if the user allows the tool, false otherwise.
+ */
+export type ToolPermissionCallback = (
+  toolUseId: string,
+  toolName: string,
+  input: unknown
+) => Promise<boolean>;
+
+/**
  * Extracts the session ID from the first event.
  * The session ID is available in every SDKMessage.
  *
@@ -598,17 +608,50 @@ async function* wrapGenerator(
 }
 
 /**
+ * Creates the canUseTool callback for the SDK based on a permission callback.
+ * This wraps the simpler ToolPermissionCallback into the SDK's expected format.
+ *
+ * @param requestPermission - Callback to request permission from the user
+ * @returns A canUseTool function for the SDK options
+ */
+function createCanUseTool(
+  requestPermission: ToolPermissionCallback
+): (toolName: string, input: Record<string, unknown>) => Promise<{ behavior: "allow"; updatedInput: Record<string, unknown> } | { behavior: "deny"; message: string }> {
+  return async (toolName: string, input: Record<string, unknown>) => {
+    // Generate a unique ID for this tool use request
+    const toolUseId = `tool_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+
+    log.info(`Tool permission requested: ${toolName} (${toolUseId})`);
+
+    const allowed = await requestPermission(toolUseId, toolName, input);
+
+    if (allowed) {
+      log.info(`Tool permission granted: ${toolName} (${toolUseId})`);
+      return { behavior: "allow" as const, updatedInput: input };
+    } else {
+      log.info(`Tool permission denied: ${toolName} (${toolUseId})`);
+      return {
+        behavior: "deny" as const,
+        message: `User denied permission for ${toolName}`,
+      };
+    }
+  };
+}
+
+/**
  * Creates a new Claude Agent SDK session for a vault.
  *
  * @param vault - The vault to create a session for
  * @param prompt - The initial prompt to send
  * @param options - Additional SDK options
+ * @param requestToolPermission - Optional callback to request tool permission from user
  * @returns SessionQueryResult with session ID and event stream
  */
 export async function createSession(
   vault: VaultInfo,
   prompt: string,
-  options?: Partial<Options>
+  options?: Partial<Options>,
+  requestToolPermission?: ToolPermissionCallback
 ): Promise<SessionQueryResult> {
   log.info(`Creating session for vault: ${vault.id}`);
   log.info(`Vault path: ${vault.path}`);
@@ -623,10 +666,18 @@ export async function createSession(
       settingSources: ["project", "user"],
       ...options, // Caller options override defaults
     };
+
+    // Add canUseTool callback if permission callback is provided
+    if (requestToolPermission) {
+      mergedOptions.canUseTool = createCanUseTool(requestToolPermission);
+      log.info("Tool permission callback configured");
+    }
+
     log.debug("SDK options:", {
       allowedTools: mergedOptions.allowedTools,
       permissionMode: mergedOptions.permissionMode,
       maxTurns: mergedOptions.maxTurns,
+      hasCanUseTool: !!mergedOptions.canUseTool,
     });
     const queryResult = query({
       prompt,
@@ -676,12 +727,14 @@ export async function createSession(
  * @param sessionId - The session ID to resume
  * @param prompt - The prompt to send
  * @param options - Additional SDK options
+ * @param requestToolPermission - Optional callback to request tool permission from user
  * @returns SessionQueryResult with session ID and event stream
  */
 export async function resumeSession(
   sessionId: string,
   prompt: string,
-  options?: Partial<Options>
+  options?: Partial<Options>,
+  requestToolPermission?: ToolPermissionCallback
 ): Promise<SessionQueryResult> {
   log.info(`Resuming session: ${sessionId}`);
 
@@ -708,10 +761,18 @@ export async function resumeSession(
       settingSources: ["project", "user"],
       ...options, // Caller options override defaults
     };
+
+    // Add canUseTool callback if permission callback is provided
+    if (requestToolPermission) {
+      mergedOptions.canUseTool = createCanUseTool(requestToolPermission);
+      log.info("Tool permission callback configured");
+    }
+
     log.debug("SDK options:", {
       allowedTools: mergedOptions.allowedTools,
       permissionMode: mergedOptions.permissionMode,
       maxTurns: mergedOptions.maxTurns,
+      hasCanUseTool: !!mergedOptions.canUseTool,
     });
     const queryResult = query({
       prompt,
@@ -750,16 +811,18 @@ export async function resumeSession(
  * @param prompt - The prompt to send
  * @param sessionId - Optional session ID to resume
  * @param options - Additional SDK options
+ * @param requestToolPermission - Optional callback to request tool permission from user
  * @returns SessionQueryResult
  */
 export async function querySession(
   vault: VaultInfo,
   prompt: string,
   sessionId?: string,
-  options?: Partial<Options>
+  options?: Partial<Options>,
+  requestToolPermission?: ToolPermissionCallback
 ): Promise<SessionQueryResult> {
   if (sessionId) {
-    return resumeSession(sessionId, prompt, options);
+    return resumeSession(sessionId, prompt, options, requestToolPermission);
   }
-  return createSession(vault, prompt, options);
+  return createSession(vault, prompt, options, requestToolPermission);
 }

@@ -1,0 +1,177 @@
+/**
+ * ToolPermissionDialog Component Styles
+ *
+ * Glassmorphism dialog for tool permission requests.
+ * Displays tool name and parameters with allow/deny actions.
+ */
+
+.tool-permission__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md);
+  background-color: rgba(0, 0, 0, 0.6);
+  animation: tool-permission-fade-in 0.2s ease;
+}
+
+@keyframes tool-permission-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tool-permission {
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border-hover);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(168, 85, 247, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: tool-permission-slide-up 0.2s ease;
+  overflow: hidden;
+}
+
+@keyframes tool-permission-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tool-permission__header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.tool-permission__icon {
+  font-size: 1.5rem;
+}
+
+.tool-permission__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.tool-permission__content {
+  flex: 1;
+  padding: var(--spacing-lg);
+  overflow-y: auto;
+}
+
+.tool-permission__description {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  line-height: var(--line-height-relaxed);
+}
+
+.tool-permission__description strong {
+  color: var(--color-accent-primary);
+}
+
+.tool-permission__tool-name {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.tool-permission__label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.tool-permission__tool-name code {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-accent-primary);
+}
+
+.tool-permission__input {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.tool-permission__code {
+  margin: 0;
+  padding: var(--spacing-md);
+  max-height: 200px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-permission__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--glass-border);
+}
+
+.tool-permission__btn {
+  min-height: 44px;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tool-permission__btn--deny {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text);
+}
+
+.tool-permission__btn--deny:hover {
+  background-color: var(--color-border);
+}
+
+.tool-permission__btn--allow {
+  background: var(--gradient-primary);
+  color: white;
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+.tool-permission__btn--allow:hover {
+  box-shadow: var(--glow-purple);
+}
+
+.tool-permission__btn:active {
+  transform: scale(0.98);
+}

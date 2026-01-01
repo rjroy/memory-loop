@@ -23,6 +23,7 @@ import {
   deleteSession,
   SessionError,
   type SessionQueryResult,
+  type ToolPermissionCallback,
 } from "./session-manager";
 import { captureToDaily, getRecentNotes } from "./note-capture";
 import {
@@ -80,6 +81,14 @@ function mapSessionErrorCode(
 }
 
 /**
+ * Pending tool permission request, waiting for user response.
+ */
+interface PendingPermissionRequest {
+  resolve: (allowed: boolean) => void;
+  reject: (error: Error) => void;
+}
+
+/**
  * Connection state for a WebSocket client.
  * Each connection tracks its selected vault and active session.
  */
@@ -90,6 +99,8 @@ export interface ConnectionState {
   currentSessionId: string | null;
   /** Active query result with interrupt function (null if no query running) */
   activeQuery: SessionQueryResult | null;
+  /** Pending tool permission requests, keyed by toolUseId */
+  pendingPermissions: Map<string, PendingPermissionRequest>;
 }
 
 /**
@@ -100,6 +111,7 @@ export function createConnectionState(): ConnectionState {
     currentVault: null,
     currentSessionId: null,
     activeQuery: null,
+    pendingPermissions: new Map(),
   };
 }
 
@@ -145,6 +157,78 @@ export class WebSocketHandler {
   ): void {
     log.error(`Sending error: ${code} - ${message}`);
     this.send(ws, { type: "error", code, message });
+  }
+
+  /**
+   * Creates a tool permission callback that sends requests to the frontend
+   * and waits for user response.
+   *
+   * @param ws - The WebSocket to send the request to
+   * @returns A callback function for the SDK's canUseTool option
+   */
+  private createToolPermissionCallback(ws: WebSocketLike): ToolPermissionCallback {
+    return async (toolUseId: string, toolName: string, input: unknown): Promise<boolean> => {
+      log.info(`Requesting tool permission: ${toolName} (${toolUseId})`);
+
+      // Check if connection is still open
+      if (ws.readyState !== 1) {
+        log.warn("Connection closed, denying tool permission");
+        return false;
+      }
+
+      // Create a promise that will be resolved when the frontend responds
+      return new Promise((resolve, reject) => {
+        // Store the pending request
+        this.state.pendingPermissions.set(toolUseId, { resolve, reject });
+
+        // Send the permission request to the frontend
+        this.send(ws, {
+          type: "tool_permission_request",
+          toolUseId,
+          toolName,
+          input,
+        });
+
+        // Set a timeout to prevent hanging forever (60 seconds)
+        const timeout = setTimeout(() => {
+          if (this.state.pendingPermissions.has(toolUseId)) {
+            this.state.pendingPermissions.delete(toolUseId);
+            log.warn(`Tool permission request timed out: ${toolUseId}`);
+            resolve(false); // Deny on timeout
+          }
+        }, 60000);
+
+        // Clean up timeout when resolved
+        const originalResolve = resolve;
+        this.state.pendingPermissions.set(toolUseId, {
+          resolve: (allowed: boolean) => {
+            clearTimeout(timeout);
+            originalResolve(allowed);
+          },
+          reject: (error: Error) => {
+            clearTimeout(timeout);
+            reject(error);
+          },
+        });
+      });
+    };
+  }
+
+  /**
+   * Handles a tool permission response from the frontend.
+   *
+   * @param toolUseId - The tool use ID from the response
+   * @param allowed - Whether the user allowed the tool
+   */
+  private handleToolPermissionResponse(toolUseId: string, allowed: boolean): void {
+    const pending = this.state.pendingPermissions.get(toolUseId);
+    if (pending) {
+      log.info(`Tool permission response received: ${toolUseId} -> ${allowed ? "allowed" : "denied"}`);
+      this.state.pendingPermissions.delete(toolUseId);
+      pending.resolve(allowed);
+    } else {
+      log.warn(`Received permission response for unknown request: ${toolUseId}`);
+    }
   }
 
   /**
@@ -283,6 +367,9 @@ export class WebSocketHandler {
       case "delete_session":
         await this.handleDeleteSession(ws, message.sessionId);
         break;
+      case "tool_permission_response":
+        this.handleToolPermissionResponse(message.toolUseId, message.allowed);
+        break;
     }
   }
 
@@ -420,14 +507,27 @@ export class WebSocketHandler {
       let queryResult: SessionQueryResult;
       let isNewSession = false;
 
+      // Create tool permission callback for this connection
+      const requestToolPermission = this.createToolPermissionCallback(ws);
+
       if (this.state.currentSessionId) {
         // Resume existing session
         log.info(`Resuming session: ${this.state.currentSessionId}`);
-        queryResult = await resumeSession(this.state.currentSessionId, text);
+        queryResult = await resumeSession(
+          this.state.currentSessionId,
+          text,
+          undefined, // no extra options
+          requestToolPermission
+        );
       } else {
         // Create new session
         log.info("Creating new session");
-        queryResult = await createSession(this.state.currentVault, text);
+        queryResult = await createSession(
+          this.state.currentVault,
+          text,
+          undefined, // no extra options
+          requestToolPermission
+        );
         isNewSession = true;
       }
 

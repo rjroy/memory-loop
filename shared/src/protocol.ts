@@ -259,6 +259,18 @@ export const DeleteSessionMessageSchema = z.object({
 });
 
 /**
+ * Client responds to a tool permission request
+ * Sent in response to tool_permission_request from server
+ */
+export const ToolPermissionResponseMessageSchema = z.object({
+  type: z.literal("tool_permission_response"),
+  /** The tool use ID from the permission request */
+  toolUseId: z.string().min(1, "Tool use ID is required"),
+  /** Whether the user allows the tool to run */
+  allowed: z.boolean(),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -279,6 +291,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   GetTasksMessageSchema,
   ToggleTaskMessageSchema,
   DeleteSessionMessageSchema,
+  ToolPermissionResponseMessageSchema,
 ]);
 
 // =============================================================================
@@ -496,6 +509,20 @@ export const SessionDeletedMessageSchema = z.object({
 });
 
 /**
+ * Server requests permission from the user before running a tool
+ * The client should display a dialog and respond with tool_permission_response
+ */
+export const ToolPermissionRequestMessageSchema = z.object({
+  type: z.literal("tool_permission_request"),
+  /** Unique identifier for this tool invocation */
+  toolUseId: z.string().min(1, "Tool use ID is required"),
+  /** Name of the tool being requested */
+  toolName: z.string().min(1, "Tool name is required"),
+  /** Tool input parameters for user review */
+  input: z.unknown(),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -520,6 +547,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   TasksMessageSchema,
   TaskToggledMessageSchema,
   SessionDeletedMessageSchema,
+  ToolPermissionRequestMessageSchema,
 ]);
 
 // =============================================================================
@@ -562,6 +590,7 @@ export type WriteFileMessage = z.infer<typeof WriteFileMessageSchema>;
 export type GetTasksMessage = z.infer<typeof GetTasksMessageSchema>;
 export type ToggleTaskMessage = z.infer<typeof ToggleTaskMessageSchema>;
 export type DeleteSessionMessage = z.infer<typeof DeleteSessionMessageSchema>;
+export type ToolPermissionResponseMessage = z.infer<typeof ToolPermissionResponseMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -588,6 +617,7 @@ export type FileWrittenMessage = z.infer<typeof FileWrittenMessageSchema>;
 export type TasksMessage = z.infer<typeof TasksMessageSchema>;
 export type TaskToggledMessage = z.infer<typeof TaskToggledMessageSchema>;
 export type SessionDeletedMessage = z.infer<typeof SessionDeletedMessageSchema>;
+export type ToolPermissionRequestMessage = z.infer<typeof ToolPermissionRequestMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

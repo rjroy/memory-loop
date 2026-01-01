@@ -319,6 +319,26 @@ describe("RecentActivity", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
 
+    it("calls onDeleteSession when confirm is clicked", () => {
+      const onDeleteSession = mock(() => {});
+
+      render(<RecentActivity onDeleteSession={onDeleteSession} />, {
+        wrapper: createTestWrapper([], mockDiscussions),
+      });
+
+      // Open the dialog
+      const deleteButtons = screen.getAllByRole("button", { name: /delete discussion/i });
+      fireEvent.click(deleteButtons[0]);
+
+      // Click Delete in the dialog
+      const confirmButton = screen.getByRole("button", { name: /^delete$/i });
+      fireEvent.click(confirmButton);
+
+      expect(onDeleteSession).toHaveBeenCalledWith("session-1");
+      // Dialog should also be closed
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
     it("disables Delete button for currently active session", () => {
       // Create a wrapper that sets session-1 as the active session
       function ActiveSessionWrapper({ children }: { children: ReactNode }) {

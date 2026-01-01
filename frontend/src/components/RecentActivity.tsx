@@ -10,9 +10,8 @@
 
 import React, { useCallback, useState } from "react";
 import { useSession } from "../contexts/SessionContext";
-import { useWebSocket } from "../hooks/useWebSocket";
 import { ConfirmDialog } from "./ConfirmDialog";
-import type { RecentNoteEntry, RecentDiscussionEntry, ServerMessage } from "@memory-loop/shared";
+import type { RecentNoteEntry, RecentDiscussionEntry } from "@memory-loop/shared";
 import "./RecentActivity.css";
 
 /**
@@ -50,6 +49,8 @@ export interface RecentActivityProps {
   onResumeDiscussion?: (sessionId: string) => void;
   /** Callback when user wants to view a capture in browse mode */
   onViewCapture?: (date: string) => void;
+  /** Callback when user confirms session deletion (parent handles WebSocket) */
+  onDeleteSession?: (sessionId: string) => void;
 }
 
 /**
@@ -58,10 +59,13 @@ export interface RecentActivityProps {
  * Reads data from SessionContext. Parent component is responsible for:
  * - Sending get_recent_activity message on mount/reconnect
  * - Handling recent_activity response and updating context
+ * - Sending delete_session message via onDeleteSession callback
+ * - Handling session_deleted response and calling removeDiscussion
  */
 export function RecentActivity({
   onResumeDiscussion,
   onViewCapture,
+  onDeleteSession,
 }: RecentActivityProps): React.ReactNode {
   const {
     vault,
@@ -71,24 +75,10 @@ export function RecentActivity({
     setMode,
     setCurrentPath,
     setPendingSessionId,
-    removeDiscussion,
   } = useSession();
 
   // State for delete confirmation dialog
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-
-  // Handle session_deleted response from server
-  const handleMessage = useCallback(
-    (message: ServerMessage) => {
-      if (message.type === "session_deleted") {
-        removeDiscussion(message.sessionId);
-        setPendingDeleteId(null);
-      }
-    },
-    [removeDiscussion]
-  );
-
-  const { sendMessage } = useWebSocket({ onMessage: handleMessage });
 
   // Handle view capture click - open the daily note file in browse mode
   const handleViewCapture = useCallback(
@@ -128,10 +118,11 @@ export function RecentActivity({
 
   // Handle delete confirmation
   const handleConfirmDelete = useCallback(() => {
-    if (pendingDeleteId) {
-      sendMessage({ type: "delete_session", sessionId: pendingDeleteId });
+    if (pendingDeleteId && onDeleteSession) {
+      onDeleteSession(pendingDeleteId);
+      setPendingDeleteId(null);
     }
-  }, [pendingDeleteId, sendMessage]);
+  }, [pendingDeleteId, onDeleteSession]);
 
   // Handle delete cancellation
   const handleCancelDelete = useCallback(() => {

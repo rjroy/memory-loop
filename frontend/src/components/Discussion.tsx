@@ -29,7 +29,6 @@ export function Discussion(): React.ReactNode {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
-  const [showNewSessionDialog, setShowNewSessionDialog] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -46,6 +45,8 @@ export function Discussion(): React.ReactNode {
     setDiscussionPrefill,
     pendingSessionId,
     setPendingSessionId,
+    showNewSessionDialog,
+    setShowNewSessionDialog,
     addToolToLastMessage,
     updateToolInput,
     completeToolInvocation,
@@ -282,8 +283,8 @@ export function Discussion(): React.ReactNode {
   }
 
   function handleConfirmNewSession() {
-    startNewSession();
     setShowNewSessionDialog(false);
+    startNewSession();
   }
 
   function handleCancelNewSession() {

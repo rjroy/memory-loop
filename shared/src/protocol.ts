@@ -97,6 +97,17 @@ export const RecentDiscussionEntrySchema = z.object({
 });
 
 /**
+ * Schema for a tool invocation within an assistant message
+ */
+export const ToolInvocationSchema = z.object({
+  toolUseId: z.string().min(1, "Tool use ID is required"),
+  toolName: z.string().min(1, "Tool name is required"),
+  input: z.unknown().optional(),
+  output: z.unknown().optional(),
+  status: z.enum(["running", "complete"]),
+});
+
+/**
  * Schema for a conversation message in session history
  */
 export const ConversationMessageSchema = z.object({
@@ -104,6 +115,7 @@ export const ConversationMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string(),
   timestamp: z.string().min(1, "Timestamp is required"),
+  toolInvocations: z.array(ToolInvocationSchema).optional(),
 });
 
 // =============================================================================
@@ -505,6 +517,9 @@ export type RecentNoteEntry = z.infer<typeof RecentNoteEntrySchema>;
 
 // Recent discussion types
 export type RecentDiscussionEntry = z.infer<typeof RecentDiscussionEntrySchema>;
+
+// Tool invocation type
+export type ToolInvocation = z.infer<typeof ToolInvocationSchema>;
 
 // Conversation message type
 export type ConversationMessageProtocol = z.infer<typeof ConversationMessageSchema>;

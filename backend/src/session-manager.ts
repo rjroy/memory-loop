@@ -524,7 +524,7 @@ export async function getSessionForVault(
  */
 export async function appendMessage(
   sessionId: string,
-  message: { id: string; role: "user" | "assistant"; content: string; timestamp: string }
+  message: { id: string; role: "user" | "assistant"; content: string; timestamp: string; toolInvocations?: Array<{ toolUseId: string; toolName: string; input?: unknown; output?: unknown; status: "running" | "complete" }> }
 ): Promise<void> {
   const metadata = await loadSession(sessionId);
   if (!metadata) {

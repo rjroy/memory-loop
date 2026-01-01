@@ -10,7 +10,7 @@
 export const VERSION = "0.1.0";
 
 // Core types
-export type { VaultInfo, SessionMetadata, ErrorCode } from "./types.js";
+export type { VaultInfo, SessionMetadata, ErrorCode, StoredToolInvocation, ConversationMessage } from "./types.js";
 
 // Protocol schemas
 export {
@@ -25,6 +25,8 @@ export {
   RecentNoteEntrySchema,
   // Recent discussion schemas
   RecentDiscussionEntrySchema,
+  // Tool invocation schema
+  ToolInvocationSchema,
   // Goals schemas
   GoalSectionSchema,
   // Inspiration schemas
@@ -82,6 +84,8 @@ export type {
   RecentNoteEntry,
   // Recent discussion types
   RecentDiscussionEntry,
+  // Tool invocation type
+  ToolInvocation,
   // Goal types
   GoalSection,
   // Inspiration types

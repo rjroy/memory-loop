@@ -29,6 +29,23 @@ export interface VaultInfo {
 }
 
 /**
+ * A tool invocation within an assistant message.
+ *
+ * @property toolUseId - Unique ID for this tool invocation
+ * @property toolName - Name of the tool that was invoked
+ * @property input - Tool input parameters (optional)
+ * @property output - Tool output/result (optional)
+ * @property status - Whether the tool is running or complete
+ */
+export interface StoredToolInvocation {
+  toolUseId: string;
+  toolName: string;
+  input?: unknown;
+  output?: unknown;
+  status: "running" | "complete";
+}
+
+/**
  * A message in the conversation history.
  *
  * Stored server-side in session files and sent to frontend on resume.
@@ -37,12 +54,14 @@ export interface VaultInfo {
  * @property role - Who sent the message
  * @property content - Message text content
  * @property timestamp - ISO 8601 timestamp
+ * @property toolInvocations - Tool invocations for assistant messages (optional)
  */
 export interface ConversationMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  toolInvocations?: StoredToolInvocation[];
 }
 
 /**

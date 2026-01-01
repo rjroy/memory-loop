@@ -10,6 +10,7 @@ import type {
   ServerMessage,
   ClientMessage,
   ErrorCode,
+  StoredToolInvocation,
 } from "@memory-loop/shared";
 import { safeParseClientMessage } from "@memory-loop/shared";
 import { discoverVaults, getVaultById, getVaultGoals } from "./vault-manager";
@@ -42,6 +43,15 @@ import { loadVaultConfig } from "./vault-config";
 export interface WebSocketLike {
   send(data: string): void;
   readyState: number;
+}
+
+/**
+ * Result from streaming SDK events.
+ * Contains accumulated response text and tool invocations for persistence.
+ */
+interface StreamingResult {
+  content: string;
+  toolInvocations: StoredToolInvocation[];
 }
 
 /**
@@ -435,20 +445,21 @@ export class WebSocketHandler {
       // Send response_start
       this.send(ws, { type: "response_start", messageId });
 
-      // Stream events from SDK and accumulate response
+      // Stream events from SDK and accumulate response + tools
       log.info("Streaming SDK events...");
-      const responseContent = await this.streamEvents(ws, messageId, queryResult);
+      const streamResult = await this.streamEvents(ws, messageId, queryResult);
 
       // Send response_end
       this.send(ws, { type: "response_end", messageId });
 
       // Save assistant message to session after streaming completes
-      if (responseContent.length > 0) {
+      if (streamResult.content.length > 0 || streamResult.toolInvocations.length > 0) {
         await appendMessage(queryResult.sessionId, {
           id: messageId,
           role: "assistant",
-          content: responseContent,
+          content: streamResult.content,
           timestamp: new Date().toISOString(),
+          toolInvocations: streamResult.toolInvocations.length > 0 ? streamResult.toolInvocations : undefined,
         });
       }
 
@@ -503,7 +514,7 @@ export class WebSocketHandler {
   /**
    * Streams SDK events to the client.
    * Maps SDK event types to WebSocket protocol messages.
-   * Returns the accumulated response text for persistence.
+   * Returns the accumulated response text and tool invocations for persistence.
    *
    * The SDK emits various event types. We handle the ones relevant to our protocol:
    * - assistant: Contains message with content blocks
@@ -514,8 +525,10 @@ export class WebSocketHandler {
     ws: WebSocketLike,
     messageId: string,
     queryResult: SessionQueryResult
-  ): Promise<string> {
+  ): Promise<StreamingResult> {
     const responseChunks: string[] = [];
+    // Track tools by ID for efficient lookup during streaming
+    const toolsMap = new Map<string, StoredToolInvocation>();
 
     for await (const event of queryResult.events) {
       // Check if connection is still open (readyState === 1)
@@ -540,13 +553,16 @@ export class WebSocketHandler {
           responseChunks.push(text);
         }
       } else if (eventType === "result") {
-        // Result events contain tool usage info
-        this.handleResultEvent(ws, rawEvent);
+        // Result events contain tool usage info - track for persistence
+        this.handleResultEvent(ws, rawEvent, toolsMap);
       }
       // Ignore other event types (system, user, auth_status, etc.)
     }
 
-    return responseChunks.join("");
+    return {
+      content: responseChunks.join(""),
+      toolInvocations: Array.from(toolsMap.values()),
+    };
   }
 
   /**
@@ -582,10 +598,12 @@ export class WebSocketHandler {
 
   /**
    * Handles result events containing tool usage.
+   * Sends tool events to client and tracks for persistence.
    */
   private handleResultEvent(
     ws: WebSocketLike,
-    event: Record<string, unknown>
+    event: Record<string, unknown>,
+    toolsMap: Map<string, StoredToolInvocation>
   ): void {
     const result = event.result as Record<string, unknown> | undefined;
     if (!result) return;
@@ -605,17 +623,31 @@ export class WebSocketHandler {
     if (content) {
       for (const block of content) {
         if (block.type === "tool_use" && block.name && block.id) {
+          // Send tool_start to client
           this.send(ws, {
             type: "tool_start",
             toolName: block.name,
             toolUseId: block.id,
           });
+
+          // Track tool for persistence (status: running until we get result)
+          toolsMap.set(block.id, {
+            toolUseId: block.id,
+            toolName: block.name,
+            status: "running",
+          });
+
           if (block.input !== undefined) {
             this.send(ws, {
               type: "tool_input",
               toolUseId: block.id,
               input: block.input,
             });
+            // Update tracked tool with input
+            const tracked = toolsMap.get(block.id);
+            if (tracked) {
+              tracked.input = block.input;
+            }
           }
         } else if (block.type === "tool_result" && block.tool_use_id) {
           this.send(ws, {
@@ -623,6 +655,12 @@ export class WebSocketHandler {
             toolUseId: block.tool_use_id,
             output: block.content ?? null,
           });
+          // Update tracked tool with output and mark complete
+          const tracked = toolsMap.get(block.tool_use_id);
+          if (tracked) {
+            tracked.output = block.content ?? null;
+            tracked.status = "complete";
+          }
         }
       }
     }

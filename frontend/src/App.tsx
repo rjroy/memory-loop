@@ -18,78 +18,8 @@ import { HomeView } from "./components/HomeView";
 import { NoteCapture } from "./components/NoteCapture";
 import { Discussion } from "./components/Discussion";
 import { BrowseMode } from "./components/BrowseMode";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import "./App.css";
-
-/**
- * Confirmation dialog component.
- */
-interface ConfirmDialogProps {
-  isOpen: boolean;
-  title: string;
-  message: string;
-  confirmLabel: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}
-
-function ConfirmDialog({
-  isOpen,
-  title,
-  message,
-  confirmLabel,
-  onConfirm,
-  onCancel,
-}: ConfirmDialogProps): React.ReactNode {
-  if (!isOpen) return null;
-
-  function handleBackdropClick(e: React.MouseEvent) {
-    if (e.target === e.currentTarget) {
-      onCancel();
-    }
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") {
-      onCancel();
-    }
-  }
-
-  return (
-    <div
-      className="confirm-dialog__backdrop"
-      onClick={handleBackdropClick}
-      onKeyDown={handleKeyDown}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-dialog-title"
-    >
-      <div className="confirm-dialog">
-        <h2 id="confirm-dialog-title" className="confirm-dialog__title">
-          {title}
-        </h2>
-        <p className="confirm-dialog__message">
-          {message}
-        </p>
-        <div className="confirm-dialog__actions">
-          <button
-            type="button"
-            className="confirm-dialog__btn confirm-dialog__btn--cancel"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="confirm-dialog__btn confirm-dialog__btn--confirm"
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /**
  * Dialog types for confirmation.

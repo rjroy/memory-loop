@@ -1120,6 +1120,26 @@ describe("WebSocket Handler", () => {
         expect(toolStart.toolName).toBe("read_file");
         expect(toolStart.toolUseId).toBe("tool-123");
       }
+
+      // Verify tool invocations are persisted with the assistant message
+      const appendCalls = mockAppendMessage.mock.calls as Array<
+        [string, { role: string; toolInvocations?: Array<{ toolUseId: string; toolName: string; input?: unknown; output?: unknown; status: string }> }]
+      >;
+      // Second call is the assistant message (first is user message)
+      const assistantMessageCall = appendCalls.find(
+        (call) => call[1]?.role === "assistant"
+      );
+      expect(assistantMessageCall).toBeDefined();
+      const assistantMessage = assistantMessageCall![1];
+      expect(assistantMessage.toolInvocations).toBeDefined();
+      expect(assistantMessage.toolInvocations).toHaveLength(1);
+      expect(assistantMessage.toolInvocations![0]).toEqual({
+        toolUseId: "tool-123",
+        toolName: "read_file",
+        input: { path: "/test.md" },
+        output: "File content here",
+        status: "complete",
+      });
     });
 
     test("aborts previous query when new message arrives", async () => {

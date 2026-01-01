@@ -1,7 +1,7 @@
 # GitHub Issues to Spec Mapping
 
 Generated: 2026-01-01
-Total Issues: 38 (Open: 6, Closed: 32)
+Total Issues: 39 (Open: 5, Closed: 34)
 
 ## Legend
 
@@ -13,12 +13,12 @@ Total Issues: 38 (Open: 6, Closed: 32)
 
 ---
 
-## Open Issues (6)
+## Open Issues (5)
 
-### #118 - Refactor the 2 dialogs into 1
+### #119 - Add a delete session button on the Ground tab
 **Status**: OPEN | **Coverage**: NOT COVERED
-**Summary**: Refactor dialogs (New session, vault switch) into reusable component
-**Spec Analysis**: No dialog component spec exists. Implementation detail but may warrant spec if dialogs are user-facing features.
+**Summary**: Add delete button to DiscussionCard with confirmation, remove from display and server storage
+**Spec Analysis**: home.md covers session display (REQ-F-17-25) but not session deletion. New feature requiring spec work.
 
 ### #117 - Implement canUseTool
 **Status**: OPEN | **Coverage**: COVERED by `chat.md`
@@ -42,7 +42,7 @@ Total Issues: 38 (Open: 6, Closed: 32)
 
 ---
 
-## Closed Issues - COVERED (25)
+## Closed Issues - COVERED (24)
 
 ### #101 - Task List on Recall tab
 **Coverage**: COVERED by `task-list.md`
@@ -170,7 +170,10 @@ These are bugs that existing specs should prevent. Specs define correct behavior
 
 ---
 
-## Closed Issues - NOT COVERED (3)
+## Closed Issues - NOT COVERED (4)
+
+### #118 - Refactor the 2 dialogs into 1
+**Coverage**: IMPLEMENTATION (refactoring, not user-facing spec)
 
 ### #3 - It's just ugly
 **Coverage**: NOT COVERED (visual design, not spec concern)
@@ -191,12 +194,12 @@ These are bugs that existing specs should prevent. Specs define correct behavior
 | PARTIAL | 0 |
 | NOT COVERED (needs spec) | 3 |
 | BUG FIX | 6 |
-| IMPLEMENTATION/INFRA | 3 |
-| **Total** | **38** |
+| IMPLEMENTATION/INFRA | 4 |
+| **Total** | **39** |
 
 ### Issues Needing Spec Work (3)
 
 **Open - Need new specs or spec updates:**
-1. #103 - User vs project CLAUDE.md scope (CLARIFICATION)
-2. #118 - Dialog refactoring (may be implementation)
+1. #119 - Delete session button (NEW FEATURE)
+2. #103 - User vs project CLAUDE.md scope (CLARIFICATION)
 3. #67 - Logging integration (infrastructure)

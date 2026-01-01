@@ -72,6 +72,8 @@ export function Discussion(): React.ReactNode {
     hasSentVaultSelectionRef.current = false;
     // Reset submitting state - any in-flight request was interrupted
     setIsSubmitting(false);
+    // Clear any pending permission dialog - backend lost the request on disconnect
+    setPendingPermission(null);
   }, []);
 
   const handleServerMessage = useServerMessageHandler();

@@ -55,6 +55,17 @@ interface StreamingResult {
 }
 
 /**
+ * Tracks state for a content block during streaming.
+ * Used to accumulate tool input JSON across multiple delta events.
+ */
+interface ContentBlockState {
+  type: "text" | "tool_use";
+  toolUseId?: string;
+  toolName?: string;
+  inputJsonChunks?: string[];
+}
+
+/**
  * Maps SessionError codes to protocol ErrorCodes.
  * STORAGE_ERROR is mapped to INTERNAL_ERROR since it's not in the protocol.
  */
@@ -516,10 +527,13 @@ export class WebSocketHandler {
    * Maps SDK event types to WebSocket protocol messages.
    * Returns the accumulated response text and tool invocations for persistence.
    *
-   * The SDK emits various event types. We handle the ones relevant to our protocol:
-   * - assistant: Contains message with content blocks
-   * - stream_event: May contain content_block_delta with text deltas
-   * - result: Contains tool_use and tool_result information
+   * The SDK emits various event types when includePartialMessages is true:
+   * - stream_event: Contains RawMessageStreamEvent with:
+   *   - content_block_start: New content block (text or tool_use)
+   *   - content_block_delta: Incremental content (text_delta or input_json_delta)
+   *   - content_block_stop: Content block complete
+   * - result: Final result with complete tool_use and tool_result blocks
+   * - assistant: Complete message (we skip to avoid duplicating streamed content)
    */
   private async streamEvents(
     ws: WebSocketLike,
@@ -529,11 +543,13 @@ export class WebSocketHandler {
     const responseChunks: string[] = [];
     // Track tools by ID for efficient lookup during streaming
     const toolsMap = new Map<string, StoredToolInvocation>();
+    // Track content blocks by index for accumulating tool input JSON
+    const contentBlocks = new Map<number, ContentBlockState>();
 
     for await (const event of queryResult.events) {
       // Check if connection is still open (readyState === 1)
       if (ws.readyState !== 1) {
-        // Connection closed, stop streaming
+        log.debug("Connection closed during streaming, stopping");
         break;
       }
 
@@ -542,18 +558,22 @@ export class WebSocketHandler {
       const rawEvent = event as unknown as Record<string, unknown>;
       const eventType = rawEvent.type as string;
 
+      // Log all SDK events for diagnostics (debug level)
+      log.debug(`SDK event: ${eventType}`, this.summarizeEvent(rawEvent));
+
       // Handle different event types
       // NOTE: We skip "assistant" events for text accumulation. The SDK emits
       // stream_event deltas for incremental text, then an assistant event with
       // the full content. Processing both would cause duplicate text.
       if (eventType === "stream_event") {
         // Streaming events (deltas, tool progress, etc.)
-        const text = this.handleStreamEvent(ws, messageId, rawEvent);
+        const text = this.handleStreamEvent(ws, messageId, rawEvent, toolsMap, contentBlocks);
         if (text) {
           responseChunks.push(text);
         }
       } else if (eventType === "result") {
         // Result events contain tool usage info - track for persistence
+        // These come at the end of a turn with complete tool info
         this.handleResultEvent(ws, rawEvent, toolsMap);
       }
       // Ignore other event types (system, user, auth_status, etc.)
@@ -566,31 +586,159 @@ export class WebSocketHandler {
   }
 
   /**
-   * Handles streaming events containing deltas.
+   * Creates a summary of an SDK event for logging.
+   * Truncates large payloads to avoid log bloat.
+   */
+  private summarizeEvent(event: Record<string, unknown>): Record<string, unknown> {
+    const summary: Record<string, unknown> = { type: event.type };
+
+    if (event.type === "stream_event" && event.event) {
+      const streamEvent = event.event as Record<string, unknown>;
+      summary.streamType = streamEvent.type;
+      if (streamEvent.index !== undefined) {
+        summary.index = streamEvent.index;
+      }
+      // Include content_block info for starts
+      if (streamEvent.content_block) {
+        const cb = streamEvent.content_block as Record<string, unknown>;
+        summary.contentBlock = { type: cb.type, id: cb.id, name: cb.name };
+      }
+      // Include delta type for deltas
+      if (streamEvent.delta) {
+        const delta = streamEvent.delta as Record<string, unknown>;
+        summary.deltaType = delta.type;
+      }
+    }
+
+    return summary;
+  }
+
+  /**
+   * Handles streaming events containing deltas and content block lifecycle.
    * Returns extracted text content for accumulation.
+   *
+   * Handles three types of stream events:
+   * - content_block_start: Signals a new content block (text or tool_use)
+   * - content_block_delta: Contains incremental content (text_delta or input_json_delta)
+   * - content_block_stop: Signals content block is complete
    */
   private handleStreamEvent(
     ws: WebSocketLike,
     messageId: string,
-    event: Record<string, unknown>
+    event: Record<string, unknown>,
+    toolsMap: Map<string, StoredToolInvocation>,
+    contentBlocks: Map<number, ContentBlockState>
   ): string {
     const streamEvent = event.event as Record<string, unknown> | undefined;
     if (!streamEvent) return "";
 
     const streamType = streamEvent.type as string | undefined;
+    const blockIndex = streamEvent.index as number | undefined;
 
-    if (streamType === "content_block_delta") {
-      const delta = streamEvent.delta as
-        | { type?: string; text?: string }
-        | undefined;
-      if (delta?.type === "text_delta" && delta.text) {
-        this.send(ws, {
-          type: "response_chunk",
-          messageId,
-          content: delta.text,
+    // Handle content_block_start - new content block beginning
+    if (streamType === "content_block_start" && blockIndex !== undefined) {
+      const contentBlock = streamEvent.content_block as Record<string, unknown> | undefined;
+      if (!contentBlock) return "";
+
+      const blockType = contentBlock.type as string;
+
+      if (blockType === "tool_use") {
+        const toolUseId = contentBlock.id as string;
+        const toolName = contentBlock.name as string;
+
+        log.info(`Tool started: ${toolName} (${toolUseId})`);
+
+        // Track this content block for accumulating input JSON
+        contentBlocks.set(blockIndex, {
+          type: "tool_use",
+          toolUseId,
+          toolName,
+          inputJsonChunks: [],
         });
-        return delta.text;
+
+        // Send tool_start to client
+        this.send(ws, {
+          type: "tool_start",
+          toolName,
+          toolUseId,
+        });
+
+        // Track tool for persistence
+        toolsMap.set(toolUseId, {
+          toolUseId,
+          toolName,
+          status: "running",
+        });
+      } else if (blockType === "text") {
+        contentBlocks.set(blockIndex, { type: "text" });
       }
+
+      return "";
+    }
+
+    // Handle content_block_delta - incremental content
+    if (streamType === "content_block_delta") {
+      const delta = streamEvent.delta as Record<string, unknown> | undefined;
+      if (!delta) return "";
+
+      const deltaType = delta.type as string;
+
+      // Text delta - stream to client (doesn't require index tracking)
+      if (deltaType === "text_delta") {
+        const text = delta.text as string | undefined;
+        if (text) {
+          this.send(ws, {
+            type: "response_chunk",
+            messageId,
+            content: text,
+          });
+          return text;
+        }
+      }
+
+      // Input JSON delta - accumulate for tool input (requires index to track which tool)
+      if (deltaType === "input_json_delta" && blockIndex !== undefined) {
+        const partialJson = delta.partial_json as string | undefined;
+        const block = contentBlocks.get(blockIndex);
+        if (partialJson && block?.type === "tool_use" && block.inputJsonChunks) {
+          block.inputJsonChunks.push(partialJson);
+        }
+      }
+
+      return "";
+    }
+
+    // Handle content_block_stop - content block complete
+    if (streamType === "content_block_stop" && blockIndex !== undefined) {
+      const block = contentBlocks.get(blockIndex);
+
+      if (block?.type === "tool_use" && block.toolUseId && block.inputJsonChunks) {
+        // Parse accumulated JSON and send tool_input
+        const jsonStr = block.inputJsonChunks.join("");
+        try {
+          const input: unknown = jsonStr ? JSON.parse(jsonStr) : {};
+
+          log.debug(`Tool input complete for ${block.toolName}`, { inputLength: jsonStr.length });
+
+          this.send(ws, {
+            type: "tool_input",
+            toolUseId: block.toolUseId,
+            input,
+          });
+
+          // Update tracked tool with input
+          const tracked = toolsMap.get(block.toolUseId);
+          if (tracked) {
+            tracked.input = input;
+          }
+        } catch (err) {
+          log.warn(`Failed to parse tool input JSON for ${block.toolUseId}`, { jsonStr, err });
+        }
+      }
+
+      // Clean up block state
+      contentBlocks.delete(blockIndex);
+      return "";
     }
 
     return "";
@@ -598,7 +746,12 @@ export class WebSocketHandler {
 
   /**
    * Handles result events containing tool usage.
-   * Sends tool events to client and tracks for persistence.
+   * Sends tool_end events and ensures tools are tracked for persistence.
+   *
+   * Note: tool_start and tool_input are now sent during streaming via
+   * handleStreamEvent. This method handles:
+   * - tool_use blocks: Only tracks for persistence if not already tracked
+   * - tool_result blocks: Sends tool_end and updates status
    */
   private handleResultEvent(
     ws: WebSocketLike,
@@ -623,33 +776,36 @@ export class WebSocketHandler {
     if (content) {
       for (const block of content) {
         if (block.type === "tool_use" && block.name && block.id) {
-          // Send tool_start to client
-          this.send(ws, {
-            type: "tool_start",
-            toolName: block.name,
-            toolUseId: block.id,
-          });
-
-          // Track tool for persistence (status: running until we get result)
-          toolsMap.set(block.id, {
-            toolUseId: block.id,
-            toolName: block.name,
-            status: "running",
-          });
-
-          if (block.input !== undefined) {
-            this.send(ws, {
-              type: "tool_input",
+          // Check if we already tracked this tool from streaming events
+          const existing = toolsMap.get(block.id);
+          if (!existing) {
+            // Fallback: tool wasn't seen during streaming, track it now
+            log.debug(`Tool ${block.name} (${block.id}) tracked from result event (fallback)`);
+            toolsMap.set(block.id, {
               toolUseId: block.id,
+              toolName: block.name,
+              status: "running",
               input: block.input,
             });
-            // Update tracked tool with input
-            const tracked = toolsMap.get(block.id);
-            if (tracked) {
-              tracked.input = block.input;
+            // Send tool_start and tool_input as fallback
+            this.send(ws, {
+              type: "tool_start",
+              toolName: block.name,
+              toolUseId: block.id,
+            });
+            if (block.input !== undefined) {
+              this.send(ws, {
+                type: "tool_input",
+                toolUseId: block.id,
+                input: block.input,
+              });
             }
+          } else if (!existing.input && block.input !== undefined) {
+            // Update input if we didn't get it from streaming
+            existing.input = block.input;
           }
         } else if (block.type === "tool_result" && block.tool_use_id) {
+          log.info(`Tool completed: ${block.tool_use_id}`);
           this.send(ws, {
             type: "tool_end",
             toolUseId: block.tool_use_id,

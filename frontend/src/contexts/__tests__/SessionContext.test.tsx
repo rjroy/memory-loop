@@ -2159,4 +2159,155 @@ describe("SessionContext", () => {
       expect(result.current.wantsNewSession).toBe(true);
     });
   });
+
+  describe("tool invocations", () => {
+    it("addToolToLastMessage adds a tool to the last assistant message", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Create an assistant message first
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+        });
+      });
+
+      // Add a tool
+      act(() => {
+        result.current.addToolToLastMessage("tool-123", "Read");
+      });
+
+      const lastMessage = result.current.messages[0];
+      expect(lastMessage.toolInvocations).toBeDefined();
+      expect(lastMessage.toolInvocations).toHaveLength(1);
+      expect(lastMessage.toolInvocations![0]).toEqual({
+        toolUseId: "tool-123",
+        toolName: "Read",
+        status: "running",
+      });
+    });
+
+    it("updateToolInput updates tool input", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Create assistant message with tool
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+        });
+        result.current.addToolToLastMessage("tool-123", "Read");
+      });
+
+      // Update tool input
+      act(() => {
+        result.current.updateToolInput("tool-123", { file_path: "/test.md" });
+      });
+
+      const lastMessage = result.current.messages[0];
+      expect(lastMessage.toolInvocations![0].input).toEqual({ file_path: "/test.md" });
+    });
+
+    it("completeToolInvocation marks tool as complete with output", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Create assistant message with tool
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+        });
+        result.current.addToolToLastMessage("tool-123", "Read");
+      });
+
+      // Complete the tool
+      act(() => {
+        result.current.completeToolInvocation("tool-123", "File contents here");
+      });
+
+      const lastMessage = result.current.messages[0];
+      expect(lastMessage.toolInvocations![0].status).toBe("complete");
+      expect(lastMessage.toolInvocations![0].output).toBe("File contents here");
+    });
+
+    it("completeToolInvocation finds tool in earlier messages (not just last)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Create first assistant message with tool
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "First response",
+          isStreaming: false,
+          toolInvocations: [{
+            toolUseId: "tool-123",
+            toolName: "Read",
+            status: "running" as const,
+          }],
+        });
+      });
+
+      // Add another message (user follow-up)
+      act(() => {
+        result.current.addMessage({
+          role: "user",
+          content: "Thanks!",
+        });
+      });
+
+      // Complete the tool from the earlier message
+      act(() => {
+        result.current.completeToolInvocation("tool-123", "File contents");
+      });
+
+      // Should update the first message's tool, not fail
+      expect(result.current.messages[0].toolInvocations![0].status).toBe("complete");
+      expect(result.current.messages[0].toolInvocations![0].output).toBe("File contents");
+    });
+
+    it("completeToolInvocation handles multiple tools in same message", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Create assistant message with multiple tools
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+        });
+        result.current.addToolToLastMessage("tool-1", "Read");
+        result.current.addToolToLastMessage("tool-2", "Grep");
+      });
+
+      // Complete second tool first
+      act(() => {
+        result.current.completeToolInvocation("tool-2", "Grep output");
+      });
+
+      // Complete first tool
+      act(() => {
+        result.current.completeToolInvocation("tool-1", "Read output");
+      });
+
+      const lastMessage = result.current.messages[0];
+      expect(lastMessage.toolInvocations).toHaveLength(2);
+      expect(lastMessage.toolInvocations![0].status).toBe("complete");
+      expect(lastMessage.toolInvocations![0].output).toBe("Read output");
+      expect(lastMessage.toolInvocations![1].status).toBe("complete");
+      expect(lastMessage.toolInvocations![1].output).toBe("Grep output");
+    });
+  });
 });

@@ -755,19 +755,36 @@ function sessionReducer(
 
     case "UPDATE_TOOL_INPUT": {
       // Update the input of a tool invocation
-      if (state.messages.length === 0) return state;
-      const messages = [...state.messages];
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role !== "assistant" || !lastMessage.toolInvocations) {
+      // Search ALL messages for the tool (not just last) to handle edge cases
+      if (state.messages.length === 0) {
+        console.warn(`[SessionContext] UPDATE_TOOL_INPUT ignored: no messages`);
         return state;
       }
-      const updatedTools = lastMessage.toolInvocations.map((tool) =>
+      const messages = [...state.messages];
+
+      // Search from end to find the message containing this tool
+      let foundMessageIndex = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        if (msg.role === "assistant" && msg.toolInvocations?.some(t => t.toolUseId === action.toolUseId)) {
+          foundMessageIndex = i;
+          break;
+        }
+      }
+
+      if (foundMessageIndex === -1) {
+        console.warn(`[SessionContext] UPDATE_TOOL_INPUT: tool ${action.toolUseId} not found in any message`);
+        return state;
+      }
+
+      const targetMessage = messages[foundMessageIndex];
+      const updatedTools = targetMessage.toolInvocations!.map((tool) =>
         tool.toolUseId === action.toolUseId
           ? { ...tool, input: action.input }
           : tool
       );
-      messages[messages.length - 1] = {
-        ...lastMessage,
+      messages[foundMessageIndex] = {
+        ...targetMessage,
         toolInvocations: updatedTools,
       };
       return { ...state, messages };
@@ -775,19 +792,37 @@ function sessionReducer(
 
     case "COMPLETE_TOOL_INVOCATION": {
       // Mark a tool invocation as complete with output
-      if (state.messages.length === 0) return state;
-      const messages = [...state.messages];
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role !== "assistant" || !lastMessage.toolInvocations) {
+      // Search ALL messages for the tool (not just last) to handle race conditions
+      // where tool_end arrives before tool_start is committed to state
+      if (state.messages.length === 0) {
+        console.warn(`[SessionContext] COMPLETE_TOOL_INVOCATION ignored: no messages`);
         return state;
       }
-      const updatedTools = lastMessage.toolInvocations.map((tool) =>
+      const messages = [...state.messages];
+
+      // Search from end to find the message containing this tool
+      let foundMessageIndex = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        if (msg.role === "assistant" && msg.toolInvocations?.some(t => t.toolUseId === action.toolUseId)) {
+          foundMessageIndex = i;
+          break;
+        }
+      }
+
+      if (foundMessageIndex === -1) {
+        console.warn(`[SessionContext] COMPLETE_TOOL_INVOCATION: tool ${action.toolUseId} not found in any message`);
+        return state;
+      }
+
+      const targetMessage = messages[foundMessageIndex];
+      const updatedTools = targetMessage.toolInvocations!.map((tool) =>
         tool.toolUseId === action.toolUseId
           ? { ...tool, output: action.output, status: "complete" as const }
           : tool
       );
-      messages[messages.length - 1] = {
-        ...lastMessage,
+      messages[foundMessageIndex] = {
+        ...targetMessage,
         toolInvocations: updatedTools,
       };
       return { ...state, messages };

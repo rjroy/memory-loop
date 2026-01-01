@@ -47,6 +47,7 @@ export function Discussion(): React.ReactNode {
     setPendingSessionId,
     showNewSessionDialog,
     setShowNewSessionDialog,
+    wantsNewSession,
     addToolToLastMessage,
     updateToolInput,
     completeToolInvocation,
@@ -119,6 +120,13 @@ export function Discussion(): React.ReactNode {
     ) {
       hasSentVaultSelectionRef.current = true;
 
+      // Priority 0: If user wants a new session, skip auto-resume entirely
+      if (wantsNewSession) {
+        console.log("[Discussion] wantsNewSession=true, starting fresh session");
+        sendMessage({ type: "select_vault", vaultId: vault.id });
+        return;
+      }
+
       // Priority 1: If RecentActivity set a pendingSessionId, resume that session
       if (pendingSessionId) {
         console.log(`[Discussion] Resuming pending session: ${pendingSessionId.slice(0, 8)}...`);
@@ -158,7 +166,7 @@ export function Discussion(): React.ReactNode {
         }
       })();
     }
-  }, [connectionStatus, vault, sessionId, pendingSessionId, sendMessage]);
+  }, [connectionStatus, vault, sessionId, pendingSessionId, wantsNewSession, sendMessage]);
 
   // Detect when sessionId is cleared (user clicked "New" button) and notify backend
   useEffect(() => {
@@ -171,8 +179,10 @@ export function Discussion(): React.ReactNode {
     ) {
       console.log("[Discussion] Session cleared, sending new_session to backend");
       sendMessage({ type: "new_session" });
-      // Reset so vault selection effect can run fresh when session_ready arrives
-      hasSentVaultSelectionRef.current = false;
+      // Don't reset hasSentVaultSelectionRef - the new_session message will trigger
+      // a session_ready response from the backend with the new session ID.
+      // Resetting the ref here causes a race condition where the vault selection
+      // effect re-runs and fetches the old session before new_session is processed.
     }
     // Always update the ref to track current sessionId
     prevSessionIdRef.current = sessionId;

@@ -76,9 +76,9 @@ describe("TaskList", () => {
   describe("task grouping", () => {
     it("groups tasks by file path", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task 1", state: " ", filePath: "folder/file1.md", lineNumber: 1 },
-        { text: "Task 2", state: " ", filePath: "folder/file1.md", lineNumber: 2 },
-        { text: "Task 3", state: " ", filePath: "folder/file2.md", lineNumber: 1 },
+        { text: "Task 1", state: " ", filePath: "folder/file1.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task 2", state: " ", filePath: "folder/file1.md", lineNumber: 2, fileMtime: 1000 },
+        { text: "Task 3", state: " ", filePath: "folder/file2.md", lineNumber: 1, fileMtime: 2000 },
       ];
 
       render(
@@ -94,9 +94,9 @@ describe("TaskList", () => {
 
     it("displays rollup count (completed / total) per file", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1 },
-        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2 },
-        { text: "Task 3", state: " ", filePath: "file.md", lineNumber: 3 },
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000 },
+        { text: "Task 3", state: " ", filePath: "file.md", lineNumber: 3, fileMtime: 1000 },
       ];
 
       render(
@@ -105,15 +105,18 @@ describe("TaskList", () => {
         </SessionProvider>
       );
 
-      // 1 completed (x), 3 total
-      expect(screen.getByText("1 / 3")).toBeDefined();
+      // 1 completed (x), 3 total - appears in both header and per-group count
+      // Find the group header button by its aria-expanded attribute
+      const groupHeader = screen.getByRole("button", { expanded: true });
+      expect(groupHeader.textContent).toContain("1 / 3");
+      expect(groupHeader.textContent).toContain("file.md");
     });
   });
 
   describe("state indicators", () => {
     it("shows empty checkbox for incomplete tasks (state=' ')", () => {
       const tasks: TaskEntry[] = [
-        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1 },
+        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
       ];
 
       render(
@@ -129,7 +132,7 @@ describe("TaskList", () => {
 
     it("shows checked checkbox for complete tasks (state='x')", () => {
       const tasks: TaskEntry[] = [
-        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 1 },
+        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
       ];
 
       render(
@@ -147,7 +150,7 @@ describe("TaskList", () => {
   describe("task toggle", () => {
     it("calls onToggleTask when toggle button is clicked", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task to toggle", state: " ", filePath: "file.md", lineNumber: 5 },
+        { text: "Task to toggle", state: " ", filePath: "file.md", lineNumber: 5, fileMtime: 1000 },
       ];
 
       let toggledFilePath = "";
@@ -179,7 +182,7 @@ describe("TaskList", () => {
   describe("touch targets", () => {
     it("has 44px minimum touch target class applied (REQ-NF-2)", () => {
       const tasks: TaskEntry[] = [
-        { text: "Touch target test", state: " ", filePath: "touch.md", lineNumber: 1 },
+        { text: "Touch target test", state: " ", filePath: "touch.md", lineNumber: 1, fileMtime: 1000 },
       ];
 
       render(
@@ -201,7 +204,7 @@ describe("TaskList", () => {
   describe("accessibility", () => {
     it("provides aria-label for toggle buttons with task state", () => {
       const tasks: TaskEntry[] = [
-        { text: "Accessible task", state: "x", filePath: "access.md", lineNumber: 1 },
+        { text: "Accessible task", state: "x", filePath: "access.md", lineNumber: 1, fileMtime: 1000 },
       ];
 
       render(
@@ -214,6 +217,133 @@ describe("TaskList", () => {
         name: /Toggle task: Accessible task \(currently complete\)/i,
       });
       expect(toggleButton).toBeDefined();
+    });
+  });
+
+  describe("hide completed toggle", () => {
+    it("renders hide completed checkbox in header", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      const checkbox = screen.getByRole("checkbox");
+      expect(checkbox).toBeDefined();
+      expect(screen.getByText("Hide completed")).toBeDefined();
+    });
+
+    it("filters out completed tasks when toggle is active", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      // Both tasks visible initially
+      expect(screen.getByText("Incomplete task")).toBeDefined();
+      expect(screen.getByText("Complete task")).toBeDefined();
+
+      // Toggle hide completed
+      const checkbox = screen.getByRole("checkbox");
+      fireEvent.click(checkbox);
+
+      // Only incomplete task visible
+      expect(screen.getByText("Incomplete task")).toBeDefined();
+      expect(screen.queryByText("Complete task")).toBeNull();
+    });
+
+    it("displays total count as completed / total in header", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000 },
+        { text: "Task 3", state: " ", filePath: "file.md", lineNumber: 3, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      // Header shows total count (1 completed / 3 total)
+      const totalCount = screen.getByText("1 / 3", { selector: ".task-list__total-count" });
+      expect(totalCount).toBeDefined();
+    });
+
+    it("keeps total count unchanged when hide toggle is active", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      // Toggle hide completed
+      const checkbox = screen.getByRole("checkbox");
+      fireEvent.click(checkbox);
+
+      // Total count still reflects all tasks, not just visible ones
+      const totalCount = screen.getByText("1 / 2", { selector: ".task-list__total-count" });
+      expect(totalCount).toBeDefined();
+    });
+  });
+
+  describe("sort by modification time", () => {
+    it("sorts files by mtime descending (newest first)", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Old file task", state: " ", filePath: "old.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "New file task", state: " ", filePath: "new.md", lineNumber: 1, fileMtime: 3000 },
+        { text: "Mid file task", state: " ", filePath: "mid.md", lineNumber: 1, fileMtime: 2000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      // Get all group headers in order
+      const headers = screen.getAllByRole("button", { expanded: true });
+      const fileNames = headers.map((h) => h.textContent);
+
+      // Should be newest first: new.md, mid.md, old.md
+      expect(fileNames[0]).toContain("new.md");
+      expect(fileNames[1]).toContain("mid.md");
+      expect(fileNames[2]).toContain("old.md");
+    });
+
+    it("handles files with mtime=0 (sorted last)", () => {
+      const tasks: TaskEntry[] = [
+        { text: "No mtime task", state: " ", filePath: "unknown.md", lineNumber: 1, fileMtime: 0 },
+        { text: "Has mtime task", state: " ", filePath: "known.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      const headers = screen.getAllByRole("button", { expanded: true });
+      const fileNames = headers.map((h) => h.textContent);
+
+      // File with mtime should come first, mtime=0 last
+      expect(fileNames[0]).toContain("known.md");
+      expect(fileNames[1]).toContain("unknown.md");
     });
   });
 });

@@ -73,6 +73,8 @@ export const TaskEntrySchema = z.object({
   filePath: z.string().min(1, "File path is required"),
   /** Line number in file (1-indexed) */
   lineNumber: z.number().int().min(1, "Line number must be at least 1"),
+  /** File modification time (Unix timestamp in ms) for sorting */
+  fileMtime: z.number().int().min(0),
 });
 
 /**

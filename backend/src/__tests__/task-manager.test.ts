@@ -425,12 +425,13 @@ describe("parseTasksFromFile", () => {
 
     const tasks = await parseTasksFromFile(testDir, "note.md");
     expect(tasks).toHaveLength(1);
-    expect(tasks[0]).toEqual({
+    expect(tasks[0]).toMatchObject({
       text: "Buy groceries",
       state: " ",
       filePath: "note.md",
       lineNumber: 1,
     });
+    expect(tasks[0].fileMtime).toBeGreaterThan(0);
   });
 
   test("parses multiple tasks", async () => {

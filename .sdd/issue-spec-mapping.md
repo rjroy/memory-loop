@@ -50,7 +50,7 @@ Total Issues: 38 (Open: 6, Closed: 32)
 
 ---
 
-## Closed Issues - COVERED (22)
+## Closed Issues - COVERED (23)
 
 ### #101 - Task List on Recall tab
 **Coverage**: COVERED by `task-list.md`
@@ -58,11 +58,15 @@ Total Issues: 38 (Open: 6, Closed: 32)
 
 ### #86 - Add lightweight edit capability to Recall tab
 **Coverage**: COVERED by `view.md` (merged)
-**Spec Refs**: REQ-F-32 to REQ-F-42 (File Content Editing section)
+**Spec Refs**: REQ-F-33 to REQ-F-43 (File Content Editing section)
 
 ### #85 - The Recall tab needs a Reload button
 **Coverage**: COVERED by `view.md`
 **Spec Refs**: REQ-F-16 (Reload button), Acceptance Test #29
+
+### #96 - Markdown frontmatter rendering improvement
+**Coverage**: COVERED by `view.md`
+**Spec Refs**: REQ-F-19 (frontmatter as table), Acceptance Test #30
 
 ### #82 - Stop/Abort button during AI thinking
 **Coverage**: COVERED by `memory-loop.md`
@@ -170,12 +174,7 @@ These are bugs that existing specs should prevent. Specs define correct behavior
 
 ---
 
-## Closed Issues - NOT COVERED (4)
-
-### #96 - Markdown frontmatter rendering improvement
-**Coverage**: NOT COVERED
-**Summary**: Render frontmatter as table (like GitHub)
-**Gap**: view.md REQ-F-17 mentions GFM but not frontmatter tables
+## Closed Issues - NOT COVERED (3)
 
 ### #3 - It's just ugly
 **Coverage**: NOT COVERED (visual design, not spec concern)
@@ -192,14 +191,14 @@ These are bugs that existing specs should prevent. Specs define correct behavior
 
 | Category | Count |
 |----------|-------|
-| COVERED | 22 |
+| COVERED | 23 |
 | PARTIAL | 1 |
-| NOT COVERED (needs spec) | 6 |
+| NOT COVERED (needs spec) | 5 |
 | BUG FIX | 6 |
 | IMPLEMENTATION/INFRA | 3 |
 | **Total** | **38** |
 
-### Issues Needing Spec Work (7)
+### Issues Needing Spec Work (6)
 
 **Open - Need new specs or spec updates:**
 1. #117 - canUseTool permission dialog (NEW FEATURE)
@@ -210,4 +209,3 @@ These are bugs that existing specs should prevent. Specs define correct behavior
 
 **Closed but not in specs:**
 6. #110 - Task improvements (sticky headers, sort, hide completed)
-7. #96 - Frontmatter rendering as table

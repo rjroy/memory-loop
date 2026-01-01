@@ -173,6 +173,8 @@ export interface SessionActions {
   unpinFolder: (path: string) => void;
   /** Set recent discussions */
   setRecentDiscussions: (discussions: RecentDiscussionEntry[]) => void;
+  /** Remove a discussion from the recent list (after deletion) */
+  removeDiscussion: (sessionId: string) => void;
   /** Set goals from vault's goals.md file */
   setGoals: (goals: GoalSection[] | null) => void;
   /** Set discussion prefill text (from inspiration click) */
@@ -254,6 +256,7 @@ type SessionAction =
   | { type: "CLEAR_DIRECTORY_CACHE" }
   | { type: "SET_RECENT_NOTES"; notes: RecentNoteEntry[] }
   | { type: "SET_RECENT_DISCUSSIONS"; discussions: RecentDiscussionEntry[] }
+  | { type: "REMOVE_DISCUSSION"; sessionId: string }
   | { type: "PIN_FOLDER"; path: string }
   | { type: "UNPIN_FOLDER"; path: string }
   | { type: "SET_PINNED_FOLDERS"; paths: string[] }
@@ -620,6 +623,14 @@ function sessionReducer(
       return {
         ...state,
         recentDiscussions: action.discussions,
+      };
+
+    case "REMOVE_DISCUSSION":
+      return {
+        ...state,
+        recentDiscussions: state.recentDiscussions.filter(
+          (d) => d.sessionId !== action.sessionId
+        ),
       };
 
     case "SET_GOALS":
@@ -1007,6 +1018,8 @@ export interface SessionProviderProps {
   initialRecentDiscussions?: RecentDiscussionEntry[];
   /** Optional initial goals (for testing) */
   initialGoals?: GoalSection[] | null;
+  /** Optional initial session ID (for testing) */
+  initialSessionId?: string | null;
 }
 
 /**
@@ -1018,12 +1031,14 @@ export function SessionProvider({
   initialRecentNotes,
   initialRecentDiscussions,
   initialGoals,
+  initialSessionId,
 }: SessionProviderProps): React.ReactNode {
   const [state, dispatch] = useReducer(sessionReducer, {
     ...initialState,
     recentNotes: initialRecentNotes ?? [],
     recentDiscussions: initialRecentDiscussions ?? [],
     goals: initialGoals ?? null,
+    sessionId: initialSessionId ?? null,
   });
 
   // Persist vault ID when it changes
@@ -1198,6 +1213,10 @@ export function SessionProvider({
     dispatch({ type: "SET_RECENT_DISCUSSIONS", discussions });
   }, []);
 
+  const removeDiscussion = useCallback((sessionId: string) => {
+    dispatch({ type: "REMOVE_DISCUSSION", sessionId });
+  }, []);
+
   const setGoals = useCallback((goals: GoalSection[] | null) => {
     dispatch({ type: "SET_GOALS", goals });
   }, []);
@@ -1298,6 +1317,7 @@ export function SessionProvider({
     pinFolder,
     unpinFolder,
     setRecentDiscussions,
+    removeDiscussion,
     setGoals,
     setDiscussionPrefill,
     setPendingSessionId,

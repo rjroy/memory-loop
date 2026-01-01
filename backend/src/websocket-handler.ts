@@ -20,6 +20,7 @@ import {
   loadSession,
   appendMessage,
   getRecentSessions,
+  deleteSession,
   SessionError,
   type SessionQueryResult,
 } from "./session-manager";
@@ -278,6 +279,9 @@ export class WebSocketHandler {
         break;
       case "toggle_task":
         await this.handleToggleTask(ws, message.filePath, message.lineNumber);
+        break;
+      case "delete_session":
+        await this.handleDeleteSession(ws, message.sessionId);
         break;
     }
   }
@@ -976,6 +980,47 @@ export class WebSocketHandler {
       sessionId: "", // Empty indicates new session will be created
       vaultId: this.state.currentVault.id,
     });
+  }
+
+  /**
+   * Handles delete_session message.
+   * Deletes a session from storage. Cannot delete the currently active session.
+   */
+  private async handleDeleteSession(
+    ws: WebSocketLike,
+    sessionId: string
+  ): Promise<void> {
+    log.info(`Deleting session: ${sessionId.slice(0, 8)}...`);
+
+    // Safety check: cannot delete the currently active session
+    if (this.state.currentSessionId === sessionId) {
+      log.warn("Attempted to delete active session");
+      this.sendError(
+        ws,
+        "SESSION_INVALID",
+        "Cannot delete the currently active session"
+      );
+      return;
+    }
+
+    try {
+      const deleted = await deleteSession(sessionId);
+      if (deleted) {
+        log.info(`Session deleted: ${sessionId.slice(0, 8)}...`);
+        this.send(ws, { type: "session_deleted", sessionId });
+      } else {
+        log.warn(`Session not found: ${sessionId.slice(0, 8)}...`);
+        this.sendError(ws, "SESSION_NOT_FOUND", `Session "${sessionId}" not found`);
+      }
+    } catch (error) {
+      log.error("Failed to delete session", error);
+      if (error instanceof SessionError) {
+        this.sendError(ws, mapSessionErrorCode(error.code), error.message);
+      } else {
+        const message = error instanceof Error ? error.message : "Failed to delete session";
+        this.sendError(ws, "INTERNAL_ERROR", message);
+      }
+    }
   }
 
   /**

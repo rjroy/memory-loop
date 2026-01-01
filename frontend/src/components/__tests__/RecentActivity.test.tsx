@@ -267,4 +267,79 @@ describe("RecentActivity", () => {
       expect(resumeButtons[0].className).toContain("primary");
     });
   });
+
+  describe("Delete button behavior", () => {
+    it("renders Delete button for each discussion", () => {
+      render(<RecentActivity />, {
+        wrapper: createTestWrapper([], mockDiscussions),
+      });
+
+      const deleteButtons = screen.getAllByRole("button", { name: /delete discussion/i });
+      expect(deleteButtons).toHaveLength(2);
+    });
+
+    it("Delete button has danger styling", () => {
+      render(<RecentActivity />, {
+        wrapper: createTestWrapper([], mockDiscussions),
+      });
+
+      const deleteButtons = screen.getAllByRole("button", { name: /delete discussion/i });
+      expect(deleteButtons[0].className).toContain("danger");
+    });
+
+    it("shows confirmation dialog when Delete is clicked", () => {
+      render(<RecentActivity />, {
+        wrapper: createTestWrapper([], mockDiscussions),
+      });
+
+      const deleteButtons = screen.getAllByRole("button", { name: /delete discussion/i });
+      fireEvent.click(deleteButtons[0]);
+
+      // Confirmation dialog should appear
+      expect(screen.getByRole("dialog")).toBeDefined();
+      expect(screen.getByText("Delete Session?")).toBeDefined();
+      expect(screen.getByText(/this cannot be undone/i)).toBeDefined();
+    });
+
+    it("closes confirmation dialog when Cancel is clicked", () => {
+      render(<RecentActivity />, {
+        wrapper: createTestWrapper([], mockDiscussions),
+      });
+
+      // Open the dialog
+      const deleteButtons = screen.getAllByRole("button", { name: /delete discussion/i });
+      fireEvent.click(deleteButtons[0]);
+      expect(screen.getByRole("dialog")).toBeDefined();
+
+      // Click Cancel
+      const cancelButton = screen.getByRole("button", { name: /cancel/i });
+      fireEvent.click(cancelButton);
+
+      // Dialog should be gone
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("disables Delete button for currently active session", () => {
+      // Create a wrapper that sets session-1 as the active session
+      function ActiveSessionWrapper({ children }: { children: ReactNode }) {
+        return (
+          <SessionProvider
+            initialVaults={[testVault]}
+            initialRecentDiscussions={mockDiscussions}
+            initialSessionId="session-1"
+          >
+            {children}
+          </SessionProvider>
+        );
+      }
+
+      render(<RecentActivity />, {
+        wrapper: ActiveSessionWrapper,
+      });
+
+      const deleteButtons = screen.getAllByRole("button", { name: /cannot delete active session/i });
+      expect(deleteButtons).toHaveLength(1);
+      expect(deleteButtons[0].hasAttribute("disabled")).toBe(true);
+    });
+  });
 });

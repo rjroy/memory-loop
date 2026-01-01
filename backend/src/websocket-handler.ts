@@ -584,8 +584,11 @@ export class WebSocketHandler {
         // Result events contain tool usage info - track for persistence
         // These come at the end of a turn with complete tool info
         this.handleResultEvent(ws, rawEvent, toolsMap);
+      } else if (eventType === "user") {
+        // User events contain tool results (SDK creates these after tool execution)
+        this.handleUserEvent(ws, rawEvent, toolsMap);
       }
-      // Ignore other event types (system, user, auth_status, etc.)
+      // Ignore other event types (system, auth_status, etc.)
     }
 
     return {
@@ -826,6 +829,53 @@ export class WebSocketHandler {
             tracked.output = block.content ?? null;
             tracked.status = "complete";
           }
+        }
+      }
+    }
+  }
+
+  /**
+   * Handles user events containing tool results.
+   * The SDK creates user messages after tool execution with the tool output.
+   *
+   * User event structure (from SDKUserMessage):
+   * - type: 'user'
+   * - message: APIUserMessage (with content array containing tool_result blocks)
+   * - tool_use_result?: unknown (convenience field with result data)
+   */
+  private handleUserEvent(
+    ws: WebSocketLike,
+    event: Record<string, unknown>,
+    toolsMap: Map<string, StoredToolInvocation>
+  ): void {
+    // The message field contains the APIUserMessage
+    const message = event.message as Record<string, unknown> | undefined;
+    if (!message) return;
+
+    // Check for tool_result blocks in message content
+    const content = message.content as
+      | Array<{
+          type: string;
+          tool_use_id?: string;
+          content?: unknown;
+        }>
+      | undefined;
+
+    if (!content || !Array.isArray(content)) return;
+
+    for (const block of content) {
+      if (block.type === "tool_result" && block.tool_use_id) {
+        log.info(`Tool completed (from user event): ${block.tool_use_id}`);
+        this.send(ws, {
+          type: "tool_end",
+          toolUseId: block.tool_use_id,
+          output: block.content ?? null,
+        });
+        // Update tracked tool with output and mark complete
+        const tracked = toolsMap.get(block.tool_use_id);
+        if (tracked) {
+          tracked.output = block.content ?? null;
+          tracked.status = "complete";
         }
       }
     }

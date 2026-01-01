@@ -791,9 +791,6 @@ function sessionReducer(
       // Remove from pending if it was there
       let pendingToolUpdates = state.pendingToolUpdates;
       if (pendingUpdate) {
-        console.log(
-          `[SessionContext] ADD_TOOL_TO_LAST_MESSAGE: applying pending update for tool ${action.toolUseId}`
-        );
         pendingToolUpdates = new Map(state.pendingToolUpdates);
         pendingToolUpdates.delete(action.toolUseId);
       }
@@ -867,9 +864,6 @@ function sessionReducer(
 
       if (foundMessageIndex === -1) {
         // Tool not found - queue the completion for when tool_start arrives
-        console.warn(
-          `[SessionContext] COMPLETE_TOOL_INVOCATION: tool ${action.toolUseId} not found, queueing completion`
-        );
         const pendingToolUpdates = new Map(state.pendingToolUpdates);
         const existing = pendingToolUpdates.get(action.toolUseId) ?? {};
         pendingToolUpdates.set(action.toolUseId, {

@@ -26,9 +26,9 @@ Total Issues: 38 (Open: 6, Closed: 32)
 **Spec Analysis**: chat.md covers tool display (REQ-F-17-22) but not tool permission prompts. This is a new feature requiring spec work.
 
 ### #105 - Add support for mermaid diagrams to Markdown view
-**Status**: OPEN | **Coverage**: NOT COVERED
+**Status**: OPEN | **Coverage**: COVERED by `view.md`
 **Summary**: Support mermaid diagrams in fenced code blocks for markdown rendering
-**Spec Analysis**: view.md REQ-F-17 mentions GFM features but not mermaid. This is a new capability.
+**Spec Refs**: REQ-F-20 (mermaid as SVG), Acceptance Test #31
 
 ### #103 - Should user space be allowed during discussion?
 **Status**: OPEN | **Coverage**: NOT COVERED
@@ -42,7 +42,7 @@ Total Issues: 38 (Open: 6, Closed: 32)
 
 ---
 
-## Closed Issues - COVERED (24)
+## Closed Issues - COVERED (25)
 
 ### #101 - Task List on Recall tab
 **Coverage**: COVERED by `task-list.md`
@@ -187,18 +187,17 @@ These are bugs that existing specs should prevent. Specs define correct behavior
 
 | Category | Count |
 |----------|-------|
-| COVERED | 24 |
+| COVERED | 25 |
 | PARTIAL | 0 |
-| NOT COVERED (needs spec) | 5 |
+| NOT COVERED (needs spec) | 4 |
 | BUG FIX | 6 |
 | IMPLEMENTATION/INFRA | 3 |
 | **Total** | **38** |
 
-### Issues Needing Spec Work (5)
+### Issues Needing Spec Work (4)
 
 **Open - Need new specs or spec updates:**
 1. #117 - canUseTool permission dialog (NEW FEATURE)
-2. #105 - Mermaid diagram support (NEW CAPABILITY)
-3. #103 - User vs project CLAUDE.md scope (CLARIFICATION)
-4. #118 - Dialog refactoring (may be implementation)
-5. #67 - Logging integration (infrastructure)
+2. #103 - User vs project CLAUDE.md scope (CLARIFICATION)
+3. #118 - Dialog refactoring (may be implementation)
+4. #67 - Logging integration (infrastructure)

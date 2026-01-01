@@ -40,21 +40,17 @@ Total Issues: 38 (Open: 6, Closed: 32)
 **Summary**: File rotation, configurable log levels
 **Spec Analysis**: No logging spec exists. Infrastructure concern, may not need feature spec.
 
-### #110 - task improvements
-**Status**: CLOSED | **Coverage**: PARTIAL
-**Summary**: Sticky file headers, newest-first sort, hide completed tasks option
-**Spec Analysis**: task-list.md covers basic task list (REQ-F-8-11) but:
-- Sticky headers: NOT in spec
-- Sort order: REQ-F-9 says "by file path, then line number" - NOT newest first
-- Hide completed: NOT in spec
-
 ---
 
-## Closed Issues - COVERED (23)
+## Closed Issues - COVERED (24)
 
 ### #101 - Task List on Recall tab
 **Coverage**: COVERED by `task-list.md`
-**Spec Refs**: REQ-F-1 to REQ-F-24, full feature spec exists
+**Spec Refs**: REQ-F-1 to REQ-F-27, full feature spec exists
+
+### #110 - task improvements
+**Coverage**: COVERED by `task-list.md`
+**Spec Refs**: REQ-F-9 (newest-first sort), REQ-F-12 (sticky headers), REQ-F-13-14 (hide completed), Acceptance Tests #12-15
 
 ### #86 - Add lightweight edit capability to Recall tab
 **Coverage**: COVERED by `view.md` (merged)
@@ -191,14 +187,14 @@ These are bugs that existing specs should prevent. Specs define correct behavior
 
 | Category | Count |
 |----------|-------|
-| COVERED | 23 |
-| PARTIAL | 1 |
+| COVERED | 24 |
+| PARTIAL | 0 |
 | NOT COVERED (needs spec) | 5 |
 | BUG FIX | 6 |
 | IMPLEMENTATION/INFRA | 3 |
 | **Total** | **38** |
 
-### Issues Needing Spec Work (6)
+### Issues Needing Spec Work (5)
 
 **Open - Need new specs or spec updates:**
 1. #117 - canUseTool permission dialog (NEW FEATURE)
@@ -206,6 +202,3 @@ These are bugs that existing specs should prevent. Specs define correct behavior
 3. #103 - User vs project CLAUDE.md scope (CLARIFICATION)
 4. #118 - Dialog refactoring (may be implementation)
 5. #67 - Logging integration (infrastructure)
-
-**Closed but not in specs:**
-6. #110 - Task improvements (sticky headers, sort, hide completed)

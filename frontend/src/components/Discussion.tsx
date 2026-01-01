@@ -10,6 +10,7 @@ import type { ServerMessage } from "@memory-loop/shared";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useSession, useServerMessageHandler } from "../contexts/SessionContext";
 import { MessageBubble } from "./MessageBubble";
+import { ConfirmDialog } from "./ConfirmDialog";
 import "./Discussion.css";
 
 const STORAGE_KEY = "memory-loop-discussion-draft";
@@ -381,44 +382,14 @@ export function Discussion(): React.ReactNode {
         </div>
       </form>
 
-      {showNewSessionDialog && (
-        <div
-          className="discussion__dialog-backdrop"
-          onClick={handleCancelNewSession}
-          onKeyDown={(e) => e.key === "Escape" && handleCancelNewSession()}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="new-session-dialog-title"
-        >
-          <div
-            className="discussion__dialog"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 id="new-session-dialog-title" className="discussion__dialog-title">
-              Start New Session?
-            </h2>
-            <p className="discussion__dialog-message">
-              This will clear the current conversation. Your notes are already saved to the vault.
-            </p>
-            <div className="discussion__dialog-actions">
-              <button
-                type="button"
-                className="discussion__dialog-btn discussion__dialog-btn--cancel"
-                onClick={handleCancelNewSession}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="discussion__dialog-btn discussion__dialog-btn--confirm"
-                onClick={handleConfirmNewSession}
-              >
-                New
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={showNewSessionDialog}
+        title="Start New Session?"
+        message="This will clear the current conversation. Your notes are already saved to the vault."
+        confirmLabel="New"
+        onConfirm={handleConfirmNewSession}
+        onCancel={handleCancelNewSession}
+      />
     </div>
   );
 }

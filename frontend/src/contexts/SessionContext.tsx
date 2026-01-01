@@ -108,6 +108,8 @@ export interface SessionState {
   discussionPrefill: string | null;
   /** Session ID pending resume (set by RecentActivity, consumed by Discussion) */
   pendingSessionId: string | null;
+  /** Whether the new session confirmation dialog is shown (persists across tab switches) */
+  showNewSessionDialog: boolean;
 }
 
 /**
@@ -164,6 +166,8 @@ export interface SessionActions {
   setDiscussionPrefill: (text: string | null) => void;
   /** Set pending session ID for resume (called by RecentActivity) */
   setPendingSessionId: (sessionId: string | null) => void;
+  /** Set new session dialog visibility (persists across tab switches) */
+  setShowNewSessionDialog: (show: boolean) => void;
   /** Enter adjust mode (copies currentFileContent to adjustContent) */
   startAdjust: () => void;
   /** Update the content being edited in adjust mode */
@@ -243,6 +247,7 @@ type SessionAction =
   | { type: "SET_GOALS"; goals: GoalSection[] | null }
   | { type: "SET_DISCUSSION_PREFILL"; text: string | null }
   | { type: "SET_PENDING_SESSION_ID"; sessionId: string | null }
+  | { type: "SET_SHOW_NEW_SESSION_DIALOG"; show: boolean }
   | { type: "START_ADJUST" }
   | { type: "UPDATE_ADJUST_CONTENT"; content: string }
   | { type: "CANCEL_ADJUST" }
@@ -337,8 +342,9 @@ function sessionReducer(
         recentDiscussions: [],
         // Clear goals when switching vaults
         goals: null,
-        // Clear discussion prefill when switching vaults (transient state)
+        // Clear transient UI state when switching vaults
         discussionPrefill: null,
+        showNewSessionDialog: false,
       };
 
     case "CLEAR_VAULT":
@@ -352,6 +358,7 @@ function sessionReducer(
         recentDiscussions: [],
         goals: null,
         discussionPrefill: null,
+        showNewSessionDialog: false,
       };
 
     case "SET_SESSION_ID":
@@ -587,6 +594,12 @@ function sessionReducer(
         pendingSessionId: action.sessionId,
       };
 
+    case "SET_SHOW_NEW_SESSION_DIALOG":
+      return {
+        ...state,
+        showNewSessionDialog: action.show,
+      };
+
     case "START_ADJUST":
       return {
         ...state,
@@ -792,6 +805,7 @@ const initialState: SessionState = {
   goals: null,
   discussionPrefill: null,
   pendingSessionId: null,
+  showNewSessionDialog: false,
 };
 
 /**
@@ -1092,6 +1106,10 @@ export function SessionProvider({
     dispatch({ type: "SET_PENDING_SESSION_ID", sessionId });
   }, []);
 
+  const setShowNewSessionDialog = useCallback((show: boolean) => {
+    dispatch({ type: "SET_SHOW_NEW_SESSION_DIALOG", show });
+  }, []);
+
   // Adjust mode action creators
   const startAdjust = useCallback(() => {
     dispatch({ type: "START_ADJUST" });
@@ -1179,6 +1197,7 @@ export function SessionProvider({
     setGoals,
     setDiscussionPrefill,
     setPendingSessionId,
+    setShowNewSessionDialog,
     startAdjust,
     updateAdjustContent,
     cancelAdjust,

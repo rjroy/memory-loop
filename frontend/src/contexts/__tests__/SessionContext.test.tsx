@@ -1897,4 +1897,133 @@ describe("SessionContext", () => {
       expect(result.current.browser.viewMode).toBe("tasks");
     });
   });
+
+  describe("showNewSessionDialog", () => {
+    it("provides initial state with showNewSessionDialog false", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(false);
+    });
+
+    it("setShowNewSessionDialog(true) shows the dialog", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setShowNewSessionDialog(true);
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(true);
+    });
+
+    it("setShowNewSessionDialog(false) hides the dialog", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setShowNewSessionDialog(true);
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(true);
+
+      act(() => {
+        result.current.setShowNewSessionDialog(false);
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(false);
+    });
+
+    it("dialog state is preserved when switching modes", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setShowNewSessionDialog(true);
+      });
+
+      // Switch to note mode
+      act(() => {
+        result.current.setMode("note");
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(true);
+
+      // Switch to home mode
+      act(() => {
+        result.current.setMode("home");
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(true);
+
+      // Switch back to discussion mode
+      act(() => {
+        result.current.setMode("discussion");
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(true);
+    });
+
+    it("dialog is closed when vault changes (selectVault)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setShowNewSessionDialog(true);
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(true);
+
+      // Switch to different vault
+      act(() => {
+        result.current.selectVault(testVault2);
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(false);
+    });
+
+    it("dialog is closed when vault is cleared (clearVault)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setShowNewSessionDialog(true);
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(true);
+
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(false);
+    });
+
+    it("dialog state is NOT persisted to localStorage (transient state)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setShowNewSessionDialog(true);
+      });
+
+      expect(result.current.showNewSessionDialog).toBe(true);
+
+      // Check localStorage doesn't contain dialog state
+      const allKeys = Object.keys(localStorage);
+      const dialogKeys = allKeys.filter(
+        (key) => key.includes("dialog") || key.includes("Dialog") || key.includes("newSession")
+      );
+      expect(dialogKeys.length).toBe(0);
+    });
+  });
 });

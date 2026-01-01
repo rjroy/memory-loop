@@ -83,6 +83,15 @@ export interface ConversationMessage {
 }
 
 /**
+ * Pending tool update queued when tool_input/tool_end arrives before tool_start.
+ */
+interface PendingToolUpdate {
+  input?: unknown;
+  output?: unknown;
+  status?: "complete";
+}
+
+/**
  * Session state stored in context.
  */
 export interface SessionState {
@@ -112,6 +121,8 @@ export interface SessionState {
   showNewSessionDialog: boolean;
   /** Whether user wants a new session (skip auto-resume on reconnect) */
   wantsNewSession: boolean;
+  /** Pending tool updates queued due to race conditions (tool_input/tool_end before tool_start) */
+  pendingToolUpdates: Map<string, PendingToolUpdate>;
 }
 
 /**
@@ -433,6 +444,7 @@ function sessionReducer(
       return {
         ...state,
         messages: [],
+        pendingToolUpdates: new Map(),
       };
 
     case "START_NEW_SESSION":
@@ -440,10 +452,13 @@ function sessionReducer(
         ...state,
         sessionId: null,
         messages: [],
+        pendingToolUpdates: new Map(),
         wantsNewSession: true,
       };
 
     case "SET_MESSAGES":
+      // When loading messages from server (session resume), clear any pending
+      // tool updates from previous connection attempts - server state is truth.
       console.log(`[Session] Setting messages from server: ${action.messages.length}`);
       return {
         ...state,
@@ -451,7 +466,17 @@ function sessionReducer(
           ...msg,
           // Ensure timestamps are Date objects (may be strings from JSON)
           timestamp: new Date(msg.timestamp),
+          // Fix stale "running" tools from interrupted sessions.
+          // If a tool is still "running" in a persisted message, it means the
+          // connection was closed before tool_result arrived. Mark as complete
+          // to prevent spinner from showing forever.
+          toolInvocations: msg.toolInvocations?.map((tool) =>
+            tool.status === "running"
+              ? { ...tool, status: "complete" as const, output: "[Connection closed before tool completed]" }
+              : tool
+          ),
         })),
+        pendingToolUpdates: new Map(),
       };
 
     case "SET_CURRENT_PATH":
@@ -748,39 +773,74 @@ function sessionReducer(
     }
 
     case "ADD_TOOL_TO_LAST_MESSAGE": {
-      // Add a new tool invocation to the last assistant message
-      if (state.messages.length === 0) return state;
-      const messages = [...state.messages];
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role !== "assistant") {
-        console.warn("[SessionContext] ADD_TOOL_TO_LAST_MESSAGE ignored: last message is not an assistant message");
-        return state;
-      }
+      // Add a new tool invocation to the last assistant message.
+      // Due to React batching, tool_start may arrive before response_start is
+      // committed to state. If no streaming assistant message exists, create one
+      // to ensure the tool has somewhere to go.
+
+      // Check for pending updates (tool_input/tool_end that arrived before tool_start)
+      const pendingUpdate = state.pendingToolUpdates.get(action.toolUseId);
       const newTool: ToolInvocation = {
         toolUseId: action.toolUseId,
         toolName: action.toolName,
-        status: "running",
+        status: pendingUpdate?.status ?? "running",
+        ...(pendingUpdate?.input !== undefined && { input: pendingUpdate.input }),
+        ...(pendingUpdate?.output !== undefined && { output: pendingUpdate.output }),
       };
-      messages[messages.length - 1] = {
-        ...lastMessage,
-        toolInvocations: [...(lastMessage.toolInvocations ?? []), newTool],
-      };
-      return { ...state, messages };
+
+      // Remove from pending if it was there
+      let pendingToolUpdates = state.pendingToolUpdates;
+      if (pendingUpdate) {
+        pendingToolUpdates = new Map(state.pendingToolUpdates);
+        pendingToolUpdates.delete(action.toolUseId);
+      }
+
+      const messages = [...state.messages];
+      const lastMessage = messages[messages.length - 1];
+      const lastIsStreamingAssistant =
+        lastMessage?.role === "assistant" && lastMessage.isStreaming;
+
+      if (lastIsStreamingAssistant) {
+        // Normal case: add tool to existing streaming assistant message
+        messages[messages.length - 1] = {
+          ...lastMessage,
+          toolInvocations: [...(lastMessage.toolInvocations ?? []), newTool],
+        };
+      } else {
+        // Race condition: tool_start arrived before response_start was committed.
+        // Create a placeholder assistant message to hold the tool.
+        console.warn(
+          `[SessionContext] ADD_TOOL_TO_LAST_MESSAGE: no streaming assistant message, creating one for tool ${action.toolUseId}`
+        );
+        const placeholderMessage: ConversationMessage = {
+          id: generateMessageId(),
+          role: "assistant",
+          content: "",
+          timestamp: new Date(),
+          isStreaming: true,
+          toolInvocations: [newTool],
+        };
+        messages.push(placeholderMessage);
+      }
+
+      return { ...state, messages, pendingToolUpdates };
     }
 
     case "UPDATE_TOOL_INPUT": {
       // Update the input of a tool invocation
       // Search all messages (not just last) in case the tool is in an earlier message
-      if (state.messages.length === 0) {
-        console.warn(`[SessionContext] UPDATE_TOOL_INPUT ignored: no messages`);
-        return state;
-      }
       const messages = [...state.messages];
       const foundMessageIndex = findMessageWithTool(messages, action.toolUseId);
 
       if (foundMessageIndex === -1) {
-        console.warn(`[SessionContext] UPDATE_TOOL_INPUT: tool ${action.toolUseId} not found in any message`);
-        return state;
+        // Tool not found - queue the update for when tool_start arrives
+        console.warn(
+          `[SessionContext] UPDATE_TOOL_INPUT: tool ${action.toolUseId} not found, queueing update`
+        );
+        const pendingToolUpdates = new Map(state.pendingToolUpdates);
+        const existing = pendingToolUpdates.get(action.toolUseId) ?? {};
+        pendingToolUpdates.set(action.toolUseId, { ...existing, input: action.input });
+        return { ...state, pendingToolUpdates };
       }
 
       const targetMessage = messages[foundMessageIndex];
@@ -799,16 +859,19 @@ function sessionReducer(
     case "COMPLETE_TOOL_INVOCATION": {
       // Mark a tool invocation as complete with output
       // Search all messages (not just last) in case the tool is in an earlier message
-      if (state.messages.length === 0) {
-        console.warn(`[SessionContext] COMPLETE_TOOL_INVOCATION ignored: no messages`);
-        return state;
-      }
       const messages = [...state.messages];
       const foundMessageIndex = findMessageWithTool(messages, action.toolUseId);
 
       if (foundMessageIndex === -1) {
-        console.warn(`[SessionContext] COMPLETE_TOOL_INVOCATION: tool ${action.toolUseId} not found in any message`);
-        return state;
+        // Tool not found - queue the completion for when tool_start arrives
+        const pendingToolUpdates = new Map(state.pendingToolUpdates);
+        const existing = pendingToolUpdates.get(action.toolUseId) ?? {};
+        pendingToolUpdates.set(action.toolUseId, {
+          ...existing,
+          output: action.output,
+          status: "complete",
+        });
+        return { ...state, pendingToolUpdates };
       }
 
       const targetMessage = messages[foundMessageIndex];
@@ -846,6 +909,7 @@ const initialState: SessionState = {
   pendingSessionId: null,
   showNewSessionDialog: false,
   wantsNewSession: false,
+  pendingToolUpdates: new Map(),
 };
 
 /**
@@ -1303,14 +1367,21 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           setPendingSessionId(null);
           break;
 
-        case "response_start":
-          // Start a new assistant message
-          addMessage({
-            role: "assistant",
-            content: "",
-            isStreaming: true,
-          });
+        case "response_start": {
+          // Start a new assistant message, but only if one doesn't already exist.
+          // A streaming assistant message may already exist if tool_start arrived
+          // before response_start was committed to state (race condition handling).
+          const currentMessages = messagesRef.current;
+          const lastMessage = currentMessages[currentMessages.length - 1];
+          if (!lastMessage || lastMessage.role !== "assistant" || !lastMessage.isStreaming) {
+            addMessage({
+              role: "assistant",
+              content: "",
+              isStreaming: true,
+            });
+          }
           break;
+        }
 
         case "response_chunk": {
           // Check if we have a streaming assistant message to update

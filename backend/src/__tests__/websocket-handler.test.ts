@@ -247,15 +247,16 @@ function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
 
 /**
  * Creates a mock WebSocket for testing.
+ * @param options.initialReadyState - Initial readyState (default: 1 = OPEN)
  */
-function createMockWebSocket() {
+function createMockWebSocket(options?: { initialReadyState?: number }) {
   const messages: string[] = [];
 
   return {
     send: mock((data: string) => {
       messages.push(data);
     }),
-    readyState: 1 as const, // OPEN
+    readyState: options?.initialReadyState ?? 1, // OPEN by default, mutable for testing
     messages,
     getLastMessage(): ServerMessage | null {
       const last = messages[messages.length - 1];
@@ -1140,6 +1141,157 @@ describe("WebSocket Handler", () => {
         output: "File content here",
         status: "complete",
       });
+    });
+
+    test("sends tool_end when SDK emits user event with tool_result", async () => {
+      // The real SDK emits 'user' events (not 'result') containing tool results
+      // This test verifies the handleUserEvent path works correctly
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const events = [
+        { type: "system", session_id: "user-event-session" },
+        // Tool invocation starts via stream events
+        {
+          type: "stream_event",
+          event: {
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "tool_use", id: "tool-user-evt", name: "read_file" },
+          },
+        },
+        // Tool execution completes - SDK emits a 'user' message with tool_result
+        {
+          type: "user",
+          session_id: "user-event-session",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "tool-user-evt",
+                content: "Result from user event",
+              },
+            ],
+          },
+        },
+      ];
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "user-event-session",
+        events: (async function* () {
+          for (const event of events) {
+            yield event;
+          }
+        })(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Read a file" })
+      );
+
+      const messages = ws.getMessages();
+
+      // Verify tool_start was sent from stream event
+      const toolStart = messages.find((m) => m.type === "tool_start");
+      expect(toolStart).toBeDefined();
+      if (toolStart?.type === "tool_start") {
+        expect(toolStart.toolName).toBe("read_file");
+        expect(toolStart.toolUseId).toBe("tool-user-evt");
+      }
+
+      // Verify tool_end was sent from user event
+      const toolEnd = messages.find((m) => m.type === "tool_end");
+      expect(toolEnd).toBeDefined();
+      if (toolEnd?.type === "tool_end") {
+        expect(toolEnd.toolUseId).toBe("tool-user-evt");
+        expect(toolEnd.output).toBe("Result from user event");
+      }
+    });
+
+    test("marks running tools as complete when connection closes mid-stream", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const ws = createMockWebSocket();
+
+      // Create an async generator that yields tool_start, then connection closes
+      mockCreateSession.mockResolvedValueOnce({
+        sessionId: "test-session-id",
+        events: (async function* () {
+          // First: system event
+          yield { type: "system", session_id: "test-session-id" };
+
+          // Second: tool_start (content_block_start with tool_use)
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "tool_use", id: "tool-interrupted", name: "read_file" },
+            },
+          };
+
+          // Simulate connection closing after tool_start
+          // The handler checks ws.readyState before each event
+          (ws as { readyState: number }).readyState = 3; // CLOSED
+
+          // This event won't be processed because connection is closed
+          yield {
+            type: "result",
+            result: {
+              content: [
+                { type: "tool_result", tool_use_id: "tool-interrupted", content: "File content" },
+              ],
+            },
+          };
+        })(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Read a file" })
+      );
+
+      // Verify tool_start was sent
+      const messages = ws.getMessages();
+      const toolStart = messages.find((m) => m.type === "tool_start");
+      expect(toolStart).toBeDefined();
+
+      // Verify tool_end was NOT sent (connection closed before result)
+      const toolEnd = messages.find((m) => m.type === "tool_end");
+      expect(toolEnd).toBeUndefined();
+
+      // Verify the tool was saved as complete (not running) to prevent spinner on resume
+      const appendCalls = mockAppendMessage.mock.calls as Array<
+        [string, { role: string; toolInvocations?: Array<{ toolUseId: string; status: string; output?: unknown }> }]
+      >;
+      const assistantMessageCall = appendCalls.find(
+        (call) => call[1]?.role === "assistant"
+      );
+      expect(assistantMessageCall).toBeDefined();
+      const assistantMessage = assistantMessageCall![1];
+      expect(assistantMessage.toolInvocations).toBeDefined();
+      expect(assistantMessage.toolInvocations![0].status).toBe("complete");
+      expect(assistantMessage.toolInvocations![0].output).toBe("[Connection closed before tool completed]");
     });
 
     test("aborts previous query when new message arrives", async () => {

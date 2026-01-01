@@ -528,6 +528,64 @@ describe("SessionContext", () => {
       expect(result.current.session.messages[1].content).toBe("hi there");
     });
 
+    it("fixes stale running tools on session resume", () => {
+      // When a session was interrupted (browser closed, network issue),
+      // tools may be saved with status "running". On resume, these should
+      // be marked as complete to prevent spinner from showing forever.
+      const { result } = renderHook(
+        () => ({
+          session: useSession(),
+          handler: useServerMessageHandler(),
+        }),
+        { wrapper: createWrapper() }
+      );
+
+      const messages = [
+        { id: "msg-1", role: "user" as const, content: "hello", timestamp: "2025-01-01T12:00:00Z" },
+        {
+          id: "msg-2",
+          role: "assistant" as const,
+          content: "Let me check that file",
+          timestamp: "2025-01-01T12:00:01Z",
+          toolInvocations: [
+            {
+              toolUseId: "tool-stale-1",
+              toolName: "Read",
+              input: { file_path: "/test.md" },
+              status: "running" as const, // Stale - should be fixed
+            },
+            {
+              toolUseId: "tool-complete-1",
+              toolName: "Write",
+              input: { file_path: "/out.md" },
+              output: "Success",
+              status: "complete" as const, // Already complete - should stay
+            },
+          ],
+        },
+      ];
+
+      act(() => {
+        result.current.handler({
+          type: "session_ready",
+          sessionId: "resumed-session",
+          vaultId: "vault-1",
+          messages,
+        });
+      });
+
+      const assistantMsg = result.current.session.messages[1];
+      expect(assistantMsg.toolInvocations).toHaveLength(2);
+
+      // Stale running tool should be marked complete
+      expect(assistantMsg.toolInvocations![0].status).toBe("complete");
+      expect(assistantMsg.toolInvocations![0].output).toBe("[Connection closed before tool completed]");
+
+      // Already complete tool should stay complete with original output
+      expect(assistantMsg.toolInvocations![1].status).toBe("complete");
+      expect(assistantMsg.toolInvocations![1].output).toBe("Success");
+    });
+
     it("handles response_start message", () => {
       const { result } = renderHook(
         () => ({
@@ -2308,6 +2366,200 @@ describe("SessionContext", () => {
       expect(lastMessage.toolInvocations![0].output).toBe("Read output");
       expect(lastMessage.toolInvocations![1].status).toBe("complete");
       expect(lastMessage.toolInvocations![1].output).toBe("Grep output");
+    });
+
+    it("addToolToLastMessage creates assistant message if none exists (race condition)", () => {
+      // This tests the race condition where tool_start arrives before
+      // response_start has been committed to state
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // No messages exist yet
+      expect(result.current.messages).toHaveLength(0);
+
+      // Add tool without any assistant message (simulating race condition)
+      act(() => {
+        result.current.addToolToLastMessage("tool-123", "Read");
+      });
+
+      // Should have created a placeholder assistant message with the tool
+      expect(result.current.messages).toHaveLength(1);
+      const message = result.current.messages[0];
+      expect(message.role).toBe("assistant");
+      expect(message.isStreaming).toBe(true);
+      expect(message.content).toBe("");
+      expect(message.toolInvocations).toHaveLength(1);
+      expect(message.toolInvocations![0].toolUseId).toBe("tool-123");
+      expect(message.toolInvocations![0].toolName).toBe("Read");
+      expect(message.toolInvocations![0].status).toBe("running");
+    });
+
+    it("addToolToLastMessage creates assistant message if last is user message", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Add a user message (not an assistant message)
+      act(() => {
+        result.current.addMessage({
+          role: "user",
+          content: "Hello",
+        });
+      });
+
+      // Add tool when last message is user message
+      act(() => {
+        result.current.addToolToLastMessage("tool-456", "Grep");
+      });
+
+      // Should have created a new assistant message
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[0].role).toBe("user");
+      expect(result.current.messages[1].role).toBe("assistant");
+      expect(result.current.messages[1].toolInvocations![0].toolUseId).toBe("tool-456");
+    });
+
+    it("tool created by race condition can still be completed", () => {
+      // Full end-to-end test of the race condition scenario
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Simulate race condition: tool_start before response_start
+      act(() => {
+        result.current.addToolToLastMessage("tool-race", "Read");
+      });
+
+      // Tool should exist in a placeholder message
+      expect(result.current.messages[0].toolInvocations![0].status).toBe("running");
+
+      // Update tool input
+      act(() => {
+        result.current.updateToolInput("tool-race", { file_path: "/test.md" });
+      });
+
+      expect(result.current.messages[0].toolInvocations![0].input).toEqual({
+        file_path: "/test.md",
+      });
+
+      // Complete the tool
+      act(() => {
+        result.current.completeToolInvocation("tool-race", "File contents");
+      });
+
+      // Tool should now be complete (spinner stops)
+      expect(result.current.messages[0].toolInvocations![0].status).toBe("complete");
+      expect(result.current.messages[0].toolInvocations![0].output).toBe("File contents");
+    });
+
+    it("addToolToLastMessage works with non-streaming assistant message (creates new)", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Add a completed (non-streaming) assistant message
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "Previous response",
+          isStreaming: false,
+        });
+      });
+
+      // Add tool - should create a new streaming message since last isn't streaming
+      act(() => {
+        result.current.addToolToLastMessage("tool-789", "Write");
+      });
+
+      // Should have two messages: the completed one and a new streaming one
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[0].isStreaming).toBe(false);
+      expect(result.current.messages[1].isStreaming).toBe(true);
+      expect(result.current.messages[1].toolInvocations![0].toolUseId).toBe("tool-789");
+    });
+
+    it("completeToolInvocation queues completion when tool_end arrives before tool_start", () => {
+      // Tests the race condition where tool_end arrives before tool_start
+      // is committed to state. The completion should be queued and applied
+      // when the tool is finally added.
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // First, simulate tool_end arriving (but tool doesn't exist yet)
+      act(() => {
+        result.current.completeToolInvocation("tool-early-end", "File contents");
+      });
+
+      // No messages yet, completion was queued
+      expect(result.current.messages).toHaveLength(0);
+
+      // Now tool_start arrives
+      act(() => {
+        result.current.addToolToLastMessage("tool-early-end", "Read");
+      });
+
+      // Tool should be created with the queued completion already applied
+      expect(result.current.messages).toHaveLength(1);
+      expect(result.current.messages[0].toolInvocations![0].status).toBe("complete");
+      expect(result.current.messages[0].toolInvocations![0].output).toBe("File contents");
+    });
+
+    it("updateToolInput queues input when tool_input arrives before tool_start", () => {
+      // Tests the race condition where tool_input arrives before tool_start
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // First, simulate tool_input arriving (but tool doesn't exist yet)
+      act(() => {
+        result.current.updateToolInput("tool-early-input", { file_path: "/test.md" });
+      });
+
+      // No messages yet, input was queued
+      expect(result.current.messages).toHaveLength(0);
+
+      // Now tool_start arrives
+      act(() => {
+        result.current.addToolToLastMessage("tool-early-input", "Read");
+      });
+
+      // Tool should be created with the queued input already applied
+      expect(result.current.messages).toHaveLength(1);
+      expect(result.current.messages[0].toolInvocations![0].input).toEqual({
+        file_path: "/test.md",
+      });
+      expect(result.current.messages[0].toolInvocations![0].status).toBe("running");
+    });
+
+    it("handles both input and completion arriving before tool_start", () => {
+      // Tests the extreme race condition where both tool_input and tool_end
+      // arrive before tool_start
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Both arrive before tool exists
+      act(() => {
+        result.current.updateToolInput("tool-both-early", { path: "/file.md" });
+        result.current.completeToolInvocation("tool-both-early", "Done!");
+      });
+
+      // No messages yet
+      expect(result.current.messages).toHaveLength(0);
+
+      // Now tool_start arrives
+      act(() => {
+        result.current.addToolToLastMessage("tool-both-early", "Write");
+      });
+
+      // Tool should have both input and completion applied
+      expect(result.current.messages).toHaveLength(1);
+      const tool = result.current.messages[0].toolInvocations![0];
+      expect(tool.input).toEqual({ path: "/file.md" });
+      expect(tool.output).toBe("Done!");
+      expect(tool.status).toBe("complete");
     });
   });
 });

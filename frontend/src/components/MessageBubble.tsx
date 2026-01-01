@@ -3,12 +3,14 @@
  *
  * Displays a single message in the conversation with appropriate styling
  * for user (right-aligned) vs assistant (left-aligned) messages.
+ * Assistant messages may include tool invocations displayed before the text.
  */
 
 import React from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ConversationMessage } from "../contexts/SessionContext";
+import { ToolDisplay } from "./ToolDisplay";
 import "./MessageBubble.css";
 
 /**
@@ -30,16 +32,33 @@ function formatTime(date: Date): string {
  * Renders a single chat message bubble.
  *
  * - User messages: right-aligned with primary color background
- * - Assistant messages: left-aligned with secondary background
+ * - Assistant messages: left-aligned with secondary background, tool invocations before text
  * - Shows streaming indicator when message is still being received
  */
 export function MessageBubble({ message }: MessageBubbleProps): React.ReactNode {
+  const hasTools = message.role === "assistant" && message.toolInvocations && message.toolInvocations.length > 0;
+
   return (
     <div
       className={`message-bubble message-bubble--${message.role}`}
       role="listitem"
     >
       <div className="message-bubble__content">
+        {/* Tool invocations displayed before message text */}
+        {hasTools && (
+          <div className="message-bubble__tools" role="list" aria-label="Tool invocations">
+            {message.toolInvocations!.map((tool) => (
+              <ToolDisplay
+                key={tool.toolUseId}
+                toolName={tool.toolName}
+                toolUseId={tool.toolUseId}
+                input={tool.input}
+                output={tool.output}
+                isLoading={tool.status === "running"}
+              />
+            ))}
+          </div>
+        )}
         <div className="message-bubble__text">
           {message.role === "user" ? (
             message.content

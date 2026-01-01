@@ -15,24 +15,16 @@ import "./Discussion.css";
 const STORAGE_KEY = "memory-loop-discussion-draft";
 
 /**
- * Props for Discussion component.
- */
-export interface DiscussionProps {
-  /** Optional callback when a tool is invoked */
-  onToolUse?: (toolName: string, toolUseId: string) => void;
-}
-
-/**
  * Chat interface for vault-contextualized AI discussions.
  *
  * - Scrollable message history with user/assistant messages
- * - Streaming response display
+ * - Streaming response display with inline tool display
  * - Input field with send button
  * - Slash command detection (basic, no autocomplete)
  * - Auto-scroll to bottom on new messages
  * - Draft preservation in localStorage
  */
-export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
+export function Discussion(): React.ReactNode {
   const [input, setInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -54,6 +46,9 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
     setDiscussionPrefill,
     pendingSessionId,
     setPendingSessionId,
+    addToolToLastMessage,
+    updateToolInput,
+    completeToolInvocation,
   } = useSession();
 
   // Detect touch-only devices (no hover capability)
@@ -76,12 +71,6 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
 
   const handleServerMessage = useServerMessageHandler();
 
-  // Keep ref to onToolUse callback to avoid stale closures while keeping onMessage stable
-  const onToolUseRef = useRef(onToolUse);
-  useEffect(() => {
-    onToolUseRef.current = onToolUse;
-  }, [onToolUse]);
-
   // Process incoming server messages via callback to ensure every message is handled
   // This prevents race conditions where React batches state updates and drops chunks
   const handleMessage = useCallback(
@@ -90,14 +79,21 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
       handleServerMessage(message);
 
       // Handle response end - clear submitting state
-      // Note: setIsSubmitting is stable (from useState), no ref needed
       if (message.type === "response_end") {
         setIsSubmitting(false);
       }
 
-      // Handle tool use
+      // Handle tool events - add/update tool invocations on last assistant message
       if (message.type === "tool_start") {
-        onToolUseRef.current?.(message.toolName, message.toolUseId);
+        addToolToLastMessage(message.toolUseId, message.toolName);
+      }
+
+      if (message.type === "tool_input") {
+        updateToolInput(message.toolUseId, message.input);
+      }
+
+      if (message.type === "tool_end") {
+        completeToolInvocation(message.toolUseId, message.output);
       }
 
       // Handle errors
@@ -105,7 +101,7 @@ export function Discussion({ onToolUse }: DiscussionProps): React.ReactNode {
         setIsSubmitting(false);
       }
     },
-    [handleServerMessage]
+    [handleServerMessage, addToolToLastMessage, updateToolInput, completeToolInvocation]
   );
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({

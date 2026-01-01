@@ -13,7 +13,7 @@ import {
   type SDKMessage,
   type Options,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { SessionMetadata, VaultInfo, RecentDiscussionEntry } from "@memory-loop/shared";
+import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@memory-loop/shared";
 import { directoryExists, fileExists } from "./vault-manager";
 import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 import { sessionLog as log } from "./logger";
@@ -524,7 +524,7 @@ export async function getSessionForVault(
  */
 export async function appendMessage(
   sessionId: string,
-  message: { id: string; role: "user" | "assistant"; content: string; timestamp: string }
+  message: ConversationMessage
 ): Promise<void> {
   const metadata = await loadSession(sessionId);
   if (!metadata) {

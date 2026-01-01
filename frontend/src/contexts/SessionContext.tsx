@@ -14,7 +14,7 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry, ToolInvocation } from "@memory-loop/shared";
 
 /**
  * Application mode: home, note capture, discussion, or browse.
@@ -78,6 +78,8 @@ export interface ConversationMessage {
   timestamp: Date;
   /** Whether this message is still streaming */
   isStreaming?: boolean;
+  /** Tool invocations for this message (assistant messages only) */
+  toolInvocations?: ToolInvocation[];
 }
 
 /**
@@ -184,6 +186,12 @@ export interface SessionActions {
   setTasksError: (error: string | null) => void;
   /** Update a single task (for optimistic updates) */
   updateTask: (filePath: string, lineNumber: number, newState: string) => void;
+  /** Add a tool invocation to the last assistant message */
+  addToolToLastMessage: (toolUseId: string, toolName: string) => void;
+  /** Update tool input for a specific tool invocation */
+  updateToolInput: (toolUseId: string, input: unknown) => void;
+  /** Mark a tool invocation as complete with output */
+  completeToolInvocation: (toolUseId: string, output: unknown) => void;
 }
 
 /**
@@ -245,7 +253,10 @@ type SessionAction =
   | { type: "SET_TASKS"; tasks: TaskEntry[] }
   | { type: "SET_TASKS_LOADING"; isLoading: boolean }
   | { type: "SET_TASKS_ERROR"; error: string | null }
-  | { type: "UPDATE_TASK"; filePath: string; lineNumber: number; newState: string };
+  | { type: "UPDATE_TASK"; filePath: string; lineNumber: number; newState: string }
+  | { type: "ADD_TOOL_TO_LAST_MESSAGE"; toolUseId: string; toolName: string }
+  | { type: "UPDATE_TOOL_INPUT"; toolUseId: string; input: unknown }
+  | { type: "COMPLETE_TOOL_INVOCATION"; toolUseId: string; output: unknown };
 
 /**
  * Generates a unique message ID.
@@ -700,6 +711,67 @@ function sessionReducer(
       };
     }
 
+    case "ADD_TOOL_TO_LAST_MESSAGE": {
+      // Add a new tool invocation to the last assistant message
+      if (state.messages.length === 0) return state;
+      const messages = [...state.messages];
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role !== "assistant") {
+        console.warn("[SessionContext] ADD_TOOL_TO_LAST_MESSAGE ignored: last message is not an assistant message");
+        return state;
+      }
+      const newTool: ToolInvocation = {
+        toolUseId: action.toolUseId,
+        toolName: action.toolName,
+        status: "running",
+      };
+      messages[messages.length - 1] = {
+        ...lastMessage,
+        toolInvocations: [...(lastMessage.toolInvocations ?? []), newTool],
+      };
+      return { ...state, messages };
+    }
+
+    case "UPDATE_TOOL_INPUT": {
+      // Update the input of a tool invocation
+      if (state.messages.length === 0) return state;
+      const messages = [...state.messages];
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role !== "assistant" || !lastMessage.toolInvocations) {
+        return state;
+      }
+      const updatedTools = lastMessage.toolInvocations.map((tool) =>
+        tool.toolUseId === action.toolUseId
+          ? { ...tool, input: action.input }
+          : tool
+      );
+      messages[messages.length - 1] = {
+        ...lastMessage,
+        toolInvocations: updatedTools,
+      };
+      return { ...state, messages };
+    }
+
+    case "COMPLETE_TOOL_INVOCATION": {
+      // Mark a tool invocation as complete with output
+      if (state.messages.length === 0) return state;
+      const messages = [...state.messages];
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role !== "assistant" || !lastMessage.toolInvocations) {
+        return state;
+      }
+      const updatedTools = lastMessage.toolInvocations.map((tool) =>
+        tool.toolUseId === action.toolUseId
+          ? { ...tool, output: action.output, status: "complete" as const }
+          : tool
+      );
+      messages[messages.length - 1] = {
+        ...lastMessage,
+        toolInvocations: updatedTools,
+      };
+      return { ...state, messages };
+    }
+
     default:
       return state;
   }
@@ -1067,6 +1139,19 @@ export function SessionProvider({
     dispatch({ type: "UPDATE_TASK", filePath, lineNumber, newState });
   }, []);
 
+  // Tool invocation action creators
+  const addToolToLastMessage = useCallback((toolUseId: string, toolName: string) => {
+    dispatch({ type: "ADD_TOOL_TO_LAST_MESSAGE", toolUseId, toolName });
+  }, []);
+
+  const updateToolInput = useCallback((toolUseId: string, input: unknown) => {
+    dispatch({ type: "UPDATE_TOOL_INPUT", toolUseId, input });
+  }, []);
+
+  const completeToolInvocation = useCallback((toolUseId: string, output: unknown) => {
+    dispatch({ type: "COMPLETE_TOOL_INVOCATION", toolUseId, output });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -1105,6 +1190,9 @@ export function SessionProvider({
     setTasksLoading,
     setTasksError,
     updateTask,
+    addToolToLastMessage,
+    updateToolInput,
+    completeToolInvocation,
   };
 
   return (

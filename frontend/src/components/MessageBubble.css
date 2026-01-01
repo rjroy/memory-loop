@@ -54,6 +54,11 @@
   }
 }
 
+/* Tool invocations container */
+.message-bubble__tools {
+  margin-bottom: var(--spacing-sm);
+}
+
 .message-bubble__text {
   margin: 0;
   word-break: break-word;

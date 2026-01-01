@@ -323,6 +323,21 @@ function createInitialBrowserState(): BrowserState {
 }
 
 /**
+ * Finds the index of the message containing a tool with the given ID.
+ * Searches from end to beginning (most recent first).
+ * Returns -1 if no message contains the tool.
+ */
+function findMessageWithTool(messages: ConversationMessage[], toolUseId: string): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === "assistant" && msg.toolInvocations?.some(t => t.toolUseId === toolUseId)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
  * Session state reducer.
  */
 function sessionReducer(
@@ -755,22 +770,13 @@ function sessionReducer(
 
     case "UPDATE_TOOL_INPUT": {
       // Update the input of a tool invocation
-      // Search ALL messages for the tool (not just last) to handle edge cases
+      // Search all messages (not just last) in case the tool is in an earlier message
       if (state.messages.length === 0) {
         console.warn(`[SessionContext] UPDATE_TOOL_INPUT ignored: no messages`);
         return state;
       }
       const messages = [...state.messages];
-
-      // Search from end to find the message containing this tool
-      let foundMessageIndex = -1;
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i];
-        if (msg.role === "assistant" && msg.toolInvocations?.some(t => t.toolUseId === action.toolUseId)) {
-          foundMessageIndex = i;
-          break;
-        }
-      }
+      const foundMessageIndex = findMessageWithTool(messages, action.toolUseId);
 
       if (foundMessageIndex === -1) {
         console.warn(`[SessionContext] UPDATE_TOOL_INPUT: tool ${action.toolUseId} not found in any message`);
@@ -792,23 +798,13 @@ function sessionReducer(
 
     case "COMPLETE_TOOL_INVOCATION": {
       // Mark a tool invocation as complete with output
-      // Search ALL messages for the tool (not just last) to handle race conditions
-      // where tool_end arrives before tool_start is committed to state
+      // Search all messages (not just last) in case the tool is in an earlier message
       if (state.messages.length === 0) {
         console.warn(`[SessionContext] COMPLETE_TOOL_INVOCATION ignored: no messages`);
         return state;
       }
       const messages = [...state.messages];
-
-      // Search from end to find the message containing this tool
-      let foundMessageIndex = -1;
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i];
-        if (msg.role === "assistant" && msg.toolInvocations?.some(t => t.toolUseId === action.toolUseId)) {
-          foundMessageIndex = i;
-          break;
-        }
-      }
+      const foundMessageIndex = findMessageWithTool(messages, action.toolUseId);
 
       if (foundMessageIndex === -1) {
         console.warn(`[SessionContext] COMPLETE_TOOL_INVOCATION: tool ${action.toolUseId} not found in any message`);

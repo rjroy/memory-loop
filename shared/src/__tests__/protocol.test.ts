@@ -23,6 +23,7 @@ import {
   WriteFileMessageSchema,
   GetTasksMessageSchema,
   ToggleTaskMessageSchema,
+  ToolPermissionResponseMessageSchema,
   // Server message schemas
   ServerMessageSchema,
   VaultListMessageSchema,
@@ -43,6 +44,7 @@ import {
   FileWrittenMessageSchema,
   TasksMessageSchema,
   TaskToggledMessageSchema,
+  ToolPermissionRequestMessageSchema,
   // Supporting schemas
   VaultInfoSchema,
   ErrorCodeSchema,
@@ -649,6 +651,56 @@ describe("Client -> Server Messages", () => {
     });
   });
 
+  describe("ToolPermissionResponseMessageSchema", () => {
+    test("accepts valid tool_permission_response with allowed=true", () => {
+      const msg = {
+        type: "tool_permission_response" as const,
+        toolUseId: "tool_123_abc",
+        allowed: true,
+      };
+      const result = ToolPermissionResponseMessageSchema.parse(msg);
+      expect(result.type).toBe("tool_permission_response");
+      expect(result.toolUseId).toBe("tool_123_abc");
+      expect(result.allowed).toBe(true);
+    });
+
+    test("accepts valid tool_permission_response with allowed=false", () => {
+      const msg = {
+        type: "tool_permission_response" as const,
+        toolUseId: "tool_456_def",
+        allowed: false,
+      };
+      const result = ToolPermissionResponseMessageSchema.parse(msg);
+      expect(result.toolUseId).toBe("tool_456_def");
+      expect(result.allowed).toBe(false);
+    });
+
+    test("rejects empty toolUseId", () => {
+      const msg = { type: "tool_permission_response", toolUseId: "", allowed: true };
+      expect(() => ToolPermissionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing toolUseId", () => {
+      const msg = { type: "tool_permission_response", allowed: true };
+      expect(() => ToolPermissionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing allowed", () => {
+      const msg = { type: "tool_permission_response", toolUseId: "tool_123" };
+      expect(() => ToolPermissionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-boolean allowed", () => {
+      const msg = { type: "tool_permission_response", toolUseId: "tool_123", allowed: "true" };
+      expect(() => ToolPermissionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string toolUseId", () => {
+      const msg = { type: "tool_permission_response", toolUseId: 123, allowed: true };
+      expect(() => ToolPermissionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ClientMessageSchema (discriminated union)", () => {
     test("parses all client message types", () => {
       const messages = [
@@ -665,6 +717,7 @@ describe("Client -> Server Messages", () => {
         { type: "write_file", path: "note.md", content: "test" },
         { type: "get_tasks" },
         { type: "toggle_task", filePath: "test.md", lineNumber: 1 },
+        { type: "tool_permission_response", toolUseId: "tool_123", allowed: true },
       ];
 
       for (const msg of messages) {
@@ -1437,6 +1490,71 @@ describe("Server -> Client Messages", () => {
     });
   });
 
+  describe("ToolPermissionRequestMessageSchema", () => {
+    test("accepts valid tool_permission_request message", () => {
+      const msg = {
+        type: "tool_permission_request" as const,
+        toolUseId: "tool_123_abc",
+        toolName: "Read",
+        input: { file_path: "/path/to/file.md" },
+      };
+      const result = ToolPermissionRequestMessageSchema.parse(msg);
+      expect(result.type).toBe("tool_permission_request");
+      expect(result.toolUseId).toBe("tool_123_abc");
+      expect(result.toolName).toBe("Read");
+      expect(result.input).toEqual({ file_path: "/path/to/file.md" });
+    });
+
+    test("accepts tool_permission_request with null input", () => {
+      const msg = {
+        type: "tool_permission_request" as const,
+        toolUseId: "tool_456",
+        toolName: "Bash",
+        input: null,
+      };
+      const result = ToolPermissionRequestMessageSchema.parse(msg);
+      expect(result.input).toBeNull();
+    });
+
+    test("accepts tool_permission_request with string input", () => {
+      const msg = {
+        type: "tool_permission_request" as const,
+        toolUseId: "tool_789",
+        toolName: "Edit",
+        input: "some string input",
+      };
+      const result = ToolPermissionRequestMessageSchema.parse(msg);
+      expect(result.input).toBe("some string input");
+    });
+
+    test("rejects empty toolUseId", () => {
+      const msg = { type: "tool_permission_request", toolUseId: "", toolName: "Read", input: {} };
+      expect(() => ToolPermissionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects empty toolName", () => {
+      const msg = { type: "tool_permission_request", toolUseId: "tool_123", toolName: "", input: {} };
+      expect(() => ToolPermissionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing toolUseId", () => {
+      const msg = { type: "tool_permission_request", toolName: "Read", input: {} };
+      expect(() => ToolPermissionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing toolName", () => {
+      const msg = { type: "tool_permission_request", toolUseId: "tool_123", input: {} };
+      expect(() => ToolPermissionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("accepts missing input (undefined)", () => {
+      const msg = { type: "tool_permission_request" as const, toolUseId: "tool_123", toolName: "Read" };
+      // input is z.unknown() so undefined is valid
+      const result = ToolPermissionRequestMessageSchema.parse(msg);
+      expect(result.input).toBeUndefined();
+    });
+  });
+
   describe("ServerMessageSchema (discriminated union)", () => {
     test("parses all server message types", () => {
       const messages = [
@@ -1481,6 +1599,7 @@ describe("Server -> Client Messages", () => {
           total: 1,
         },
         { type: "task_toggled", filePath: "test.md", lineNumber: 5, newState: "x" },
+        { type: "tool_permission_request", toolUseId: "tool_123", toolName: "Read", input: {} },
       ];
 
       for (const msg of messages) {

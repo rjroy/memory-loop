@@ -11,6 +11,7 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { useSession, useServerMessageHandler } from "../contexts/SessionContext";
 import { MessageBubble } from "./MessageBubble";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ToolPermissionDialog, type ToolPermissionRequest } from "./ToolPermissionDialog";
 import "./Discussion.css";
 
 const STORAGE_KEY = "memory-loop-discussion-draft";
@@ -30,6 +31,7 @@ export function Discussion(): React.ReactNode {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [pendingPermission, setPendingPermission] = useState<ToolPermissionRequest | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -97,6 +99,15 @@ export function Discussion(): React.ReactNode {
 
       if (message.type === "tool_end") {
         completeToolInvocation(message.toolUseId, message.output);
+      }
+
+      // Handle tool permission requests
+      if (message.type === "tool_permission_request") {
+        setPendingPermission({
+          toolUseId: message.toolUseId,
+          toolName: message.toolName,
+          input: message.input,
+        });
       }
 
       // Handle errors
@@ -302,6 +313,28 @@ export function Discussion(): React.ReactNode {
     setShowNewSessionDialog(false);
   }
 
+  function handleAllowTool() {
+    if (pendingPermission) {
+      sendMessage({
+        type: "tool_permission_response",
+        toolUseId: pendingPermission.toolUseId,
+        allowed: true,
+      });
+      setPendingPermission(null);
+    }
+  }
+
+  function handleDenyTool() {
+    if (pendingPermission) {
+      sendMessage({
+        type: "tool_permission_response",
+        toolUseId: pendingPermission.toolUseId,
+        allowed: false,
+      });
+      setPendingPermission(null);
+    }
+  }
+
   return (
     <div className="discussion">
       <div className="discussion__header">
@@ -389,6 +422,12 @@ export function Discussion(): React.ReactNode {
         confirmLabel="New"
         onConfirm={handleConfirmNewSession}
         onCancel={handleCancelNewSession}
+      />
+
+      <ToolPermissionDialog
+        request={pendingPermission}
+        onAllow={handleAllowTool}
+        onDeny={handleDenyTool}
       />
     </div>
   );

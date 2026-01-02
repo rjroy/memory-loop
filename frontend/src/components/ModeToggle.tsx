@@ -22,16 +22,17 @@ export interface ModeToggleProps {
 interface ModeOption {
   value: AppMode;
   label: string;
+  sigil: string;
 }
 
 /**
  * Available mode options.
  */
 const modes: ModeOption[] = [
-  { value: "home", label: "Ground" },
-  { value: "note", label: "Capture" },
-  { value: "discussion", label: "Think" },
-  { value: "browse", label: "Recall" },
+  { value: "home", label: "Ground", sigil: "🪨" },
+  { value: "note", label: "Capture", sigil: "🪶" },
+  { value: "discussion", label: "Think", sigil: "✨" },
+  { value: "browse", label: "Recall", sigil: "🪞" },
 ];
 
 /**
@@ -64,7 +65,10 @@ export function ModeToggle({ disabled = false }: ModeToggleProps): React.ReactNo
           onClick={() => handleClick(option.value)}
           disabled={disabled}
         >
-          {option.label}
+          <span className="mode-toggle__sigil" aria-hidden="true">
+            {option.sigil}
+          </span>
+          <span className="mode-toggle__label">{option.label}</span>
         </button>
       ))}
     </div>

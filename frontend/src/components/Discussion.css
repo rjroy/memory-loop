@@ -31,6 +31,26 @@
   color: var(--color-text-secondary);
   padding: var(--spacing-lg);
 }
+.discussion__empty p::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/images/bg-orange.webp');
+  background-size: cover;
+  background-position: center center;
+  border-radius: inherit;
+  opacity: 0.15;
+  z-index: -1;
+}
+
+
+.discussion__empty p,
+.discussion__empty .discussion__hint {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-light));
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+}
 
 .discussion__empty::before {
   content: "";

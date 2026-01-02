@@ -52,7 +52,7 @@
 /* Prompt variant - cyan accent */
 .inspiration-card__prompt {
   border-left: 3px solid var(--color-accent-cyan);
-  background: var(--glass-bg-cyan);
+  background: var(--glass-bg);
 }
 
 .inspiration-card__prompt::before {
@@ -75,7 +75,7 @@
 /* Quote variant - purple accent */
 .inspiration-card__quote {
   border-left: 3px solid var(--color-accent-orange);
-  background: var(--glass-bg-orange);
+  background: var(--glass-bg);
 }
 
 .inspiration-card__quote::before {

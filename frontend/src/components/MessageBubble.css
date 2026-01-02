@@ -132,6 +132,13 @@
   opacity: 0.9;
 }
 
+.message-bubble__hr {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 1em 0;
+}
+
 .message-bubble--assistant .message-bubble__text h1,
 .message-bubble--assistant .message-bubble__text h2,
 .message-bubble--assistant .message-bubble__text h3,

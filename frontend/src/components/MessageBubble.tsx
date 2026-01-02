@@ -7,11 +7,26 @@
  */
 
 import React from "react";
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ConversationMessage } from "../contexts/SessionContext";
 import { ToolDisplay } from "./ToolDisplay";
 import "./MessageBubble.css";
+
+/**
+ * Custom markdown components for Discussion messages.
+ * Uses decorative hr.webp image for horizontal rules.
+ */
+const markdownComponents: Components = {
+  hr: () => (
+    <img
+      src="/images/hr.webp"
+      alt=""
+      className="message-bubble__hr"
+      aria-hidden="true"
+    />
+  ),
+};
 
 /**
  * Props for MessageBubble component.
@@ -63,7 +78,7 @@ export function MessageBubble({ message }: MessageBubbleProps): React.ReactNode 
           {message.role === "user" ? (
             message.content
           ) : (
-            <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
+            <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.content}</Markdown>
           )}
           {message.isStreaming && (
             <span className="message-bubble__cursor" aria-label="Typing">

@@ -122,6 +122,7 @@
 }
 
 .recent-activity__text {
+  font-family: var(--font-family-user);
   font-size: var(--text-sm);
   color: var(--color-text);
   line-height: var(--line-height-normal);

@@ -13,11 +13,13 @@
 .message-bubble--user {
   margin-left: auto;
   justify-content: flex-end;
+  font-family: var(--font-family-user);
 }
 
 .message-bubble--assistant {
   margin-right: auto;
   justify-content: flex-start;
+  font-family: var(--font-family-ai);
 }
 
 .message-bubble__content {
@@ -183,10 +185,12 @@
 
 .message-bubble--user .message-bubble__time {
   text-align: right;
+  text-transform: uppercase;
 }
 
 .message-bubble--assistant .message-bubble__time {
   text-align: left;
+  text-transform: lowercase;
 }
 
 /* Mobile adjustments for blur performance */

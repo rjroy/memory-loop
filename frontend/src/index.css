@@ -6,7 +6,18 @@
  */
 
 /* ============================================
-   Self-hosted Fonts
+   Font System (Self-hosted)
+
+   Six families for distinct semantic contexts:
+   - font-family: System UI (Ubuntu)
+   - font-family-mono: Technical/system messages (Space Mono)
+   - font-family-title: Logo stamp only (Great Vibes)
+   - font-family-attribution: Quote sources (Kings)
+   - font-family-ai: AI-generated prose (IM Fell English)
+   - font-family-user: User-generated content (Inconsolata)
+
+   The AI/user split provides immediate visual attribution
+   in conversation without explicit labels.
    ============================================ */
 
 @font-face {
@@ -95,6 +106,39 @@
   font-weight: 700;
   font-display: swap;
   src: url("/font-families/Space_Mono/SpaceMono-BoldItalic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Inconsolata";
+  font-style: normal;
+  font-weight: 200 900;
+  font-stretch: 50% 200%;
+  font-display: swap;
+  src: url("/font-families/Inconsolata/Inconsolata-VariableFont_wdth,wght.ttf") format("truetype-variations");
+}
+
+@font-face {
+  font-family: "IM Fell English";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/IM_Fell_English/IMFellEnglish-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "IM Fell English";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/IM_Fell_English/IMFellEnglish-Italic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Kings";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/font-families/Kings/Kings-Regular.ttf") format("truetype");
 }
 
 /* ============================================
@@ -193,8 +237,12 @@
   /* Typography */
   --font-family: "Ubuntu", system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-family-display: "Great Vibes", "Brush Script MT", "Segoe Script", cursive;
   --font-family-mono: "Space Mono", ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Consolas, monospace;
+  --font-family-title: "Great Vibes", "Brush Script MT", "Segoe Script", cursive;
+  --font-family-attribution: "Kings", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+  --font-family-ai: "IM Fell English", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+  --font-family-user: "Inconsolata", ui-monospace, SFMono-Regular, "SF Mono",
     Menlo, Consolas, monospace;
 
   --font-size-xs: 0.75rem;   /* 12px */

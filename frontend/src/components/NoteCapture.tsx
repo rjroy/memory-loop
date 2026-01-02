@@ -198,6 +198,13 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   return (
     <div className="note-capture">
       <form className="note-capture__form" onSubmit={handleSubmit}>
+        <button
+          type="submit"
+          className="note-capture__submit"
+          disabled={isDisabled || !content.trim()}
+        >
+          {isSubmitting ? "Saving..." : "Capture Note"}
+        </button>
         <textarea
           ref={textareaRef}
           className="note-capture__input"
@@ -208,13 +215,6 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
           rows={3}
           aria-label="Note content"
         />
-        <button
-          type="submit"
-          className="note-capture__submit"
-          disabled={isDisabled || !content.trim()}
-        >
-          {isSubmitting ? "Saving..." : "Capture Note"}
-        </button>
       </form>
 
       {toast.visible && (

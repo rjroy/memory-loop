@@ -339,17 +339,15 @@ export function Discussion(): React.ReactNode {
 
   return (
     <div className="discussion">
-      <div className="discussion__header">
-        <button
-          type="button"
-          className="discussion__new-btn"
-          onClick={handleNewSessionClick}
-          aria-label="Start new session"
-          title="New session"
-        >
-          +
-        </button>
-      </div>
+      <button
+        type="button"
+        className="discussion__new-btn"
+        onClick={handleNewSessionClick}
+        aria-label="Start new session"
+        title="New session"
+      >
+        +
+      </button>
 
       <div className="discussion__messages" role="list" aria-label="Conversation">
         {messages.length === 0 ? (

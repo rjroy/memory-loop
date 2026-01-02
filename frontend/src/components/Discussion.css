@@ -9,6 +9,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  position: relative;
 }
 
 /* Messages container */
@@ -240,23 +241,21 @@
 }
 
 /* ============================================
-   New Session Button
+   New Session Button (floating overlay)
    ============================================ */
 
-.discussion__header {
-  display: flex;
-  align-items: center;
-  padding: var(--spacing-xs) var(--spacing-md);
-  flex-shrink: 0;
-}
-
 .discussion__new-btn {
+  position: absolute;
+  top: var(--spacing-sm);
+  left: var(--spacing-md);
+  z-index: 10;
   width: 32px;
   height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
+  backdrop-filter: blur(var(--glass-blur-light));
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -265,6 +264,12 @@
   line-height: 1;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .discussion__new-btn {
+    background-color: var(--color-surface);
+  }
 }
 
 .discussion__new-btn:hover {

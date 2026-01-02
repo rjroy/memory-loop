@@ -98,7 +98,7 @@
 
 /* Text content */
 .inspiration-card__text {
-  font-size: var(--text-sm);
+  font-size: var(--text-lg);
   color: var(--color-text);
   line-height: var(--line-height-relaxed);
   margin: 0;

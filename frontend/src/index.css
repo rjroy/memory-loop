@@ -138,7 +138,7 @@
 
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
-  --gradient-primary-dim: linear-gradient(135deg, #7038A6 0%, #B34B6E 100%);
+  --gradient-primary-dim: linear-gradient(135deg, #a67a38 0%, #B34B6E 100%);
   --gradient-secondary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
   --gradient-surface: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
 

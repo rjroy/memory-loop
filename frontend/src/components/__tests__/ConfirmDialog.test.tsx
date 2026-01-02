@@ -96,10 +96,10 @@ describe("ConfirmDialog", () => {
 
     it("calls onCancel when backdrop is clicked", () => {
       const onCancel = mock(() => {});
-      const { container } = render(<ConfirmDialog {...defaultProps} onCancel={onCancel} />);
+      render(<ConfirmDialog {...defaultProps} onCancel={onCancel} />);
 
-      // Click on the backdrop (parent of the dialog)
-      const backdrop = container.querySelector(".confirm-dialog__backdrop");
+      // Click on the backdrop (rendered to document.body via portal)
+      const backdrop = document.querySelector(".confirm-dialog__backdrop");
       expect(backdrop).not.toBeNull();
       fireEvent.click(backdrop!);
 
@@ -119,10 +119,10 @@ describe("ConfirmDialog", () => {
 
     it("calls onCancel when Escape key is pressed", () => {
       const onCancel = mock(() => {});
-      const { container } = render(<ConfirmDialog {...defaultProps} onCancel={onCancel} />);
+      render(<ConfirmDialog {...defaultProps} onCancel={onCancel} />);
 
-      // Escape key handler is on the backdrop
-      const backdrop = container.querySelector(".confirm-dialog__backdrop");
+      // Escape key handler is on the backdrop (rendered to document.body via portal)
+      const backdrop = document.querySelector(".confirm-dialog__backdrop");
       fireEvent.keyDown(backdrop!, { key: "Escape" });
 
       expect(onCancel).toHaveBeenCalledTimes(1);
@@ -130,9 +130,9 @@ describe("ConfirmDialog", () => {
 
     it("does not call onCancel for other keys", () => {
       const onCancel = mock(() => {});
-      const { container } = render(<ConfirmDialog {...defaultProps} onCancel={onCancel} />);
+      render(<ConfirmDialog {...defaultProps} onCancel={onCancel} />);
 
-      const backdrop = container.querySelector(".confirm-dialog__backdrop");
+      const backdrop = document.querySelector(".confirm-dialog__backdrop");
       fireEvent.keyDown(backdrop!, { key: "Enter" });
 
       expect(onCancel).not.toHaveBeenCalled();

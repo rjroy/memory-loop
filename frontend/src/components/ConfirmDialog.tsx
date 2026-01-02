@@ -6,6 +6,7 @@
  */
 
 import React, { useId } from "react";
+import { createPortal } from "react-dom";
 import "./ConfirmDialog.css";
 
 export interface ConfirmDialogProps {
@@ -41,7 +42,7 @@ export function ConfirmDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div
       className="confirm-dialog__backdrop"
       onClick={handleBackdropClick}
@@ -74,6 +75,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

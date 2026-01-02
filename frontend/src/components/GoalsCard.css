@@ -26,6 +26,7 @@
   border-radius: var(--radius-xl);
   backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--glass-shadow);
+  font-family: var(--font-family-user);
 }
 
 @supports not (backdrop-filter: blur(10px)) {

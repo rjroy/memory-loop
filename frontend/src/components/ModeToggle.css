@@ -60,3 +60,27 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.mode-toggle__label {
+  position: relative;
+  z-index: 1;
+}
+
+.mode-toggle__sigil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.25rem;
+  opacity: 0.15;
+  filter: blur(2px);
+  transform: translate(2px, -2px);
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.mode-toggle__segment--selected .mode-toggle__sigil {
+  opacity: 0.25;
+}

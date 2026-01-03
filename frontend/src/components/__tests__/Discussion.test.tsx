@@ -295,7 +295,7 @@ describe("Discussion", () => {
 
       // Streaming cursor should appear (assistant message with isStreaming: true)
       await waitFor(() => {
-        const cursor = screen.queryByLabelText("Typing");
+        const cursor = screen.queryByAltText("Typing");
         expect(cursor).not.toBeNull();
       });
 
@@ -316,7 +316,7 @@ describe("Discussion", () => {
 
       // Cursor should disappear
       await waitFor(() => {
-        const cursor = screen.queryByLabelText("Typing");
+        const cursor = screen.queryByAltText("Typing");
         expect(cursor).toBeNull();
       });
     });

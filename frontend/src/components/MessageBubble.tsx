@@ -83,9 +83,8 @@ export function MessageBubble({ message }: MessageBubbleProps): React.ReactNode 
           {message.isStreaming && (
             <img
               src="/images/empty-state.webp"
-              alt=""
+              alt="Typing"
               className="message-bubble__cursor"
-              aria-label="Typing"
             />
           )}
         </div>

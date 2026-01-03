@@ -81,9 +81,11 @@ export function MessageBubble({ message }: MessageBubbleProps): React.ReactNode 
             <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.content}</Markdown>
           )}
           {message.isStreaming && (
-            <span className="message-bubble__cursor" aria-label="Typing">
-              ▊
-            </span>
+            <img
+              src="/images/empty-state.webp"
+              alt="Typing"
+              className="message-bubble__cursor"
+            />
           )}
         </div>
         <span className="message-bubble__time">

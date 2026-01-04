@@ -167,7 +167,7 @@
   --color-accent-purple: #a855f7;
   --color-accent-cyan: #6fd5fa;
   --color-accent-orange: #faa46f;
-
+  
   /* Aliases for component compatibility */
   --color-bg: var(--color-background);
   --color-bg-secondary: var(--color-surface);
@@ -184,6 +184,7 @@
   --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
   --gradient-primary-dim: linear-gradient(135deg, #a67a38 0%, #B34B6E 100%);
   --gradient-secondary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
+  --gradient-secondary-hover: linear-gradient(135deg, #1fb8d9 0%, #9333ea 100%);
   --gradient-surface: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
 
   /* Glassmorphism */

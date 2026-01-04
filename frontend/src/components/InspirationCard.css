@@ -50,9 +50,9 @@
   transform: scale(0.98);
 }
 
-/* Prompt variant - cyan accent */
+/* Prompt variant - tertiary accent */
 .inspiration-card__prompt {
-  border-left: 3px solid var(--color-accent-cyan);
+  border-left: 3px solid var(--color-accent-tertiary);
   background: var(--glass-bg);
 }
 
@@ -60,7 +60,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/images/bg-cyan.webp');
+  background-image: url('/images/bg-tertiary.webp');
   background-size: cover;
   background-position: center center;
   border-radius: inherit;
@@ -69,13 +69,13 @@
 }
 
 .inspiration-card__prompt:hover {
-  border-left-color: var(--color-accent-cyan);
-  box-shadow: var(--glow-cyan);
+  border-left-color: var(--color-accent-tertiary);
+  box-shadow: var(--glow-tertiary);
 }
 
-/* Quote variant - purple accent */
+/* Quote variant - primary accent */
 .inspiration-card__quote {
-  border-left: 3px solid var(--color-accent-orange);
+  border-left: 3px solid var(--color-accent-quartary);
   background: var(--glass-bg);
 }
 
@@ -83,7 +83,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/images/bg-orange.webp');
+  background-image: url('/images/bg-quartary.webp');
   background-size: cover;
   background-position: center center;
   border-radius: inherit;
@@ -92,8 +92,8 @@
 }
 
 .inspiration-card__quote:hover {
-  border-left-color: var(--color-accent-orange);
-  box-shadow: var(--glow-orange);
+  border-left-color: var(--color-accent-quartary);
+  box-shadow: var(--glow-quartary);
 }
 
 /* Text content */

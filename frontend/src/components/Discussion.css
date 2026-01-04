@@ -35,7 +35,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/images/bg-orange.webp');
+  background-image: url('/images/bg-quartary.webp');
   background-size: cover;
   background-position: center center;
   border-radius: inherit;
@@ -106,7 +106,7 @@
 
 .discussion__slash-hint {
   font-size: var(--font-size-xs);
-  color: var(--color-accent-cyan);
+  color: var(--color-text-accent-tertiary);
   padding: var(--spacing-xs) 0;
   font-weight: var(--font-weight-medium);
   font-family: var(--font-family-mono);
@@ -125,7 +125,7 @@
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  background: rgba(15, 15, 26, 0.6);
+  background: var(--color-background-a60);
   color: var(--color-text);
   font-family: var(--font-family-user);
   font-size: var(--text-base);
@@ -133,16 +133,16 @@
   resize: none;
   transition: border-color 0.2s ease, box-shadow 0.3s ease, min-height 0.2s ease, max-height 0.2s ease;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+    inset 0 1px 0 var(--color-white-a05),
+    inset 0 -1px 0 var(--color-black-a20);
 }
 
 .discussion__input:focus {
   outline: none;
   border-color: var(--glass-border-hover);
   box-shadow:
-    0 0 20px rgba(168, 85, 247, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    0 0 20px var(--color-accent-primary-a10),
+    inset 0 1px 0 var(--color-white-a07);
 }
 
 .discussion__input::placeholder {
@@ -171,7 +171,7 @@
 }
 
 .discussion__send:hover:not(:disabled) {
-  box-shadow: var(--glow-purple);
+  box-shadow: var(--glow-primary);
   transform: scale(1.05);
 }
 
@@ -199,11 +199,11 @@
 
 /* Stop button state - red/warning appearance */
 .discussion__send--stop {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  background: var(--gradient-error);
 }
 
 .discussion__send--stop:hover:not(:disabled) {
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+  box-shadow: 0 0 20px var(--color-error-a40);
 }
 
 .discussion__stop-icon {
@@ -214,7 +214,7 @@
 .discussion__send-spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid var(--color-white-a30);
   border-top-color: white;
   border-radius: 50%;
   animation: spin 1s linear infinite;

@@ -8,7 +8,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/images/bg-pink.webp');
+  background-image: url('/images/bg-secondary.webp');
   background-size: cover;
   background-position: center center;
   border-radius: inherit;
@@ -22,7 +22,7 @@
   padding: var(--spacing-lg);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  border-left: 3px solid var(--color-accent-pink);
+  border-left: 3px solid var(--color-accent-secondary);
   border-radius: var(--radius-xl);
   backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--glass-shadow);
@@ -46,7 +46,7 @@
 .goals-card__heading {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
-  color: var(--color-accent-pink);
+  color: var(--color-text-accent-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin: 0 0 var(--spacing-sm) 0;

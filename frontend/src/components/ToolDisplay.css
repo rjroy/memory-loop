@@ -11,16 +11,16 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    0 2px 12px var(--color-black-a20),
+    inset 0 1px 0 var(--color-white-a05);
 }
 
 .tool-display--loading {
-  border-color: var(--color-primary);
+  border-color: var(--color-accent);
   border-style: dashed;
   box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.2),
-    0 0 12px rgba(168, 85, 247, 0.1);
+    0 2px 12px var(--color-black-a20),
+    0 0 12px var(--color-accent-primary-a10);
 }
 
 .tool-display--expanded {
@@ -45,7 +45,7 @@
 }
 
 .tool-display__header:focus {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-accent);
   outline-offset: -2px;
 }
 
@@ -67,7 +67,7 @@
   width: 16px;
   height: 16px;
   border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
+  border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

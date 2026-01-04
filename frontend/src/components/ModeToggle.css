@@ -31,7 +31,7 @@
   border: none;
   border-radius: var(--radius-lg);
   background-color: transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-text-accent-quartary);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
@@ -41,7 +41,7 @@
 }
 
 .mode-toggle__segment:hover:not(:disabled):not(.mode-toggle__segment--selected) {
-  color: var(--color-text);
+  color: var(--color-text-secondary);
 }
 
 .mode-toggle__segment:active:not(:disabled) {
@@ -49,10 +49,10 @@
 }
 
 .mode-toggle__segment--selected {
-  background: var(--gradient-primary-dim);
-  color: var(--color-accent-cyan);
+  background: var(--gradient-tertiary);
+  color: var(--color-text-primary);
   font-weight: var(--font-weight-bold);
-  box-shadow: var(--glow-purple);
+  box-shadow: var(--glow-primary);
   transition: all 0.3s var(--ease-bounce);
 }
 

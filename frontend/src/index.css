@@ -143,79 +143,197 @@
 
 /* ============================================
    CSS Custom Properties (Design Tokens)
+
+   Color system uses OKLCH for perceptual uniformity.
+   All colors derive from the base palette below.
    ============================================ */
 
 :root {
-  /* Colors - Dark synthwave theme */
-  --color-background: #0f0f1a;
-  --color-surface: #1a1a2e;
-  --color-surface-elevated: #252540;
-  --color-text-primary: #f0f0f5;
-  --color-text-secondary: #b8b8d0;
-  --color-text-muted: #6a6a8a;
-  --color-text-note-heading: #bfb394ff;
-  --color-text-note-highlight: #f2cbc4ff;
-  --color-accent: #a855f7;
-  --color-accent-hover: #9333ea;
-  --color-border: #2d2d4a;
-  --color-error: #f87171;
-  --color-success: #4ade80;
-  --color-warning: #fbbf24;
+  /* ==========================================
+     Base Palette - Dark Synthwave Theme
 
-  /* Synthwave accent colors */
-  --color-accent-pink: #ee6492;
-  --color-accent-purple: #a855f7;
-  --color-accent-cyan: #6fd5fa;
-  --color-accent-orange: #faa46f;
-  
-  /* Aliases for component compatibility */
+     These 8 colors are the only raw values.
+     Everything else derives from them.
+
+     OKLCH format: oklch(lightness chroma hue)
+     - Lightness: 0-1 (0=black, 1=white)
+     - Chroma: 0-0.4 (0=gray, higher=saturated)
+     - Hue: 0-360 degrees
+     ========================================== */
+
+  /* Neutral base — Deep purple based on dark synthwave */
+  --color-background: oklch(0.13 0.02 285);
+
+  /* Accent palette — Sunset Sky */
+  --color-accent-primary:   oklch(0.55 0.05 285);  /* Twilight Violet */
+  --color-accent-secondary: oklch(0.70 0.09 20);   /* Sunset Rose */
+  --color-accent-tertiary:  oklch(0.62 0.06 255);  /* Dusk Blue */
+  --color-accent-quartary:  oklch(0.78 0.10 75);   /* Sunset Gold */
+
+
+  /* Status colors */
+  --color-error:  oklch(0.67 0.18 25);    /* Red */
+  --color-success: oklch(0.80 0.18 145); /* Green */
+  --color-warning: oklch(0.82 0.16 85);  /* Yellow */
+
+
+  /* ==========================================
+     Derived Colors - Surfaces & Borders
+
+     All share background hue, vary in lightness.
+     ========================================== */
+  --color-surface: oklch(from var(--color-background) calc(l + 0.05) calc(c + 0.01) h);
+  --color-surface-elevated: oklch(from var(--color-background) calc(l + 0.10) calc(c + 0.02) h);
+  --color-border: oklch(from var(--color-background) calc(l + 0.15) calc(c + 0.02) h);
+
+  /* ==========================================
+     Derived Colors - Accent Variants
+     ========================================== */
+  --color-accent: var(--color-accent-primary);
+  --color-accent-hover: oklch(from var(--color-accent-primary) calc(l + 0.08) c h);
+
+  /* Text accent colors - lighter for WCAG on dark backgrounds */
+  --color-text-accent-primary: oklch(from var(--color-accent-primary) calc(l + 0.17) c h);
+  --color-text-accent-secondary: var(--color-accent-secondary); /* oklch(from var(--color-accent-secondary) calc(l + 0.13) calc(c - 0.05) h); */
+  --color-text-accent-tertiary: var(--color-accent-tertiary);  /* Already light */
+  --color-text-accent-quartary: var(--color-accent-quartary);  /* Already light */
+  --color-text-accent: var(--color-text-accent-primary);
+
+  /* Status text colors - same as status (already WCAG compliant) */
+  --color-text-error: var(--color-error);
+  --color-text-success: var(--color-success);
+  --color-text-warning: var(--color-warning);
+
+  /* ==========================================
+     Derived Colors - Text Hierarchy
+
+     All derive from accent hues for consistency.
+     ========================================== */
+  --color-text-primary: oklch(from var(--color-accent-primary) 0.96 0.01 h);
+  --color-text-secondary: oklch(from var(--color-accent-primary) 0.89 0.02 h);
+  --color-text-muted: oklch(from var(--color-accent-secondary) 0.72 0.12 h); /* Slight hue shift for purple tint */
+  --color-text-heading: var(--color-text-accent-quartary);
+  --color-text-highlight: oklch(from var(--color-text-accent-quartary) calc(l + 0.15) c h);
+
+  /* Status backgrounds - darkened versions */
+  --color-bg-error: oklch(from var(--color-error) calc(l / 4) c h);
+  --color-bg-warning: oklch(from var(--color-warning) calc(l / 4) c h);
+  --color-bg-success: oklch(from var(--color-success) calc(l / 4) c h);
+
+  /* ==========================================
+     Alpha Variants
+
+     Naming: --color-{name}-a{opacity}
+     Opacity scale: 03, 05, 07, 10, 12, 15, 20, 25, 30, 40, 50, 60, 95
+     ========================================== */
+
+  /* Accent Primary - Purple (most commonly used) */
+  --color-accent-primary-a05: oklch(from var(--color-accent-primary) l c h / 0.05);
+  --color-accent-primary-a08: oklch(from var(--color-accent-primary) l c h / 0.08);
+  --color-accent-primary-a10: oklch(from var(--color-accent-primary) l c h / 0.10);
+  --color-accent-primary-a12: oklch(from var(--color-accent-primary) l c h / 0.12);
+  --color-accent-primary-a15: oklch(from var(--color-accent-primary) l c h / 0.15);
+  --color-accent-primary-a20: oklch(from var(--color-accent-primary) l c h / 0.20);
+  --color-accent-primary-a25: oklch(from var(--color-accent-primary) l c h / 0.25);
+  --color-accent-primary-a30: oklch(from var(--color-accent-primary) l c h / 0.30);
+  --color-accent-primary-a40: oklch(from var(--color-accent-primary) l c h / 0.40);
+
+  /* Accent Secondary - Pink */
+  --color-accent-secondary-a10: oklch(from var(--color-accent-secondary) l c h / 0.10);
+  --color-accent-secondary-a15: oklch(from var(--color-accent-secondary) l c h / 0.15);
+  --color-accent-secondary-a30: oklch(from var(--color-accent-secondary) l c h / 0.30);
+  --color-accent-secondary-a40: oklch(from var(--color-accent-secondary) l c h / 0.40);
+
+  /* Accent Tertiary - Cyan */
+  --color-accent-tertiary-a40: oklch(from var(--color-accent-tertiary) l c h / 0.40);
+
+  /* Accent Quartary - Orange */
+  --color-accent-quartary-a40: oklch(from var(--color-accent-quartary) l c h / 0.40);
+
+  /* Error - Red */
+  --color-error-a10: oklch(from var(--color-error) l c h / 0.10);
+  --color-error-a30: oklch(from var(--color-error) l c h / 0.30);
+  --color-error-a40: oklch(from var(--color-error) l c h / 0.40);
+
+  /* Success - Green */
+  --color-success-a30: oklch(from var(--color-success) l c h / 0.30);
+
+  /* Black - Shadows & Overlays */
+  --color-black-a20: oklch(0 0 0 / 0.20);
+  --color-black-a30: oklch(0 0 0 / 0.30);
+  --color-black-a40: oklch(0 0 0 / 0.40);
+  --color-black-a50: oklch(0 0 0 / 0.50);
+  --color-black-a60: oklch(0 0 0 / 0.60);
+
+  /* White - Highlights & Borders */
+  --color-white-a03: oklch(1 0 0 / 0.03);
+  --color-white-a05: oklch(1 0 0 / 0.05);
+  --color-white-a07: oklch(1 0 0 / 0.07);
+  --color-white-a10: oklch(1 0 0 / 0.10);
+  --color-white-a30: oklch(1 0 0 / 0.30);
+
+  /* Background - For overlays */
+  --color-background-a60: oklch(from var(--color-background) l c h / 0.60);
+
+  /* Surface - For glass effects */
+  --color-surface-a90: oklch(from var(--color-surface) l c h / 0.90);
+  --color-surface-a95: oklch(from var(--color-surface) l c h / 0.95);
+
+  /* ==========================================
+     Semantic Aliases
+     ========================================== */
+
+  /* Component compatibility */
   --color-bg: var(--color-background);
   --color-bg-secondary: var(--color-surface);
   --color-bg-tertiary: var(--color-surface-elevated);
   --color-text: var(--color-text-primary);
-  --color-primary: var(--color-accent);
-  --color-primary-hover: var(--color-accent-hover);
-  --color-primary-light: #312e81;
-  --color-error-light: #450a0a;
-  --color-warning-light: #78350f;
-  --color-warning-dark: #b45309;
 
-  /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
-  --gradient-primary-dim: linear-gradient(135deg, #a67a38 0%, #B34B6E 100%);
-  --gradient-secondary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
-  --gradient-secondary-hover: linear-gradient(135deg, #1fb8d9 0%, #9333ea 100%);
-  --gradient-surface: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
+  /* ==========================================
+     Gradients
+     ========================================== */
+  --gradient-primary: linear-gradient(135deg, var(--color-accent-primary) 0%, var(--color-accent-secondary) 100%);
+  --gradient-secondary: linear-gradient(135deg, var(--color-accent-tertiary) 0%, var(--color-accent-primary) 100%);
+  --gradient-tertiary: linear-gradient(135deg, oklch(from var(--color-accent-quartary) calc(l - 0.2) c h) 0%, oklch(from var(--color-accent-secondary) calc(l - 0.15) c h) 100%);
+  --gradient-text-primary: linear-gradient(135deg, var(--color-text-accent-primary) 0%, var(--color-text-accent-secondary) 100%);
+  --gradient-secondary-hover: linear-gradient(135deg, oklch(from var(--color-accent-tertiary) calc(l + 0.08) c h) 0%, var(--color-accent-hover) 100%);
+  --gradient-surface: linear-gradient(180deg, var(--color-surface) 0%, var(--color-background) 100%);
+  --gradient-error: linear-gradient(135deg, var(--color-error) 0%, oklch(from var(--color-error) calc(l - 0.14) c h) 100%);
 
-  /* Glassmorphism */
-  --glass-bg: rgba(26, 29, 46, 0.9);
-  --glass-bg-purple: rgba(46, 26, 40, 0.85);
-  --glass-bg-purple-button: rgba(55, 34, 48, 0.85);
-  --glass-bg-purple-hover: rgba(81, 48, 71, 0.85);
-  --glass-bg-cyan: rgba(26, 40, 46, 0.85);
-  --glass-bg-orange: rgba(46, 40, 26, 0.85);
-  --glass-bg-secondary: var(--glass-bg-purple);
-  --glass-bg-tertiary: var(--glass-bg-cyan);
-  --glass-border: rgba(168, 85, 247, 0.25);
-  --glass-border-hover: rgba(168, 85, 247, 0.5);
-  --glass-border-accent: rgba(85, 168, 247, 0.5);
+  /* ==========================================
+     Glassmorphism
+
+     Glass backgrounds use accent hues at low lightness/chroma.
+     ========================================== */
+  --glass-bg: var(--color-surface-a90);
+  --glass-bg-primary: oklch(from var(--color-accent-primary) 0.22 0.04 h / 0.85);
+  --glass-bg-primary-button: oklch(from var(--color-accent-primary) 0.25 0.05 h / 0.85);
+  --glass-bg-primary-hover: oklch(from var(--color-accent-primary) 0.32 0.06 h / 0.85);
+  --glass-bg-secondary: oklch(from var(--color-accent-secondary) 0.22 0.04 h / 0.85);
+  --glass-bg-tertiary: oklch(from var(--color-accent-tertiary) 0.22 0.04 h / 0.85);
+  --glass-bg-quartary: oklch(from var(--color-accent-quartary) 0.22 0.04 h / 0.85);
+  --glass-border: var(--color-accent-primary-a25);
+  --glass-border-hover: oklch(from var(--color-accent-primary) l c h / 0.5);
+  --glass-border-accent: oklch(from var(--color-accent-tertiary) l c h / 0.5);
   --glass-blur: 10px;
   --glass-blur-light: 2px;
   --glass-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+    0 4px 24px var(--color-black-a30),
+    inset 0 1px 0 var(--color-white-a07),
+    inset 0 -1px 0 var(--color-black-a20);
   --glass-shadow-hover:
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 0 24px rgba(168, 85, 247, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 8px 32px var(--color-black-a40),
+    0 0 24px var(--color-accent-primary-a15),
+    inset 0 1px 0 var(--color-white-a10);
 
-  /* Glow effects */
-  --glow-purple: 0 0 20px rgba(168, 85, 247, 0.4);
-  --glow-pink: 0 0 20px rgba(255, 107, 157, 0.4);
-  --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.4);
-  --glow-orange: 0 0 20px rgba(238, 163, 34, 0.4);
-  --glow-success: 0 0 20px rgba(74, 222, 128, 0.3);
+  /* ==========================================
+     Glow Effects
+     ========================================== */
+  --glow-primary: 0 0 20px var(--color-accent-primary-a40);
+  --glow-secondary: 0 0 20px var(--color-accent-secondary-a40);
+  --glow-tertiary: 0 0 20px var(--color-accent-tertiary-a40);
+  --glow-quartary: 0 0 20px var(--color-accent-quartary-a40);
+  --glow-success: 0 0 20px var(--color-success-a30);
 
   /* Spacing scale (4px base) */
   --space-1: 0.25rem;   /* 4px */
@@ -367,7 +485,7 @@ p {
 }
 
 a {
-  color: var(--color-accent);
+  color: var(--color-text-accent);
   text-decoration: none;
   transition: color var(--transition-fast);
 }

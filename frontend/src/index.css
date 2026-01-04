@@ -275,6 +275,7 @@
   --gradient-tertiary: linear-gradient(135deg, oklch(0.55 0.12 70) 0%, oklch(0.50 0.16 350) 100%);
   --gradient-secondary-hover: linear-gradient(135deg, oklch(0.75 0.13 210) 0%, var(--color-accent-hover) 100%);
   --gradient-surface: linear-gradient(180deg, var(--color-surface) 0%, var(--color-background) 100%);
+  --gradient-error: linear-gradient(135deg, var(--color-error) 0%, oklch(0.53 0.21 27) 100%);
 
   /* ==========================================
      Glassmorphism

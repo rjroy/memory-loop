@@ -199,7 +199,7 @@
 
 /* Stop button state - red/warning appearance */
 .discussion__send--stop {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  background: var(--gradient-error);
 }
 
 .discussion__send--stop:hover:not(:disabled) {

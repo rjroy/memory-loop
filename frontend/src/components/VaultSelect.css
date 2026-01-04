@@ -116,7 +116,7 @@
 }
 
 .vault-select__error h2 {
-  color: var(--color-error);
+  color: var(--color-text-error);
   font-size: var(--text-lg);
 }
 
@@ -148,8 +148,8 @@
 
 /* Error banner */
 .vault-select__error-banner {
-  background-color: var(--color-error-light);
-  color: var(--color-error);
+  background-color: var(--color-bg-error);
+  color: var(--color-text-error);
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius-md);
   margin-bottom: var(--spacing-md);

@@ -78,8 +78,8 @@
 /* Truncation warning */
 .markdown-viewer__truncation-warning {
   padding: var(--spacing-sm) var(--spacing-md);
-  background-color: var(--color-warning-light);
-  color: var(--color-warning-dark);
+  background-color: var(--color-bg-warning);
+  color: var(--color-text-warning);
   font-size: var(--text-sm);
   border-bottom: 1px solid var(--color-warning);
 }
@@ -144,10 +144,10 @@
 .markdown-viewer__content h6 {
   margin-top: 1.5em;
   margin-bottom: 0.5em;
-  color: var(--color-text-note-heading);
+  color: var(--color-text-heading);
   font-weight: var(--font-semibold);
   line-height: 1.3;
-  border-bottom: 1px solid hsl(from var(--color-text-note-heading) h s l / 20%);
+  border-bottom: 1px solid hsl(from var(--color-accent-quartary) h s l / 20%);
 }
 
 .markdown-viewer__content h1:first-child,
@@ -214,11 +214,11 @@
 
 .markdown-viewer__content strong {
   font-weight: var(--font-semibold);
-  color: var(--color-text-note-highlight);
+  color: var(--color-text-highlight);
 }
 .markdown-viewer__content em {
   font-style: italic;
-  color: var(--color-text-note-highlight);
+  color: var(--color-text-highlight);
 }
 
 .markdown-viewer__content pre code {
@@ -281,7 +281,7 @@
 }
 
 .markdown-viewer__wiki-link--broken {
-  color: var(--color-error);
+  color: var(--color-text-error);
   border-bottom-color: var(--color-error);
 }
 
@@ -306,12 +306,12 @@
 }
 
 .markdown-viewer__error-message {
-  color: var(--color-error);
+  color: var(--color-text-error);
   font-size: var(--text-base);
 }
 
 .markdown-viewer__error {
-  color: var(--color-error);
+  color: var(--color-text-error);
 }
 
 /* Loading skeleton */
@@ -473,7 +473,7 @@
   padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--color-error-a10);
   border-bottom: 1px solid var(--color-error-a30);
-  color: var(--color-error);
+  color: var(--color-text-error);
   font-size: var(--text-sm);
 }
 

@@ -163,13 +163,6 @@
   --color-surface: oklch(0.18 0.03 285);
   --color-surface-elevated: oklch(0.23 0.04 285);
 
-  /* Text hierarchy */
-  --color-text-primary: oklch(0.96 0.01 285);
-  --color-text-secondary: oklch(0.89 0.02 285);
-  --color-text-muted: oklch(0.72 0.12 290);
-  --color-text-note-heading: oklch(0.77 0.08 85);
-  --color-text-note-highlight: oklch(0.86 0.06 25);
-
   /* Borders */
   --color-border: oklch(0.28 0.04 285);
 
@@ -184,7 +177,7 @@
   --color-accent-tertiary: oklch(0.82 0.11 210);
   --color-accent-quartary: oklch(0.77 0.14 55);
   --color-accent: var(--color-accent-primary);
-  --color-accent-hover: oklch(0.52 0.26 300);
+  --color-accent-hover: oklch(from var(--color-accent-primary) calc(l + 0.08) c h);
 
   /* Text accent colors (lighter for readability) */
   --color-text-accent-primary: oklch(0.75 0.16 300);
@@ -193,10 +186,22 @@
   --color-text-accent-quartary: oklch(0.77 0.14 55);
   --color-text-accent: var(--color-text-accent-primary);
 
-  /* Status variants */
-  --color-error-light: oklch(0.25 0.08 25);
-  --color-warning-light: oklch(0.35 0.10 70);
-  --color-warning-dark: oklch(0.55 0.14 70);
+  /* Status text colors */
+  --color-text-error: oklch(0.67 0.18 25);
+  --color-text-success: oklch(0.80 0.18 145);
+  --color-text-warning: oklch(0.82 0.16 85);
+
+  /* Text hierarchy */
+  --color-text-primary: oklch(0.96 0.01 285);
+  --color-text-secondary: oklch(0.89 0.02 285);
+  --color-text-muted: oklch(0.72 0.12 290);
+  --color-text-heading: var(--color-text-accent-quartary);
+  --color-text-highlight: oklch(from var(--color-text-accent-quartary) calc(l + 0.15) c h);
+
+  /* Status background */
+  --color-bg-error: oklch(from var(--color-error) calc(l / 4) c h);
+  --color-bg-warning: oklch(from var(--color-warning) calc(l / 4) c h);
+  --color-bg-success: oklch(from var(--color-success) calc(l / 4) c h);
 
   /* ==========================================
      Alpha Variants

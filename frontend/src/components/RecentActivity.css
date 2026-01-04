@@ -201,14 +201,14 @@
 }
 
 .recent-activity__action--danger {
-  color: var(--color-error, #ff6b6b);
-  border-color: var(--color-error, #ff6b6b);
+  color: var(--color-text-error);
+  border-color: var(--color-error);
 }
 
 .recent-activity__action--danger:hover {
-  background: var(--color-error, #ff6b6b);
+  background: var(--color-error);
   color: white;
-  box-shadow: 0 0 10px var(--color-error, #ff6b6b);
+  box-shadow: 0 0 10px var(--color-error);
 }
 
 .recent-activity__action--danger:disabled {
@@ -250,7 +250,7 @@
 
   .recent-activity__action--danger:hover {
     background: var(--glass-bg);
-    color: var(--color-error, #ff6b6b);
+    color: var(--color-text-error);
     box-shadow: none;
   }
 

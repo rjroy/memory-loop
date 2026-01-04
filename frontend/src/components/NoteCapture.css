@@ -124,7 +124,7 @@
 }
 
 .note-capture__toast--error {
-  color: var(--color-error);
+  color: var(--color-text-error);
   border: 1px solid var(--color-error);
   box-shadow: 0 0 20px var(--color-error-a30);
 }

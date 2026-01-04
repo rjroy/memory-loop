@@ -89,7 +89,7 @@
   font-weight: var(--font-weight-normal);
   margin: 0;
   white-space: nowrap;
-  background: var(--gradient-primary);
+  background: var(--gradient-text-primary);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

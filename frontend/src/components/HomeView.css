@@ -53,33 +53,36 @@
   margin: 0;
 }
 
-.home-view__session-stats {
+/* Debrief Buttons */
+.home-view__debrief-buttons {
   display: flex;
-  gap: var(--spacing-lg);
+  flex-direction: row;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
 }
 
-.home-view__stat {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-
-.home-view__stat-value {
-  font-size: var(--font-size-lg);
+.home-view__debrief-button {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-accent-cyan);
+  color: var(--color-bg);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-accent-cyan);
-  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
 }
 
-.home-view__stat-label {
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.home-view__debrief-button:hover {
+  background: var(--color-accent-cyan-hover, #5ce0e6);
 }
 
-/* Tablet and up - horizontal quick actions */
+.home-view__debrief-button:active {
+  transform: scale(0.98);
+}
+
+/* Tablet and up - buttons in column to the right */
 @media (min-width: 768px) {
   .home-view {
     max-width: 1000px;
@@ -91,6 +94,11 @@
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
+  }
+
+  .home-view__debrief-buttons {
+    flex-direction: column;
+    align-items: flex-end;
   }
 }
 

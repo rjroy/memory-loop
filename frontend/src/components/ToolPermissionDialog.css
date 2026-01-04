@@ -169,7 +169,7 @@
 }
 
 .tool-permission__btn--allow:hover {
-  box-shadow: var(--glow-purple);
+  box-shadow: var(--glow-primary);
 }
 
 .tool-permission__btn:active {

@@ -37,7 +37,7 @@
 
 .recent-activity__heading {
   font-weight: var(--font-weight-bold);
-  color: var(--color-text-accent-cyan);
+  color: var(--color-text-accent-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: var(--spacing-xs);
@@ -100,13 +100,13 @@
 }
 
 .recent-activity__card--capture {
-  border-left: 3px solid var(--color-accent-cyan);
-  background: var(--glass-bg-cyan);
+  border-left: 3px solid var(--color-accent-tertiary);
+  background: var(--glass-bg-tertiary);
 }
 
 .recent-activity__card--discussion {
   border-left: 3px solid var(--color-accent);
-  background: var(--glass-bg-purple);
+  background: var(--glass-bg-primary);
 }
 
 @supports not (backdrop-filter: blur(10px)) {
@@ -197,7 +197,7 @@
 .recent-activity__action--primary:hover {
   background: var(--color-accent);
   color: white;
-  box-shadow: var(--glow-purple);
+  box-shadow: var(--glow-primary);
 }
 
 .recent-activity__action--danger {

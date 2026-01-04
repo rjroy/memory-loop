@@ -29,7 +29,7 @@
   flex-wrap: wrap;
   gap: var(--spacing-xs);
   padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--glass-bg-orange);
+  background: var(--glass-bg-quartary);
   backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--glass-border);
   font-size: var(--text-sm);
@@ -353,13 +353,6 @@
   }
   100% {
     background-position: -200% 0;
-  }
-}
-
-/* Dark mode adjustments */
-@media (prefers-color-scheme: dark) {
-  .markdown-viewer__content blockquote {
-    border-left-color: var(--color-accent-hover);
   }
 }
 

@@ -161,20 +161,20 @@
   --color-warning: #fbbf24;
 
   /* Synthwave accent colors */
-  --color-accent-pink: #ee6492;
-  --color-accent-purple: #a855f7;
-  --color-accent-cyan: #6fd5fa;
-  --color-accent-orange: #faa46f;
-  --color-accent: var(--color-accent-purple);
+  --color-accent-secondary: #ee6492;
+  --color-accent-primary: #a855f7;
+  --color-accent-tertiary: #6fd5fa;
+  --color-accent-quartary: #faa46f;
+  --color-accent: var(--color-accent-primary);
 
   --color-accent-hover: #9333ea;
 
   /* Synthwave accent colors for text */
-  --color-text-accent-pink: #ff88b0;
-  --color-text-accent-purple: #cd96ff;
-  --color-text-accent-cyan: #6fd5fa;
-  --color-text-accent-orange: #faa46f;
-  --color-text-accent: var(--color-text-accent-purple);
+  --color-text-accent-secondary: #ff88b0;
+  --color-text-accent-primary: #cd96ff;
+  --color-text-accent-tertiary: #6fd5fa;
+  --color-text-accent-quartary: #faa46f;
+  --color-text-accent: var(--color-text-accent-primary);
    
   /* Aliases for component compatibility */
   --color-bg: var(--color-background);
@@ -194,13 +194,13 @@
 
   /* Glassmorphism */
   --glass-bg: rgba(26, 29, 46, 0.9);
-  --glass-bg-purple: rgba(46, 26, 40, 0.85);
-  --glass-bg-purple-button: rgba(55, 34, 48, 0.85);
-  --glass-bg-purple-hover: rgba(81, 48, 71, 0.85);
-  --glass-bg-cyan: rgba(26, 40, 46, 0.85);
-  --glass-bg-orange: rgba(46, 40, 26, 0.85);
-  --glass-bg-secondary: var(--glass-bg-purple);
-  --glass-bg-tertiary: var(--glass-bg-cyan);
+  --glass-bg-primary: rgba(46, 26, 40, 0.85);
+  --glass-bg-primary-button: rgba(55, 34, 48, 0.85);
+  --glass-bg-primary-hover: rgba(81, 48, 71, 0.85);
+  --glass-bg-tertiary: rgba(26, 40, 46, 0.85);
+  --glass-bg-quartary: rgba(46, 40, 26, 0.85);
+  --glass-bg-secondary: var(--glass-bg-primary);
+  --glass-bg-tertiary: var(--glass-bg-tertiary);
   --glass-border: rgba(168, 85, 247, 0.25);
   --glass-border-hover: rgba(168, 85, 247, 0.5);
   --glass-border-accent: rgba(85, 168, 247, 0.5);
@@ -216,10 +216,10 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 
   /* Glow effects */
-  --glow-purple: 0 0 20px rgba(168, 85, 247, 0.4);
-  --glow-pink: 0 0 20px rgba(255, 107, 157, 0.4);
-  --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.4);
-  --glow-orange: 0 0 20px rgba(238, 163, 34, 0.4);
+  --glow-primary: 0 0 20px rgba(168, 85, 247, 0.4);
+  --glow-secondary: 0 0 20px rgba(255, 107, 157, 0.4);
+  --glow-tertiary: 0 0 20px rgba(34, 211, 238, 0.4);
+  --glow-quartary: 0 0 20px rgba(238, 163, 34, 0.4);
   --glow-success: 0 0 20px rgba(74, 222, 128, 0.3);
 
   /* Spacing scale (4px base) */

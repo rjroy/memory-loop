@@ -35,7 +35,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/images/bg-orange.webp');
+  background-image: url('/images/bg-quartary.webp');
   background-size: cover;
   background-position: center center;
   border-radius: inherit;
@@ -106,7 +106,7 @@
 
 .discussion__slash-hint {
   font-size: var(--font-size-xs);
-  color: var(--color-text-accent-cyan);
+  color: var(--color-text-accent-tertiary);
   padding: var(--spacing-xs) 0;
   font-weight: var(--font-weight-medium);
   font-family: var(--font-family-mono);
@@ -171,7 +171,7 @@
 }
 
 .discussion__send:hover:not(:disabled) {
-  box-shadow: var(--glow-purple);
+  box-shadow: var(--glow-primary);
   transform: scale(1.05);
 }
 

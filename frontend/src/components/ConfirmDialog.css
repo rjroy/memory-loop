@@ -98,7 +98,7 @@
 }
 
 .confirm-dialog__btn--confirm:hover {
-  box-shadow: var(--glow-purple);
+  box-shadow: var(--glow-primary);
 }
 
 .confirm-dialog__btn:active {

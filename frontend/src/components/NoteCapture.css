@@ -78,7 +78,7 @@
 }
 
 .note-capture__submit:hover:not(:disabled) {
-  box-shadow: var(--glow-purple);
+  box-shadow: var(--glow-primary);
   transform: translateY(-1px);
 }
 

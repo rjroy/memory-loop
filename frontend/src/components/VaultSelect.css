@@ -84,7 +84,7 @@
   width: 40px;
   height: 40px;
   border: 3px solid var(--glass-border);
-  border-top-color: var(--color-accent-purple);
+  border-top-color: var(--color-accent-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -138,7 +138,7 @@
 }
 
 .vault-select__retry-btn:hover {
-  box-shadow: var(--glow-purple);
+  box-shadow: var(--glow-primary);
   transform: translateY(-1px);
 }
 
@@ -289,7 +289,7 @@
 }
 
 .vault-select__card--loading {
-  border-color: var(--color-accent-purple);
+  border-color: var(--color-accent-primary);
 }
 
 .vault-select__vault-name {
@@ -320,13 +320,13 @@
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-medium);
   background: rgba(168, 85, 247, 0.15);
-  color: var(--color-text-accent-purple);
+  color: var(--color-text-accent-primary);
   border: 1px solid rgba(168, 85, 247, 0.3);
 }
 
 .vault-select__badge--claude {
   background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(255, 107, 157, 0.15) 100%);
-  color: var(--color-text-accent-pink);
+  color: var(--color-text-accent-secondary);
   border-color: rgba(255, 107, 157, 0.3);
 }
 
@@ -338,7 +338,7 @@
   width: 24px;
   height: 24px;
   border: 2px solid var(--glass-border);
-  border-top-color: var(--color-accent-purple);
+  border-top-color: var(--color-accent-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

@@ -113,7 +113,7 @@
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--color-text);
-  background: var(--glass-bg-purple-button);
+  background: var(--glass-bg-primary-button);
   backdrop-filter: blur(var(--glass-blur));
   border: none;
   border-radius: var(--radius-sm);
@@ -128,7 +128,7 @@
 }
 
 .task-list__group-header:hover {
-  background: var(--glass-bg-purple-hover);
+  background: var(--glass-bg-primary-hover);
 }
 
 .task-list__group-header:focus-visible {

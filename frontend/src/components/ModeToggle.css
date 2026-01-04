@@ -50,9 +50,9 @@
 
 .mode-toggle__segment--selected {
   background: var(--gradient-tertiary);
-  color: var(--color-text-accent-cyan);
+  color: var(--color-text-accent-tertiary);
   font-weight: var(--font-weight-bold);
-  box-shadow: var(--glow-purple);
+  box-shadow: var(--glow-primary);
   transition: all 0.3s var(--ease-bounce);
 }
 

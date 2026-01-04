@@ -92,14 +92,14 @@
 }
 
 .message-bubble--assistant .message-bubble__text code {
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: var(--color-black-a30);
   padding: 0.1em 0.3em;
   border-radius: 3px;
   font-size: 0.9em;
 }
 
 .message-bubble--assistant .message-bubble__text pre {
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: var(--color-black-a30);
   padding: 0.75em;
   border-radius: 6px;
   overflow-x: auto;
@@ -130,7 +130,7 @@
 .message-bubble--assistant .message-bubble__text blockquote {
   margin: 0.5em 0;
   padding-left: 0.75em;
-  border-left: 2px solid rgba(255, 255, 255, 0.3);
+  border-left: 2px solid var(--color-white-a30);
   opacity: 0.9;
 }
 

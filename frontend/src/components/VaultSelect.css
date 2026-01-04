@@ -269,7 +269,7 @@
 @media (hover: none) {
   .vault-select__card:hover:not(:disabled) {
     transform: none;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 24px var(--color-black-a20);
   }
 }
 
@@ -284,7 +284,7 @@
 
 .vault-select__card--selected {
   border-color: var(--glass-border-hover);
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(255, 107, 157, 0.1) 100%);
+  background: linear-gradient(135deg, var(--color-accent-primary-a15) 0%, var(--color-accent-secondary-a10) 100%);
   box-shadow: var(--glass-shadow-hover);
 }
 
@@ -319,15 +319,15 @@
   padding: 4px 10px;
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-medium);
-  background: rgba(168, 85, 247, 0.15);
+  background: var(--color-accent-primary-a15);
   color: var(--color-text-accent-primary);
-  border: 1px solid rgba(168, 85, 247, 0.3);
+  border: 1px solid var(--color-accent-primary-a30);
 }
 
 .vault-select__badge--claude {
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(255, 107, 157, 0.15) 100%);
+  background: linear-gradient(135deg, var(--color-accent-primary-a20) 0%, var(--color-accent-secondary-a15) 100%);
   color: var(--color-text-accent-secondary);
-  border-color: rgba(255, 107, 157, 0.3);
+  border-color: var(--color-accent-secondary-a30);
 }
 
 .vault-select__card-spinner {

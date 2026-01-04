@@ -143,84 +143,171 @@
 
 /* ============================================
    CSS Custom Properties (Design Tokens)
+
+   Color system uses OKLCH for perceptual uniformity.
+   All colors derive from the base palette below.
    ============================================ */
 
 :root {
-  /* Colors - Dark synthwave theme */
-  --color-background: #0f0f1a;
-  --color-surface: #1a1a2e;
-  --color-surface-elevated: #252540;
-  --color-text-primary: #f0f0f5;
-  --color-text-secondary: #dbdbeb;
-  --color-text-muted: #a7a7f4;
-  --color-text-note-heading: #bfb394ff;
-  --color-text-note-highlight: #f2cbc4ff;
-  --color-border: #2d2d4a;
-  --color-error: #f87171;
-  --color-success: #4ade80;
-  --color-warning: #fbbf24;
+  /* ==========================================
+     Base Palette - Dark Synthwave Theme
 
-  /* Synthwave accent colors */
-  --color-accent-secondary: #ee6492;
-  --color-accent-primary: #a855f7;
-  --color-accent-tertiary: #6fd5fa;
-  --color-accent-quartary: #faa46f;
+     OKLCH format: oklch(lightness chroma hue)
+     - Lightness: 0-1 (0=black, 1=white)
+     - Chroma: 0-0.4 (0=gray, higher=saturated)
+     - Hue: 0-360 degrees
+     ========================================== */
+
+  /* Backgrounds & Surfaces */
+  --color-background: oklch(0.13 0.02 285);
+  --color-surface: oklch(0.18 0.03 285);
+  --color-surface-elevated: oklch(0.23 0.04 285);
+
+  /* Text hierarchy */
+  --color-text-primary: oklch(0.96 0.01 285);
+  --color-text-secondary: oklch(0.89 0.02 285);
+  --color-text-muted: oklch(0.72 0.12 290);
+  --color-text-note-heading: oklch(0.77 0.08 85);
+  --color-text-note-highlight: oklch(0.86 0.06 25);
+
+  /* Borders */
+  --color-border: oklch(0.28 0.04 285);
+
+  /* Status colors */
+  --color-error: oklch(0.67 0.18 25);
+  --color-success: oklch(0.80 0.18 145);
+  --color-warning: oklch(0.82 0.16 85);
+
+  /* Accent palette - Synthwave */
+  --color-accent-primary: oklch(0.59 0.24 300);
+  --color-accent-secondary: oklch(0.65 0.19 360);
+  --color-accent-tertiary: oklch(0.82 0.11 210);
+  --color-accent-quartary: oklch(0.77 0.14 55);
   --color-accent: var(--color-accent-primary);
+  --color-accent-hover: oklch(0.52 0.26 300);
 
-  --color-accent-hover: #9333ea;
-
-  /* Synthwave accent colors for text */
-  --color-text-accent-secondary: #ff88b0;
-  --color-text-accent-primary: #cd96ff;
-  --color-text-accent-tertiary: #6fd5fa;
-  --color-text-accent-quartary: #faa46f;
+  /* Text accent colors (lighter for readability) */
+  --color-text-accent-primary: oklch(0.75 0.16 300);
+  --color-text-accent-secondary: oklch(0.78 0.14 360);
+  --color-text-accent-tertiary: oklch(0.82 0.11 210);
+  --color-text-accent-quartary: oklch(0.77 0.14 55);
   --color-text-accent: var(--color-text-accent-primary);
-   
-  /* Aliases for component compatibility */
+
+  /* Status variants */
+  --color-error-light: oklch(0.25 0.08 25);
+  --color-warning-light: oklch(0.35 0.10 70);
+  --color-warning-dark: oklch(0.55 0.14 70);
+
+  /* ==========================================
+     Alpha Variants
+
+     Naming: --color-{name}-a{opacity}
+     Opacity scale: 03, 05, 07, 10, 12, 15, 20, 25, 30, 40, 50, 60, 95
+     ========================================== */
+
+  /* Accent Primary - Purple (most commonly used) */
+  --color-accent-primary-a05: oklch(from var(--color-accent-primary) l c h / 0.05);
+  --color-accent-primary-a08: oklch(from var(--color-accent-primary) l c h / 0.08);
+  --color-accent-primary-a10: oklch(from var(--color-accent-primary) l c h / 0.10);
+  --color-accent-primary-a12: oklch(from var(--color-accent-primary) l c h / 0.12);
+  --color-accent-primary-a15: oklch(from var(--color-accent-primary) l c h / 0.15);
+  --color-accent-primary-a20: oklch(from var(--color-accent-primary) l c h / 0.20);
+  --color-accent-primary-a25: oklch(from var(--color-accent-primary) l c h / 0.25);
+  --color-accent-primary-a30: oklch(from var(--color-accent-primary) l c h / 0.30);
+  --color-accent-primary-a40: oklch(from var(--color-accent-primary) l c h / 0.40);
+
+  /* Accent Secondary - Pink */
+  --color-accent-secondary-a10: oklch(from var(--color-accent-secondary) l c h / 0.10);
+  --color-accent-secondary-a15: oklch(from var(--color-accent-secondary) l c h / 0.15);
+  --color-accent-secondary-a30: oklch(from var(--color-accent-secondary) l c h / 0.30);
+  --color-accent-secondary-a40: oklch(from var(--color-accent-secondary) l c h / 0.40);
+
+  /* Accent Tertiary - Cyan */
+  --color-accent-tertiary-a40: oklch(from var(--color-accent-tertiary) l c h / 0.40);
+
+  /* Accent Quartary - Orange */
+  --color-accent-quartary-a40: oklch(from var(--color-accent-quartary) l c h / 0.40);
+
+  /* Error - Red */
+  --color-error-a10: oklch(from var(--color-error) l c h / 0.10);
+  --color-error-a30: oklch(from var(--color-error) l c h / 0.30);
+  --color-error-a40: oklch(from var(--color-error) l c h / 0.40);
+
+  /* Success - Green */
+  --color-success-a30: oklch(from var(--color-success) l c h / 0.30);
+
+  /* Black - Shadows & Overlays */
+  --color-black-a20: oklch(0 0 0 / 0.20);
+  --color-black-a30: oklch(0 0 0 / 0.30);
+  --color-black-a40: oklch(0 0 0 / 0.40);
+  --color-black-a50: oklch(0 0 0 / 0.50);
+  --color-black-a60: oklch(0 0 0 / 0.60);
+
+  /* White - Highlights & Borders */
+  --color-white-a03: oklch(1 0 0 / 0.03);
+  --color-white-a05: oklch(1 0 0 / 0.05);
+  --color-white-a07: oklch(1 0 0 / 0.07);
+  --color-white-a10: oklch(1 0 0 / 0.10);
+  --color-white-a30: oklch(1 0 0 / 0.30);
+
+  /* Background - For overlays */
+  --color-background-a60: oklch(from var(--color-background) l c h / 0.60);
+
+  /* Surface - For glass effects */
+  --color-surface-a90: oklch(from var(--color-surface) l c h / 0.90);
+  --color-surface-a95: oklch(from var(--color-surface) l c h / 0.95);
+
+  /* ==========================================
+     Semantic Aliases
+     ========================================== */
+
+  /* Component compatibility */
   --color-bg: var(--color-background);
   --color-bg-secondary: var(--color-surface);
   --color-bg-tertiary: var(--color-surface-elevated);
   --color-text: var(--color-text-primary);
-  --color-error-light: #450a0a;
-  --color-warning-light: #78350f;
-  --color-warning-dark: #b45309;
 
-  /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
-  --gradient-secondary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
-  --gradient-tertiary: linear-gradient(135deg, #a67a38 0%, #B34B6E 100%);
-  --gradient-secondary-hover: linear-gradient(135deg, #1fb8d9 0%, #9333ea 100%);
-  --gradient-surface: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
+  /* ==========================================
+     Gradients
+     ========================================== */
+  --gradient-primary: linear-gradient(135deg, var(--color-accent-primary) 0%, var(--color-accent-secondary) 100%);
+  --gradient-secondary: linear-gradient(135deg, var(--color-accent-tertiary) 0%, var(--color-accent-primary) 100%);
+  --gradient-tertiary: linear-gradient(135deg, oklch(0.55 0.12 70) 0%, oklch(0.50 0.16 350) 100%);
+  --gradient-secondary-hover: linear-gradient(135deg, oklch(0.75 0.13 210) 0%, var(--color-accent-hover) 100%);
+  --gradient-surface: linear-gradient(180deg, var(--color-surface) 0%, var(--color-background) 100%);
 
-  /* Glassmorphism */
-  --glass-bg: rgba(26, 29, 46, 0.9);
-  --glass-bg-primary: rgba(46, 26, 40, 0.85);
-  --glass-bg-primary-button: rgba(55, 34, 48, 0.85);
-  --glass-bg-primary-hover: rgba(81, 48, 71, 0.85);
-  --glass-bg-tertiary: rgba(26, 40, 46, 0.85);
-  --glass-bg-quartary: rgba(46, 40, 26, 0.85);
+  /* ==========================================
+     Glassmorphism
+     ========================================== */
+  --glass-bg: var(--color-surface-a90);
+  --glass-bg-primary: oklch(0.22 0.05 340 / 0.85);
+  --glass-bg-primary-button: oklch(0.25 0.05 340 / 0.85);
+  --glass-bg-primary-hover: oklch(0.32 0.06 340 / 0.85);
+  --glass-bg-tertiary: oklch(0.22 0.04 200 / 0.85);
+  --glass-bg-quartary: oklch(0.22 0.04 70 / 0.85);
   --glass-bg-secondary: var(--glass-bg-primary);
-  --glass-bg-tertiary: var(--glass-bg-tertiary);
-  --glass-border: rgba(168, 85, 247, 0.25);
-  --glass-border-hover: rgba(168, 85, 247, 0.5);
-  --glass-border-accent: rgba(85, 168, 247, 0.5);
+  --glass-border: var(--color-accent-primary-a25);
+  --glass-border-hover: oklch(from var(--color-accent-primary) l c h / 0.5);
+  --glass-border-accent: oklch(from var(--color-accent-tertiary) l c h / 0.5);
   --glass-blur: 10px;
   --glass-blur-light: 2px;
   --glass-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+    0 4px 24px var(--color-black-a30),
+    inset 0 1px 0 var(--color-white-a07),
+    inset 0 -1px 0 var(--color-black-a20);
   --glass-shadow-hover:
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 0 24px rgba(168, 85, 247, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 8px 32px var(--color-black-a40),
+    0 0 24px var(--color-accent-primary-a15),
+    inset 0 1px 0 var(--color-white-a10);
 
-  /* Glow effects */
-  --glow-primary: 0 0 20px rgba(168, 85, 247, 0.4);
-  --glow-secondary: 0 0 20px rgba(255, 107, 157, 0.4);
-  --glow-tertiary: 0 0 20px rgba(34, 211, 238, 0.4);
-  --glow-quartary: 0 0 20px rgba(238, 163, 34, 0.4);
-  --glow-success: 0 0 20px rgba(74, 222, 128, 0.3);
+  /* ==========================================
+     Glow Effects
+     ========================================== */
+  --glow-primary: 0 0 20px var(--color-accent-primary-a40);
+  --glow-secondary: 0 0 20px var(--color-accent-secondary-a40);
+  --glow-tertiary: 0 0 20px var(--color-accent-tertiary-a40);
+  --glow-quartary: 0 0 20px var(--color-accent-quartary-a40);
+  --glow-success: 0 0 20px var(--color-success-a30);
 
   /* Spacing scale (4px base) */
   --space-1: 0.25rem;   /* 4px */

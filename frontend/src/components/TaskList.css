@@ -90,7 +90,7 @@
 .task-list__total-count {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
-  background: rgba(168, 85, 247, 0.15);
+  background: var(--color-accent-primary-a15);
   padding: 2px 8px;
   border-radius: var(--radius-sm);
 }
@@ -177,7 +177,7 @@
   flex-shrink: 0;
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
-  background: rgba(168, 85, 247, 0.15);
+  background: var(--color-accent-primary-a15);
   padding: 2px 8px;
   border-radius: var(--radius-sm);
 }
@@ -224,7 +224,7 @@
 }
 
 .task-list__toggle:hover {
-  background: rgba(168, 85, 247, 0.1);
+  background: var(--color-accent-primary-a10);
 }
 
 .task-list__toggle:focus-visible {
@@ -233,7 +233,7 @@
 }
 
 .task-list__toggle:active {
-  background: rgba(168, 85, 247, 0.2);
+  background: var(--color-accent-primary-a20);
 }
 
 .task-list__indicator {
@@ -307,7 +307,7 @@
 @media (hover: none) {
   .task-list__toggle:hover,
   .task-list__group-header:hover {
-    background: rgba(168, 85, 247, 0.08);
+    background: var(--color-accent-primary-a08);
   }
 
   .task-list__text-btn:hover {

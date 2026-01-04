@@ -46,7 +46,7 @@
 .goals-card__heading {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
-  color: var(--color-accent-pink);
+  color: var(--color-text-accent-pink);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin: 0 0 var(--spacing-sm) 0;

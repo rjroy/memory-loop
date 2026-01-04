@@ -151,12 +151,10 @@
   --color-surface: #1a1a2e;
   --color-surface-elevated: #252540;
   --color-text-primary: #f0f0f5;
-  --color-text-secondary: #b8b8d0;
-  --color-text-muted: #6a6a8a;
+  --color-text-secondary: #dbdbeb;
+  --color-text-muted: #a7a7f4;
   --color-text-note-heading: #bfb394ff;
   --color-text-note-highlight: #f2cbc4ff;
-  --color-accent: #a855f7;
-  --color-accent-hover: #9333ea;
   --color-border: #2d2d4a;
   --color-error: #f87171;
   --color-success: #4ade80;
@@ -167,23 +165,30 @@
   --color-accent-purple: #a855f7;
   --color-accent-cyan: #6fd5fa;
   --color-accent-orange: #faa46f;
-  
+  --color-accent: var(--color-accent-purple);
+
+  --color-accent-hover: #9333ea;
+
+  /* Synthwave accent colors for text */
+  --color-text-accent-pink: #ff88b0;
+  --color-text-accent-purple: #cd96ff;
+  --color-text-accent-cyan: #6fd5fa;
+  --color-text-accent-orange: #faa46f;
+  --color-text-accent: var(--color-text-accent-purple);
+   
   /* Aliases for component compatibility */
   --color-bg: var(--color-background);
   --color-bg-secondary: var(--color-surface);
   --color-bg-tertiary: var(--color-surface-elevated);
   --color-text: var(--color-text-primary);
-  --color-primary: var(--color-accent);
-  --color-primary-hover: var(--color-accent-hover);
-  --color-primary-light: #312e81;
   --color-error-light: #450a0a;
   --color-warning-light: #78350f;
   --color-warning-dark: #b45309;
 
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, #a855f7 0%, #ff6b9d 100%);
-  --gradient-primary-dim: linear-gradient(135deg, #a67a38 0%, #B34B6E 100%);
   --gradient-secondary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
+  --gradient-tertiary: linear-gradient(135deg, #a67a38 0%, #B34B6E 100%);
   --gradient-secondary-hover: linear-gradient(135deg, #1fb8d9 0%, #9333ea 100%);
   --gradient-surface: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
 
@@ -367,7 +372,7 @@ p {
 }
 
 a {
-  color: var(--color-accent);
+  color: var(--color-text-accent);
   text-decoration: none;
   transition: color var(--transition-fast);
 }

@@ -106,7 +106,7 @@
 
 .discussion__slash-hint {
   font-size: var(--font-size-xs);
-  color: var(--color-accent-cyan);
+  color: var(--color-text-accent-cyan);
   padding: var(--spacing-xs) 0;
   font-weight: var(--font-weight-medium);
   font-family: var(--font-family-mono);

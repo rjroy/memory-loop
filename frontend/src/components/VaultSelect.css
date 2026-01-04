@@ -320,13 +320,13 @@
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-medium);
   background: rgba(168, 85, 247, 0.15);
-  color: var(--color-accent-purple);
+  color: var(--color-text-accent-purple);
   border: 1px solid rgba(168, 85, 247, 0.3);
 }
 
 .vault-select__badge--claude {
   background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(255, 107, 157, 0.15) 100%);
-  color: var(--color-accent-pink);
+  color: var(--color-text-accent-pink);
   border-color: rgba(255, 107, 157, 0.3);
 }
 

@@ -70,7 +70,7 @@
 }
 
 .browse-mode__tree-title--clickable:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 

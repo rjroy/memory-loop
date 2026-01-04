@@ -16,7 +16,7 @@
 }
 
 .tool-display--loading {
-  border-color: var(--color-primary);
+  border-color: var(--color-accent);
   border-style: dashed;
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.2),
@@ -45,7 +45,7 @@
 }
 
 .tool-display__header:focus {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-accent);
   outline-offset: -2px;
 }
 
@@ -67,7 +67,7 @@
   width: 16px;
   height: 16px;
   border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
+  border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

@@ -5,7 +5,7 @@
  * Displays session context, goals, inspiration, and recent activity.
  */
 
-import React, { useEffect, useRef, useCallback, useState } from "react";
+import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useSession } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { RecentActivity } from "./RecentActivity";
@@ -19,37 +19,99 @@ import type {
 import "./HomeView.css";
 
 /**
- * Formats a duration in milliseconds to a human-readable string.
+ * Debrief button configuration.
  */
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const hours = Math.floor(minutes / 60);
+interface DebriefButton {
+  label: string;
+  command: string;
+}
 
-  if (hours > 0) {
-    const remainingMinutes = minutes % 60;
-    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+/**
+ * Determines which debrief buttons should be shown based on the current date
+ * and whether a daily note exists.
+ *
+ * @param today - Current date (for testing, defaults to now)
+ * @param hasTodayNote - Whether a note exists for today
+ * @returns Array of buttons to display (max 3)
+ */
+export function getDebriefButtons(
+  today: Date = new Date(),
+  hasTodayNote: boolean = false
+): DebriefButton[] {
+  const buttons: DebriefButton[] = [];
+  const dayOfWeek = today.getDay(); // 0 = Sunday, 5 = Friday, 6 = Saturday
+  const dayOfMonth = today.getDate();
+  const year = today.getFullYear();
+  const month = today.getMonth(); // 0-indexed
+
+  // Daily Debrief: shown when there's a note for today
+  if (hasTodayNote) {
+    buttons.push({ label: "Daily Debrief", command: "/daily-debrief" });
   }
-  if (minutes > 0) {
-    return `${minutes}m`;
+
+  // Weekly Debrief: shown Friday (5) through Sunday (0)
+  if (dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6) {
+    buttons.push({ label: "Weekly Debrief", command: "/weekly-debrief" });
   }
-  return "< 1m";
+
+  // Monthly Summary: shown last 3 days of month or first 3 days of next month
+  // Get last day of current month
+  const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+  const isLastDaysOfMonth = dayOfMonth >= lastDayOfMonth - 2;
+  const isFirstDaysOfMonth = dayOfMonth <= 3;
+
+  if (isLastDaysOfMonth || isFirstDaysOfMonth) {
+    // Determine which month to summarize
+    // First 3 days: summarize previous month
+    // Last 3 days: summarize current month
+    let summaryYear = year;
+    let summaryMonth = month + 1; // Convert to 1-indexed
+
+    if (isFirstDaysOfMonth) {
+      // Summarize previous month
+      if (month === 0) {
+        summaryYear = year - 1;
+        summaryMonth = 12;
+      } else {
+        summaryMonth = month; // 0-indexed month equals previous month 1-indexed (e.g., month=1 Feb → summaryMonth=1 → "01" Jan)
+      }
+    }
+
+    const monthStr = summaryMonth.toString().padStart(2, "0");
+    buttons.push({
+      label: "Monthly Summary",
+      command: `/monthly-summary ${summaryYear} ${monthStr}`,
+    });
+  }
+
+  return buttons;
+}
+
+/**
+ * Formats today's date as YYYY-MM-DD for comparison with note dates.
+ */
+function formatDateAsYYYYMMDD(date: Date): string {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 /**
  * Home view with session context and recent activity.
  *
- * - Shows vault name and session stats
+ * - Shows vault name and debrief action buttons
  * - Displays goals, inspiration, and recent activity
  */
 export function HomeView(): React.ReactNode {
   const {
     vault,
-    sessionStartTime,
-    messages,
+    recentNotes,
     setRecentNotes,
     setRecentDiscussions,
     setGoals,
+    setMode,
+    setDiscussionPrefill,
     removeDiscussion,
   } = useSession();
 
@@ -161,10 +223,23 @@ export function HomeView(): React.ReactNode {
     }
   }, [connectionStatus, vault, sendMessage]);
 
-  // Calculate session duration
-  const sessionDuration = sessionStartTime
-    ? formatDuration(Date.now() - sessionStartTime.getTime())
-    : null;
+  // Determine which debrief buttons to show (single Date for consistency)
+  const today = new Date();
+  const todayStr = formatDateAsYYYYMMDD(today);
+  const hasTodayNote = recentNotes.some((note) => note.date === todayStr);
+  const debriefButtons = useMemo(
+    () => getDebriefButtons(today, hasTodayNote),
+    [todayStr, hasTodayNote]
+  );
+
+  // Handle debrief button click
+  const handleDebriefClick = useCallback(
+    (command: string) => {
+      setDiscussionPrefill(command);
+      setMode("discussion");
+    },
+    [setDiscussionPrefill, setMode]
+  );
 
   return (
     <div className="home-view">
@@ -174,18 +249,21 @@ export function HomeView(): React.ReactNode {
           <span className="home-view__vault-label">Current Vault</span>
           <h2 className="home-view__vault-name">{vault?.name ?? "—"}</h2>
         </div>
-        <div className="home-view__session-stats">
-          {sessionDuration && (
-            <div className="home-view__stat">
-              <span className="home-view__stat-value">{sessionDuration}</span>
-              <span className="home-view__stat-label">Session</span>
-            </div>
-          )}
-          <div className="home-view__stat">
-            <span className="home-view__stat-value">{messages.length}</span>
-            <span className="home-view__stat-label">Messages</span>
+        {debriefButtons.length > 0 && (
+          <div className="home-view__debrief-buttons">
+            {debriefButtons.map((btn) => (
+              <button
+                key={btn.command}
+                type="button"
+                className="home-view__debrief-button"
+                onClick={() => handleDebriefClick(btn.command)}
+                aria-label={`Start ${btn.label.toLowerCase()} discussion`}
+              >
+                {btn.label}
+              </button>
+            ))}
           </div>
-        </div>
+        )}
       </section>
 
       {/* Inspiration */}

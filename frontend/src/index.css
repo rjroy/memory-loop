@@ -272,20 +272,22 @@
      ========================================== */
   --gradient-primary: linear-gradient(135deg, var(--color-accent-primary) 0%, var(--color-accent-secondary) 100%);
   --gradient-secondary: linear-gradient(135deg, var(--color-accent-tertiary) 0%, var(--color-accent-primary) 100%);
-  --gradient-tertiary: linear-gradient(135deg, oklch(0.55 0.12 70) 0%, oklch(0.50 0.16 350) 100%);
-  --gradient-secondary-hover: linear-gradient(135deg, oklch(0.75 0.13 210) 0%, var(--color-accent-hover) 100%);
+  --gradient-tertiary: linear-gradient(135deg, oklch(from var(--color-accent-quartary) calc(l - 0.2) c h) 0%, oklch(from var(--color-accent-secondary) calc(l - 0.15) c h) 100%);
+  --gradient-secondary-hover: linear-gradient(135deg, oklch(from var(--color-accent-tertiary) calc(l + 0.08) c h) 0%, var(--color-accent-hover) 100%);
   --gradient-surface: linear-gradient(180deg, var(--color-surface) 0%, var(--color-background) 100%);
-  --gradient-error: linear-gradient(135deg, var(--color-error) 0%, oklch(0.53 0.21 27) 100%);
+  --gradient-error: linear-gradient(135deg, var(--color-error) 0%, oklch(from var(--color-error) calc(l - 0.14) c h) 100%);
 
   /* ==========================================
      Glassmorphism
+
+     Glass backgrounds use accent hues at low lightness/chroma.
      ========================================== */
   --glass-bg: var(--color-surface-a90);
-  --glass-bg-primary: oklch(0.22 0.05 340 / 0.85);
-  --glass-bg-primary-button: oklch(0.25 0.05 340 / 0.85);
-  --glass-bg-primary-hover: oklch(0.32 0.06 340 / 0.85);
-  --glass-bg-tertiary: oklch(0.22 0.04 200 / 0.85);
-  --glass-bg-quartary: oklch(0.22 0.04 70 / 0.85);
+  --glass-bg-primary: oklch(from var(--color-accent-secondary) 0.22 0.05 h / 0.85);
+  --glass-bg-primary-button: oklch(from var(--color-accent-secondary) 0.25 0.05 h / 0.85);
+  --glass-bg-primary-hover: oklch(from var(--color-accent-secondary) 0.32 0.06 h / 0.85);
+  --glass-bg-tertiary: oklch(from var(--color-accent-tertiary) 0.22 0.04 h / 0.85);
+  --glass-bg-quartary: oklch(from var(--color-accent-quartary) 0.22 0.04 h / 0.85);
   --glass-bg-secondary: var(--glass-bg-primary);
   --glass-border: var(--color-accent-primary-a25);
   --glass-border-hover: oklch(from var(--color-accent-primary) l c h / 0.5);

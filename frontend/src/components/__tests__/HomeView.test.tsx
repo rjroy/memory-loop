@@ -171,6 +171,15 @@ describe("getDebriefButtons", () => {
       expect(monthlyBtn).toBeTruthy();
       expect(monthlyBtn?.command).toBe("/monthly-summary 2026 02");
     });
+
+    it("handles February 29 in a leap year", () => {
+      // 2028-02-29 (leap year, Feb has 29 days)
+      const buttons = getDebriefButtons(new Date("2028-02-29"), false);
+
+      const monthlyBtn = buttons.find((b) => b.label === "Monthly Summary");
+      expect(monthlyBtn).toBeTruthy();
+      expect(monthlyBtn?.command).toBe("/monthly-summary 2028 02");
+    });
   });
 
   describe("multiple buttons", () => {

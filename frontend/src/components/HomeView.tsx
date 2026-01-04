@@ -73,7 +73,7 @@ export function getDebriefButtons(
         summaryYear = year - 1;
         summaryMonth = 12;
       } else {
-        summaryMonth = month; // Previous month (already 0-indexed, so this is correct for 1-indexed)
+        summaryMonth = month; // 0-indexed month equals previous month 1-indexed (e.g., month=1 Feb → summaryMonth=1 → "01" Jan)
       }
     }
 
@@ -223,12 +223,13 @@ export function HomeView(): React.ReactNode {
     }
   }, [connectionStatus, vault, sendMessage]);
 
-  // Determine which debrief buttons to show
-  const todayStr = formatDateAsYYYYMMDD(new Date());
+  // Determine which debrief buttons to show (single Date for consistency)
+  const today = new Date();
+  const todayStr = formatDateAsYYYYMMDD(today);
   const hasTodayNote = recentNotes.some((note) => note.date === todayStr);
   const debriefButtons = useMemo(
-    () => getDebriefButtons(new Date(), hasTodayNote),
-    [hasTodayNote]
+    () => getDebriefButtons(today, hasTodayNote),
+    [todayStr, hasTodayNote]
   );
 
   // Handle debrief button click

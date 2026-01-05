@@ -27,12 +27,14 @@ const mockGetVaultById = mock<(id: string) => Promise<VaultInfo | null>>(() =>
 
 // Mock session manager functions
 const mockInterrupt = mock(() => Promise.resolve());
+const mockSupportedCommands = mock(() => Promise.resolve([]));
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockCreateSession = mock<(...args: any[]) => Promise<any>>(() =>
   Promise.resolve({
     sessionId: "test-session-id",
     events: (async function* () {})(),
     interrupt: mockInterrupt,
+    supportedCommands: mockSupportedCommands,
   })
 );
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,6 +43,7 @@ const mockResumeSession = mock<(...args: any[]) => Promise<any>>(() =>
     sessionId: "resumed-session-id",
     events: (async function* () {})(),
     interrupt: mockInterrupt,
+    supportedCommands: mockSupportedCommands,
   })
 );
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -667,6 +670,7 @@ describe("WebSocket Handler", () => {
         sessionId: "session-1",
         events: (async function* () {})(),
         interrupt: mockInterrupt,
+        supportedCommands: mockSupportedCommands,
       });
 
       await handler.onMessage(
@@ -3057,6 +3061,7 @@ describe("WebSocket Handler", () => {
           yield { type: "system", session_id: "active-session-id" };
         })(),
         interrupt: mockInterrupt,
+        supportedCommands: mockSupportedCommands,
       });
 
       const handler = createWebSocketHandler();

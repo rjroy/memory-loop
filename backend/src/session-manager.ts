@@ -12,7 +12,11 @@ import {
   type Query,
   type SDKMessage,
   type Options,
+  type SlashCommand as SDKSlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
+
+// Re-export the SDK's SlashCommand type for use by other modules
+export type { SDKSlashCommand };
 import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@memory-loop/shared";
 import { directoryExists, fileExists } from "./vault-manager";
 import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
@@ -551,6 +555,8 @@ export interface SessionQueryResult {
   events: AsyncGenerator<SDKMessage, void>;
   /** Function to interrupt the query */
   interrupt: () => Promise<void>;
+  /** Function to fetch supported slash commands */
+  supportedCommands: () => Promise<SDKSlashCommand[]>;
 }
 
 /**
@@ -720,6 +726,7 @@ export async function createSession(
       sessionId,
       events: wrapGenerator(firstEvent, queryResult),
       interrupt: () => queryResult.interrupt(),
+      supportedCommands: () => queryResult.supportedCommands(),
     };
   } catch (error) {
     log.error("Failed to create session", error);
@@ -811,6 +818,7 @@ export async function resumeSession(
       sessionId: resumedId,
       events: wrapGenerator(firstEvent, queryResult),
       interrupt: () => queryResult.interrupt(),
+      supportedCommands: () => queryResult.supportedCommands(),
     };
   } catch (error) {
     log.error("Failed to resume session", error);

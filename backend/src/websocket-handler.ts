@@ -11,6 +11,7 @@ import type {
   ClientMessage,
   ErrorCode,
   StoredToolInvocation,
+  SlashCommand,
 } from "@memory-loop/shared";
 import { safeParseClientMessage } from "@memory-loop/shared";
 import { discoverVaults, getVaultById, getVaultGoals } from "./vault-manager";
@@ -157,6 +158,46 @@ export class WebSocketHandler {
   ): void {
     log.error(`Sending error: ${code} - ${message}`);
     this.send(ws, { type: "error", code, message });
+  }
+
+  /**
+   * Fetches slash commands from a session with graceful error handling.
+   * Returns empty array if the SDK call fails or returns empty.
+   *
+   * Per spec REQ-F-22: If supportedCommands() throws, log warning and continue without commands.
+   * Per spec REQ-F-21: If SDK returns empty array, it's handled correctly (no error).
+   *
+   * @param queryResult - The session query result with supportedCommands method
+   * @returns Array of SlashCommand objects, or empty array on failure
+   */
+  private async fetchSlashCommands(
+    queryResult: SessionQueryResult
+  ): Promise<SlashCommand[]> {
+    try {
+      log.info("Fetching slash commands from SDK...");
+      const sdkCommands = await queryResult.supportedCommands();
+
+      // Handle empty array (valid case per REQ-F-21)
+      if (sdkCommands.length === 0) {
+        log.info("SDK returned no slash commands");
+        return [];
+      }
+
+      // Map SDK commands to protocol format
+      // SDK returns { name, description, argumentHint } where name lacks "/" prefix
+      const commands: SlashCommand[] = sdkCommands.map((cmd) => ({
+        name: cmd.name.startsWith("/") ? cmd.name : `/${cmd.name}`,
+        description: cmd.description,
+        argumentHint: cmd.argumentHint || undefined,
+      }));
+
+      log.info(`Fetched ${commands.length} slash commands`);
+      return commands;
+    } catch (error) {
+      // Graceful degradation per REQ-F-22: log warning and continue without commands
+      log.warn("Failed to fetch slash commands from SDK, continuing without commands", error);
+      return [];
+    }
   }
 
   /**
@@ -538,13 +579,19 @@ export class WebSocketHandler {
       this.state.currentSessionId = queryResult.sessionId;
 
       // Notify client of new session ID so it can persist for resume
+      // Also fetch and include slash commands for the autocomplete feature
       if (isNewSession) {
         log.info(`Sending session_ready with new sessionId: ${queryResult.sessionId}`);
+
+        // Fetch slash commands (graceful failure returns empty array)
+        const slashCommands = await this.fetchSlashCommands(queryResult);
+
         this.send(ws, {
           type: "session_ready",
           sessionId: queryResult.sessionId,
           vaultId: this.state.currentVault.id,
           createdAt: new Date().toISOString(), // Session was just created
+          slashCommands: slashCommands.length > 0 ? slashCommands : undefined,
         });
       }
 

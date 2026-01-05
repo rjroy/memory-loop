@@ -27,7 +27,7 @@ const mockGetVaultById = mock<(id: string) => Promise<VaultInfo | null>>(() =>
 
 // Mock session manager functions
 const mockInterrupt = mock(() => Promise.resolve());
-const mockSupportedCommands = mock(() => Promise.resolve([]));
+const mockSupportedCommands = mock<() => Promise<Array<{ name: string; description: string; argumentHint?: string }>>>(() => Promise.resolve([]));
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockCreateSession = mock<(...args: any[]) => Promise<any>>(() =>
   Promise.resolve({
@@ -1363,6 +1363,196 @@ describe("WebSocket Handler", () => {
 
       // Wait for first to complete
       await firstPromise;
+    });
+  });
+
+  // ===========================================================================
+  // Slash Command Fetching Tests
+  // ===========================================================================
+
+  describe("slash command fetching", () => {
+    test("includes slash commands in session_ready when SDK returns commands", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Mock SDK returning slash commands
+      const sdkCommands = [
+        { name: "commit", description: "Create a commit", argumentHint: "message" },
+        { name: "/review", description: "Review code" }, // Already has prefix
+      ];
+      mockSupportedCommands.mockResolvedValue(sdkCommands);
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "new-session",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+        supportedCommands: mockSupportedCommands,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Send discussion message to trigger session creation
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      const messages = ws.getMessages();
+
+      // Find the session_ready message that includes slash commands
+      // (the second one, after vault selection and session creation)
+      const sessionReadyWithCommands = messages.find(
+        (m) => m.type === "session_ready" && "slashCommands" in m && m.slashCommands
+      );
+
+      expect(sessionReadyWithCommands).toBeDefined();
+      if (sessionReadyWithCommands?.type === "session_ready" && sessionReadyWithCommands.slashCommands) {
+        expect(sessionReadyWithCommands.slashCommands).toHaveLength(2);
+        // Verify "/" prefix was added to first command
+        expect(sessionReadyWithCommands.slashCommands[0].name).toBe("/commit");
+        expect(sessionReadyWithCommands.slashCommands[0].description).toBe("Create a commit");
+        expect(sessionReadyWithCommands.slashCommands[0].argumentHint).toBe("message");
+        // Verify "/" prefix was preserved on second command
+        expect(sessionReadyWithCommands.slashCommands[1].name).toBe("/review");
+      }
+    });
+
+    test("handles empty slash commands array without error", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Mock SDK returning empty commands array
+      mockSupportedCommands.mockResolvedValue([]);
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "new-session",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+        supportedCommands: mockSupportedCommands,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      const messages = ws.getMessages();
+
+      // Should complete without error
+      expect(messages.some((m) => m.type === "response_end")).toBe(true);
+
+      // session_ready should NOT include slashCommands key when empty
+      const sessionReadyAfterDiscussion = messages.find(
+        (m, i) => m.type === "session_ready" && i > 0
+      );
+      expect(sessionReadyAfterDiscussion).toBeDefined();
+      if (sessionReadyAfterDiscussion?.type === "session_ready") {
+        expect(sessionReadyAfterDiscussion.slashCommands).toBeUndefined();
+      }
+    });
+
+    test("continues without commands when SDK throws error", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Mock SDK throwing error
+      mockSupportedCommands.mockRejectedValue(new Error("SDK not available"));
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "new-session",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+        supportedCommands: mockSupportedCommands,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      const messages = ws.getMessages();
+
+      // Should complete without error (graceful degradation)
+      expect(messages.some((m) => m.type === "response_end")).toBe(true);
+      // Should not have an error message
+      expect(messages.every((m) => m.type !== "error")).toBe(true);
+
+      // session_ready should be sent but without slashCommands
+      const sessionReadyAfterDiscussion = messages.find(
+        (m, i) => m.type === "session_ready" && i > 0
+      );
+      expect(sessionReadyAfterDiscussion).toBeDefined();
+    });
+
+    test("does not re-fetch commands on session resume", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Reset mock call history from other tests in this suite
+      mockSupportedCommands.mockClear();
+
+      // Mock session for resume
+      mockLoadSession.mockResolvedValue({
+        id: "existing-session",
+        vaultId: "test-vault",
+        vaultPath: "/tmp/test-vault",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        messages: [{ id: "1", role: "user", content: "Hi", timestamp: new Date().toISOString() }],
+      });
+
+      mockSupportedCommands.mockResolvedValue([
+        { name: "test", description: "Test command" },
+      ]);
+
+      mockResumeSession.mockResolvedValue({
+        sessionId: "existing-session",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+        supportedCommands: mockSupportedCommands,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Resume an existing session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "resume_session", sessionId: "existing-session" })
+      );
+
+      // Send a new message in the resumed session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Continue chat" })
+      );
+
+      // supportedCommands should NOT have been called (resume doesn't re-fetch)
+      // because the session already exists (isNewSession = false)
+      expect(mockSupportedCommands).not.toHaveBeenCalled();
     });
   });
 

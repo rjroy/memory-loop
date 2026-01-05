@@ -8,6 +8,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import {
   CONFIG_FILE_NAME,
   DEFAULT_METADATA_PATH,
@@ -21,8 +22,11 @@ import {
   resolveGeneralInspirationPath,
   resolveProjectPath,
   resolveAreaPath,
+  saveSlashCommands,
+  slashCommandsEqual,
   type VaultConfig,
 } from "../vault-config";
+import type { SlashCommand } from "@memory-loop/shared";
 
 describe("vault-config", () => {
   let testDir: string;
@@ -407,6 +411,217 @@ describe("vault-config", () => {
     test("handles nested area paths", () => {
       const result = resolveAreaPath({ areaPath: "life/areas" });
       expect(result).toBe("life/areas");
+    });
+  });
+
+  describe("loadVaultConfig with slashCommands", () => {
+    test("loads config with valid slashCommands array", async () => {
+      const commands: SlashCommand[] = [
+        { name: "/commit", description: "Create a commit" },
+        { name: "/review", description: "Review code", argumentHint: "file" },
+      ];
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ slashCommands: commands })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.slashCommands).toEqual(commands);
+    });
+
+    test("loads config with slashCommands alongside other fields", async () => {
+      const configData = {
+        contentRoot: "content",
+        slashCommands: [{ name: "/help", description: "Get help" }],
+      };
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify(configData)
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.contentRoot).toBe("content");
+      expect(config.slashCommands).toEqual([{ name: "/help", description: "Get help" }]);
+    });
+
+    test("filters out invalid slashCommand entries", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          slashCommands: [
+            { name: "/valid", description: "Valid command" },
+            { name: "/missing-desc" }, // Missing description
+            { description: "Missing name" }, // Missing name
+            null,
+            "not an object",
+            42,
+          ],
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.slashCommands).toEqual([{ name: "/valid", description: "Valid command" }]);
+    });
+
+    test("returns undefined slashCommands when not an array", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ slashCommands: "not an array" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.slashCommands).toBeUndefined();
+    });
+
+    test("returns empty array when slashCommands is empty array", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ slashCommands: [] })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.slashCommands).toEqual([]);
+    });
+  });
+
+  describe("saveSlashCommands", () => {
+    test("creates config file with slashCommands when none exists", async () => {
+      const commands: SlashCommand[] = [
+        { name: "/commit", description: "Create a commit" },
+      ];
+
+      await saveSlashCommands(testDir, commands);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.slashCommands).toEqual(commands);
+    });
+
+    test("preserves existing config fields when saving slashCommands", async () => {
+      // Create existing config
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ contentRoot: "content", inboxPath: "inbox" })
+      );
+
+      const commands: SlashCommand[] = [{ name: "/test", description: "Test" }];
+      await saveSlashCommands(testDir, commands);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.contentRoot).toBe("content");
+      expect(parsed.inboxPath).toBe("inbox");
+      expect(parsed.slashCommands).toEqual(commands);
+    });
+
+    test("updates existing slashCommands", async () => {
+      // Create existing config with slashCommands
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          slashCommands: [{ name: "/old", description: "Old command" }],
+        })
+      );
+
+      const newCommands: SlashCommand[] = [{ name: "/new", description: "New command" }];
+      await saveSlashCommands(testDir, newCommands);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.slashCommands).toEqual(newCommands);
+    });
+
+    test("saves empty array when no commands", async () => {
+      await saveSlashCommands(testDir, []);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.slashCommands).toEqual([]);
+    });
+
+    test("handles invalid existing JSON by starting fresh", async () => {
+      // Create invalid JSON
+      await writeFile(join(testDir, CONFIG_FILE_NAME), "{ invalid }");
+
+      const commands: SlashCommand[] = [{ name: "/test", description: "Test" }];
+      await saveSlashCommands(testDir, commands);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.slashCommands).toEqual(commands);
+    });
+  });
+
+  describe("slashCommandsEqual", () => {
+    test("returns true for two undefined arrays", () => {
+      expect(slashCommandsEqual(undefined, undefined)).toBe(true);
+    });
+
+    test("returns false when one is undefined", () => {
+      const commands: SlashCommand[] = [{ name: "/test", description: "Test" }];
+      expect(slashCommandsEqual(commands, undefined)).toBe(false);
+      expect(slashCommandsEqual(undefined, commands)).toBe(false);
+    });
+
+    test("returns true for two empty arrays", () => {
+      expect(slashCommandsEqual([], [])).toBe(true);
+    });
+
+    test("returns false for different lengths", () => {
+      const a: SlashCommand[] = [{ name: "/a", description: "A" }];
+      const b: SlashCommand[] = [
+        { name: "/a", description: "A" },
+        { name: "/b", description: "B" },
+      ];
+      expect(slashCommandsEqual(a, b)).toBe(false);
+    });
+
+    test("returns true for identical commands", () => {
+      const a: SlashCommand[] = [
+        { name: "/commit", description: "Create commit", argumentHint: "message" },
+        { name: "/review", description: "Review code" },
+      ];
+      const b: SlashCommand[] = [
+        { name: "/commit", description: "Create commit", argumentHint: "message" },
+        { name: "/review", description: "Review code" },
+      ];
+      expect(slashCommandsEqual(a, b)).toBe(true);
+    });
+
+    test("returns false when names differ", () => {
+      const a: SlashCommand[] = [{ name: "/a", description: "Desc" }];
+      const b: SlashCommand[] = [{ name: "/b", description: "Desc" }];
+      expect(slashCommandsEqual(a, b)).toBe(false);
+    });
+
+    test("returns false when descriptions differ", () => {
+      const a: SlashCommand[] = [{ name: "/test", description: "Desc A" }];
+      const b: SlashCommand[] = [{ name: "/test", description: "Desc B" }];
+      expect(slashCommandsEqual(a, b)).toBe(false);
+    });
+
+    test("returns false when argumentHints differ", () => {
+      const a: SlashCommand[] = [{ name: "/test", description: "Desc", argumentHint: "a" }];
+      const b: SlashCommand[] = [{ name: "/test", description: "Desc", argumentHint: "b" }];
+      expect(slashCommandsEqual(a, b)).toBe(false);
+    });
+
+    test("returns false when one has argumentHint and other does not", () => {
+      const a: SlashCommand[] = [{ name: "/test", description: "Desc", argumentHint: "hint" }];
+      const b: SlashCommand[] = [{ name: "/test", description: "Desc" }];
+      expect(slashCommandsEqual(a, b)).toBe(false);
+    });
+
+    test("returns false when order differs", () => {
+      const a: SlashCommand[] = [
+        { name: "/a", description: "A" },
+        { name: "/b", description: "B" },
+      ];
+      const b: SlashCommand[] = [
+        { name: "/b", description: "B" },
+        { name: "/a", description: "A" },
+      ];
+      expect(slashCommandsEqual(a, b)).toBe(false);
     });
   });
 });

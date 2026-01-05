@@ -667,7 +667,7 @@ export async function createSession(
 
     const mergedOptions: Partial<Options> = {
       ...DISCUSSION_MODE_OPTIONS,
-      ...options, // Caller options first, then we override specific fields
+      ...options, // Merge defaults then caller options, then force specific fields below
       cwd: vault.path,
       settingSources: ["project", "user"],
       mcpServers: {
@@ -769,7 +769,7 @@ export async function resumeSession(
 
     const mergedOptions: Partial<Options> = {
       ...DISCUSSION_MODE_OPTIONS,
-      ...options, // Caller options first, then we override specific fields
+      ...options, // Merge defaults then caller options, then force specific fields below
       resume: sessionId,
       cwd: metadata.vaultPath,
       settingSources: ["project", "user"],

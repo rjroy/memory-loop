@@ -176,11 +176,24 @@ export async function transferFile(
   }
 
   // Check target doesn't exist (unless overwrite is enabled)
-  if (!overwrite && (await fileExists(targetFullPath))) {
-    throw new VaultTransferError(
-      `Target file "${targetPath}" already exists in vault "${targetVaultId}". Set overwrite=true to replace.`,
-      "TARGET_EXISTS"
-    );
+  // Also reject symlinks at target to prevent writing outside vault boundary
+  const targetExists = await fileExists(targetFullPath);
+  if (targetExists) {
+    if (!overwrite) {
+      throw new VaultTransferError(
+        `Target file "${targetPath}" already exists in vault "${targetVaultId}". Set overwrite=true to replace.`,
+        "TARGET_EXISTS"
+      );
+    }
+    // When overwriting, verify target isn't a symlink (could write outside vault)
+    const targetStats = await lstat(targetFullPath);
+    if (targetStats.isSymbolicLink()) {
+      log.warn(`Target symlink rejected: ${targetPath}`);
+      throw new VaultTransferError(
+        `Target path "${targetPath}" is a symbolic link and cannot be overwritten`,
+        "PATH_TRAVERSAL"
+      );
+    }
   }
 
   // Ensure target directory exists

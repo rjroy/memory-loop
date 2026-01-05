@@ -418,6 +418,31 @@ describe("transferFile", () => {
       }
     });
 
+    test("throws PATH_TRAVERSAL for symlink at target location with overwrite", async () => {
+      const sourceVault = await createTestVault(testDir, "source-vault", "Source");
+      const targetVault = await createTestVault(testDir, "target-vault", "Target");
+
+      // Create source file
+      await writeFile(join(sourceVault, "note.md"), "# Source Note");
+
+      // Create a symlink at target location pointing outside vault
+      await symlink("/tmp/evil-target.md", join(targetVault, "note.md"));
+
+      try {
+        await transferFile({
+          sourceVaultId: "source-vault",
+          targetVaultId: "target-vault",
+          sourcePath: "note.md",
+          mode: "copy",
+          overwrite: true, // Would write through symlink without the check
+        });
+        expect.unreachable("Should have thrown");
+      } catch (error) {
+        expect(error).toBeInstanceOf(VaultTransferError);
+        expect((error as VaultTransferError).code).toBe("PATH_TRAVERSAL");
+      }
+    });
+
     test("throws TRANSFER_FAILED when move delete fails", async () => {
       const sourceVault = await createTestVault(testDir, "source-vault", "Source");
       const targetVault = await createTestVault(testDir, "target-vault", "Target");

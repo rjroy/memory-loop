@@ -1106,13 +1106,19 @@ export class WebSocketHandler {
 
       log.info(`Resuming session ${sessionId} with ${metadata.messages.length} messages`);
 
+      // Load cached slash commands for immediate autocomplete
+      const vaultConfig = await loadVaultConfig(this.state.currentVault.path);
+      const cachedCommands = vaultConfig.slashCommands;
+
       // Send session_ready with conversation history for frontend to display
+      // Include cached slash commands for immediate autocomplete availability
       this.send(ws, {
         type: "session_ready",
         sessionId,
         vaultId: this.state.currentVault.id,
         messages: metadata.messages,
         createdAt: metadata.createdAt,
+        slashCommands: cachedCommands && cachedCommands.length > 0 ? cachedCommands : undefined,
       });
     } catch (error) {
       log.error("Failed to load session for validation", error);

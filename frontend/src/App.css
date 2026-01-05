@@ -34,6 +34,31 @@
   z-index: 0;
 }
 
+/* Holiday-specific backgrounds */
+.app[data-holiday="christmas"]::before {
+  background-image: url('/images/holiday/christmas-bg-vault.webp');
+}
+
+.app[data-holiday="valentine"]::before {
+  background-image: url('/images/holiday/valentine-bg-vault.webp');
+}
+
+.app[data-holiday="easter"]::before {
+  background-image: url('/images/holiday/easter-bg-vault.webp');
+}
+
+.app[data-holiday="summer"]::before {
+  background-image: url('/images/holiday/summer-bg-vault.webp');
+}
+
+.app[data-holiday="halloween"]::before {
+  background-image: url('/images/holiday/halloween-bg-vault.webp');
+}
+
+.app[data-holiday="thanksgiving"]::before {
+  background-image: url('/images/holiday/thanksgiving-bg-vault.webp');
+}
+
 /* Ensure all content sits above background */
 .app > * {
   position: relative;

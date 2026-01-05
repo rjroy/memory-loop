@@ -37,7 +37,11 @@ import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk"
 import { getInspiration } from "./inspiration-manager";
 import { wsLog as log } from "./logger";
 import { getAllTasks, toggleTask } from "./task-manager";
-import { loadVaultConfig } from "./vault-config";
+import {
+  loadVaultConfig,
+  saveSlashCommands,
+  slashCommandsEqual,
+} from "./vault-config";
 
 /**
  * WebSocket interface for sending messages.
@@ -167,6 +171,9 @@ export class WebSocketHandler {
    * Per spec REQ-F-22: If supportedCommands() throws, log warning and continue without commands.
    * Per spec REQ-F-21: If SDK returns empty array, it's handled correctly (no error).
    *
+   * Also updates the vault's .memory-loop.json cache if commands differ from
+   * the cached version, ensuring autocomplete works immediately on next vault selection.
+   *
    * @param queryResult - The session query result with supportedCommands method
    * @returns Array of SlashCommand objects, or empty array on failure
    */
@@ -192,6 +199,20 @@ export class WebSocketHandler {
       }));
 
       log.info(`Fetched ${commands.length} slash commands`);
+
+      // Update cache if commands changed (non-blocking, failures logged but don't affect return)
+      if (this.state.currentVault) {
+        try {
+          const vaultConfig = await loadVaultConfig(this.state.currentVault.path);
+          if (!slashCommandsEqual(vaultConfig.slashCommands, commands)) {
+            log.info("Slash commands changed, updating cache");
+            await saveSlashCommands(this.state.currentVault.path, commands);
+          }
+        } catch (cacheError) {
+          log.warn("Failed to update slash commands cache, continuing", cacheError);
+        }
+      }
+
       return commands;
     } catch (error) {
       // Graceful degradation per REQ-F-22: log warning and continue without commands
@@ -439,16 +460,20 @@ export class WebSocketHandler {
       this.state.currentSessionId = null;
       this.state.activeQuery = null;
 
+      // Load cached slash commands for immediate autocomplete
+      const vaultConfig = await loadVaultConfig(vault.path);
+      const cachedCommands = vaultConfig.slashCommands;
+
       log.info("Sending session_ready");
       // Send session_ready with empty session (will be created on first message)
-      // For now, we signal readiness without a session ID - the session will be
-      // created lazily on the first discussion_message
+      // Include cached slash commands for immediate autocomplete availability
       this.send(ws, {
         type: "session_ready",
         sessionId: "", // Will be populated after first query
         vaultId: vault.id,
+        slashCommands: cachedCommands && cachedCommands.length > 0 ? cachedCommands : undefined,
       });
-      log.info("Vault selection complete");
+      log.info(`Vault selection complete (${cachedCommands?.length ?? 0} cached commands)`);
     } catch (error) {
       log.error("Failed to select vault", error);
       const message =

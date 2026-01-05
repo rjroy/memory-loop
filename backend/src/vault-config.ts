@@ -6,8 +6,9 @@
  * for vaults where content is in a subdirectory (e.g., Quartz sites).
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join, normalize } from "node:path";
+import type { SlashCommand } from "@memory-loop/shared";
 import { fileExists } from "./vault-manager";
 import { createLogger } from "./logger";
 
@@ -58,6 +59,12 @@ export interface VaultConfig {
    * Default: "02_Areas"
    */
   areaPath?: string;
+
+  /**
+   * Cached slash commands from Claude Code SDK.
+   * Stored to provide autocomplete before SDK session is established.
+   */
+  slashCommands?: SlashCommand[];
 }
 
 /**
@@ -120,6 +127,16 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
 
     if (typeof obj.areaPath === "string") {
       config.areaPath = obj.areaPath;
+    }
+
+    if (Array.isArray(obj.slashCommands)) {
+      config.slashCommands = obj.slashCommands.filter(
+        (cmd): cmd is SlashCommand =>
+          typeof cmd === "object" &&
+          cmd !== null &&
+          typeof (cmd as Record<string, unknown>).name === "string" &&
+          typeof (cmd as Record<string, unknown>).description === "string"
+      );
     }
 
     return config;
@@ -222,4 +239,63 @@ export function resolveProjectPath(config: VaultConfig): string {
  */
 export function resolveAreaPath(config: VaultConfig): string {
   return config.areaPath ?? DEFAULT_AREA_PATH;
+}
+
+/**
+ * Saves slash commands to the vault configuration file.
+ * Preserves existing configuration fields while updating slashCommands.
+ *
+ * @param vaultPath - Absolute path to the vault root directory
+ * @param commands - Slash commands to cache
+ */
+export async function saveSlashCommands(
+  vaultPath: string,
+  commands: SlashCommand[]
+): Promise<void> {
+  const configPath = join(vaultPath, CONFIG_FILE_NAME);
+
+  let existingConfig: Record<string, unknown> = {};
+
+  if (await fileExists(configPath)) {
+    try {
+      const content = await readFile(configPath, "utf-8");
+      const parsed = JSON.parse(content) as unknown;
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        existingConfig = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // If we can't read existing config, start fresh
+    }
+  }
+
+  existingConfig.slashCommands = commands;
+
+  await writeFile(configPath, JSON.stringify(existingConfig, null, 2) + "\n", "utf-8");
+  log.info(`Cached ${commands.length} slash commands to ${configPath}`);
+}
+
+/**
+ * Checks if two slash command arrays are equivalent.
+ * Used to detect when cached commands need updating.
+ *
+ * @param a - First command array
+ * @param b - Second command array
+ * @returns true if arrays contain the same commands
+ */
+export function slashCommandsEqual(
+  a: SlashCommand[] | undefined,
+  b: SlashCommand[] | undefined
+): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+
+  return a.every((cmdA, i) => {
+    const cmdB = b[i];
+    return (
+      cmdA.name === cmdB.name &&
+      cmdA.description === cmdB.description &&
+      cmdA.argumentHint === cmdB.argumentHint
+    );
+  });
 }

@@ -98,6 +98,27 @@ export const RecentDiscussionEntrySchema = z.object({
   messageCount: z.number().int().min(0),
 });
 
+// =============================================================================
+// Slash Command Schema
+// =============================================================================
+
+/**
+ * Schema for a slash command available in the discussion interface
+ * Commands are sent from server to client in session_ready message
+ */
+export const SlashCommandSchema = z.object({
+  /** Command name including "/" prefix (e.g., "/commit") */
+  name: z.string().min(2, "Command name must include / prefix and at least one character"),
+  /** User-facing description of what the command does */
+  description: z.string().min(1, "Description is required"),
+  /** Optional hint for expected arguments (e.g., "<message>") */
+  argumentHint: z.string().optional(),
+});
+
+// =============================================================================
+// Tool Invocation Schema
+// =============================================================================
+
 /**
  * Schema for a tool invocation within an assistant message
  */
@@ -317,6 +338,7 @@ export const SessionReadyMessageSchema = z.object({
   vaultId: z.string().min(1),
   messages: z.array(ConversationMessageSchema).optional(), // Sent on resume
   createdAt: z.string().optional(), // ISO 8601 timestamp of session creation
+  slashCommands: z.array(SlashCommandSchema).optional(), // Available slash commands
 });
 
 /**
@@ -565,6 +587,9 @@ export type RecentNoteEntry = z.infer<typeof RecentNoteEntrySchema>;
 
 // Recent discussion types
 export type RecentDiscussionEntry = z.infer<typeof RecentDiscussionEntrySchema>;
+
+// Slash command type
+export type SlashCommand = z.infer<typeof SlashCommandSchema>;
 
 // Tool invocation type
 export type ToolInvocation = z.infer<typeof ToolInvocationSchema>;

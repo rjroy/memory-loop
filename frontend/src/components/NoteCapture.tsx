@@ -210,7 +210,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
           className="note-capture__input"
           value={content}
           onChange={handleChange}
-          placeholder="What's on your mind?"
+          placeholder="What's on your mind? Goes to your daily note."
           disabled={isSubmitting}
           rows={3}
           aria-label="Note content"

@@ -117,7 +117,7 @@ describe("NoteCapture", () => {
         expect(wsInstances.length).toBeGreaterThan(0);
       });
 
-      expect(screen.getByPlaceholderText("What's on your mind?")).toBeDefined();
+      expect(screen.getByPlaceholderText("What's on your mind? Goes to your daily note.")).toBeDefined();
     });
   });
 

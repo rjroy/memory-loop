@@ -19,6 +19,7 @@ import { NoteCapture } from "./components/NoteCapture";
 import { Discussion } from "./components/Discussion";
 import { BrowseMode } from "./components/BrowseMode";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { useHoliday } from "./hooks/useHoliday";
 import "./App.css";
 
 /**
@@ -32,6 +33,10 @@ type DialogType = "changeVault" | null;
 function MainContent(): React.ReactNode {
   const { mode, vault, clearVault } = useSession();
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
+  const holiday = useHoliday();
+
+  // Use holiday-specific logo if available
+  const logoSrc = holiday ? `/images/holiday/${holiday}-logo.webp` : "/images/logo.webp";
 
   function handleChangeVault() {
     setActiveDialog("changeVault");
@@ -51,7 +56,7 @@ function MainContent(): React.ReactNode {
       <header className="app-header">
         <div className="app-header__left">
           <div className="app-title-row">
-            <img src="/images/logo.webp" alt="" className="app-logo" aria-hidden="true" />
+            <img src={logoSrc} alt="" className="app-logo" aria-hidden="true" />
             <h1 className="app-title">Memory Loop</h1>
           </div>
           {vault && (
@@ -98,6 +103,7 @@ function MainContent(): React.ReactNode {
 function AppShell(): React.ReactNode {
   const { vault } = useSession();
   const [isReady, setIsReady] = useState(false);
+  const holiday = useHoliday();
 
   // Reset isReady when vault is cleared
   React.useEffect(() => {
@@ -109,14 +115,14 @@ function AppShell(): React.ReactNode {
   // Show vault selection until a vault is selected and session is ready
   if (!vault || !isReady) {
     return (
-      <div className="app">
+      <div className="app" data-holiday={holiday ?? undefined}>
         <VaultSelect onReady={() => setIsReady(true)} />
       </div>
     );
   }
 
   return (
-    <div className="app">
+    <div className="app" data-holiday={holiday ?? undefined}>
       <MainContent />
     </div>
   );

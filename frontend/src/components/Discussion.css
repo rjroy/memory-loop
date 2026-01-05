@@ -91,6 +91,7 @@
 
 /* Input area */
 .discussion__input-area {
+  position: relative; /* For absolute positioning of autocomplete popup */
   flex-shrink: 0;
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--glass-bg);
@@ -102,14 +103,6 @@
   .discussion__input-area {
     background-color: var(--color-surface);
   }
-}
-
-.discussion__slash-hint {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-accent-tertiary);
-  padding: var(--spacing-xs) 0;
-  font-weight: var(--font-weight-medium);
-  font-family: var(--font-family-mono);
 }
 
 .discussion__input-row {

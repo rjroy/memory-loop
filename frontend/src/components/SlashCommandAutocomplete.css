@@ -1,0 +1,103 @@
+/**
+ * SlashCommandAutocomplete Component Styles
+ *
+ * Positioned absolutely above the input area with glassmorphism styling.
+ * Maximum 5 items visible with scroll overflow.
+ */
+
+.slash-autocomplete {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  margin-bottom: var(--spacing-xs);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border-hover);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 -4px 24px var(--color-black-a30),
+    0 0 20px var(--color-accent-primary-a10),
+    inset 0 -1px 0 var(--color-white-a07);
+  overflow: hidden;
+  animation: slash-autocomplete-slide-up 0.15s ease-out;
+}
+
+@keyframes slash-autocomplete-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .slash-autocomplete {
+    background-color: var(--color-surface);
+  }
+}
+
+.slash-autocomplete__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--spacing-xs) 0;
+  max-height: calc(5 * 52px + var(--spacing-xs) * 2);
+  overflow-y: auto;
+}
+
+.slash-autocomplete__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.slash-autocomplete__item:hover,
+.slash-autocomplete__item--selected {
+  background-color: var(--color-accent-primary-a15);
+}
+
+.slash-autocomplete__item--selected {
+  background-color: var(--color-accent-primary-a20);
+}
+
+.slash-autocomplete__name {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-accent-primary);
+}
+
+.slash-autocomplete__description {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tablet and up */
+@media (min-width: 768px) {
+  .slash-autocomplete {
+    border-radius: var(--radius-xl);
+  }
+
+  .slash-autocomplete__item {
+    padding: var(--spacing-sm) var(--spacing-lg);
+  }
+
+  .slash-autocomplete__name {
+    font-size: var(--font-size-base);
+  }
+
+  .slash-autocomplete__description {
+    font-size: var(--font-size-sm);
+  }
+}

@@ -33,6 +33,8 @@ export {
   InspirationItemSchema,
   GetInspirationMessageSchema,
   InspirationMessageSchema,
+  // Slash command schemas
+  SlashCommandSchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -92,6 +94,8 @@ export type {
   InspirationItem,
   GetInspirationMessage,
   InspirationMessage,
+  // Slash command types
+  SlashCommand,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

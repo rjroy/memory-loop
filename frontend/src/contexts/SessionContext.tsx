@@ -14,7 +14,7 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry, ToolInvocation } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry, ToolInvocation, SlashCommand } from "@memory-loop/shared";
 
 /**
  * Application mode: home, note capture, discussion, or browse.
@@ -125,6 +125,8 @@ export interface SessionState {
   pendingToolUpdates: Map<string, PendingToolUpdate>;
   /** Flag to prepend line break before next text chunk (set after tool completion) */
   needsLineBreakBeforeText: boolean;
+  /** Available slash commands from the SDK (empty if not yet loaded or unsupported) */
+  slashCommands: SlashCommand[];
 }
 
 /**
@@ -213,6 +215,8 @@ export interface SessionActions {
   updateToolInput: (toolUseId: string, input: unknown) => void;
   /** Mark a tool invocation as complete with output */
   completeToolInvocation: (toolUseId: string, output: unknown) => void;
+  /** Set available slash commands from SDK */
+  setSlashCommands: (commands: SlashCommand[]) => void;
 }
 
 /**
@@ -279,7 +283,8 @@ type SessionAction =
   | { type: "UPDATE_TASK"; filePath: string; lineNumber: number; newState: string }
   | { type: "ADD_TOOL_TO_LAST_MESSAGE"; toolUseId: string; toolName: string }
   | { type: "UPDATE_TOOL_INPUT"; toolUseId: string; input: unknown }
-  | { type: "COMPLETE_TOOL_INVOCATION"; toolUseId: string; output: unknown };
+  | { type: "COMPLETE_TOOL_INVOCATION"; toolUseId: string; output: unknown }
+  | { type: "SET_SLASH_COMMANDS"; commands: SlashCommand[] };
 
 /**
  * Generates a unique message ID.
@@ -379,6 +384,8 @@ function sessionReducer(
         discussionPrefill: null,
         showNewSessionDialog: false,
         wantsNewSession: false,
+        // Clear slash commands when switching vaults (will be re-fetched on session_ready)
+        slashCommands: [],
       };
 
     case "CLEAR_VAULT":
@@ -394,6 +401,7 @@ function sessionReducer(
         discussionPrefill: null,
         showNewSessionDialog: false,
         wantsNewSession: false,
+        slashCommands: [],
       };
 
     case "SET_SESSION_ID":
@@ -910,6 +918,12 @@ function sessionReducer(
       return { ...state, messages, needsLineBreakBeforeText: true };
     }
 
+    case "SET_SLASH_COMMANDS":
+      return {
+        ...state,
+        slashCommands: action.commands,
+      };
+
     default:
       return state;
   }
@@ -934,6 +948,7 @@ const initialState: SessionState = {
   wantsNewSession: false,
   pendingToolUpdates: new Map(),
   needsLineBreakBeforeText: false,
+  slashCommands: [],
 };
 
 /**
@@ -1306,6 +1321,10 @@ export function SessionProvider({
     dispatch({ type: "COMPLETE_TOOL_INVOCATION", toolUseId, output });
   }, []);
 
+  const setSlashCommands = useCallback((commands: SlashCommand[]) => {
+    dispatch({ type: "SET_SLASH_COMMANDS", commands });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -1349,6 +1368,7 @@ export function SessionProvider({
     addToolToLastMessage,
     updateToolInput,
     completeToolInvocation,
+    setSlashCommands,
   };
 
   return (
@@ -1373,7 +1393,7 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId } = useSession();
+  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands } = useSession();
 
   // Use ref to access current messages in callback without causing re-renders
   const messagesRef = useRef(messages);
@@ -1396,6 +1416,8 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           if (message.messages && message.messages.length > 0) {
             setMessages(message.messages);
           }
+          // Set slash commands from SDK (defaults to empty array if not present)
+          setSlashCommands(message.slashCommands ?? []);
           // Clear pending session ID (resume complete)
           setPendingSessionId(null);
           break;
@@ -1443,6 +1465,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           break;
       }
     },
-    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId]
+    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands]
   );
 }

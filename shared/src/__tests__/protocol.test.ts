@@ -50,6 +50,7 @@ import {
   ErrorCodeSchema,
   FileEntrySchema,
   TaskEntrySchema,
+  SlashCommandSchema,
   // Utilities
   parseClientMessage,
   parseServerMessage,
@@ -333,6 +334,59 @@ describe("TaskEntrySchema", () => {
       state: " ",
     };
     expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
+  });
+});
+
+// =============================================================================
+// SlashCommand Schema Tests
+// =============================================================================
+
+describe("SlashCommandSchema", () => {
+  test("accepts valid slash command with all fields", () => {
+    const cmd = {
+      name: "/commit",
+      description: "Commit changes to the repository",
+      argumentHint: "<message>",
+    };
+    const result = SlashCommandSchema.parse(cmd);
+    expect(result.name).toBe("/commit");
+    expect(result.description).toBe("Commit changes to the repository");
+    expect(result.argumentHint).toBe("<message>");
+  });
+
+  test("accepts valid slash command without argumentHint", () => {
+    const cmd = {
+      name: "/help",
+      description: "Show available commands",
+    };
+    const result = SlashCommandSchema.parse(cmd);
+    expect(result.name).toBe("/help");
+    expect(result.argumentHint).toBeUndefined();
+  });
+
+  test("rejects name shorter than 2 characters", () => {
+    const cmd = { name: "/", description: "Invalid" };
+    expect(() => SlashCommandSchema.parse(cmd)).toThrow(ZodError);
+  });
+
+  test("rejects empty name", () => {
+    const cmd = { name: "", description: "Invalid" };
+    expect(() => SlashCommandSchema.parse(cmd)).toThrow(ZodError);
+  });
+
+  test("rejects empty description", () => {
+    const cmd = { name: "/test", description: "" };
+    expect(() => SlashCommandSchema.parse(cmd)).toThrow(ZodError);
+  });
+
+  test("rejects missing name", () => {
+    const cmd = { description: "Missing name" };
+    expect(() => SlashCommandSchema.parse(cmd)).toThrow(ZodError);
+  });
+
+  test("rejects missing description", () => {
+    const cmd = { name: "/test" };
+    expect(() => SlashCommandSchema.parse(cmd)).toThrow(ZodError);
   });
 });
 
@@ -818,6 +872,53 @@ describe("Server -> Client Messages", () => {
       const result = SessionReadyMessageSchema.parse(msg);
       expect(result.sessionId).toBe("");
       expect(result.vaultId).toBe("vault-1");
+    });
+
+    test("accepts session_ready with slashCommands", () => {
+      const msg = {
+        type: "session_ready" as const,
+        sessionId: "session-123",
+        vaultId: "vault-1",
+        slashCommands: [
+          { name: "/commit", description: "Commit changes", argumentHint: "<message>" },
+          { name: "/help", description: "Show help" },
+        ],
+      };
+      const result = SessionReadyMessageSchema.parse(msg);
+      expect(result.slashCommands).toHaveLength(2);
+      expect(result.slashCommands?.[0].name).toBe("/commit");
+      expect(result.slashCommands?.[1].argumentHint).toBeUndefined();
+    });
+
+    test("accepts session_ready without slashCommands (optional field)", () => {
+      const msg = {
+        type: "session_ready" as const,
+        sessionId: "session-123",
+        vaultId: "vault-1",
+      };
+      const result = SessionReadyMessageSchema.parse(msg);
+      expect(result.slashCommands).toBeUndefined();
+    });
+
+    test("accepts session_ready with empty slashCommands array", () => {
+      const msg = {
+        type: "session_ready" as const,
+        sessionId: "session-123",
+        vaultId: "vault-1",
+        slashCommands: [],
+      };
+      const result = SessionReadyMessageSchema.parse(msg);
+      expect(result.slashCommands).toHaveLength(0);
+    });
+
+    test("rejects session_ready with invalid slashCommand in array", () => {
+      const msg = {
+        type: "session_ready",
+        sessionId: "session-123",
+        vaultId: "vault-1",
+        slashCommands: [{ name: "/", description: "" }], // Both invalid
+      };
+      expect(() => SessionReadyMessageSchema.parse(msg)).toThrow(ZodError);
     });
   });
 

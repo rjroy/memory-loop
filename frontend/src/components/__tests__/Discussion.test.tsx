@@ -456,33 +456,129 @@ describe("Discussion", () => {
     });
   });
 
-  describe("slash command detection", () => {
-    it("shows hint when typing slash command", async () => {
+  describe("slash command autocomplete", () => {
+    it("shows autocomplete popup when typing slash command and commands are available", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
 
       await waitFor(() => {
         expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Simulate session_ready with slash commands
+      const ws = wsInstances[0];
+      act(() => {
+        ws.simulateMessage({
+          type: "session_ready",
+          sessionId: "test-session",
+          vaultId: "vault-1",
+          slashCommands: [
+            { name: "/help", description: "Show help" },
+            { name: "/commit", description: "Create a commit" },
+          ],
+        });
       });
 
       const input = screen.getByRole("textbox");
-      fireEvent.change(input, { target: { value: "/help" } });
+      fireEvent.change(input, { target: { value: "/he" } });
 
       await waitFor(() => {
-        expect(screen.getByText(/slash command detected/i)).toBeDefined();
+        // The autocomplete popup has role="listbox"
+        expect(screen.getByRole("listbox")).toBeDefined();
+        // Should show the matching command
+        expect(screen.getByText("/help")).toBeDefined();
       });
     });
 
-    it("does not show hint for regular messages", async () => {
+    it("does not show autocomplete for regular messages", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
 
       await waitFor(() => {
         expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Simulate session_ready with slash commands
+      const ws = wsInstances[0];
+      act(() => {
+        ws.simulateMessage({
+          type: "session_ready",
+          sessionId: "test-session",
+          vaultId: "vault-1",
+          slashCommands: [
+            { name: "/help", description: "Show help" },
+          ],
+        });
       });
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "Hello" } });
 
-      expect(screen.queryByText(/slash command detected/i)).toBeNull();
+      // No listbox should be present for regular messages
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+
+    it("does not show autocomplete when no commands are available", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      // Session ready without slash commands
+      const ws = wsInstances[0];
+      act(() => {
+        ws.simulateMessage({
+          type: "session_ready",
+          sessionId: "test-session",
+          vaultId: "vault-1",
+          slashCommands: [],
+        });
+      });
+
+      const input = screen.getByRole("textbox");
+      fireEvent.change(input, { target: { value: "/help" } });
+
+      // No listbox should be present when no commands exist
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+
+    it("hides autocomplete after space is typed (indicating arguments)", async () => {
+      render(<Discussion />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const ws = wsInstances[0];
+      act(() => {
+        ws.simulateMessage({
+          type: "session_ready",
+          sessionId: "test-session",
+          vaultId: "vault-1",
+          slashCommands: [
+            { name: "/commit", description: "Create a commit", argumentHint: "<message>" },
+          ],
+        });
+      });
+
+      const input = screen.getByRole("textbox");
+
+      // First type the command prefix
+      act(() => {
+        fireEvent.change(input, { target: { value: "/com" } });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole("listbox")).toBeDefined();
+      });
+
+      // Now type a space to indicate we're entering arguments
+      act(() => {
+        fireEvent.change(input, { target: { value: "/commit " } });
+      });
+
+      // Autocomplete should be hidden synchronously when space is added
+      // The state update should cause immediate re-render hiding the listbox
+      expect(screen.queryByRole("listbox")).toBeNull();
     });
   });
 

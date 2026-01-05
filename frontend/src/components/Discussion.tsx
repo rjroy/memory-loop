@@ -5,13 +5,14 @@
  * Features message history, streaming responses, and slash command detection.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import type { ServerMessage } from "@memory-loop/shared";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import type { ServerMessage, SlashCommand } from "@memory-loop/shared";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useSession, useServerMessageHandler } from "../contexts/SessionContext";
 import { MessageBubble } from "./MessageBubble";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ToolPermissionDialog, type ToolPermissionRequest } from "./ToolPermissionDialog";
+import { SlashCommandAutocomplete, useSlashCommandNavigation } from "./SlashCommandAutocomplete";
 import "./Discussion.css";
 
 const STORAGE_KEY = "memory-loop-discussion-draft";
@@ -22,7 +23,7 @@ const STORAGE_KEY = "memory-loop-discussion-draft";
  * - Scrollable message history with user/assistant messages
  * - Streaming response display with inline tool display
  * - Input field with send button
- * - Slash command detection (basic, no autocomplete)
+ * - Slash command autocomplete with keyboard navigation
  * - Auto-scroll to bottom on new messages
  * - Draft preservation in localStorage
  */
@@ -32,6 +33,8 @@ export function Discussion(): React.ReactNode {
   const [isFocused, setIsFocused] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [pendingPermission, setPendingPermission] = useState<ToolPermissionRequest | null>(null);
+  const [autocompleteSelectedIndex, setAutocompleteSelectedIndex] = useState(0);
+  const [argumentHintPlaceholder, setArgumentHintPlaceholder] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -54,6 +57,7 @@ export function Discussion(): React.ReactNode {
     addToolToLastMessage,
     updateToolInput,
     completeToolInvocation,
+    slashCommands,
   } = useSession();
 
   // Detect touch-only devices (no hover capability)
@@ -245,10 +249,69 @@ export function Discussion(): React.ReactNode {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Detect slash commands
-  function isSlashCommand(text: string): boolean {
-    return text.trim().startsWith("/");
-  }
+  // Slash command autocomplete logic
+  // Check if input starts with "/" and we have commands available
+  // Use trimmed for startsWith check but check for space in original input
+  // (trailing space indicates user is done with command name and entering arguments)
+  const inputStartsWithSlash = input.trim().startsWith("/");
+  const hasNoSpaceInInput = !input.includes(" ");
+  const isAutocompleteVisible = inputStartsWithSlash && hasNoSpaceInInput && slashCommands.length > 0;
+
+  // Filter commands based on current input prefix (memoized for performance)
+  const filteredCommands = useMemo(() => {
+    if (!isAutocompleteVisible) return [];
+
+    const prefix = input.trim().slice(1).toLowerCase(); // Remove leading "/"
+    return slashCommands
+      .filter((cmd) => {
+        const cmdName = cmd.name.startsWith("/") ? cmd.name.slice(1) : cmd.name;
+        return cmdName.toLowerCase().startsWith(prefix);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [input, slashCommands, isAutocompleteVisible]);
+
+  // Handle autocomplete command selection
+  const handleAutocompleteSelect = useCallback((command: SlashCommand) => {
+    // Replace input with full command name
+    setInput(command.name + " ");
+    // Set argumentHint as placeholder if available
+    setArgumentHintPlaceholder(command.argumentHint ?? null);
+    // Reset autocomplete selection
+    setAutocompleteSelectedIndex(0);
+    // Focus the input and position cursor at end
+    inputRef.current?.focus();
+  }, []);
+
+  // Handle selection by index (from keyboard navigation)
+  const handleAutocompleteSelectByIndex = useCallback((index: number) => {
+    const command = filteredCommands[index];
+    if (command) {
+      handleAutocompleteSelect(command);
+    }
+  }, [filteredCommands, handleAutocompleteSelect]);
+
+  // Handle autocomplete close
+  const handleAutocompleteClose = useCallback(() => {
+    // Simply reset selection; visibility is derived from input state
+    setAutocompleteSelectedIndex(0);
+  }, []);
+
+  // Keyboard navigation for autocomplete
+  const { handleKeyDown: handleAutocompleteKeyDown } = useSlashCommandNavigation(
+    filteredCommands.length,
+    autocompleteSelectedIndex,
+    setAutocompleteSelectedIndex,
+    handleAutocompleteSelectByIndex,
+    handleAutocompleteClose,
+    isAutocompleteVisible && filteredCommands.length > 0
+  );
+
+  // Clear argumentHint placeholder when input changes from the command pattern
+  useEffect(() => {
+    if (argumentHintPlaceholder && !inputStartsWithSlash) {
+      setArgumentHintPlaceholder(null);
+    }
+  }, [inputStartsWithSlash, argumentHintPlaceholder]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -281,6 +344,12 @@ export function Discussion(): React.ReactNode {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // First, let autocomplete handle keyboard events when visible
+    // handleAutocompleteKeyDown returns true if it handled the event
+    if (handleAutocompleteKeyDown(e)) {
+      return;
+    }
+
     // On touch devices, Enter always adds a newline (no keyboard shortcut to submit)
     // On desktop, Enter submits and Shift+Enter adds a newline
     if (e.key === "Enter" && !e.shiftKey && !isTouchDevice) {
@@ -300,7 +369,6 @@ export function Discussion(): React.ReactNode {
   }
 
   const isDisconnected = connectionStatus !== "connected" || !vault;
-  const showSlashHint = isSlashCommand(input);
 
   function handleNewSessionClick() {
     setShowNewSessionDialog(true);
@@ -366,11 +434,15 @@ export function Discussion(): React.ReactNode {
       </div>
 
       <form className="discussion__input-area" onSubmit={handleSubmit}>
-        {showSlashHint && (
-          <div className="discussion__slash-hint" role="status">
-            Slash command detected
-          </div>
-        )}
+        <SlashCommandAutocomplete
+          commands={slashCommands}
+          inputValue={input}
+          isVisible={isAutocompleteVisible}
+          onSelect={handleAutocompleteSelect}
+          onClose={handleAutocompleteClose}
+          selectedIndex={autocompleteSelectedIndex}
+          onSelectedIndexChange={setAutocompleteSelectedIndex}
+        />
         <div className="discussion__input-row">
           <textarea
             ref={inputRef}
@@ -380,7 +452,7 @@ export function Discussion(): React.ReactNode {
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder="Explore. Challenge. Refine. Your vault awaits..."
+            placeholder={argumentHintPlaceholder ?? "Explore. Challenge. Refine. Your vault awaits..."}
             disabled={isSubmitting}
             rows={1}
             aria-label="Message input"

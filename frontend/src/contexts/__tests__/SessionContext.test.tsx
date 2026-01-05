@@ -2562,4 +2562,166 @@ describe("SessionContext", () => {
       expect(tool.status).toBe("complete");
     });
   });
+
+  describe("line break after tool completion (issue #143)", () => {
+    it("prepends line break to text arriving after tool completion", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up an assistant message with a tool
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "Let me check that file.",
+          isStreaming: true,
+        });
+        result.current.addToolToLastMessage("tool-123", "Read");
+      });
+
+      // Tool completes
+      act(() => {
+        result.current.completeToolInvocation("tool-123", "File contents");
+      });
+
+      // New text arrives after tool completion
+      act(() => {
+        result.current.updateLastMessage("I found the file.", true);
+      });
+
+      // Text should have line break prefix
+      expect(result.current.messages[0].content).toBe(
+        "Let me check that file.\n\nI found the file."
+      );
+    });
+
+    it("does not add line break when no tool completed", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up an assistant message
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "Hello",
+          isStreaming: true,
+        });
+      });
+
+      // More text arrives (no tool completion)
+      act(() => {
+        result.current.updateLastMessage(" world", true);
+      });
+
+      // No line break should be added
+      expect(result.current.messages[0].content).toBe("Hello world");
+    });
+
+    it("does not add line break when content is empty, but preserves flag for next content", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up an assistant message with a tool
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "Checking...",
+          isStreaming: true,
+        });
+        result.current.addToolToLastMessage("tool-123", "Read");
+      });
+
+      // Tool completes
+      act(() => {
+        result.current.completeToolInvocation("tool-123", "File contents");
+      });
+
+      // Empty content arrives (e.g., intermediate event)
+      act(() => {
+        result.current.updateLastMessage("", true);
+      });
+
+      // No line break should be added for empty content
+      expect(result.current.messages[0].content).toBe("Checking...");
+
+      // Now non-empty content arrives - should still get the line break
+      act(() => {
+        result.current.updateLastMessage("Found it!", true);
+      });
+
+      // Line break should be added before the non-empty content
+      expect(result.current.messages[0].content).toBe("Checking...\n\nFound it!");
+    });
+
+    it("resets line break flag after use", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up an assistant message with a tool
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "First part.",
+          isStreaming: true,
+        });
+        result.current.addToolToLastMessage("tool-123", "Read");
+      });
+
+      // Tool completes
+      act(() => {
+        result.current.completeToolInvocation("tool-123", "File contents");
+      });
+
+      // First text after tool - should get line break
+      act(() => {
+        result.current.updateLastMessage("After tool.", true);
+      });
+
+      // Second text - should NOT get line break (flag was reset)
+      act(() => {
+        result.current.updateLastMessage(" More text.", true);
+      });
+
+      // Only one line break should have been added
+      expect(result.current.messages[0].content).toBe(
+        "First part.\n\nAfter tool. More text."
+      );
+    });
+
+    it("handles multiple tools completing before text arrives", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up an assistant message with multiple tools
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "Let me check those files.",
+          isStreaming: true,
+        });
+        result.current.addToolToLastMessage("tool-1", "Read");
+        result.current.addToolToLastMessage("tool-2", "Grep");
+      });
+
+      // Both tools complete
+      act(() => {
+        result.current.completeToolInvocation("tool-1", "File 1 contents");
+        result.current.completeToolInvocation("tool-2", "Grep results");
+      });
+
+      // Text arrives after both tools
+      act(() => {
+        result.current.updateLastMessage("Found what I needed.", true);
+      });
+
+      // Should have exactly one line break (not two)
+      expect(result.current.messages[0].content).toBe(
+        "Let me check those files.\n\nFound what I needed."
+      );
+    });
+  });
 });

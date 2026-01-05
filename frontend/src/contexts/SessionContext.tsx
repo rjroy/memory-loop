@@ -123,6 +123,8 @@ export interface SessionState {
   wantsNewSession: boolean;
   /** Pending tool updates queued due to race conditions (tool_input/tool_end before tool_start) */
   pendingToolUpdates: Map<string, PendingToolUpdate>;
+  /** Flag to prepend line break before next text chunk (set after tool completion) */
+  needsLineBreakBeforeText: boolean;
 }
 
 /**
@@ -432,14 +434,19 @@ function sessionReducer(
         );
         return state;
       }
+      // If a tool just completed and we have new content, prepend a line break
+      // to separate the post-tool text from the pre-tool text.
+      const prefix = state.needsLineBreakBeforeText && action.content ? "\n\n" : "";
       messages[messages.length - 1] = {
         ...lastMessage,
-        content: lastMessage.content + action.content,
+        content: lastMessage.content + prefix + action.content,
         isStreaming: action.isStreaming ?? lastMessage.isStreaming,
       };
       return {
         ...state,
         messages,
+        // Only clear the flag when we actually added the line break prefix.
+        needsLineBreakBeforeText: prefix ? false : state.needsLineBreakBeforeText,
       };
     }
 
@@ -448,6 +455,7 @@ function sessionReducer(
         ...state,
         messages: [],
         pendingToolUpdates: new Map(),
+        needsLineBreakBeforeText: false,
       };
 
     case "START_NEW_SESSION":
@@ -456,6 +464,7 @@ function sessionReducer(
         sessionId: null,
         messages: [],
         pendingToolUpdates: new Map(),
+        needsLineBreakBeforeText: false,
         wantsNewSession: true,
       };
 
@@ -480,6 +489,7 @@ function sessionReducer(
           ),
         })),
         pendingToolUpdates: new Map(),
+        needsLineBreakBeforeText: false,
       };
 
     case "SET_CURRENT_PATH":
@@ -882,7 +892,8 @@ function sessionReducer(
           output: action.output,
           status: "complete",
         });
-        return { ...state, pendingToolUpdates };
+        // Set flag so next text chunk gets a line break prefix
+        return { ...state, pendingToolUpdates, needsLineBreakBeforeText: true };
       }
 
       const targetMessage = messages[foundMessageIndex];
@@ -895,7 +906,8 @@ function sessionReducer(
         ...targetMessage,
         toolInvocations: updatedTools,
       };
-      return { ...state, messages };
+      // Set flag so next text chunk gets a line break prefix
+      return { ...state, messages, needsLineBreakBeforeText: true };
     }
 
     default:
@@ -921,6 +933,7 @@ const initialState: SessionState = {
   showNewSessionDialog: false,
   wantsNewSession: false,
   pendingToolUpdates: new Map(),
+  needsLineBreakBeforeText: false,
 };
 
 /**

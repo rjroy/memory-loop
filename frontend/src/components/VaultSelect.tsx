@@ -40,7 +40,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [error, setError] = useState<string | null>(null);
   const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
 
-  const { selectVault, vault: currentVault } = useSession();
+  const { selectVault, vault: currentVault, setSlashCommands } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
 
   // Track whether we've attempted auto-resume from localStorage
@@ -136,10 +136,14 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
 
       // Session is ready - update context and notify parent
       selectVault(vault);
+      // Set slash commands from the session_ready message (after selectVault clears them)
+      if (lastMessage.slashCommands) {
+        setSlashCommands(lastMessage.slashCommands);
+      }
       setSelectedVaultId(null);
       onReady?.();
     }
-  }, [lastMessage, selectedVaultId, vaults, selectVault, onReady]);
+  }, [lastMessage, selectedVaultId, vaults, selectVault, setSlashCommands, onReady]);
 
   // Handle errors during vault selection
   useEffect(() => {

@@ -17,6 +17,7 @@ import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMes
 import { directoryExists, fileExists } from "./vault-manager";
 import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 import { sessionLog as log } from "./logger";
+import { createVaultTransferServer } from "./vault-transfer";
 
 /**
  * Default SDK options for Discussion mode.
@@ -660,11 +661,19 @@ export async function createSession(
   try {
     // Create SDK query with vault's cwd, project settings, and discussion mode defaults
     log.info("Calling Claude Agent SDK query()...");
+
+    // Create vault transfer MCP server for this session
+    const vaultTransferServer = createVaultTransferServer();
+
     const mergedOptions: Partial<Options> = {
       ...DISCUSSION_MODE_OPTIONS,
+      ...options, // Caller options first, then we override specific fields
       cwd: vault.path,
       settingSources: ["project", "user"],
-      ...options, // Caller options override defaults
+      mcpServers: {
+        ...options?.mcpServers,
+        "vault-transfer": vaultTransferServer, // Always include vault-transfer
+      },
     };
 
     // Add canUseTool callback if permission callback is provided
@@ -754,12 +763,20 @@ export async function resumeSession(
   try {
     // Create SDK query with resume option and discussion mode defaults
     log.info("Calling Claude Agent SDK query() with resume...");
+
+    // Create vault transfer MCP server for this session
+    const vaultTransferServer = createVaultTransferServer();
+
     const mergedOptions: Partial<Options> = {
       ...DISCUSSION_MODE_OPTIONS,
+      ...options, // Caller options first, then we override specific fields
       resume: sessionId,
       cwd: metadata.vaultPath,
       settingSources: ["project", "user"],
-      ...options, // Caller options override defaults
+      mcpServers: {
+        ...options?.mcpServers,
+        "vault-transfer": vaultTransferServer, // Always include vault-transfer
+      },
     };
 
     // Add canUseTool callback if permission callback is provided

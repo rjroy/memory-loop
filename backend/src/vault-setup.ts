@@ -111,14 +111,14 @@ export const SETUP_MARKER_PATH = ".memory-loop/setup-complete";
 export const COMMANDS_DEST_PATH = ".claude/commands";
 
 /**
- * Default PARA directory names (relative to content root).
+ * Default path for Resources directory (relative to content root).
  */
-export const DEFAULT_PARA_DIRS = [
-  "01_Projects",
-  "02_Areas",
-  "03_Resources",
-  "04_Archives",
-];
+export const DEFAULT_RESOURCES_PATH = "03_Resources";
+
+/**
+ * Default path for Archives directory (relative to content root).
+ */
+export const DEFAULT_ARCHIVES_PATH = "04_Archives";
 
 /**
  * Path to CLAUDE.md backup relative to vault root.
@@ -278,8 +278,8 @@ export async function createParaDirectories(
   const paraDirs: { name: string; relativePath: string }[] = [
     { name: "Projects", relativePath: resolveProjectPath(config) },
     { name: "Areas", relativePath: resolveAreaPath(config) },
-    { name: "Resources", relativePath: "03_Resources" },
-    { name: "Archives", relativePath: "04_Archives" },
+    { name: "Resources", relativePath: DEFAULT_RESOURCES_PATH },
+    { name: "Archives", relativePath: DEFAULT_ARCHIVES_PATH },
   ];
 
   for (const dir of paraDirs) {
@@ -445,8 +445,8 @@ Vault configuration:
 - PARA directories:
   - Projects: ${projectPath}
   - Areas: ${areaPath}
-  - Resources: 03_Resources
-  - Archives: 04_Archives
+  - Resources: ${DEFAULT_RESOURCES_PATH}
+  - Archives: ${DEFAULT_ARCHIVES_PATH}
 
 Instructions:
 1. Preserve all existing content and structure

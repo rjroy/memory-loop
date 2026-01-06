@@ -39,6 +39,8 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [loadingState, setLoadingState] = useState<LoadingState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
+  // Track which vault is being set up (TASK-008)
+  const [setupVaultId, setSetupVaultId] = useState<string | null>(null);
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
@@ -159,6 +161,44 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       }
     }
   }, [lastMessage, selectedVaultId, sendMessage]);
+
+  // Handle setup_complete message (TASK-008)
+  useEffect(() => {
+    if (lastMessage?.type === "setup_complete" && setupVaultId) {
+      const { vaultId, success } = lastMessage;
+
+      // Update vault's setupComplete status in local state
+      if (success) {
+        setVaults((prev) =>
+          prev.map((v) =>
+            v.id === vaultId ? { ...v, setupComplete: true } : v
+          )
+        );
+        console.log(`[VaultSelect] Setup complete for vault: ${vaultId}`);
+      } else {
+        // Setup failed - show error
+        const errorMessages = lastMessage.errors?.join(", ") ?? "Setup failed";
+        setError(errorMessages);
+        console.warn(`[VaultSelect] Setup failed for vault: ${vaultId}`, lastMessage.errors);
+      }
+
+      // Clear setup state
+      setSetupVaultId(null);
+    }
+  }, [lastMessage, setupVaultId]);
+
+  // Handle setup button click - send setup_vault message
+  function handleSetupClick(vault: VaultInfo) {
+    if (connectionStatus !== "connected") {
+      setError("Not connected to server. Please wait...");
+      return;
+    }
+
+    setSetupVaultId(vault.id);
+    setError(null);
+    console.log(`[VaultSelect] Starting setup for vault: ${vault.id}`);
+    sendMessage({ type: "setup_vault", vaultId: vault.id });
+  }
 
   // Handle vault card click - check for existing session via API
   async function handleVaultClick(vault: VaultInfo) {
@@ -326,13 +366,14 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
               {vault.hasClaudeMd && (
                 <button
                   type="button"
-                  className="vault-select__setup-btn"
+                  className={`vault-select__setup-btn ${
+                    setupVaultId === vault.id ? "vault-select__setup-btn--loading" : ""
+                  }`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    // TODO: TASK-008 will implement setup WebSocket logic
-                    console.log(`[VaultSelect] Setup requested for vault: ${vault.id}`);
+                    handleSetupClick(vault);
                   }}
-                  disabled={selectedVaultId !== null}
+                  disabled={selectedVaultId !== null || setupVaultId !== null}
                   aria-label={vault.setupComplete ? `Reconfigure ${vault.name}` : `Setup ${vault.name}`}
                 >
                   {vault.setupComplete ? "Reconfigure" : "Setup"}

@@ -244,12 +244,15 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
     setIsTreeCollapsed((prev) => !prev);
   }, []);
 
-  // Reload file tree (clear cache and refetch root, preserves pinned folders)
+  // Reload file tree and task list (clear cache and refetch, preserves pinned folders)
   const handleReload = useCallback(() => {
     clearDirectoryCache();
     setFileLoading(true);
     sendMessage({ type: "list_directory", path: "" });
-  }, [clearDirectoryCache, setFileLoading, sendMessage]);
+    // Also refresh task list
+    setTasksLoading(true);
+    sendMessage({ type: "get_tasks" });
+  }, [clearDirectoryCache, setFileLoading, setTasksLoading, sendMessage]);
 
   // Toggle mobile tree overlay
   const toggleMobileTree = useCallback(() => {

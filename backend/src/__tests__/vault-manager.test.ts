@@ -953,3 +953,104 @@ Item 3
     });
   });
 });
+
+// =============================================================================
+// Setup Complete Detection Tests
+// =============================================================================
+
+describe("Setup Complete Detection", () => {
+  let testDir: string;
+  const originalVaultsDir = process.env.VAULTS_DIR;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `vault-setup-detect-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(testDir, { recursive: true });
+    process.env.VAULTS_DIR = testDir;
+  });
+
+  afterEach(async () => {
+    if (originalVaultsDir === undefined) {
+      delete process.env.VAULTS_DIR;
+    } else {
+      process.env.VAULTS_DIR = originalVaultsDir;
+    }
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  describe("parseVault with setupComplete", () => {
+    test("setupComplete is false when marker does not exist", async () => {
+      const vaultDir = join(testDir, "test-vault");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Test Vault");
+
+      const vault = await parseVault(testDir, "test-vault");
+      expect(vault).not.toBeNull();
+      expect(vault!.setupComplete).toBe(false);
+    });
+
+    test("setupComplete is true when marker exists", async () => {
+      const vaultDir = join(testDir, "test-vault");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Test Vault");
+
+      // Create setup marker
+      const markerDir = join(vaultDir, ".memory-loop");
+      await mkdir(markerDir, { recursive: true });
+      await writeFile(join(markerDir, "setup-complete"), JSON.stringify({
+        completedAt: new Date().toISOString(),
+        version: "1.0.0",
+        commandsInstalled: [],
+        paraCreated: [],
+        claudeMdUpdated: false,
+      }));
+
+      const vault = await parseVault(testDir, "test-vault");
+      expect(vault).not.toBeNull();
+      expect(vault!.setupComplete).toBe(true);
+    });
+
+    test("setupComplete is false when .memory-loop exists but marker does not", async () => {
+      const vaultDir = join(testDir, "test-vault");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Test Vault");
+
+      // Create .memory-loop directory but no marker
+      const markerDir = join(vaultDir, ".memory-loop");
+      await mkdir(markerDir, { recursive: true });
+
+      const vault = await parseVault(testDir, "test-vault");
+      expect(vault).not.toBeNull();
+      expect(vault!.setupComplete).toBe(false);
+    });
+  });
+
+  describe("discoverVaults with setupComplete", () => {
+    test("correctly identifies setup status across multiple vaults", async () => {
+      // Create vault without setup
+      const vault1Dir = join(testDir, "vault-1");
+      await mkdir(vault1Dir);
+      await writeFile(join(vault1Dir, "CLAUDE.md"), "# Vault 1");
+
+      // Create vault with setup
+      const vault2Dir = join(testDir, "vault-2");
+      await mkdir(vault2Dir);
+      await writeFile(join(vault2Dir, "CLAUDE.md"), "# Vault 2");
+      const markerDir = join(vault2Dir, ".memory-loop");
+      await mkdir(markerDir, { recursive: true });
+      await writeFile(join(markerDir, "setup-complete"), "{}");
+
+      const vaults = await discoverVaults();
+      expect(vaults).toHaveLength(2);
+
+      const vault1 = vaults.find((v) => v.id === "vault-1");
+      const vault2 = vaults.find((v) => v.id === "vault-2");
+
+      expect(vault1!.setupComplete).toBe(false);
+      expect(vault2!.setupComplete).toBe(true);
+    });
+  });
+});

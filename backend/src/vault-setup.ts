@@ -8,7 +8,7 @@
  * 4. Write setup completion marker
  */
 
-import { copyFile, mkdir, readdir, writeFile, readFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -412,14 +412,13 @@ export async function createClaudeMdBackup(
 
 /**
  * Builds the prompt for updating CLAUDE.md with Memory Loop context.
+ * The LLM will use Read and Edit tools to perform the update.
  *
- * @param currentContent - Current CLAUDE.md content
  * @param config - Vault configuration
  * @param vaultPath - Vault path for context
  * @returns The prompt string for the LLM
  */
 export function buildClaudeMdPrompt(
-  currentContent: string,
   config: VaultConfig,
   vaultPath: string
 ): string {
@@ -431,12 +430,9 @@ export function buildClaudeMdPrompt(
     ? `${config.metadataPath}/goals.md`
     : "06_Metadata/memory-loop/goals.md";
 
-  return `You are updating a CLAUDE.md file for Memory Loop integration.
+  const claudeMdPath = join(vaultPath, "CLAUDE.md");
 
-Current CLAUDE.md content:
----
-${currentContent}
----
+  return `Update the CLAUDE.md file at "${claudeMdPath}" to add Memory Loop integration.
 
 Vault configuration:
 - Inbox path: ${inboxPath}
@@ -448,22 +444,22 @@ Vault configuration:
   - Resources: ${DEFAULT_RESOURCES_PATH}
   - Archives: ${DEFAULT_ARCHIVES_PATH}
 
-Instructions:
-1. Preserve all existing content and structure
+Steps:
+1. Read the current CLAUDE.md file
 2. Add or update a "## Memory Loop" section with:
    - Inbox location for daily note capture (${inboxPath})
    - Goals file location (${goalsPath})
    - Note that daily notes are created via the capture tab
    - PARA directory locations for organization
 3. If "## Memory Loop" already exists, update it in place
-4. Do not remove or reorder existing sections
-5. Keep the update concise and focused on operational information
-
-Return ONLY the complete updated CLAUDE.md content with no additional commentary.`;
+4. Preserve all existing content and structure
+5. Use the Edit tool to make targeted changes (don't rewrite the entire file)
+6. Keep the update concise and focused on operational information`;
 }
 
 /**
  * Updates CLAUDE.md with Memory Loop context using the Claude Agent SDK.
+ * The LLM uses Read and Edit tools to make targeted changes.
  *
  * @param vaultPath - Absolute path to the vault root
  * @param config - Vault configuration
@@ -475,8 +471,6 @@ export async function updateClaudeMd(
 ): Promise<SetupStepResult> {
   log.info(`Updating CLAUDE.md in ${vaultPath}`);
 
-  const claudeMdPath = join(vaultPath, "CLAUDE.md");
-
   // Step 1: Create backup first
   const backupResult = await createClaudeMdBackup(vaultPath);
   if (!backupResult.success) {
@@ -487,93 +481,52 @@ export async function updateClaudeMd(
     };
   }
 
-  // Step 2: Read current content
-  let currentContent: string;
-  try {
-    currentContent = await readFile(claudeMdPath, "utf-8");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      success: false,
-      message: "Failed to read CLAUDE.md",
-      error: message,
-    };
-  }
+  // Step 2: Build prompt and call SDK with tools
+  const prompt = buildClaudeMdPrompt(config, vaultPath);
 
-  // Step 3: Build and send prompt to SDK
-  const prompt = buildClaudeMdPrompt(currentContent, config, vaultPath);
-
-  let updatedContent: string;
   try {
     log.info("Calling SDK to update CLAUDE.md...");
 
-    // Use SDK query for a single-turn LLM request
     const queryResult = queryFn({
       prompt,
       options: {
         cwd: vaultPath,
-        maxTurns: 1, // Single turn, no tools needed
-        allowedTools: [], // No tools for this simple update
+        maxTurns: 10,
+        allowedTools: ["Read", "Edit"],
+        permissionMode: "acceptEdits",
       },
     });
 
-    // Collect the response
-    let responseText = "";
+    // Process events and check for completion
+    let resultReceived = false;
     for await (const event of queryResult) {
-      // Cast to unknown for flexible property checking
-      // The SDK types are more constrained than runtime events
       const rawEvent = event as unknown as Record<string, unknown>;
       const eventType = rawEvent.type as string;
 
-      if (eventType === "assistant") {
-        // Extract text from assistant message content blocks
-        const message = rawEvent.message as
-          | { content?: Array<{ type: string; text?: string }> }
-          | undefined;
-
-        if (message?.content) {
-          for (const block of message.content) {
-            if (block.type === "text" && block.text) {
-              responseText += block.text;
-            }
-          }
-        }
+      if (eventType === "result") {
+        resultReceived = true;
+        log.info("SDK completed CLAUDE.md update");
       }
     }
 
-    if (!responseText.trim()) {
+    if (!resultReceived) {
       return {
         success: false,
-        message: "SDK returned empty response",
-        error: "No content returned from LLM for CLAUDE.md update",
+        message: "SDK did not complete",
+        error: "No result event received from SDK",
       };
     }
 
-    updatedContent = responseText.trim();
-    log.info(`SDK returned ${updatedContent.length} characters`);
+    return {
+      success: true,
+      message: "CLAUDE.md updated with Memory Loop context",
+    };
   } catch (error) {
     const message = mapSdkError(error);
     log.error(`SDK error: ${message}`);
     return {
       success: false,
       message: "SDK call failed",
-      error: message,
-    };
-  }
-
-  // Step 4: Write updated content
-  try {
-    await writeFile(claudeMdPath, updatedContent, "utf-8");
-    log.info("CLAUDE.md updated successfully");
-    return {
-      success: true,
-      message: "CLAUDE.md updated with Memory Loop context",
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      success: false,
-      message: "Failed to write updated CLAUDE.md",
       error: message,
     };
   }

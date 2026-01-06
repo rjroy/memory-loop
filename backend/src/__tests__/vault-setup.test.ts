@@ -37,14 +37,49 @@ import { directoryExists, fileExists } from "../vault-manager";
 // =============================================================================
 
 /**
- * Creates a mock query function that returns the given response.
+ * Creates a mock query function that simulates the SDK using tools.
+ * @param updatedContent - The content to write to CLAUDE.md (simulating Edit tool)
+ * @param vaultPathRef - Reference to the vault path (allows late binding)
  */
-function createMockQueryFn(responseText: string): QueryFunction {
+function createMockQueryFn(
+  updatedContent: string,
+  vaultPathRef: { current: string }
+): QueryFunction {
+  return (async function* mockQuery() {
+    // Simulate the LLM using Edit tool to update CLAUDE.md
+    const claudeMdPath = join(vaultPathRef.current, "CLAUDE.md");
+    await writeFile(claudeMdPath, updatedContent, "utf-8");
+
+    // Emit result event to signal completion
+    yield {
+      type: "result" as const,
+    };
+  }) as unknown as QueryFunction;
+}
+
+/**
+ * Creates a mock query function that completes without making changes.
+ * Used for testing when we just need the SDK to "complete" without file edits.
+ */
+function createNoOpMockQueryFn(): QueryFunction {
   return (function* mockQuery() {
+    yield {
+      type: "result" as const,
+    };
+  }) as unknown as QueryFunction;
+}
+
+/**
+ * Creates a mock query function that does not emit a result event.
+ * Used to test timeout/incomplete scenarios.
+ */
+function createIncompleteQueryFn(): QueryFunction {
+  return (function* mockQuery() {
+    // Emit an assistant message but no result
     yield {
       type: "assistant" as const,
       message: {
-        content: [{ type: "text" as const, text: responseText }],
+        content: [{ type: "text" as const, text: "I started but didn't finish" }],
       },
     };
   }) as unknown as QueryFunction;
@@ -65,6 +100,8 @@ function createErrorMockQueryFn(message: string): QueryFunction {
 
 let testDir: string;
 let vaultPath: string;
+// Reference object for late binding in mock functions
+const vaultPathRef: { current: string } = { current: "" };
 const originalVaultsDir = process.env.VAULTS_DIR;
 
 beforeEach(async () => {
@@ -74,6 +111,7 @@ beforeEach(async () => {
     `vault-setup-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
   );
   vaultPath = join(testDir, "test-vault");
+  vaultPathRef.current = vaultPath;
 
   // Create vault with CLAUDE.md
   await mkdir(vaultPath, { recursive: true });
@@ -492,15 +530,15 @@ describe("createClaudeMdBackup", () => {
 // =============================================================================
 
 describe("buildClaudeMdPrompt", () => {
-  test("includes current CLAUDE.md content", () => {
-    const currentContent = "# My Vault\n\nExisting instructions.";
-    const prompt = buildClaudeMdPrompt(currentContent, {}, vaultPath);
+  test("includes file path for LLM to read", () => {
+    const prompt = buildClaudeMdPrompt({}, vaultPath);
 
-    expect(prompt).toContain(currentContent);
+    expect(prompt).toContain("CLAUDE.md");
+    expect(prompt).toContain(vaultPath);
   });
 
   test("includes vault configuration", () => {
-    const prompt = buildClaudeMdPrompt("# Vault", {}, vaultPath);
+    const prompt = buildClaudeMdPrompt({}, vaultPath);
 
     expect(prompt).toContain("Inbox path:");
     expect(prompt).toContain("Goals file:");
@@ -508,21 +546,22 @@ describe("buildClaudeMdPrompt", () => {
   });
 
   test("uses custom inbox path from config", () => {
-    const prompt = buildClaudeMdPrompt("# Vault", { inboxPath: "Custom_Inbox" }, vaultPath);
+    const prompt = buildClaudeMdPrompt({ inboxPath: "Custom_Inbox" }, vaultPath);
 
     expect(prompt).toContain("Custom_Inbox");
   });
 
   test("uses custom metadata path for goals", () => {
-    const prompt = buildClaudeMdPrompt("# Vault", { metadataPath: "custom_meta" }, vaultPath);
+    const prompt = buildClaudeMdPrompt({ metadataPath: "custom_meta" }, vaultPath);
 
     expect(prompt).toContain("custom_meta/goals.md");
   });
 
-  test("includes Memory Loop section instructions", () => {
-    const prompt = buildClaudeMdPrompt("# Vault", {}, vaultPath);
+  test("includes instructions to use Edit tool", () => {
+    const prompt = buildClaudeMdPrompt({}, vaultPath);
 
     expect(prompt).toContain("Memory Loop");
+    expect(prompt).toContain("Edit tool");
     expect(prompt).toContain("Preserve all existing content");
   });
 });
@@ -534,8 +573,8 @@ describe("buildClaudeMdPrompt", () => {
 describe("updateClaudeMd", () => {
   const mockUpdatedContent = "# Test Vault\n\nTest content.\n\n## Memory Loop\n\nUpdated by LLM.";
 
-  test("updates CLAUDE.md with SDK response", async () => {
-    setQueryFunction(createMockQueryFn(mockUpdatedContent));
+  test("updates CLAUDE.md when SDK completes successfully", async () => {
+    setQueryFunction(createMockQueryFn(mockUpdatedContent, vaultPathRef));
 
     const result = await updateClaudeMd(vaultPath, {});
 
@@ -546,7 +585,7 @@ describe("updateClaudeMd", () => {
   });
 
   test("creates backup before updating", async () => {
-    setQueryFunction(createMockQueryFn(mockUpdatedContent));
+    setQueryFunction(createMockQueryFn(mockUpdatedContent, vaultPathRef));
 
     await updateClaudeMd(vaultPath, {});
 
@@ -555,7 +594,7 @@ describe("updateClaudeMd", () => {
 
   test("backup contains original content", async () => {
     const originalContent = "# Test Vault\n\nTest content.";
-    setQueryFunction(createMockQueryFn(mockUpdatedContent));
+    setQueryFunction(createMockQueryFn(mockUpdatedContent, vaultPathRef));
 
     await updateClaudeMd(vaultPath, {});
 
@@ -573,13 +612,13 @@ describe("updateClaudeMd", () => {
     expect(result.error).toContain("CLAUDE.md does not exist");
   });
 
-  test("returns error if SDK returns empty response", async () => {
-    setQueryFunction(createMockQueryFn(""));
+  test("returns error if SDK does not emit result event", async () => {
+    setQueryFunction(createIncompleteQueryFn());
 
     const result = await updateClaudeMd(vaultPath, {});
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain("No content returned");
+    expect(result.error).toContain("No result event");
   });
 
   test("returns error if SDK throws", async () => {
@@ -611,7 +650,7 @@ describe("runVaultSetup", () => {
 
   beforeEach(() => {
     // Set up mock for SDK calls in runVaultSetup tests
-    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd));
+    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd, vaultPathRef));
   });
 
   test("returns error for non-existent vault", async () => {
@@ -739,7 +778,7 @@ describe("Partial Failure Handling", () => {
   const mockUpdatedClaudeMd = "# Test Vault\n\n## Memory Loop\n\nConfigured.";
 
   beforeEach(() => {
-    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd));
+    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd, vaultPathRef));
   });
 
   test("continues after command install failure and accumulates errors", async () => {
@@ -784,10 +823,10 @@ describe("Partial Failure Handling", () => {
 // =============================================================================
 
 describe("Edge Cases", () => {
-  const mockUpdatedClaudeMd = "# Vault\n\n## Memory Loop\n\nConfigured.";
-
   beforeEach(() => {
-    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd));
+    // Use no-op mock since these tests use different vault paths
+    // and just verify setup completes without error
+    setQueryFunction(createNoOpMockQueryFn());
   });
 
   test("handles vault with spaces in name", async () => {

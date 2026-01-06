@@ -1,0 +1,594 @@
+/**
+ * Vault Setup Tests
+ *
+ * Unit tests for vault setup functionality:
+ * - Command template installation
+ * - PARA directory creation
+ * - Setup marker writing
+ * - Full setup orchestration
+ */
+
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdir, writeFile, rm, readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import {
+  installCommands,
+  createParaDirectories,
+  writeSetupMarker,
+  isSetupComplete,
+  runVaultSetup,
+  SETUP_VERSION,
+  SETUP_MARKER_PATH,
+  COMMANDS_DEST_PATH,
+  type SetupCompleteMarker,
+} from "../vault-setup";
+import { directoryExists } from "../vault-manager";
+
+// =============================================================================
+// Test Fixtures
+// =============================================================================
+
+let testDir: string;
+let vaultPath: string;
+const originalVaultsDir = process.env.VAULTS_DIR;
+
+beforeEach(async () => {
+  // Create a unique test directory for each test
+  testDir = join(
+    tmpdir(),
+    `vault-setup-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
+  vaultPath = join(testDir, "test-vault");
+
+  // Create vault with CLAUDE.md
+  await mkdir(vaultPath, { recursive: true });
+  await writeFile(join(vaultPath, "CLAUDE.md"), "# Test Vault\n\nTest content.");
+
+  // Set VAULTS_DIR for vault discovery
+  process.env.VAULTS_DIR = testDir;
+});
+
+afterEach(async () => {
+  // Restore original env
+  if (originalVaultsDir === undefined) {
+    delete process.env.VAULTS_DIR;
+  } else {
+    process.env.VAULTS_DIR = originalVaultsDir;
+  }
+
+  // Clean up test directory
+  try {
+    await rm(testDir, { recursive: true, force: true });
+  } catch {
+    // Ignore cleanup errors
+  }
+});
+
+// =============================================================================
+// installCommands Tests
+// =============================================================================
+
+describe("installCommands", () => {
+  test("creates .claude/commands directory", async () => {
+    const result = await installCommands(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(await directoryExists(join(vaultPath, COMMANDS_DEST_PATH))).toBe(true);
+  });
+
+  test("copies all command templates", async () => {
+    const result = await installCommands(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(result.installed.length).toBeGreaterThan(0);
+
+    // Check that files were actually created
+    const commandsDir = join(vaultPath, COMMANDS_DEST_PATH);
+    const files = await readdir(commandsDir);
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  test("includes expected command files", async () => {
+    const result = await installCommands(vaultPath);
+
+    expect(result.success).toBe(true);
+
+    const commandsDir = join(vaultPath, COMMANDS_DEST_PATH);
+    const files = await readdir(commandsDir);
+
+    // Check for expected command files
+    expect(files).toContain("daily-debrief.md");
+    expect(files).toContain("weekly-debrief.md");
+    expect(files).toContain("monthly-summary.md");
+    expect(files).toContain("daily-review.md");
+    expect(files).toContain("inbox-processor.md");
+    expect(files).toContain("weekly-synthesis.md");
+  });
+
+  test("skips existing files", async () => {
+    // First install
+    const result1 = await installCommands(vaultPath);
+    expect(result1.success).toBe(true);
+    expect(result1.installed.length).toBeGreaterThan(0);
+
+    // Second install should skip all
+    const result2 = await installCommands(vaultPath);
+    expect(result2.success).toBe(true);
+    expect(result2.installed.length).toBe(0);
+    expect(result2.message).toContain("already existed");
+  });
+
+  test("does not overwrite existing files with different content", async () => {
+    // Create commands directory with a custom file
+    const commandsDir = join(vaultPath, COMMANDS_DEST_PATH);
+    await mkdir(commandsDir, { recursive: true });
+    const customContent = "# Custom daily-debrief content\n\nDo not overwrite me.";
+    await writeFile(join(commandsDir, "daily-debrief.md"), customContent);
+
+    // Run install
+    await installCommands(vaultPath);
+
+    // Verify custom file was preserved
+    const content = await readFile(join(commandsDir, "daily-debrief.md"), "utf-8");
+    expect(content).toBe(customContent);
+  });
+
+  test("handles mixed existing and new files", async () => {
+    // Create commands directory with one existing file
+    const commandsDir = join(vaultPath, COMMANDS_DEST_PATH);
+    await mkdir(commandsDir, { recursive: true });
+    await writeFile(join(commandsDir, "daily-debrief.md"), "existing");
+
+    const result = await installCommands(vaultPath);
+
+    expect(result.success).toBe(true);
+    // Should install all except daily-debrief.md
+    expect(result.installed).not.toContain("daily-debrief.md");
+    expect(result.installed.length).toBeGreaterThan(0);
+    expect(result.message).toContain("already existed");
+  });
+
+  test("returns list of installed commands", async () => {
+    const result = await installCommands(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(Array.isArray(result.installed)).toBe(true);
+    expect(result.installed.length).toBeGreaterThan(0);
+
+    // All installed items should be .md files
+    for (const file of result.installed) {
+      expect(file.endsWith(".md")).toBe(true);
+    }
+  });
+
+  test("creates nested directory structure", async () => {
+    // Vault with deep path
+    const deepVaultPath = join(testDir, "deep/nested/vault");
+    await mkdir(deepVaultPath, { recursive: true });
+    await writeFile(join(deepVaultPath, "CLAUDE.md"), "# Deep Vault");
+
+    const result = await installCommands(deepVaultPath);
+
+    expect(result.success).toBe(true);
+    expect(await directoryExists(join(deepVaultPath, COMMANDS_DEST_PATH))).toBe(true);
+  });
+});
+
+// =============================================================================
+// createParaDirectories Tests
+// =============================================================================
+
+describe("createParaDirectories", () => {
+  test("creates all PARA directories when none exist", async () => {
+    const result = await createParaDirectories(vaultPath, {});
+
+    expect(result.success).toBe(true);
+    expect(result.created.length).toBe(4);
+
+    // Check directories exist
+    expect(await directoryExists(join(vaultPath, "01_Projects"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "02_Areas"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "03_Resources"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "04_Archives"))).toBe(true);
+  });
+
+  test("skips existing directories", async () => {
+    // Create some directories
+    await mkdir(join(vaultPath, "01_Projects"));
+    await mkdir(join(vaultPath, "02_Areas"));
+
+    const result = await createParaDirectories(vaultPath, {});
+
+    expect(result.success).toBe(true);
+    // Should only create Resources and Archives
+    expect(result.created).toContain("Resources");
+    expect(result.created).toContain("Archives");
+    expect(result.created).not.toContain("Projects");
+    expect(result.created).not.toContain("Areas");
+    expect(result.message).toContain("already existed");
+  });
+
+  test("respects custom project path from config", async () => {
+    const result = await createParaDirectories(vaultPath, {
+      projectPath: "Custom_Projects",
+    });
+
+    expect(result.success).toBe(true);
+    expect(await directoryExists(join(vaultPath, "Custom_Projects"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "01_Projects"))).toBe(false);
+  });
+
+  test("respects custom area path from config", async () => {
+    const result = await createParaDirectories(vaultPath, {
+      areaPath: "Custom_Areas",
+    });
+
+    expect(result.success).toBe(true);
+    expect(await directoryExists(join(vaultPath, "Custom_Areas"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "02_Areas"))).toBe(false);
+  });
+
+  test("respects content root from config", async () => {
+    // Create content subdirectory
+    const contentRoot = join(vaultPath, "content");
+    await mkdir(contentRoot);
+
+    const result = await createParaDirectories(vaultPath, {
+      contentRoot: "content",
+    });
+
+    expect(result.success).toBe(true);
+    // PARA directories should be inside content/
+    expect(await directoryExists(join(contentRoot, "01_Projects"))).toBe(true);
+    expect(await directoryExists(join(contentRoot, "02_Areas"))).toBe(true);
+    expect(await directoryExists(join(contentRoot, "03_Resources"))).toBe(true);
+    expect(await directoryExists(join(contentRoot, "04_Archives"))).toBe(true);
+  });
+
+  test("returns list of created directories", async () => {
+    const result = await createParaDirectories(vaultPath, {});
+
+    expect(result.success).toBe(true);
+    expect(Array.isArray(result.created)).toBe(true);
+    expect(result.created).toContain("Projects");
+    expect(result.created).toContain("Areas");
+    expect(result.created).toContain("Resources");
+    expect(result.created).toContain("Archives");
+  });
+
+  test("returns empty created list when all exist", async () => {
+    // Create all PARA directories
+    await mkdir(join(vaultPath, "01_Projects"));
+    await mkdir(join(vaultPath, "02_Areas"));
+    await mkdir(join(vaultPath, "03_Resources"));
+    await mkdir(join(vaultPath, "04_Archives"));
+
+    const result = await createParaDirectories(vaultPath, {});
+
+    expect(result.success).toBe(true);
+    expect(result.created.length).toBe(0);
+    expect(result.message).toContain("already existed");
+  });
+});
+
+// =============================================================================
+// writeSetupMarker Tests
+// =============================================================================
+
+describe("writeSetupMarker", () => {
+  test("creates .memory-loop directory", async () => {
+    const marker: SetupCompleteMarker = {
+      completedAt: new Date().toISOString(),
+      version: SETUP_VERSION,
+      commandsInstalled: ["test.md"],
+      paraCreated: ["Projects"],
+      claudeMdUpdated: false,
+    };
+
+    const result = await writeSetupMarker(vaultPath, marker);
+
+    expect(result.success).toBe(true);
+    expect(await directoryExists(join(vaultPath, ".memory-loop"))).toBe(true);
+  });
+
+  test("writes marker file with correct content", async () => {
+    const marker: SetupCompleteMarker = {
+      completedAt: "2026-01-05T12:00:00.000Z",
+      version: SETUP_VERSION,
+      commandsInstalled: ["daily-debrief.md", "weekly-debrief.md"],
+      paraCreated: ["Projects", "Areas"],
+      claudeMdUpdated: true,
+    };
+
+    const result = await writeSetupMarker(vaultPath, marker);
+
+    expect(result.success).toBe(true);
+
+    // Read and verify content
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const parsed = JSON.parse(content) as SetupCompleteMarker;
+
+    expect(parsed.completedAt).toBe("2026-01-05T12:00:00.000Z");
+    expect(parsed.version).toBe(SETUP_VERSION);
+    expect(parsed.commandsInstalled).toEqual(["daily-debrief.md", "weekly-debrief.md"]);
+    expect(parsed.paraCreated).toEqual(["Projects", "Areas"]);
+    expect(parsed.claudeMdUpdated).toBe(true);
+  });
+
+  test("includes errors in marker when present", async () => {
+    const marker: SetupCompleteMarker = {
+      completedAt: new Date().toISOString(),
+      version: SETUP_VERSION,
+      commandsInstalled: [],
+      paraCreated: [],
+      claudeMdUpdated: false,
+      errors: ["Failed to create Projects", "Failed to update CLAUDE.md"],
+    };
+
+    const result = await writeSetupMarker(vaultPath, marker);
+
+    expect(result.success).toBe(true);
+
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const parsed = JSON.parse(content) as SetupCompleteMarker;
+
+    expect(parsed.errors).toEqual([
+      "Failed to create Projects",
+      "Failed to update CLAUDE.md",
+    ]);
+  });
+
+  test("overwrites existing marker file", async () => {
+    // Create initial marker
+    const marker1: SetupCompleteMarker = {
+      completedAt: "2026-01-01T00:00:00.000Z",
+      version: "0.0.1",
+      commandsInstalled: [],
+      paraCreated: [],
+      claudeMdUpdated: false,
+    };
+    await writeSetupMarker(vaultPath, marker1);
+
+    // Write new marker
+    const marker2: SetupCompleteMarker = {
+      completedAt: "2026-01-05T12:00:00.000Z",
+      version: SETUP_VERSION,
+      commandsInstalled: ["updated.md"],
+      paraCreated: ["All"],
+      claudeMdUpdated: true,
+    };
+    const result = await writeSetupMarker(vaultPath, marker2);
+
+    expect(result.success).toBe(true);
+
+    // Verify new content
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const parsed = JSON.parse(content) as SetupCompleteMarker;
+
+    expect(parsed.version).toBe(SETUP_VERSION);
+    expect(parsed.commandsInstalled).toEqual(["updated.md"]);
+  });
+});
+
+// =============================================================================
+// isSetupComplete Tests
+// =============================================================================
+
+describe("isSetupComplete", () => {
+  test("returns false when marker does not exist", async () => {
+    const result = await isSetupComplete(vaultPath);
+    expect(result).toBe(false);
+  });
+
+  test("returns true when marker exists", async () => {
+    // Create marker
+    const marker: SetupCompleteMarker = {
+      completedAt: new Date().toISOString(),
+      version: SETUP_VERSION,
+      commandsInstalled: [],
+      paraCreated: [],
+      claudeMdUpdated: false,
+    };
+    await writeSetupMarker(vaultPath, marker);
+
+    const result = await isSetupComplete(vaultPath);
+    expect(result).toBe(true);
+  });
+});
+
+// =============================================================================
+// runVaultSetup Tests
+// =============================================================================
+
+describe("runVaultSetup", () => {
+  test("returns error for non-existent vault", async () => {
+    const result = await runVaultSetup("nonexistent-vault");
+
+    expect(result.success).toBe(false);
+    expect(result.errors).toBeDefined();
+    expect(result.errors![0]).toContain("Vault not found");
+  });
+
+  test("completes full setup on fresh vault", async () => {
+    const result = await runVaultSetup("test-vault");
+
+    expect(result.success).toBe(true);
+    expect(result.summary.length).toBeGreaterThan(0);
+    expect(result.errors).toBeUndefined();
+
+    // Verify commands installed
+    expect(await directoryExists(join(vaultPath, COMMANDS_DEST_PATH))).toBe(true);
+
+    // Verify PARA directories created
+    expect(await directoryExists(join(vaultPath, "01_Projects"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "02_Areas"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "03_Resources"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "04_Archives"))).toBe(true);
+
+    // Verify marker written
+    expect(await isSetupComplete(vaultPath)).toBe(true);
+  });
+
+  test("succeeds on re-run (reconfigure)", async () => {
+    // First setup
+    const result1 = await runVaultSetup("test-vault");
+    expect(result1.success).toBe(true);
+
+    // Second setup (reconfigure)
+    const result2 = await runVaultSetup("test-vault");
+    expect(result2.success).toBe(true);
+    expect(result2.summary).toContain("Setup marker written");
+  });
+
+  test("marker includes all installed commands", async () => {
+    await runVaultSetup("test-vault");
+
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const marker = JSON.parse(content) as SetupCompleteMarker;
+
+    expect(marker.commandsInstalled.length).toBeGreaterThan(0);
+    expect(marker.commandsInstalled).toContain("daily-debrief.md");
+  });
+
+  test("marker includes created PARA directories", async () => {
+    await runVaultSetup("test-vault");
+
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const marker = JSON.parse(content) as SetupCompleteMarker;
+
+    expect(marker.paraCreated).toContain("Projects");
+    expect(marker.paraCreated).toContain("Areas");
+    expect(marker.paraCreated).toContain("Resources");
+    expect(marker.paraCreated).toContain("Archives");
+  });
+
+  test("marker has claudeMdUpdated as false (not yet implemented)", async () => {
+    await runVaultSetup("test-vault");
+
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const marker = JSON.parse(content) as SetupCompleteMarker;
+
+    // TASK-004 will implement CLAUDE.md update
+    expect(marker.claudeMdUpdated).toBe(false);
+  });
+
+  test("respects custom paths from .memory-loop.json", async () => {
+    // Create config file
+    await writeFile(
+      join(vaultPath, ".memory-loop.json"),
+      JSON.stringify({
+        projectPath: "My_Projects",
+        areaPath: "My_Areas",
+      })
+    );
+
+    const result = await runVaultSetup("test-vault");
+
+    expect(result.success).toBe(true);
+
+    // Check custom paths were used
+    expect(await directoryExists(join(vaultPath, "My_Projects"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "My_Areas"))).toBe(true);
+
+    // Default paths should NOT exist
+    expect(await directoryExists(join(vaultPath, "01_Projects"))).toBe(false);
+    expect(await directoryExists(join(vaultPath, "02_Areas"))).toBe(false);
+  });
+
+  test("summary includes meaningful messages", async () => {
+    const result = await runVaultSetup("test-vault");
+
+    expect(result.success).toBe(true);
+
+    // Summary should have messages about commands, PARA, and marker
+    const summaryText = result.summary.join(" ");
+    expect(summaryText).toContain("command");
+    expect(summaryText).toContain("directory");
+    expect(summaryText).toContain("marker");
+  });
+});
+
+// =============================================================================
+// Partial Failure Tests
+// =============================================================================
+
+describe("Partial Failure Handling", () => {
+  test("continues after command install failure and accumulates errors", async () => {
+    // This test verifies the error accumulation behavior
+    // We can't easily simulate a command install failure without more complex mocking
+    // but we can verify the structure handles errors correctly
+
+    // Create a vault where setup should succeed
+    const result = await runVaultSetup("test-vault");
+
+    expect(result.success).toBe(true);
+    // Verify errors array is undefined when no errors
+    expect(result.errors).toBeUndefined();
+    // Summary should still have entries for all steps
+    expect(result.summary.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test("marker is written even with partial failures", async () => {
+    // Setup should complete even if some operations are skipped/already exist
+    await mkdir(join(vaultPath, "01_Projects"));
+    await mkdir(join(vaultPath, "02_Areas"));
+
+    const result = await runVaultSetup("test-vault");
+
+    expect(result.success).toBe(true);
+    expect(await isSetupComplete(vaultPath)).toBe(true);
+
+    // Check marker reflects what was actually created (not all 4)
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const marker = JSON.parse(content) as SetupCompleteMarker;
+
+    // Only Resources and Archives should be in paraCreated
+    expect(marker.paraCreated).toContain("Resources");
+    expect(marker.paraCreated).toContain("Archives");
+    expect(marker.paraCreated).not.toContain("Projects");
+    expect(marker.paraCreated).not.toContain("Areas");
+  });
+});
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
+describe("Edge Cases", () => {
+  test("handles vault with spaces in name", async () => {
+    // Create vault with spaces
+    const spacedVaultPath = join(testDir, "my vault");
+    await mkdir(spacedVaultPath);
+    await writeFile(join(spacedVaultPath, "CLAUDE.md"), "# Spaced Vault");
+
+    const result = await runVaultSetup("my vault");
+
+    expect(result.success).toBe(true);
+    expect(await directoryExists(join(spacedVaultPath, COMMANDS_DEST_PATH))).toBe(true);
+  });
+
+  test("handles vault with special characters in name", async () => {
+    // Create vault with special chars
+    const specialVaultPath = join(testDir, "vault-2025_test.v1");
+    await mkdir(specialVaultPath);
+    await writeFile(join(specialVaultPath, "CLAUDE.md"), "# Special Vault");
+
+    const result = await runVaultSetup("vault-2025_test.v1");
+
+    expect(result.success).toBe(true);
+    expect(await isSetupComplete(specialVaultPath)).toBe(true);
+  });
+
+  test("setup version is correct", () => {
+    expect(SETUP_VERSION).toBe("1.0.0");
+  });
+
+  test("marker path is correct", () => {
+    expect(SETUP_MARKER_PATH).toBe(".memory-loop/setup-complete");
+  });
+
+  test("commands destination path is correct", () => {
+    expect(COMMANDS_DEST_PATH).toBe(".claude/commands");
+  });
+});

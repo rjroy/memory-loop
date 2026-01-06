@@ -12,13 +12,16 @@ authored_by:
 
 # Vault Setup - Implementation Progress
 
-**Last Updated**: 2026-01-05 | **Status**: 0% complete (0 of 12 tasks)
+**Last Updated**: 2026-01-05 | **Status**: 33% complete (4 of 12 tasks)
 
 ## Current Session
-**Date**: 2026-01-05 | **Working On**: Phase 1 (Foundation) | **Blockers**: None
+**Date**: 2026-01-05 | **Working On**: Phase 2 (Backend Core) | **Blockers**: None
 
 ## Completed Today
-- (Starting implementation)
+- TASK-001: Add Protocol Schemas for Setup Messages ✅ (commit: c1b9c31)
+- TASK-002: Create Command Template Files ✅ (commit: 237b873)
+- TASK-009: Add Toast Notification Component ✅ (commit: aad5935)
+- TASK-003: Implement vault-setup.ts Module - Core Structure ✅ (commit: pending)
 
 ## Discovered Issues
 - None
@@ -29,15 +32,15 @@ authored_by:
 
 ### Phase 1: Foundation (Parallelizable)
 
-**In Progress** 🚧
-- [ ] TASK-001: Add Protocol Schemas for Setup Messages
-- [ ] TASK-002: Create Command Template Files
-- [ ] TASK-009: Add Toast Notification Component
+**Completed** ✅
+- [x] TASK-001: Add Protocol Schemas for Setup Messages - *Completed 2026-01-05*
+- [x] TASK-002: Create Command Template Files - *Completed 2026-01-05*
+- [x] TASK-009: Add Toast Notification Component - *Completed 2026-01-05*
 
 ### Phase 2: Backend Core
 
-**Upcoming** ⏳
-- [ ] TASK-003: Implement vault-setup.ts Module - Core Structure
+**In Progress**
+- [x] TASK-003: Implement vault-setup.ts Module - Core Structure - *Completed 2026-01-05*
 - [ ] TASK-006: Update Vault Discovery for setupComplete Status
 
 ### Phase 3: Backend Complete
@@ -77,13 +80,14 @@ None yet.
 
 | Component | Status |
 |-----------|--------|
-| protocol.ts (setup schemas) | ⏳ Pending |
-| vault-setup.ts | ⏳ Pending |
+| protocol.ts (setup schemas) | ✅ Complete (12 tests) |
+| vault-setup.ts | ✅ Complete (36 tests) |
 | VaultSelect.tsx (setup) | ⏳ Pending |
-| Toast.tsx | ⏳ Pending |
+| Toast.tsx | ✅ Complete (22 tests) |
 
 ---
 
 ## Notes for Next Session
-- Starting with Phase 1 tasks which can be parallelized
-- TASK-001, TASK-002, TASK-009 have no dependencies
+- TASK-006 is next: Update vault discovery to check for setup marker
+- TASK-004 and TASK-005 are backend completion tasks
+- CLAUDE.md update via SDK deferred to TASK-004

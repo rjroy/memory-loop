@@ -289,15 +289,25 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       <ul className="vault-select__list" role="listbox" aria-label="Available vaults">
         {vaults.map((vault) => (
           <li key={vault.id}>
-            <button
-              type="button"
+            <div
               className={`vault-select__card ${
                 selectedVaultId === vault.id ? "vault-select__card--loading" : ""
-              } ${currentVault?.id === vault.id ? "vault-select__card--selected" : ""}`}
-              onClick={() => void handleVaultClick(vault)}
-              disabled={selectedVaultId !== null}
+              } ${currentVault?.id === vault.id ? "vault-select__card--selected" : ""} ${
+                selectedVaultId !== null ? "vault-select__card--disabled" : ""
+              }`}
+              onClick={() => {
+                if (selectedVaultId === null) void handleVaultClick(vault);
+              }}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && selectedVaultId === null) {
+                  e.preventDefault();
+                  void handleVaultClick(vault);
+                }
+              }}
               role="option"
+              tabIndex={selectedVaultId !== null ? -1 : 0}
               aria-selected={currentVault?.id === vault.id}
+              aria-disabled={selectedVaultId !== null}
             >
               <h2 className="vault-select__vault-name">{vault.name}</h2>
               <p className="vault-select__vault-path">{vault.path}</p>
@@ -307,11 +317,31 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
                     CLAUDE.md
                   </span>
                 )}
+                {vault.setupComplete && (
+                  <span className="vault-select__badge vault-select__badge--setup">
+                    Memory Loop
+                  </span>
+                )}
               </div>
+              {vault.hasClaudeMd && (
+                <button
+                  type="button"
+                  className="vault-select__setup-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // TODO: TASK-008 will implement setup WebSocket logic
+                    console.log(`[VaultSelect] Setup requested for vault: ${vault.id}`);
+                  }}
+                  disabled={selectedVaultId !== null}
+                  aria-label={vault.setupComplete ? `Reconfigure ${vault.name}` : `Setup ${vault.name}`}
+                >
+                  {vault.setupComplete ? "Reconfigure" : "Setup"}
+                </button>
+              )}
               {selectedVaultId === vault.id && (
                 <div className="vault-select__card-spinner" aria-label="Connecting" />
               )}
-            </button>
+            </div>
           </li>
         ))}
       </ul>

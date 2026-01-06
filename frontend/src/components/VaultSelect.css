@@ -277,7 +277,8 @@
   transform: translateY(0);
 }
 
-.vault-select__card:disabled {
+.vault-select__card:disabled,
+.vault-select__card--disabled {
   opacity: 0.6;
   cursor: wait;
 }
@@ -328,6 +329,61 @@
   background: linear-gradient(135deg, var(--color-accent-primary-a20) 0%, var(--color-accent-secondary-a15) 100%);
   color: var(--color-text-accent-secondary);
   border-color: var(--color-accent-secondary-a30);
+}
+
+.vault-select__badge--setup {
+  background: linear-gradient(135deg, var(--color-success-a20, rgba(34, 197, 94, 0.2)) 0%, var(--color-success-a10, rgba(34, 197, 94, 0.1)) 100%);
+  color: var(--color-success, #22c55e);
+  border-color: var(--color-success-a30, rgba(34, 197, 94, 0.3));
+}
+
+/* Setup button */
+.vault-select__setup-btn {
+  align-self: flex-start;
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vault-select__setup-btn:hover {
+  background: var(--color-accent-primary-a15);
+  border-color: var(--color-accent-primary-a30);
+  color: var(--color-text-accent-primary);
+}
+
+.vault-select__setup-btn:active {
+  transform: scale(0.98);
+}
+
+.vault-select__setup-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.vault-select__setup-btn--loading {
+  position: relative;
+  color: transparent;
+}
+
+.vault-select__setup-btn--loading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid var(--glass-border);
+  border-top-color: var(--color-accent-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 .vault-select__card-spinner {

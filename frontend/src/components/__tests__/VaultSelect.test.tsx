@@ -223,7 +223,8 @@ describe("VaultSelect", () => {
         expect(screen.getByText("Personal Notes")).toBeDefined();
       });
 
-      const vaultCard = screen.getByText("Personal Notes").closest("button");
+      // Vault cards are now divs with role="option"
+      const vaultCard = screen.getByText("Personal Notes").closest("[role='option']");
       expect(vaultCard).toBeDefined();
 
       fireEvent.click(vaultCard!);
@@ -243,13 +244,15 @@ describe("VaultSelect", () => {
         expect(screen.getByText("Personal Notes")).toBeDefined();
       });
 
-      const vaultCard = screen.getByText("Personal Notes").closest("button");
+      // Vault cards are now divs with role="option"
+      const vaultCard = screen.getByText("Personal Notes").closest("[role='option']");
       fireEvent.click(vaultCard!);
 
       await waitFor(() => {
         const allCards = screen.getAllByRole("option");
         allCards.forEach((card) => {
-          expect(card.hasAttribute("disabled")).toBe(true);
+          // Divs use aria-disabled instead of disabled attribute
+          expect(card.getAttribute("aria-disabled")).toBe("true");
         });
       });
     });
@@ -263,8 +266,8 @@ describe("VaultSelect", () => {
         expect(screen.getByText("Personal Notes")).toBeDefined();
       });
 
-      // Click vault
-      const vaultCard = screen.getByText("Personal Notes").closest("button");
+      // Click vault (cards are now divs with role="option")
+      const vaultCard = screen.getByText("Personal Notes").closest("[role='option']");
       fireEvent.click(vaultCard!);
 
       // Simulate session_ready from server

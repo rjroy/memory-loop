@@ -12,17 +12,20 @@ authored_by:
 
 # Vault Setup - Implementation Progress
 
-**Last Updated**: 2026-01-05 | **Status**: 42% complete (5 of 12 tasks)
+**Last Updated**: 2026-01-05 | **Status**: 66% complete (8 of 12 tasks)
 
 ## Current Session
-**Date**: 2026-01-05 | **Working On**: Phase 2 (Backend Core) | **Blockers**: None
+**Date**: 2026-01-05 | **Working On**: Phase 4 (Frontend) | **Blockers**: None
 
 ## Completed Today
 - TASK-001: Add Protocol Schemas for Setup Messages ✅ (commit: c1b9c31)
 - TASK-002: Create Command Template Files ✅ (commit: 237b873)
 - TASK-009: Add Toast Notification Component ✅ (commit: aad5935)
 - TASK-003: Implement vault-setup.ts Module - Core Structure ✅ (commit: 5ca3c1e)
-- TASK-006: Update Vault Discovery for setupComplete Status ✅ (commit: pending)
+- TASK-006: Update Vault Discovery for setupComplete Status ✅ (commit: fb70cca)
+- TASK-004: Implement CLAUDE.md Update with SDK ✅ (commit: a874d37)
+- TASK-005: Add WebSocket Handler for setup_vault ✅ (commit: 514d315)
+- TASK-007: Add Setup Button to VaultSelect Component ✅
 
 ## Discovered Issues
 - None
@@ -46,14 +49,14 @@ authored_by:
 
 ### Phase 3: Backend Complete
 
-**Upcoming** ⏳
-- [ ] TASK-004: Implement CLAUDE.md Update with SDK
-- [ ] TASK-005: Add WebSocket Handler for setup_vault
+**Completed** ✅
+- [x] TASK-004: Implement CLAUDE.md Update with SDK - *Completed 2026-01-05*
+- [x] TASK-005: Add WebSocket Handler for setup_vault - *Completed 2026-01-05*
 
 ### Phase 4: Frontend
 
-**Upcoming** ⏳
-- [ ] TASK-007: Add Setup Button to VaultSelect Component
+**In Progress** 🔄
+- [x] TASK-007: Add Setup Button to VaultSelect Component - *Completed 2026-01-05*
 - [ ] TASK-008: Implement Setup Loading State and WebSocket Integration
 - [ ] TASK-010: Integrate Toast with Setup Completion
 
@@ -82,13 +85,13 @@ None yet.
 | Component | Status |
 |-----------|--------|
 | protocol.ts (setup schemas) | ✅ Complete (12 tests) |
-| vault-setup.ts | ✅ Complete (36 tests) |
+| vault-setup.ts | ✅ Complete (54 tests) |
+| websocket-handler.ts (setup) | ✅ Complete (6 tests) |
 | VaultSelect.tsx (setup) | ⏳ Pending |
 | Toast.tsx | ✅ Complete (22 tests) |
 
 ---
 
 ## Notes for Next Session
-- TASK-006 is next: Update vault discovery to check for setup marker
-- TASK-004 and TASK-005 are backend completion tasks
-- CLAUDE.md update via SDK deferred to TASK-004
+- Phase 4 (Frontend) tasks are next: TASK-007, TASK-008, TASK-010
+- Backend is complete, frontend integration remains

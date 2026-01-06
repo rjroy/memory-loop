@@ -199,7 +199,7 @@ Validation happens first, before any filesystem modifications. If validation fai
 
 Strategy:
 1. Load vault config for custom paths
-2. For each PARA directory (01_Projects, 02_Areas, 03_Resources, 04_Archives):
+2. For each PARA directory (01_Projects, 02_Areas, 03_Resources, 04_Archive):
    - Resolve path using config or defaults
    - Check if exists
    - If missing, create with `mkdir -p` equivalent
@@ -277,7 +277,7 @@ Vault configuration:
   - Projects: {projectPath}
   - Areas: {areaPath}
   - Resources: 03_Resources
-  - Archives: 04_Archives
+  - Archives: 04_Archive
 
 Instructions:
 1. Preserve all existing content

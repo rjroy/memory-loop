@@ -425,7 +425,7 @@ export class WebSocketHandler {
         await this.handleGetTasks(ws);
         break;
       case "toggle_task":
-        await this.handleToggleTask(ws, message.filePath, message.lineNumber);
+        await this.handleToggleTask(ws, message.filePath, message.lineNumber, message.newState);
         break;
       case "delete_session":
         await this.handleDeleteSession(ws, message.sessionId);
@@ -1574,15 +1574,16 @@ export class WebSocketHandler {
 
   /**
    * Handles toggle_task message.
-   * Toggles the checkbox state of a task in a file.
-   * State cycle: ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
+   * If newState is provided, sets to that state. Otherwise cycles:
+   * ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
    */
   private async handleToggleTask(
     ws: WebSocketLike,
     filePath: string,
-    lineNumber: number
+    lineNumber: number,
+    newState?: string
   ): Promise<void> {
-    log.info(`Toggling task: ${filePath}:${lineNumber}`);
+    log.info(`Toggling task: ${filePath}:${lineNumber}${newState ? ` -> '${newState}'` : ""}`);
     if (!this.state.currentVault) {
       log.warn("No vault selected for task toggle");
       this.sendError(
@@ -1597,7 +1598,8 @@ export class WebSocketHandler {
       const result = await toggleTask(
         this.state.currentVault.contentRoot,
         filePath,
-        lineNumber
+        lineNumber,
+        newState
       );
 
       if (!result.success) {

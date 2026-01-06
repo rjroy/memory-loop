@@ -263,13 +263,16 @@ export const GetTasksMessageSchema = z.object({
 });
 
 /**
- * Client requests to toggle a task's checkbox state
- * Server will cycle through states: ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
+ * Client requests to toggle a task's checkbox state.
+ * If newState is provided, sets task to that state directly.
+ * Otherwise cycles through states: ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
  */
 export const ToggleTaskMessageSchema = z.object({
   type: z.literal("toggle_task"),
   filePath: z.string().min(1, "File path is required"),
   lineNumber: z.number().int().min(1, "Line number must be at least 1"),
+  /** Optional: set task to this specific state instead of cycling */
+  newState: z.string().length(1, "State must be a single character").optional(),
 });
 
 /**

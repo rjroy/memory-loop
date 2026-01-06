@@ -273,7 +273,7 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   // Handle task toggle from TaskList
   // Returns true if message was sent, false if unable to send (e.g., disconnected)
   const handleToggleTask = useCallback(
-    (filePath: string, lineNumber: number, originalState: string): boolean => {
+    (filePath: string, lineNumber: number, newState: string, originalState: string): boolean => {
       // Check connection status before attempting to send
       if (connectionStatus !== "connected") {
         setTasksError("Not connected. Please wait and try again.");
@@ -284,11 +284,12 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
       const taskKey = `${filePath}:${lineNumber}`;
       pendingTaskTogglesRef.current.set(taskKey, originalState);
 
-      // Send toggle request to server
+      // Send toggle request to server with the desired new state
       sendMessage({
         type: "toggle_task",
         filePath,
         lineNumber,
+        newState,
       });
 
       return true;

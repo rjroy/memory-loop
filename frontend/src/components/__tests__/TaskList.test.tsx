@@ -26,7 +26,7 @@ function TaskListWithTasks({
   onToggleTask,
 }: {
   tasks: TaskEntry[];
-  onToggleTask?: (filePath: string, lineNumber: number) => void;
+  onToggleTask?: (filePath: string, lineNumber: number, originalState: string) => boolean;
 }) {
   const { setTasks } = useSession();
 
@@ -155,14 +155,17 @@ describe("TaskList", () => {
 
       let toggledFilePath = "";
       let toggledLineNumber = 0;
+      let toggledOriginalState = "";
 
       render(
         <SessionProvider>
           <TaskListWithTasks
             tasks={tasks}
-            onToggleTask={(filePath, lineNumber) => {
+            onToggleTask={(filePath, lineNumber, originalState) => {
               toggledFilePath = filePath;
               toggledLineNumber = lineNumber;
+              toggledOriginalState = originalState;
+              return true;
             }}
           />
         </SessionProvider>
@@ -176,6 +179,33 @@ describe("TaskList", () => {
 
       expect(toggledFilePath).toBe("file.md");
       expect(toggledLineNumber).toBe(5);
+      expect(toggledOriginalState).toBe(" ");
+    });
+
+    it("rolls back optimistic update when onToggleTask returns false", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Task to rollback", state: " ", filePath: "file.md", lineNumber: 5, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks
+            tasks={tasks}
+            onToggleTask={() => false}
+          />
+        </SessionProvider>
+      );
+
+      // Find and click the toggle button
+      const toggleButton = screen.getByRole("button", {
+        name: /Toggle task: Task to rollback/i,
+      });
+      fireEvent.click(toggleButton);
+
+      // Task should still show incomplete state after rollback
+      // The checkbox indicator should be empty ballot box (☐)
+      const indicators = screen.getAllByText("\u2610");
+      expect(indicators.length).toBeGreaterThanOrEqual(1);
     });
   });
 

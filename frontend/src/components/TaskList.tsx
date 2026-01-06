@@ -14,8 +14,8 @@ import "./TaskList.css";
  * Props for TaskList component.
  */
 export interface TaskListProps {
-  /** Callback when a task is toggled */
-  onToggleTask?: (filePath: string, lineNumber: number) => void;
+  /** Callback when a task is toggled. Returns false to indicate failure (triggers rollback). */
+  onToggleTask?: (filePath: string, lineNumber: number, originalState: string) => boolean;
   /** Callback when a task's file is selected for viewing */
   onFileSelect?: (path: string) => void;
 }
@@ -362,7 +362,14 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
       setTasksError(null);
 
       // Notify parent to send WebSocket message
-      onToggleTask?.(filePath, lineNumber);
+      // Parent returns false if unable to send (e.g., disconnected)
+      const success = onToggleTask?.(filePath, lineNumber, currentState) ?? true;
+
+      // Rollback if parent indicates failure
+      if (!success) {
+        updateTask(filePath, lineNumber, currentState);
+        pendingTogglesRef.current.delete(taskKey);
+      }
     },
     [updateTask, setTasksError, onToggleTask]
   );

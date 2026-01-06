@@ -1,108 +1,27 @@
 ---
-description: Create comprehensive synthesis of the week's work and thinking.
-argument-hint: [optional: last-week|specific week start date in YYYY-MM-DD format]
+description: Create comprehensive synthesis of the week's work and thinking
+argument-hint: [week: this-week|last-week|YYYY-MM-DD]
 ---
-# /weekly-synthesis
 
-Create a comprehensive synthesis of the week's work and thinking.
+Focus week: $ARGUMENTS (default: this week)
 
-## Analysis Process
+Create a written synthesis of the week's work, patterns, and insights.
 
-1. **Gather Week's Work**
-   - All notes created this week
-   - All notes modified this week
-   - Projects that saw activity
+## Process
 
-2. **Identify Patterns**
-   - Recurring themes
-   - Common challenges
-   - Breakthrough moments
-   - Energy patterns (what energized vs drained)
+1. **Gather**: All notes created and modified this week, projects that saw activity
+2. **Identify patterns**: Recurring themes, challenges, breakthroughs
+3. **Synthesize learning**: Key insights, how thinking evolved, connections discovered
+4. **Assess progress**: What advanced, what's blocked, what emerged
 
-3. **Synthesize Learning**
-   - Key insights that emerged
-   - How thinking evolved
-   - Connections discovered
-   - Questions answered and raised
+## Output
 
-4. **Assess Progress**
-   - Projects advanced
-   - Areas maintained
-   - Resources added
-   - Items archived
+Create a weekly synthesis note containing:
 
-## Output Format
-
-Create a weekly synthesis note:
-
-```markdown
-# Weekly Synthesis - Week of [Date]
-
-## Week at a Glance
-
-- Notes created: [X]
-- Projects active: [List]
-- Major accomplishments: [List]
-
-## Key Themes
-
-### Theme 1: [Name]
-
-- Where it appeared: [contexts]
-- Why it matters: [significance]
-- Next actions: [what to do]
-
-### Theme 2: [Name]
-
-- Where it appeared: [contexts]
-- Why it matters: [significance]
-- Next actions: [what to do]
-
-## Major Insights
-
-1. [Insight with context]
-2. [Insight with context]
-
-## Progress by Project
-
-### [Project Name]
-
-- What advanced:
-- What's blocked:
-- Next week's focus:
-
-## Questions Emerged
-
-- [Question 1 - and why it matters]
-- [Question 2 - and why it matters]
-
-## Energy Audit
-
-- What gave energy:
-- What drained energy:
-- What to adjust:
-
-## Connections Made
-
-- [Note A] ←→ [Note B]: [Why significant]
-- [Concept X] ←→ [Concept Y]: [New understanding]
-
-## Next Week's Intentions
-
-1. [Primary focus]
-2. [Secondary focus]
-3. [Thing to explore]
-
-## To Process
-
-- Inbox items: [count]
-- Orphaned notes: [list]
-- Missing connections: [identified]
-```
-
-## Follow-up Actions
-
-- Archive completed projects
-- Clean up inbox
-- Update project status
-- Plan next week's focus
+- **Week at a Glance**: Notes created, projects active, major accomplishments
+- **Key Themes**: 2-3 recurring themes with context and significance
+- **Major Insights**: Key realizations with context
+- **Progress by Project**: What advanced, what's blocked, next focus
+- **Questions Emerged**: New questions and why they matter
+- **Connections Made**: Links between notes/concepts discovered
+- **Next Week's Intentions**: Primary focus, secondary focus, things to explore

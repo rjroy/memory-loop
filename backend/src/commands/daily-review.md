@@ -1,80 +1,25 @@
 ---
-description: Conduct an end-of-day review to capture progress and set up tomorrow.
-argument-hint: [optional: yesterday|specific date in YYYY-MM-DD format]
+description: Conduct an end-of-day review to capture progress and set up tomorrow
+argument-hint: [date: today|yesterday|YYYY-MM-DD]
 ---
-# /daily-review
 
-Conduct an end-of-day review to capture progress and set up tomorrow.
+Review date: $ARGUMENTS (default: today)
 
-## Review Process
+## Process
 
-1. **Today's Activity**
-   - Find all notes modified today
-   - Identify new notes created
-   - Review work across all projects
+1. Find all notes modified on the review date
+2. Identify new notes created that day
+3. Assess what was accomplished, what got stuck, what emerged unexpectedly
+4. Capture key learnings and new connections
+5. Set tomorrow's top 3 priorities
 
-2. **Progress Assessment**
-   - What was accomplished?
-   - What got stuck or blocked?
-   - What unexpected discoveries emerged?
+## Output
 
-3. **Capture Insights**
-   - Key learnings from today
-   - New connections discovered
-   - Questions that arose
+Update the daily note for the review date with a "Daily Review" section containing:
 
-4. **Tomorrow's Setup**
-   - Top 3 priorities
-   - Open loops to close
-   - Questions to explore
-
-## Output Format
-
-Create or update a daily note with:
-
-```markdown
-# Daily Review - [Date]
-
-## Accomplished
-
-- ✓ [Completed item 1]
-- ✓ [Completed item 2]
-
-## Progress Made
-
-- [Project/Area]: [What moved forward]
-- [Project/Area]: [What moved forward]
-
-## Insights
-
-- [Key realization or connection]
-- [Important learning]
-
-## Blocked/Stuck
-
-- [What didn't progress and why]
-
-## Discovered Questions
-
-- [New question that emerged]
-- [Thing to research]
-
-## Tomorrow's Focus
-
-1. [Priority 1]
-2. [Priority 2]
-3. [Priority 3]
-
-## Open Loops
-
-- [ ] [Thing to remember]
-- [ ] [Person to follow up with]
-- [ ] [Idea to develop]
-```
-
-## Additional Actions
-
-- Move completed project tasks to archive
-- Update project status notes
-- Link related discoveries
-- Flag items needing attention
+- **Accomplished**: Completed items (checked)
+- **Progress Made**: What moved forward, by project/area
+- **Insights**: Realizations, learnings, new connections
+- **Blocked/Stuck**: What didn't move and why
+- **Tomorrow's Focus**: Top 3 priorities
+- **Open Loops**: Follow-ups, ideas to develop

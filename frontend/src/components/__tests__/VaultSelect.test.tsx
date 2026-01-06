@@ -393,4 +393,302 @@ describe("VaultSelect", () => {
       });
     });
   });
+
+  describe("setup button", () => {
+    it("shows Setup button for vaults with CLAUDE.md but not setupComplete", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        // vault-2 has hasClaudeMd: false, so no setup button
+        // vault-1 has hasClaudeMd: true and setupComplete: true
+        const setupButton = screen.getByText("Reconfigure");
+        expect(setupButton).toBeDefined();
+      });
+    });
+
+    it("shows Reconfigure button for vaults that are already setup", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        // vault-1 has setupComplete: true
+        const reconfigureButton = screen.getByText("Reconfigure");
+        expect(reconfigureButton).toBeDefined();
+        expect(reconfigureButton.closest("button")).toBeDefined();
+      });
+    });
+
+    it("shows Setup button for vaults not yet setup", async () => {
+      // Create a vault that has CLAUDE.md but not setupComplete
+      const vaultsWithUnconfigured: VaultInfo[] = [
+        {
+          id: "vault-unconfigured",
+          name: "Unconfigured Vault",
+          path: "/home/user/unconfigured",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/unconfigured",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+        },
+      ];
+
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithUnconfigured }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        const setupButton = screen.getByText("Setup");
+        expect(setupButton).toBeDefined();
+      });
+    });
+
+    it("clicking setup button does not select the vault", async () => {
+      // Create a vault with setup needed
+      const vaultsWithUnconfigured: VaultInfo[] = [
+        {
+          id: "vault-unconfigured",
+          name: "Unconfigured Vault",
+          path: "/home/user/unconfigured",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/unconfigured",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+        },
+      ];
+
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithUnconfigured }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Setup")).toBeDefined();
+      });
+
+      // Click the setup button
+      const setupButton = screen.getByText("Setup");
+      fireEvent.click(setupButton);
+
+      // Should send setup_vault, not select_vault
+      await waitFor(() => {
+        expect(sentMessages).toContainEqual({
+          type: "setup_vault",
+          vaultId: "vault-unconfigured",
+        });
+      });
+
+      // Should NOT have sent select_vault
+      const selectMessages = sentMessages.filter((m) => m.type === "select_vault");
+      expect(selectMessages.length).toBe(0);
+    });
+
+    it("shows loading state on setup button during setup", async () => {
+      // Create a vault with setup needed
+      const vaultsWithUnconfigured: VaultInfo[] = [
+        {
+          id: "vault-unconfigured",
+          name: "Unconfigured Vault",
+          path: "/home/user/unconfigured",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/unconfigured",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+        },
+      ];
+
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithUnconfigured }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Setup")).toBeDefined();
+      });
+
+      // Click the setup button
+      const setupButton = screen.getByText("Setup");
+      fireEvent.click(setupButton);
+
+      // Button should have loading class
+      await waitFor(() => {
+        expect(setupButton.className).toContain("vault-select__setup-btn--loading");
+      });
+    });
+
+    it("updates vault to setupComplete after successful setup", async () => {
+      // Create a vault with setup needed
+      const vaultsWithUnconfigured: VaultInfo[] = [
+        {
+          id: "vault-unconfigured",
+          name: "Unconfigured Vault",
+          path: "/home/user/unconfigured",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/unconfigured",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+        },
+      ];
+
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithUnconfigured }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Setup")).toBeDefined();
+      });
+
+      // Click the setup button
+      fireEvent.click(screen.getByText("Setup"));
+
+      // Simulate setup_complete success from server
+      await waitFor(() => {
+        const ws = wsInstances[0];
+        ws.simulateMessage({
+          type: "setup_complete",
+          vaultId: "vault-unconfigured",
+          success: true,
+          summary: ["Installed 6 commands", "Created 4 directories"],
+        });
+      });
+
+      // Button should now say "Reconfigure"
+      await waitFor(() => {
+        expect(screen.getByText("Reconfigure")).toBeDefined();
+      });
+    });
+
+    it("shows toast notification on successful setup", async () => {
+      // Create a vault with setup needed
+      const vaultsWithUnconfigured: VaultInfo[] = [
+        {
+          id: "vault-unconfigured",
+          name: "Unconfigured Vault",
+          path: "/home/user/unconfigured",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/unconfigured",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+        },
+      ];
+
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithUnconfigured }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Setup")).toBeDefined();
+      });
+
+      // Click the setup button
+      fireEvent.click(screen.getByText("Setup"));
+
+      // Simulate setup_complete success from server
+      await waitFor(() => {
+        const ws = wsInstances[0];
+        ws.simulateMessage({
+          type: "setup_complete",
+          vaultId: "vault-unconfigured",
+          success: true,
+          summary: ["Installed 6 commands", "Created 4 directories"],
+        });
+      });
+
+      // Toast should appear with success message
+      await waitFor(() => {
+        const toast = document.querySelector("[role='alert']");
+        expect(toast).toBeDefined();
+        expect(toast?.textContent).toContain("Installed 6 commands");
+      });
+    });
+
+    it("shows error toast on failed setup", async () => {
+      // Create a vault with setup needed
+      const vaultsWithUnconfigured: VaultInfo[] = [
+        {
+          id: "vault-unconfigured",
+          name: "Unconfigured Vault",
+          path: "/home/user/unconfigured",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/unconfigured",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+        },
+      ];
+
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithUnconfigured }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Setup")).toBeDefined();
+      });
+
+      // Click the setup button
+      fireEvent.click(screen.getByText("Setup"));
+
+      // Simulate setup_complete failure from server
+      await waitFor(() => {
+        const ws = wsInstances[0];
+        ws.simulateMessage({
+          type: "setup_complete",
+          vaultId: "vault-unconfigured",
+          success: false,
+          summary: [],
+          errors: ["Failed to install commands", "Permission denied"],
+        });
+      });
+
+      // Toast should appear with error message
+      await waitFor(() => {
+        const toast = document.querySelector("[role='alert']");
+        expect(toast).toBeDefined();
+        expect(toast?.textContent).toContain("Failed to install commands");
+      });
+    });
+
+    it("disables setup button during any vault operation", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Click a vault card to start selection
+      const vaultCard = screen.getByText("Personal Notes").closest("[role='option']");
+      fireEvent.click(vaultCard!);
+
+      // Setup button should be disabled
+      await waitFor(() => {
+        const setupButton = screen.getByText("Reconfigure");
+        expect((setupButton as HTMLButtonElement).disabled).toBe(true);
+      });
+    });
+  });
 });

@@ -6,10 +6,11 @@
  * Uses API to check for existing sessions before connecting.
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import type { VaultInfo } from "@memory-loop/shared";
 import { useSession, STORAGE_KEY_VAULT } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { Toast, type ToastVariant } from "./Toast";
 import "./VaultSelect.css";
 
 /**
@@ -41,6 +42,10 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
   // Track which vault is being set up (TASK-008)
   const [setupVaultId, setSetupVaultId] = useState<string | null>(null);
+  // Toast notification state (TASK-010)
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastVariant, setToastVariant] = useState<ToastVariant>("success");
+  const [toastMessage, setToastMessage] = useState("");
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
@@ -162,10 +167,10 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     }
   }, [lastMessage, selectedVaultId, sendMessage]);
 
-  // Handle setup_complete message (TASK-008)
+  // Handle setup_complete message (TASK-008, TASK-010)
   useEffect(() => {
     if (lastMessage?.type === "setup_complete" && setupVaultId) {
-      const { vaultId, success } = lastMessage;
+      const { vaultId, success, summary, errors } = lastMessage;
 
       // Update vault's setupComplete status in local state
       if (success) {
@@ -174,18 +179,30 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
             v.id === vaultId ? { ...v, setupComplete: true } : v
           )
         );
+        // Show success toast with summary
+        const summaryText = summary?.join(", ") ?? "Setup complete";
+        setToastVariant("success");
+        setToastMessage(summaryText);
+        setToastVisible(true);
         console.log(`[VaultSelect] Setup complete for vault: ${vaultId}`);
       } else {
-        // Setup failed - show error
-        const errorMessages = lastMessage.errors?.join(", ") ?? "Setup failed";
-        setError(errorMessages);
-        console.warn(`[VaultSelect] Setup failed for vault: ${vaultId}`, lastMessage.errors);
+        // Setup failed - show error toast
+        const errorMessages = errors?.join(", ") ?? "Setup failed";
+        setToastVariant("error");
+        setToastMessage(errorMessages);
+        setToastVisible(true);
+        console.warn(`[VaultSelect] Setup failed for vault: ${vaultId}`, errors);
       }
 
       // Clear setup state
       setSetupVaultId(null);
     }
   }, [lastMessage, setupVaultId]);
+
+  // Toast dismiss handler
+  const handleToastDismiss = useCallback(() => {
+    setToastVisible(false);
+  }, []);
 
   // Handle setup button click - send setup_vault message
   function handleSetupClick(vault: VaultInfo) {
@@ -386,6 +403,13 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
           </li>
         ))}
       </ul>
+
+      <Toast
+        isVisible={toastVisible}
+        variant={toastVariant}
+        message={toastMessage}
+        onDismiss={handleToastDismiss}
+      />
     </div>
   );
 }

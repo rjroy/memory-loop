@@ -326,19 +326,22 @@ export interface ToggleResult {
 }
 
 /**
- * Toggles the state of a task checkbox in a file.
+ * Toggles or sets the state of a task checkbox in a file.
  *
- * State cycle: ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
+ * If newState is provided, sets the task to that state directly.
+ * Otherwise cycles: ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
  *
  * @param vaultPath - Absolute path to the vault root
  * @param filePath - Relative file path from vault root
  * @param lineNumber - 1-indexed line number of the task
+ * @param newState - Optional: set to this state instead of cycling
  * @returns ToggleResult with success status and new state
  */
 export async function toggleTask(
   vaultPath: string,
   filePath: string,
-  lineNumber: number
+  lineNumber: number,
+  newState?: string
 ): Promise<ToggleResult> {
   log.debug(`Toggling task: ${filePath}:${lineNumber} in ${vaultPath}`);
 
@@ -391,11 +394,11 @@ export async function toggleTask(
   const currentState = match[2]; // e.g., " " or "x"
   const suffix = match[3]; // e.g., "] Buy groceries"
 
-  // 8. Calculate next state using getNextState()
-  const newState = getNextState(currentState);
+  // 8. Calculate next state: use provided state or cycle
+  const targetState = newState ?? getNextState(currentState);
 
   // 9. Reconstruct the line with only the state character changed
-  const newLine = prefix + newState + suffix;
+  const newLine = prefix + targetState + suffix;
 
   // 10. Update the array
   lines[lineNumber - 1] = newLine;
@@ -411,8 +414,8 @@ export async function toggleTask(
     return { success: false, error: message };
   }
 
-  log.info(`Toggled task ${filePath}:${lineNumber} from '${currentState}' to '${newState}'`);
+  log.info(`Toggled task ${filePath}:${lineNumber} from '${currentState}' to '${targetState}'`);
 
   // 12. Return success with new state
-  return { success: true, newState };
+  return { success: true, newState: targetState };
 }

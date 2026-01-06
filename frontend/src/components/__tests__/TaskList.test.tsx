@@ -26,7 +26,7 @@ function TaskListWithTasks({
   onToggleTask,
 }: {
   tasks: TaskEntry[];
-  onToggleTask?: (filePath: string, lineNumber: number, originalState: string) => boolean;
+  onToggleTask?: (filePath: string, lineNumber: number, newState: string, originalState: string) => boolean;
 }) {
   const { setTasks } = useSession();
 
@@ -155,15 +155,17 @@ describe("TaskList", () => {
 
       let toggledFilePath = "";
       let toggledLineNumber = 0;
+      let toggledNewState = "";
       let toggledOriginalState = "";
 
       render(
         <SessionProvider>
           <TaskListWithTasks
             tasks={tasks}
-            onToggleTask={(filePath, lineNumber, originalState) => {
+            onToggleTask={(filePath, lineNumber, newState, originalState) => {
               toggledFilePath = filePath;
               toggledLineNumber = lineNumber;
+              toggledNewState = newState;
               toggledOriginalState = originalState;
               return true;
             }}
@@ -179,6 +181,7 @@ describe("TaskList", () => {
 
       expect(toggledFilePath).toBe("file.md");
       expect(toggledLineNumber).toBe(5);
+      expect(toggledNewState).toBe("x"); // ' ' toggles to 'x'
       expect(toggledOriginalState).toBe(" ");
     });
 
@@ -497,14 +500,19 @@ describe("TaskList", () => {
 
       let toggledFilePath = "";
       let toggledLineNumber = 0;
+      let toggledNewState = "";
+      let toggledOriginalState = "";
 
       render(
         <SessionProvider>
           <TaskListWithTasks
             tasks={tasks}
-            onToggleTask={(filePath, lineNumber) => {
+            onToggleTask={(filePath, lineNumber, newState, originalState) => {
               toggledFilePath = filePath;
               toggledLineNumber = lineNumber;
+              toggledNewState = newState;
+              toggledOriginalState = originalState;
+              return true;
             }}
           />
         </SessionProvider>
@@ -520,9 +528,11 @@ describe("TaskList", () => {
       const urgentOption = screen.getByRole("menuitem", { name: /urgent/i });
       fireEvent.click(urgentOption);
 
-      // Should call onToggleTask
+      // Should call onToggleTask with the selected state
       expect(toggledFilePath).toBe("file.md");
       expect(toggledLineNumber).toBe(1);
+      expect(toggledNewState).toBe("f"); // 'f' is the urgent state
+      expect(toggledOriginalState).toBe(" ");
 
       // Context menu should be closed
       expect(screen.queryByRole("menu")).toBeNull();

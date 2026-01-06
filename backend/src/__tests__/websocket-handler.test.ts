@@ -3021,7 +3021,8 @@ describe("WebSocket Handler", () => {
       expect(mockToggleTask).toHaveBeenCalledWith(
         vault.contentRoot,
         "00_Inbox/tasks.md",
-        5
+        5,
+        undefined
       );
     });
 

@@ -271,16 +271,18 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   }, [viewMode, setViewMode]);
 
   // Handle task toggle from TaskList
+  // Returns true if message was sent, false if unable to send (e.g., disconnected)
   const handleToggleTask = useCallback(
-    (filePath: string, lineNumber: number) => {
-      // Store original state for rollback (get from current tasks)
-      const task = browser.tasks.find(
-        (t) => t.filePath === filePath && t.lineNumber === lineNumber
-      );
-      if (task) {
-        const taskKey = `${filePath}:${lineNumber}`;
-        pendingTaskTogglesRef.current.set(taskKey, task.state);
+    (filePath: string, lineNumber: number, originalState: string): boolean => {
+      // Check connection status before attempting to send
+      if (connectionStatus !== "connected") {
+        setTasksError("Not connected. Please wait and try again.");
+        return false;
       }
+
+      // Store original state for rollback on server error
+      const taskKey = `${filePath}:${lineNumber}`;
+      pendingTaskTogglesRef.current.set(taskKey, originalState);
 
       // Send toggle request to server
       sendMessage({
@@ -288,8 +290,10 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
         filePath,
         lineNumber,
       });
+
+      return true;
     },
-    [browser.tasks, sendMessage]
+    [sendMessage, connectionStatus, setTasksError]
   );
 
   // Get the view mode title text

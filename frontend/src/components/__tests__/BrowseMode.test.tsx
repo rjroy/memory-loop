@@ -302,4 +302,61 @@ describe("BrowseMode", () => {
       expect(localStorage.getItem("memory-loop:viewMode")).toBe("tasks");
     });
   });
+
+  describe("task toggle when disconnected", () => {
+    it("shows error and does not send message when WebSocket is disconnected", async () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Wait for WebSocket to connect
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const ws = wsInstances[0];
+
+      // Simulate session ready
+      ws.simulateMessage({ type: "session_ready", sessionId: "test-session", vaultId: "vault-1" });
+
+      // Toggle to tasks view
+      const header = screen.getByRole("button", { name: /switch to tasks view/i });
+      fireEvent.click(header);
+
+      // Wait for get_tasks request to be sent
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Simulate tasks response with a sample task
+      ws.simulateMessage({
+        type: "tasks",
+        tasks: [
+          { text: "Test task", state: " ", filePath: "test.md", lineNumber: 1, fileMtime: 1000 },
+        ],
+        incomplete: 1,
+        total: 1,
+      });
+
+      // Wait for tasks to render
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Verify task is displayed
+      expect(screen.getByText("Test task")).toBeDefined();
+
+      // Clear sent messages to track only new ones
+      sentMessages.length = 0;
+
+      // Simulate disconnect
+      ws.readyState = MockWebSocket.CLOSED;
+      ws.onclose?.(new Event("close"));
+
+      // Wait for disconnect to propagate
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Click the task toggle button
+      const toggleButton = screen.getByRole("button", { name: /Toggle task: Test task/i });
+      fireEvent.click(toggleButton);
+
+      // Verify error message is displayed
+      expect(screen.getByText("Not connected. Please wait and try again.")).toBeDefined();
+
+      // Verify no toggle_task message was sent
+      const toggleMessages = sentMessages.filter((m) => m.type === "toggle_task");
+      expect(toggleMessages.length).toBe(0);
+    });
+  });
 });

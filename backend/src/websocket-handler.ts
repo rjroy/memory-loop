@@ -42,6 +42,7 @@ import {
   saveSlashCommands,
   slashCommandsEqual,
 } from "./vault-config";
+import { runVaultSetup } from "./vault-setup";
 
 /**
  * WebSocket interface for sending messages.
@@ -431,6 +432,9 @@ export class WebSocketHandler {
         break;
       case "tool_permission_response":
         this.handleToolPermissionResponse(message.toolUseId, message.allowed);
+        break;
+      case "setup_vault":
+        await this.handleSetupVault(ws, message.vaultId);
         break;
     }
   }
@@ -1198,6 +1202,60 @@ export class WebSocketHandler {
         const message = error instanceof Error ? error.message : "Failed to delete session";
         this.sendError(ws, "INTERNAL_ERROR", message);
       }
+    }
+  }
+
+  /**
+   * Handles setup_vault message.
+   * Runs vault setup to install commands, create directories, and update CLAUDE.md.
+   */
+  private async handleSetupVault(
+    ws: WebSocketLike,
+    vaultId: string
+  ): Promise<void> {
+    log.info(`Setting up vault: ${vaultId}`);
+
+    // Validate vault exists
+    const vault = await getVaultById(vaultId);
+    if (!vault) {
+      log.warn(`Vault not found for setup: ${vaultId}`);
+      this.sendError(ws, "VAULT_NOT_FOUND", `Vault "${vaultId}" not found`);
+      return;
+    }
+
+    // Validate vault has CLAUDE.md (required for setup)
+    if (!vault.hasClaudeMd) {
+      log.warn(`Vault missing CLAUDE.md: ${vaultId}`);
+      this.sendError(
+        ws,
+        "VALIDATION_ERROR",
+        `Vault "${vault.name}" is missing CLAUDE.md at root`
+      );
+      return;
+    }
+
+    // Run setup
+    try {
+      const result = await runVaultSetup(vaultId);
+
+      log.info(
+        `Setup complete for ${vaultId}: success=${result.success}, ` +
+          `summary=${result.summary.length} items`
+      );
+
+      // Send setup_complete message
+      this.send(ws, {
+        type: "setup_complete",
+        vaultId,
+        success: result.success,
+        summary: result.summary,
+        errors: result.errors,
+      });
+    } catch (error) {
+      log.error(`Setup failed for ${vaultId}:`, error);
+      const message =
+        error instanceof Error ? error.message : "Setup failed unexpectedly";
+      this.sendError(ws, "INTERNAL_ERROR", message);
     }
   }
 

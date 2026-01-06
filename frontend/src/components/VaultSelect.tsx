@@ -6,10 +6,11 @@
  * Uses API to check for existing sessions before connecting.
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import type { VaultInfo } from "@memory-loop/shared";
 import { useSession, STORAGE_KEY_VAULT } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { Toast, type ToastVariant } from "./Toast";
 import "./VaultSelect.css";
 
 /**
@@ -39,6 +40,12 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [loadingState, setLoadingState] = useState<LoadingState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
+  // Track which vault is being set up (TASK-008)
+  const [setupVaultId, setSetupVaultId] = useState<string | null>(null);
+  // Toast notification state (TASK-010)
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastVariant, setToastVariant] = useState<ToastVariant>("success");
+  const [toastMessage, setToastMessage] = useState("");
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
@@ -159,6 +166,56 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       }
     }
   }, [lastMessage, selectedVaultId, sendMessage]);
+
+  // Handle setup_complete message (TASK-008, TASK-010)
+  useEffect(() => {
+    if (lastMessage?.type === "setup_complete" && setupVaultId) {
+      const { vaultId, success, summary, errors } = lastMessage;
+
+      // Update vault's setupComplete status in local state
+      if (success) {
+        setVaults((prev) =>
+          prev.map((v) =>
+            v.id === vaultId ? { ...v, setupComplete: true } : v
+          )
+        );
+        // Show success toast with summary
+        const summaryText = summary?.join(", ") ?? "Setup complete";
+        setToastVariant("success");
+        setToastMessage(summaryText);
+        setToastVisible(true);
+        console.log(`[VaultSelect] Setup complete for vault: ${vaultId}`);
+      } else {
+        // Setup failed - show error toast
+        const errorMessages = errors?.join(", ") ?? "Setup failed";
+        setToastVariant("error");
+        setToastMessage(errorMessages);
+        setToastVisible(true);
+        console.warn(`[VaultSelect] Setup failed for vault: ${vaultId}`, errors);
+      }
+
+      // Clear setup state
+      setSetupVaultId(null);
+    }
+  }, [lastMessage, setupVaultId]);
+
+  // Toast dismiss handler
+  const handleToastDismiss = useCallback(() => {
+    setToastVisible(false);
+  }, []);
+
+  // Handle setup button click - send setup_vault message
+  function handleSetupClick(vault: VaultInfo) {
+    if (connectionStatus !== "connected") {
+      setError("Not connected to server. Please wait...");
+      return;
+    }
+
+    setSetupVaultId(vault.id);
+    setError(null);
+    console.log(`[VaultSelect] Starting setup for vault: ${vault.id}`);
+    sendMessage({ type: "setup_vault", vaultId: vault.id });
+  }
 
   // Handle vault card click - check for existing session via API
   async function handleVaultClick(vault: VaultInfo) {
@@ -289,15 +346,25 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       <ul className="vault-select__list" role="listbox" aria-label="Available vaults">
         {vaults.map((vault) => (
           <li key={vault.id}>
-            <button
-              type="button"
+            <div
               className={`vault-select__card ${
                 selectedVaultId === vault.id ? "vault-select__card--loading" : ""
-              } ${currentVault?.id === vault.id ? "vault-select__card--selected" : ""}`}
-              onClick={() => void handleVaultClick(vault)}
-              disabled={selectedVaultId !== null}
+              } ${currentVault?.id === vault.id ? "vault-select__card--selected" : ""} ${
+                selectedVaultId !== null ? "vault-select__card--disabled" : ""
+              }`}
+              onClick={() => {
+                if (selectedVaultId === null) void handleVaultClick(vault);
+              }}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && selectedVaultId === null) {
+                  e.preventDefault();
+                  void handleVaultClick(vault);
+                }
+              }}
               role="option"
+              tabIndex={selectedVaultId !== null ? -1 : 0}
               aria-selected={currentVault?.id === vault.id}
+              aria-disabled={selectedVaultId !== null}
             >
               <h2 className="vault-select__vault-name">{vault.name}</h2>
               <p className="vault-select__vault-path">{vault.path}</p>
@@ -307,14 +374,42 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
                     CLAUDE.md
                   </span>
                 )}
+                {vault.setupComplete && (
+                  <span className="vault-select__badge vault-select__badge--setup">
+                    Memory Loop
+                  </span>
+                )}
               </div>
+              {vault.hasClaudeMd && (
+                <button
+                  type="button"
+                  className={`vault-select__setup-btn ${
+                    setupVaultId === vault.id ? "vault-select__setup-btn--loading" : ""
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSetupClick(vault);
+                  }}
+                  disabled={selectedVaultId !== null || setupVaultId !== null}
+                  aria-label={vault.setupComplete ? `Reconfigure ${vault.name}` : `Setup ${vault.name}`}
+                >
+                  {vault.setupComplete ? "Reconfigure" : "Setup"}
+                </button>
+              )}
               {selectedVaultId === vault.id && (
                 <div className="vault-select__card-spinner" aria-label="Connecting" />
               )}
-            </button>
+            </div>
           </li>
         ))}
       </ul>
+
+      <Toast
+        isVisible={toastVisible}
+        variant={toastVariant}
+        message={toastMessage}
+        onDismiss={handleToastDismiss}
+      />
     </div>
   );
 }

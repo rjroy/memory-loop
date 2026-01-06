@@ -23,6 +23,7 @@ export const VaultInfoSchema = z.object({
   inboxPath: z.string().min(1, "Inbox path is required"),
   metadataPath: z.string().min(1, "Metadata path is required"),
   goalsPath: z.string().optional(),
+  setupComplete: z.boolean(),
 });
 
 // =============================================================================
@@ -292,6 +293,14 @@ export const ToolPermissionResponseMessageSchema = z.object({
 });
 
 /**
+ * Client requests to run vault setup (install commands, create PARA dirs, update CLAUDE.md)
+ */
+export const SetupVaultMessageSchema = z.object({
+  type: z.literal("setup_vault"),
+  vaultId: z.string().min(1, "Vault ID is required"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -313,6 +322,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ToggleTaskMessageSchema,
   DeleteSessionMessageSchema,
   ToolPermissionResponseMessageSchema,
+  SetupVaultMessageSchema,
 ]);
 
 // =============================================================================
@@ -545,6 +555,19 @@ export const ToolPermissionRequestMessageSchema = z.object({
 });
 
 /**
+ * Server reports vault setup completion (commands installed, PARA created, CLAUDE.md updated)
+ */
+export const SetupCompleteMessageSchema = z.object({
+  type: z.literal("setup_complete"),
+  vaultId: z.string().min(1, "Vault ID is required"),
+  success: z.boolean(),
+  /** Human-readable summary of actions taken */
+  summary: z.array(z.string()),
+  /** Details of any errors that occurred during setup */
+  errors: z.array(z.string()).optional(),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -570,6 +593,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   TaskToggledMessageSchema,
   SessionDeletedMessageSchema,
   ToolPermissionRequestMessageSchema,
+  SetupCompleteMessageSchema,
 ]);
 
 // =============================================================================
@@ -616,6 +640,7 @@ export type GetTasksMessage = z.infer<typeof GetTasksMessageSchema>;
 export type ToggleTaskMessage = z.infer<typeof ToggleTaskMessageSchema>;
 export type DeleteSessionMessage = z.infer<typeof DeleteSessionMessageSchema>;
 export type ToolPermissionResponseMessage = z.infer<typeof ToolPermissionResponseMessageSchema>;
+export type SetupVaultMessage = z.infer<typeof SetupVaultMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -643,6 +668,7 @@ export type TasksMessage = z.infer<typeof TasksMessageSchema>;
 export type TaskToggledMessage = z.infer<typeof TaskToggledMessageSchema>;
 export type SessionDeletedMessage = z.infer<typeof SessionDeletedMessageSchema>;
 export type ToolPermissionRequestMessage = z.infer<typeof ToolPermissionRequestMessageSchema>;
+export type SetupCompleteMessage = z.infer<typeof SetupCompleteMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

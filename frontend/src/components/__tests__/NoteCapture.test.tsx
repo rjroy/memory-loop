@@ -57,6 +57,7 @@ const testVault: VaultInfo = {
   contentRoot: "/test/vault",
   inboxPath: "inbox",
   metadataPath: "06_Metadata/memory-loop",
+  setupComplete: false,
 };
 
 // Wrapper with providers - vault is pre-selected via localStorage

@@ -24,6 +24,7 @@ import {
   GetTasksMessageSchema,
   ToggleTaskMessageSchema,
   ToolPermissionResponseMessageSchema,
+  SetupVaultMessageSchema,
   // Server message schemas
   ServerMessageSchema,
   VaultListMessageSchema,
@@ -45,6 +46,7 @@ import {
   TasksMessageSchema,
   TaskToggledMessageSchema,
   ToolPermissionRequestMessageSchema,
+  SetupCompleteMessageSchema,
   // Supporting schemas
   VaultInfoSchema,
   ErrorCodeSchema,
@@ -73,6 +75,7 @@ describe("VaultInfoSchema", () => {
       contentRoot: "/vaults/my-vault",
       inboxPath: "00_Inbox",
       metadataPath: "06_Metadata/memory-loop",
+      setupComplete: false,
     };
 
     const result = VaultInfoSchema.parse(validVault);
@@ -92,6 +95,7 @@ describe("VaultInfoSchema", () => {
       contentRoot: "/vaults/my-vault",
       inboxPath: "00_Inbox",
       metadataPath: "06_Metadata/memory-loop",
+      setupComplete: false,
     };
 
     expect(() => VaultInfoSchema.parse(invalidVault)).toThrow(ZodError);
@@ -213,6 +217,7 @@ describe("TaskEntrySchema", () => {
       state: " ",
       filePath: "00_Inbox/2025-01-01.md",
       lineNumber: 5,
+      fileMtime: 1704067200000,
     };
     const result = TaskEntrySchema.parse(task);
     expect(result.text).toBe("Buy groceries");
@@ -227,6 +232,7 @@ describe("TaskEntrySchema", () => {
       state: "x",
       filePath: "01_Projects/project.md",
       lineNumber: 10,
+      fileMtime: 1704067200000,
     };
     const result = TaskEntrySchema.parse(task);
     expect(result.state).toBe("x");
@@ -240,6 +246,7 @@ describe("TaskEntrySchema", () => {
         state,
         filePath: "test.md",
         lineNumber: 1,
+        fileMtime: 1704067200000,
       };
       expect(() => TaskEntrySchema.parse(task)).not.toThrow();
     }
@@ -252,6 +259,7 @@ describe("TaskEntrySchema", () => {
       state: " ",
       filePath: "test.md",
       lineNumber: 1,
+      fileMtime: 1704067200000,
     };
     const result = TaskEntrySchema.parse(task);
     expect(result.text).toBe("");
@@ -263,6 +271,7 @@ describe("TaskEntrySchema", () => {
       state: " ",
       filePath: "test.md",
       lineNumber: 1,
+      fileMtime: 1704067200000,
     };
     const result = TaskEntrySchema.parse(task);
     expect(result.text).toContain("\u{1F525}");
@@ -274,6 +283,7 @@ describe("TaskEntrySchema", () => {
       state: "xx",
       filePath: "test.md",
       lineNumber: 1,
+      fileMtime: 1704067200000,
     };
     expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
   });
@@ -755,6 +765,33 @@ describe("Client -> Server Messages", () => {
     });
   });
 
+  describe("SetupVaultMessageSchema", () => {
+    test("accepts valid setup_vault message", () => {
+      const msg = {
+        type: "setup_vault" as const,
+        vaultId: "my-vault",
+      };
+      const result = SetupVaultMessageSchema.parse(msg);
+      expect(result.type).toBe("setup_vault");
+      expect(result.vaultId).toBe("my-vault");
+    });
+
+    test("rejects empty vaultId", () => {
+      const msg = { type: "setup_vault", vaultId: "" };
+      expect(() => SetupVaultMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing vaultId", () => {
+      const msg = { type: "setup_vault" };
+      expect(() => SetupVaultMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string vaultId", () => {
+      const msg = { type: "setup_vault", vaultId: 123 };
+      expect(() => SetupVaultMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ClientMessageSchema (discriminated union)", () => {
     test("parses all client message types", () => {
       const messages = [
@@ -772,6 +809,7 @@ describe("Client -> Server Messages", () => {
         { type: "get_tasks" },
         { type: "toggle_task", filePath: "test.md", lineNumber: 1 },
         { type: "tool_permission_response", toolUseId: "tool_123", allowed: true },
+        { type: "setup_vault", vaultId: "my-vault" },
       ];
 
       for (const msg of messages) {
@@ -817,6 +855,7 @@ describe("Server -> Client Messages", () => {
             contentRoot: "/vaults/vault-1",
             inboxPath: "00_Inbox",
             metadataPath: "06_Metadata/memory-loop",
+            setupComplete: true,
           },
           {
             id: "vault-2",
@@ -826,6 +865,7 @@ describe("Server -> Client Messages", () => {
             contentRoot: "/vaults/vault-2",
             inboxPath: "Inbox",
             metadataPath: "06_Metadata/memory-loop",
+            setupComplete: false,
           },
         ],
       };
@@ -1400,8 +1440,20 @@ describe("Server -> Client Messages", () => {
       const msg = {
         type: "tasks" as const,
         tasks: [
-          { text: "Buy groceries", state: " ", filePath: "00_Inbox/today.md", lineNumber: 5 },
-          { text: "Finish report", state: "x", filePath: "01_Projects/work.md", lineNumber: 10 },
+          {
+            text: "Buy groceries",
+            state: " ",
+            filePath: "00_Inbox/today.md",
+            lineNumber: 5,
+            fileMtime: 1704067200000,
+          },
+          {
+            text: "Finish report",
+            state: "x",
+            filePath: "01_Projects/work.md",
+            lineNumber: 10,
+            fileMtime: 1704067200000,
+          },
         ],
         incomplete: 1,
         total: 2,
@@ -1435,6 +1487,7 @@ describe("Server -> Client Messages", () => {
         state,
         filePath: "test.md",
         lineNumber: i + 1,
+        fileMtime: 1704067200000,
       }));
       const msg = {
         type: "tasks" as const,
@@ -1449,7 +1502,7 @@ describe("Server -> Client Messages", () => {
     test("rejects invalid task in tasks array", () => {
       const msg = {
         type: "tasks",
-        tasks: [{ text: "Valid", state: "xx", filePath: "test.md", lineNumber: 1 }], // invalid state
+        tasks: [{ text: "Valid", state: "xx", filePath: "test.md", lineNumber: 1, fileMtime: 1704067200000 }], // invalid state
         incomplete: 0,
         total: 1,
       };
@@ -1656,6 +1709,72 @@ describe("Server -> Client Messages", () => {
     });
   });
 
+  describe("SetupCompleteMessageSchema", () => {
+    test("accepts valid setup_complete with success", () => {
+      const msg = {
+        type: "setup_complete" as const,
+        vaultId: "my-vault",
+        success: true,
+        summary: ["Installed 6 commands", "Created 4 directories", "Updated CLAUDE.md"],
+      };
+      const result = SetupCompleteMessageSchema.parse(msg);
+      expect(result.type).toBe("setup_complete");
+      expect(result.vaultId).toBe("my-vault");
+      expect(result.success).toBe(true);
+      expect(result.summary).toHaveLength(3);
+    });
+
+    test("accepts setup_complete with failure and errors", () => {
+      const msg = {
+        type: "setup_complete" as const,
+        vaultId: "my-vault",
+        success: false,
+        summary: ["Installed 6 commands"],
+        errors: ["Failed to update CLAUDE.md: permission denied"],
+      };
+      const result = SetupCompleteMessageSchema.parse(msg);
+      expect(result.success).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors?.[0]).toContain("permission denied");
+    });
+
+    test("accepts setup_complete without errors field", () => {
+      const msg = {
+        type: "setup_complete" as const,
+        vaultId: "my-vault",
+        success: true,
+        summary: [],
+      };
+      const result = SetupCompleteMessageSchema.parse(msg);
+      expect(result.errors).toBeUndefined();
+    });
+
+    test("rejects empty vaultId", () => {
+      const msg = { type: "setup_complete", vaultId: "", success: true, summary: [] };
+      expect(() => SetupCompleteMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing vaultId", () => {
+      const msg = { type: "setup_complete", success: true, summary: [] };
+      expect(() => SetupCompleteMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing success", () => {
+      const msg = { type: "setup_complete", vaultId: "v1", summary: [] };
+      expect(() => SetupCompleteMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing summary", () => {
+      const msg = { type: "setup_complete", vaultId: "v1", success: true };
+      expect(() => SetupCompleteMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-array summary", () => {
+      const msg = { type: "setup_complete", vaultId: "v1", success: true, summary: "not an array" };
+      expect(() => SetupCompleteMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("ServerMessageSchema (discriminated union)", () => {
     test("parses all server message types", () => {
       const messages = [
@@ -1670,6 +1789,7 @@ describe("Server -> Client Messages", () => {
               contentRoot: "/v1",
               inboxPath: "Inbox",
               metadataPath: "06_Metadata/memory-loop",
+              setupComplete: false,
             },
           ],
         },
@@ -1695,12 +1815,15 @@ describe("Server -> Client Messages", () => {
         { type: "tasks", tasks: [], incomplete: 0, total: 0 },
         {
           type: "tasks",
-          tasks: [{ text: "Buy milk", state: " ", filePath: "inbox.md", lineNumber: 1 }],
+          tasks: [
+            { text: "Buy milk", state: " ", filePath: "inbox.md", lineNumber: 1, fileMtime: 1704067200000 },
+          ],
           incomplete: 1,
           total: 1,
         },
         { type: "task_toggled", filePath: "test.md", lineNumber: 5, newState: "x" },
         { type: "tool_permission_request", toolUseId: "tool_123", toolName: "Read", input: {} },
+        { type: "setup_complete", vaultId: "v1", success: true, summary: ["Installed 6 commands"] },
       ];
 
       for (const msg of messages) {

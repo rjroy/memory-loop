@@ -213,6 +213,10 @@ export async function parseVault(
   // Detect goals.md file
   const goalsPath = await detectGoalsPath(contentRoot, config);
 
+  // Check for setup completion marker
+  const setupMarkerPath = join(vaultPath, ".memory-loop/setup-complete");
+  const setupComplete = await fileExists(setupMarkerPath);
+
   return {
     id: dirName,
     name,
@@ -222,6 +226,7 @@ export async function parseVault(
     inboxPath,
     metadataPath,
     goalsPath,
+    setupComplete,
   };
 }
 

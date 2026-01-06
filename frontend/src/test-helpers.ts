@@ -22,6 +22,7 @@ export function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     contentRoot,
     inboxPath: "00_Inbox",
     metadataPath: "06_Metadata/memory-loop",
+    setupComplete: false,
     ...overrides,
   };
 }

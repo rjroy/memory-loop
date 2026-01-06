@@ -573,6 +573,7 @@ describe("captureToDaily Integration", () => {
       contentRoot: testDir,
       inboxPath: "00_Inbox",
       metadataPath: "06_Metadata/memory-loop",
+      setupComplete: false,
     };
   });
 
@@ -796,6 +797,7 @@ describe("Edge Cases", () => {
       contentRoot: testDir,
       inboxPath: "00_Inbox",
       metadataPath: "06_Metadata/memory-loop",
+      setupComplete: false,
     };
   });
 

@@ -18,12 +18,46 @@ import {
   writeSetupMarker,
   isSetupComplete,
   runVaultSetup,
+  createClaudeMdBackup,
+  buildClaudeMdPrompt,
+  updateClaudeMd,
+  setQueryFunction,
+  resetQueryFunction,
   SETUP_VERSION,
   SETUP_MARKER_PATH,
   COMMANDS_DEST_PATH,
+  CLAUDEMD_BACKUP_PATH,
   type SetupCompleteMarker,
+  type QueryFunction,
 } from "../vault-setup";
-import { directoryExists } from "../vault-manager";
+import { directoryExists, fileExists } from "../vault-manager";
+
+// =============================================================================
+// Mock Query Function Factory
+// =============================================================================
+
+/**
+ * Creates a mock query function that returns the given response.
+ */
+function createMockQueryFn(responseText: string): QueryFunction {
+  return (function* mockQuery() {
+    yield {
+      type: "assistant" as const,
+      message: {
+        content: [{ type: "text" as const, text: responseText }],
+      },
+    };
+  }) as unknown as QueryFunction;
+}
+
+/**
+ * Creates a mock query function that throws an error.
+ */
+function createErrorMockQueryFn(message: string): QueryFunction {
+  return (() => {
+    throw new Error(message);
+  }) as unknown as QueryFunction;
+}
 
 // =============================================================================
 // Test Fixtures
@@ -50,6 +84,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // Reset SDK mock
+  resetQueryFunction();
+
   // Restore original env
   if (originalVaultsDir === undefined) {
     delete process.env.VAULTS_DIR;
@@ -398,10 +435,185 @@ describe("isSetupComplete", () => {
 });
 
 // =============================================================================
+// CLAUDE.md Backup Tests
+// =============================================================================
+
+describe("createClaudeMdBackup", () => {
+  test("creates backup of CLAUDE.md", async () => {
+    const result = await createClaudeMdBackup(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(await fileExists(join(vaultPath, CLAUDEMD_BACKUP_PATH))).toBe(true);
+  });
+
+  test("backup contains original content", async () => {
+    const originalContent = "# Test Vault\n\nTest content.";
+    const result = await createClaudeMdBackup(vaultPath);
+
+    expect(result.success).toBe(true);
+
+    const backupContent = await readFile(join(vaultPath, CLAUDEMD_BACKUP_PATH), "utf-8");
+    expect(backupContent).toBe(originalContent);
+  });
+
+  test("creates .memory-loop directory if needed", async () => {
+    const result = await createClaudeMdBackup(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(await directoryExists(join(vaultPath, ".memory-loop"))).toBe(true);
+  });
+
+  test("returns error if CLAUDE.md does not exist", async () => {
+    const emptyVaultPath = join(testDir, "empty-vault");
+    await mkdir(emptyVaultPath);
+
+    const result = await createClaudeMdBackup(emptyVaultPath);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("CLAUDE.md does not exist");
+  });
+
+  test("overwrites existing backup", async () => {
+    // Create initial backup
+    await mkdir(join(vaultPath, ".memory-loop"), { recursive: true });
+    await writeFile(join(vaultPath, CLAUDEMD_BACKUP_PATH), "old backup");
+
+    const result = await createClaudeMdBackup(vaultPath);
+
+    expect(result.success).toBe(true);
+
+    const backupContent = await readFile(join(vaultPath, CLAUDEMD_BACKUP_PATH), "utf-8");
+    expect(backupContent).toBe("# Test Vault\n\nTest content.");
+  });
+});
+
+// =============================================================================
+// CLAUDE.md Prompt Building Tests
+// =============================================================================
+
+describe("buildClaudeMdPrompt", () => {
+  test("includes current CLAUDE.md content", () => {
+    const currentContent = "# My Vault\n\nExisting instructions.";
+    const prompt = buildClaudeMdPrompt(currentContent, {}, vaultPath);
+
+    expect(prompt).toContain(currentContent);
+  });
+
+  test("includes vault configuration", () => {
+    const prompt = buildClaudeMdPrompt("# Vault", {}, vaultPath);
+
+    expect(prompt).toContain("Inbox path:");
+    expect(prompt).toContain("Goals file:");
+    expect(prompt).toContain("PARA directories:");
+  });
+
+  test("uses custom inbox path from config", () => {
+    const prompt = buildClaudeMdPrompt("# Vault", { inboxPath: "Custom_Inbox" }, vaultPath);
+
+    expect(prompt).toContain("Custom_Inbox");
+  });
+
+  test("uses custom metadata path for goals", () => {
+    const prompt = buildClaudeMdPrompt("# Vault", { metadataPath: "custom_meta" }, vaultPath);
+
+    expect(prompt).toContain("custom_meta/goals.md");
+  });
+
+  test("includes Memory Loop section instructions", () => {
+    const prompt = buildClaudeMdPrompt("# Vault", {}, vaultPath);
+
+    expect(prompt).toContain("Memory Loop");
+    expect(prompt).toContain("Preserve all existing content");
+  });
+});
+
+// =============================================================================
+// CLAUDE.md Update Tests
+// =============================================================================
+
+describe("updateClaudeMd", () => {
+  const mockUpdatedContent = "# Test Vault\n\nTest content.\n\n## Memory Loop\n\nUpdated by LLM.";
+
+  test("updates CLAUDE.md with SDK response", async () => {
+    setQueryFunction(createMockQueryFn(mockUpdatedContent));
+
+    const result = await updateClaudeMd(vaultPath, {});
+
+    expect(result.success).toBe(true);
+
+    const content = await readFile(join(vaultPath, "CLAUDE.md"), "utf-8");
+    expect(content).toBe(mockUpdatedContent);
+  });
+
+  test("creates backup before updating", async () => {
+    setQueryFunction(createMockQueryFn(mockUpdatedContent));
+
+    await updateClaudeMd(vaultPath, {});
+
+    expect(await fileExists(join(vaultPath, CLAUDEMD_BACKUP_PATH))).toBe(true);
+  });
+
+  test("backup contains original content", async () => {
+    const originalContent = "# Test Vault\n\nTest content.";
+    setQueryFunction(createMockQueryFn(mockUpdatedContent));
+
+    await updateClaudeMd(vaultPath, {});
+
+    const backupContent = await readFile(join(vaultPath, CLAUDEMD_BACKUP_PATH), "utf-8");
+    expect(backupContent).toBe(originalContent);
+  });
+
+  test("returns error if backup fails", async () => {
+    // Remove CLAUDE.md so backup fails
+    await rm(join(vaultPath, "CLAUDE.md"));
+
+    const result = await updateClaudeMd(vaultPath, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("CLAUDE.md does not exist");
+  });
+
+  test("returns error if SDK returns empty response", async () => {
+    setQueryFunction(createMockQueryFn(""));
+
+    const result = await updateClaudeMd(vaultPath, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No content returned");
+  });
+
+  test("returns error if SDK throws", async () => {
+    setQueryFunction(createErrorMockQueryFn("API rate limit exceeded"));
+
+    const result = await updateClaudeMd(vaultPath, {});
+
+    expect(result.success).toBe(false);
+    expect(result.message).toBe("SDK call failed");
+  });
+
+  test("preserves CLAUDE.md on SDK error", async () => {
+    const originalContent = "# Test Vault\n\nTest content.";
+    setQueryFunction(createErrorMockQueryFn("SDK error"));
+
+    await updateClaudeMd(vaultPath, {});
+
+    const content = await readFile(join(vaultPath, "CLAUDE.md"), "utf-8");
+    expect(content).toBe(originalContent);
+  });
+});
+
+// =============================================================================
 // runVaultSetup Tests
 // =============================================================================
 
 describe("runVaultSetup", () => {
+  const mockUpdatedClaudeMd = "# Test Vault\n\n## Memory Loop\n\nConfigured.";
+
+  beforeEach(() => {
+    // Set up mock for SDK calls in runVaultSetup tests
+    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd));
+  });
+
   test("returns error for non-existent vault", async () => {
     const result = await runVaultSetup("nonexistent-vault");
 
@@ -463,13 +675,23 @@ describe("runVaultSetup", () => {
     expect(marker.paraCreated).toContain("Archives");
   });
 
-  test("marker has claudeMdUpdated as false (not yet implemented)", async () => {
+  test("marker has claudeMdUpdated as true when SDK succeeds", async () => {
     await runVaultSetup("test-vault");
 
     const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
     const marker = JSON.parse(content) as SetupCompleteMarker;
 
-    // TASK-004 will implement CLAUDE.md update
+    expect(marker.claudeMdUpdated).toBe(true);
+  });
+
+  test("marker has claudeMdUpdated as false when SDK fails", async () => {
+    setQueryFunction(createErrorMockQueryFn("SDK error"));
+
+    await runVaultSetup("test-vault");
+
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const marker = JSON.parse(content) as SetupCompleteMarker;
+
     expect(marker.claudeMdUpdated).toBe(false);
   });
 
@@ -514,6 +736,12 @@ describe("runVaultSetup", () => {
 // =============================================================================
 
 describe("Partial Failure Handling", () => {
+  const mockUpdatedClaudeMd = "# Test Vault\n\n## Memory Loop\n\nConfigured.";
+
+  beforeEach(() => {
+    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd));
+  });
+
   test("continues after command install failure and accumulates errors", async () => {
     // This test verifies the error accumulation behavior
     // We can't easily simulate a command install failure without more complex mocking
@@ -556,6 +784,12 @@ describe("Partial Failure Handling", () => {
 // =============================================================================
 
 describe("Edge Cases", () => {
+  const mockUpdatedClaudeMd = "# Vault\n\n## Memory Loop\n\nConfigured.";
+
+  beforeEach(() => {
+    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd));
+  });
+
   test("handles vault with spaces in name", async () => {
     // Create vault with spaces
     const spacedVaultPath = join(testDir, "my vault");

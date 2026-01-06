@@ -1,7 +1,8 @@
 ---
+description: Process and remember what was important this week through guided conversation.
 argument-hint: [optional: last-week|specific week start date in YYYY-MM-DD format]
 ---
-# Weekly Debrief
+# /weekly-debrief
 
 Help me process and remember what was important this week through guided conversation. If `$ARGUMENTS` is provided, focus on that week instead of the current week.
 

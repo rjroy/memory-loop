@@ -1,7 +1,8 @@
 ---
+description: Quick focused conversation to capture what matters from today.
 argument-hint: [optional: yesterday|specific date in YYYY-MM-DD format]
 ---
-# Daily Debrief
+# /daily-debrief
 
 Quick, focused conversation (5-10 minutes) to capture what matters from today before moving on. If `$ARGUMENTS` is provided, focus on that day instead of today.
 

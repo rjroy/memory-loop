@@ -1,7 +1,8 @@
 ---
+description: Conduct an end-of-day review to capture progress and set up tomorrow.
 argument-hint: [optional: yesterday|specific date in YYYY-MM-DD format]
 ---
-# Daily Review
+# /daily-review
 
 Conduct an end-of-day review to capture progress and set up tomorrow.
 

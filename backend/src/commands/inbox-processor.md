@@ -1,4 +1,7 @@
-# Inbox Processor
+---
+description: Organize and process items in inbox according to PARA method.
+---
+# /inbox-processor
 
 Help organize and process items in the 00_Inbox folder according to the PARA
 method.

@@ -1,4 +1,8 @@
-# Weekly Synthesis
+---
+description: Create comprehensive synthesis of the week's work and thinking.
+argument-hint: [optional: last-week|specific week start date in YYYY-MM-DD format]
+---
+# /weekly-synthesis
 
 Create a comprehensive synthesis of the week's work and thinking.
 

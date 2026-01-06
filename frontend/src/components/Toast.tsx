@@ -56,6 +56,12 @@ export function Toast({
     return () => clearTimeout(timer);
   }, [isVisible, autoDismissMs, handleDismiss]);
 
+  // Handle click dismissal
+  function handleClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    handleDismiss();
+  }
+
   // Handle keyboard dismissal
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape" || e.key === "Enter" || e.key === " ") {
@@ -73,7 +79,7 @@ export function Toast({
       className={`toast toast--${variant}`}
       role="alert"
       aria-live="assertive"
-      onClick={handleDismiss}
+      onClick={handleClick}
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >
@@ -84,7 +90,7 @@ export function Toast({
       <button
         type="button"
         className="toast__dismiss"
-        onClick={handleDismiss}
+        onClick={handleClick}
         aria-label="Dismiss notification"
       >
         <span aria-hidden="true">&times;</span>

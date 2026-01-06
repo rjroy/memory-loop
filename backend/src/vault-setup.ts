@@ -283,16 +283,18 @@ export async function createParaDirectories(
   ];
 
   for (const dir of paraDirs) {
+
     const absolutePath = join(contentRoot, dir.relativePath);
 
     // Validate path is within vault boundary
     try {
-      await validatePath(vaultPath, dir.relativePath);
+      await validatePath(vaultPath, absolutePath);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(`${dir.name} (${dir.relativePath}): ${message}`);
       continue;
     }
+
 
     // Check if directory exists
     if (await directoryExists(absolutePath)) {

@@ -222,6 +222,7 @@ export async function parseVault(
     inboxPath,
     metadataPath,
     goalsPath,
+    setupComplete: false, // TODO: TASK-006 will check for .memory-loop/setup-complete marker
   };
 }
 

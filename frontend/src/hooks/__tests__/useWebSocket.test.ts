@@ -256,6 +256,7 @@ describe("useWebSocket", () => {
             contentRoot: "/test",
             inboxPath: "inbox",
             metadataPath: "06_Metadata/memory-loop",
+            setupComplete: false,
           },
         ],
       };

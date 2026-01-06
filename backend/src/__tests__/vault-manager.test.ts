@@ -473,6 +473,7 @@ describe("Filesystem Integration", () => {
         contentRoot: "/vaults/test-vault",
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
+        setupComplete: false,
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/00_Inbox");
@@ -487,6 +488,7 @@ describe("Filesystem Integration", () => {
         contentRoot: "/vaults/test-vault",
         inboxPath: "Custom/Inbox",
         metadataPath: "06_Metadata/memory-loop",
+        setupComplete: false,
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/Custom/Inbox");
@@ -501,6 +503,7 @@ describe("Filesystem Integration", () => {
         contentRoot: "/vaults/test-vault/content",
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
+        setupComplete: false,
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/content/00_Inbox");
@@ -841,6 +844,7 @@ Item 3
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
         goalsPath: undefined,
+        setupComplete: false,
       };
 
       const goals = await getVaultGoals(vault);
@@ -870,6 +874,7 @@ Item 3
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
         goalsPath: GOALS_FILE_PATH,
+        setupComplete: false,
       };
 
       const sections = await getVaultGoals(vault);
@@ -892,6 +897,7 @@ Item 3
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
         goalsPath: GOALS_FILE_PATH,
+        setupComplete: false,
       };
 
       const goals = await getVaultGoals(vault);

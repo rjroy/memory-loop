@@ -72,6 +72,7 @@ const testVault: VaultInfo = {
   contentRoot: "/test/vault",
   inboxPath: "inbox",
   metadataPath: "06_Metadata/memory-loop",
+  setupComplete: false,
 };
 
 function TestWrapper({ children }: { children: ReactNode }) {

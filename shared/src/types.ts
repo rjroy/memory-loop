@@ -16,6 +16,7 @@
  * @property inboxPath - Resolved inbox location for daily notes (relative to contentRoot)
  * @property metadataPath - Path to metadata directory (relative to contentRoot)
  * @property goalsPath - Path to goals.md if it exists (relative to contentRoot)
+ * @property setupComplete - Whether vault setup has been completed (marker file exists)
  */
 export interface VaultInfo {
   id: string;
@@ -26,6 +27,7 @@ export interface VaultInfo {
   inboxPath: string;
   metadataPath: string;
   goalsPath?: string;
+  setupComplete: boolean;
 }
 
 /**

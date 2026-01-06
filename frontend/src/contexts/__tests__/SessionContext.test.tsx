@@ -42,6 +42,7 @@ const testVault: VaultInfo = {
   contentRoot: "/path/to/vault",
   inboxPath: "inbox",
   metadataPath: "06_Metadata/memory-loop",
+  setupComplete: false,
 };
 
 const testVault2: VaultInfo = {
@@ -52,6 +53,7 @@ const testVault2: VaultInfo = {
   contentRoot: "/path/to/vault2",
   inboxPath: "inbox",
   metadataPath: "06_Metadata/memory-loop",
+  setupComplete: false,
 };
 
 describe("SessionContext", () => {

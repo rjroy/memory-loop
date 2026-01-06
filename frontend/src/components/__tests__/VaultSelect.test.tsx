@@ -71,6 +71,7 @@ const testVaults: VaultInfo[] = [
     contentRoot: "/home/user/notes",
     inboxPath: "inbox",
     metadataPath: "06_Metadata/memory-loop",
+    setupComplete: true,
   },
   {
     id: "vault-2",
@@ -80,6 +81,7 @@ const testVaults: VaultInfo[] = [
     contentRoot: "/home/user/work",
     inboxPath: "inbox",
     metadataPath: "06_Metadata/memory-loop",
+    setupComplete: false,
   },
 ];
 

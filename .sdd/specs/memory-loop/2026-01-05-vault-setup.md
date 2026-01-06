@@ -88,7 +88,7 @@ As a Memory Loop user setting up a new vault, I want to click a single button th
 - **REQ-F-32**: Setup must create `01_Projects/` if it doesn't exist
 - **REQ-F-33**: Setup must create `02_Areas/` if it doesn't exist
 - **REQ-F-34**: Setup must create `03_Resources/` if it doesn't exist
-- **REQ-F-35**: Setup must create `04_Archives/` if it doesn't exist
+- **REQ-F-35**: Setup must create `04_Archive/` if it doesn't exist
 - **REQ-F-36**: Setup must respect custom paths from `.memory-loop.json` (projectPath, areaPath)
 - **REQ-F-37**: Existing directories must not be modified (only missing ones created)
 
@@ -168,7 +168,7 @@ Commands will be stored in the backend and copied to vaults during setup:
 
 5. **Command Preservation**: Given a vault with existing `.claude/commands/daily-debrief.md`, when setup runs, then the existing file is not overwritten and summary notes it was skipped.
 
-6. **PARA Creation**: Given a vault without PARA directories, when setup completes, then `01_Projects/`, `02_Areas/`, `03_Resources/`, `04_Archives/` exist relative to content root.
+6. **PARA Creation**: Given a vault without PARA directories, when setup completes, then `01_Projects/`, `02_Areas/`, `03_Resources/`, `04_Archive/` exist relative to content root.
 
 7. **PARA Preservation**: Given a vault with existing `01_Projects/` containing files, when setup runs, then the directory and its contents are unchanged.
 

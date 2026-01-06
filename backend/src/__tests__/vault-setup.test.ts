@@ -265,7 +265,7 @@ describe("createParaDirectories", () => {
     expect(await directoryExists(join(vaultPath, "01_Projects"))).toBe(true);
     expect(await directoryExists(join(vaultPath, "02_Areas"))).toBe(true);
     expect(await directoryExists(join(vaultPath, "03_Resources"))).toBe(true);
-    expect(await directoryExists(join(vaultPath, "04_Archives"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "04_Archive"))).toBe(true);
   });
 
   test("skips existing directories", async () => {
@@ -318,7 +318,7 @@ describe("createParaDirectories", () => {
     expect(await directoryExists(join(contentRoot, "01_Projects"))).toBe(true);
     expect(await directoryExists(join(contentRoot, "02_Areas"))).toBe(true);
     expect(await directoryExists(join(contentRoot, "03_Resources"))).toBe(true);
-    expect(await directoryExists(join(contentRoot, "04_Archives"))).toBe(true);
+    expect(await directoryExists(join(contentRoot, "04_Archive"))).toBe(true);
   });
 
   test("returns list of created directories", async () => {
@@ -337,7 +337,7 @@ describe("createParaDirectories", () => {
     await mkdir(join(vaultPath, "01_Projects"));
     await mkdir(join(vaultPath, "02_Areas"));
     await mkdir(join(vaultPath, "03_Resources"));
-    await mkdir(join(vaultPath, "04_Archives"));
+    await mkdir(join(vaultPath, "04_Archive"));
 
     const result = await createParaDirectories(vaultPath, {});
 
@@ -675,7 +675,7 @@ describe("runVaultSetup", () => {
     expect(await directoryExists(join(vaultPath, "01_Projects"))).toBe(true);
     expect(await directoryExists(join(vaultPath, "02_Areas"))).toBe(true);
     expect(await directoryExists(join(vaultPath, "03_Resources"))).toBe(true);
-    expect(await directoryExists(join(vaultPath, "04_Archives"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "04_Archive"))).toBe(true);
 
     // Verify marker written
     expect(await isSetupComplete(vaultPath)).toBe(true);

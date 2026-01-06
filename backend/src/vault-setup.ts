@@ -118,7 +118,7 @@ export const DEFAULT_RESOURCES_PATH = "03_Resources";
 /**
  * Default path for Archives directory (relative to content root).
  */
-export const DEFAULT_ARCHIVES_PATH = "04_Archives";
+export const DEFAULT_ARCHIVES_PATH = "04_Archive";
 
 /**
  * Path to CLAUDE.md backup relative to vault root.

@@ -256,6 +256,8 @@
   --color-error-a40: oklch(from var(--color-error) l c h / 0.40);
 
   /* Success - Green */
+  --color-success-a10: oklch(from var(--color-success) l c h / 0.10);
+  --color-success-a20: oklch(from var(--color-success) l c h / 0.20);
   --color-success-a30: oklch(from var(--color-success) l c h / 0.30);
 
   /* Black - Shadows & Overlays */

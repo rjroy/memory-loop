@@ -690,5 +690,59 @@ describe("VaultSelect", () => {
         expect((setupButton as HTMLButtonElement).disabled).toBe(true);
       });
     });
+
+    it("handles setup_complete even when server responds before state update (race condition fix)", async () => {
+      // This tests the fix for issue #169: vault card doesn't update if server is too fast
+      // The setup_complete handler should use vaultId from message, not depend on setupVaultId state
+      const vaultsWithUnconfigured: VaultInfo[] = [
+        {
+          id: "vault-unconfigured",
+          name: "Unconfigured Vault",
+          path: "/home/user/unconfigured",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/unconfigured",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+        },
+      ];
+
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithUnconfigured }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Setup")).toBeDefined();
+      });
+
+      // Get the WebSocket instance
+      const ws = wsInstances[0];
+
+      // Simulate the race condition: server sends setup_complete immediately
+      // (before the setupVaultId state update from handleSetupClick completes)
+      // We do this by sending the message without clicking the button first
+      ws.simulateMessage({
+        type: "setup_complete",
+        vaultId: "vault-unconfigured",
+        success: true,
+        summary: ["Fast setup complete"],
+      });
+
+      // The vault card should still update to show "Reconfigure"
+      await waitFor(() => {
+        expect(screen.getByText("Reconfigure")).toBeDefined();
+      });
+
+      // Toast should still appear
+      await waitFor(() => {
+        const toast = document.querySelector("[role='alert']");
+        expect(toast).toBeDefined();
+        expect(toast?.textContent).toContain("Fast setup complete");
+      });
+    });
   });
 });

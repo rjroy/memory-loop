@@ -168,9 +168,19 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   }, [lastMessage, selectedVaultId, sendMessage]);
 
   // Handle setup_complete message (TASK-008, TASK-010)
+  // Note: We don't depend on setupVaultId for matching because the server response
+  // may arrive before React finishes processing setSetupVaultId (race condition).
+  // Instead, we use the vaultId from the message and verify the vault exists.
   useEffect(() => {
-    if (lastMessage?.type === "setup_complete" && setupVaultId) {
+    if (lastMessage?.type === "setup_complete") {
       const { vaultId, success, summary, errors } = lastMessage;
+
+      // Verify this vault exists in our list (guards against stale messages)
+      const vault = vaults.find((v) => v.id === vaultId);
+      if (!vault) {
+        console.warn(`[VaultSelect] Received setup_complete for unknown vault: ${vaultId}`);
+        return;
+      }
 
       // Update vault's setupComplete status in local state
       if (success) {
@@ -194,10 +204,10 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         console.warn(`[VaultSelect] Setup failed for vault: ${vaultId}`, errors);
       }
 
-      // Clear setup state
+      // Clear setup state (if it was set)
       setSetupVaultId(null);
     }
-  }, [lastMessage, setupVaultId]);
+  }, [lastMessage, vaults]);
 
   // Toast dismiss handler
   const handleToastDismiss = useCallback(() => {

@@ -5,7 +5,7 @@
  * Supports optimistic updates with rollback on error.
  */
 
-import { useMemo, useCallback, useRef, useState } from "react";
+import { useMemo, useCallback, useRef, useState, useEffect } from "react";
 import type { TaskEntry } from "@memory-loop/shared";
 import { useSession } from "../contexts/SessionContext";
 import "./TaskList.css";
@@ -21,20 +21,21 @@ export interface TaskListProps {
 }
 
 /**
- * Task state cycle order for toggling.
- * ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
+ * Available task states for context menu selection.
+ * These are the "special" states beyond basic incomplete/complete.
  */
-const STATE_CYCLE: string[] = [" ", "x", "/", "?", "b", "f"];
+const CONTEXT_MENU_STATES: string[] = ["/", "?", "b", "f"];
 
 /**
- * Get the next state in the cycle for a given current state.
+ * Get the next state for left-click toggle.
+ * Left-click toggles between ' ' (incomplete) and 'x' (complete).
+ * Any other state goes to ' ' (incomplete).
  */
 function getNextState(currentState: string): string {
-  const currentIndex = STATE_CYCLE.indexOf(currentState);
-  if (currentIndex === -1) {
-    return "x"; // Unknown state, cycle to complete
+  if (currentState === " ") {
+    return "x";
   }
-  return STATE_CYCLE[(currentIndex + 1) % STATE_CYCLE.length];
+  return " ";
 }
 
 /**
@@ -82,6 +83,18 @@ function getStateLabel(state: string): string {
 }
 
 /**
+ * Context menu state for task state selection.
+ */
+interface TaskContextMenuState {
+  isOpen: boolean;
+  filePath: string;
+  lineNumber: number;
+  currentState: string;
+  x: number;
+  y: number;
+}
+
+/**
  * Props for TaskGroup component (internal).
  */
 interface TaskGroupProps {
@@ -89,14 +102,25 @@ interface TaskGroupProps {
   tasks: TaskEntry[];
   onToggle: (filePath: string, lineNumber: number, currentState: string) => void;
   onFileSelect?: (path: string) => void;
+  onContextMenu: (filePath: string, lineNumber: number, currentState: string, event: React.MouseEvent | React.TouchEvent) => void;
 }
 
 /**
  * TaskGroup displays tasks from a single file.
  */
-function TaskGroup({ filePath, tasks, onToggle, onFileSelect }: TaskGroupProps): React.ReactNode {
+function TaskGroup({ filePath, tasks, onToggle, onFileSelect, onContextMenu }: TaskGroupProps): React.ReactNode {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { setCurrentPath } = useSession();
+  const longPressTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Cleanup long press timers on unmount
+  useEffect(() => {
+    return () => {
+      for (const timer of longPressTimerRef.current.values()) {
+        clearTimeout(timer);
+      }
+    };
+  }, []);
 
   // Calculate rollup count: completed (state = 'x') / total
   const completedCount = tasks.filter((t) => t.state === "x").length;
@@ -142,28 +166,65 @@ function TaskGroup({ filePath, tasks, onToggle, onFileSelect }: TaskGroupProps):
       </button>
       {!isCollapsed && (
         <ul className="task-list__items">
-          {tasks.map((task) => (
-            <li key={`${task.filePath}:${task.lineNumber}`} className="task-list__item">
-              <button
-                type="button"
-                className="task-list__toggle"
-                onClick={() => onToggle(task.filePath, task.lineNumber, task.state)}
-                aria-label={`Toggle task: ${task.text} (currently ${getStateLabel(task.state)})`}
-              >
-                <span className="task-list__indicator" data-state={task.state}>
-                  {getStateIndicator(task.state)}
-                </span>
-              </button>
-              <button
-                type="button"
-                className="task-list__text-btn"
-                onClick={() => handleTextClick(task.filePath)}
-                aria-label={`View file: ${task.filePath}`}
-              >
-                {task.text}
-              </button>
-            </li>
-          ))}
+          {tasks.map((task) => {
+            const taskKey = `${task.filePath}:${task.lineNumber}`;
+
+            const handleRightClick = (e: React.MouseEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onContextMenu(task.filePath, task.lineNumber, task.state, e);
+            };
+
+            const handleTouchStart = (e: React.TouchEvent) => {
+              const timer = setTimeout(() => {
+                onContextMenu(task.filePath, task.lineNumber, task.state, e);
+              }, 500);
+              longPressTimerRef.current.set(taskKey, timer);
+            };
+
+            const handleTouchEnd = () => {
+              const timer = longPressTimerRef.current.get(taskKey);
+              if (timer) {
+                clearTimeout(timer);
+                longPressTimerRef.current.delete(taskKey);
+              }
+            };
+
+            const handleTouchMove = () => {
+              const timer = longPressTimerRef.current.get(taskKey);
+              if (timer) {
+                clearTimeout(timer);
+                longPressTimerRef.current.delete(taskKey);
+              }
+            };
+
+            return (
+              <li key={taskKey} className="task-list__item">
+                <button
+                  type="button"
+                  className="task-list__toggle"
+                  onClick={() => onToggle(task.filePath, task.lineNumber, task.state)}
+                  onContextMenu={handleRightClick}
+                  onTouchStart={handleTouchStart}
+                  onTouchEnd={handleTouchEnd}
+                  onTouchMove={handleTouchMove}
+                  aria-label={`Toggle task: ${task.text} (currently ${getStateLabel(task.state)})`}
+                >
+                  <span className="task-list__indicator" data-state={task.state}>
+                    {getStateIndicator(task.state)}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="task-list__text-btn"
+                  onClick={() => handleTextClick(task.filePath)}
+                  aria-label={`View file: ${task.filePath}`}
+                >
+                  {task.text}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -226,6 +287,17 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
 
   // State for hiding completed tasks
   const [hideCompleted, setHideCompleted] = useState(false);
+
+  // Context menu state for task state selection
+  const [contextMenu, setContextMenu] = useState<TaskContextMenuState>({
+    isOpen: false,
+    filePath: "",
+    lineNumber: 0,
+    currentState: " ",
+    x: 0,
+    y: 0,
+  });
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Track original states for rollback on error
   const pendingTogglesRef = useRef<Map<string, string>>(new Map());
@@ -295,6 +367,115 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
     [updateTask, setTasksError, onToggleTask]
   );
 
+  // Handle opening context menu for state selection
+  const handleContextMenu = useCallback(
+    (filePath: string, lineNumber: number, currentState: string, event: React.MouseEvent | React.TouchEvent) => {
+      let clientX: number;
+      let clientY: number;
+
+      if ("touches" in event) {
+        const touch = event.touches[0] || event.changedTouches[0];
+        clientX = touch?.clientX ?? 0;
+        clientY = touch?.clientY ?? 0;
+      } else {
+        clientX = event.clientX;
+        clientY = event.clientY;
+      }
+
+      // Position the menu, adjusting for viewport bounds
+      const target = event.target as HTMLElement;
+      const taskList = target.closest(".task-list");
+      const menuWidth = 160;
+      const menuHeight = 200;
+
+      let x = clientX;
+      let y = clientY;
+
+      if (taskList) {
+        const rect = taskList.getBoundingClientRect();
+        x = clientX - rect.left;
+        y = clientY - rect.top;
+
+        // Keep menu within container bounds
+        if (x + menuWidth > rect.width) {
+          x = Math.max(0, x - menuWidth);
+        }
+        if (y + menuHeight > rect.height) {
+          y = Math.max(0, rect.height - menuHeight - 8);
+        }
+      }
+
+      setContextMenu({
+        isOpen: true,
+        filePath,
+        lineNumber,
+        currentState,
+        x,
+        y,
+      });
+    },
+    []
+  );
+
+  // Close the context menu
+  const closeContextMenu = useCallback(() => {
+    setContextMenu((prev) => ({ ...prev, isOpen: false }));
+  }, []);
+
+  // Handle selecting a state from the context menu
+  const handleStateSelect = useCallback(
+    (newState: string) => {
+      const { filePath, lineNumber, currentState } = contextMenu;
+      const taskKey = `${filePath}:${lineNumber}`;
+
+      // Store original state for potential rollback
+      if (!pendingTogglesRef.current.has(taskKey)) {
+        pendingTogglesRef.current.set(taskKey, currentState);
+      }
+
+      // Optimistic update
+      updateTask(filePath, lineNumber, newState);
+
+      // Clear any previous error
+      setTasksError(null);
+
+      // Notify parent to send WebSocket message
+      onToggleTask?.(filePath, lineNumber);
+
+      // Close the menu
+      closeContextMenu();
+    },
+    [contextMenu, updateTask, setTasksError, onToggleTask, closeContextMenu]
+  );
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
+        closeContextMenu();
+      }
+    }
+
+    if (contextMenu.isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [contextMenu.isOpen, closeContextMenu]);
+
+  // Close context menu on escape key
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    }
+
+    if (contextMenu.isOpen) {
+      document.addEventListener("keydown", handleEscape);
+      return () => document.removeEventListener("keydown", handleEscape);
+    }
+  }, [contextMenu.isOpen, closeContextMenu]);
+
   // Show loading state
   if (isTasksLoading && tasks.length === 0) {
     return (
@@ -350,9 +531,39 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
             tasks={fileTasks}
             onToggle={handleToggle}
             onFileSelect={onFileSelect}
+            onContextMenu={handleContextMenu}
           />
         );
       })}
+
+      {/* Context menu for task state selection */}
+      {contextMenu.isOpen && (
+        <div
+          ref={contextMenuRef}
+          className="task-list__context-menu"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+          role="menu"
+        >
+          <div className="task-list__context-menu-header">Set status</div>
+          {CONTEXT_MENU_STATES.map((state) => (
+            <button
+              key={state}
+              type="button"
+              className={`task-list__context-menu-item ${contextMenu.currentState === state ? "task-list__context-menu-item--active" : ""}`}
+              onClick={() => handleStateSelect(state)}
+              role="menuitem"
+            >
+              <span className="task-list__context-menu-indicator" data-state={state}>
+                {getStateIndicator(state)}
+              </span>
+              <span>{getStateLabel(state)}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </nav>
   );
 }

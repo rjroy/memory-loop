@@ -346,4 +346,208 @@ describe("TaskList", () => {
       expect(fileNames[1]).toContain("unknown.md");
     });
   });
+
+  describe("left-click toggle behavior", () => {
+    it("toggles from incomplete to complete on left-click", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      // Find and click the toggle button
+      const toggleButton = screen.getByRole("button", {
+        name: /Toggle task: Incomplete task/i,
+      });
+      fireEvent.click(toggleButton);
+
+      // After click, should show checked checkbox (optimistic update)
+      const indicators = screen.getAllByText("\u2611");
+      expect(indicators.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("toggles from complete to incomplete on left-click", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      // Find and click the toggle button
+      const toggleButton = screen.getByRole("button", {
+        name: /Toggle task: Complete task/i,
+      });
+      fireEvent.click(toggleButton);
+
+      // After click, should show empty checkbox (optimistic update)
+      const indicators = screen.getAllByText("\u2610");
+      expect(indicators.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("toggles from special state to incomplete on left-click", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Partial task", state: "/", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      // Find and click the toggle button
+      const toggleButton = screen.getByRole("button", {
+        name: /Toggle task: Partial task/i,
+      });
+      fireEvent.click(toggleButton);
+
+      // After click, should show empty checkbox (special states go to incomplete)
+      const indicators = screen.getAllByText("\u2610");
+      expect(indicators.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe("context menu", () => {
+    it("opens context menu on right-click", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      const toggleButton = screen.getByRole("button", {
+        name: /Toggle task: Task with menu/i,
+      });
+      fireEvent.contextMenu(toggleButton);
+
+      // Context menu should be visible
+      expect(screen.getByRole("menu")).toBeDefined();
+      expect(screen.getByText("Set status")).toBeDefined();
+    });
+
+    it("displays special state options in context menu", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      const toggleButton = screen.getByRole("button", {
+        name: /Toggle task: Task with menu/i,
+      });
+      fireEvent.contextMenu(toggleButton);
+
+      // Should show all special state options
+      expect(screen.getByText("partial")).toBeDefined();
+      expect(screen.getByText("needs info")).toBeDefined();
+      expect(screen.getByText("bookmarked")).toBeDefined();
+      expect(screen.getByText("urgent")).toBeDefined();
+    });
+
+    it("selects state from context menu", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Task to update", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      let toggledFilePath = "";
+      let toggledLineNumber = 0;
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks
+            tasks={tasks}
+            onToggleTask={(filePath, lineNumber) => {
+              toggledFilePath = filePath;
+              toggledLineNumber = lineNumber;
+            }}
+          />
+        </SessionProvider>
+      );
+
+      // Open context menu
+      const toggleButton = screen.getByRole("button", {
+        name: /Toggle task: Task to update/i,
+      });
+      fireEvent.contextMenu(toggleButton);
+
+      // Click "urgent" option
+      const urgentOption = screen.getByRole("menuitem", { name: /urgent/i });
+      fireEvent.click(urgentOption);
+
+      // Should call onToggleTask
+      expect(toggledFilePath).toBe("file.md");
+      expect(toggledLineNumber).toBe(1);
+
+      // Context menu should be closed
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("closes context menu on escape key", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      const toggleButton = screen.getByRole("button", {
+        name: /Toggle task: Task with menu/i,
+      });
+      fireEvent.contextMenu(toggleButton);
+
+      // Menu should be open
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      // Press escape
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      // Menu should be closed
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("closes context menu on click outside", () => {
+      const tasks: TaskEntry[] = [
+        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+      ];
+
+      render(
+        <SessionProvider>
+          <TaskListWithTasks tasks={tasks} />
+        </SessionProvider>
+      );
+
+      const toggleButton = screen.getByRole("button", {
+        name: /Toggle task: Task with menu/i,
+      });
+      fireEvent.contextMenu(toggleButton);
+
+      // Menu should be open
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      // Click outside (on the task list container)
+      fireEvent.mouseDown(document.body);
+
+      // Menu should be closed
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+  });
 });

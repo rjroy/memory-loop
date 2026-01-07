@@ -77,6 +77,26 @@ export interface VaultConfig {
    * Stored to provide autocomplete before SDK session is established.
    */
   slashCommands?: SlashCommand[];
+
+  /**
+   * Number of prompts to generate per generation cycle.
+   * Applies to both contextual prompts (weekdays) and weekend prompts.
+   * Default: 5
+   */
+  promptsPerGeneration?: number;
+
+  /**
+   * Maximum number of items to keep in each inspiration pool.
+   * Older items are pruned when the pool exceeds this size.
+   * Default: 50
+   */
+  maxPoolSize?: number;
+
+  /**
+   * Number of inspirational quotes to generate per week.
+   * Default: 1
+   */
+  quotesPerWeek?: number;
 }
 
 /**
@@ -93,6 +113,21 @@ export const DEFAULT_PROJECT_PATH = "01_Projects";
  * Default area path relative to content root.
  */
 export const DEFAULT_AREA_PATH = "02_Areas";
+
+/**
+ * Default number of prompts to generate per cycle.
+ */
+export const DEFAULT_PROMPTS_PER_GENERATION = 5;
+
+/**
+ * Default maximum pool size for inspiration items.
+ */
+export const DEFAULT_MAX_POOL_SIZE = 50;
+
+/**
+ * Default number of quotes to generate per week.
+ */
+export const DEFAULT_QUOTES_PER_WEEK = 1;
 
 /**
  * Loads vault configuration from .memory-loop.json if it exists.
@@ -157,6 +192,19 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
           typeof (cmd as Record<string, unknown>).name === "string" &&
           typeof (cmd as Record<string, unknown>).description === "string"
       );
+    }
+
+    // Validate generation settings (must be positive integers)
+    if (typeof obj.promptsPerGeneration === "number" && obj.promptsPerGeneration > 0) {
+      config.promptsPerGeneration = Math.floor(obj.promptsPerGeneration);
+    }
+
+    if (typeof obj.maxPoolSize === "number" && obj.maxPoolSize > 0) {
+      config.maxPoolSize = Math.floor(obj.maxPoolSize);
+    }
+
+    if (typeof obj.quotesPerWeek === "number" && obj.quotesPerWeek > 0) {
+      config.quotesPerWeek = Math.floor(obj.quotesPerWeek);
     }
 
     return config;
@@ -259,6 +307,36 @@ export function resolveProjectPath(config: VaultConfig): string {
  */
 export function resolveAreaPath(config: VaultConfig): string {
   return config.areaPath ?? DEFAULT_AREA_PATH;
+}
+
+/**
+ * Resolves the number of prompts to generate per cycle.
+ *
+ * @param config - Vault configuration
+ * @returns Number of prompts to generate (default: 5)
+ */
+export function resolvePromptsPerGeneration(config: VaultConfig): number {
+  return config.promptsPerGeneration ?? DEFAULT_PROMPTS_PER_GENERATION;
+}
+
+/**
+ * Resolves the maximum pool size for inspiration items.
+ *
+ * @param config - Vault configuration
+ * @returns Maximum pool size (default: 50)
+ */
+export function resolveMaxPoolSize(config: VaultConfig): number {
+  return config.maxPoolSize ?? DEFAULT_MAX_POOL_SIZE;
+}
+
+/**
+ * Resolves the number of quotes to generate per week.
+ *
+ * @param config - Vault configuration
+ * @returns Number of quotes per week (default: 1)
+ */
+export function resolveQuotesPerWeek(config: VaultConfig): number {
+  return config.quotesPerWeek ?? DEFAULT_QUOTES_PER_WEEK;
 }
 
 /**

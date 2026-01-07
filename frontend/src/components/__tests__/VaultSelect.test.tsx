@@ -72,6 +72,9 @@ const testVaults: VaultInfo[] = [
     inboxPath: "inbox",
     metadataPath: "06_Metadata/memory-loop",
     setupComplete: true,
+    promptsPerGeneration: 5,
+    maxPoolSize: 50,
+    quotesPerWeek: 1,
   },
   {
     id: "vault-2",
@@ -82,6 +85,9 @@ const testVaults: VaultInfo[] = [
     inboxPath: "inbox",
     metadataPath: "06_Metadata/memory-loop",
     setupComplete: false,
+    promptsPerGeneration: 5,
+    maxPoolSize: 50,
+    quotesPerWeek: 1,
   },
 ];
 
@@ -491,6 +497,9 @@ describe("VaultSelect", () => {
           inboxPath: "inbox",
           metadataPath: "06_Metadata/memory-loop",
           setupComplete: false,
+          promptsPerGeneration: 5,
+          maxPoolSize: 50,
+          quotesPerWeek: 1,
         },
       ];
 
@@ -520,6 +529,9 @@ describe("VaultSelect", () => {
           inboxPath: "inbox",
           metadataPath: "06_Metadata/memory-loop",
           setupComplete: false,
+          promptsPerGeneration: 5,
+          maxPoolSize: 50,
+          quotesPerWeek: 1,
         },
       ];
 
@@ -564,6 +576,9 @@ describe("VaultSelect", () => {
           inboxPath: "inbox",
           metadataPath: "06_Metadata/memory-loop",
           setupComplete: false,
+          promptsPerGeneration: 5,
+          maxPoolSize: 50,
+          quotesPerWeek: 1,
         },
       ];
 
@@ -601,6 +616,9 @@ describe("VaultSelect", () => {
           inboxPath: "inbox",
           metadataPath: "06_Metadata/memory-loop",
           setupComplete: false,
+          promptsPerGeneration: 5,
+          maxPoolSize: 50,
+          quotesPerWeek: 1,
         },
       ];
 
@@ -648,6 +666,9 @@ describe("VaultSelect", () => {
           inboxPath: "inbox",
           metadataPath: "06_Metadata/memory-loop",
           setupComplete: false,
+          promptsPerGeneration: 5,
+          maxPoolSize: 50,
+          quotesPerWeek: 1,
         },
       ];
 
@@ -697,6 +718,9 @@ describe("VaultSelect", () => {
           inboxPath: "inbox",
           metadataPath: "06_Metadata/memory-loop",
           setupComplete: false,
+          promptsPerGeneration: 5,
+          maxPoolSize: 50,
+          quotesPerWeek: 1,
         },
       ];
 
@@ -766,6 +790,9 @@ describe("VaultSelect", () => {
           inboxPath: "inbox",
           metadataPath: "06_Metadata/memory-loop",
           setupComplete: false,
+          promptsPerGeneration: 5,
+          maxPoolSize: 50,
+          quotesPerWeek: 1,
         },
       ];
 

@@ -21,6 +21,9 @@ const testVault: VaultInfo = {
   inboxPath: "inbox",
   metadataPath: "06_Metadata/memory-loop",
   setupComplete: false,
+  promptsPerGeneration: 5,
+  maxPoolSize: 50,
+  quotesPerWeek: 1,
 };
 
 const mockContextual: InspirationItem = {

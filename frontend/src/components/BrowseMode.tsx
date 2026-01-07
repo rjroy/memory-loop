@@ -68,6 +68,14 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   // Destructure search state for convenience
   const { search } = browser;
 
+  // Clear search state on WebSocket disconnect (REQ-F-26 error handling)
+  // This ensures stale search results aren't shown when connection is lost
+  useEffect(() => {
+    if (connectionStatus === "disconnected" && search.isActive) {
+      clearSearch();
+    }
+  }, [connectionStatus, search.isActive, clearSearch]);
+
   // Send vault selection when WebSocket connects (initial or reconnect)
   useEffect(() => {
     if (

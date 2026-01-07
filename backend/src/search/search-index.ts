@@ -91,8 +91,14 @@ const DEFAULT_LIMIT = 50;
 /** Maximum number of snippets to return per file */
 const MAX_SNIPPETS_PER_FILE = 10;
 
+/** Batch size for parallel file reading during index build */
+const FILE_READ_BATCH_SIZE = 50;
+
 /** Number of context lines before and after a match */
 const CONTEXT_LINES = 2;
+
+/** Content search timeout in milliseconds (REQ-NF-9) */
+const SEARCH_TIMEOUT_MS = 500;
 
 // =============================================================================
 // Search Index Manager
@@ -172,6 +178,10 @@ export class SearchIndexManager {
    * Uses MiniSearch with prefix matching, fuzzy matching (0.2 threshold),
    * and AND combination for multi-term queries.
    *
+   * Includes timeout handling (REQ-NF-9): returns partial results after 500ms.
+   * Excludes deleted files gracefully (REQ-F-28): files that no longer exist
+   * are filtered from results.
+   *
    * @param query - Search query string
    * @param options - Search options (limit)
    * @returns Array of matching files with match counts, sorted by relevance
@@ -198,12 +208,32 @@ export class SearchIndexManager {
       combineWith: "AND",
     });
 
-    // Convert to ContentSearchResult format
+    // Convert to ContentSearchResult format with timeout handling (REQ-NF-9)
     const results: ContentSearchResult[] = [];
+    const startTime = Date.now();
+    let timedOut = false;
 
     for (const result of searchResults.slice(0, limit)) {
+      // Check timeout - return partial results if exceeded (REQ-NF-9)
+      if (Date.now() - startTime > SEARCH_TIMEOUT_MS) {
+        log.debug(`Content search timeout after ${results.length} results`);
+        timedOut = true;
+        break;
+      }
+
       // MiniSearch returns id as type any, but we know it's a string (the path)
       const filePath = String(result.id);
+
+      // Check if file still exists (REQ-F-28: exclude deleted files)
+      const absolutePath = join(this.contentRoot, filePath);
+      try {
+        await stat(absolutePath);
+      } catch {
+        // File no longer exists, skip it gracefully
+        log.debug(`Excluding deleted file from results: ${filePath}`);
+        continue;
+      }
+
       const fileName = basename(filePath);
 
       // Count actual matches in the file content
@@ -214,6 +244,10 @@ export class SearchIndexManager {
         name: fileName,
         matchCount,
       });
+    }
+
+    if (timedOut) {
+      log.info(`Content search timed out, returning ${results.length} partial results`);
     }
 
     return results;
@@ -356,8 +390,9 @@ export class SearchIndexManager {
   /**
    * Loads the index from a JSON file.
    *
-   * Returns false if the index file doesn't exist or version mismatches.
-   * On version mismatch, the existing index file is deleted.
+   * Returns false if the index file doesn't exist, version mismatches, or
+   * the file is corrupted (REQ-F-27). On version mismatch or corruption,
+   * the existing index file is deleted to allow a fresh rebuild.
    *
    * @returns true if index was loaded successfully, false otherwise
    */
@@ -366,7 +401,36 @@ export class SearchIndexManager {
 
     try {
       const content = await readFile(indexPath, "utf-8");
-      const indexData = JSON.parse(content) as IndexData;
+      let indexData: IndexData;
+
+      // Parse JSON with explicit error handling for corruption (REQ-F-27)
+      try {
+        indexData = JSON.parse(content) as IndexData;
+      } catch {
+        log.warn(`Corrupted index file (invalid JSON), deleting and rebuilding: ${indexPath}`);
+        try {
+          await rm(indexPath);
+        } catch {
+          // Ignore delete errors
+        }
+        return false;
+      }
+
+      // Validate required fields exist (corruption check)
+      if (
+        !indexData ||
+        typeof indexData.version !== "string" ||
+        !Array.isArray(indexData.fileList) ||
+        !indexData.contentIndex
+      ) {
+        log.warn(`Corrupted index file (missing required fields), deleting and rebuilding: ${indexPath}`);
+        try {
+          await rm(indexPath);
+        } catch {
+          // Ignore delete errors
+        }
+        return false;
+      }
 
       // Check version compatibility
       if (indexData.version !== INDEX_VERSION) {
@@ -379,13 +443,23 @@ export class SearchIndexManager {
       }
 
       // Restore MiniSearch index with the same configuration
-      this.contentIndex = MiniSearch.loadJSON<ContentDocument>(
-        JSON.stringify(indexData.contentIndex),
-        {
-          fields: ["content"],
-          storeFields: ["path"],
+      try {
+        this.contentIndex = MiniSearch.loadJSON<ContentDocument>(
+          JSON.stringify(indexData.contentIndex),
+          {
+            fields: ["content"],
+            storeFields: ["path"],
+          }
+        );
+      } catch {
+        log.warn(`Corrupted index file (invalid MiniSearch data), deleting and rebuilding: ${indexPath}`);
+        try {
+          await rm(indexPath);
+        } catch {
+          // Ignore delete errors
         }
-      );
+        return false;
+      }
 
       this.fileList = indexData.fileList;
       this.indexBuilt = true;
@@ -399,6 +473,12 @@ export class SearchIndexManager {
         log.debug("No existing index file found");
       } else {
         log.warn("Failed to load index, will rebuild", error);
+        // Try to delete corrupted file so rebuild can proceed
+        try {
+          await rm(indexPath);
+        } catch {
+          // Ignore delete errors
+        }
       }
       return false;
     }
@@ -544,6 +624,7 @@ export class SearchIndexManager {
    * 1. Recursively finds all .md files within contentRoot
    * 2. Excludes hidden folders (starting with .)
    * 3. Builds both the file list (for name search) and content index (for content search)
+   * 4. Uses batch parallel file reading for performance (REQ-NF-5)
    */
   private async buildIndex(): Promise<void> {
     if (this.buildingIndex) {
@@ -562,8 +643,36 @@ export class SearchIndexManager {
         storeFields: ["path"],
       });
 
-      // Crawl and index files
-      await this.crawlDirectory("");
+      // Phase 1: Crawl directory structure to collect file paths and mtimes
+      // This is fast as it only reads directory entries, not file contents
+      await this.crawlDirectoryForMtime("", this.fileList);
+
+      // Phase 2: Batch read file contents in parallel for content indexing
+      const documents: ContentDocument[] = [];
+
+      for (let i = 0; i < this.fileList.length; i += FILE_READ_BATCH_SIZE) {
+        const batch = this.fileList.slice(i, i + FILE_READ_BATCH_SIZE);
+        const batchDocs = await Promise.all(
+          batch.map(async (file) => {
+            try {
+              const content = await readFile(join(this.contentRoot, file.path), "utf-8");
+              return {
+                id: file.path,
+                path: file.path,
+                content,
+              };
+            } catch {
+              // File may have been deleted between crawl and read
+              log.debug(`Failed to read file for indexing: ${file.path}`);
+              return null;
+            }
+          })
+        );
+        documents.push(...batchDocs.filter((d): d is ContentDocument => d !== null));
+      }
+
+      // Phase 3: Add all documents to the content index
+      this.contentIndex.addAll(documents);
 
       this.indexBuilt = true;
       const duration = Date.now() - startTime;
@@ -573,52 +682,6 @@ export class SearchIndexManager {
       throw error;
     } finally {
       this.buildingIndex = false;
-    }
-  }
-
-  /**
-   * Recursively crawls a directory, indexing .md files.
-   *
-   * @param relativePath - Path relative to contentRoot
-   */
-  private async crawlDirectory(relativePath: string): Promise<void> {
-    const absolutePath = relativePath === "" ? this.contentRoot : join(this.contentRoot, relativePath);
-
-    let entries;
-    try {
-      entries = await readdir(absolutePath, { withFileTypes: true });
-    } catch (error) {
-      log.debug(`Cannot read directory: ${relativePath}`, error);
-      return;
-    }
-
-    for (const entry of entries) {
-      // Skip hidden files and directories (starting with .)
-      if (entry.name.startsWith(".")) {
-        continue;
-      }
-
-      const entryRelativePath = relativePath === "" ? entry.name : `${relativePath}/${entry.name}`;
-      const entryAbsolutePath = join(this.contentRoot, entryRelativePath);
-
-      // Skip symlinks for security
-      try {
-        const lstats = await lstat(entryAbsolutePath);
-        if (lstats.isSymbolicLink()) {
-          log.debug(`Skipping symlink: ${entryRelativePath}`);
-          continue;
-        }
-      } catch {
-        continue;
-      }
-
-      if (entry.isDirectory()) {
-        // Recursively crawl subdirectories
-        await this.crawlDirectory(entryRelativePath);
-      } else if (entry.isFile() && extname(entry.name).toLowerCase() === ".md") {
-        // Index .md files
-        await this.indexFile(entryRelativePath, entryAbsolutePath);
-      }
     }
   }
 

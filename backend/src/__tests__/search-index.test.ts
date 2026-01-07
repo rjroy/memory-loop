@@ -1167,3 +1167,194 @@ describe("index persistence", () => {
     });
   });
 });
+
+// =============================================================================
+// Error Handling Tests (TASK-012)
+// =============================================================================
+
+describe("error handling", () => {
+  let vaultPath: string;
+  let manager: SearchIndexManager;
+
+  beforeEach(async () => {
+    vaultPath = await createTestVault();
+    await setupTestVault(vaultPath);
+    manager = new SearchIndexManager(vaultPath);
+  });
+
+  afterEach(async () => {
+    await cleanupTestVault(vaultPath);
+  });
+
+  describe("deleted files exclusion (REQ-F-28)", () => {
+    test("searchContent excludes files deleted after indexing", async () => {
+      // Build index with a file
+      await writeFile(join(vaultPath, "will-delete.md"), "This file will be deleted with UNIQUE_TERM");
+      await manager.rebuildIndex();
+
+      // Verify file is found initially
+      const resultsBefore = await manager.searchContent("UNIQUE_TERM");
+      expect(resultsBefore.some((r) => r.name === "will-delete.md")).toBe(true);
+
+      // Delete the file (simulating external deletion)
+      await rm(join(vaultPath, "will-delete.md"));
+
+      // Search again - file should be excluded gracefully
+      const resultsAfter = await manager.searchContent("UNIQUE_TERM");
+      expect(resultsAfter.some((r) => r.name === "will-delete.md")).toBe(false);
+    });
+
+    test("countMatches returns 0 for deleted files", async () => {
+      // Build index with a file containing matches
+      await writeFile(join(vaultPath, "match-file.md"), "TODO TODO TODO");
+      await manager.rebuildIndex();
+
+      // Verify file is found with matches
+      const resultsBefore = await manager.searchContent("TODO");
+      const beforeResult = resultsBefore.find((r) => r.name === "match-file.md");
+      expect(beforeResult).toBeDefined();
+      expect(beforeResult!.matchCount).toBe(3);
+
+      // Delete the file
+      await rm(join(vaultPath, "match-file.md"));
+
+      // Search again - deleted file should not appear in results
+      const resultsAfter = await manager.searchContent("TODO");
+      expect(resultsAfter.some((r) => r.name === "match-file.md")).toBe(false);
+    });
+
+    test("getSnippets returns empty array for deleted file", async () => {
+      // Build index with a file
+      await writeFile(join(vaultPath, "snippet-file.md"), "Line with MATCH");
+      await manager.rebuildIndex();
+
+      // Verify snippets work initially
+      const snippetsBefore = await manager.getSnippets("snippet-file.md", "MATCH");
+      expect(snippetsBefore.length).toBe(1);
+
+      // Delete the file
+      await rm(join(vaultPath, "snippet-file.md"));
+
+      // Snippets should return empty array (not error)
+      const snippetsAfter = await manager.getSnippets("snippet-file.md", "MATCH");
+      expect(snippetsAfter).toEqual([]);
+    });
+  });
+
+  describe("corrupted index handling (REQ-F-27)", () => {
+    test("handles invalid JSON in index file", async () => {
+      // Build and save a valid index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Corrupt the index file with invalid JSON
+      const indexPath = manager.getIndexPath();
+      await writeFile(indexPath, "not valid json {{{");
+
+      // Create a new manager and try to load
+      const newManager = new SearchIndexManager(vaultPath);
+      const loaded = await newManager.loadIndex();
+
+      // Should return false (will trigger rebuild)
+      expect(loaded).toBe(false);
+      expect(newManager.isIndexBuilt()).toBe(false);
+
+      // Corrupted file should be deleted
+      let fileExists = true;
+      try {
+        await readFile(indexPath, "utf-8");
+      } catch {
+        fileExists = false;
+      }
+      expect(fileExists).toBe(false);
+    });
+
+    test("handles missing required fields in index file", async () => {
+      // Build and save a valid index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Corrupt the index file with missing fields
+      const indexPath = manager.getIndexPath();
+      await writeFile(indexPath, JSON.stringify({ version: "1.0.0" })); // Missing fileList and contentIndex
+
+      // Create a new manager and try to load
+      const newManager = new SearchIndexManager(vaultPath);
+      const loaded = await newManager.loadIndex();
+
+      // Should return false (will trigger rebuild)
+      expect(loaded).toBe(false);
+      expect(newManager.isIndexBuilt()).toBe(false);
+    });
+
+    test("handles invalid MiniSearch data in index file", async () => {
+      // Build and save a valid index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Corrupt the index file with invalid MiniSearch data
+      const indexPath = manager.getIndexPath();
+      await writeFile(
+        indexPath,
+        JSON.stringify({
+          version: "1.0.0",
+          lastUpdated: Date.now(),
+          fileList: [],
+          contentIndex: { invalid: "structure" },
+        })
+      );
+
+      // Create a new manager and try to load
+      const newManager = new SearchIndexManager(vaultPath);
+      const loaded = await newManager.loadIndex();
+
+      // Should return false (will trigger rebuild)
+      expect(loaded).toBe(false);
+      expect(newManager.isIndexBuilt()).toBe(false);
+    });
+
+    test("search still works after corrupted index triggers rebuild", async () => {
+      // Build and save a valid index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Corrupt the index file
+      const indexPath = manager.getIndexPath();
+      await writeFile(indexPath, "corrupted data");
+
+      // Create a new manager
+      const newManager = new SearchIndexManager(vaultPath);
+
+      // Search should still work (triggers rebuild)
+      const results = await newManager.searchFiles("readme");
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].name).toBe("README.md");
+      expect(newManager.isIndexBuilt()).toBe(true);
+    });
+  });
+
+  describe("empty query handling (REQ-F-26)", () => {
+    test("searchContent returns empty for empty query", async () => {
+      await manager.rebuildIndex();
+
+      expect(await manager.searchContent("")).toEqual([]);
+      expect(await manager.searchContent("   ")).toEqual([]);
+    });
+
+    test("searchFiles returns empty for empty query", async () => {
+      await manager.rebuildIndex();
+
+      expect(await manager.searchFiles("")).toEqual([]);
+      expect(await manager.searchFiles("   ")).toEqual([]);
+    });
+
+    test("getSnippets returns empty for empty query", async () => {
+      await writeFile(join(vaultPath, "test.md"), "content");
+      await manager.rebuildIndex();
+
+      expect(await manager.getSnippets("test.md", "")).toEqual([]);
+      expect(await manager.getSnippets("test.md", "   ")).toEqual([]);
+    });
+  });
+});

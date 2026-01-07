@@ -146,6 +146,55 @@ export const ConversationMessageSchema = z.object({
 });
 
 // =============================================================================
+// Search Result Schemas
+// =============================================================================
+
+/**
+ * Schema for a file name search result
+ * Returned when searching by file name with fuzzy matching
+ */
+export const FileSearchResultSchema = z.object({
+  /** Relative path from content root */
+  path: z.string(),
+  /** File name only (without path) */
+  name: z.string(),
+  /** Match quality score (higher = better match) */
+  score: z.number(),
+  /** Character positions in name that matched the query */
+  matchPositions: z.array(z.number()),
+});
+
+/**
+ * Schema for a content search result
+ * Returned when searching within file contents
+ */
+export const ContentSearchResultSchema = z.object({
+  /** Relative path from content root */
+  path: z.string(),
+  /** File name only (without path) */
+  name: z.string(),
+  /** Number of matches found in this file */
+  matchCount: z.number().int().min(1),
+  /** Context snippets (populated on demand via get_snippets) */
+  snippets: z.array(z.lazy(() => ContextSnippetSchema)).optional(),
+});
+
+/**
+ * Schema for a context snippet showing a matched line with surrounding context
+ * Used for content search result expansion
+ */
+export const ContextSnippetSchema = z.object({
+  /** Line number of the match (1-indexed) */
+  lineNumber: z.number().int().min(1),
+  /** The matched line content */
+  line: z.string(),
+  /** Up to 2 lines before the match */
+  contextBefore: z.array(z.string()),
+  /** Up to 2 lines after the match */
+  contextAfter: z.array(z.string()),
+});
+
+// =============================================================================
 // Client -> Server Message Schemas
 // =============================================================================
 
@@ -307,6 +356,40 @@ export const SetupVaultMessageSchema = z.object({
 });
 
 /**
+ * Client requests file name search with fuzzy matching
+ * Results are sorted by match quality score
+ */
+export const SearchFilesMessageSchema = z.object({
+  type: z.literal("search_files"),
+  query: z.string().min(1, "Search query is required"),
+  /** Maximum number of results to return (default: 50) */
+  limit: z.number().int().positive().optional(),
+});
+
+/**
+ * Client requests content search across markdown files
+ * Results show files with match counts
+ */
+export const SearchContentMessageSchema = z.object({
+  type: z.literal("search_content"),
+  query: z.string().min(1, "Search query is required"),
+  /** Maximum number of results to return (default: 50) */
+  limit: z.number().int().positive().optional(),
+});
+
+/**
+ * Client requests context snippets for a specific file in content search results
+ * Used for lazy loading of match context when expanding a result
+ */
+export const GetSnippetsMessageSchema = z.object({
+  type: z.literal("get_snippets"),
+  /** File path to get snippets for */
+  path: z.string().min(1, "File path is required"),
+  /** Original search query to find matches */
+  query: z.string().min(1, "Search query is required"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -329,6 +412,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   DeleteSessionMessageSchema,
   ToolPermissionResponseMessageSchema,
   SetupVaultMessageSchema,
+  SearchFilesMessageSchema,
+  SearchContentMessageSchema,
+  GetSnippetsMessageSchema,
 ]);
 
 // =============================================================================
@@ -574,6 +660,53 @@ export const SetupCompleteMessageSchema = z.object({
 });
 
 /**
+ * Server sends search results (for both file name and content search)
+ * Query is echoed back for client-side correlation with requests
+ */
+export const SearchResultsMessageSchema = z.object({
+  type: z.literal("search_results"),
+  /** Search mode: 'files' for file name search, 'content' for full-text search */
+  mode: z.enum(["files", "content"]),
+  /** Original query (echoed for correlation) */
+  query: z.string(),
+  /** Search results (type depends on mode) */
+  results: z.union([
+    z.array(FileSearchResultSchema),
+    z.array(ContentSearchResultSchema),
+  ]),
+  /** Total matches before limit was applied */
+  totalMatches: z.number().int().min(0),
+  /** Search execution time in milliseconds (for monitoring) */
+  searchTimeMs: z.number().min(0),
+});
+
+/**
+ * Server sends context snippets for a specific file
+ * Response to get_snippets request
+ */
+export const SnippetsMessageSchema = z.object({
+  type: z.literal("snippets"),
+  /** File path the snippets are from */
+  path: z.string().min(1, "File path is required"),
+  /** Context snippets showing matched lines */
+  snippets: z.array(ContextSnippetSchema),
+});
+
+/**
+ * Server reports index building progress for large vaults
+ * Sent during initial index build or rebuild
+ */
+export const IndexProgressMessageSchema = z.object({
+  type: z.literal("index_progress"),
+  /** Current indexing stage */
+  stage: z.enum(["scanning", "indexing", "complete"]),
+  /** Number of files processed so far */
+  filesProcessed: z.number().int().min(0),
+  /** Total number of files to process */
+  totalFiles: z.number().int().min(0),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -600,6 +733,9 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   SessionDeletedMessageSchema,
   ToolPermissionRequestMessageSchema,
   SetupCompleteMessageSchema,
+  SearchResultsMessageSchema,
+  SnippetsMessageSchema,
+  IndexProgressMessageSchema,
 ]);
 
 // =============================================================================
@@ -627,6 +763,11 @@ export type ToolInvocation = z.infer<typeof ToolInvocationSchema>;
 // Conversation message type
 export type ConversationMessageProtocol = z.infer<typeof ConversationMessageSchema>;
 
+// Search result types
+export type FileSearchResult = z.infer<typeof FileSearchResultSchema>;
+export type ContentSearchResult = z.infer<typeof ContentSearchResultSchema>;
+export type ContextSnippet = z.infer<typeof ContextSnippetSchema>;
+
 // Client message types
 export type SelectVaultMessage = z.infer<typeof SelectVaultMessageSchema>;
 export type CaptureNoteMessage = z.infer<typeof CaptureNoteMessageSchema>;
@@ -647,6 +788,9 @@ export type ToggleTaskMessage = z.infer<typeof ToggleTaskMessageSchema>;
 export type DeleteSessionMessage = z.infer<typeof DeleteSessionMessageSchema>;
 export type ToolPermissionResponseMessage = z.infer<typeof ToolPermissionResponseMessageSchema>;
 export type SetupVaultMessage = z.infer<typeof SetupVaultMessageSchema>;
+export type SearchFilesMessage = z.infer<typeof SearchFilesMessageSchema>;
+export type SearchContentMessage = z.infer<typeof SearchContentMessageSchema>;
+export type GetSnippetsMessage = z.infer<typeof GetSnippetsMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -675,6 +819,9 @@ export type TaskToggledMessage = z.infer<typeof TaskToggledMessageSchema>;
 export type SessionDeletedMessage = z.infer<typeof SessionDeletedMessageSchema>;
 export type ToolPermissionRequestMessage = z.infer<typeof ToolPermissionRequestMessageSchema>;
 export type SetupCompleteMessage = z.infer<typeof SetupCompleteMessageSchema>;
+export type SearchResultsMessage = z.infer<typeof SearchResultsMessageSchema>;
+export type SnippetsMessage = z.infer<typeof SnippetsMessageSchema>;
+export type IndexProgressMessage = z.infer<typeof IndexProgressMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

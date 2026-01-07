@@ -48,6 +48,21 @@ class MockWebSocket {
 let wsInstances: MockWebSocket[] = [];
 let sentMessages: ClientMessage[] = [];
 const originalWebSocket = globalThis.WebSocket;
+const originalMatchMedia = globalThis.matchMedia;
+
+// Mock matchMedia for touch device detection
+function createMatchMediaMock(matches: boolean) {
+  return (query: string): MediaQueryList => ({
+    matches: query === "(hover: none)" ? matches : false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => true,
+  });
+}
 
 const testVault: VaultInfo = {
   id: "vault-1",
@@ -79,11 +94,15 @@ beforeEach(() => {
 
   // @ts-expect-error - mocking WebSocket
   globalThis.WebSocket = MockWebSocket;
+
+  // Default to desktop (non-touch) for tests
+  globalThis.matchMedia = createMatchMediaMock(false);
 });
 
 afterEach(() => {
   cleanup();
   globalThis.WebSocket = originalWebSocket;
+  globalThis.matchMedia = originalMatchMedia;
 });
 
 describe("NoteCapture", () => {
@@ -330,6 +349,89 @@ describe("NoteCapture", () => {
       await waitFor(() => {
         expect(localStorage.getItem("memory-loop-draft")).toBeNull();
       });
+    });
+  });
+
+  describe("keyboard behavior", () => {
+    it("submits on Enter key on desktop", async () => {
+      // Default mock is desktop (non-touch)
+      render(<NoteCapture />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const textarea = screen.getByRole("textbox");
+
+      fireEvent.change(textarea, { target: { value: "My note" } });
+      fireEvent.keyDown(textarea, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(sentMessages).toContainEqual({
+          type: "capture_note",
+          text: "My note",
+        });
+      });
+    });
+
+    it("does not submit on Enter key on touch devices", async () => {
+      // Mock touch device
+      globalThis.matchMedia = createMatchMediaMock(true);
+
+      render(<NoteCapture />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const textarea = screen.getByRole("textbox");
+
+      fireEvent.change(textarea, { target: { value: "My note" } });
+      fireEvent.keyDown(textarea, { key: "Enter" });
+
+      // Should not have sent capture_note - only select_vault
+      const captureMessages = sentMessages.filter(
+        (m) => m.type === "capture_note"
+      );
+      expect(captureMessages.length).toBe(0);
+    });
+
+    it("does not submit on Shift+Enter (allows newline)", async () => {
+      render(<NoteCapture />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const textarea = screen.getByRole("textbox");
+
+      fireEvent.change(textarea, { target: { value: "Line 1" } });
+      fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+
+      // Should not have sent capture_note
+      const captureMessages = sentMessages.filter(
+        (m) => m.type === "capture_note"
+      );
+      expect(captureMessages.length).toBe(0);
+    });
+
+    it("does not submit on Enter with empty content", async () => {
+      render(<NoteCapture />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const textarea = screen.getByRole("textbox");
+
+      // Don't change content, just press Enter
+      fireEvent.keyDown(textarea, { key: "Enter" });
+
+      // Should not have sent capture_note
+      const captureMessages = sentMessages.filter(
+        (m) => m.type === "capture_note"
+      );
+      expect(captureMessages.length).toBe(0);
     });
   });
 });

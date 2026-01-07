@@ -1,7 +1,7 @@
 /**
  * Tests for SearchHeader component
  *
- * Tests debounced input, mode toggle, clear action, and keyboard accessibility.
+ * Tests debounced input, dropdown menu, mode toggle, close action, and keyboard accessibility.
  */
 
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
@@ -32,6 +32,14 @@ afterEach(() => {
   cleanup();
 });
 
+/**
+ * Helper to open the dropdown menu
+ */
+function openMenu() {
+  const menuTrigger = screen.getByRole("button", { name: "Search options" });
+  fireEvent.click(menuTrigger);
+}
+
 describe("SearchHeader", () => {
   describe("rendering", () => {
     it("renders search input with correct placeholder for files mode", () => {
@@ -49,21 +57,11 @@ describe("SearchHeader", () => {
       expect(input.getAttribute("placeholder")).toBe("Search content...");
     });
 
-    it("renders mode toggle button", () => {
+    it("renders menu trigger button", () => {
       render(<SearchHeader {...defaultProps} mode="files" />);
 
-      const modeBtn = screen.getByRole("button", {
-        name: "Switch to content search",
-      });
-      expect(modeBtn).toBeDefined();
-      expect(modeBtn.textContent).toBe("Names");
-    });
-
-    it("renders clear button", () => {
-      render(<SearchHeader {...defaultProps} />);
-
-      const clearBtn = screen.getByRole("button", { name: "Clear search" });
-      expect(clearBtn).toBeDefined();
+      const menuTrigger = screen.getByRole("button", { name: "Search options" });
+      expect(menuTrigger).toBeDefined();
     });
 
     it("shows loading spinner when isLoading is true", () => {
@@ -77,6 +75,56 @@ describe("SearchHeader", () => {
       render(<SearchHeader {...defaultProps} isLoading={false} />);
 
       expect(screen.queryByLabelText("Searching")).toBeNull();
+    });
+  });
+
+  describe("dropdown menu", () => {
+    it("does not show menu by default", () => {
+      render(<SearchHeader {...defaultProps} />);
+
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("shows menu when trigger is clicked", () => {
+      render(<SearchHeader {...defaultProps} />);
+
+      openMenu();
+
+      expect(screen.getByRole("menu")).toBeDefined();
+    });
+
+    it("hides menu when trigger is clicked again", () => {
+      render(<SearchHeader {...defaultProps} />);
+
+      openMenu();
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      // Click trigger again to close
+      const menuTrigger = screen.getByRole("button", { name: "Search options" });
+      fireEvent.click(menuTrigger);
+
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("has aria-expanded attribute on trigger", () => {
+      render(<SearchHeader {...defaultProps} />);
+
+      const menuTrigger = screen.getByRole("button", { name: "Search options" });
+      expect(menuTrigger.getAttribute("aria-expanded")).toBe("false");
+
+      openMenu();
+      expect(menuTrigger.getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("contains mode toggle and close menu items", () => {
+      render(<SearchHeader {...defaultProps} mode="files" />);
+
+      openMenu();
+
+      const menuItems = screen.getAllByRole("menuitem");
+      expect(menuItems).toHaveLength(2);
+      expect(menuItems[0].textContent).toContain("Switch to Content Search");
+      expect(menuItems[1].textContent).toContain("Close Search");
     });
   });
 
@@ -170,10 +218,11 @@ describe("SearchHeader", () => {
         <SearchHeader {...defaultProps} mode="files" onModeChange={onModeChange} />
       );
 
-      const modeBtn = screen.getByRole("button", {
-        name: "Switch to content search",
+      openMenu();
+      const modeItem = screen.getByRole("menuitem", {
+        name: /Switch to Content Search/i,
       });
-      fireEvent.click(modeBtn);
+      fireEvent.click(modeItem);
 
       expect(onModeChange).toHaveBeenCalledWith("content");
     });
@@ -184,65 +233,81 @@ describe("SearchHeader", () => {
         <SearchHeader {...defaultProps} mode="content" onModeChange={onModeChange} />
       );
 
-      const modeBtn = screen.getByRole("button", {
-        name: "Switch to files search",
+      openMenu();
+      const modeItem = screen.getByRole("menuitem", {
+        name: /Switch to File Name Search/i,
       });
-      fireEvent.click(modeBtn);
+      fireEvent.click(modeItem);
 
       expect(onModeChange).toHaveBeenCalledWith("files");
     });
 
-    it("shows Names when in files mode", () => {
+    it("shows Content search option when in files mode", () => {
       render(<SearchHeader {...defaultProps} mode="files" />);
 
-      const modeBtn = screen.getByRole("button", {
-        name: "Switch to content search",
+      openMenu();
+      const modeItem = screen.getByRole("menuitem", {
+        name: /Switch to Content Search/i,
       });
-      expect(modeBtn.textContent).toBe("Names");
+      expect(modeItem).toBeDefined();
     });
 
-    it("shows Content when in content mode", () => {
+    it("shows File Name search option when in content mode", () => {
       render(<SearchHeader {...defaultProps} mode="content" />);
 
-      const modeBtn = screen.getByRole("button", {
-        name: "Switch to files search",
+      openMenu();
+      const modeItem = screen.getByRole("menuitem", {
+        name: /Switch to File Name Search/i,
       });
-      expect(modeBtn.textContent).toBe("Content");
+      expect(modeItem).toBeDefined();
     });
 
-    it("has aria-pressed=true when in content mode", () => {
-      render(<SearchHeader {...defaultProps} mode="content" />);
+    it("closes menu after mode toggle", () => {
+      const onModeChange = mock(() => {});
+      render(
+        <SearchHeader {...defaultProps} mode="files" onModeChange={onModeChange} />
+      );
 
-      const modeBtn = screen.getByRole("button", {
-        name: "Switch to files search",
+      openMenu();
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      const modeItem = screen.getByRole("menuitem", {
+        name: /Switch to Content Search/i,
       });
-      expect(modeBtn.getAttribute("aria-pressed")).toBe("true");
-    });
+      fireEvent.click(modeItem);
 
-    it("has aria-pressed=false when in files mode", () => {
-      render(<SearchHeader {...defaultProps} mode="files" />);
-
-      const modeBtn = screen.getByRole("button", {
-        name: "Switch to content search",
-      });
-      expect(modeBtn.getAttribute("aria-pressed")).toBe("false");
+      expect(screen.queryByRole("menu")).toBeNull();
     });
   });
 
-  describe("clear action", () => {
-    it("calls onClear when clear button is clicked", () => {
+  describe("close action", () => {
+    it("calls onClear when Close Search is clicked", () => {
       const onClear = mock(() => {});
       render(<SearchHeader {...defaultProps} onClear={onClear} />);
 
-      const clearBtn = screen.getByRole("button", { name: "Clear search" });
-      fireEvent.click(clearBtn);
+      openMenu();
+      const closeItem = screen.getByRole("menuitem", { name: /Close Search/i });
+      fireEvent.click(closeItem);
 
       expect(onClear).toHaveBeenCalledTimes(1);
+    });
+
+    it("closes menu after close action", () => {
+      const onClear = mock(() => {});
+      render(<SearchHeader {...defaultProps} onClear={onClear} />);
+
+      openMenu();
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      const closeItem = screen.getByRole("menuitem", { name: /Close Search/i });
+      fireEvent.click(closeItem);
+
+      expect(screen.queryByRole("menu")).toBeNull();
     });
   });
 
   describe("keyboard accessibility", () => {
-    it("calls onClear when Escape is pressed in input", () => {
+    it("calls onClear when Escape is pressed in input (menu closed)", () => {
       const onClear = mock(() => {});
       render(<SearchHeader {...defaultProps} onClear={onClear} />);
 
@@ -250,6 +315,21 @@ describe("SearchHeader", () => {
       fireEvent.keyDown(input, { key: "Escape" });
 
       expect(onClear).toHaveBeenCalledTimes(1);
+    });
+
+    it("closes menu when Escape is pressed (menu open)", () => {
+      const onClear = mock(() => {});
+      render(<SearchHeader {...defaultProps} onClear={onClear} />);
+
+      openMenu();
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      const input = screen.getByRole("textbox", { name: "Search query" });
+      fireEvent.keyDown(input, { key: "Escape" });
+
+      // Menu should close, but onClear should not be called
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(onClear).not.toHaveBeenCalled();
     });
 
     it("does not call onClear for other keys", () => {
@@ -273,22 +353,18 @@ describe("SearchHeader", () => {
       expect(input.getAttribute("aria-label")).toBe("Search query");
     });
 
-    it("has proper aria-label on mode toggle", () => {
+    it("has proper aria-label on menu trigger", () => {
       render(<SearchHeader {...defaultProps} mode="files" />);
 
-      const modeBtn = screen.getByRole("button", {
-        name: "Switch to content search",
-      });
-      expect(modeBtn.getAttribute("aria-label")).toBe(
-        "Switch to content search"
-      );
+      const menuTrigger = screen.getByRole("button", { name: "Search options" });
+      expect(menuTrigger.getAttribute("aria-label")).toBe("Search options");
     });
 
-    it("has proper aria-label on clear button", () => {
+    it("has aria-haspopup on menu trigger", () => {
       render(<SearchHeader {...defaultProps} />);
 
-      const clearBtn = screen.getByRole("button", { name: "Clear search" });
-      expect(clearBtn.getAttribute("aria-label")).toBe("Clear search");
+      const menuTrigger = screen.getByRole("button", { name: "Search options" });
+      expect(menuTrigger.getAttribute("aria-haspopup")).toBe("true");
     });
   });
 });

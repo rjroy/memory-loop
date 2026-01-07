@@ -123,7 +123,7 @@ describe("BrowseMode Search Integration", () => {
   });
 
   describe("search deactivation", () => {
-    it("returns to FileTree when search is cleared", async () => {
+    it("returns to FileTree when search is closed via dropdown", async () => {
       render(<BrowseMode />, { wrapper: TestWrapper });
 
       // Activate search
@@ -135,9 +135,11 @@ describe("BrowseMode Search Integration", () => {
         expect(screen.getByPlaceholderText(/search file names/i)).toBeDefined();
       });
 
-      // Clear search
-      const clearBtn = screen.getByRole("button", { name: /clear search/i });
-      fireEvent.click(clearBtn);
+      // Open dropdown menu and click Close Search
+      const menuTrigger = screen.getByRole("button", { name: /search options/i });
+      fireEvent.click(menuTrigger);
+      const closeItem = screen.getByRole("menuitem", { name: /close search/i });
+      fireEvent.click(closeItem);
 
       // FileTree should be visible again
       await waitFor(() => {
@@ -198,9 +200,11 @@ describe("BrowseMode Search Integration", () => {
       const searchBtn = screen.getByRole("button", { name: /search files/i });
       fireEvent.click(searchBtn);
 
-      // Switch to content mode
-      const modeBtn = screen.getByRole("button", { name: /switch to content search/i });
-      fireEvent.click(modeBtn);
+      // Switch to content mode via dropdown
+      const menuTrigger = screen.getByRole("button", { name: /search options/i });
+      fireEvent.click(menuTrigger);
+      const modeItem = screen.getByRole("menuitem", { name: /switch to content search/i });
+      fireEvent.click(modeItem);
 
       // Type in the search input
       const input = screen.getByPlaceholderText(/search content/i);
@@ -278,12 +282,14 @@ describe("BrowseMode Search Integration", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
       const ws = wsInstances[0];
 
-      // Activate search and switch to content mode
+      // Activate search and switch to content mode via dropdown
       const searchBtn = screen.getByRole("button", { name: /search files/i });
       fireEvent.click(searchBtn);
 
-      const modeBtn = screen.getByRole("button", { name: /switch to content search/i });
-      fireEvent.click(modeBtn);
+      const menuTrigger = screen.getByRole("button", { name: /search options/i });
+      fireEvent.click(menuTrigger);
+      const modeItem = screen.getByRole("menuitem", { name: /switch to content search/i });
+      fireEvent.click(modeItem);
 
       const input = screen.getByPlaceholderText(/search content/i);
       fireEvent.change(input, { target: { value: "hello" } });
@@ -405,12 +411,14 @@ describe("BrowseMode Search Integration", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
       const ws = wsInstances[0];
 
-      // Activate search and switch to content mode
+      // Activate search and switch to content mode via dropdown
       const searchBtn = screen.getByRole("button", { name: /search files/i });
       fireEvent.click(searchBtn);
 
-      const modeBtn = screen.getByRole("button", { name: /switch to content search/i });
-      fireEvent.click(modeBtn);
+      const menuTrigger = screen.getByRole("button", { name: /search options/i });
+      fireEvent.click(menuTrigger);
+      const modeItem = screen.getByRole("menuitem", { name: /switch to content search/i });
+      fireEvent.click(modeItem);
 
       const input = screen.getByPlaceholderText(/search content/i);
       fireEvent.change(input, { target: { value: "hello" } });
@@ -453,12 +461,14 @@ describe("BrowseMode Search Integration", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
       const ws = wsInstances[0];
 
-      // Activate search and switch to content mode
+      // Activate search and switch to content mode via dropdown
       const searchBtn = screen.getByRole("button", { name: /search files/i });
       fireEvent.click(searchBtn);
 
-      const modeBtn = screen.getByRole("button", { name: /switch to content search/i });
-      fireEvent.click(modeBtn);
+      const menuTrigger = screen.getByRole("button", { name: /search options/i });
+      fireEvent.click(menuTrigger);
+      const modeItem = screen.getByRole("menuitem", { name: /switch to content search/i });
+      fireEvent.click(modeItem);
 
       const input = screen.getByPlaceholderText(/search content/i);
       fireEvent.change(input, { target: { value: "hello" } });
@@ -566,9 +576,11 @@ describe("BrowseMode Search Integration", () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       sentMessages.length = 0;
 
-      // Switch to content mode
-      const modeBtn = screen.getByRole("button", { name: /switch to content search/i });
-      fireEvent.click(modeBtn);
+      // Switch to content mode via dropdown
+      const menuTrigger = screen.getByRole("button", { name: /search options/i });
+      fireEvent.click(menuTrigger);
+      const modeItem = screen.getByRole("menuitem", { name: /switch to content search/i });
+      fireEvent.click(modeItem);
 
       // Should immediately send search_content with existing query
       const searchMsg = sentMessages.find((m) => m.type === "search_content");

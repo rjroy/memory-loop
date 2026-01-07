@@ -12,15 +12,18 @@ authored_by:
 
 # Recall Tab Search - Implementation Progress
 
-**Last Updated**: 2026-01-07 | **Status**: 21% complete (3 of 14 tasks)
+**Last Updated**: 2026-01-07 | **Status**: 43% complete (6 of 14 tasks)
 
 ## Current Session
-**Date**: 2026-01-07 | **Working On**: Phase 2 (Backend Services) | **Blockers**: None
+**Date**: 2026-01-07 | **Working On**: Phase 3 (Frontend State) | **Blockers**: None
 
 ## Completed Today
 - TASK-001: Define Search Protocol Types (S) - Commit: 34e6216
 - TASK-002: Implement Fuzzy File Name Matcher (M) - Commit: 34e6216
 - TASK-003: Add MiniSearch Dependency (S) - Commit: 34e6216
+- TASK-004: Implement Search Index Manager (L) - Commit: 5323e47
+- TASK-005: Implement Index Persistence (M) - Commit: 81f87cf
+- TASK-006: Add Search WebSocket Handlers (M) - Commit: 4b0e953
 
 ## Discovered Issues
 - None
@@ -38,14 +41,14 @@ authored_by:
 
 ### Phase 2: Backend Services
 
-**In Progress** 🚧
-- [ ] TASK-004: Implement Search Index Manager (L)
-- [ ] TASK-005: Implement Index Persistence (M)
-- [ ] TASK-006: Add Search WebSocket Handlers (M)
+**Completed** ✅
+- [x] TASK-004: Implement Search Index Manager (L) - *Completed 2026-01-07*
+- [x] TASK-005: Implement Index Persistence (M) - *Completed 2026-01-07*
+- [x] TASK-006: Add Search WebSocket Handlers (M) - *Completed 2026-01-07*
 
 ### Phase 3: Frontend State
 
-**Upcoming** ⏳
+**In Progress** 🚧
 - [ ] TASK-007: Add Search State to SessionContext (M)
 - [ ] TASK-008: Implement Search WebSocket Client (S)
 
@@ -83,14 +86,15 @@ authored_by:
 |-----------|--------|
 | Protocol types | ✅ Complete (schema validation via TypeScript) |
 | Fuzzy matcher | ✅ Complete (52 tests) |
-| Search index | ⏳ Not started |
-| WebSocket handlers | ⏳ Not started |
+| Search index | ✅ Complete (56 tests + 17 persistence tests) |
+| WebSocket handlers | ✅ Complete (20 new tests) |
 | Frontend state | ⏳ Not started |
 | UI components | ⏳ Not started |
 
 ---
 
 ## Notes for Next Session
-- Phase 1 complete, moving to Phase 2 (Backend Services)
-- TASK-004 is the critical path - implements SearchIndexManager
-- TASK-005 and TASK-006 depend on TASK-004
+- Phase 2 complete, moving to Phase 3 (Frontend State)
+- TASK-007 adds search state slice to SessionContext
+- TASK-008 adds WebSocket client methods for search
+- Both can be done in parallel since they're independent

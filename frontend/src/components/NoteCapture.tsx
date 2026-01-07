@@ -43,6 +43,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<ToastState>({ visible: false, type: "success", message: "" });
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const retryCountRef = useRef(0);
@@ -74,6 +75,17 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       hasSentVaultSelectionRef.current = true;
     }
   }, [connectionStatus, vault, sendMessage]);
+
+  // Detect touch-only devices (no hover capability)
+  // On touch devices, Enter adds newlines; send button is the only way to submit
+  useEffect(() => {
+    const query = window.matchMedia("(hover: none)");
+    setIsTouchDevice(query.matches);
+
+    const handler = (e: MediaQueryListEvent) => setIsTouchDevice(e.matches);
+    query.addEventListener("change", handler);
+    return () => query.removeEventListener("change", handler);
+  }, []);
 
   // Load draft from localStorage on mount
   useEffect(() => {
@@ -193,6 +205,15 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
     setContent(e.target.value);
   }
 
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // On touch devices, Enter always adds a newline (no keyboard shortcut to submit)
+    // On desktop, Enter submits and Shift+Enter adds a newline
+    if (e.key === "Enter" && !e.shiftKey && !isTouchDevice) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  }
+
   const isDisabled = isSubmitting || connectionStatus !== "connected" || !vault;
 
   return (
@@ -210,6 +231,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
           className="note-capture__input"
           value={content}
           onChange={handleChange}
+          onKeyDown={handleKeyDown}
           placeholder="What's on your mind? Goes to your daily note."
           disabled={isSubmitting}
           rows={3}

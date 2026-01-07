@@ -237,7 +237,13 @@ export class SearchIndexManager {
       const fileName = basename(filePath);
 
       // Count actual matches in the file content
+      // MiniSearch uses fuzzy matching, so a file might be returned even if
+      // the exact query string doesn't appear in it. Skip such results.
       const matchCount = await this.countMatches(filePath, query);
+      if (matchCount === 0) {
+        log.debug(`Skipping fuzzy-only match (no exact matches): ${filePath}`);
+        continue;
+      }
 
       results.push({
         path: filePath,

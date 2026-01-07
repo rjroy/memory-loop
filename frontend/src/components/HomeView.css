@@ -53,6 +53,12 @@
   margin: 0;
 }
 
+.home-view__vault-subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
 /* Debrief Buttons */
 .home-view__debrief-buttons {
   display: flex;

@@ -74,6 +74,66 @@ export const getHost = (): string => {
 };
 
 /**
+ * TLS configuration for HTTPS support.
+ * Returns undefined if TLS is not configured, otherwise returns the tls options object.
+ *
+ * Required environment variables for TLS:
+ * - TLS_CERT: Path to the certificate file (PEM format)
+ * - TLS_KEY: Path to the private key file (PEM format)
+ *
+ * Optional:
+ * - TLS_PASSPHRASE: Passphrase for encrypted private keys
+ * - TLS_CA: Path to CA certificate chain file (for client cert verification)
+ */
+export const getTlsConfig = ():
+  | {
+      cert: ReturnType<typeof Bun.file>;
+      key: ReturnType<typeof Bun.file>;
+      passphrase?: string;
+      ca?: ReturnType<typeof Bun.file>;
+    }
+  | undefined => {
+  const certPath = process.env.TLS_CERT;
+  const keyPath = process.env.TLS_KEY;
+
+  // Both cert and key are required for TLS
+  if (!certPath || !keyPath) {
+    return undefined;
+  }
+
+  const config: {
+    cert: ReturnType<typeof Bun.file>;
+    key: ReturnType<typeof Bun.file>;
+    passphrase?: string;
+    ca?: ReturnType<typeof Bun.file>;
+  } = {
+    cert: Bun.file(certPath),
+    key: Bun.file(keyPath),
+  };
+
+  // Optional passphrase for encrypted private keys
+  const passphrase = process.env.TLS_PASSPHRASE;
+  if (passphrase) {
+    config.passphrase = passphrase;
+  }
+
+  // Optional CA certificate chain
+  const caPath = process.env.TLS_CA;
+  if (caPath) {
+    config.ca = Bun.file(caPath);
+  }
+
+  return config;
+};
+
+/**
+ * Check if TLS is enabled based on environment configuration
+ */
+export const isTlsEnabled = (): boolean => {
+  return Boolean(process.env.TLS_CERT && process.env.TLS_KEY);
+};
+
+/**
  * Create and configure the Hono application
  */
 export const createApp = () => {
@@ -265,10 +325,18 @@ export const createApp = () => {
 // Create the app instance
 export const app = createApp();
 
-// Export server configuration for Bun.serve
-export const serverConfig = {
+// Build server configuration for Bun.serve
+const baseConfig = {
   port: getPort(),
   hostname: getHost(),
   fetch: app.fetch,
   websocket,
 };
+
+// Add TLS configuration if enabled
+const tlsConfig = getTlsConfig();
+
+// Export server configuration for Bun.serve
+export const serverConfig = tlsConfig
+  ? { ...baseConfig, tls: tlsConfig }
+  : baseConfig;

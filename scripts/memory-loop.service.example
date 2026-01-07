@@ -34,6 +34,11 @@ Environment=VAULTS_DIR=/path/to/your/vaults
 Environment=PORT=3000
 Environment=HOST=0.0.0.0
 
+# HTTPS/TLS - uncomment and set paths to enable HTTPS
+#Environment=TLS_CERT=/path/to/certificate.pem
+#Environment=TLS_KEY=/path/to/private-key.pem
+#Environment=TLS_PASSPHRASE=your-passphrase-if-needed
+
 # Uncomment if bun is not in default PATH
 #Environment=PATH=/home/YOUR_USER/.bun/bin:/usr/local/bin:/usr/bin:/bin
 

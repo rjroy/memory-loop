@@ -7,15 +7,21 @@
  * - Claude Agent SDK integration for AI conversations
  */
 
-import { serverConfig } from "./server";
+import { serverConfig, isTlsEnabled } from "./server";
 import { serverLog as log } from "./logger";
 
 const server = Bun.serve(serverConfig);
 
 const displayHost = server.hostname === "0.0.0.0" ? "localhost" : server.hostname;
-log.info(`Memory Loop Backend running at http://${displayHost}:${server.port}`);
-log.info(`WebSocket available at ws://${displayHost}:${server.port}/ws`);
-log.info(`Health check at http://${displayHost}:${server.port}/api/health`);
+const httpProtocol = isTlsEnabled() ? "https" : "http";
+const wsProtocol = isTlsEnabled() ? "wss" : "ws";
+
+log.info(`Memory Loop Backend running at ${httpProtocol}://${displayHost}:${server.port}`);
+log.info(`WebSocket available at ${wsProtocol}://${displayHost}:${server.port}/ws`);
+log.info(`Health check at ${httpProtocol}://${displayHost}:${server.port}/api/health`);
+if (isTlsEnabled()) {
+  log.info(`TLS enabled - connections are encrypted`);
+}
 if (server.hostname === "0.0.0.0") {
   log.info(`Server bound to all interfaces (0.0.0.0) - accessible remotely`);
 }

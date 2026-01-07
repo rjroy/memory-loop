@@ -4,8 +4,8 @@
  * Tests input, localStorage persistence, submission, and feedback.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
+import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { NoteCapture } from "../NoteCapture";
 import { SessionProvider } from "../../contexts/SessionContext";
@@ -352,6 +352,47 @@ describe("NoteCapture", () => {
       await waitFor(() => {
         expect(localStorage.getItem("memory-loop-draft")).toBeNull();
       });
+    });
+
+    it("restores focus to textarea after successful capture", async () => {
+      // Spy on focus to verify it's called (happy-dom doesn't track activeElement)
+      const focusSpy = spyOn(HTMLTextAreaElement.prototype, "focus");
+
+      render(<NoteCapture />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(wsInstances.length).toBeGreaterThan(0);
+      });
+
+      const textarea = screen.getByRole("textbox");
+      const button = screen.getByRole("button", { name: /capture note/i });
+
+      fireEvent.change(textarea, { target: { value: "My note" } });
+      fireEvent.click(button);
+
+      // Wait for message to be sent
+      await waitFor(() => {
+        expect(sentMessages.length).toBeGreaterThan(0);
+      });
+
+      // Clear any prior focus calls (e.g., from initial render)
+      focusSpy.mockClear();
+
+      // Simulate server response (wrap in act to handle state updates)
+      const ws = wsInstances[0];
+      act(() => {
+        ws.simulateMessage({
+          type: "note_captured",
+          timestamp: "12:34:56",
+        });
+      });
+
+      // Verify focus was called on textarea after successful capture
+      await waitFor(() => {
+        expect(focusSpy).toHaveBeenCalled();
+      });
+
+      focusSpy.mockRestore();
     });
   });
 

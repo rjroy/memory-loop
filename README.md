@@ -176,6 +176,11 @@ TLS_KEY=/path/to/private-key.pem
 
 # Optional: passphrase for encrypted private keys
 TLS_PASSPHRASE=your-passphrase
+
+# Optional: HTTP redirect port (default: 80)
+# When TLS is enabled, a second server starts on this port
+# and redirects all HTTP requests to HTTPS
+HTTP_PORT=80
 ```
 
 ### Option 1: Self-Signed Certificate (Local Network)
@@ -243,7 +248,57 @@ After starting the server with TLS configured, you should see:
 Memory Loop Backend running at https://localhost:3000
 WebSocket available at wss://localhost:3000/ws
 TLS enabled - connections are encrypted
+HTTP redirect server running at http://localhost:80 -> https://localhost:3000
 ```
+
+### Linux Privileged Ports
+
+On Linux, binding to ports below 1024 (like 80 and 443) requires elevated privileges. Several options exist:
+
+**Option 1: sysctl (simplest)**
+
+Lower the unprivileged port threshold system-wide:
+
+```bash
+# Allow binding to ports >= 80
+sudo sysctl net.ipv4.ip_unprivileged_port_start=80
+
+# Make permanent across reboots
+echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-unprivileged-ports.conf
+```
+
+This is safe for personal systems where you're the only user.
+
+**Option 2: Capability on bun binary**
+
+Grant bun the specific capability to bind low ports:
+
+```bash
+sudo setcap 'cap_net_bind_service=+ep' $(which bun)
+```
+
+Note: Must be re-run after bun updates.
+
+**Option 3: Port forwarding (app stays on high ports)**
+
+Use nftables to redirect standard ports to high ports:
+
+```bash
+sudo nft add table nat
+sudo nft add chain nat prerouting { type nat hook prerouting priority 0 \; }
+sudo nft add rule nat prerouting tcp dport 80 redirect to :3080
+sudo nft add rule nat prerouting tcp dport 443 redirect to :3443
+```
+
+Then configure:
+```bash
+export PORT=3443
+export HTTP_PORT=3080
+```
+
+**Option 4: Reverse proxy**
+
+Use nginx or caddy on ports 80/443 to proxy to Memory Loop on high ports. This is the standard production approach and allows multiple services to share ports.
 
 ## Running as a Service (systemd)
 

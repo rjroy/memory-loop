@@ -15,7 +15,15 @@ import { describe, expect, it, afterEach, beforeEach } from "bun:test";
 import { mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createApp, getPort, getHost, getTlsConfig, isTlsEnabled } from "../server";
+import {
+  createApp,
+  getPort,
+  getHost,
+  getTlsConfig,
+  isTlsEnabled,
+  getHttpRedirectPort,
+  createHttpRedirectServer,
+} from "../server";
 import type { VaultInfo } from "@memory-loop/shared";
 
 /** Response type for successful vault list */
@@ -240,6 +248,125 @@ describe("isTlsEnabled", () => {
     process.env.TLS_CERT = "/path/to/cert.pem";
     process.env.TLS_KEY = "/path/to/key.pem";
     expect(isTlsEnabled()).toBe(true);
+  });
+});
+
+describe("getHttpRedirectPort", () => {
+  const originalEnv = process.env.HTTP_PORT;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.HTTP_PORT;
+    } else {
+      process.env.HTTP_PORT = originalEnv;
+    }
+  });
+
+  it("returns default port 80 when HTTP_PORT is not set", () => {
+    delete process.env.HTTP_PORT;
+    expect(getHttpRedirectPort()).toBe(80);
+  });
+
+  it("returns configured HTTP_PORT when valid", () => {
+    process.env.HTTP_PORT = "8080";
+    expect(getHttpRedirectPort()).toBe(8080);
+  });
+
+  it("returns default port when HTTP_PORT is invalid number", () => {
+    process.env.HTTP_PORT = "invalid";
+    expect(getHttpRedirectPort()).toBe(80);
+  });
+
+  it("returns default port when HTTP_PORT is out of range", () => {
+    process.env.HTTP_PORT = "99999";
+    expect(getHttpRedirectPort()).toBe(80);
+  });
+
+  it("returns default port when HTTP_PORT is negative", () => {
+    process.env.HTTP_PORT = "-1";
+    expect(getHttpRedirectPort()).toBe(80);
+  });
+
+  it("returns default port when HTTP_PORT is zero", () => {
+    process.env.HTTP_PORT = "0";
+    expect(getHttpRedirectPort()).toBe(80);
+  });
+});
+
+describe("createHttpRedirectServer", () => {
+  const originalHttpPort = process.env.HTTP_PORT;
+  const originalHost = process.env.HOST;
+
+  afterEach(() => {
+    if (originalHttpPort === undefined) {
+      delete process.env.HTTP_PORT;
+    } else {
+      process.env.HTTP_PORT = originalHttpPort;
+    }
+    if (originalHost === undefined) {
+      delete process.env.HOST;
+    } else {
+      process.env.HOST = originalHost;
+    }
+  });
+
+  it("returns server config with correct port", () => {
+    process.env.HTTP_PORT = "3080";
+    delete process.env.HOST;
+
+    const config = createHttpRedirectServer(3443);
+
+    expect(config.port).toBe(3080);
+    expect(config.hostname).toBe("0.0.0.0");
+    expect(typeof config.fetch).toBe("function");
+  });
+
+  it("redirects requests to HTTPS with 308 status", () => {
+    process.env.HTTP_PORT = "80";
+    delete process.env.HOST;
+
+    const config = createHttpRedirectServer(443);
+    const req = new Request("http://example.com/some/path?query=value");
+    const res = config.fetch(req);
+
+    expect(res.status).toBe(308);
+    expect(res.headers.get("Location")).toBe("https://example.com:443/some/path?query=value");
+  });
+
+  it("preserves path in redirect", () => {
+    const config = createHttpRedirectServer(3000);
+    const req = new Request("http://localhost/api/health");
+    const res = config.fetch(req);
+
+    expect(res.status).toBe(308);
+    expect(res.headers.get("Location")).toBe("https://localhost:3000/api/health");
+  });
+
+  it("preserves query string in redirect", () => {
+    const config = createHttpRedirectServer(3000);
+    const req = new Request("http://localhost/search?q=test&page=2");
+    const res = config.fetch(req);
+
+    expect(res.status).toBe(308);
+    expect(res.headers.get("Location")).toBe("https://localhost:3000/search?q=test&page=2");
+  });
+
+  it("redirects favicon requests to HTTPS", () => {
+    const config = createHttpRedirectServer(443);
+    const req = new Request("http://example.com/favicon-32.png");
+    const res = config.fetch(req);
+
+    expect(res.status).toBe(308);
+    expect(res.headers.get("Location")).toBe("https://example.com:443/favicon-32.png");
+  });
+
+  it("redirects root path correctly", () => {
+    const config = createHttpRedirectServer(443);
+    const req = new Request("http://example.com/");
+    const res = config.fetch(req);
+
+    expect(res.status).toBe(308);
+    expect(res.headers.get("Location")).toBe("https://example.com:443/");
   });
 });
 

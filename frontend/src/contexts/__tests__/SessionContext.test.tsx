@@ -46,6 +46,7 @@ const testVault: VaultInfo = {
   promptsPerGeneration: 5,
   maxPoolSize: 50,
   quotesPerWeek: 1,
+  badges: [],
 };
 
 const testVault2: VaultInfo = {
@@ -60,6 +61,7 @@ const testVault2: VaultInfo = {
   promptsPerGeneration: 5,
   maxPoolSize: 50,
   quotesPerWeek: 1,
+  badges: [],
 };
 
 describe("SessionContext", () => {

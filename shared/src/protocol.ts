@@ -8,6 +8,32 @@
 import { z } from "zod";
 
 // =============================================================================
+// Badge Schema
+// =============================================================================
+
+/**
+ * Schema for badge color enum - valid named colors for badges
+ */
+export const BadgeColorSchema = z.enum([
+  "black",
+  "purple",
+  "red",
+  "cyan",
+  "orange",
+  "blue",
+  "green",
+  "yellow",
+]);
+
+/**
+ * Schema for Badge - custom badge configured in .memory-loop.json
+ */
+export const BadgeSchema = z.object({
+  text: z.string().min(1, "Badge text is required"),
+  color: BadgeColorSchema,
+});
+
+// =============================================================================
 // Vault Info Schema
 // =============================================================================
 
@@ -17,6 +43,7 @@ import { z } from "zod";
 export const VaultInfoSchema = z.object({
   id: z.string().min(1, "Vault ID is required"),
   name: z.string().min(1, "Vault name is required"),
+  subtitle: z.string().optional(),
   path: z.string().min(1, "Vault path is required"),
   hasClaudeMd: z.boolean(),
   contentRoot: z.string().min(1, "Content root is required"),
@@ -27,6 +54,7 @@ export const VaultInfoSchema = z.object({
   promptsPerGeneration: z.number().int().positive(),
   maxPoolSize: z.number().int().positive(),
   quotesPerWeek: z.number().int().positive(),
+  badges: z.array(BadgeSchema),
 });
 
 // =============================================================================

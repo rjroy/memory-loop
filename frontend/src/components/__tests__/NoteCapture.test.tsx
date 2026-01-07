@@ -76,6 +76,7 @@ const testVault: VaultInfo = {
   promptsPerGeneration: 5,
   maxPoolSize: 50,
   quotesPerWeek: 1,
+  badges: [],
 };
 
 // Wrapper with providers - vault is pre-selected via localStorage

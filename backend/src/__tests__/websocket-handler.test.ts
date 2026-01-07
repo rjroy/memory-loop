@@ -322,6 +322,7 @@ function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     promptsPerGeneration: 5,
     maxPoolSize: 50,
     quotesPerWeek: 1,
+    badges: [],
     ...overrides,
   };
 }

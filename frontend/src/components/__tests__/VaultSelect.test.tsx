@@ -75,6 +75,7 @@ const testVaults: VaultInfo[] = [
     promptsPerGeneration: 5,
     maxPoolSize: 50,
     quotesPerWeek: 1,
+    badges: [],
   },
   {
     id: "vault-2",
@@ -88,6 +89,7 @@ const testVaults: VaultInfo[] = [
     promptsPerGeneration: 5,
     maxPoolSize: 50,
     quotesPerWeek: 1,
+    badges: [],
   },
 ];
 
@@ -164,6 +166,80 @@ describe("VaultSelect", () => {
       });
     });
 
+    it("displays custom badges from vault configuration", async () => {
+      const vaultsWithBadges: VaultInfo[] = [
+        {
+          id: "vault-badges",
+          name: "Vault with Badges",
+          path: "/home/user/vault",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/vault",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+          promptsPerGeneration: 5,
+          maxPoolSize: 50,
+          quotesPerWeek: 1,
+          badges: [
+            { text: "Work", color: "blue" },
+            { text: "Personal", color: "green" },
+          ],
+        },
+      ];
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithBadges }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Work")).toBeDefined();
+        expect(screen.getByText("Personal")).toBeDefined();
+      });
+
+      // Verify badges have correct CSS classes
+      const workBadge = screen.getByText("Work");
+      const personalBadge = screen.getByText("Personal");
+      expect(workBadge.className).toContain("vault-select__badge--blue");
+      expect(personalBadge.className).toContain("vault-select__badge--green");
+    });
+
+    it("displays custom badges alongside built-in badges", async () => {
+      const vaultsWithAllBadges: VaultInfo[] = [
+        {
+          id: "vault-all-badges",
+          name: "Vault with All Badges",
+          path: "/home/user/vault",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/vault",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: true,
+          promptsPerGeneration: 5,
+          maxPoolSize: 50,
+          quotesPerWeek: 1,
+          badges: [{ text: "Custom", color: "purple" }],
+        },
+      ];
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithAllBadges }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        // Built-in badges
+        expect(screen.getByText("CLAUDE.md")).toBeDefined();
+        expect(screen.getByText("Memory Loop")).toBeDefined();
+        // Custom badge
+        expect(screen.getByText("Custom")).toBeDefined();
+      });
+    });
+
     it("shows connection status", async () => {
       render(<VaultSelect />, { wrapper: TestWrapper });
 
@@ -188,6 +264,7 @@ describe("VaultSelect", () => {
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
+          badges: [],
         },
       ];
       mockFetchResponse = {
@@ -222,6 +299,7 @@ describe("VaultSelect", () => {
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
+          badges: [],
         },
       ];
       mockFetchResponse = {
@@ -506,6 +584,7 @@ describe("VaultSelect", () => {
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
+          badges: [],
         },
       ];
 
@@ -538,6 +617,7 @@ describe("VaultSelect", () => {
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
+          badges: [],
         },
       ];
 
@@ -585,6 +665,7 @@ describe("VaultSelect", () => {
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
+          badges: [],
         },
       ];
 
@@ -625,6 +706,7 @@ describe("VaultSelect", () => {
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
+          badges: [],
         },
       ];
 
@@ -675,6 +757,7 @@ describe("VaultSelect", () => {
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
+          badges: [],
         },
       ];
 
@@ -727,6 +810,7 @@ describe("VaultSelect", () => {
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
+          badges: [],
         },
       ];
 
@@ -799,6 +883,7 @@ describe("VaultSelect", () => {
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
+          badges: [],
         },
       ];
 

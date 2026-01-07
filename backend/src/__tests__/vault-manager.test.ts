@@ -628,6 +628,7 @@ describe("Filesystem Integration", () => {
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
+        badges: [],
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/00_Inbox");
@@ -646,6 +647,7 @@ describe("Filesystem Integration", () => {
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
+        badges: [],
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/Custom/Inbox");
@@ -664,6 +666,7 @@ describe("Filesystem Integration", () => {
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
+        badges: [],
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/content/00_Inbox");
@@ -1008,6 +1011,7 @@ Item 3
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
+        badges: [],
       };
 
       const goals = await getVaultGoals(vault);
@@ -1041,6 +1045,7 @@ Item 3
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
+        badges: [],
       };
 
       const sections = await getVaultGoals(vault);
@@ -1067,6 +1072,7 @@ Item 3
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
+        badges: [],
       };
 
       const goals = await getVaultGoals(vault);

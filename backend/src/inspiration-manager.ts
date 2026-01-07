@@ -1068,6 +1068,47 @@ export function selectRandom<T>(items: T[]): T | undefined {
 }
 
 /**
+ * Select a random item with linear recency weighting.
+ *
+ * Items at the end of the array (most recent) are more likely to be selected.
+ * Uses linear weighting: item at index i has weight (i + 1).
+ *
+ * For an array of n items:
+ * - First item (oldest): weight 1, probability 2/[n(n+1)]
+ * - Last item (newest): weight n, probability 2/(n+1)
+ * - Most recent item is n times more likely than the oldest
+ *
+ * @param items - Array of items to select from (newest at end)
+ * @returns A weighted random item, or undefined if array is empty
+ */
+export function selectWeightedRandom<T>(items: T[]): T | undefined {
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const n = items.length;
+
+  // Total weight = 1 + 2 + ... + n = n(n+1)/2
+  const totalWeight = (n * (n + 1)) / 2;
+
+  // Random value in [0, totalWeight)
+  const randomValue = Math.random() * totalWeight;
+
+  // Find the item: cumulative weight at index i is (i+1)(i+2)/2
+  // We need to find smallest i where cumulative weight > randomValue
+  let cumulativeWeight = 0;
+  for (let i = 0; i < n; i++) {
+    cumulativeWeight += i + 1;
+    if (randomValue < cumulativeWeight) {
+      return items[i];
+    }
+  }
+
+  // Fallback (shouldn't reach due to floating point, but safety first)
+  return items[n - 1];
+}
+
+/**
  * Main orchestration function for inspiration content.
  *
  * REQ-F-1: Provide dual-content display: contextual prompts + timeless quotes
@@ -1157,7 +1198,7 @@ export async function getInspiration(vault: VaultInfo): Promise<InspirationResul
     const contextualFile = await parseInspirationFile(contextualPath);
 
     if (contextualFile.items.length > 0) {
-      contextual = selectRandom(contextualFile.items) ?? null;
+      contextual = selectWeightedRandom(contextualFile.items) ?? null;
     }
   } catch {
     // File doesn't exist or parse error - return null for contextual

@@ -42,6 +42,7 @@ import {
   setQueryFunction,
   resetQueryFunction,
   selectRandom,
+  selectWeightedRandom,
   getInspiration,
   FALLBACK_QUOTE,
   CONTEXTUAL_PROMPTS_PATH,
@@ -2772,6 +2773,111 @@ describe("selectRandom", () => {
 
     // Should have selected at least 2 different items over 100 runs
     expect(results.size).toBeGreaterThan(1);
+  });
+});
+
+// =============================================================================
+// selectWeightedRandom Tests
+// =============================================================================
+
+describe("selectWeightedRandom", () => {
+  test("returns undefined for empty array", () => {
+    const result = selectWeightedRandom([]);
+    expect(result).toBeUndefined();
+  });
+
+  test("returns the single item for array with one element", () => {
+    const item = { text: "Only one" };
+    const result = selectWeightedRandom([item]);
+    expect(result).toBe(item);
+  });
+
+  test("returns an item from the array for multiple elements", () => {
+    const items = [
+      { text: "First" },
+      { text: "Second" },
+      { text: "Third" },
+    ];
+    const result = selectWeightedRandom(items);
+    expect(result).toBeDefined();
+    expect(items).toContain(result!);
+  });
+
+  test("handles arrays of strings", () => {
+    const items = ["a", "b", "c"];
+    const result = selectWeightedRandom(items);
+    expect(result).toBeDefined();
+    expect(items).toContain(result!);
+  });
+
+  test("handles arrays of numbers", () => {
+    const items = [1, 2, 3, 4, 5];
+    const result = selectWeightedRandom(items);
+    expect(result).toBeDefined();
+    expect(items).toContain(result!);
+  });
+
+  test("returns different items over many calls (statistical)", () => {
+    const items = ["a", "b", "c", "d", "e"];
+    const results = new Set<string>();
+
+    // Run many times to get statistical coverage
+    for (let i = 0; i < 100; i++) {
+      const result = selectWeightedRandom(items);
+      if (result) results.add(result);
+    }
+
+    // Should have selected at least 2 different items over 100 runs
+    expect(results.size).toBeGreaterThan(1);
+  });
+
+  test("biases toward recent items (end of array)", () => {
+    // Use a larger array to make the bias statistically significant
+    const items = ["oldest", "old", "middle", "recent", "newest"];
+    const counts: Record<string, number> = {
+      oldest: 0,
+      old: 0,
+      middle: 0,
+      recent: 0,
+      newest: 0,
+    };
+
+    // Run many times to get statistical distribution
+    const iterations = 10000;
+    for (let i = 0; i < iterations; i++) {
+      const result = selectWeightedRandom(items);
+      if (result) counts[result]++;
+    }
+
+    // With linear weighting (1,2,3,4,5), expected probabilities:
+    // oldest: 1/15 = 6.7%, old: 2/15 = 13.3%, middle: 3/15 = 20%
+    // recent: 4/15 = 26.7%, newest: 5/15 = 33.3%
+    //
+    // Verify the bias: newest should be selected more than oldest
+    expect(counts.newest).toBeGreaterThan(counts.oldest);
+
+    // Newest should be roughly 5x more likely than oldest
+    // Allow some statistical variance (3x to 7x range)
+    const ratio = counts.newest / counts.oldest;
+    expect(ratio).toBeGreaterThan(3);
+    expect(ratio).toBeLessThan(7);
+  });
+
+  test("with two items, second has 2x probability", () => {
+    const items = ["first", "second"];
+    const counts = { first: 0, second: 0 };
+
+    const iterations = 10000;
+    for (let i = 0; i < iterations; i++) {
+      const result = selectWeightedRandom(items);
+      if (result) counts[result as "first" | "second"]++;
+    }
+
+    // Expected: first = 1/3, second = 2/3
+    // Second should be roughly 2x first (allow 1.5x to 2.5x)
+    const ratio = counts.second / counts.first;
+    expect(ratio).toBeGreaterThan(1.5);
+    expect(ratio).toBeLessThan(2.5);
   });
 });
 

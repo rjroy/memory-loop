@@ -6,6 +6,8 @@
  * - Vaults endpoint functionality
  * - Vault asset serving endpoint
  * - Port configuration
+ * - Host configuration
+ * - TLS/HTTPS configuration
  * - App creation
  */
 
@@ -13,7 +15,7 @@ import { describe, expect, it, afterEach, beforeEach } from "bun:test";
 import { mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createApp, getPort, getHost } from "../server";
+import { createApp, getPort, getHost, getTlsConfig, isTlsEnabled } from "../server";
 import type { VaultInfo } from "@memory-loop/shared";
 
 /** Response type for successful vault list */
@@ -97,6 +99,147 @@ describe("getHost", () => {
   it("returns custom hostname when HOST is set", () => {
     process.env.HOST = "192.168.1.100";
     expect(getHost()).toBe("192.168.1.100");
+  });
+});
+
+describe("getTlsConfig", () => {
+  const originalCert = process.env.TLS_CERT;
+  const originalKey = process.env.TLS_KEY;
+  const originalPassphrase = process.env.TLS_PASSPHRASE;
+  const originalCa = process.env.TLS_CA;
+
+  afterEach(() => {
+    // Restore original environment
+    if (originalCert === undefined) {
+      delete process.env.TLS_CERT;
+    } else {
+      process.env.TLS_CERT = originalCert;
+    }
+    if (originalKey === undefined) {
+      delete process.env.TLS_KEY;
+    } else {
+      process.env.TLS_KEY = originalKey;
+    }
+    if (originalPassphrase === undefined) {
+      delete process.env.TLS_PASSPHRASE;
+    } else {
+      process.env.TLS_PASSPHRASE = originalPassphrase;
+    }
+    if (originalCa === undefined) {
+      delete process.env.TLS_CA;
+    } else {
+      process.env.TLS_CA = originalCa;
+    }
+  });
+
+  it("returns undefined when TLS_CERT is not set", () => {
+    delete process.env.TLS_CERT;
+    delete process.env.TLS_KEY;
+    expect(getTlsConfig()).toBeUndefined();
+  });
+
+  it("returns undefined when TLS_KEY is not set", () => {
+    process.env.TLS_CERT = "/path/to/cert.pem";
+    delete process.env.TLS_KEY;
+    expect(getTlsConfig()).toBeUndefined();
+  });
+
+  it("returns undefined when only TLS_KEY is set", () => {
+    delete process.env.TLS_CERT;
+    process.env.TLS_KEY = "/path/to/key.pem";
+    expect(getTlsConfig()).toBeUndefined();
+  });
+
+  it("returns config with cert and key when both are set", () => {
+    process.env.TLS_CERT = "/path/to/cert.pem";
+    process.env.TLS_KEY = "/path/to/key.pem";
+    delete process.env.TLS_PASSPHRASE;
+    delete process.env.TLS_CA;
+
+    const config = getTlsConfig();
+    expect(config).toBeDefined();
+    expect(config?.cert).toBeDefined();
+    expect(config?.key).toBeDefined();
+    expect(config?.passphrase).toBeUndefined();
+    expect(config?.ca).toBeUndefined();
+  });
+
+  it("includes passphrase when TLS_PASSPHRASE is set", () => {
+    process.env.TLS_CERT = "/path/to/cert.pem";
+    process.env.TLS_KEY = "/path/to/key.pem";
+    process.env.TLS_PASSPHRASE = "secret";
+    delete process.env.TLS_CA;
+
+    const config = getTlsConfig();
+    expect(config).toBeDefined();
+    expect(config?.passphrase).toBe("secret");
+  });
+
+  it("includes ca when TLS_CA is set", () => {
+    process.env.TLS_CERT = "/path/to/cert.pem";
+    process.env.TLS_KEY = "/path/to/key.pem";
+    process.env.TLS_CA = "/path/to/ca.pem";
+    delete process.env.TLS_PASSPHRASE;
+
+    const config = getTlsConfig();
+    expect(config).toBeDefined();
+    expect(config?.ca).toBeDefined();
+  });
+
+  it("includes all options when fully configured", () => {
+    process.env.TLS_CERT = "/path/to/cert.pem";
+    process.env.TLS_KEY = "/path/to/key.pem";
+    process.env.TLS_PASSPHRASE = "secret";
+    process.env.TLS_CA = "/path/to/ca.pem";
+
+    const config = getTlsConfig();
+    expect(config).toBeDefined();
+    expect(config?.cert).toBeDefined();
+    expect(config?.key).toBeDefined();
+    expect(config?.passphrase).toBe("secret");
+    expect(config?.ca).toBeDefined();
+  });
+});
+
+describe("isTlsEnabled", () => {
+  const originalCert = process.env.TLS_CERT;
+  const originalKey = process.env.TLS_KEY;
+
+  afterEach(() => {
+    if (originalCert === undefined) {
+      delete process.env.TLS_CERT;
+    } else {
+      process.env.TLS_CERT = originalCert;
+    }
+    if (originalKey === undefined) {
+      delete process.env.TLS_KEY;
+    } else {
+      process.env.TLS_KEY = originalKey;
+    }
+  });
+
+  it("returns false when neither TLS_CERT nor TLS_KEY is set", () => {
+    delete process.env.TLS_CERT;
+    delete process.env.TLS_KEY;
+    expect(isTlsEnabled()).toBe(false);
+  });
+
+  it("returns false when only TLS_CERT is set", () => {
+    process.env.TLS_CERT = "/path/to/cert.pem";
+    delete process.env.TLS_KEY;
+    expect(isTlsEnabled()).toBe(false);
+  });
+
+  it("returns false when only TLS_KEY is set", () => {
+    delete process.env.TLS_CERT;
+    process.env.TLS_KEY = "/path/to/key.pem";
+    expect(isTlsEnabled()).toBe(false);
+  });
+
+  it("returns true when both TLS_CERT and TLS_KEY are set", () => {
+    process.env.TLS_CERT = "/path/to/cert.pem";
+    process.env.TLS_KEY = "/path/to/key.pem";
+    expect(isTlsEnabled()).toBe(true);
   });
 });
 

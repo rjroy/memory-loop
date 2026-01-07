@@ -248,6 +248,9 @@ export function HomeView(): React.ReactNode {
         <div className="home-view__vault-info">
           <span className="home-view__vault-label">Current Vault</span>
           <h2 className="home-view__vault-name">{vault?.name ?? "—"}</h2>
+          {vault?.subtitle && (
+            <p className="home-view__vault-subtitle">{vault.subtitle}</p>
+          )}
         </div>
         {debriefButtons.length > 0 && (
           <div className="home-view__debrief-buttons">

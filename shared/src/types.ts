@@ -18,6 +18,9 @@
  * @property metadataPath - Path to metadata directory (relative to contentRoot)
  * @property goalsPath - Path to goals.md if it exists (relative to contentRoot)
  * @property setupComplete - Whether vault setup has been completed (marker file exists)
+ * @property promptsPerGeneration - Number of prompts to generate per cycle (default: 5)
+ * @property maxPoolSize - Maximum items to keep in inspiration pools (default: 50)
+ * @property quotesPerWeek - Number of quotes to generate per week (default: 1)
  */
 export interface VaultInfo {
   id: string;
@@ -30,6 +33,9 @@ export interface VaultInfo {
   metadataPath: string;
   goalsPath?: string;
   setupComplete: boolean;
+  promptsPerGeneration: number;
+  maxPoolSize: number;
+  quotesPerWeek: number;
 }
 
 /**

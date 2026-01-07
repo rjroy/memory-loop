@@ -24,6 +24,9 @@ export const VaultInfoSchema = z.object({
   metadataPath: z.string().min(1, "Metadata path is required"),
   goalsPath: z.string().optional(),
   setupComplete: z.boolean(),
+  promptsPerGeneration: z.number().int().positive(),
+  maxPoolSize: z.number().int().positive(),
+  quotesPerWeek: z.number().int().positive(),
 });
 
 // =============================================================================

@@ -16,6 +16,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { VaultInfo } from "@memory-loop/shared";
+import { DEFAULT_MAX_POOL_SIZE } from "./vault-config";
 
 // =============================================================================
 // File Path Constants
@@ -193,8 +194,10 @@ export async function isQuoteGenerationNeeded(
 /** Maximum context size in characters (~800 tokens at ~4 chars/token) */
 export const MAX_CONTEXT_CHARS = 3200;
 
-/** Maximum entries in each inspiration pool (REQ-F-19, REQ-F-24) */
-export const MAX_POOL_SIZE = 50;
+/** Maximum entries in each inspiration pool (REQ-F-19, REQ-F-24)
+ * @deprecated Use vault.maxPoolSize from VaultInfo instead. This is kept for backwards compatibility.
+ */
+export const MAX_POOL_SIZE = DEFAULT_MAX_POOL_SIZE;
 
 /** Path to inbox folder containing daily notes */
 export const INBOX_PATH = "00_Inbox";
@@ -749,10 +752,13 @@ export const GENERATION_MODEL = "claude-3-haiku-20240307";
 export const MAX_GENERATION_CONTEXT = 3000;
 
 /**
- * Prompt template for generating contextual prompts.
+ * Builds the prompt template for generating contextual prompts.
  * Uses vault content as context to create personalized reflection questions.
+ *
+ * @param count - Number of prompts to generate
  */
-export const CONTEXTUAL_PROMPT_TEMPLATE = `Based on the following content from the user's notes, generate exactly 5 thought-provoking prompts that encourage reflection, action, or deeper thinking about the topics mentioned.
+export function buildContextualPromptTemplate(count: number): string {
+  return `Based on the following content from the user's notes, generate exactly ${count} thought-provoking prompts that encourage reflection, action, or deeper thinking about the topics mentioned.
 
 Requirements:
 - Each prompt should be 1-2 sentences
@@ -771,14 +777,18 @@ User's recent notes:
 {context}
 ---
 
-Generate 5 prompts:`;
+Generate ${count} prompts:`;
+}
 
 /**
- * Prompt template for generating weekend prompts.
+ * Builds the prompt template for generating weekend prompts.
  * Focuses on creativity, imagination, and non-work exploration.
  * Vault context is provided as a light nudge, not deep reflection.
+ *
+ * @param count - Number of prompts to generate
  */
-export const WEEKEND_PROMPT_TEMPLATE = `Generate exactly 5 creative prompts for weekend exploration and imagination. These should help someone step away from their usual work mindset and think differently.
+export function buildWeekendPromptTemplate(count: number): string {
+  return `Generate exactly ${count} creative prompts for weekend exploration and imagination. These should help someone step away from their usual work mindset and think differently.
 
 Requirements:
 - Focus on creativity, curiosity, play, and imagination
@@ -794,27 +804,34 @@ Format your response as a markdown list with each prompt quoted:
 - "Another prompt"
 ...
 
-Generate 5 creative prompts:`;
+Generate ${count} creative prompts:`;
+}
 
 /**
- * Prompt template for generating inspirational quotes.
+ * Builds the prompt template for generating inspirational quotes.
  * Uses vault context to select relevant quotes from appropriate domains.
+ *
+ * @param count - Number of quotes to generate
  */
-export const QUOTE_PROMPT_TEMPLATE = `Generate 1 inspirational quote that would resonate with someone based on the themes in their recent notes.
+export function buildQuotePromptTemplate(count: number): string {
+  const quoteWord = count === 1 ? "quote" : "quotes";
+  const itemWord = count === 1 ? "item" : "items";
+  return `Generate ${count} inspirational ${quoteWord} that would resonate with someone based on the themes in their recent notes.
 
 {context_section}
 
 Requirements:
-- Select a quote relevant to the themes, challenges, or interests evident in the notes
+- Select ${count === 1 ? "a quote" : "quotes"} relevant to the themes, challenges, or interests evident in the notes
 - Draw from appropriate domains: if notes mention leadership, draw from management wisdom; if technical work, draw from engineering leaders; if creative work, from artists and creators
 - Good sources include: industry pioneers, technical leaders, authors, historical figures - whoever is most relevant
-- The quote should feel personally applicable, not generic
+- The ${quoteWord} should feel personally applicable, not generic
 - Include accurate attribution
 
-Format your response as a single markdown list item with attribution:
+Format your response as markdown list ${itemWord} with attribution:
 - "Quote text here" -- Attribution
 
-Generate 1 quote:`;
+Generate ${count} ${quoteWord}:`;
+}
 
 /**
  * Type for the SDK query function to allow mocking in tests
@@ -903,14 +920,16 @@ export function parseAIResponse(response: string): InspirationItem[] {
 /**
  * Generate contextual prompts based on vault content.
  *
- * REQ-F-12: Generate 5 new contextual prompts per generation cycle
+ * REQ-F-12: Generate contextual prompts per generation cycle (configurable count)
  * REQ-NF-2: Use Claude Haiku model for cost efficiency
  *
  * @param context - Vault content for context (from gatherDayContext)
+ * @param count - Number of prompts to generate (default: 5)
  * @returns Array of generated prompts (may be empty on error)
  */
 export async function generateContextualPrompts(
-  context: string
+  context: string,
+  count: number = 5
 ): Promise<InspirationItem[]> {
   // Skip if no context provided
   if (!context || !context.trim()) {
@@ -920,8 +939,8 @@ export async function generateContextualPrompts(
   // Truncate context if too long
   const truncatedContext = context.slice(0, MAX_GENERATION_CONTEXT);
 
-  // Build the prompt
-  const prompt = CONTEXTUAL_PROMPT_TEMPLATE.replace("{context}", truncatedContext);
+  // Build the prompt with configurable count
+  const prompt = buildContextualPromptTemplate(count).replace("{context}", truncatedContext);
 
   try {
     const queryResult = queryFn({
@@ -948,10 +967,12 @@ export async function generateContextualPrompts(
  * Uses vault context as a light nudge (project themes) rather than deep reflection.
  *
  * @param context - Optional vault content for light context nudge
+ * @param count - Number of prompts to generate (default: 5)
  * @returns Array of generated creative prompts (may be empty on error)
  */
 export async function generateWeekendPrompts(
-  context?: string
+  context?: string,
+  count: number = 5
 ): Promise<InspirationItem[]> {
   try {
     // Build context nudge - just a hint about their interests, not detailed content
@@ -965,7 +986,7 @@ export async function generateWeekendPrompts(
         "Generate general creative prompts suitable for anyone looking to think differently on a weekend.";
     }
 
-    const prompt = WEEKEND_PROMPT_TEMPLATE.replace("{context_nudge}", contextNudge);
+    const prompt = buildWeekendPromptTemplate(count).replace("{context_nudge}", contextNudge);
 
     const queryResult = queryFn({
       prompt,
@@ -985,17 +1006,19 @@ export async function generateWeekendPrompts(
 }
 
 /**
- * Generate an inspirational quote relevant to the user's work context.
+ * Generate inspirational quotes relevant to the user's work context.
  *
- * REQ-F-21: Generate 1 new inspirational quote per week
+ * REQ-F-21: Generate inspirational quotes per week (configurable count)
  * REQ-F-25: Draw from Claude's knowledge of historical quotes
  * REQ-NF-2: Use Claude Haiku model for cost efficiency
  *
  * @param context - Optional vault content for context-aware quote selection
- * @returns Array with one generated quote (may be empty on error)
+ * @param count - Number of quotes to generate (default: 1)
+ * @returns Array of generated quotes (may be empty on error)
  */
 export async function generateInspirationQuote(
-  context?: string
+  context?: string,
+  count: number = 1
 ): Promise<InspirationItem[]> {
   try {
     // Build context section based on whether context is provided
@@ -1004,10 +1027,10 @@ export async function generateInspirationQuote(
       const truncatedContext = context.slice(0, MAX_GENERATION_CONTEXT);
       contextSection = `The user's recent notes:\n---\n${truncatedContext}\n---`;
     } else {
-      contextSection = "No recent notes available. Generate a timeless, universally applicable quote about growth, learning, or perseverance.";
+      contextSection = "No recent notes available. Generate timeless, universally applicable quotes about growth, learning, or perseverance.";
     }
 
-    const prompt = QUOTE_PROMPT_TEMPLATE.replace("{context_section}", contextSection);
+    const prompt = buildQuotePromptTemplate(count).replace("{context_section}", contextSection);
 
     const queryResult = queryFn({
       prompt,
@@ -1021,8 +1044,8 @@ export async function generateInspirationQuote(
     const response = await collectResponse(queryResult);
     const items = parseAIResponse(response);
 
-    // Only return the first quote (we only want 1)
-    return items.slice(0, 1);
+    // Return up to the requested number of quotes
+    return items.slice(0, count);
   } catch (error) {
     // Log error but return empty (graceful handling per REQ-NF-3)
     console.error("[inspiration-manager] Failed to generate inspiration quote:", error);
@@ -1158,16 +1181,16 @@ export async function getInspiration(vault: VaultInfo): Promise<InspirationResul
 
       if (dayType === "weekend") {
         // Weekend: creative prompts (context is optional nudge)
-        newPrompts = await generateWeekendPrompts(context);
+        newPrompts = await generateWeekendPrompts(context, vault.promptsPerGeneration);
       } else {
         // Weekday: reflection prompts (requires context)
         newPrompts = context.trim()
-          ? await generateContextualPrompts(context)
+          ? await generateContextualPrompts(context, vault.promptsPerGeneration)
           : [];
       }
 
       if (newPrompts.length > 0) {
-        await appendAndPrune(contextualPath, newPrompts);
+        await appendAndPrune(contextualPath, newPrompts, undefined, vault.maxPoolSize);
       }
     } catch (error) {
       // Generation failure doesn't block response (REQ-NF-3)
@@ -1178,10 +1201,10 @@ export async function getInspiration(vault: VaultInfo): Promise<InspirationResul
   // Phase 2: Trigger quote generation (once per week, context-aware)
   if (needsQuote) {
     try {
-      const newQuotes = await generateInspirationQuote(context);
+      const newQuotes = await generateInspirationQuote(context, vault.quotesPerWeek);
 
       if (newQuotes.length > 0) {
-        await appendAndPrune(quotePath, newQuotes, currentWeek);
+        await appendAndPrune(quotePath, newQuotes, currentWeek, vault.maxPoolSize);
       }
     } catch (error) {
       // Generation failure doesn't block response (REQ-NF-3)

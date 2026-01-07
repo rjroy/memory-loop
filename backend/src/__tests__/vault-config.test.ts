@@ -14,6 +14,9 @@ import {
   DEFAULT_METADATA_PATH,
   DEFAULT_PROJECT_PATH,
   DEFAULT_AREA_PATH,
+  DEFAULT_PROMPTS_PER_GENERATION,
+  DEFAULT_MAX_POOL_SIZE,
+  DEFAULT_QUOTES_PER_WEEK,
   loadVaultConfig,
   resolveContentRoot,
   resolveMetadataPath,
@@ -22,6 +25,9 @@ import {
   resolveGeneralInspirationPath,
   resolveProjectPath,
   resolveAreaPath,
+  resolvePromptsPerGeneration,
+  resolveMaxPoolSize,
+  resolveQuotesPerWeek,
   saveSlashCommands,
   slashCommandsEqual,
   type VaultConfig,
@@ -68,6 +74,24 @@ describe("vault-config", () => {
   describe("DEFAULT_AREA_PATH", () => {
     test("exports expected default area path", () => {
       expect(DEFAULT_AREA_PATH).toBe("02_Areas");
+    });
+  });
+
+  describe("DEFAULT_PROMPTS_PER_GENERATION", () => {
+    test("exports expected default prompts per generation", () => {
+      expect(DEFAULT_PROMPTS_PER_GENERATION).toBe(5);
+    });
+  });
+
+  describe("DEFAULT_MAX_POOL_SIZE", () => {
+    test("exports expected default max pool size", () => {
+      expect(DEFAULT_MAX_POOL_SIZE).toBe(50);
+    });
+  });
+
+  describe("DEFAULT_QUOTES_PER_WEEK", () => {
+    test("exports expected default quotes per week", () => {
+      expect(DEFAULT_QUOTES_PER_WEEK).toBe(1);
     });
   });
 
@@ -482,6 +506,153 @@ describe("vault-config", () => {
     test("handles nested area paths", () => {
       const result = resolveAreaPath({ areaPath: "life/areas" });
       expect(result).toBe("life/areas");
+    });
+  });
+
+  describe("resolvePromptsPerGeneration", () => {
+    test("returns default when not configured", () => {
+      const result = resolvePromptsPerGeneration({});
+      expect(result).toBe(DEFAULT_PROMPTS_PER_GENERATION);
+    });
+
+    test("returns default when undefined", () => {
+      const result = resolvePromptsPerGeneration({ promptsPerGeneration: undefined });
+      expect(result).toBe(DEFAULT_PROMPTS_PER_GENERATION);
+    });
+
+    test("returns configured value", () => {
+      const result = resolvePromptsPerGeneration({ promptsPerGeneration: 10 });
+      expect(result).toBe(10);
+    });
+  });
+
+  describe("resolveMaxPoolSize", () => {
+    test("returns default when not configured", () => {
+      const result = resolveMaxPoolSize({});
+      expect(result).toBe(DEFAULT_MAX_POOL_SIZE);
+    });
+
+    test("returns default when undefined", () => {
+      const result = resolveMaxPoolSize({ maxPoolSize: undefined });
+      expect(result).toBe(DEFAULT_MAX_POOL_SIZE);
+    });
+
+    test("returns configured value", () => {
+      const result = resolveMaxPoolSize({ maxPoolSize: 100 });
+      expect(result).toBe(100);
+    });
+  });
+
+  describe("resolveQuotesPerWeek", () => {
+    test("returns default when not configured", () => {
+      const result = resolveQuotesPerWeek({});
+      expect(result).toBe(DEFAULT_QUOTES_PER_WEEK);
+    });
+
+    test("returns default when undefined", () => {
+      const result = resolveQuotesPerWeek({ quotesPerWeek: undefined });
+      expect(result).toBe(DEFAULT_QUOTES_PER_WEEK);
+    });
+
+    test("returns configured value", () => {
+      const result = resolveQuotesPerWeek({ quotesPerWeek: 3 });
+      expect(result).toBe(3);
+    });
+  });
+
+  describe("loadVaultConfig with generation settings", () => {
+    test("loads config with promptsPerGeneration", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ promptsPerGeneration: 10 })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.promptsPerGeneration).toBe(10);
+    });
+
+    test("loads config with maxPoolSize", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ maxPoolSize: 100 })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.maxPoolSize).toBe(100);
+    });
+
+    test("loads config with quotesPerWeek", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ quotesPerWeek: 3 })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.quotesPerWeek).toBe(3);
+    });
+
+    test("loads config with all generation settings", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          promptsPerGeneration: 7,
+          maxPoolSize: 75,
+          quotesPerWeek: 2,
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.promptsPerGeneration).toBe(7);
+      expect(config.maxPoolSize).toBe(75);
+      expect(config.quotesPerWeek).toBe(2);
+    });
+
+    test("ignores non-numeric generation settings", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          promptsPerGeneration: "five",
+          maxPoolSize: null,
+          quotesPerWeek: [],
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.promptsPerGeneration).toBeUndefined();
+      expect(config.maxPoolSize).toBeUndefined();
+      expect(config.quotesPerWeek).toBeUndefined();
+    });
+
+    test("ignores zero or negative generation settings", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          promptsPerGeneration: 0,
+          maxPoolSize: -5,
+          quotesPerWeek: -1,
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.promptsPerGeneration).toBeUndefined();
+      expect(config.maxPoolSize).toBeUndefined();
+      expect(config.quotesPerWeek).toBeUndefined();
+    });
+
+    test("floors decimal values for generation settings", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          promptsPerGeneration: 5.7,
+          maxPoolSize: 50.9,
+          quotesPerWeek: 2.3,
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.promptsPerGeneration).toBe(5);
+      expect(config.maxPoolSize).toBe(50);
+      expect(config.quotesPerWeek).toBe(2);
     });
   });
 

@@ -14,6 +14,9 @@ import {
   resolveContentRoot,
   resolveMetadataPath,
   resolveGoalsPath,
+  resolvePromptsPerGeneration,
+  resolveMaxPoolSize,
+  resolveQuotesPerWeek,
   type VaultConfig,
 } from "./vault-config";
 
@@ -261,6 +264,9 @@ export async function parseVault(
     metadataPath,
     goalsPath,
     setupComplete,
+    promptsPerGeneration: resolvePromptsPerGeneration(config),
+    maxPoolSize: resolveMaxPoolSize(config),
+    quotesPerWeek: resolveQuotesPerWeek(config),
   };
 }
 

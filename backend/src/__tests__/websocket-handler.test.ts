@@ -241,6 +241,57 @@ void mock.module("../vault-setup", () => ({
   runVaultSetup: mockRunVaultSetup,
 }));
 
+// Mock search index manager
+const mockSearchFiles = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<Array<{
+    path: string;
+    name: string;
+    score: number;
+    matchPositions: number[];
+  }>>
+>(() => Promise.resolve([]));
+
+const mockSearchContent = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<Array<{
+    path: string;
+    name: string;
+    matchCount: number;
+  }>>
+>(() => Promise.resolve([]));
+
+const mockGetSnippets = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<Array<{
+    lineNumber: number;
+    line: string;
+    contextBefore: string[];
+    contextAfter: string[];
+  }>>
+>(() => Promise.resolve([]));
+
+// Create a mock class for SearchIndexManager
+class MockSearchIndexManager {
+  private contentRoot: string;
+
+  constructor(contentRoot: string) {
+    this.contentRoot = contentRoot;
+  }
+
+  getContentRoot(): string {
+    return this.contentRoot;
+  }
+
+  searchFiles = mockSearchFiles;
+  searchContent = mockSearchContent;
+  getSnippets = mockGetSnippets;
+}
+
+void mock.module("../search/search-index", () => ({
+  SearchIndexManager: MockSearchIndexManager,
+}));
+
 // Import handler after mocks are set up
 import {
   WebSocketHandler,
@@ -332,6 +383,9 @@ describe("WebSocket Handler", () => {
     mockGetAllTasks.mockReset();
     mockToggleTask.mockReset();
     mockLoadVaultConfig.mockReset();
+    mockSearchFiles.mockReset();
+    mockSearchContent.mockReset();
+    mockGetSnippets.mockReset();
 
     // Set default mock implementations
     mockDiscoverVaults.mockResolvedValue([]);
@@ -362,6 +416,9 @@ describe("WebSocket Handler", () => {
       newState: "x",
     });
     mockLoadVaultConfig.mockResolvedValue({});
+    mockSearchFiles.mockResolvedValue([]);
+    mockSearchContent.mockResolvedValue([]);
+    mockGetSnippets.mockResolvedValue([]);
   });
 
   afterEach(async () => {
@@ -382,6 +439,7 @@ describe("WebSocket Handler", () => {
       expect(state.currentVault).toBeNull();
       expect(state.currentSessionId).toBeNull();
       expect(state.activeQuery).toBeNull();
+      expect(state.searchIndex).toBeNull();
     });
   });
 
@@ -3450,6 +3508,434 @@ describe("WebSocket Handler", () => {
       if (message?.type === "error") {
         expect(message.code).toBe("VALIDATION_ERROR");
       }
+    });
+  });
+
+  // ===========================================================================
+  // Search Handler Tests
+  // ===========================================================================
+
+  describe("search_files handler", () => {
+    test("returns VAULT_NOT_FOUND when no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "search_files", query: "test" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("returns search_results with matching files", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSearchFiles.mockResolvedValue([
+        { path: "folder/test-file.md", name: "test-file.md", score: 100, matchPositions: [0, 1, 2, 3] },
+        { path: "another-test.md", name: "another-test.md", score: 80, matchPositions: [8, 9, 10, 11] },
+      ]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Search files
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "search_files", query: "test" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("search_results");
+      if (message?.type === "search_results") {
+        expect(message.mode).toBe("files");
+        expect(message.query).toBe("test");
+        expect(message.results).toHaveLength(2);
+        expect(message.totalMatches).toBe(2);
+        expect(message.searchTimeMs).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    test("passes limit option to search index", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSearchFiles.mockResolvedValue([]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Search files with limit
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "search_files", query: "test", limit: 10 })
+      );
+
+      expect(mockSearchFiles).toHaveBeenCalledWith("test", { limit: 10 });
+    });
+
+    test("returns INTERNAL_ERROR when search throws", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSearchFiles.mockRejectedValue(new Error("Search failed"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Search files
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "search_files", query: "test" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toBe("Search failed");
+      }
+    });
+
+    test("validates query is required", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "search_files" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+  });
+
+  describe("search_content handler", () => {
+    test("returns VAULT_NOT_FOUND when no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "search_content", query: "TODO" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("returns search_results with matching content", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSearchContent.mockResolvedValue([
+        { path: "notes/todo.md", name: "todo.md", matchCount: 5 },
+        { path: "projects/tasks.md", name: "tasks.md", matchCount: 3 },
+      ]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Search content
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "search_content", query: "TODO" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("search_results");
+      if (message?.type === "search_results") {
+        expect(message.mode).toBe("content");
+        expect(message.query).toBe("TODO");
+        expect(message.results).toHaveLength(2);
+        expect(message.totalMatches).toBe(2);
+        expect(message.searchTimeMs).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    test("passes limit option to search index", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSearchContent.mockResolvedValue([]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Search content with limit
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "search_content", query: "TODO", limit: 25 })
+      );
+
+      expect(mockSearchContent).toHaveBeenCalledWith("TODO", { limit: 25 });
+    });
+
+    test("returns INTERNAL_ERROR when search throws", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSearchContent.mockRejectedValue(new Error("Index not ready"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Search content
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "search_content", query: "TODO" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toBe("Index not ready");
+      }
+    });
+  });
+
+  describe("get_snippets handler", () => {
+    test("returns VAULT_NOT_FOUND when no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_snippets", path: "notes/todo.md", query: "TODO" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("returns snippets for matching file", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetSnippets.mockResolvedValue([
+        {
+          lineNumber: 5,
+          line: "TODO: Complete this task",
+          contextBefore: ["Some context before", "Another line before"],
+          contextAfter: ["Context after", "More after"],
+        },
+        {
+          lineNumber: 12,
+          line: "Another TODO item here",
+          contextBefore: ["Previous line"],
+          contextAfter: ["Next line"],
+        },
+      ]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Get snippets
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_snippets", path: "notes/todo.md", query: "TODO" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("snippets");
+      if (message?.type === "snippets") {
+        expect(message.path).toBe("notes/todo.md");
+        expect(message.snippets).toHaveLength(2);
+        expect(message.snippets[0].lineNumber).toBe(5);
+        expect(message.snippets[0].line).toBe("TODO: Complete this task");
+        expect(message.snippets[0].contextBefore).toHaveLength(2);
+        expect(message.snippets[0].contextAfter).toHaveLength(2);
+      }
+    });
+
+    test("calls getSnippets with correct arguments", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetSnippets.mockResolvedValue([]);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Get snippets
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_snippets", path: "folder/file.md", query: "search term" })
+      );
+
+      expect(mockGetSnippets).toHaveBeenCalledWith("folder/file.md", "search term");
+    });
+
+    test("returns INTERNAL_ERROR when getSnippets throws", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockGetSnippets.mockRejectedValue(new Error("File read error"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Get snippets
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_snippets", path: "notes/todo.md", query: "TODO" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toBe("File read error");
+      }
+    });
+
+    test("validates path is required", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_snippets", query: "TODO" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+
+    test("validates query is required", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "get_snippets", path: "notes/todo.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+  });
+
+  describe("searchIndex initialization on vault select", () => {
+    test("creates searchIndex when vault is selected", async () => {
+      const vault = createMockVault({ contentRoot: "/test/vault/content" });
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Verify searchIndex is null before vault selection
+      expect(handler.getState().searchIndex).toBeNull();
+
+      // Select vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Verify searchIndex is created
+      const state = handler.getState();
+      expect(state.searchIndex).not.toBeNull();
+    });
+
+    test("replaces searchIndex when different vault is selected", async () => {
+      const vault1 = createMockVault({ id: "vault-1", contentRoot: "/vault1/content" });
+      const vault2 = createMockVault({ id: "vault-2", contentRoot: "/vault2/content" });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select first vault
+      mockGetVaultById.mockResolvedValue(vault1);
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "vault-1" })
+      );
+
+      const firstSearchIndex = handler.getState().searchIndex;
+      expect(firstSearchIndex).not.toBeNull();
+
+      // Select second vault
+      mockGetVaultById.mockResolvedValue(vault2);
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "vault-2" })
+      );
+
+      const secondSearchIndex = handler.getState().searchIndex;
+      expect(secondSearchIndex).not.toBeNull();
+      // Verify a new searchIndex was created (different object instance)
+      expect(secondSearchIndex).not.toBe(firstSearchIndex);
     });
   });
 });

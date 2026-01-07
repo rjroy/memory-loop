@@ -15,6 +15,7 @@ import type {
 } from "@memory-loop/shared";
 import { safeParseClientMessage } from "@memory-loop/shared";
 import { discoverVaults, getVaultById, getVaultGoals } from "./vault-manager";
+import { SearchIndexManager } from "./search/search-index";
 import {
   createSession,
   resumeSession,
@@ -107,6 +108,8 @@ export interface ConnectionState {
   activeQuery: SessionQueryResult | null;
   /** Pending tool permission requests, keyed by toolUseId */
   pendingPermissions: Map<string, PendingPermissionRequest>;
+  /** Search index manager for the current vault (null if no vault selected) */
+  searchIndex: SearchIndexManager | null;
 }
 
 /**
@@ -118,6 +121,7 @@ export function createConnectionState(): ConnectionState {
     currentSessionId: null,
     activeQuery: null,
     pendingPermissions: new Map(),
+    searchIndex: null,
   };
 }
 
@@ -436,6 +440,15 @@ export class WebSocketHandler {
       case "setup_vault":
         await this.handleSetupVault(ws, message.vaultId);
         break;
+      case "search_files":
+        await this.handleSearchFiles(ws, message.query, message.limit);
+        break;
+      case "search_content":
+        await this.handleSearchContent(ws, message.query, message.limit);
+        break;
+      case "get_snippets":
+        await this.handleGetSnippets(ws, message.path, message.query);
+        break;
     }
   }
 
@@ -463,6 +476,7 @@ export class WebSocketHandler {
       this.state.currentVault = vault;
       this.state.currentSessionId = null;
       this.state.activeQuery = null;
+      this.state.searchIndex = new SearchIndexManager(vault.contentRoot);
 
       // Load cached slash commands for immediate autocomplete
       const vaultConfig = await loadVaultConfig(vault.path);
@@ -1632,6 +1646,133 @@ export class WebSocketHandler {
           error instanceof Error ? error.message : "Failed to toggle task";
         this.sendError(ws, "INTERNAL_ERROR", message);
       }
+    }
+  }
+
+  /**
+   * Handles search_files message.
+   * Searches for files by name using fuzzy matching.
+   */
+  private async handleSearchFiles(
+    ws: WebSocketLike,
+    query: string,
+    limit?: number
+  ): Promise<void> {
+    log.info(`Searching files: "${query}" (limit: ${limit ?? "default"})`);
+
+    if (!this.state.currentVault || !this.state.searchIndex) {
+      log.warn("No vault selected for file search");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const startTime = Date.now();
+      const results = await this.state.searchIndex.searchFiles(query, { limit });
+      const searchTimeMs = Date.now() - startTime;
+
+      log.info(`File search complete: ${results.length} results in ${searchTimeMs}ms`);
+
+      this.send(ws, {
+        type: "search_results",
+        mode: "files",
+        query,
+        results,
+        totalMatches: results.length,
+        searchTimeMs,
+      });
+    } catch (error) {
+      log.error("File search failed", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to search files";
+      this.sendError(ws, "INTERNAL_ERROR", message);
+    }
+  }
+
+  /**
+   * Handles search_content message.
+   * Searches file contents using full-text search.
+   */
+  private async handleSearchContent(
+    ws: WebSocketLike,
+    query: string,
+    limit?: number
+  ): Promise<void> {
+    log.info(`Searching content: "${query}" (limit: ${limit ?? "default"})`);
+
+    if (!this.state.currentVault || !this.state.searchIndex) {
+      log.warn("No vault selected for content search");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const startTime = Date.now();
+      const results = await this.state.searchIndex.searchContent(query, { limit });
+      const searchTimeMs = Date.now() - startTime;
+
+      log.info(`Content search complete: ${results.length} results in ${searchTimeMs}ms`);
+
+      this.send(ws, {
+        type: "search_results",
+        mode: "content",
+        query,
+        results,
+        totalMatches: results.length,
+        searchTimeMs,
+      });
+    } catch (error) {
+      log.error("Content search failed", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to search content";
+      this.sendError(ws, "INTERNAL_ERROR", message);
+    }
+  }
+
+  /**
+   * Handles get_snippets message.
+   * Returns context snippets for a specific file matching a query.
+   */
+  private async handleGetSnippets(
+    ws: WebSocketLike,
+    path: string,
+    query: string
+  ): Promise<void> {
+    log.info(`Getting snippets: "${path}" for query "${query}"`);
+
+    if (!this.state.currentVault || !this.state.searchIndex) {
+      log.warn("No vault selected for get snippets");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      const snippets = await this.state.searchIndex.getSnippets(path, query);
+
+      log.info(`Got ${snippets.length} snippets for ${path}`);
+
+      this.send(ws, {
+        type: "snippets",
+        path,
+        snippets,
+      });
+    } catch (error) {
+      log.error("Get snippets failed", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to get snippets";
+      this.sendError(ws, "INTERNAL_ERROR", message);
     }
   }
 }

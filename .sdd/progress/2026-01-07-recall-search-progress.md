@@ -12,13 +12,15 @@ authored_by:
 
 # Recall Tab Search - Implementation Progress
 
-**Last Updated**: 2026-01-07 | **Status**: 0% complete (0 of 14 tasks)
+**Last Updated**: 2026-01-07 | **Status**: 21% complete (3 of 14 tasks)
 
 ## Current Session
-**Date**: 2026-01-07 | **Working On**: Starting Phase 1 (Foundation) | **Blockers**: None
+**Date**: 2026-01-07 | **Working On**: Phase 2 (Backend Services) | **Blockers**: None
 
 ## Completed Today
-- (None yet)
+- TASK-001: Define Search Protocol Types (S) - Commit: 34e6216
+- TASK-002: Implement Fuzzy File Name Matcher (M) - Commit: 34e6216
+- TASK-003: Add MiniSearch Dependency (S) - Commit: 34e6216
 
 ## Discovered Issues
 - None
@@ -29,14 +31,14 @@ authored_by:
 
 ### Phase 1: Foundation
 
-**Upcoming** ⏳
-- [ ] TASK-001: Define Search Protocol Types (S)
-- [ ] TASK-002: Implement Fuzzy File Name Matcher (M)
-- [ ] TASK-003: Add MiniSearch Dependency (S)
+**Completed** ✅
+- [x] TASK-001: Define Search Protocol Types (S) - *Completed 2026-01-07*
+- [x] TASK-002: Implement Fuzzy File Name Matcher (M) - *Completed 2026-01-07*
+- [x] TASK-003: Add MiniSearch Dependency (S) - *Completed 2026-01-07*
 
 ### Phase 2: Backend Services
 
-**Upcoming** ⏳
+**In Progress** 🚧
 - [ ] TASK-004: Implement Search Index Manager (L)
 - [ ] TASK-005: Implement Index Persistence (M)
 - [ ] TASK-006: Add Search WebSocket Handlers (M)
@@ -79,8 +81,8 @@ authored_by:
 
 | Component | Status |
 |-----------|--------|
-| Protocol types | ⏳ Not started |
-| Fuzzy matcher | ⏳ Not started |
+| Protocol types | ✅ Complete (schema validation via TypeScript) |
+| Fuzzy matcher | ✅ Complete (52 tests) |
 | Search index | ⏳ Not started |
 | WebSocket handlers | ⏳ Not started |
 | Frontend state | ⏳ Not started |
@@ -89,5 +91,6 @@ authored_by:
 ---
 
 ## Notes for Next Session
-- Starting with Phase 1 Foundation tasks (parallelizable)
-- TASK-001, TASK-002, TASK-003 have no dependencies
+- Phase 1 complete, moving to Phase 2 (Backend Services)
+- TASK-004 is the critical path - implements SearchIndexManager
+- TASK-005 and TASK-006 depend on TASK-004

@@ -115,6 +115,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
 
       showToast("success", `Note saved at ${lastMessage.timestamp}`);
       onCaptured?.();
+      textareaRef.current?.focus();
 
       // Refresh recent activity for HomeView
       sendMessage({ type: "get_recent_activity" });

@@ -26,6 +26,18 @@ export const CONFIG_FILE_NAME = ".memory-loop.json";
  */
 export interface VaultConfig {
   /**
+   * Override the vault title extracted from CLAUDE.md.
+   * If set, this takes precedence over the H1 heading.
+   */
+  title?: string;
+
+  /**
+   * Override the vault subtitle extracted from CLAUDE.md.
+   * If set, this takes precedence over the portion after " - " in the heading.
+   */
+  subtitle?: string;
+
+  /**
    * Root directory for vault content.
    * Use when content is in a subdirectory (e.g., "content" for Quartz).
    * Default: "" (vault root)
@@ -108,6 +120,14 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
     // Extract and validate known fields
     const config: VaultConfig = {};
     const obj = parsed as Record<string, unknown>;
+
+    if (typeof obj.title === "string") {
+      config.title = obj.title;
+    }
+
+    if (typeof obj.subtitle === "string") {
+      config.subtitle = obj.subtitle;
+    }
 
     if (typeof obj.contentRoot === "string") {
       config.contentRoot = obj.contentRoot;

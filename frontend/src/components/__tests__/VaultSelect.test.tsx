@@ -166,6 +166,68 @@ describe("VaultSelect", () => {
         expect(statusElements.length).toBeGreaterThan(0);
       });
     });
+
+    it("displays subtitle when vault has one", async () => {
+      const vaultsWithSubtitle: VaultInfo[] = [
+        {
+          id: "vault-sub",
+          name: "My Vault",
+          subtitle: "Personal Notes",
+          path: "/home/user/vault",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/vault",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+        },
+      ];
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithSubtitle }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("My Vault")).toBeDefined();
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Verify subtitle has correct CSS class
+      const subtitle = screen.getByText("Personal Notes");
+      expect(subtitle.className).toContain("vault-select__vault-subtitle");
+    });
+
+    it("does not display subtitle element when vault has no subtitle", async () => {
+      const vaultsWithoutSubtitle: VaultInfo[] = [
+        {
+          id: "vault-no-sub",
+          name: "Simple Vault",
+          path: "/home/user/vault",
+          hasClaudeMd: true,
+          contentRoot: "/home/user/vault",
+          inboxPath: "inbox",
+          metadataPath: "06_Metadata/memory-loop",
+          setupComplete: false,
+        },
+      ];
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ vaults: vaultsWithoutSubtitle }),
+      };
+
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Simple Vault")).toBeDefined();
+      });
+
+      // Verify no subtitle element exists
+      const subtitleElements = document.querySelectorAll(".vault-select__vault-subtitle");
+      expect(subtitleElements.length).toBe(0);
+    });
   });
 
   describe("empty state", () => {

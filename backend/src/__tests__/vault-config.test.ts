@@ -122,6 +122,77 @@ describe("vault-config", () => {
       expect(config).toEqual({ metadataPath: "meta" });
     });
 
+    test("loads config with only title", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ title: "Custom Vault Title" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual({ title: "Custom Vault Title" });
+    });
+
+    test("loads config with title and other fields", async () => {
+      const configData: VaultConfig = {
+        title: "My Vault",
+        contentRoot: "content",
+        inboxPath: "inbox",
+      };
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify(configData)
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual(configData);
+    });
+
+    test("ignores non-string title value", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ title: 123, contentRoot: "content" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual({ contentRoot: "content" });
+      expect(config.title).toBeUndefined();
+    });
+
+    test("loads config with only subtitle", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ subtitle: "Personal Notes" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual({ subtitle: "Personal Notes" });
+    });
+
+    test("loads config with title and subtitle", async () => {
+      const configData: VaultConfig = {
+        title: "My Vault",
+        subtitle: "Personal Notes",
+      };
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify(configData)
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual(configData);
+    });
+
+    test("ignores non-string subtitle value", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ subtitle: 123, contentRoot: "content" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual({ contentRoot: "content" });
+      expect(config.subtitle).toBeUndefined();
+    });
+
     test("loads config with only projectPath", async () => {
       await writeFile(
         join(testDir, CONFIG_FILE_NAME),

@@ -35,6 +35,7 @@ const testVault: VaultInfo = {
   promptsPerGeneration: 5,
   maxPoolSize: 50,
   quotesPerWeek: 1,
+  badges: [],
 };
 
 const mockCaptures: RecentNoteEntry[] = [

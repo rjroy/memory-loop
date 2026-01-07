@@ -343,6 +343,56 @@
   border-color: var(--color-success-a30);
 }
 
+/* Custom badge color variants */
+.vault-select__badge--black {
+  background: oklch(from var(--color-background) l c h / 0.15);
+  color: var(--color-text);
+  border-color: oklch(from var(--color-background) l c h / 0.30);
+}
+
+.vault-select__badge--purple {
+  background: var(--color-accent-primary-a15);
+  color: var(--color-text-accent-primary);
+  border-color: var(--color-accent-primary-a30);
+}
+
+.vault-select__badge--red {
+  background: var(--color-accent-secondary-a15);
+  color: var(--color-accent-secondary);
+  border-color: var(--color-accent-secondary-a30);
+}
+
+.vault-select__badge--cyan {
+  background: oklch(from var(--color-accent-tertiary) l c h / 0.15);
+  color: var(--color-accent-tertiary);
+  border-color: oklch(from var(--color-accent-tertiary) l c h / 0.30);
+}
+
+.vault-select__badge--orange {
+  background: oklch(from var(--color-accent-quartary) l c h / 0.15);
+  color: var(--color-accent-quartary);
+  border-color: oklch(from var(--color-accent-quartary) l c h / 0.30);
+}
+
+/* Hue-shifted variants */
+.vault-select__badge--blue {
+  background: oklch(from var(--color-accent-primary) l c calc(h - 45) / 0.15);
+  color: oklch(from var(--color-accent-primary) calc(l + 0.17) c calc(h - 45));
+  border-color: oklch(from var(--color-accent-primary) l c calc(h - 45) / 0.30);
+}
+
+.vault-select__badge--green {
+  background: oklch(from var(--color-accent-tertiary) l c calc(h - 95) / 0.15);
+  color: oklch(from var(--color-accent-tertiary) calc(l + 0.1) c calc(h - 95));
+  border-color: oklch(from var(--color-accent-tertiary) l c calc(h - 95) / 0.30);
+}
+
+.vault-select__badge--yellow {
+  background: oklch(from var(--color-accent-quartary) l c calc(h + 15) / 0.15);
+  color: oklch(from var(--color-accent-quartary) l c calc(h + 15));
+  border-color: oklch(from var(--color-accent-quartary) l c calc(h + 15) / 0.30);
+}
+
 /* Setup button */
 .vault-select__setup-btn {
   align-self: flex-end;

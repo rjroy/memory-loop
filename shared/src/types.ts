@@ -6,6 +6,31 @@
  */
 
 /**
+ * Named colors for custom badges.
+ * These map to theme CSS variables for consistent styling.
+ */
+export type BadgeColor =
+  | "black"
+  | "purple"
+  | "red"
+  | "cyan"
+  | "orange"
+  | "blue"
+  | "green"
+  | "yellow";
+
+/**
+ * A custom badge configured in .memory-loop.json.
+ *
+ * @property text - The badge label text
+ * @property color - Named color from the theme palette
+ */
+export interface Badge {
+  text: string;
+  color: BadgeColor;
+}
+
+/**
  * Information about an Obsidian vault discovered by the backend.
  *
  * @property id - Directory name (unique identifier)
@@ -21,6 +46,7 @@
  * @property promptsPerGeneration - Number of prompts to generate per cycle (default: 5)
  * @property maxPoolSize - Maximum items to keep in inspiration pools (default: 50)
  * @property quotesPerWeek - Number of quotes to generate per week (default: 1)
+ * @property badges - Custom badges configured in .memory-loop.json
  */
 export interface VaultInfo {
   id: string;
@@ -36,6 +62,7 @@ export interface VaultInfo {
   promptsPerGeneration: number;
   maxPoolSize: number;
   quotesPerWeek: number;
+  badges: Badge[];
 }
 
 /**

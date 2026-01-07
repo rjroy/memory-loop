@@ -10,7 +10,7 @@
 export const VERSION = "0.1.0";
 
 // Core types
-export type { VaultInfo, SessionMetadata, ErrorCode, StoredToolInvocation, ConversationMessage } from "./types.js";
+export type { VaultInfo, SessionMetadata, ErrorCode, StoredToolInvocation, ConversationMessage, Badge, BadgeColor } from "./types.js";
 
 // Protocol schemas
 export {

@@ -8,7 +8,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { join, normalize } from "node:path";
-import type { SlashCommand } from "@memory-loop/shared";
+import type { SlashCommand, Badge, BadgeColor } from "@memory-loop/shared";
 import { fileExists } from "./vault-manager";
 import { createLogger } from "./logger";
 
@@ -97,6 +97,12 @@ export interface VaultConfig {
    * Default: 1
    */
   quotesPerWeek?: number;
+
+  /**
+   * Custom badges to display on the vault card.
+   * Each badge has text and a named color from the theme palette.
+   */
+  badges?: Badge[];
 }
 
 /**
@@ -128,6 +134,20 @@ export const DEFAULT_MAX_POOL_SIZE = 50;
  * Default number of quotes to generate per week.
  */
 export const DEFAULT_QUOTES_PER_WEEK = 1;
+
+/**
+ * Valid badge color names.
+ */
+export const VALID_BADGE_COLORS: BadgeColor[] = [
+  "black",
+  "purple",
+  "red",
+  "cyan",
+  "orange",
+  "blue",
+  "green",
+  "yellow",
+];
 
 /**
  * Loads vault configuration from .memory-loop.json if it exists.
@@ -205,6 +225,19 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
 
     if (typeof obj.quotesPerWeek === "number" && obj.quotesPerWeek > 0) {
       config.quotesPerWeek = Math.floor(obj.quotesPerWeek);
+    }
+
+    // Validate badges array
+    if (Array.isArray(obj.badges)) {
+      config.badges = obj.badges.filter(
+        (badge): badge is Badge =>
+          typeof badge === "object" &&
+          badge !== null &&
+          typeof (badge as Record<string, unknown>).text === "string" &&
+          (badge as Record<string, unknown>).text !== "" &&
+          typeof (badge as Record<string, unknown>).color === "string" &&
+          VALID_BADGE_COLORS.includes((badge as Record<string, unknown>).color as BadgeColor)
+      );
     }
 
     return config;
@@ -337,6 +370,16 @@ export function resolveMaxPoolSize(config: VaultConfig): number {
  */
 export function resolveQuotesPerWeek(config: VaultConfig): number {
   return config.quotesPerWeek ?? DEFAULT_QUOTES_PER_WEEK;
+}
+
+/**
+ * Resolves custom badges from configuration.
+ *
+ * @param config - Vault configuration
+ * @returns Array of badges (default: empty array)
+ */
+export function resolveBadges(config: VaultConfig): Badge[] {
+  return config.badges ?? [];
 }
 
 /**

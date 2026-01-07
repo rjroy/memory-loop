@@ -392,6 +392,14 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
                     Memory Loop
                   </span>
                 )}
+                {vault.badges.map((badge, index) => (
+                  <span
+                    key={`${badge.text}-${index}`}
+                    className={`vault-select__badge vault-select__badge--${badge.color}`}
+                  >
+                    {badge.text}
+                  </span>
+                ))}
               </div>
               {vault.hasClaudeMd && (
                 <button

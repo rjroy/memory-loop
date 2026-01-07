@@ -28,6 +28,7 @@ import {
   resolvePromptsPerGeneration,
   resolveMaxPoolSize,
   resolveQuotesPerWeek,
+  resolveBadges,
   saveSlashCommands,
   slashCommandsEqual,
   type VaultConfig,
@@ -864,6 +865,193 @@ describe("vault-config", () => {
         { name: "/a", description: "A" },
       ];
       expect(slashCommandsEqual(a, b)).toBe(false);
+    });
+  });
+
+  describe("loadVaultConfig with badges", () => {
+    test("loads config with valid badges array", async () => {
+      const badges = [
+        { text: "Work", color: "blue" as const },
+        { text: "Personal", color: "green" as const },
+      ];
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ badges })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.badges).toEqual(badges);
+    });
+
+    test("loads config with all valid badge colors", async () => {
+      const badges = [
+        { text: "Black", color: "black" as const },
+        { text: "Purple", color: "purple" as const },
+        { text: "Red", color: "red" as const },
+        { text: "Cyan", color: "cyan" as const },
+        { text: "Orange", color: "orange" as const },
+        { text: "Blue", color: "blue" as const },
+        { text: "Green", color: "green" as const },
+        { text: "Yellow", color: "yellow" as const },
+      ];
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ badges })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.badges).toEqual(badges);
+    });
+
+    test("filters out badges with invalid color", async () => {
+      const badges = [
+        { text: "Valid", color: "blue" },
+        { text: "Invalid", color: "pink" },
+        { text: "Also Valid", color: "red" },
+      ];
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ badges })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.badges).toEqual([
+        { text: "Valid", color: "blue" },
+        { text: "Also Valid", color: "red" },
+      ]);
+    });
+
+    test("filters out badges with missing text", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          badges: [
+            { text: "Valid", color: "blue" },
+            { color: "red" },
+            { text: "Also Valid", color: "green" },
+          ],
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.badges).toEqual([
+        { text: "Valid", color: "blue" },
+        { text: "Also Valid", color: "green" },
+      ]);
+    });
+
+    test("filters out badges with empty text", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          badges: [
+            { text: "Valid", color: "blue" },
+            { text: "", color: "red" },
+          ],
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.badges).toEqual([{ text: "Valid", color: "blue" }]);
+    });
+
+    test("filters out badges with missing color", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          badges: [
+            { text: "Valid", color: "blue" },
+            { text: "No Color" },
+          ],
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.badges).toEqual([{ text: "Valid", color: "blue" }]);
+    });
+
+    test("filters out non-object badge entries", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          badges: [
+            { text: "Valid", color: "blue" },
+            null,
+            "string",
+            42,
+            { text: "Also Valid", color: "red" },
+          ],
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.badges).toEqual([
+        { text: "Valid", color: "blue" },
+        { text: "Also Valid", color: "red" },
+      ]);
+    });
+
+    test("returns undefined badges when not an array", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ badges: "not an array" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.badges).toBeUndefined();
+    });
+
+    test("returns empty array when badges is empty array", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ badges: [] })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.badges).toEqual([]);
+    });
+
+    test("loads badges alongside other config fields", async () => {
+      const configData = {
+        title: "My Vault",
+        contentRoot: "content",
+        badges: [{ text: "Test", color: "purple" }],
+      };
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify(configData)
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.title).toBe("My Vault");
+      expect(config.contentRoot).toBe("content");
+      expect(config.badges).toEqual([{ text: "Test", color: "purple" }]);
+    });
+  });
+
+  describe("resolveBadges", () => {
+    test("returns empty array when badges not configured", () => {
+      const result = resolveBadges({});
+      expect(result).toEqual([]);
+    });
+
+    test("returns empty array when badges is undefined", () => {
+      const result = resolveBadges({ badges: undefined });
+      expect(result).toEqual([]);
+    });
+
+    test("returns configured badges", () => {
+      const badges = [
+        { text: "Work", color: "blue" as const },
+        { text: "Personal", color: "green" as const },
+      ];
+      const result = resolveBadges({ badges });
+      expect(result).toEqual(badges);
+    });
+
+    test("returns empty array when configured as empty", () => {
+      const result = resolveBadges({ badges: [] });
+      expect(result).toEqual([]);
     });
   });
 });

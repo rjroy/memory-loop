@@ -577,6 +577,7 @@ describe("captureToDaily Integration", () => {
       promptsPerGeneration: 5,
       maxPoolSize: 50,
       quotesPerWeek: 1,
+      badges: [],
     };
   });
 
@@ -804,6 +805,7 @@ describe("Edge Cases", () => {
       promptsPerGeneration: 5,
       maxPoolSize: 50,
       quotesPerWeek: 1,
+      badges: [],
     };
   });
 

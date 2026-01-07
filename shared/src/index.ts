@@ -35,6 +35,10 @@ export {
   InspirationMessageSchema,
   // Slash command schemas
   SlashCommandSchema,
+  // Search result schemas
+  FileSearchResultSchema,
+  ContentSearchResultSchema,
+  ContextSnippetSchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -96,6 +100,10 @@ export type {
   InspirationMessage,
   // Slash command types
   SlashCommand,
+  // Search result types
+  FileSearchResult,
+  ContentSearchResult,
+  ContextSnippet,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

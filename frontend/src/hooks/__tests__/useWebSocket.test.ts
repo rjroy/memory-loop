@@ -400,6 +400,106 @@ describe("useWebSocket", () => {
     });
   });
 
+  describe("search methods", () => {
+    it("sendSearchFiles sends correct message", () => {
+      const { result } = renderHook(() => useWebSocket());
+
+      act(() => {
+        instances[0].simulateOpen();
+      });
+
+      act(() => {
+        result.current.sendSearchFiles("test query");
+      });
+
+      const sent = instances[0].getParsedMessages();
+      expect(sent.length).toBe(1);
+      expect(sent[0]).toEqual({ type: "search_files", query: "test query", limit: undefined });
+    });
+
+    it("sendSearchFiles sends message with limit", () => {
+      const { result } = renderHook(() => useWebSocket());
+
+      act(() => {
+        instances[0].simulateOpen();
+      });
+
+      act(() => {
+        result.current.sendSearchFiles("query", 20);
+      });
+
+      const sent = instances[0].getParsedMessages();
+      expect(sent.length).toBe(1);
+      expect(sent[0]).toEqual({ type: "search_files", query: "query", limit: 20 });
+    });
+
+    it("sendSearchContent sends correct message", () => {
+      const { result } = renderHook(() => useWebSocket());
+
+      act(() => {
+        instances[0].simulateOpen();
+      });
+
+      act(() => {
+        result.current.sendSearchContent("search term");
+      });
+
+      const sent = instances[0].getParsedMessages();
+      expect(sent.length).toBe(1);
+      expect(sent[0]).toEqual({ type: "search_content", query: "search term", limit: undefined });
+    });
+
+    it("sendSearchContent sends message with limit", () => {
+      const { result } = renderHook(() => useWebSocket());
+
+      act(() => {
+        instances[0].simulateOpen();
+      });
+
+      act(() => {
+        result.current.sendSearchContent("content query", 100);
+      });
+
+      const sent = instances[0].getParsedMessages();
+      expect(sent.length).toBe(1);
+      expect(sent[0]).toEqual({ type: "search_content", query: "content query", limit: 100 });
+    });
+
+    it("sendGetSnippets sends correct message", () => {
+      const { result } = renderHook(() => useWebSocket());
+
+      act(() => {
+        instances[0].simulateOpen();
+      });
+
+      act(() => {
+        result.current.sendGetSnippets("path/to/file.md", "search term");
+      });
+
+      const sent = instances[0].getParsedMessages();
+      expect(sent.length).toBe(1);
+      expect(sent[0]).toEqual({ type: "get_snippets", path: "path/to/file.md", query: "search term" });
+    });
+
+    it("search methods warn when disconnected", () => {
+      const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+      const { result } = renderHook(() => useWebSocket());
+
+      // Don't open the connection
+      act(() => {
+        result.current.sendSearchFiles("query");
+        result.current.sendSearchContent("query");
+        result.current.sendGetSnippets("path", "query");
+      });
+
+      expect(warnSpy).toHaveBeenCalledTimes(3);
+      expect(warnSpy).toHaveBeenCalledWith("Cannot send message: WebSocket not connected");
+
+      warnSpy.mockRestore();
+    });
+  });
+
   describe("visibility-aware reconnect", () => {
     it("defers reconnect when page is hidden", async () => {
       // Mock visibilityState inline for test isolation

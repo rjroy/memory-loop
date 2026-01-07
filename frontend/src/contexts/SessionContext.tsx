@@ -14,7 +14,7 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry, ToolInvocation, SlashCommand } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry, ToolInvocation, SlashCommand, FileSearchResult, ContentSearchResult, ContextSnippet } from "@memory-loop/shared";
 
 /**
  * Application mode: home, note capture, discussion, or browse.
@@ -25,6 +25,33 @@ export type AppMode = "home" | "note" | "discussion" | "browse";
  * View mode for the browse tab: files or tasks.
  */
 export type BrowseViewMode = "files" | "tasks";
+
+/**
+ * Search mode: files (fuzzy name) or content (full-text).
+ */
+export type SearchMode = "files" | "content";
+
+/**
+ * Search state for the browse tab.
+ */
+export interface SearchState {
+  /** Whether search is currently active */
+  isActive: boolean;
+  /** Current search mode */
+  mode: SearchMode;
+  /** Current search query */
+  query: string;
+  /** File search results (when mode is "files") */
+  fileResults: FileSearchResult[];
+  /** Content search results (when mode is "content") */
+  contentResults: ContentSearchResult[];
+  /** Whether search is in progress */
+  isLoading: boolean;
+  /** Expanded content result paths (for showing snippets) */
+  expandedPaths: Set<string>;
+  /** Snippets for expanded content results, keyed by path */
+  snippetsCache: Map<string, ContextSnippet[]>;
+}
 
 /**
  * Browser state for vault file browsing.
@@ -62,6 +89,8 @@ export interface BrowserState {
   isTasksLoading: boolean;
   /** Error message from task operations */
   tasksError: string | null;
+  /** Search state for the browse tab */
+  search: SearchState;
 }
 
 /**
@@ -217,6 +246,23 @@ export interface SessionActions {
   completeToolInvocation: (toolUseId: string, output: unknown) => void;
   /** Set available slash commands from SDK */
   setSlashCommands: (commands: SlashCommand[]) => void;
+  // Search actions
+  /** Activate or deactivate search mode */
+  setSearchActive: (isActive: boolean) => void;
+  /** Set search mode (files or content) */
+  setSearchMode: (mode: SearchMode) => void;
+  /** Set search query */
+  setSearchQuery: (query: string) => void;
+  /** Set search results from server */
+  setSearchResults: (mode: SearchMode, fileResults?: FileSearchResult[], contentResults?: ContentSearchResult[]) => void;
+  /** Set search loading state */
+  setSearchLoading: (isLoading: boolean) => void;
+  /** Toggle expanded state for a content result */
+  toggleResultExpanded: (path: string) => void;
+  /** Set snippets for a content result */
+  setSnippets: (path: string, snippets: ContextSnippet[]) => void;
+  /** Clear search and return to file tree */
+  clearSearch: () => void;
 }
 
 /**
@@ -284,7 +330,16 @@ type SessionAction =
   | { type: "ADD_TOOL_TO_LAST_MESSAGE"; toolUseId: string; toolName: string }
   | { type: "UPDATE_TOOL_INPUT"; toolUseId: string; input: unknown }
   | { type: "COMPLETE_TOOL_INVOCATION"; toolUseId: string; output: unknown }
-  | { type: "SET_SLASH_COMMANDS"; commands: SlashCommand[] };
+  | { type: "SET_SLASH_COMMANDS"; commands: SlashCommand[] }
+  // Search actions
+  | { type: "SET_SEARCH_ACTIVE"; isActive: boolean }
+  | { type: "SET_SEARCH_MODE"; mode: SearchMode }
+  | { type: "SET_SEARCH_QUERY"; query: string }
+  | { type: "SET_SEARCH_RESULTS"; mode: SearchMode; fileResults?: FileSearchResult[]; contentResults?: ContentSearchResult[] }
+  | { type: "SET_SEARCH_LOADING"; isLoading: boolean }
+  | { type: "TOGGLE_RESULT_EXPANDED"; path: string }
+  | { type: "SET_SNIPPETS"; path: string; snippets: ContextSnippet[] }
+  | { type: "CLEAR_SEARCH" };
 
 /**
  * Generates a unique message ID.
@@ -320,6 +375,22 @@ function persistViewMode(mode: BrowseViewMode): void {
 }
 
 /**
+ * Creates initial search state.
+ */
+function createInitialSearchState(): SearchState {
+  return {
+    isActive: false,
+    mode: "files",
+    query: "",
+    fileResults: [],
+    contentResults: [],
+    isLoading: false,
+    expandedPaths: new Set(),
+    snippetsCache: new Map(),
+  };
+}
+
+/**
  * Creates initial browser state.
  */
 function createInitialBrowserState(): BrowserState {
@@ -340,6 +411,7 @@ function createInitialBrowserState(): BrowserState {
     tasks: [],
     isTasksLoading: false,
     tasksError: null,
+    search: createInitialSearchState(),
   };
 }
 
@@ -924,6 +996,128 @@ function sessionReducer(
         slashCommands: action.commands,
       };
 
+    // Search actions
+    case "SET_SEARCH_ACTIVE":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          search: {
+            ...state.browser.search,
+            isActive: action.isActive,
+            // Clear results when deactivating search
+            ...(action.isActive ? {} : {
+              query: "",
+              fileResults: [],
+              contentResults: [],
+              isLoading: false,
+              expandedPaths: new Set<string>(),
+              snippetsCache: new Map<string, ContextSnippet[]>(),
+            }),
+          },
+        },
+      };
+
+    case "SET_SEARCH_MODE":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          search: {
+            ...state.browser.search,
+            mode: action.mode,
+            // Clear results when switching modes
+            fileResults: [],
+            contentResults: [],
+            expandedPaths: new Set<string>(),
+            snippetsCache: new Map<string, ContextSnippet[]>(),
+          },
+        },
+      };
+
+    case "SET_SEARCH_QUERY":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          search: {
+            ...state.browser.search,
+            query: action.query,
+          },
+        },
+      };
+
+    case "SET_SEARCH_RESULTS":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          search: {
+            ...state.browser.search,
+            isLoading: false,
+            // Only update results for the matching mode
+            ...(action.mode === "files"
+              ? { fileResults: action.fileResults ?? [] }
+              : { contentResults: action.contentResults ?? [] }),
+          },
+        },
+      };
+
+    case "SET_SEARCH_LOADING":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          search: {
+            ...state.browser.search,
+            isLoading: action.isLoading,
+          },
+        },
+      };
+
+    case "TOGGLE_RESULT_EXPANDED": {
+      const newExpandedPaths = new Set(state.browser.search.expandedPaths);
+      if (newExpandedPaths.has(action.path)) {
+        newExpandedPaths.delete(action.path);
+      } else {
+        newExpandedPaths.add(action.path);
+      }
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          search: {
+            ...state.browser.search,
+            expandedPaths: newExpandedPaths,
+          },
+        },
+      };
+    }
+
+    case "SET_SNIPPETS": {
+      const newSnippetsCache = new Map(state.browser.search.snippetsCache);
+      newSnippetsCache.set(action.path, action.snippets);
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          search: {
+            ...state.browser.search,
+            snippetsCache: newSnippetsCache,
+          },
+        },
+      };
+    }
+
+    case "CLEAR_SEARCH":
+      return {
+        ...state,
+        browser: {
+          ...state.browser,
+          search: createInitialSearchState(),
+        },
+      };
+
     default:
       return state;
   }
@@ -1325,6 +1519,39 @@ export function SessionProvider({
     dispatch({ type: "SET_SLASH_COMMANDS", commands });
   }, []);
 
+  // Search action creators
+  const setSearchActive = useCallback((isActive: boolean) => {
+    dispatch({ type: "SET_SEARCH_ACTIVE", isActive });
+  }, []);
+
+  const setSearchMode = useCallback((mode: SearchMode) => {
+    dispatch({ type: "SET_SEARCH_MODE", mode });
+  }, []);
+
+  const setSearchQuery = useCallback((query: string) => {
+    dispatch({ type: "SET_SEARCH_QUERY", query });
+  }, []);
+
+  const setSearchResults = useCallback((mode: SearchMode, fileResults?: FileSearchResult[], contentResults?: ContentSearchResult[]) => {
+    dispatch({ type: "SET_SEARCH_RESULTS", mode, fileResults, contentResults });
+  }, []);
+
+  const setSearchLoading = useCallback((isLoading: boolean) => {
+    dispatch({ type: "SET_SEARCH_LOADING", isLoading });
+  }, []);
+
+  const toggleResultExpanded = useCallback((path: string) => {
+    dispatch({ type: "TOGGLE_RESULT_EXPANDED", path });
+  }, []);
+
+  const setSnippets = useCallback((path: string, snippets: ContextSnippet[]) => {
+    dispatch({ type: "SET_SNIPPETS", path, snippets });
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    dispatch({ type: "CLEAR_SEARCH" });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -1369,6 +1596,14 @@ export function SessionProvider({
     updateToolInput,
     completeToolInvocation,
     setSlashCommands,
+    setSearchActive,
+    setSearchMode,
+    setSearchQuery,
+    setSearchResults,
+    setSearchLoading,
+    toggleResultExpanded,
+    setSnippets,
+    clearSearch,
   };
 
   return (
@@ -1393,7 +1628,7 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands } = useSession();
+  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setSearchResults, setSnippets, setSearchLoading } = useSession();
 
   // Use ref to access current messages in callback without causing re-renders
   const messagesRef = useRef(messages);
@@ -1460,11 +1695,31 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           updateLastMessage("", false);
           break;
 
+        // Search message handlers
+        case "search_results":
+          // Update search results based on mode
+          if (message.mode === "files") {
+            setSearchResults("files", message.results as FileSearchResult[], undefined);
+          } else {
+            setSearchResults("content", undefined, message.results as ContentSearchResult[]);
+          }
+          break;
+
+        case "snippets":
+          // Update snippets cache for the specified file
+          setSnippets(message.path, message.snippets);
+          break;
+
+        case "index_progress":
+          // Show loading indicator during indexing, clear when complete
+          setSearchLoading(message.stage !== "complete");
+          break;
+
         // Other message types handled elsewhere
         default:
           break;
       }
     },
-    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands]
+    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setSearchResults, setSnippets, setSearchLoading]
   );
 }

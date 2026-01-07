@@ -7,11 +7,14 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "../contexts/SessionContext";
-import type { BrowseViewMode } from "../contexts/SessionContext";
+import type { BrowseViewMode, SearchMode } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { FileTree } from "./FileTree";
 import { TaskList } from "./TaskList";
 import { MarkdownViewer } from "./MarkdownViewer";
+import { SearchHeader } from "./SearchHeader";
+import { SearchResults } from "./SearchResults";
+import type { FileSearchResult, ContentSearchResult } from "@memory-loop/shared";
 import "./BrowseMode.css";
 
 /** Error codes that indicate save failure for adjust mode */
@@ -41,7 +44,7 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  const { browser, vault, cacheDirectory, clearDirectoryCache, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask } = useSession();
+  const { browser, vault, cacheDirectory, clearDirectoryCache, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch } = useSession();
 
   const { viewMode } = browser;
 
@@ -58,9 +61,20 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
     setHasSessionReady(false);
   }, []);
 
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
+  const { sendMessage, lastMessage, connectionStatus, sendSearchFiles, sendSearchContent, sendGetSnippets } = useWebSocket({
     onReconnect: handleReconnect,
   });
+
+  // Destructure search state for convenience
+  const { search } = browser;
+
+  // Clear search state on WebSocket disconnect (REQ-F-26 error handling)
+  // This ensures stale search results aren't shown when connection is lost
+  useEffect(() => {
+    if (connectionStatus === "disconnected" && search.isActive) {
+      clearSearch();
+    }
+  }, [connectionStatus, search.isActive, clearSearch]);
 
   // Send vault selection when WebSocket connects (initial or reconnect)
   useEffect(() => {
@@ -189,8 +203,23 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
         updateTask(lastMessage.filePath, lastMessage.lineNumber, lastMessage.newState);
         break;
       }
+
+      case "search_results":
+        // Update search results based on mode
+        if (lastMessage.mode === "files") {
+          setSearchResults("files", lastMessage.results as FileSearchResult[]);
+        } else {
+          setSearchResults("content", undefined, lastMessage.results as ContentSearchResult[]);
+        }
+        setSearchLoading(false);
+        break;
+
+      case "snippets":
+        // Update snippets cache for the specified file
+        setSnippets(lastMessage.path, lastMessage.snippets);
+        break;
     }
-  }, [lastMessage, cacheDirectory, setFileContent, setFileError, setFileLoading, saveSuccess, saveError, sendMessage, setTasks, updateTask, setTasksError]);
+  }, [lastMessage, cacheDirectory, setFileContent, setFileError, setFileLoading, saveSuccess, saveError, sendMessage, setTasks, updateTask, setTasksError, setSearchResults, setSearchLoading, setSnippets]);
 
   // Handle directory load request from FileTree
   const handleLoadDirectory = useCallback(
@@ -297,6 +326,59 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
     [sendMessage, connectionStatus, setTasksError]
   );
 
+  // Handle search query change - send WebSocket request
+  const handleSearchQueryChange = useCallback(
+    (query: string) => {
+      setSearchQuery(query);
+      if (query.trim()) {
+        setSearchLoading(true);
+        if (search.mode === "files") {
+          sendSearchFiles(query);
+        } else {
+          sendSearchContent(query);
+        }
+      }
+    },
+    [search.mode, setSearchQuery, setSearchLoading, sendSearchFiles, sendSearchContent]
+  );
+
+  // Handle search mode change - re-search if query exists
+  const handleSearchModeChange = useCallback(
+    (mode: SearchMode) => {
+      setSearchMode(mode);
+      if (search.query.trim()) {
+        setSearchLoading(true);
+        if (mode === "files") {
+          sendSearchFiles(search.query);
+        } else {
+          sendSearchContent(search.query);
+        }
+      }
+    },
+    [search.query, setSearchMode, setSearchLoading, sendSearchFiles, sendSearchContent]
+  );
+
+  // Handle clear search
+  const handleClearSearch = useCallback(() => {
+    clearSearch();
+  }, [clearSearch]);
+
+  // Handle result expansion toggle
+  const handleToggleExpand = useCallback(
+    (path: string) => {
+      toggleResultExpanded(path);
+    },
+    [toggleResultExpanded]
+  );
+
+  // Handle request for snippets (lazy load on expand)
+  const handleRequestSnippets = useCallback(
+    (path: string) => {
+      sendGetSnippets(path, search.query);
+    },
+    [search.query, sendGetSnippets]
+  );
+
   // Get the view mode title text
   const viewModeTitle = viewMode === "files" ? "Files" : "Tasks";
 
@@ -304,40 +386,74 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
     <div className={`browse-mode ${isTreeCollapsed ? "browse-mode--tree-collapsed" : ""}`}>
       {/* Desktop tree pane */}
       <aside className="browse-mode__tree-pane">
-        <div className="browse-mode__tree-header">
-          <button
-            type="button"
-            className="browse-mode__tree-title browse-mode__tree-title--clickable"
-            onClick={toggleViewMode}
-            aria-label={`Switch to ${viewMode === "files" ? "tasks" : "files"} view`}
-          >
-            {viewModeTitle}
-          </button>
-          <div className="browse-mode__header-actions">
-            {!isTreeCollapsed && (
-              <button
-                type="button"
-                className="browse-mode__reload-btn"
-                onClick={handleReload}
-                aria-label="Reload file tree"
-              >
-                ♻
-              </button>
-            )}
+        {search.isActive ? (
+          <SearchHeader
+            mode={search.mode}
+            query={search.query}
+            isLoading={search.isLoading}
+            onQueryChange={handleSearchQueryChange}
+            onModeChange={handleSearchModeChange}
+            onClear={handleClearSearch}
+          />
+        ) : (
+          <div className="browse-mode__tree-header">
             <button
               type="button"
-              className="browse-mode__collapse-btn"
-              onClick={toggleTreeCollapse}
-              aria-label={isTreeCollapsed ? "Expand file tree" : "Collapse file tree"}
-              aria-expanded={!isTreeCollapsed}
+              className="browse-mode__tree-title browse-mode__tree-title--clickable"
+              onClick={toggleViewMode}
+              aria-label={`Switch to ${viewMode === "files" ? "tasks" : "files"} view`}
             >
-              <CollapseIcon isCollapsed={isTreeCollapsed} />
+              {viewModeTitle}
             </button>
+            <div className="browse-mode__header-actions">
+              {!isTreeCollapsed && (
+                <>
+                  <button
+                    type="button"
+                    className="browse-mode__search-btn"
+                    onClick={() => setSearchActive(true)}
+                    aria-label="Search files"
+                  >
+                    <SearchIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="browse-mode__reload-btn"
+                    onClick={handleReload}
+                    aria-label="Reload file tree"
+                  >
+                    ♻
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="browse-mode__collapse-btn"
+                onClick={toggleTreeCollapse}
+                aria-label={isTreeCollapsed ? "Expand file tree" : "Collapse file tree"}
+                aria-expanded={!isTreeCollapsed}
+              >
+                <CollapseIcon isCollapsed={isTreeCollapsed} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
         {!isTreeCollapsed && (
           <div className="browse-mode__tree-content">
-            {viewMode === "files" ? (
+            {search.isActive ? (
+              <SearchResults
+                mode={search.mode}
+                fileResults={search.fileResults}
+                contentResults={search.contentResults}
+                isLoading={search.isLoading}
+                query={search.query}
+                expandedPaths={search.expandedPaths}
+                snippetsCache={search.snippetsCache}
+                onFileSelect={handleFileSelect}
+                onToggleExpand={handleToggleExpand}
+                onRequestSnippets={handleRequestSnippets}
+              />
+            ) : viewMode === "files" ? (
               <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
             ) : (
               <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
@@ -375,36 +491,68 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
             aria-hidden="true"
           />
           <aside className="browse-mode__mobile-tree">
-            <div className="browse-mode__mobile-tree-header">
-              <button
-                type="button"
-                className="browse-mode__tree-title browse-mode__tree-title--clickable"
-                onClick={toggleViewMode}
-                aria-label={`Switch to ${viewMode === "files" ? "tasks" : "files"} view`}
-              >
-                {viewModeTitle}
-              </button>
-              <div className="browse-mode__header-actions">
+            {search.isActive ? (
+              <SearchHeader
+                mode={search.mode}
+                query={search.query}
+                isLoading={search.isLoading}
+                onQueryChange={handleSearchQueryChange}
+                onModeChange={handleSearchModeChange}
+                onClear={handleClearSearch}
+              />
+            ) : (
+              <div className="browse-mode__mobile-tree-header">
                 <button
                   type="button"
-                  className="browse-mode__reload-btn"
-                  onClick={handleReload}
-                  aria-label="Reload file tree"
+                  className="browse-mode__tree-title browse-mode__tree-title--clickable"
+                  onClick={toggleViewMode}
+                  aria-label={`Switch to ${viewMode === "files" ? "tasks" : "files"} view`}
                 >
-                  ♻
+                  {viewModeTitle}
                 </button>
-                <button
-                  type="button"
-                  className="browse-mode__close-btn"
-                  onClick={closeMobileTree}
-                  aria-label="Close file browser"
-                >
-                  <CloseIcon />
-                </button>
+                <div className="browse-mode__header-actions">
+                  <button
+                    type="button"
+                    className="browse-mode__search-btn"
+                    onClick={() => setSearchActive(true)}
+                    aria-label="Search files"
+                  >
+                    <SearchIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="browse-mode__reload-btn"
+                    onClick={handleReload}
+                    aria-label="Reload file tree"
+                  >
+                    ♻
+                  </button>
+                  <button
+                    type="button"
+                    className="browse-mode__close-btn"
+                    onClick={closeMobileTree}
+                    aria-label="Close file browser"
+                  >
+                    <CloseIcon />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
             <div className="browse-mode__tree-content">
-              {viewMode === "files" ? (
+              {search.isActive ? (
+                <SearchResults
+                  mode={search.mode}
+                  fileResults={search.fileResults}
+                  contentResults={search.contentResults}
+                  isLoading={search.isLoading}
+                  query={search.query}
+                  expandedPaths={search.expandedPaths}
+                  snippetsCache={search.snippetsCache}
+                  onFileSelect={handleFileSelect}
+                  onToggleExpand={handleToggleExpand}
+                  onRequestSnippets={handleRequestSnippets}
+                />
+              ) : viewMode === "files" ? (
                 <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
               ) : (
                 <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
@@ -477,6 +625,26 @@ function CloseIcon(): React.ReactNode {
     >
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+/**
+ * Search icon for search button.
+ */
+function SearchIcon(): React.ReactNode {
+  return (
+    <svg
+      className="browse-mode__icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
   );
 }

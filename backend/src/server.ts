@@ -134,6 +134,41 @@ export const isTlsEnabled = (): boolean => {
 };
 
 /**
+ * Get the HTTP redirect port when TLS is enabled.
+ * This port serves HTTP requests and redirects them to HTTPS.
+ *
+ * Environment variable: HTTP_PORT (default: 80)
+ */
+export const getHttpRedirectPort = (): number => {
+  const envPort = process.env.HTTP_PORT;
+  if (envPort) {
+    const parsed = parseInt(envPort, 10);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= 65535) {
+      return parsed;
+    }
+    log.warn(`Invalid HTTP_PORT "${envPort}", using default 80`);
+  }
+  return 80;
+};
+
+/**
+ * Create an HTTP server that redirects all requests to HTTPS.
+ * Returns the Bun server configuration for the redirect server.
+ */
+export const createHttpRedirectServer = (httpsPort: number) => {
+  return {
+    port: getHttpRedirectPort(),
+    hostname: getHost(),
+    fetch(req: Request) {
+      const url = new URL(req.url);
+      // Redirect to HTTPS, preserving path and query
+      const httpsUrl = `https://${url.hostname}:${httpsPort}${url.pathname}${url.search}`;
+      return Response.redirect(httpsUrl, 308);
+    },
+  };
+};
+
+/**
  * Create and configure the Hono application
  */
 export const createApp = () => {

@@ -27,6 +27,12 @@ export interface UseWebSocketResult {
   lastMessage: ServerMessage | null;
   /** Current connection status */
   connectionStatus: ConnectionStatus;
+  /** Send search_files message for file name search */
+  sendSearchFiles: (query: string, limit?: number) => void;
+  /** Send search_content message for full-text search */
+  sendSearchContent: (query: string, limit?: number) => void;
+  /** Send get_snippets message for lazy-loading match context */
+  sendGetSnippets: (path: string, query: string) => void;
 }
 
 /**
@@ -240,6 +246,36 @@ export function useWebSocket(
     }
   }, []);
 
+  /**
+   * Sends a search_files message for file name search.
+   */
+  const sendSearchFiles = useCallback(
+    (query: string, limit?: number) => {
+      sendMessage({ type: "search_files", query, limit });
+    },
+    [sendMessage]
+  );
+
+  /**
+   * Sends a search_content message for full-text content search.
+   */
+  const sendSearchContent = useCallback(
+    (query: string, limit?: number) => {
+      sendMessage({ type: "search_content", query, limit });
+    },
+    [sendMessage]
+  );
+
+  /**
+   * Sends a get_snippets message for lazy-loading match context.
+   */
+  const sendGetSnippets = useCallback(
+    (path: string, query: string) => {
+      sendMessage({ type: "get_snippets", path, query });
+    },
+    [sendMessage]
+  );
+
   // Connect on mount, disconnect on unmount
   useEffect(() => {
     mountedRef.current = true;
@@ -280,5 +316,8 @@ export function useWebSocket(
     sendMessage,
     lastMessage,
     connectionStatus,
+    sendSearchFiles,
+    sendSearchContent,
+    sendGetSnippets,
   };
 }

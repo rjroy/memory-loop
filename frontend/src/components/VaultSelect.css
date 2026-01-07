@@ -300,6 +300,12 @@
   margin: 0;
 }
 
+.vault-select__vault-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
 .vault-select__vault-path {
   font-size: var(--font-size-xs);
   font-family: var(--font-family-mono);

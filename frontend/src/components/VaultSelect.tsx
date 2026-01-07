@@ -377,6 +377,9 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
               aria-disabled={selectedVaultId !== null}
             >
               <h2 className="vault-select__vault-name">{vault.name}</h2>
+              {vault.subtitle && (
+                <p className="vault-select__vault-subtitle">{vault.subtitle}</p>
+              )}
               <p className="vault-select__vault-path">{vault.path}</p>
               <div className="vault-select__vault-badges">
                 {vault.hasClaudeMd && (

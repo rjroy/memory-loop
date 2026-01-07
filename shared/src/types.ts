@@ -9,7 +9,8 @@
  * Information about an Obsidian vault discovered by the backend.
  *
  * @property id - Directory name (unique identifier)
- * @property name - Human-readable name from CLAUDE.md title or fallback to id
+ * @property name - Human-readable name (title portion before " - " or full heading)
+ * @property subtitle - Optional subtitle (portion after " - " in heading)
  * @property path - Absolute path to the vault root directory
  * @property hasClaudeMd - Whether the vault has a CLAUDE.md file
  * @property contentRoot - Absolute path to content root (may differ from path if configured)
@@ -21,6 +22,7 @@
 export interface VaultInfo {
   id: string;
   name: string;
+  subtitle?: string;
   path: string;
   hasClaudeMd: boolean;
   contentRoot: string;

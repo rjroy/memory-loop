@@ -64,22 +64,22 @@ describe("getVaultsDir", () => {
 describe("extractVaultName", () => {
   test("extracts name from first H1 heading", () => {
     const content = "# My Personal Vault\n\nSome content here.";
-    expect(extractVaultName(content)).toBe("My Personal Vault");
+    expect(extractVaultName(content)).toEqual({ title: "My Personal Vault" });
   });
 
   test("returns first H1 when multiple exist", () => {
     const content = "# First Heading\n\n# Second Heading";
-    expect(extractVaultName(content)).toBe("First Heading");
+    expect(extractVaultName(content)).toEqual({ title: "First Heading" });
   });
 
   test("ignores H2 and lower headings", () => {
     const content = "## Not H1\n\n### Also not H1\n\n# This is H1";
-    expect(extractVaultName(content)).toBe("This is H1");
+    expect(extractVaultName(content)).toEqual({ title: "This is H1" });
   });
 
   test("handles content before H1", () => {
     const content = "Some preamble text\n\n# The Real Title\n\nMore content";
-    expect(extractVaultName(content)).toBe("The Real Title");
+    expect(extractVaultName(content)).toEqual({ title: "The Real Title" });
   });
 
   test("returns null when no H1 found", () => {
@@ -98,17 +98,17 @@ describe("extractVaultName", () => {
 
   test("handles H1 with only spaces", () => {
     const content = "#    \n\n# Real Title";
-    expect(extractVaultName(content)).toBe("Real Title");
+    expect(extractVaultName(content)).toEqual({ title: "Real Title" });
   });
 
   test("trims whitespace from heading", () => {
     const content = "#   Spaced Title   \n";
-    expect(extractVaultName(content)).toBe("Spaced Title");
+    expect(extractVaultName(content)).toEqual({ title: "Spaced Title" });
   });
 
   test("handles Windows line endings", () => {
     const content = "# Windows Title\r\n\r\nContent";
-    expect(extractVaultName(content)).toBe("Windows Title");
+    expect(extractVaultName(content)).toEqual({ title: "Windows Title" });
   });
 
   test("handles mixed content types", () => {
@@ -121,17 +121,62 @@ frontmatter: true
 
 This is content.
 `;
-    expect(extractVaultName(content)).toBe("Vault with Frontmatter");
+    expect(extractVaultName(content)).toEqual({ title: "Vault with Frontmatter" });
   });
 
   test("handles H1 with special characters", () => {
     const content = "# Project X: The Re-Launch (2025)";
-    expect(extractVaultName(content)).toBe("Project X: The Re-Launch (2025)");
+    expect(extractVaultName(content)).toEqual({ title: "Project X: The Re-Launch (2025)" });
   });
 
   test("handles unicode in vault name", () => {
     const content = "# My Notes \u{1F4DA}";
-    expect(extractVaultName(content)).toBe("My Notes \u{1F4DA}");
+    expect(extractVaultName(content)).toEqual({ title: "My Notes \u{1F4DA}" });
+  });
+
+  // Title/subtitle parsing tests
+  test("splits title and subtitle on ' - ' separator", () => {
+    const content = "# My Vault - Personal Notes";
+    expect(extractVaultName(content)).toEqual({
+      title: "My Vault",
+      subtitle: "Personal Notes",
+    });
+  });
+
+  test("handles multiple ' - ' separators by using first one", () => {
+    const content = "# Main - Sub - Extra";
+    expect(extractVaultName(content)).toEqual({
+      title: "Main",
+      subtitle: "Sub - Extra",
+    });
+  });
+
+  test("does not split on single hyphen without spaces", () => {
+    const content = "# Project-Name";
+    expect(extractVaultName(content)).toEqual({ title: "Project-Name" });
+  });
+
+  test("does not split on hyphen with only leading space", () => {
+    const content = "# Project -Name";
+    expect(extractVaultName(content)).toEqual({ title: "Project -Name" });
+  });
+
+  test("does not split on hyphen with only trailing space", () => {
+    const content = "# Project- Name";
+    expect(extractVaultName(content)).toEqual({ title: "Project- Name" });
+  });
+
+  test("handles empty subtitle after separator", () => {
+    const content = "# Title -   ";
+    expect(extractVaultName(content)).toEqual({ title: "Title -" });
+  });
+
+  test("handles title with colon and subtitle", () => {
+    const content = "# Project X: Relaunch - Development Notes";
+    expect(extractVaultName(content)).toEqual({
+      title: "Project X: Relaunch",
+      subtitle: "Development Notes",
+    });
   });
 });
 
@@ -317,6 +362,112 @@ describe("Filesystem Integration", () => {
     test("returns null for file (not directory)", async () => {
       await writeFile(join(testDir, "file.txt"), "content");
       expect(await parseVault(testDir, "file.txt")).toBeNull();
+    });
+
+    test("extracts subtitle from heading with ' - ' separator", async () => {
+      const vaultDir = join(testDir, "vault-with-subtitle");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# My Vault - Personal Notes");
+
+      const vault = await parseVault(testDir, "vault-with-subtitle");
+      expect(vault).not.toBeNull();
+      expect(vault!.name).toBe("My Vault");
+      expect(vault!.subtitle).toBe("Personal Notes");
+    });
+
+    test("subtitle is undefined when no separator in heading", async () => {
+      const vaultDir = join(testDir, "vault-no-subtitle");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Simple Title");
+
+      const vault = await parseVault(testDir, "vault-no-subtitle");
+      expect(vault).not.toBeNull();
+      expect(vault!.name).toBe("Simple Title");
+      expect(vault!.subtitle).toBeUndefined();
+    });
+
+    test("config title overrides CLAUDE.md heading", async () => {
+      const vaultDir = join(testDir, "vault-config-override");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Original Title");
+      await writeFile(join(vaultDir, ".memory-loop.json"), JSON.stringify({
+        title: "Overridden Title",
+      }));
+
+      const vault = await parseVault(testDir, "vault-config-override");
+      expect(vault).not.toBeNull();
+      expect(vault!.name).toBe("Overridden Title");
+    });
+
+    test("subtitle is preserved when config overrides title", async () => {
+      const vaultDir = join(testDir, "vault-override-with-subtitle");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Original - Has Subtitle");
+      await writeFile(join(vaultDir, ".memory-loop.json"), JSON.stringify({
+        title: "Custom Title",
+      }));
+
+      const vault = await parseVault(testDir, "vault-override-with-subtitle");
+      expect(vault).not.toBeNull();
+      expect(vault!.name).toBe("Custom Title");
+      expect(vault!.subtitle).toBe("Has Subtitle");
+    });
+
+    test("config subtitle overrides CLAUDE.md subtitle", async () => {
+      const vaultDir = join(testDir, "vault-subtitle-override");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# My Vault - Original Subtitle");
+      await writeFile(join(vaultDir, ".memory-loop.json"), JSON.stringify({
+        subtitle: "Custom Subtitle",
+      }));
+
+      const vault = await parseVault(testDir, "vault-subtitle-override");
+      expect(vault).not.toBeNull();
+      expect(vault!.name).toBe("My Vault");
+      expect(vault!.subtitle).toBe("Custom Subtitle");
+    });
+
+    test("config can add subtitle when CLAUDE.md has none", async () => {
+      const vaultDir = join(testDir, "vault-add-subtitle");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Simple Title");
+      await writeFile(join(vaultDir, ".memory-loop.json"), JSON.stringify({
+        subtitle: "Added Subtitle",
+      }));
+
+      const vault = await parseVault(testDir, "vault-add-subtitle");
+      expect(vault).not.toBeNull();
+      expect(vault!.name).toBe("Simple Title");
+      expect(vault!.subtitle).toBe("Added Subtitle");
+    });
+
+    test("config can remove subtitle with empty string", async () => {
+      const vaultDir = join(testDir, "vault-remove-subtitle");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# My Vault - Has Subtitle");
+      await writeFile(join(vaultDir, ".memory-loop.json"), JSON.stringify({
+        subtitle: "",
+      }));
+
+      const vault = await parseVault(testDir, "vault-remove-subtitle");
+      expect(vault).not.toBeNull();
+      expect(vault!.name).toBe("My Vault");
+      expect(vault!.subtitle).toBeUndefined();
+    });
+
+    test("config overrides both title and subtitle", async () => {
+      const vaultDir = join(testDir, "vault-full-override");
+      await mkdir(vaultDir);
+      await writeFile(join(vaultDir, "CLAUDE.md"), "# Original Title - Original Subtitle");
+      await writeFile(join(vaultDir, ".memory-loop.json"), JSON.stringify({
+        title: "Custom Title",
+        subtitle: "Custom Subtitle",
+      }));
+
+      const vault = await parseVault(testDir, "vault-full-override");
+      expect(vault).not.toBeNull();
+      expect(vault!.name).toBe("Custom Title");
+      expect(vault!.subtitle).toBe("Custom Subtitle");
     });
   });
 

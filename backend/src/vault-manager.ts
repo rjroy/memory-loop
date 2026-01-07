@@ -103,20 +103,43 @@ export async function fileExists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Extracts the vault name from CLAUDE.md content.
- * Uses the first H1 heading (line starting with "# ") as the name.
+ * Result of extracting vault title from CLAUDE.md.
+ */
+export interface ExtractedTitle {
+  /** Title portion (before " - " if present, or full heading) */
+  title: string;
+  /** Subtitle portion (after " - " if present) */
+  subtitle?: string;
+}
+
+/**
+ * Extracts the vault title and subtitle from CLAUDE.md content.
+ * Uses the first H1 heading (line starting with "# ") as the source.
+ * If the heading contains " - ", splits into title and subtitle.
  *
  * @param content - The content of CLAUDE.md
- * @returns The vault name or null if no H1 heading found
+ * @returns Extracted title/subtitle or null if no H1 heading found
  */
-export function extractVaultName(content: string): string | null {
+export function extractVaultName(content: string): ExtractedTitle | null {
   const lines = content.split("\n");
   for (const line of lines) {
     const trimmed = line.trim();
     if (trimmed.startsWith("# ")) {
-      const name = trimmed.slice(2).trim();
-      if (name.length > 0) {
-        return name;
+      const fullName = trimmed.slice(2).trim();
+      if (fullName.length > 0) {
+        // Check for " - " separator to split title and subtitle
+        const separatorIndex = fullName.indexOf(" - ");
+        if (separatorIndex > 0) {
+          const title = fullName.slice(0, separatorIndex).trim();
+          const subtitle = fullName.slice(separatorIndex + 3).trim();
+          if (title.length > 0) {
+            return {
+              title,
+              subtitle: subtitle.length > 0 ? subtitle : undefined,
+            };
+          }
+        }
+        return { title: fullName };
       }
     }
   }
@@ -192,16 +215,26 @@ export async function parseVault(
   // Resolve content root (may be different from vault root)
   const contentRoot = resolveContentRoot(vaultPath, config);
 
-  // Extract vault name from CLAUDE.md
+  // Extract vault name and subtitle from CLAUDE.md
   let name = dirName; // Default to directory name
+  let subtitle: string | undefined;
   try {
     const content = await readFile(claudeMdPath, "utf-8");
-    const extractedName = extractVaultName(content);
-    if (extractedName) {
-      name = extractedName;
+    const extracted = extractVaultName(content);
+    if (extracted) {
+      name = extracted.title;
+      subtitle = extracted.subtitle;
     }
   } catch {
     // Failed to read CLAUDE.md, use directory name
+  }
+
+  // Apply config overrides if present
+  if (config.title) {
+    name = config.title;
+  }
+  if (config.subtitle !== undefined) {
+    subtitle = config.subtitle || undefined; // Empty string becomes undefined
   }
 
   // Detect or use configured inbox path
@@ -220,6 +253,7 @@ export async function parseVault(
   return {
     id: dirName,
     name,
+    subtitle,
     path: vaultPath,
     hasClaudeMd,
     contentRoot,

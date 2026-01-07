@@ -2732,4 +2732,427 @@ describe("SessionContext", () => {
       );
     });
   });
+
+  describe("search state", () => {
+    it("provides initial search state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.browser.search.isActive).toBe(false);
+      expect(result.current.browser.search.mode).toBe("files");
+      expect(result.current.browser.search.query).toBe("");
+      expect(result.current.browser.search.fileResults).toEqual([]);
+      expect(result.current.browser.search.contentResults).toEqual([]);
+      expect(result.current.browser.search.isLoading).toBe(false);
+      expect(result.current.browser.search.expandedPaths.size).toBe(0);
+      expect(result.current.browser.search.snippetsCache.size).toBe(0);
+    });
+
+    it("SET_SEARCH_ACTIVE toggles isActive true", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setSearchActive(true);
+      });
+
+      expect(result.current.browser.search.isActive).toBe(true);
+    });
+
+    it("SET_SEARCH_ACTIVE toggles isActive false and clears results", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up search state
+      act(() => {
+        result.current.setSearchActive(true);
+        result.current.setSearchQuery("test query");
+        result.current.setSearchResults("files", [
+          { path: "test.md", name: "test.md", score: 100, matchPositions: [0, 1, 2, 3] },
+        ]);
+      });
+
+      expect(result.current.browser.search.isActive).toBe(true);
+      expect(result.current.browser.search.query).toBe("test query");
+      expect(result.current.browser.search.fileResults).toHaveLength(1);
+
+      // Deactivate search
+      act(() => {
+        result.current.setSearchActive(false);
+      });
+
+      expect(result.current.browser.search.isActive).toBe(false);
+      expect(result.current.browser.search.query).toBe("");
+      expect(result.current.browser.search.fileResults).toEqual([]);
+    });
+
+    it("SET_SEARCH_MODE changes mode and clears results", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up file search results
+      act(() => {
+        result.current.setSearchActive(true);
+        result.current.setSearchResults("files", [
+          { path: "test.md", name: "test.md", score: 100, matchPositions: [0, 1, 2, 3] },
+        ]);
+      });
+
+      expect(result.current.browser.search.mode).toBe("files");
+      expect(result.current.browser.search.fileResults).toHaveLength(1);
+
+      // Switch to content mode
+      act(() => {
+        result.current.setSearchMode("content");
+      });
+
+      expect(result.current.browser.search.mode).toBe("content");
+      expect(result.current.browser.search.fileResults).toEqual([]);
+      expect(result.current.browser.search.contentResults).toEqual([]);
+    });
+
+    it("SET_SEARCH_QUERY updates query string", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setSearchQuery("hello world");
+      });
+
+      expect(result.current.browser.search.query).toBe("hello world");
+    });
+
+    it("SET_SEARCH_RESULTS stores file results", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const fileResults = [
+        { path: "folder/file1.md", name: "file1.md", score: 95, matchPositions: [0, 1, 2, 3, 4] },
+        { path: "folder/file2.md", name: "file2.md", score: 80, matchPositions: [0, 1, 2, 3, 4] },
+      ];
+
+      act(() => {
+        result.current.setSearchLoading(true);
+      });
+
+      expect(result.current.browser.search.isLoading).toBe(true);
+
+      act(() => {
+        result.current.setSearchResults("files", fileResults);
+      });
+
+      expect(result.current.browser.search.fileResults).toEqual(fileResults);
+      expect(result.current.browser.search.isLoading).toBe(false);
+    });
+
+    it("SET_SEARCH_RESULTS stores content results", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const contentResults = [
+        { path: "notes/meeting.md", name: "meeting.md", matchCount: 5 },
+        { path: "docs/readme.md", name: "readme.md", matchCount: 2 },
+      ];
+
+      act(() => {
+        result.current.setSearchMode("content");
+        result.current.setSearchLoading(true);
+      });
+
+      act(() => {
+        result.current.setSearchResults("content", undefined, contentResults);
+      });
+
+      expect(result.current.browser.search.contentResults).toEqual(contentResults);
+      expect(result.current.browser.search.isLoading).toBe(false);
+    });
+
+    it("SET_SEARCH_LOADING updates loading state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.setSearchLoading(true);
+      });
+
+      expect(result.current.browser.search.isLoading).toBe(true);
+
+      act(() => {
+        result.current.setSearchLoading(false);
+      });
+
+      expect(result.current.browser.search.isLoading).toBe(false);
+    });
+
+    it("TOGGLE_RESULT_EXPANDED adds path to expandedPaths", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.toggleResultExpanded("folder/file.md");
+      });
+
+      expect(result.current.browser.search.expandedPaths.has("folder/file.md")).toBe(true);
+    });
+
+    it("TOGGLE_RESULT_EXPANDED removes path from expandedPaths when toggled again", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        result.current.toggleResultExpanded("folder/file.md");
+      });
+
+      expect(result.current.browser.search.expandedPaths.has("folder/file.md")).toBe(true);
+
+      act(() => {
+        result.current.toggleResultExpanded("folder/file.md");
+      });
+
+      expect(result.current.browser.search.expandedPaths.has("folder/file.md")).toBe(false);
+    });
+
+    it("SET_SNIPPETS caches snippets for a path", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const snippets = [
+        {
+          lineNumber: 10,
+          line: "This is a matching line",
+          contextBefore: ["Line 8", "Line 9"],
+          contextAfter: ["Line 11", "Line 12"],
+        },
+        {
+          lineNumber: 25,
+          line: "Another match here",
+          contextBefore: ["Line 23", "Line 24"],
+          contextAfter: ["Line 26", "Line 27"],
+        },
+      ];
+
+      act(() => {
+        result.current.setSnippets("notes/meeting.md", snippets);
+      });
+
+      expect(result.current.browser.search.snippetsCache.get("notes/meeting.md")).toEqual(snippets);
+    });
+
+    it("SET_SNIPPETS can cache snippets for multiple paths", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      const snippets1 = [{ lineNumber: 1, line: "First", contextBefore: [], contextAfter: [] }];
+      const snippets2 = [{ lineNumber: 5, line: "Second", contextBefore: [], contextAfter: [] }];
+
+      act(() => {
+        result.current.setSnippets("file1.md", snippets1);
+        result.current.setSnippets("file2.md", snippets2);
+      });
+
+      expect(result.current.browser.search.snippetsCache.get("file1.md")).toEqual(snippets1);
+      expect(result.current.browser.search.snippetsCache.get("file2.md")).toEqual(snippets2);
+    });
+
+    it("CLEAR_SEARCH resets search state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up full search state
+      act(() => {
+        result.current.setSearchActive(true);
+        result.current.setSearchMode("content");
+        result.current.setSearchQuery("important");
+        result.current.setSearchResults("content", undefined, [
+          { path: "notes/meeting.md", name: "meeting.md", matchCount: 3 },
+        ]);
+        result.current.toggleResultExpanded("notes/meeting.md");
+        result.current.setSnippets("notes/meeting.md", [
+          { lineNumber: 1, line: "Important note", contextBefore: [], contextAfter: [] },
+        ]);
+      });
+
+      expect(result.current.browser.search.isActive).toBe(true);
+      expect(result.current.browser.search.mode).toBe("content");
+      expect(result.current.browser.search.query).toBe("important");
+      expect(result.current.browser.search.contentResults).toHaveLength(1);
+      expect(result.current.browser.search.expandedPaths.size).toBe(1);
+      expect(result.current.browser.search.snippetsCache.size).toBe(1);
+
+      // Clear search
+      act(() => {
+        result.current.clearSearch();
+      });
+
+      expect(result.current.browser.search.isActive).toBe(false);
+      expect(result.current.browser.search.mode).toBe("files");
+      expect(result.current.browser.search.query).toBe("");
+      expect(result.current.browser.search.fileResults).toEqual([]);
+      expect(result.current.browser.search.contentResults).toEqual([]);
+      expect(result.current.browser.search.isLoading).toBe(false);
+      expect(result.current.browser.search.expandedPaths.size).toBe(0);
+      expect(result.current.browser.search.snippetsCache.size).toBe(0);
+    });
+
+    it("selectVault clears search state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up search state
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setSearchActive(true);
+        result.current.setSearchQuery("test");
+        result.current.setSearchResults("files", [
+          { path: "test.md", name: "test.md", score: 100, matchPositions: [0, 1, 2, 3] },
+        ]);
+      });
+
+      expect(result.current.browser.search.isActive).toBe(true);
+      expect(result.current.browser.search.fileResults).toHaveLength(1);
+
+      // Switch vault
+      act(() => {
+        result.current.selectVault(testVault2);
+      });
+
+      expect(result.current.browser.search.isActive).toBe(false);
+      expect(result.current.browser.search.query).toBe("");
+      expect(result.current.browser.search.fileResults).toEqual([]);
+    });
+
+    it("clearVault clears search state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up search state
+      act(() => {
+        result.current.selectVault(testVault);
+        result.current.setSearchActive(true);
+        result.current.setSearchQuery("test");
+      });
+
+      expect(result.current.browser.search.isActive).toBe(true);
+
+      // Clear vault
+      act(() => {
+        result.current.clearVault();
+      });
+
+      expect(result.current.browser.search.isActive).toBe(false);
+      expect(result.current.browser.search.query).toBe("");
+    });
+
+    it("clearBrowserState clears search state", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up search state
+      act(() => {
+        result.current.setSearchActive(true);
+        result.current.setSearchQuery("test");
+        result.current.setSearchResults("files", [
+          { path: "test.md", name: "test.md", score: 100, matchPositions: [0, 1, 2, 3] },
+        ]);
+      });
+
+      expect(result.current.browser.search.isActive).toBe(true);
+      expect(result.current.browser.search.fileResults).toHaveLength(1);
+
+      // Clear browser state
+      act(() => {
+        result.current.clearBrowserState();
+      });
+
+      expect(result.current.browser.search.isActive).toBe(false);
+      expect(result.current.browser.search.query).toBe("");
+      expect(result.current.browser.search.fileResults).toEqual([]);
+    });
+
+    it("search state is preserved when switching modes", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up search state in browse mode
+      act(() => {
+        result.current.setMode("browse");
+        result.current.setSearchActive(true);
+        result.current.setSearchQuery("meeting notes");
+        result.current.setSearchResults("files", [
+          { path: "notes/meeting.md", name: "meeting.md", score: 95, matchPositions: [0, 1, 2, 3, 4, 5, 6] },
+        ]);
+      });
+
+      expect(result.current.browser.search.isActive).toBe(true);
+      expect(result.current.browser.search.query).toBe("meeting notes");
+      expect(result.current.browser.search.fileResults).toHaveLength(1);
+
+      // Switch to discussion mode
+      act(() => {
+        result.current.setMode("discussion");
+      });
+
+      // Search state should be preserved
+      expect(result.current.browser.search.isActive).toBe(true);
+      expect(result.current.browser.search.query).toBe("meeting notes");
+      expect(result.current.browser.search.fileResults).toHaveLength(1);
+
+      // Switch back to browse mode
+      act(() => {
+        result.current.setMode("browse");
+      });
+
+      expect(result.current.browser.search.isActive).toBe(true);
+      expect(result.current.browser.search.query).toBe("meeting notes");
+      expect(result.current.browser.search.fileResults).toHaveLength(1);
+    });
+
+    it("switching search mode clears expandedPaths and snippetsCache", () => {
+      const { result } = renderHook(() => useSession(), {
+        wrapper: createWrapper(),
+      });
+
+      // Set up content search with expanded results
+      act(() => {
+        result.current.setSearchActive(true);
+        result.current.setSearchMode("content");
+        result.current.setSearchResults("content", undefined, [
+          { path: "file.md", name: "file.md", matchCount: 3 },
+        ]);
+        result.current.toggleResultExpanded("file.md");
+        result.current.setSnippets("file.md", [
+          { lineNumber: 1, line: "Match", contextBefore: [], contextAfter: [] },
+        ]);
+      });
+
+      expect(result.current.browser.search.expandedPaths.size).toBe(1);
+      expect(result.current.browser.search.snippetsCache.size).toBe(1);
+
+      // Switch to files mode
+      act(() => {
+        result.current.setSearchMode("files");
+      });
+
+      // Expanded paths and snippets cache should be cleared
+      expect(result.current.browser.search.expandedPaths.size).toBe(0);
+      expect(result.current.browser.search.snippetsCache.size).toBe(0);
+    });
+  });
 });

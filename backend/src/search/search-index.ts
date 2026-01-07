@@ -12,8 +12,8 @@
  * @see .sdd/plans/2026-01-07-recall-search-plan.md (TD-2, TD-3, TD-6)
  */
 
-import { readdir, readFile, stat, lstat } from "node:fs/promises";
-import { join, basename, extname } from "node:path";
+import { readdir, readFile, writeFile, stat, lstat, mkdir, rm } from "node:fs/promises";
+import { join, basename, extname, dirname } from "node:path";
 import MiniSearch from "minisearch";
 import type { FileSearchResult, ContentSearchResult, ContextSnippet } from "@memory-loop/shared";
 import { fuzzySearchFiles, escapeRegex, type FuzzyMatchFile } from "./fuzzy-matcher";
@@ -58,9 +58,32 @@ export interface SearchOptions {
   limit?: number;
 }
 
+/**
+ * Persisted index data structure for JSON storage.
+ */
+export interface IndexData {
+  /** Schema version for migration detection */
+  version: string;
+  /** Timestamp when the index was last updated (ms since epoch) */
+  lastUpdated: number;
+  /** List of indexed files with metadata */
+  fileList: IndexedFile[];
+  /** Serialized MiniSearch index state */
+  contentIndex: object;
+}
+
 // =============================================================================
 // Constants
 // =============================================================================
+
+/** Current index version for migration detection */
+export const INDEX_VERSION = "1.0.0";
+
+/** Metadata directory relative to content root */
+const METADATA_DIR = "06_Metadata/memory-loop";
+
+/** Index file name within metadata directory */
+const INDEX_FILE = "search-index.json";
 
 /** Default maximum search results */
 const DEFAULT_LIMIT = 50;
@@ -108,6 +131,13 @@ export class SearchIndexManager {
   // ===========================================================================
   // Public API
   // ===========================================================================
+
+  /**
+   * Returns the content root path for this index.
+   */
+  getContentRoot(): string {
+    return this.contentRoot;
+  }
 
   /**
    * Searches for files by name using fuzzy subsequence matching.
@@ -286,6 +316,193 @@ export class SearchIndexManager {
     await this.buildIndex();
   }
 
+  /**
+   * Returns the path to the index file for this vault.
+   */
+  getIndexPath(): string {
+    return join(this.contentRoot, METADATA_DIR, INDEX_FILE);
+  }
+
+  /**
+   * Saves the current index to a JSON file.
+   *
+   * Creates the metadata directory if it doesn't exist.
+   * The index is saved to {contentRoot}/06_Metadata/memory-loop/search-index.json
+   *
+   * @throws Error if index is not built or save fails
+   */
+  async saveIndex(): Promise<void> {
+    if (!this.indexBuilt || !this.contentIndex) {
+      throw new Error("Cannot save index: index not built");
+    }
+
+    const indexPath = this.getIndexPath();
+    const indexDir = dirname(indexPath);
+
+    // Create metadata directory if it doesn't exist
+    await mkdir(indexDir, { recursive: true });
+
+    const indexData: IndexData = {
+      version: INDEX_VERSION,
+      lastUpdated: Date.now(),
+      fileList: this.fileList,
+      contentIndex: this.contentIndex.toJSON(),
+    };
+
+    await writeFile(indexPath, JSON.stringify(indexData, null, 2), "utf-8");
+    log.info(`Index saved to: ${indexPath}`);
+  }
+
+  /**
+   * Loads the index from a JSON file.
+   *
+   * Returns false if the index file doesn't exist or version mismatches.
+   * On version mismatch, the existing index file is deleted.
+   *
+   * @returns true if index was loaded successfully, false otherwise
+   */
+  async loadIndex(): Promise<boolean> {
+    const indexPath = this.getIndexPath();
+
+    try {
+      const content = await readFile(indexPath, "utf-8");
+      const indexData = JSON.parse(content) as IndexData;
+
+      // Check version compatibility
+      if (indexData.version !== INDEX_VERSION) {
+        log.warn(
+          `Index version mismatch: found ${indexData.version}, expected ${INDEX_VERSION}. Rebuilding.`
+        );
+        // Delete the old index file
+        await rm(indexPath);
+        return false;
+      }
+
+      // Restore MiniSearch index with the same configuration
+      this.contentIndex = MiniSearch.loadJSON<ContentDocument>(
+        JSON.stringify(indexData.contentIndex),
+        {
+          fields: ["content"],
+          storeFields: ["path"],
+        }
+      );
+
+      this.fileList = indexData.fileList;
+      this.indexBuilt = true;
+
+      log.info(
+        `Index loaded from: ${indexPath} (${this.fileList.length} files, last updated: ${new Date(indexData.lastUpdated).toISOString()})`
+      );
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        log.debug("No existing index file found");
+      } else {
+        log.warn("Failed to load index, will rebuild", error);
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Incrementally updates the index by comparing file mtimes.
+   *
+   * This method:
+   * 1. Compares current files against the indexed file list
+   * 2. Re-indexes files that have been modified (mtime changed)
+   * 3. Adds new files that weren't in the index
+   * 4. Removes entries for deleted files
+   * 5. Saves the updated index
+   *
+   * @returns Object with counts of added, updated, and removed files
+   */
+  async updateIndex(): Promise<{ added: number; updated: number; removed: number }> {
+    // Ensure we have an existing index to update
+    if (!this.indexBuilt) {
+      const loaded = await this.loadIndex();
+      if (!loaded) {
+        await this.buildIndex();
+        await this.saveIndex();
+        return { added: this.fileList.length, updated: 0, removed: 0 };
+      }
+    }
+
+    log.info("Updating search index incrementally");
+    const startTime = Date.now();
+
+    // Create a map of existing files for quick lookup
+    const existingFiles = new Map<string, IndexedFile>();
+    for (const file of this.fileList) {
+      existingFiles.set(file.path, file);
+    }
+
+    // Crawl current files to find changes
+    const currentFiles: IndexedFile[] = [];
+    await this.crawlDirectoryForMtime("", currentFiles);
+
+    // Track changes
+    let added = 0;
+    let updated = 0;
+    let removed = 0;
+
+    const currentPaths = new Set<string>();
+
+    // Process current files
+    for (const file of currentFiles) {
+      currentPaths.add(file.path);
+      const existing = existingFiles.get(file.path);
+
+      if (!existing) {
+        // New file
+        await this.indexFile(file.path, join(this.contentRoot, file.path));
+        added++;
+      } else if (file.mtime !== existing.mtime) {
+        // Modified file: remove old entry and re-index
+        if (this.contentIndex) {
+          try {
+            this.contentIndex.discard(file.path);
+          } catch {
+            // Ignore if document not found
+          }
+        }
+        // Update mtime in file list
+        const idx = this.fileList.findIndex((f) => f.path === file.path);
+        if (idx !== -1) {
+          this.fileList[idx].mtime = file.mtime;
+        }
+        // Re-read and index content
+        await this.reindexFileContent(file.path, join(this.contentRoot, file.path));
+        updated++;
+      }
+    }
+
+    // Remove deleted files
+    for (const [path] of existingFiles) {
+      if (!currentPaths.has(path)) {
+        // File was deleted
+        if (this.contentIndex) {
+          try {
+            this.contentIndex.discard(path);
+          } catch {
+            // Ignore if document not found
+          }
+        }
+        this.fileList = this.fileList.filter((f) => f.path !== path);
+        removed++;
+      }
+    }
+
+    // Save the updated index
+    await this.saveIndex();
+
+    const duration = Date.now() - startTime;
+    log.info(
+      `Index updated in ${duration}ms: ${added} added, ${updated} updated, ${removed} removed`
+    );
+
+    return { added, updated, removed };
+  }
+
   // ===========================================================================
   // Private Methods
   // ===========================================================================
@@ -294,6 +511,8 @@ export class SearchIndexManager {
    * Ensures the index is built before performing a search.
    * If the index is already built, this is a no-op.
    * If another build is in progress, waits for it to complete.
+   *
+   * First attempts to load a persisted index, falling back to a full build.
    */
   private async ensureIndexBuilt(): Promise<void> {
     if (this.indexBuilt) {
@@ -308,6 +527,13 @@ export class SearchIndexManager {
       return;
     }
 
+    // Try to load existing index first
+    const loaded = await this.loadIndex();
+    if (loaded) {
+      return;
+    }
+
+    // Fall back to full build
     await this.buildIndex();
   }
 
@@ -425,6 +651,80 @@ export class SearchIndexManager {
       });
     } catch (error) {
       log.debug(`Failed to index file: ${relativePath}`, error);
+    }
+  }
+
+  /**
+   * Recursively crawls a directory collecting file paths and mtimes only.
+   * Used by updateIndex for incremental updates.
+   *
+   * @param relativePath - Path relative to contentRoot
+   * @param files - Array to collect file info into
+   */
+  private async crawlDirectoryForMtime(relativePath: string, files: IndexedFile[]): Promise<void> {
+    const absolutePath = relativePath === "" ? this.contentRoot : join(this.contentRoot, relativePath);
+
+    let entries;
+    try {
+      entries = await readdir(absolutePath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      // Skip hidden files and directories (starting with .)
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
+
+      const entryRelativePath = relativePath === "" ? entry.name : `${relativePath}/${entry.name}`;
+      const entryAbsolutePath = join(this.contentRoot, entryRelativePath);
+
+      // Skip symlinks for security
+      try {
+        const lstats = await lstat(entryAbsolutePath);
+        if (lstats.isSymbolicLink()) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        await this.crawlDirectoryForMtime(entryRelativePath, files);
+      } else if (entry.isFile() && extname(entry.name).toLowerCase() === ".md") {
+        try {
+          const stats = await stat(entryAbsolutePath);
+          files.push({
+            path: entryRelativePath,
+            name: basename(entryRelativePath),
+            mtime: stats.mtimeMs,
+          });
+        } catch {
+          // Skip files we can't stat
+        }
+      }
+    }
+  }
+
+  /**
+   * Re-indexes file content without modifying the file list.
+   * Used by updateIndex for modified files.
+   *
+   * @param relativePath - Path relative to contentRoot
+   * @param absolutePath - Absolute path to the file
+   */
+  private async reindexFileContent(relativePath: string, absolutePath: string): Promise<void> {
+    try {
+      const content = await readFile(absolutePath, "utf-8");
+
+      this.contentIndex?.add({
+        id: relativePath,
+        path: relativePath,
+        content,
+      });
+    } catch (error) {
+      log.debug(`Failed to re-index file content: ${relativePath}`, error);
     }
   }
 

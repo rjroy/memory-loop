@@ -9,11 +9,11 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { SearchIndexManager } from "../search/search-index";
+import { SearchIndexManager, type IndexData } from "../search/search-index";
 
 // =============================================================================
 // Test Helpers
@@ -816,5 +816,354 @@ describe("acceptance tests", () => {
 
     expect(fileResults).toEqual([]);
     expect(contentResults).toEqual([]);
+  });
+});
+
+// =============================================================================
+// Index Persistence Tests
+// =============================================================================
+
+describe("index persistence", () => {
+  let vaultPath: string;
+  let manager: SearchIndexManager;
+
+  beforeEach(async () => {
+    vaultPath = await createTestVault();
+    await setupTestVault(vaultPath);
+    manager = new SearchIndexManager(vaultPath);
+  });
+
+  afterEach(async () => {
+    await cleanupTestVault(vaultPath);
+  });
+
+  describe("saveIndex and loadIndex", () => {
+    test("saves and loads index correctly (round-trip)", async () => {
+      // Build and save the index
+      await manager.rebuildIndex();
+      const originalFileList = manager.getFileList();
+      await manager.saveIndex();
+
+      // Create a new manager and load the index
+      const newManager = new SearchIndexManager(vaultPath);
+      const loaded = await newManager.loadIndex();
+
+      expect(loaded).toBe(true);
+      expect(newManager.isIndexBuilt()).toBe(true);
+
+      // Verify file list matches
+      const loadedFileList = newManager.getFileList();
+      expect(loadedFileList.length).toBe(originalFileList.length);
+
+      for (const original of originalFileList) {
+        const found = loadedFileList.find((f) => f.path === original.path);
+        expect(found).toBeDefined();
+        expect(found!.name).toBe(original.name);
+        expect(found!.mtime).toBe(original.mtime);
+      }
+    });
+
+    test("content search works after loading from disk", async () => {
+      // Build and save the index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Create a new manager and load the index
+      const newManager = new SearchIndexManager(vaultPath);
+      await newManager.loadIndex();
+
+      // Test content search (requires MiniSearch index to be loaded correctly)
+      const results = await newManager.searchContent("TODO");
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.some((r) => r.path.includes("daily") || r.path.includes("alpha"))).toBe(true);
+    });
+
+    test("file search works after loading from disk", async () => {
+      // Build and save the index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Create a new manager and load the index
+      const newManager = new SearchIndexManager(vaultPath);
+      await newManager.loadIndex();
+
+      // Test file search
+      const results = await newManager.searchFiles("readme");
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].name).toBe("README.md");
+    });
+
+    test("creates metadata directory if missing", async () => {
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Verify the index file exists in the expected location
+      const indexPath = manager.getIndexPath();
+      const content = await readFile(indexPath, "utf-8");
+      const indexData = JSON.parse(content) as IndexData;
+
+      expect(indexData.version).toBe("1.0.0");
+      expect(indexData.fileList.length).toBeGreaterThan(0);
+      expect(indexData.contentIndex).toBeDefined();
+    });
+
+    test("returns false when index file does not exist", async () => {
+      const loaded = await manager.loadIndex();
+
+      expect(loaded).toBe(false);
+      expect(manager.isIndexBuilt()).toBe(false);
+    });
+
+    test("throws error when saving without building index first", async () => {
+      let error: Error | undefined;
+      try {
+        await manager.saveIndex();
+      } catch (e) {
+        error = e as Error;
+      }
+      expect(error).toBeDefined();
+      expect(error?.message).toBe("Cannot save index: index not built");
+    });
+  });
+
+  describe("version mismatch", () => {
+    test("detects version mismatch and returns false", async () => {
+      // Build and save with current version
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Manually modify the version in the index file
+      const indexPath = manager.getIndexPath();
+      const content = await readFile(indexPath, "utf-8");
+      const indexData = JSON.parse(content) as IndexData;
+      indexData.version = "0.9.0"; // Old version
+      await writeFile(indexPath, JSON.stringify(indexData));
+
+      // Try to load
+      const newManager = new SearchIndexManager(vaultPath);
+      const loaded = await newManager.loadIndex();
+
+      expect(loaded).toBe(false);
+      expect(newManager.isIndexBuilt()).toBe(false);
+    });
+
+    test("deletes old index file on version mismatch", async () => {
+      // Build and save with current version
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Manually modify the version in the index file
+      const indexPath = manager.getIndexPath();
+      const content = await readFile(indexPath, "utf-8");
+      const indexData = JSON.parse(content) as IndexData;
+      indexData.version = "0.9.0"; // Old version
+      await writeFile(indexPath, JSON.stringify(indexData));
+
+      // Try to load
+      const newManager = new SearchIndexManager(vaultPath);
+      await newManager.loadIndex();
+
+      // The old index file should be deleted
+      let fileExists = true;
+      try {
+        await readFile(indexPath, "utf-8");
+      } catch {
+        fileExists = false;
+      }
+      expect(fileExists).toBe(false);
+    });
+
+    test("ensureIndexBuilt loads persisted index on first search", async () => {
+      // Build, save, and verify
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Create a new manager that hasn't built its index
+      const newManager = new SearchIndexManager(vaultPath);
+      expect(newManager.isIndexBuilt()).toBe(false);
+
+      // searchFiles should trigger ensureIndexBuilt which loads from disk
+      const results = await newManager.searchFiles("readme");
+
+      expect(newManager.isIndexBuilt()).toBe(true);
+      expect(results.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("updateIndex incremental updates", () => {
+    test("detects and indexes new files", async () => {
+      // Build initial index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      const initialCount = manager.getFileList().length;
+
+      // Add a new file
+      await writeFile(join(vaultPath, "new-note.md"), "This is a new note with UNIQUE content");
+
+      // Run incremental update
+      const result = await manager.updateIndex();
+
+      expect(result.added).toBe(1);
+      expect(result.updated).toBe(0);
+      expect(result.removed).toBe(0);
+
+      // Verify new file is searchable
+      const fileResults = await manager.searchFiles("new-note");
+      expect(fileResults.some((r) => r.name === "new-note.md")).toBe(true);
+
+      const contentResults = await manager.searchContent("UNIQUE");
+      expect(contentResults.some((r) => r.name === "new-note.md")).toBe(true);
+
+      expect(manager.getFileList().length).toBe(initialCount + 1);
+    });
+
+    test("detects and re-indexes modified files", async () => {
+      // Build initial index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Modify an existing file (need to change mtime)
+      const filePath = join(vaultPath, "README.md");
+
+      // Wait a bit to ensure mtime changes
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await writeFile(filePath, "# Modified README\n\nNow contains MODIFIED_CONTENT");
+
+      // Run incremental update
+      const result = await manager.updateIndex();
+
+      expect(result.updated).toBe(1);
+      expect(result.added).toBe(0);
+      expect(result.removed).toBe(0);
+
+      // Verify modified content is searchable
+      const contentResults = await manager.searchContent("MODIFIED_CONTENT");
+      expect(contentResults.some((r) => r.name === "README.md")).toBe(true);
+    });
+
+    test("detects and removes deleted files", async () => {
+      // Build initial index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      const initialCount = manager.getFileList().length;
+      expect(manager.getFileList().some((f) => f.name === "README.md")).toBe(true);
+
+      // Delete a file
+      await rm(join(vaultPath, "README.md"));
+
+      // Run incremental update
+      const result = await manager.updateIndex();
+
+      expect(result.removed).toBe(1);
+      expect(result.added).toBe(0);
+      expect(result.updated).toBe(0);
+
+      // Verify file is no longer in index
+      expect(manager.getFileList().some((f) => f.name === "README.md")).toBe(false);
+      expect(manager.getFileList().length).toBe(initialCount - 1);
+    });
+
+    test("handles multiple changes at once", async () => {
+      // Build initial index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Add a new file
+      await writeFile(join(vaultPath, "new-file.md"), "New content");
+
+      // Modify an existing file
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await writeFile(join(vaultPath, "notes/meeting-notes.md"), "# Modified Meeting\n\nModified content");
+
+      // Delete a file
+      await rm(join(vaultPath, "projects/project-alpha.md"));
+
+      // Run incremental update
+      const result = await manager.updateIndex();
+
+      expect(result.added).toBe(1);
+      expect(result.updated).toBe(1);
+      expect(result.removed).toBe(1);
+    });
+
+    test("builds from scratch if no existing index", async () => {
+      // Don't build index initially
+      expect(manager.isIndexBuilt()).toBe(false);
+
+      // Run updateIndex which should trigger a full build
+      const result = await manager.updateIndex();
+
+      // All files should be counted as added
+      expect(result.added).toBeGreaterThan(0);
+      expect(result.updated).toBe(0);
+      expect(result.removed).toBe(0);
+      expect(manager.isIndexBuilt()).toBe(true);
+    });
+
+    test("saves index after update", async () => {
+      // Build initial index
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      // Add a new file
+      await writeFile(join(vaultPath, "update-test.md"), "Update test content");
+
+      // Run incremental update
+      await manager.updateIndex();
+
+      // Verify the saved index includes the new file
+      const newManager = new SearchIndexManager(vaultPath);
+      await newManager.loadIndex();
+
+      expect(newManager.getFileList().some((f) => f.name === "update-test.md")).toBe(true);
+    });
+  });
+
+  describe("index file format", () => {
+    test("index file contains expected fields", async () => {
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      const indexPath = manager.getIndexPath();
+      const content = await readFile(indexPath, "utf-8");
+      const indexData = JSON.parse(content) as IndexData;
+
+      // Verify structure
+      expect(indexData).toHaveProperty("version");
+      expect(indexData).toHaveProperty("lastUpdated");
+      expect(indexData).toHaveProperty("fileList");
+      expect(indexData).toHaveProperty("contentIndex");
+
+      // Verify types
+      expect(typeof indexData.version).toBe("string");
+      expect(typeof indexData.lastUpdated).toBe("number");
+      expect(Array.isArray(indexData.fileList)).toBe(true);
+      expect(typeof indexData.contentIndex).toBe("object");
+    });
+
+    test("fileList entries have correct structure", async () => {
+      await manager.rebuildIndex();
+      await manager.saveIndex();
+
+      const indexPath = manager.getIndexPath();
+      const content = await readFile(indexPath, "utf-8");
+      const indexData = JSON.parse(content) as IndexData & {
+        fileList: Array<{ path: string; name: string; mtime: number }>;
+      };
+
+      expect(indexData.fileList.length).toBeGreaterThan(0);
+
+      const file = indexData.fileList[0];
+      expect(file).toHaveProperty("path");
+      expect(file).toHaveProperty("name");
+      expect(file).toHaveProperty("mtime");
+      expect(typeof file.path).toBe("string");
+      expect(typeof file.name).toBe("string");
+      expect(typeof file.mtime).toBe("number");
+    });
   });
 });

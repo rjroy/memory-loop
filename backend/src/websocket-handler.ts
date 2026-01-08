@@ -1171,10 +1171,15 @@ export class WebSocketHandler {
     // Clear session ID - next discussion_message will create a new session
     this.state.currentSessionId = null;
 
+    // Load cached slash commands so autocomplete remains available
+    const vaultConfig = await loadVaultConfig(this.state.currentVault.path);
+    const cachedCommands = vaultConfig.slashCommands;
+
     this.send(ws, {
       type: "session_ready",
       sessionId: "", // Empty indicates new session will be created
       vaultId: this.state.currentVault.id,
+      slashCommands: cachedCommands && cachedCommands.length > 0 ? cachedCommands : undefined,
     });
   }
 

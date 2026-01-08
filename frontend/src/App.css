@@ -43,6 +43,10 @@
   background-image: url('/images/holiday/valentine-bg-vault.webp');
 }
 
+.app[data-holiday="stpatricks"]::before {
+  background-image: url('/images/holiday/stpatricks-bg-vault.webp');
+}
+
 .app[data-holiday="easter"]::before {
   background-image: url('/images/holiday/easter-bg-vault.webp');
 }

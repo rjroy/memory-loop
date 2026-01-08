@@ -32,6 +32,23 @@
 }
 
 /* ============================================
+   St. Patrick's Day - Irish Green
+
+   Deep emerald base with shamrock and gold accents.
+   Traditional Irish celebration feel.
+   ============================================ */
+[data-holiday="stpatricks"] {
+  --color-background: oklch(0.11 0.05 145);       /* Deep emerald */
+  --color-accent-primary: oklch(0.52 0.14 145);   /* Shamrock green */
+  --color-accent-secondary: oklch(0.72 0.14 95);  /* Celtic gold */
+  --color-accent-tertiary: oklch(0.45 0.10 145);  /* Forest green */
+  --color-accent-quartary: oklch(0.80 0.08 100);  /* Light gold */
+  --holiday-hue-rotate: 120deg;                   /* Shift to green */
+
+  @include derived-colors;
+}
+
+/* ============================================
    Easter - Spring Pastels
 
    Soft lavender base with pastel accents.

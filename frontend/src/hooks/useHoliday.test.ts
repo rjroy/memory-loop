@@ -38,6 +38,28 @@ describe("getHoliday", () => {
     });
   });
 
+  describe("St. Patrick's Day", () => {
+    // 2024: March 17 is Sunday, week is March 17 (Sun) - March 23 (Sat)
+    test("returns stpatricks for week containing March 17", () => {
+      expect(getHoliday(new Date(2024, 2, 17))).toBe("stpatricks"); // Sunday
+      expect(getHoliday(new Date(2024, 2, 20))).toBe("stpatricks"); // Wednesday
+      expect(getHoliday(new Date(2024, 2, 23))).toBe("stpatricks"); // Saturday
+    });
+
+    test("does not return stpatricks outside the week", () => {
+      expect(getHoliday(new Date(2024, 2, 16))).not.toBe("stpatricks");
+      expect(getHoliday(new Date(2024, 2, 24))).not.toBe("stpatricks");
+    });
+
+    // 2025: March 17 is Monday, week is March 16 (Sun) - March 22 (Sat)
+    test("handles different years correctly", () => {
+      expect(getHoliday(new Date(2025, 2, 16))).toBe("stpatricks");
+      expect(getHoliday(new Date(2025, 2, 17))).toBe("stpatricks");
+      expect(getHoliday(new Date(2025, 2, 22))).toBe("stpatricks");
+      expect(getHoliday(new Date(2025, 2, 23))).not.toBe("stpatricks");
+    });
+  });
+
   describe("Easter", () => {
     // 2024: Easter is March 31, range is March 24 - April 6
     test("returns easter for 2 weeks centered on Easter Sunday", () => {

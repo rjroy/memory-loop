@@ -1,0 +1,145 @@
+/**
+ * Derived Color Definitions
+ *
+ * Mixin containing all colors derived from the 5 base colors.
+ * Used in both :root (index.scss) and [data-holiday] (holidays.scss)
+ * to ensure derived colors recalculate when base colors change.
+ *
+ * Base colors (defined elsewhere):
+ * - --color-background
+ * - --color-accent-primary
+ * - --color-accent-secondary
+ * - --color-accent-tertiary
+ * - --color-accent-quartary
+ */
+
+@mixin derived-colors {
+  /* Surfaces & Borders (from background) */
+  --color-surface: oklch(from var(--color-background) calc(l + 0.05) calc(c + 0.01) h);
+  --color-surface-elevated: oklch(from var(--color-background) calc(l + 0.10) calc(c + 0.02) h);
+  --color-border: oklch(from var(--color-background) calc(l + 0.15) calc(c + 0.02) h);
+
+  /* Accent Variants (from accent-primary) */
+  --color-accent: var(--color-accent-primary);
+  --color-accent-hover: oklch(from var(--color-accent-primary) calc(l + 0.08) c h);
+
+  /* Text Accent Colors (from accents) */
+  --color-text-accent-primary: oklch(from var(--color-accent-primary) calc(l + 0.17) c h);
+  --color-text-accent-secondary: var(--color-accent-secondary);
+  --color-text-accent-tertiary: var(--color-accent-tertiary);
+  --color-text-accent-quartary: var(--color-accent-quartary);
+  --color-text-accent: var(--color-text-accent-primary);
+
+  /* Status text colors - same as status (already WCAG compliant) */
+  --color-text-error: var(--color-error);
+  --color-text-success: var(--color-success);
+  --color-text-warning: var(--color-warning);
+
+  /* Text Hierarchy (from accents) */
+  --color-text-primary: oklch(from var(--color-accent-primary) 0.96 0.01 h);
+  --color-text-secondary: oklch(from var(--color-accent-primary) 0.89 0.02 h);
+  --color-text-muted: oklch(from var(--color-accent-secondary) 0.72 0.12 h);
+  --color-text-heading: var(--color-text-accent-quartary);
+  --color-text-highlight: oklch(from var(--color-text-accent-quartary) calc(l + 0.15) c h);
+
+  /* Status backgrounds - darkened versions */
+  --color-bg-error: oklch(from var(--color-error) calc(l / 4) c h);
+  --color-bg-warning: oklch(from var(--color-warning) calc(l / 4) c h);
+  --color-bg-success: oklch(from var(--color-success) calc(l / 4) c h);
+
+  /* Alpha Variants - Accent Primary */
+  --color-accent-primary-a05: oklch(from var(--color-accent-primary) l c h / 0.05);
+  --color-accent-primary-a08: oklch(from var(--color-accent-primary) l c h / 0.08);
+  --color-accent-primary-a10: oklch(from var(--color-accent-primary) l c h / 0.10);
+  --color-accent-primary-a12: oklch(from var(--color-accent-primary) l c h / 0.12);
+  --color-accent-primary-a15: oklch(from var(--color-accent-primary) l c h / 0.15);
+  --color-accent-primary-a20: oklch(from var(--color-accent-primary) l c h / 0.20);
+  --color-accent-primary-a25: oklch(from var(--color-accent-primary) l c h / 0.25);
+  --color-accent-primary-a30: oklch(from var(--color-accent-primary) l c h / 0.30);
+  --color-accent-primary-a40: oklch(from var(--color-accent-primary) l c h / 0.40);
+
+  /* Alpha Variants - Accent Secondary */
+  --color-accent-secondary-a10: oklch(from var(--color-accent-secondary) l c h / 0.10);
+  --color-accent-secondary-a15: oklch(from var(--color-accent-secondary) l c h / 0.15);
+  --color-accent-secondary-a30: oklch(from var(--color-accent-secondary) l c h / 0.30);
+  --color-accent-secondary-a40: oklch(from var(--color-accent-secondary) l c h / 0.40);
+
+  /* Alpha Variants - Accent Tertiary */
+  --color-accent-tertiary-a40: oklch(from var(--color-accent-tertiary) l c h / 0.40);
+
+  /* Alpha Variants - Accent Quartary */
+  --color-accent-quartary-a40: oklch(from var(--color-accent-quartary) l c h / 0.40);
+
+  /* Alpha Variants - Error */
+  --color-error-a10: oklch(from var(--color-error) l c h / 0.10);
+  --color-error-a30: oklch(from var(--color-error) l c h / 0.30);
+  --color-error-a40: oklch(from var(--color-error) l c h / 0.40);
+
+  /* Alpha Variants - Success */
+  --color-success-a10: oklch(from var(--color-success) l c h / 0.10);
+  --color-success-a20: oklch(from var(--color-success) l c h / 0.20);
+  --color-success-a30: oklch(from var(--color-success) l c h / 0.30);
+
+  /* Alpha Variants - Black (Shadows & Overlays) */
+  --color-black-a20: oklch(0 0 0 / 0.20);
+  --color-black-a30: oklch(0 0 0 / 0.30);
+  --color-black-a40: oklch(0 0 0 / 0.40);
+  --color-black-a50: oklch(0 0 0 / 0.50);
+  --color-black-a60: oklch(0 0 0 / 0.60);
+
+  /* Alpha Variants - White (Highlights & Borders) */
+  --color-white-a03: oklch(1 0 0 / 0.03);
+  --color-white-a05: oklch(1 0 0 / 0.05);
+  --color-white-a07: oklch(1 0 0 / 0.07);
+  --color-white-a10: oklch(1 0 0 / 0.10);
+  --color-white-a30: oklch(1 0 0 / 0.30);
+
+  /* Alpha Variants - Background & Surface */
+  --color-background-a60: oklch(from var(--color-background) l c h / 0.60);
+  --color-surface-a90: oklch(from var(--color-surface) l c h / 0.90);
+  --color-surface-a95: oklch(from var(--color-surface) l c h / 0.95);
+
+  /* Semantic Aliases */
+  --color-bg: var(--color-background);
+  --color-bg-secondary: var(--color-surface);
+  --color-bg-tertiary: var(--color-surface-elevated);
+  --color-text: var(--color-text-primary);
+
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, var(--color-accent-primary) 0%, var(--color-accent-secondary) 100%);
+  --gradient-secondary: linear-gradient(135deg, var(--color-accent-tertiary) 0%, var(--color-accent-primary) 100%);
+  --gradient-tertiary: linear-gradient(135deg, oklch(from var(--color-accent-quartary) calc(l - 0.2) c h) 0%, oklch(from var(--color-accent-secondary) calc(l - 0.15) c h) 100%);
+  --gradient-text-primary: linear-gradient(135deg, var(--color-text-accent-primary) 0%, var(--color-text-accent-secondary) 100%);
+  --gradient-secondary-hover: linear-gradient(135deg, oklch(from var(--color-accent-tertiary) calc(l + 0.08) c h) 0%, var(--color-accent-hover) 100%);
+  --gradient-surface: linear-gradient(180deg, var(--color-surface) 0%, var(--color-background) 100%);
+  --gradient-error: linear-gradient(135deg, var(--color-error) 0%, oklch(from var(--color-error) calc(l - 0.14) c h) 100%);
+
+  /* Glassmorphism */
+  --glass-bg: var(--color-surface-a90);
+  --glass-bg-primary: oklch(from var(--color-accent-primary) 0.22 0.04 h / 0.85);
+  --glass-bg-primary-button: oklch(from var(--color-accent-primary) 0.25 0.05 h / 0.85);
+  --glass-bg-primary-hover: oklch(from var(--color-accent-primary) 0.32 0.06 h / 0.85);
+  --glass-bg-secondary: oklch(from var(--color-accent-secondary) 0.22 0.04 h / 0.85);
+  --glass-bg-tertiary: oklch(from var(--color-accent-tertiary) 0.22 0.04 h / 0.85);
+  --glass-bg-quartary: oklch(from var(--color-accent-quartary) 0.22 0.04 h / 0.85);
+  --glass-border: var(--color-accent-primary-a25);
+  --glass-border-hover: oklch(from var(--color-accent-primary) l c h / 0.5);
+  --glass-border-accent: oklch(from var(--color-accent-tertiary) l c h / 0.5);
+  --glass-blur: 10px;
+  --glass-blur-light: 2px;
+  --glass-shadow:
+    0 4px 24px var(--color-black-a30),
+    inset 0 1px 0 var(--color-white-a07),
+    inset 0 -1px 0 var(--color-black-a20);
+  --glass-shadow-hover:
+    0 8px 32px var(--color-black-a40),
+    0 0 24px var(--color-accent-primary-a15),
+    inset 0 1px 0 var(--color-white-a10);
+
+  /* Glow Effects */
+  --glow-primary: 0 0 20px var(--color-accent-primary-a40);
+  --glow-secondary: 0 0 20px var(--color-accent-secondary-a40);
+  --glow-tertiary: 0 0 20px var(--color-accent-tertiary-a40);
+  --glow-quartary: 0 0 20px var(--color-accent-quartary-a40);
+  --glow-success: 0 0 20px var(--color-success-a30);
+}

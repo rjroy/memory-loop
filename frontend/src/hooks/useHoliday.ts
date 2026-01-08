@@ -139,12 +139,22 @@ export function getHoliday(date: Date = new Date()): Holiday {
   return null;
 }
 
+const VALID_HOLIDAYS = ['valentine', 'easter', 'summer', 'halloween', 'thanksgiving', 'christmas'] as const;
+
 /**
  * React hook that returns the current holiday.
- * Re-checks at midnight in case the date changes while the app is open.
+ * Supports ?holiday=<name> query parameter for testing or mood-based override.
+ * Use ?holiday=none to disable holiday theming.
  */
 export function useHoliday(): Holiday {
-  // For SSR safety and to avoid hydration mismatches, we just calculate once.
-  // The date doesn't change often enough to warrant a subscription.
+  // Check for query parameter override
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const override = params.get('holiday');
+    if (override === 'none') return null;
+    if (VALID_HOLIDAYS.includes(override as typeof VALID_HOLIDAYS[number])) {
+      return override as Holiday;
+    }
+  }
   return getHoliday();
 }

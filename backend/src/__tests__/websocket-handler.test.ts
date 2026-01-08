@@ -216,7 +216,7 @@ void mock.module("../task-manager", () => ({
 // Mock vault config
 const mockLoadVaultConfig = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (vaultPath: string) => Promise<Record<string, string>>
+  (vaultPath: string) => Promise<Record<string, unknown>>
 >(() => Promise.resolve({}));
 
 void mock.module("../vault-config", () => ({
@@ -1923,6 +1923,52 @@ describe("WebSocket Handler", () => {
       expect(activeInterrupt).toHaveBeenCalled();
 
       await discussionPromise;
+    });
+
+    test("includes cached slash commands in response", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const cachedCommands = [
+        { name: "/recall", description: "Search vault" },
+        { name: "/tasks", description: "List tasks" },
+      ];
+      mockLoadVaultConfig.mockResolvedValue({
+        slashCommands: cachedCommands,
+      });
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "session-to-clear",
+        events: (async function* () {})(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault and create session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      // Clear session
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "new_session" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("session_ready");
+      if (message?.type === "session_ready") {
+        expect(message.sessionId).toBe("");
+        expect(message.vaultId).toBe("test-vault");
+        expect(message.slashCommands).toEqual(cachedCommands);
+      }
     });
   });
 

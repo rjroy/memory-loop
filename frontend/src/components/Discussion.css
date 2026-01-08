@@ -57,6 +57,7 @@
   width: 60px;
   height: 60px;
   background-image: url('/images/empty-state.webp');
+  filter: hue-rotate(var(--holiday-hue-rotate, 0deg));
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;

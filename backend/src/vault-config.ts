@@ -73,6 +73,13 @@ export interface VaultConfig {
   areaPath?: string;
 
   /**
+   * Path to attachments directory for uploaded images.
+   * Relative to contentRoot.
+   * Default: "05_Attachments"
+   */
+  attachmentPath?: string;
+
+  /**
    * Cached slash commands from Claude Code SDK.
    * Stored to provide autocomplete before SDK session is established.
    */
@@ -119,6 +126,11 @@ export const DEFAULT_PROJECT_PATH = "01_Projects";
  * Default area path relative to content root.
  */
 export const DEFAULT_AREA_PATH = "02_Areas";
+
+/**
+ * Default attachment path relative to content root.
+ */
+export const DEFAULT_ATTACHMENT_PATH = "05_Attachments";
 
 /**
  * Default number of prompts to generate per cycle.
@@ -202,6 +214,10 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
 
     if (typeof obj.areaPath === "string") {
       config.areaPath = obj.areaPath;
+    }
+
+    if (typeof obj.attachmentPath === "string") {
+      config.attachmentPath = obj.attachmentPath;
     }
 
     if (Array.isArray(obj.slashCommands)) {
@@ -340,6 +356,16 @@ export function resolveProjectPath(config: VaultConfig): string {
  */
 export function resolveAreaPath(config: VaultConfig): string {
   return config.areaPath ?? DEFAULT_AREA_PATH;
+}
+
+/**
+ * Resolves the attachments directory path relative to content root.
+ *
+ * @param config - Vault configuration
+ * @returns Relative path to attachments directory (from content root)
+ */
+export function resolveAttachmentPath(config: VaultConfig): string {
+  return config.attachmentPath ?? DEFAULT_ATTACHMENT_PATH;
 }
 
 /**

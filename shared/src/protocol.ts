@@ -50,6 +50,7 @@ export const VaultInfoSchema = z.object({
   inboxPath: z.string().min(1, "Inbox path is required"),
   metadataPath: z.string().min(1, "Metadata path is required"),
   goalsPath: z.string().optional(),
+  attachmentPath: z.string().min(1, "Attachment path is required"),
   setupComplete: z.boolean(),
   promptsPerGeneration: z.number().int().positive(),
   maxPoolSize: z.number().int().positive(),

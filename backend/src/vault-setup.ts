@@ -21,6 +21,7 @@ import {
   resolveContentRoot,
   resolveProjectPath,
   resolveAreaPath,
+  resolveAttachmentPath,
   type VaultConfig,
 } from "./vault-config";
 
@@ -275,11 +276,13 @@ export async function createParaDirectories(
   const contentRoot = resolveContentRoot(vaultPath, config);
 
   // Build list of PARA directories with custom paths where configured
+  // Also includes Attachments directory for image uploads
   const paraDirs: { name: string; relativePath: string }[] = [
     { name: "Projects", relativePath: resolveProjectPath(config) },
     { name: "Areas", relativePath: resolveAreaPath(config) },
     { name: "Resources", relativePath: DEFAULT_RESOURCES_PATH },
     { name: "Archives", relativePath: DEFAULT_ARCHIVES_PATH },
+    { name: "Attachments", relativePath: resolveAttachmentPath(config) },
   ];
 
   for (const dir of paraDirs) {

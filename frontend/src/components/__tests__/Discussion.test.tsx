@@ -72,6 +72,7 @@ const testVault: VaultInfo = {
   contentRoot: "/test/vault",
   inboxPath: "inbox",
   metadataPath: "06_Metadata/memory-loop",
+      attachmentPath: "05_Attachments",
   setupComplete: false,
   promptsPerGeneration: 5,
   maxPoolSize: 50,

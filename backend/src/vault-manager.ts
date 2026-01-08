@@ -14,6 +14,7 @@ import {
   resolveContentRoot,
   resolveMetadataPath,
   resolveGoalsPath,
+  resolveAttachmentPath,
   resolvePromptsPerGeneration,
   resolveMaxPoolSize,
   resolveQuotesPerWeek,
@@ -53,6 +54,18 @@ export const INBOX_PATTERNS = [
   "inbox",
   "_Inbox",
   "0-Inbox",
+];
+
+/**
+ * Common attachment directory patterns to detect.
+ * Checked in order; first match is used.
+ */
+export const ATTACHMENT_PATTERNS = [
+  "05_Attachments",
+  "Attachments",
+  "attachments",
+  "assets",
+  "images",
 ];
 
 /**
@@ -167,6 +180,34 @@ export async function detectInboxPath(contentRoot: string): Promise<string> {
 }
 
 /**
+ * Detects the attachment path for a vault by checking common patterns.
+ *
+ * @param contentRoot - Absolute path to the content root directory
+ * @param config - Vault configuration (may contain custom attachmentPath)
+ * @returns The detected attachment path (relative to content root) or configured default
+ */
+export async function detectAttachmentPath(
+  contentRoot: string,
+  config: VaultConfig
+): Promise<string> {
+  // If configured, use that
+  if (config.attachmentPath) {
+    return config.attachmentPath;
+  }
+
+  // Otherwise detect from common patterns
+  for (const pattern of ATTACHMENT_PATTERNS) {
+    const attachmentFullPath = join(contentRoot, pattern);
+    if (await directoryExists(attachmentFullPath)) {
+      return pattern;
+    }
+  }
+
+  // Return the default from config resolver
+  return resolveAttachmentPath(config);
+}
+
+/**
  * Detects the goals.md file path for a vault.
  *
  * @param contentRoot - Absolute path to the content root directory
@@ -250,6 +291,9 @@ export async function parseVault(
   // Detect goals.md file
   const goalsPath = await detectGoalsPath(contentRoot, config);
 
+  // Detect or use configured attachment path
+  const attachmentPath = await detectAttachmentPath(contentRoot, config);
+
   // Check for setup completion marker
   const setupMarkerPath = join(vaultPath, ".memory-loop/setup-complete");
   const setupComplete = await fileExists(setupMarkerPath);
@@ -264,6 +308,7 @@ export async function parseVault(
     inboxPath,
     metadataPath,
     goalsPath,
+    attachmentPath,
     setupComplete,
     promptsPerGeneration: resolvePromptsPerGeneration(config),
     maxPoolSize: resolveMaxPoolSize(config),

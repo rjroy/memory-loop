@@ -14,6 +14,7 @@
   border-radius: inherit;
   opacity: 0.1;
   z-index: -1;
+  filter: hue-rotate(var(--holiday-hue-rotate, 0deg));
 }
 
 .goals-card {

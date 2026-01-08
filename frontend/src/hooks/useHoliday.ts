@@ -3,6 +3,7 @@
  *
  * Returns the current holiday (if any) based on date ranges:
  * - Valentine's: 1 week starting Sunday of week containing Feb 14
+ * - St. Patrick's: 1 week starting Sunday of week containing March 17
  * - Easter: 2 weeks centered on Easter Sunday
  * - Summer: 2 weeks centered on July 4th
  * - Halloween: 1 week starting Sunday of week containing Oct 31
@@ -12,6 +13,7 @@
 
 export type Holiday =
   | "valentine"
+  | "stpatricks"
   | "easter"
   | "summer"
   | "halloween"
@@ -95,6 +97,16 @@ export function getHoliday(date: Date = new Date()): Holiday {
     return "valentine";
   }
 
+  // St. Patrick's Day: 1 week starting Sunday of week containing March 17
+  const stpatricks = new Date(year, 2, 17);
+  const stpatricksStart = getSundayOfWeek(stpatricks);
+  const stpatricksEnd = new Date(stpatricksStart);
+  stpatricksEnd.setDate(stpatricksEnd.getDate() + 6);
+  stpatricksEnd.setHours(23, 59, 59, 999);
+  if (isInRange(testDate, stpatricksStart, stpatricksEnd)) {
+    return "stpatricks";
+  }
+
   // Easter: 2 weeks centered on Easter Sunday
   const easter = calculateEaster(year);
   const easterStart = new Date(easter);
@@ -139,7 +151,7 @@ export function getHoliday(date: Date = new Date()): Holiday {
   return null;
 }
 
-const VALID_HOLIDAYS = ['valentine', 'easter', 'summer', 'halloween', 'thanksgiving', 'christmas'] as const;
+const VALID_HOLIDAYS = ['valentine', 'stpatricks', 'easter', 'summer', 'halloween', 'thanksgiving', 'christmas'] as const;
 
 /**
  * React hook that returns the current holiday.

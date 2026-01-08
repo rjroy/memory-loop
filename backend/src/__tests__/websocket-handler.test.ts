@@ -157,7 +157,6 @@ void mock.module("../file-browser", () => ({
 
 // Mock inspiration manager
 const mockGetInspiration = mock<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (vaultPath: string) => Promise<{
     contextual: { text: string; attribution?: string } | null;
     quote: { text: string; attribution?: string };
@@ -215,7 +214,6 @@ void mock.module("../task-manager", () => ({
 
 // Mock vault config
 const mockLoadVaultConfig = mock<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (vaultPath: string) => Promise<Record<string, unknown>>
 >(() => Promise.resolve({}));
 
@@ -318,6 +316,7 @@ function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     contentRoot,
     inboxPath: "00_Inbox",
     metadataPath: "06_Metadata/memory-loop",
+      attachmentPath: "05_Attachments",
     setupComplete: false,
     promptsPerGeneration: 5,
     maxPoolSize: 50,

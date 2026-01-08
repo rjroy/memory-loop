@@ -1,0 +1,101 @@
+/**
+ * ImageAttachButton Styles
+ *
+ * Circular button matching the send button style.
+ */
+
+.image-attach {
+  position: relative;
+}
+
+/* Hidden file input */
+.image-attach__input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Button styling - matches send button size */
+.image-attach__button {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-light));
+  color: var(--color-text-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .image-attach__button {
+    background-color: var(--color-surface);
+  }
+}
+
+.image-attach__button:hover:not(:disabled) {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-hover);
+  color: var(--color-text);
+}
+
+/* Disable hover effects on touch devices */
+@media (hover: none) {
+  .image-attach__button:hover:not(:disabled) {
+    background: var(--glass-bg);
+    border-color: var(--glass-border);
+    color: var(--color-text-secondary);
+  }
+}
+
+.image-attach__button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.image-attach__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Error state - brief red flash */
+.image-attach__button--error {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+/* Icon */
+.image-attach__icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Spinner */
+.image-attach__spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-text-secondary-a30, rgba(255, 255, 255, 0.3));
+  border-top-color: var(--color-text-secondary);
+  border-radius: 50%;
+  animation: image-attach-spin 1s linear infinite;
+}
+
+@keyframes image-attach-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Tablet and up - larger button */
+@media (min-width: 768px) {
+  .image-attach__button {
+    width: 48px;
+    height: 48px;
+  }
+}

@@ -34,6 +34,8 @@ const markdownComponents: Components = {
 export interface MessageBubbleProps {
   /** The message to display */
   message: ConversationMessage;
+  /** Vault ID for constructing image URLs (required for user messages with images) */
+  vaultId?: string;
 }
 
 /**
@@ -44,13 +46,84 @@ function formatTime(date: Date): string {
 }
 
 /**
+ * Pattern to detect image paths in user messages.
+ * Matches paths in common attachment directories.
+ */
+const IMAGE_PATH_PATTERN =
+  /(?:05_Attachments|Attachments|attachments|assets|images)\/[\w.-]+\.(png|jpg|jpeg|gif|webp)/gi;
+
+/**
+ * Renders user message content with inline images.
+ * Detects image paths and renders them as images.
+ */
+function UserMessageContent({
+  content,
+  vaultId,
+}: {
+  content: string;
+  vaultId?: string;
+}): React.ReactNode {
+  if (!vaultId) {
+    return content;
+  }
+
+  // Find all image path matches
+  const matches: { match: string; index: number }[] = [];
+  let match: RegExpExecArray | null;
+
+  // Reset regex lastIndex for each call
+  IMAGE_PATH_PATTERN.lastIndex = 0;
+
+  while ((match = IMAGE_PATH_PATTERN.exec(content)) !== null) {
+    matches.push({ match: match[0], index: match.index });
+  }
+
+  if (matches.length === 0) {
+    return content;
+  }
+
+  // Build elements array with text and images
+  const elements: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  matches.forEach((m, i) => {
+    // Text before this match
+    if (m.index > lastIndex) {
+      elements.push(content.slice(lastIndex, m.index));
+    }
+
+    // The image
+    const imagePath = m.match;
+    const imageUrl = `/vault/${vaultId}/assets/${imagePath}`;
+    elements.push(
+      <img
+        key={`img-${i}`}
+        src={imageUrl}
+        alt={`Attached: ${imagePath}`}
+        className="message-bubble__inline-image"
+        loading="lazy"
+      />
+    );
+
+    lastIndex = m.index + m.match.length;
+  });
+
+  // Remaining text after last match
+  if (lastIndex < content.length) {
+    elements.push(content.slice(lastIndex));
+  }
+
+  return <>{elements}</>;
+}
+
+/**
  * Renders a single chat message bubble.
  *
  * - User messages: right-aligned with primary color background
  * - Assistant messages: left-aligned with secondary background, tool invocations before text
  * - Shows streaming indicator when message is still being received
  */
-export function MessageBubble({ message }: MessageBubbleProps): React.ReactNode {
+export function MessageBubble({ message, vaultId }: MessageBubbleProps): React.ReactNode {
   const hasTools = message.role === "assistant" && message.toolInvocations && message.toolInvocations.length > 0;
 
   return (
@@ -76,7 +149,7 @@ export function MessageBubble({ message }: MessageBubbleProps): React.ReactNode 
         )}
         <div className="message-bubble__text">
           {message.role === "user" ? (
-            message.content
+            <UserMessageContent content={message.content} vaultId={vaultId} />
           ) : (
             <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.content}</Markdown>
           )}

@@ -20,6 +20,7 @@ import { discoverVaults, VaultsDirError } from "./vault-manager";
 import { createWebSocketHandler } from "./websocket-handler";
 import { isPathWithinVault } from "./file-browser";
 import { getSessionForVault } from "./session-manager";
+import { uploadImage } from "./image-upload";
 import { serverLog as log } from "./logger";
 
 /**
@@ -283,6 +284,66 @@ export const createApp = () => {
       log.error(`Failed to read asset: ${assetPath}`, error);
       return c.json({ error: "Failed to read file" }, 500);
     }
+  });
+
+  // Image upload endpoint
+  // Handles multipart/form-data image uploads to vault attachments directory
+  app.post("/vault/:vaultId/upload", async (c) => {
+    const vaultId = c.req.param("vaultId");
+    log.info(`Image upload request for vault: ${vaultId}`);
+
+    // Find the vault
+    let vaults;
+    try {
+      vaults = await discoverVaults();
+    } catch (error) {
+      log.error("Failed to discover vaults for upload:", error);
+      return c.json({ error: "Internal server error" }, 500);
+    }
+
+    const vault = vaults.find((v) => v.id === vaultId);
+    if (!vault) {
+      return c.json({ error: "Vault not found" }, 404);
+    }
+
+    // Parse multipart form data
+    let formData;
+    try {
+      formData = await c.req.formData();
+    } catch (error) {
+      log.error("Failed to parse form data:", error);
+      return c.json({ error: "Failed to parse form data" }, 400);
+    }
+
+    const file = formData.get("image");
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: "No image file provided" }, 400);
+    }
+
+    // Convert to buffer
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(await file.arrayBuffer());
+    } catch (error) {
+      log.error("Failed to read file data:", error);
+      return c.json({ error: "Failed to read file data" }, 400);
+    }
+
+    // Upload image
+    const result = await uploadImage(
+      vault.path,
+      vault.contentRoot,
+      vault.attachmentPath,
+      buffer,
+      file.name
+    );
+
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+
+    return c.json({ success: true, path: result.path });
   });
 
   // WebSocket upgrade handler at /ws

@@ -259,13 +259,14 @@ describe("createParaDirectories", () => {
     const result = await createParaDirectories(vaultPath, {});
 
     expect(result.success).toBe(true);
-    expect(result.created.length).toBe(4);
+    expect(result.created.length).toBe(5);
 
     // Check directories exist
     expect(await directoryExists(join(vaultPath, "01_Projects"))).toBe(true);
     expect(await directoryExists(join(vaultPath, "02_Areas"))).toBe(true);
     expect(await directoryExists(join(vaultPath, "03_Resources"))).toBe(true);
     expect(await directoryExists(join(vaultPath, "04_Archive"))).toBe(true);
+    expect(await directoryExists(join(vaultPath, "05_Attachments"))).toBe(true);
   });
 
   test("skips existing directories", async () => {
@@ -276,9 +277,10 @@ describe("createParaDirectories", () => {
     const result = await createParaDirectories(vaultPath, {});
 
     expect(result.success).toBe(true);
-    // Should only create Resources and Archives
+    // Should only create Resources, Archives, and Attachments
     expect(result.created).toContain("Resources");
     expect(result.created).toContain("Archives");
+    expect(result.created).toContain("Attachments");
     expect(result.created).not.toContain("Projects");
     expect(result.created).not.toContain("Areas");
     expect(result.message).toContain("already existed");
@@ -338,6 +340,7 @@ describe("createParaDirectories", () => {
     await mkdir(join(vaultPath, "02_Areas"));
     await mkdir(join(vaultPath, "03_Resources"));
     await mkdir(join(vaultPath, "04_Archive"));
+    await mkdir(join(vaultPath, "05_Attachments"));
 
     const result = await createParaDirectories(vaultPath, {});
 

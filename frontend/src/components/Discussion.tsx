@@ -13,6 +13,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ToolPermissionDialog, type ToolPermissionRequest } from "./ToolPermissionDialog";
 import { SlashCommandAutocomplete, useSlashCommandNavigation } from "./SlashCommandAutocomplete";
+import { ImageAttachButton } from "./ImageAttachButton";
 import "./Discussion.css";
 
 const STORAGE_KEY = "memory-loop-discussion-draft";
@@ -364,6 +365,22 @@ export function Discussion(): React.ReactNode {
     setIsSubmitting(false);
   }
 
+  /**
+   * Handle image upload completion - append path to input.
+   * Claude can then read the image file using its Read tool.
+   */
+  const handleImageUploaded = useCallback((path: string) => {
+    setInput((prev) => {
+      const trimmed = prev.trim();
+      if (trimmed) {
+        return `${trimmed}\n${path}`;
+      }
+      return path;
+    });
+    // Focus the input so user can add a message
+    inputRef.current?.focus();
+  }, []);
+
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setInput(e.target.value);
   }
@@ -427,7 +444,7 @@ export function Discussion(): React.ReactNode {
           </div>
         ) : (
           messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+            <MessageBubble key={message.id} message={message} vaultId={vault?.id} />
           ))
         )}
         <div ref={messagesEndRef} aria-hidden="true" />
@@ -444,6 +461,10 @@ export function Discussion(): React.ReactNode {
           onSelectedIndexChange={setAutocompleteSelectedIndex}
         />
         <div className="discussion__input-row">
+          <ImageAttachButton
+            onImageUploaded={handleImageUploaded}
+            disabled={isSubmitting}
+          />
           <textarea
             ref={inputRef}
             className={`discussion__input${isFocused ? " discussion__input--expanded" : ""}`}

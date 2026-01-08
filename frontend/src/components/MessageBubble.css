@@ -75,6 +75,16 @@
   white-space: pre-wrap;
 }
 
+/* Inline images in user messages */
+.message-bubble__inline-image {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: var(--radius-md);
+  margin: var(--spacing-sm) 0;
+  object-fit: contain;
+}
+
 /* Markdown content styling for assistant messages */
 .message-bubble--assistant .message-bubble__text > :first-child {
   margin-top: 0;

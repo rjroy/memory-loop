@@ -75,6 +75,7 @@ describe("VaultInfoSchema", () => {
       contentRoot: "/vaults/my-vault",
       inboxPath: "00_Inbox",
       metadataPath: "06_Metadata/memory-loop",
+      attachmentPath: "05_Attachments",
       setupComplete: false,
     };
 
@@ -95,6 +96,7 @@ describe("VaultInfoSchema", () => {
       contentRoot: "/vaults/my-vault",
       inboxPath: "00_Inbox",
       metadataPath: "06_Metadata/memory-loop",
+      attachmentPath: "05_Attachments",
       setupComplete: false,
     };
 
@@ -855,6 +857,7 @@ describe("Server -> Client Messages", () => {
             contentRoot: "/vaults/vault-1",
             inboxPath: "00_Inbox",
             metadataPath: "06_Metadata/memory-loop",
+      attachmentPath: "05_Attachments",
             setupComplete: true,
           },
           {
@@ -865,6 +868,7 @@ describe("Server -> Client Messages", () => {
             contentRoot: "/vaults/vault-2",
             inboxPath: "Inbox",
             metadataPath: "06_Metadata/memory-loop",
+      attachmentPath: "05_Attachments",
             setupComplete: false,
           },
         ],
@@ -1789,6 +1793,7 @@ describe("Server -> Client Messages", () => {
               contentRoot: "/v1",
               inboxPath: "Inbox",
               metadataPath: "06_Metadata/memory-loop",
+      attachmentPath: "05_Attachments",
               setupComplete: false,
             },
           ],

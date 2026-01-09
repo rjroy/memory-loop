@@ -5,7 +5,7 @@
  * All operations are restricted to the vault boundary to prevent path traversal attacks.
  */
 
-import { readdir, readFile, writeFile, lstat, realpath } from "node:fs/promises";
+import { readdir, readFile, writeFile, lstat, realpath, unlink } from "node:fs/promises";
 import { join, resolve, extname } from "node:path";
 import type { FileEntry } from "@memory-loop/shared";
 import type { ErrorCode } from "@memory-loop/shared";
@@ -412,4 +412,55 @@ export async function writeMarkdownFile(
   // Write content to file
   await writeFile(targetPath, content, "utf-8");
   log.debug(`Successfully wrote ${content.length} bytes to ${relativePath}`);
+}
+
+// =============================================================================
+// File Deletion
+// =============================================================================
+
+/**
+ * Deletes a file from the vault.
+ * Only allows deleting files (not directories) for safety.
+ *
+ * @param vaultPath - Absolute path to the vault root
+ * @param relativePath - Path relative to vault root
+ * @throws PathTraversalError if path escapes vault boundary or is a symlink
+ * @throws FileNotFoundError if file does not exist
+ * @throws InvalidFileTypeError if target is a directory (not a file)
+ */
+export async function deleteFile(
+  vaultPath: string,
+  relativePath: string
+): Promise<void> {
+  log.info(`Deleting file: ${relativePath} in ${vaultPath}`);
+
+  // Validate path is within vault
+  const targetPath = await validatePath(vaultPath, relativePath);
+
+  // Check if target exists and is a file (not symlink or directory)
+  try {
+    const stats = await lstat(targetPath);
+
+    if (stats.isSymbolicLink()) {
+      log.warn(`Symlink rejected for delete: ${relativePath}`);
+      throw new PathTraversalError(
+        `Path "${relativePath}" is a symbolic link and cannot be deleted`
+      );
+    }
+
+    if (!stats.isFile()) {
+      throw new InvalidFileTypeError(
+        `Can only delete files, not directories. Path "${relativePath}" is a directory`
+      );
+    }
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    throw new FileNotFoundError(`File "${relativePath}" does not exist`);
+  }
+
+  // Delete the file
+  await unlink(targetPath);
+  log.info(`Successfully deleted file: ${relativePath}`);
 }

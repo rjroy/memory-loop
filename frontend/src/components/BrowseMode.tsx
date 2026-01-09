@@ -206,6 +206,22 @@ export function BrowseMode(): React.ReactNode {
         sendMessage({ type: "read_file", path: lastMessage.path });
         break;
 
+      case "file_deleted": {
+        // File deleted - refresh parent directory and clear view if needed
+        const deletedPath = lastMessage.path;
+        const parentPath = deletedPath.includes("/")
+          ? deletedPath.substring(0, deletedPath.lastIndexOf("/"))
+          : "";
+        // Refresh the parent directory listing
+        sendMessage({ type: "list_directory", path: parentPath });
+        // If the deleted file was currently being viewed, clear the view
+        if (browser.currentPath === deletedPath) {
+          setCurrentPath("");
+          setFileContent("", false);
+        }
+        break;
+      }
+
       case "tasks":
         // Task list received from server
         setTasks(lastMessage.tasks);
@@ -235,7 +251,7 @@ export function BrowseMode(): React.ReactNode {
         setSnippets(lastMessage.path, lastMessage.snippets);
         break;
     }
-  }, [lastMessage, cacheDirectory, setFileContent, setFileError, setFileLoading, saveSuccess, saveError, sendMessage, setTasks, updateTask, setTasksError, setSearchResults, setSearchLoading, setSnippets]);
+  }, [lastMessage, cacheDirectory, setFileContent, setFileError, setFileLoading, saveSuccess, saveError, sendMessage, setTasks, updateTask, setTasksError, setSearchResults, setSearchLoading, setSnippets, browser.currentPath, setCurrentPath]);
 
   // Handle directory load request from FileTree
   const handleLoadDirectory = useCallback(
@@ -244,6 +260,14 @@ export function BrowseMode(): React.ReactNode {
       sendMessage({ type: "list_directory", path });
     },
     [sendMessage, setFileLoading]
+  );
+
+  // Handle file deletion from FileTree context menu
+  const handleDeleteFile = useCallback(
+    (path: string) => {
+      sendMessage({ type: "delete_file", path });
+    },
+    [sendMessage]
   );
 
   // Handle file selection from FileTree
@@ -476,7 +500,7 @@ export function BrowseMode(): React.ReactNode {
                 onRequestSnippets={handleRequestSnippets}
               />
             ) : viewMode === "files" ? (
-              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
+              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} />
             ) : (
               <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
             )}
@@ -589,7 +613,7 @@ export function BrowseMode(): React.ReactNode {
                   onRequestSnippets={handleRequestSnippets}
                 />
               ) : viewMode === "files" ? (
-                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} />
+                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} />
               ) : (
                 <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
               )}

@@ -8,6 +8,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { FileEntry } from "@memory-loop/shared";
 import { useSession } from "../contexts/SessionContext";
+import { ConfirmDialog } from "./ConfirmDialog";
 import "./FileTree.css";
 
 /**
@@ -18,6 +19,8 @@ export interface FileTreeProps {
   onFileSelect?: (path: string) => void;
   /** Callback when a directory needs to be loaded */
   onLoadDirectory?: (path: string) => void;
+  /** Callback when a file deletion is requested */
+  onDeleteFile?: (path: string) => void;
 }
 
 /**
@@ -270,6 +273,28 @@ function PinIcon(): React.ReactNode {
 }
 
 /**
+ * Trash icon for delete action.
+ */
+function TrashIcon(): React.ReactNode {
+  return (
+    <svg
+      className="file-tree__icon-svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
+/**
  * Context menu state for pin/unpin actions.
  */
 interface ContextMenuState {
@@ -290,7 +315,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -301,6 +326,7 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
     y: 0,
   });
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null);
 
   // Track which directories are currently loading
   // For now we just use isLoading for the overall state
@@ -415,6 +441,22 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
     unpinFolder(contextMenu.path);
     closeContextMenu();
   }, [contextMenu.path, unpinFolder, closeContextMenu]);
+
+  const handleDeleteClick = useCallback(() => {
+    setPendingDeletePath(contextMenu.path);
+    closeContextMenu();
+  }, [contextMenu.path, closeContextMenu]);
+
+  const handleConfirmDelete = useCallback(() => {
+    if (pendingDeletePath && onDeleteFile) {
+      onDeleteFile(pendingDeletePath);
+    }
+    setPendingDeletePath(null);
+  }, [pendingDeletePath, onDeleteFile]);
+
+  const handleCancelDelete = useCallback(() => {
+    setPendingDeletePath(null);
+  }, []);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -548,8 +590,29 @@ export function FileTree({ onFileSelect, onLoadDirectory }: FileTreeProps): Reac
             <PinIcon />
             <span>{isPinned ? "Unpin folder" : "Pin to top"}</span>
           </button>
+          {!contextMenu.isDirectory && onDeleteFile && (
+            <button
+              type="button"
+              className="file-tree__context-menu-item file-tree__context-menu-item--danger"
+              onClick={handleDeleteClick}
+              role="menuitem"
+            >
+              <TrashIcon />
+              <span>Delete file</span>
+            </button>
+          )}
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        isOpen={pendingDeletePath !== null}
+        title="Delete File?"
+        message="This cannot be undone! The file will be permanently deleted from your vault."
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+      />
     </nav>
   );
 }

@@ -7,7 +7,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rm, symlink, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -17,6 +17,7 @@ import {
   listDirectory,
   readMarkdownFile,
   writeMarkdownFile,
+  deleteFile,
   MAX_FILE_SIZE,
   PathTraversalError,
   DirectoryNotFoundError,
@@ -1317,6 +1318,190 @@ describe("TSV file writing", () => {
       expect.unreachable("Should have thrown FileNotFoundError");
     } catch (error) {
       expect(error).toBeInstanceOf(FileNotFoundError);
+    }
+  });
+});
+
+// =============================================================================
+// deleteFile Tests
+// =============================================================================
+
+describe("deleteFile", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("deletes an existing file", async () => {
+    const filePath = join(testDir, "to-delete.txt");
+    await writeFile(filePath, "content to delete");
+
+    await deleteFile(testDir, "to-delete.txt");
+
+    // Verify file no longer exists
+    try {
+      await stat(filePath);
+      expect.unreachable("File should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  test("deletes file with .md extension", async () => {
+    const filePath = join(testDir, "note.md");
+    await writeFile(filePath, "# Note");
+
+    await deleteFile(testDir, "note.md");
+
+    try {
+      await stat(filePath);
+      expect.unreachable("File should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  test("deletes file in nested directory", async () => {
+    await mkdir(join(testDir, "folder", "subfolder"), { recursive: true });
+    const filePath = join(testDir, "folder", "subfolder", "nested.txt");
+    await writeFile(filePath, "nested content");
+
+    await deleteFile(testDir, "folder/subfolder/nested.txt");
+
+    try {
+      await stat(filePath);
+      expect.unreachable("File should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  test("throws FileNotFoundError for non-existent file", async () => {
+    try {
+      await deleteFile(testDir, "does-not-exist.txt");
+      expect.unreachable("Should have thrown FileNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileNotFoundError);
+    }
+  });
+
+  test("throws InvalidFileTypeError for directories", async () => {
+    await mkdir(join(testDir, "a-directory"));
+
+    try {
+      await deleteFile(testDir, "a-directory");
+      expect.unreachable("Should have thrown InvalidFileTypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileTypeError);
+      expect((error as InvalidFileTypeError).message).toContain("directory");
+    }
+  });
+
+  test("throws PathTraversalError for path traversal attempts", async () => {
+    // Create a file outside the vault
+    const outsideDir = await createTestDir();
+    try {
+      await writeFile(join(outsideDir, "secret.txt"), "secret content");
+
+      try {
+        await deleteFile(testDir, `../${outsideDir.split("/").pop()}/secret.txt`);
+        expect.unreachable("Should have thrown PathTraversalError");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PathTraversalError);
+      }
+    } finally {
+      await cleanupTestDir(outsideDir);
+    }
+  });
+
+  test("throws PathTraversalError for absolute path", async () => {
+    const outsideFile = "/etc/passwd";
+    try {
+      await deleteFile(testDir, outsideFile);
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("throws PathTraversalError for symlink", async () => {
+    const realFile = join(testDir, "real.txt");
+    await writeFile(realFile, "real content");
+    const linkPath = join(testDir, "link.txt");
+
+    try {
+      await symlink(realFile, linkPath);
+
+      try {
+        await deleteFile(testDir, "link.txt");
+        expect.unreachable("Should have thrown PathTraversalError");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PathTraversalError);
+        expect((error as PathTraversalError).message).toContain("symbolic link");
+      }
+
+      // Verify original file was NOT deleted
+      const fileContent = await readFile(realFile, "utf-8");
+      expect(fileContent).toBe("real content");
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.includes("EPERM") ||
+          error.message.includes("operation not permitted"))
+      ) {
+        console.log("Skipping symlink test - not supported on this platform");
+        return;
+      }
+      throw error;
+    }
+  });
+
+  test("handles file with spaces in name", async () => {
+    const filePath = join(testDir, "my file.txt");
+    await writeFile(filePath, "content");
+
+    await deleteFile(testDir, "my file.txt");
+
+    try {
+      await stat(filePath);
+      expect.unreachable("File should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  test("handles file with special characters", async () => {
+    const fileName = "file-with_special.chars(2025).txt";
+    const filePath = join(testDir, fileName);
+    await writeFile(filePath, "content");
+
+    await deleteFile(testDir, fileName);
+
+    try {
+      await stat(filePath);
+      expect.unreachable("File should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  test("handles file with unicode name", async () => {
+    const fileName = "日本語ファイル.txt";
+    const filePath = join(testDir, fileName);
+    await writeFile(filePath, "content");
+
+    await deleteFile(testDir, fileName);
+
+    try {
+      await stat(filePath);
+      expect.unreachable("File should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
     }
   });
 });

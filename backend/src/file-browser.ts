@@ -287,15 +287,15 @@ export interface FileReadResult {
 }
 
 /**
- * Reads a markdown file from the vault.
- * Files larger than 1MB are truncated.
+ * Reads a text file from the vault.
+ * Supports .md and .json files. Files larger than 1MB are truncated.
  *
  * @param vaultPath - Absolute path to the vault root
  * @param relativePath - Path relative to vault root
  * @returns FileReadResult with content and truncation status
  * @throws PathTraversalError if path escapes vault boundary
  * @throws FileNotFoundError if file does not exist
- * @throws InvalidFileTypeError if file is not a .md file
+ * @throws InvalidFileTypeError if file is not an allowed text file (.md, .json)
  */
 export async function readMarkdownFile(
   vaultPath: string,
@@ -360,15 +360,15 @@ export async function readMarkdownFile(
 // =============================================================================
 
 /**
- * Writes content to a markdown file in the vault.
- * Only allows writing to existing .md files within the vault boundary.
+ * Writes content to a text file in the vault.
+ * Supports .md and .json files. Only allows writing to existing files.
  *
  * @param vaultPath - Absolute path to the vault root
  * @param relativePath - Path relative to vault root
  * @param content - Content to write to the file
  * @throws PathTraversalError if path escapes vault boundary
  * @throws FileNotFoundError if file does not exist (no new file creation)
- * @throws InvalidFileTypeError if file is not a .md file
+ * @throws InvalidFileTypeError if file is not an allowed text file (.md, .json)
  */
 export async function writeMarkdownFile(
   vaultPath: string,

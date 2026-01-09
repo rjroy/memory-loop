@@ -20,6 +20,11 @@ export const IMAGE_EXTENSIONS = new Set([
 ]);
 
 /**
+ * Supported video file extensions (lowercase, without dot).
+ */
+export const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "ogg", "m4v"]);
+
+/**
  * Checks if a file path is an image based on its extension.
  *
  * @param path - File path to check
@@ -32,6 +37,31 @@ export function isImageFile(path: string): boolean {
   }
   const ext = path.slice(lastDot + 1).toLowerCase();
   return IMAGE_EXTENSIONS.has(ext);
+}
+
+/**
+ * Checks if a file path is a video based on its extension.
+ *
+ * @param path - File path to check
+ * @returns true if the file has a recognized video extension
+ */
+export function isVideoFile(path: string): boolean {
+  const lastDot = path.lastIndexOf(".");
+  if (lastDot === -1 || lastDot === path.length - 1) {
+    return false;
+  }
+  const ext = path.slice(lastDot + 1).toLowerCase();
+  return VIDEO_EXTENSIONS.has(ext);
+}
+
+/**
+ * Checks if a file path is a PDF file.
+ *
+ * @param path - File path to check
+ * @returns true if the file has .pdf extension
+ */
+export function isPdfFile(path: string): boolean {
+  return path.toLowerCase().endsWith(".pdf");
 }
 
 /**

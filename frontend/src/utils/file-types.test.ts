@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { isImageFile, isMarkdownFile, isJsonFile, encodeAssetPath } from "./file-types";
+import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, encodeAssetPath } from "./file-types";
 
 describe("isImageFile", () => {
   test("returns true for common image extensions", () => {
@@ -30,6 +30,53 @@ describe("isImageFile", () => {
     expect(isImageFile("document.md")).toBe(false);
     expect(isImageFile("script.js")).toBe(false);
     expect(isImageFile("noextension")).toBe(false);
+  });
+});
+
+describe("isVideoFile", () => {
+  test("returns true for common video extensions", () => {
+    expect(isVideoFile("movie.mp4")).toBe(true);
+    expect(isVideoFile("clip.mov")).toBe(true);
+    expect(isVideoFile("video.webm")).toBe(true);
+    expect(isVideoFile("audio.ogg")).toBe(true);
+    expect(isVideoFile("movie.m4v")).toBe(true);
+  });
+
+  test("returns true regardless of case", () => {
+    expect(isVideoFile("movie.MP4")).toBe(true);
+    expect(isVideoFile("clip.MOV")).toBe(true);
+    expect(isVideoFile("video.WebM")).toBe(true);
+  });
+
+  test("works with paths", () => {
+    expect(isVideoFile("videos/movie.mp4")).toBe(true);
+    expect(isVideoFile("deep/nested/path/clip.mov")).toBe(true);
+  });
+
+  test("returns false for non-video files", () => {
+    expect(isVideoFile("document.md")).toBe(false);
+    expect(isVideoFile("photo.png")).toBe(false);
+    expect(isVideoFile("script.js")).toBe(false);
+    expect(isVideoFile("noextension")).toBe(false);
+  });
+});
+
+describe("isPdfFile", () => {
+  test("returns true for .pdf files", () => {
+    expect(isPdfFile("document.pdf")).toBe(true);
+    expect(isPdfFile("report.PDF")).toBe(true);
+  });
+
+  test("works with paths", () => {
+    expect(isPdfFile("docs/report.pdf")).toBe(true);
+    expect(isPdfFile("deep/nested/path/document.pdf")).toBe(true);
+  });
+
+  test("returns false for non-pdf files", () => {
+    expect(isPdfFile("document.md")).toBe(false);
+    expect(isPdfFile("photo.png")).toBe(false);
+    expect(isPdfFile("script.js")).toBe(false);
+    expect(isPdfFile("noextension")).toBe(false);
   });
 });
 

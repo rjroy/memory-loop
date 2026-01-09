@@ -5,6 +5,85 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-01-09
+
+### Added
+
+**Browse Mode Enhancements**
+- Download option for unsupported file types (#219)
+- Upload support for additional file types (#217)
+- File deletion via context menu (#215)
+- CSV/TSV files rendered as tables (#213)
+- TXT file viewing (#212)
+- JSON, video, and PDF file viewing (#210)
+- Image rendering when file selected (#206)
+
+**Discussion Mode**
+- Image upload capability (#201)
+- Slash command autocomplete with cached commands for immediate availability (#157, #159)
+- Vault transfer MCP tool for cross-vault file operations (#154)
+
+**Vault Configuration**
+- Custom badges for vault cards (#194)
+- Vault title and subtitle parsing with config overrides (#181, #193)
+- Setup button on vault select screen (#168)
+- Configurable generation settings for inspiration content (#182)
+
+**Search & Task Management**
+- Search functionality in Recall tab (#191)
+- Right-click context menu for task state selection (#167)
+
+**Infrastructure**
+- HTTPS/TLS support via environment variables (#188)
+- HTTP to HTTPS redirect server when TLS enabled (#189)
+- Version watermark showing git commit hash in header (#216)
+
+**Theming**
+- Seasonal holiday theming system with SCSS (#197)
+- St. Patrick's Day holiday theme (#199)
+- Hue-rotate filters for background images on holidays (#198)
+- Holiday-themed backgrounds and logos (#156)
+- Debrief action buttons replacing vault stats (#146)
+
+**Usability**
+- Enter key submission for NoteCapture (#176)
+- Recency-weighted selection for contextual prompts (#180)
+
+### Changed
+
+- Note capture placeholder now shows destination (#155)
+- Updated logo to match Sunset Sky theme (#149)
+- WCAG color system improvements with Sunset Sky theme (#148)
+- Streaming cursor replaced with pulsing orb (#141)
+- Increased font size for InspirationCard text (#140)
+- Capture button moved above textarea for iOS keyboard visibility (#138)
+- Updated font usage with 3 additional fonts (#137)
+- Added glass background to empty-state, improved contrast on inspiration (#136)
+- Debrief color adjusted (#147)
+- Text gradient corrected (#150)
+
+### Fixed
+
+- Span wrappers on plain text in list items with links (#220)
+- VaultId missing from image asset URLs (#205)
+- Slash commands missing from new_session response (#196)
+- Fuzzy-only matches with zero exact matches appearing in search (#192)
+- PWA meta tags and manifest for iOS home screen icon (#190)
+- Focus not restoring to textarea after note capture (#186)
+- Race condition in vault card setup update (#173)
+- Archive directory name (plural to singular) (#172)
+- Task toggle and context menu state inconsistency (#170)
+- Task toggle when WebSocket disconnected (#166)
+- Refresh button not refreshing task list (#165)
+- Cached slash commands missing from resume_session response (#161)
+- Cached slash commands not restoring after vault selection (#160)
+- Missing line break after tool completion in messages (#153)
+- ConfirmDialog positioning (now rendered via portal) (#139)
+
+### Documentation
+
+- Added systemd service example for running as user service (#175)
+
 ## [1.1.0] - 2026-01-01
 
 ### Added

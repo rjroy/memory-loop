@@ -242,12 +242,13 @@ export const createApp = () => {
   // Serves images from vault with security validation
   app.get("/vault/:vaultId/assets/*", async (c) => {
     const vaultId = c.req.param("vaultId");
-    // Extract the path after /vault/:vaultId/assets/
+    // Extract the path after /vault/:vaultId/assets/ and decode URL encoding
     const url = new URL(c.req.url);
     const prefix = `/vault/${vaultId}/assets/`;
-    const assetPath = url.pathname.startsWith(prefix)
+    const encodedPath = url.pathname.startsWith(prefix)
       ? url.pathname.slice(prefix.length)
       : "";
+    const assetPath = decodeURIComponent(encodedPath);
 
     // Find the vault
     let vaults;

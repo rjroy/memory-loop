@@ -352,7 +352,7 @@ describe("BrowseMode Adjust Integration", () => {
     it("shows error and preserves content when PATH_TRAVERSAL error received", async () => {
       render(<BrowseMode />, {
         wrapper: createTestWrapper({
-          currentPath: "../etc/passwd",
+          currentPath: "../etc/config.md",
           currentFileContent: "malicious content",
         }),
       });
@@ -397,8 +397,8 @@ describe("BrowseMode Adjust Integration", () => {
     it("shows error when INVALID_FILE_TYPE error received during save", async () => {
       render(<BrowseMode />, {
         wrapper: createTestWrapper({
-          currentPath: "script.js",
-          currentFileContent: "console.log('test');",
+          currentPath: "test-file.md",
+          currentFileContent: "# Test content",
         }),
       });
 

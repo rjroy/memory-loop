@@ -106,6 +106,24 @@ export function isCsvFile(path: string): boolean {
 }
 
 /**
+ * Checks if a file has a supported viewer in the browser.
+ *
+ * @param path - File path to check
+ * @returns true if the file type has a dedicated viewer
+ */
+export function hasSupportedViewer(path: string): boolean {
+  return (
+    isImageFile(path) ||
+    isVideoFile(path) ||
+    isPdfFile(path) ||
+    isMarkdownFile(path) ||
+    isJsonFile(path) ||
+    isTxtFile(path) ||
+    isCsvFile(path)
+  );
+}
+
+/**
  * Encodes a file path for use in URLs.
  * Encodes each path segment separately to preserve directory structure.
  *

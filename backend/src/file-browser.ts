@@ -19,6 +19,27 @@ const log = createLogger("FileBrowser");
  */
 export const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
+/**
+ * Allowed file extensions for text file reading/writing.
+ * Lowercase, including the leading dot.
+ */
+const ALLOWED_TEXT_EXTENSIONS = new Set([".md", ".json"]);
+
+/**
+ * Checks if a file path has an allowed text extension.
+ */
+function isAllowedTextFile(filePath: string): boolean {
+  const ext = extname(filePath).toLowerCase();
+  return ALLOWED_TEXT_EXTENSIONS.has(ext);
+}
+
+/**
+ * Formats the allowed extensions for error messages.
+ */
+function formatAllowedExtensions(): string {
+  return Array.from(ALLOWED_TEXT_EXTENSIONS).join(", ");
+}
+
 // =============================================================================
 // Error Classes
 // =============================================================================
@@ -266,15 +287,15 @@ export interface FileReadResult {
 }
 
 /**
- * Reads a markdown file from the vault.
- * Files larger than 1MB are truncated.
+ * Reads a text file from the vault.
+ * Supports .md and .json files. Files larger than 1MB are truncated.
  *
  * @param vaultPath - Absolute path to the vault root
  * @param relativePath - Path relative to vault root
  * @returns FileReadResult with content and truncation status
  * @throws PathTraversalError if path escapes vault boundary
  * @throws FileNotFoundError if file does not exist
- * @throws InvalidFileTypeError if file is not a .md file
+ * @throws InvalidFileTypeError if file is not an allowed text file (.md, .json)
  */
 export async function readMarkdownFile(
   vaultPath: string,
@@ -283,10 +304,10 @@ export async function readMarkdownFile(
   log.debug(`Reading file: ${relativePath} in ${vaultPath}`);
 
   // Validate file extension
-  const ext = extname(relativePath).toLowerCase();
-  if (ext !== ".md") {
+  if (!isAllowedTextFile(relativePath)) {
+    const ext = extname(relativePath).toLowerCase();
     throw new InvalidFileTypeError(
-      `Only markdown (.md) files can be read. Requested: ${ext || "(no extension)"}`
+      `Only ${formatAllowedExtensions()} files can be read. Requested: ${ext || "(no extension)"}`
     );
   }
 
@@ -339,15 +360,15 @@ export async function readMarkdownFile(
 // =============================================================================
 
 /**
- * Writes content to a markdown file in the vault.
- * Only allows writing to existing .md files within the vault boundary.
+ * Writes content to a text file in the vault.
+ * Supports .md and .json files. Only allows writing to existing files.
  *
  * @param vaultPath - Absolute path to the vault root
  * @param relativePath - Path relative to vault root
  * @param content - Content to write to the file
  * @throws PathTraversalError if path escapes vault boundary
  * @throws FileNotFoundError if file does not exist (no new file creation)
- * @throws InvalidFileTypeError if file is not a .md file
+ * @throws InvalidFileTypeError if file is not an allowed text file (.md, .json)
  */
 export async function writeMarkdownFile(
   vaultPath: string,
@@ -357,10 +378,10 @@ export async function writeMarkdownFile(
   log.debug(`Writing file: ${relativePath} in ${vaultPath}`);
 
   // Validate file extension
-  const ext = extname(relativePath).toLowerCase();
-  if (ext !== ".md") {
+  if (!isAllowedTextFile(relativePath)) {
+    const ext = extname(relativePath).toLowerCase();
     throw new InvalidFileTypeError(
-      `Only markdown (.md) files can be written. Requested: ${ext || "(no extension)"}`
+      `Only ${formatAllowedExtensions()} files can be written. Requested: ${ext || "(no extension)"}`
     );
   }
 

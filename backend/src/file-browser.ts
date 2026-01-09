@@ -19,6 +19,27 @@ const log = createLogger("FileBrowser");
  */
 export const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
+/**
+ * Allowed file extensions for text file reading/writing.
+ * Lowercase, including the leading dot.
+ */
+const ALLOWED_TEXT_EXTENSIONS = new Set([".md", ".json"]);
+
+/**
+ * Checks if a file path has an allowed text extension.
+ */
+function isAllowedTextFile(filePath: string): boolean {
+  const ext = extname(filePath).toLowerCase();
+  return ALLOWED_TEXT_EXTENSIONS.has(ext);
+}
+
+/**
+ * Formats the allowed extensions for error messages.
+ */
+function formatAllowedExtensions(): string {
+  return Array.from(ALLOWED_TEXT_EXTENSIONS).join(", ");
+}
+
 // =============================================================================
 // Error Classes
 // =============================================================================
@@ -283,10 +304,10 @@ export async function readMarkdownFile(
   log.debug(`Reading file: ${relativePath} in ${vaultPath}`);
 
   // Validate file extension
-  const ext = extname(relativePath).toLowerCase();
-  if (ext !== ".md") {
+  if (!isAllowedTextFile(relativePath)) {
+    const ext = extname(relativePath).toLowerCase();
     throw new InvalidFileTypeError(
-      `Only markdown (.md) files can be read. Requested: ${ext || "(no extension)"}`
+      `Only ${formatAllowedExtensions()} files can be read. Requested: ${ext || "(no extension)"}`
     );
   }
 
@@ -357,10 +378,10 @@ export async function writeMarkdownFile(
   log.debug(`Writing file: ${relativePath} in ${vaultPath}`);
 
   // Validate file extension
-  const ext = extname(relativePath).toLowerCase();
-  if (ext !== ".md") {
+  if (!isAllowedTextFile(relativePath)) {
+    const ext = extname(relativePath).toLowerCase();
     throw new InvalidFileTypeError(
-      `Only markdown (.md) files can be written. Requested: ${ext || "(no extension)"}`
+      `Only ${formatAllowedExtensions()} files can be written. Requested: ${ext || "(no extension)"}`
     );
   }
 

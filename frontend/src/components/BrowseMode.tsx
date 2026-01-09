@@ -13,9 +13,10 @@ import { FileTree } from "./FileTree";
 import { TaskList } from "./TaskList";
 import { MarkdownViewer } from "./MarkdownViewer";
 import { ImageViewer } from "./ImageViewer";
+import { JsonViewer } from "./JsonViewer";
 import { SearchHeader } from "./SearchHeader";
 import { SearchResults } from "./SearchResults";
-import { isImageFile, isMarkdownFile } from "../utils/file-types";
+import { isImageFile, isMarkdownFile, isJsonFile } from "../utils/file-types";
 import type { FileSearchResult, ContentSearchResult } from "@memory-loop/shared";
 import "./BrowseMode.css";
 
@@ -105,7 +106,7 @@ export function BrowseMode(): React.ReactNode {
   }, [vault, hasSessionReady, viewMode, sendMessage, setTasksLoading]);
 
   // Auto-load file when currentPath is set externally (e.g., from RecentActivity View button)
-  // Only load markdown files - images are rendered directly via asset URL
+  // Only load text files (markdown, JSON) - images are rendered directly via asset URL
   const hasAutoLoadedRef = useRef<string | null>(null);
   useEffect(() => {
     const path = browser.currentPath;
@@ -122,9 +123,12 @@ export function BrowseMode(): React.ReactNode {
       return;
     }
 
-    // For markdown files, auto-load if not already loaded
+    // Check if this is a text file that needs loading
+    const isTextFile = isMarkdownFile(path) || isJsonFile(path);
+
+    // For text files, auto-load if not already loaded
     if (
-      isMarkdownFile(path) &&
+      isTextFile &&
       browser.currentFileContent === null &&
       !browser.fileError &&
       !browser.isLoading &&
@@ -137,7 +141,7 @@ export function BrowseMode(): React.ReactNode {
     }
 
     // Reset ref when conditions aren't met (allows reload on future navigation)
-    if (!isMarkdownFile(path) || browser.currentFileContent !== null || browser.fileError || browser.isLoading) {
+    if (!isTextFile || browser.currentFileContent !== null || browser.fileError || browser.isLoading) {
       hasAutoLoadedRef.current = null;
     }
   }, [hasSessionReady, browser.currentPath, browser.currentFileContent, browser.fileError, browser.isLoading, sendMessage, setFileLoading]);
@@ -246,7 +250,7 @@ export function BrowseMode(): React.ReactNode {
         setCurrentPath(path);
         return;
       }
-      // For markdown and other files, request content from backend
+      // For text files (markdown, JSON), request content from backend
       setFileLoading(true);
       sendMessage({ type: "read_file", path });
     },
@@ -494,6 +498,8 @@ export function BrowseMode(): React.ReactNode {
         <div className="browse-mode__viewer-content">
           {isImageFile(browser.currentPath) ? (
             <ImageViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
+          ) : isJsonFile(browser.currentPath) ? (
+            <JsonViewer onNavigate={handleNavigate} onSave={handleSave} />
           ) : (
             <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} onSave={handleSave} />
           )}

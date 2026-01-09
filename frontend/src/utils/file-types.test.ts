@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { isImageFile, isMarkdownFile, encodeAssetPath } from "./file-types";
+import { isImageFile, isMarkdownFile, isJsonFile, encodeAssetPath } from "./file-types";
 
 describe("isImageFile", () => {
   test("returns true for common image extensions", () => {
@@ -46,6 +46,25 @@ describe("isMarkdownFile", () => {
   test("returns false for non-markdown files", () => {
     expect(isMarkdownFile("photo.png")).toBe(false);
     expect(isMarkdownFile("script.js")).toBe(false);
+  });
+});
+
+describe("isJsonFile", () => {
+  test("returns true for .json files", () => {
+    expect(isJsonFile("data.json")).toBe(true);
+    expect(isJsonFile("config.JSON")).toBe(true);
+  });
+
+  test("works with paths", () => {
+    expect(isJsonFile("config/settings.json")).toBe(true);
+    expect(isJsonFile("deep/nested/path/data.json")).toBe(true);
+  });
+
+  test("returns false for non-json files", () => {
+    expect(isJsonFile("photo.png")).toBe(false);
+    expect(isJsonFile("notes.md")).toBe(false);
+    expect(isJsonFile("script.js")).toBe(false);
+    expect(isJsonFile("data.jsonl")).toBe(false);
   });
 });
 

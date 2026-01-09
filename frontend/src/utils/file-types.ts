@@ -45,6 +45,16 @@ export function isMarkdownFile(path: string): boolean {
 }
 
 /**
+ * Checks if a file path is a JSON file.
+ *
+ * @param path - File path to check
+ * @returns true if the file has .json extension
+ */
+export function isJsonFile(path: string): boolean {
+  return path.toLowerCase().endsWith(".json");
+}
+
+/**
  * Encodes a file path for use in URLs.
  * Encodes each path segment separately to preserve directory structure.
  *

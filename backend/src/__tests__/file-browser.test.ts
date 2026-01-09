@@ -999,3 +999,88 @@ describe("writeMarkdownFile", () => {
     expect(fileContent).toBe(newContent);
   });
 });
+
+// =============================================================================
+// JSON File Support Tests
+// =============================================================================
+
+describe("JSON file reading", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("reads JSON file content", async () => {
+    const content = JSON.stringify({ name: "test", value: 42 }, null, 2);
+    await writeFile(join(testDir, "data.json"), content);
+
+    const result = await readMarkdownFile(testDir, "data.json");
+    expect(result.content).toBe(content);
+    expect(result.truncated).toBe(false);
+  });
+
+  test("reads nested JSON file", async () => {
+    await mkdir(join(testDir, "config"));
+    const content = JSON.stringify({ setting: true });
+    await writeFile(join(testDir, "config", "settings.json"), content);
+
+    const result = await readMarkdownFile(testDir, "config/settings.json");
+    expect(result.content).toBe(content);
+  });
+
+  test("handles JSON file with uppercase extension", async () => {
+    const content = JSON.stringify({ data: "test" });
+    await writeFile(join(testDir, "DATA.JSON"), content);
+
+    const result = await readMarkdownFile(testDir, "DATA.JSON");
+    expect(result.content).toBe(content);
+  });
+});
+
+describe("JSON file writing", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("writes content to existing JSON file", async () => {
+    const originalContent = JSON.stringify({ original: true });
+    const newContent = JSON.stringify({ updated: true, value: 123 }, null, 2);
+    await writeFile(join(testDir, "data.json"), originalContent);
+
+    await writeMarkdownFile(testDir, "data.json", newContent);
+
+    const fileContent = await readFile(join(testDir, "data.json"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("writes to nested JSON file", async () => {
+    await mkdir(join(testDir, "config"));
+    await writeFile(join(testDir, "config", "settings.json"), "{}");
+
+    const newContent = JSON.stringify({ setting: "value" });
+    await writeMarkdownFile(testDir, "config/settings.json", newContent);
+
+    const fileContent = await readFile(join(testDir, "config", "settings.json"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("throws FileNotFoundError for non-existent JSON file", async () => {
+    try {
+      await writeMarkdownFile(testDir, "missing.json", "{}");
+      expect.unreachable("Should have thrown FileNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileNotFoundError);
+    }
+  });
+});

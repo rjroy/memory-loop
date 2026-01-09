@@ -70,10 +70,6 @@
   line-height: 1.5;
 }
 
-/* User messages preserve whitespace literally */
-.message-bubble--user .message-bubble__text {
-  white-space: pre-wrap;
-}
 
 /* Inline images in user messages */
 .message-bubble__inline-image {
@@ -85,31 +81,31 @@
   object-fit: contain;
 }
 
-/* Markdown content styling for assistant messages */
-.message-bubble--assistant .message-bubble__text > :first-child {
+/* Markdown content styling for all messages */
+.message-bubble__text > :first-child {
   margin-top: 0;
 }
 
-.message-bubble--assistant .message-bubble__text > :last-child {
+.message-bubble__text > :last-child {
   margin-bottom: 0;
 }
 
-.message-bubble--assistant .message-bubble__text p {
+.message-bubble__text p {
   margin: 0 0 0.75em 0;
 }
 
-.message-bubble--assistant .message-bubble__text p:last-child {
+.message-bubble__text p:last-child {
   margin-bottom: 0;
 }
 
-.message-bubble--assistant .message-bubble__text code {
+.message-bubble__text code {
   background-color: var(--color-black-a30);
   padding: 0.1em 0.3em;
   border-radius: 3px;
   font-size: 0.9em;
 }
 
-.message-bubble--assistant .message-bubble__text pre {
+.message-bubble__text pre {
   background-color: var(--color-black-a30);
   padding: 0.75em;
   border-radius: 6px;
@@ -117,28 +113,28 @@
   margin: 0.75em 0;
 }
 
-.message-bubble--assistant .message-bubble__text pre code {
+.message-bubble__text pre code {
   background: none;
   padding: 0;
 }
 
-.message-bubble--assistant .message-bubble__text ul,
-.message-bubble--assistant .message-bubble__text ol {
+.message-bubble__text ul,
+.message-bubble__text ol {
   margin: 0.5em 0;
   padding-left: 1.5em;
 }
 
-.message-bubble--assistant .message-bubble__text li {
+.message-bubble__text li {
   margin: 0.25em 0;
 }
 
-.message-bubble--assistant .message-bubble__text a {
+.message-bubble__text a {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.message-bubble--assistant .message-bubble__text blockquote {
+.message-bubble__text blockquote {
   margin: 0.5em 0;
   padding-left: 0.75em;
   border-left: 2px solid var(--color-white-a30);
@@ -152,22 +148,22 @@
   margin: 1em 0;
 }
 
-.message-bubble--assistant .message-bubble__text h1,
-.message-bubble--assistant .message-bubble__text h2,
-.message-bubble--assistant .message-bubble__text h3,
-.message-bubble--assistant .message-bubble__text h4,
-.message-bubble--assistant .message-bubble__text h5,
-.message-bubble--assistant .message-bubble__text h6 {
+.message-bubble__text h1,
+.message-bubble__text h2,
+.message-bubble__text h3,
+.message-bubble__text h4,
+.message-bubble__text h5,
+.message-bubble__text h6 {
   margin: 0.75em 0 0.25em 0;
   font-weight: 600;
 }
 
-.message-bubble--assistant .message-bubble__text h1:first-child,
-.message-bubble--assistant .message-bubble__text h2:first-child,
-.message-bubble--assistant .message-bubble__text h3:first-child,
-.message-bubble--assistant .message-bubble__text h4:first-child,
-.message-bubble--assistant .message-bubble__text h5:first-child,
-.message-bubble--assistant .message-bubble__text h6:first-child {
+.message-bubble__text h1:first-child,
+.message-bubble__text h2:first-child,
+.message-bubble__text h3:first-child,
+.message-bubble__text h4:first-child,
+.message-bubble__text h5:first-child,
+.message-bubble__text h6:first-child {
   margin-top: 0;
 }
 

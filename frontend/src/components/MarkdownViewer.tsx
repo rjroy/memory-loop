@@ -17,6 +17,7 @@ import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
 import yaml from "js-yaml";
 import { useSession } from "../contexts/SessionContext";
+import { encodeAssetPath } from "../utils/file-types";
 import "./MarkdownViewer.css";
 
 /**
@@ -271,7 +272,7 @@ function createMarkdownComponents(
         !src.startsWith("http://") &&
         !src.startsWith("https://") &&
         !src.startsWith("data:");
-      const resolvedSrc = isRelative ? `${assetBaseUrl}/${src}` : src;
+      const resolvedSrc = isRelative ? `${assetBaseUrl}/${encodeAssetPath(src)}` : src;
 
       return <img src={resolvedSrc} alt={alt} loading="lazy" {...props} />;
     },

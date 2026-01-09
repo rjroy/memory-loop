@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback, useEffect, type ReactNode } from "react";
+import { encodeAssetPath } from "../utils/file-types";
 import "./ImageViewer.css";
 
 export interface ImageViewerProps {
@@ -31,7 +32,7 @@ export function ImageViewer({ path, assetBaseUrl }: ImageViewerProps): ReactNode
     setHasError(false);
   }, [path]);
 
-  const imageUrl = `${assetBaseUrl}/${path}`;
+  const imageUrl = `${assetBaseUrl}/${encodeAssetPath(path)}`;
   const fileName = path.split("/").pop() ?? path;
 
   const handleLoad = useCallback(() => {

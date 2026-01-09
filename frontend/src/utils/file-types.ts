@@ -43,3 +43,17 @@ export function isImageFile(path: string): boolean {
 export function isMarkdownFile(path: string): boolean {
   return path.toLowerCase().endsWith(".md");
 }
+
+/**
+ * Encodes a file path for use in URLs.
+ * Encodes each path segment separately to preserve directory structure.
+ *
+ * @param path - File path to encode (e.g., "attachments/my file.png")
+ * @returns URL-encoded path with separators preserved (e.g., "attachments/my%20file.png")
+ */
+export function encodeAssetPath(path: string): string {
+  return path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}

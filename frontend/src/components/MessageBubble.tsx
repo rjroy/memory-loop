@@ -10,6 +10,7 @@ import React from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ConversationMessage } from "../contexts/SessionContext";
+import { encodeAssetPath } from "../utils/file-types";
 import { ToolDisplay } from "./ToolDisplay";
 import "./MessageBubble.css";
 
@@ -94,7 +95,7 @@ function UserMessageContent({
 
     // The image
     const imagePath = m.match;
-    const imageUrl = `/vault/${vaultId}/assets/${imagePath}`;
+    const imageUrl = `/vault/${vaultId}/assets/${encodeAssetPath(imagePath)}`;
     elements.push(
       <img
         key={`img-${i}`}

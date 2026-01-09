@@ -1,15 +1,15 @@
 /**
- * useImageUpload Hook Tests
+ * useFileUpload Hook Tests
  */
 
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
-import { useImageUpload } from "../useImageUpload";
+import { useFileUpload } from "../useFileUpload";
 
 // Store original fetch for restoration
 const originalFetch = globalThis.fetch;
 
-describe("useImageUpload", () => {
+describe("useFileUpload", () => {
   const mockVaultId = "test-vault-123";
 
   beforeEach(() => {
@@ -30,23 +30,23 @@ describe("useImageUpload", () => {
 
   describe("initial state", () => {
     it("starts with isUploading false", () => {
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
       expect(result.current.isUploading).toBe(false);
     });
 
     it("starts with no error", () => {
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
       expect(result.current.error).toBeNull();
     });
   });
 
-  describe("uploadImage", () => {
+  describe("uploadFile", () => {
     it("returns null if no vaultId provided", async () => {
-      const { result } = renderHook(() => useImageUpload(undefined));
+      const { result } = renderHook(() => useFileUpload(undefined));
 
       let uploadResult: string | null = null;
       await act(async () => {
-        uploadResult = await result.current.uploadImage(new File(["test"], "test.png"));
+        uploadResult = await result.current.uploadFile(new File(["test"], "test.png"));
       });
 
       expect(uploadResult).toBeNull();
@@ -62,13 +62,13 @@ describe("useImageUpload", () => {
           })
       );
 
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
 
       expect(result.current.isUploading).toBe(false);
 
       let uploadPromise: Promise<string | null>;
       act(() => {
-        uploadPromise = result.current.uploadImage(new File(["test"], "test.png"));
+        uploadPromise = result.current.uploadFile(new File(["test"], "test.png"));
       });
 
       // Should be uploading now
@@ -90,11 +90,11 @@ describe("useImageUpload", () => {
     it("posts to correct endpoint with FormData", async () => {
       const fetchSpy = spyOn(globalThis, "fetch");
 
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
-      const testFile = new File(["image data"], "photo.jpg", { type: "image/jpeg" });
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
+      const testFile = new File(["file data"], "document.pdf", { type: "application/pdf" });
 
       await act(async () => {
-        await result.current.uploadImage(testFile);
+        await result.current.uploadFile(testFile);
       });
 
       expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -104,7 +104,7 @@ describe("useImageUpload", () => {
       expect(options.body).toBeInstanceOf(FormData);
 
       const formData = options.body as FormData;
-      expect(formData.get("image")).toBe(testFile);
+      expect(formData.get("file")).toBe(testFile);
     });
 
     it("returns path on successful upload", async () => {
@@ -116,11 +116,11 @@ describe("useImageUpload", () => {
         } as Response)
       );
 
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
 
       let uploadResult: string | null = null;
       await act(async () => {
-        uploadResult = await result.current.uploadImage(new File(["test"], "test.png"));
+        uploadResult = await result.current.uploadFile(new File(["test"], "test.png"));
       });
 
       // Type narrowing for assertion
@@ -136,48 +136,48 @@ describe("useImageUpload", () => {
       (globalThis.fetch as unknown) = mock(() =>
         Promise.resolve({
           ok: false,
-          json: () => Promise.resolve({ success: false, error: "Invalid file type: .pdf" }),
+          json: () => Promise.resolve({ success: false, error: "Invalid file type: .exe" }),
         } as Response)
       );
 
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
 
       let uploadResult: string | null = null;
       await act(async () => {
-        uploadResult = await result.current.uploadImage(new File(["test"], "test.pdf"));
+        uploadResult = await result.current.uploadFile(new File(["test"], "test.exe"));
       });
 
       expect(uploadResult).toBeNull();
-      expect(result.current.error).toBe("Invalid file type: .pdf");
+      expect(result.current.error).toBe("Invalid file type: .exe");
     });
 
     it("sets error on success=false response", async () => {
       (globalThis.fetch as unknown) = mock(() =>
         Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ success: false, error: "File too large. Maximum size: 10MB" }),
+          json: () => Promise.resolve({ success: false, error: "File too large. Maximum size for image files: 10MB" }),
         } as Response)
       );
 
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
 
       let uploadResult: string | null = null;
       await act(async () => {
-        uploadResult = await result.current.uploadImage(new File(["test"], "large.png"));
+        uploadResult = await result.current.uploadFile(new File(["test"], "large.png"));
       });
 
       expect(uploadResult).toBeNull();
-      expect(result.current.error).toBe("File too large. Maximum size: 10MB");
+      expect(result.current.error).toBe("File too large. Maximum size for image files: 10MB");
     });
 
     it("sets error on network failure", async () => {
       (globalThis.fetch as unknown) = mock(() => Promise.reject(new Error("Network error")));
 
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
 
       let uploadResult: string | null = null;
       await act(async () => {
-        uploadResult = await result.current.uploadImage(new File(["test"], "test.png"));
+        uploadResult = await result.current.uploadFile(new File(["test"], "test.png"));
       });
 
       expect(uploadResult).toBeNull();
@@ -193,10 +193,10 @@ describe("useImageUpload", () => {
         } as Response)
       );
 
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
 
       await act(async () => {
-        await result.current.uploadImage(new File(["test"], "test.pdf"));
+        await result.current.uploadFile(new File(["test"], "test.exe"));
       });
 
       expect(result.current.error).toBe("First error");
@@ -210,7 +210,7 @@ describe("useImageUpload", () => {
       );
 
       await act(async () => {
-        await result.current.uploadImage(new File(["test"], "test.png"));
+        await result.current.uploadFile(new File(["test"], "test.png"));
       });
 
       expect(result.current.error).toBeNull();
@@ -226,10 +226,10 @@ describe("useImageUpload", () => {
         } as Response)
       );
 
-      const { result } = renderHook(() => useImageUpload(mockVaultId));
+      const { result } = renderHook(() => useFileUpload(mockVaultId));
 
       await act(async () => {
-        await result.current.uploadImage(new File(["test"], "test.png"));
+        await result.current.uploadFile(new File(["test"], "test.png"));
       });
 
       expect(result.current.error).toBe("Test error");
@@ -245,17 +245,17 @@ describe("useImageUpload", () => {
   describe("vaultId changes", () => {
     it("uses updated vaultId for uploads", async () => {
       // This test verifies the hook uses the current vaultId value
-      // We test this by calling uploadImage with different vaultIds
+      // We test this by calling uploadFile with different vaultIds
       // and checking that the returned paths differ based on the mock responses
 
-      const { result, rerender } = renderHook(({ vaultId }) => useImageUpload(vaultId), {
+      const { result, rerender } = renderHook(({ vaultId }) => useFileUpload(vaultId), {
         initialProps: { vaultId: "vault-1" },
       });
 
       // First upload with vault-1
       let path1: string | null = null;
       await act(async () => {
-        path1 = await result.current.uploadImage(new File(["test"], "test.png"));
+        path1 = await result.current.uploadFile(new File(["test"], "test.png"));
       });
 
       // Verify upload succeeded (mock returns path)
@@ -266,7 +266,7 @@ describe("useImageUpload", () => {
 
       let path2: string | null = null;
       await act(async () => {
-        path2 = await result.current.uploadImage(new File(["test"], "test.png"));
+        path2 = await result.current.uploadFile(new File(["test"], "test.png"));
       });
 
       // Both uploads should succeed (mock returns path for both)

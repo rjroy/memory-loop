@@ -13,7 +13,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ToolPermissionDialog, type ToolPermissionRequest } from "./ToolPermissionDialog";
 import { SlashCommandAutocomplete, useSlashCommandNavigation } from "./SlashCommandAutocomplete";
-import { ImageAttachButton } from "./ImageAttachButton";
+import { FileAttachButton } from "./FileAttachButton";
 import "./Discussion.css";
 
 const STORAGE_KEY = "memory-loop-discussion-draft";
@@ -366,10 +366,10 @@ export function Discussion(): React.ReactNode {
   }
 
   /**
-   * Handle image upload completion - append path to input.
-   * Claude can then read the image file using its Read tool.
+   * Handle file upload completion - append path to input.
+   * Claude can then read the file using its Read tool.
    */
-  const handleImageUploaded = useCallback((path: string) => {
+  const handleFileUploaded = useCallback((path: string) => {
     setInput((prev) => {
       const trimmed = prev.trim();
       if (trimmed) {
@@ -461,8 +461,8 @@ export function Discussion(): React.ReactNode {
           onSelectedIndexChange={setAutocompleteSelectedIndex}
         />
         <div className="discussion__input-row">
-          <ImageAttachButton
-            onImageUploaded={handleImageUploaded}
+          <FileAttachButton
+            onFileUploaded={handleFileUploaded}
             disabled={isSubmitting}
           />
           <textarea

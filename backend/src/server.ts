@@ -20,7 +20,7 @@ import { discoverVaults, VaultsDirError } from "./vault-manager";
 import { createWebSocketHandler } from "./websocket-handler";
 import { isPathWithinVault } from "./file-browser";
 import { getSessionForVault } from "./session-manager";
-import { uploadImage } from "./image-upload";
+import { uploadFile } from "./file-upload";
 import { serverLog as log } from "./logger";
 
 /**
@@ -340,10 +340,11 @@ export const createApp = () => {
       return c.json({ error: "Failed to parse form data" }, 400);
     }
 
-    const file = formData.get("image");
+    // Accept both "file" (preferred) and "image" (backward compat) field names
+    const file = formData.get("file") ?? formData.get("image");
 
     if (!file || !(file instanceof File)) {
-      return c.json({ error: "No image file provided" }, 400);
+      return c.json({ error: "No file provided" }, 400);
     }
 
     // Convert to buffer
@@ -355,8 +356,8 @@ export const createApp = () => {
       return c.json({ error: "Failed to read file data" }, 400);
     }
 
-    // Upload image
-    const result = await uploadImage(
+    // Upload file
+    const result = await uploadFile(
       vault.path,
       vault.contentRoot,
       vault.attachmentPath,

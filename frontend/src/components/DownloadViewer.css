@@ -1,0 +1,68 @@
+/**
+ * DownloadViewer Styles
+ *
+ * Centered layout with file icon, name, and download button.
+ */
+
+.download-viewer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--spacing-lg);
+}
+
+.download-viewer__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--spacing-md);
+  max-width: 300px;
+}
+
+.download-viewer__icon {
+  color: var(--text-muted);
+}
+
+.download-viewer__file-icon {
+  width: 64px;
+  height: 64px;
+}
+
+.download-viewer__filename {
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  color: var(--text-primary);
+  word-break: break-word;
+  margin: 0;
+}
+
+.download-viewer__message {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.download-viewer__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background-color: var(--accent-primary);
+  color: var(--text-on-accent);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+  margin-top: var(--spacing-sm);
+}
+
+.download-viewer__button:hover {
+  background-color: var(--accent-hover);
+}
+
+.download-viewer__button:active {
+  background-color: var(--accent-active);
+}

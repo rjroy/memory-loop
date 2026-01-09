@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { isImageFile, isMarkdownFile, isTxtFile, IMAGE_EXTENSIONS } from "../file-types";
+import { isImageFile, isMarkdownFile, isTxtFile, hasSupportedViewer, IMAGE_EXTENSIONS } from "../file-types";
 
 describe("isImageFile", () => {
   it("returns true for common image extensions", () => {
@@ -126,5 +126,67 @@ describe("IMAGE_EXTENSIONS", () => {
     expect(IMAGE_EXTENSIONS.has("md")).toBe(false);
     expect(IMAGE_EXTENSIONS.has("txt")).toBe(false);
     expect(IMAGE_EXTENSIONS.has("pdf")).toBe(false);
+  });
+});
+
+describe("hasSupportedViewer", () => {
+  it("returns true for image files", () => {
+    expect(hasSupportedViewer("photo.jpg")).toBe(true);
+    expect(hasSupportedViewer("image.png")).toBe(true);
+    expect(hasSupportedViewer("icon.svg")).toBe(true);
+  });
+
+  it("returns true for video files", () => {
+    expect(hasSupportedViewer("movie.mp4")).toBe(true);
+    expect(hasSupportedViewer("clip.webm")).toBe(true);
+    expect(hasSupportedViewer("video.mov")).toBe(true);
+  });
+
+  it("returns true for PDF files", () => {
+    expect(hasSupportedViewer("document.pdf")).toBe(true);
+    expect(hasSupportedViewer("report.PDF")).toBe(true);
+  });
+
+  it("returns true for markdown files", () => {
+    expect(hasSupportedViewer("notes.md")).toBe(true);
+    expect(hasSupportedViewer("README.MD")).toBe(true);
+  });
+
+  it("returns true for JSON files", () => {
+    expect(hasSupportedViewer("data.json")).toBe(true);
+    expect(hasSupportedViewer("config.JSON")).toBe(true);
+  });
+
+  it("returns true for TXT files", () => {
+    expect(hasSupportedViewer("notes.txt")).toBe(true);
+    expect(hasSupportedViewer("log.TXT")).toBe(true);
+  });
+
+  it("returns true for CSV/TSV files", () => {
+    expect(hasSupportedViewer("data.csv")).toBe(true);
+    expect(hasSupportedViewer("table.tsv")).toBe(true);
+  });
+
+  it("returns false for unsupported file types", () => {
+    expect(hasSupportedViewer("archive.zip")).toBe(false);
+    expect(hasSupportedViewer("document.docx")).toBe(false);
+    expect(hasSupportedViewer("spreadsheet.xlsx")).toBe(false);
+    expect(hasSupportedViewer("presentation.pptx")).toBe(false);
+    expect(hasSupportedViewer("executable.exe")).toBe(false);
+    expect(hasSupportedViewer("archive.tar.gz")).toBe(false);
+  });
+
+  it("handles paths with directories", () => {
+    expect(hasSupportedViewer("attachments/photo.jpg")).toBe(true);
+    expect(hasSupportedViewer("docs/archive.zip")).toBe(false);
+  });
+
+  it("returns false for empty string", () => {
+    expect(hasSupportedViewer("")).toBe(false);
+  });
+
+  it("returns false for files without extensions", () => {
+    expect(hasSupportedViewer("README")).toBe(false);
+    expect(hasSupportedViewer("Makefile")).toBe(false);
   });
 });

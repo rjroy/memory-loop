@@ -18,9 +18,10 @@ import { PdfViewer } from "./PdfViewer";
 import { JsonViewer } from "./JsonViewer";
 import { TxtViewer } from "./TxtViewer";
 import { CsvViewer } from "./CsvViewer";
+import { DownloadViewer } from "./DownloadViewer";
 import { SearchHeader } from "./SearchHeader";
 import { SearchResults } from "./SearchResults";
-import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isTxtFile, isCsvFile } from "../utils/file-types";
+import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isTxtFile, isCsvFile, hasSupportedViewer } from "../utils/file-types";
 import type { FileSearchResult, ContentSearchResult } from "@memory-loop/shared";
 import "./BrowseMode.css";
 
@@ -123,6 +124,12 @@ export function BrowseMode(): React.ReactNode {
 
     // Media files (images, videos, PDFs) don't need loading - they render directly from asset URL
     if (isImageFile(path) || isVideoFile(path) || isPdfFile(path)) {
+      hasAutoLoadedRef.current = null;
+      return;
+    }
+
+    // Unsupported files don't need loading - DownloadViewer uses asset URL directly
+    if (!hasSupportedViewer(path)) {
       hasAutoLoadedRef.current = null;
       return;
     }
@@ -278,7 +285,12 @@ export function BrowseMode(): React.ReactNode {
         setCurrentPath(path);
         return;
       }
-      // For text files (markdown, JSON), request content from backend
+      // For unsupported files, just set the path - DownloadViewer uses asset URL directly
+      if (!hasSupportedViewer(path)) {
+        setCurrentPath(path);
+        return;
+      }
+      // For text files (markdown, JSON, txt, csv), request content from backend
       setFileLoading(true);
       sendMessage({ type: "read_file", path });
     },
@@ -536,8 +548,10 @@ export function BrowseMode(): React.ReactNode {
             <TxtViewer onNavigate={handleNavigate} onSave={handleSave} />
           ) : isCsvFile(browser.currentPath) ? (
             <CsvViewer onNavigate={handleNavigate} />
-          ) : (
+          ) : isMarkdownFile(browser.currentPath) || !browser.currentPath ? (
             <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} onSave={handleSave} />
+          ) : (
+            <DownloadViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
           )}
         </div>
       </main>

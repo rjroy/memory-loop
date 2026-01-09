@@ -11,11 +11,13 @@ bun run dev            # Start both frontend (Vite) and backend with hot reload
 bun run --cwd backend dev   # Backend only
 bun run --cwd frontend dev  # Frontend only
 
-# Testing
-bun run test           # Run all tests (backend + frontend)
-bun run --cwd backend test  # Backend tests only
-bun run --cwd frontend test # Frontend tests only
-bun test path/to/file.test.ts  # Single test file
+# Testing (two approaches)
+# Targeted: run specific tests within a module
+bun run --cwd backend test src/__tests__/file-upload.test.ts
+bun run --cwd frontend test src/hooks/__tests__/useFileUpload.test.ts
+
+# Full review: runs all tests (frontend, backend, shared) plus lint and typecheck
+./git-hooks/pre-commit.sh
 
 # Type checking and linting
 bun run typecheck      # TypeScript checking across all workspaces
@@ -88,3 +90,4 @@ MOCK_SDK=true              # Test without API calls
 - Backend tests use filesystem operations in temp directories
 - Frontend tests use `@testing-library/react` + happy-dom
 - Mock the WebSocket and SDK for isolation
+- **Do not run `bun run test`** (the combined command). Running multiple test instances concurrently causes resource conflicts. Use targeted tests or `./git-hooks/pre-commit.sh` instead.

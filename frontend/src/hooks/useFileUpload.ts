@@ -1,18 +1,18 @@
 /**
- * useImageUpload Hook
+ * useFileUpload Hook
  *
- * Handles image file uploads to the vault's attachment directory.
+ * Handles file uploads to the vault's attachment directory.
  * Uses fetch with FormData to POST to the backend upload endpoint.
  */
 
 import { useState, useCallback } from "react";
 
 /**
- * Return type for the useImageUpload hook.
+ * Return type for the useFileUpload hook.
  */
-export interface UseImageUploadResult {
-  /** Upload an image file and return the relative path on success */
-  uploadImage: (file: File) => Promise<string | null>;
+export interface UseFileUploadResult {
+  /** Upload a file and return the relative path on success */
+  uploadFile: (file: File) => Promise<string | null>;
   /** Whether an upload is currently in progress */
   isUploading: boolean;
   /** Error message from the last failed upload */
@@ -31,24 +31,24 @@ interface UploadResponse {
 }
 
 /**
- * React hook for uploading images to the vault attachment directory.
+ * React hook for uploading files to the vault attachment directory.
  *
  * @param vaultId - The vault ID to upload to (from session context)
  * @returns Upload function, loading state, and error state
  *
  * @example
  * ```tsx
- * const { uploadImage, isUploading, error } = useImageUpload(vault?.id);
+ * const { uploadFile, isUploading, error } = useFileUpload(vault?.id);
  *
  * const handleFileSelect = async (file: File) => {
- *   const path = await uploadImage(file);
+ *   const path = await uploadFile(file);
  *   if (path) {
  *     console.log("Uploaded to:", path);
  *   }
  * };
  * ```
  */
-export function useImageUpload(vaultId: string | undefined): UseImageUploadResult {
+export function useFileUpload(vaultId: string | undefined): UseFileUploadResult {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,7 +56,7 @@ export function useImageUpload(vaultId: string | undefined): UseImageUploadResul
     setError(null);
   }, []);
 
-  const uploadImage = useCallback(
+  const uploadFile = useCallback(
     async (file: File): Promise<string | null> => {
       if (!vaultId) {
         setError("No vault selected");
@@ -68,7 +68,7 @@ export function useImageUpload(vaultId: string | undefined): UseImageUploadResul
 
       try {
         const formData = new FormData();
-        formData.append("image", file);
+        formData.append("file", file);
 
         const response = await fetch(`/vault/${vaultId}/upload`, {
           method: "POST",
@@ -96,7 +96,7 @@ export function useImageUpload(vaultId: string | undefined): UseImageUploadResul
   );
 
   return {
-    uploadImage,
+    uploadFile,
     isUploading,
     error,
     clearError,

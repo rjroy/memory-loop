@@ -1,14 +1,14 @@
 /**
- * ImageAttachButton Component Tests
+ * FileAttachButton Component Tests
  *
- * Tests the ImageAttachButton component by mocking fetch at the network level.
- * This allows the actual useImageUpload hook to run, ensuring proper integration.
+ * Tests the FileAttachButton component by mocking fetch at the network level.
+ * This allows the actual useFileUpload hook to run, ensuring proper integration.
  */
 
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
 import React from "react";
-import { ImageAttachButton } from "../ImageAttachButton";
+import { FileAttachButton } from "../FileAttachButton";
 import { SessionProvider } from "../../contexts/SessionContext";
 import { createMockVault } from "../../test-helpers";
 import type { VaultInfo } from "@memory-loop/shared";
@@ -27,11 +27,11 @@ function renderWithSession(
   );
 }
 
-describe("ImageAttachButton", () => {
-  const mockOnImageUploaded = mock(() => {});
+describe("FileAttachButton", () => {
+  const mockOnFileUploaded = mock(() => {});
 
   beforeEach(() => {
-    mockOnImageUploaded.mockReset();
+    mockOnFileUploaded.mockReset();
     localStorage.clear();
     // Pre-select vault via localStorage (same pattern as Discussion tests)
     localStorage.setItem("memory-loop:vaultId", "test-vault");
@@ -41,7 +41,7 @@ describe("ImageAttachButton", () => {
         ok: true,
         json: () => Promise.resolve({
           success: true,
-          path: "05_Attachments/test-image.png",
+          path: "05_Attachments/test-file.png",
         }),
       } as Response)
     );
@@ -54,10 +54,10 @@ describe("ImageAttachButton", () => {
   });
 
   describe("rendering", () => {
-    it("renders a button with camera icon", () => {
-      renderWithSession(<ImageAttachButton onImageUploaded={mockOnImageUploaded} />);
+    it("renders a button with paperclip icon", () => {
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />);
 
-      const button = screen.getByRole("button", { name: "Attach image" });
+      const button = screen.getByRole("button", { name: "Attach file" });
       expect(button).toBeDefined();
 
       // Check for SVG icon
@@ -66,42 +66,57 @@ describe("ImageAttachButton", () => {
     });
 
     it("renders hidden file input", () => {
-      renderWithSession(<ImageAttachButton onImageUploaded={mockOnImageUploaded} />);
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />);
 
       const input = document.querySelector('input[type="file"]');
       expect(input).toBeDefined();
-      expect(input?.getAttribute("accept")).toBe("image/png,image/jpeg,image/gif,image/webp");
-      expect(input?.getAttribute("capture")).toBe("environment");
+      // Check that accept includes various file types
+      const accept = input?.getAttribute("accept") ?? "";
+      expect(accept).toContain("image/png");
+      expect(accept).toContain("video/mp4");
+      expect(accept).toContain("application/pdf");
+      expect(accept).toContain("text/plain");
     });
 
     it("disables button when disabled prop is true", () => {
-      renderWithSession(<ImageAttachButton onImageUploaded={mockOnImageUploaded} disabled />);
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} disabled />);
 
-      const button = screen.getByRole("button", { name: "Attach image" });
+      const button = screen.getByRole("button", { name: "Attach file" });
       expect(button.hasAttribute("disabled")).toBe(true);
     });
 
     it("disables button when no vault selected", () => {
-      renderWithSession(<ImageAttachButton onImageUploaded={mockOnImageUploaded} />, null);
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />, null);
 
-      const button = screen.getByRole("button", { name: "Attach image" });
+      const button = screen.getByRole("button", { name: "Attach file" });
       expect(button.hasAttribute("disabled")).toBe(true);
     });
   });
 
   describe("file selection", () => {
-    it("has file input with correct accept types", () => {
-      renderWithSession(<ImageAttachButton onImageUploaded={mockOnImageUploaded} />);
+    it("has file input with multiple accept types", () => {
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />);
 
       // Verify the file input exists with correct attributes
       const input = document.querySelector('input[type="file"]') as HTMLInputElement;
 
       expect(input).toBeDefined();
-      expect(input.getAttribute("accept")).toBe("image/png,image/jpeg,image/gif,image/webp");
-      expect(input.getAttribute("capture")).toBe("environment");
+      const accept = input.getAttribute("accept") ?? "";
+      // Images
+      expect(accept).toContain("image/png");
+      expect(accept).toContain("image/jpeg");
+      // Videos
+      expect(accept).toContain("video/mp4");
+      expect(accept).toContain("video/quicktime");
+      // Documents
+      expect(accept).toContain("application/pdf");
+      // Text
+      expect(accept).toContain("text/plain");
+      expect(accept).toContain("text/markdown");
+      expect(accept).toContain("application/json");
     });
 
-    it("calls onImageUploaded with path on successful upload", async () => {
+    it("calls onFileUploaded with path on successful upload", async () => {
       (globalThis.fetch as unknown) = mock(() =>
         Promise.resolve({
           ok: true,
@@ -112,7 +127,7 @@ describe("ImageAttachButton", () => {
         } as Response)
       );
 
-      renderWithSession(<ImageAttachButton onImageUploaded={mockOnImageUploaded} />);
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />);
 
       const input = document.querySelector('input[type="file"]') as HTMLInputElement;
       const file = new File(["image data"], "photo.png", { type: "image/png" });
@@ -122,11 +137,61 @@ describe("ImageAttachButton", () => {
       });
 
       await waitFor(() => {
-        expect(mockOnImageUploaded).toHaveBeenCalledWith("05_Attachments/2026-01-08-image-ABC12.png");
+        expect(mockOnFileUploaded).toHaveBeenCalledWith("05_Attachments/2026-01-08-image-ABC12.png");
       });
     });
 
-    it("does not call onImageUploaded when upload fails", async () => {
+    it("calls onFileUploaded for PDF upload", async () => {
+      (globalThis.fetch as unknown) = mock(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true,
+            path: "05_Attachments/2026-01-08-document-ABC12.pdf",
+          }),
+        } as Response)
+      );
+
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />);
+
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const file = new File(["pdf data"], "report.pdf", { type: "application/pdf" });
+
+      act(() => {
+        fireEvent.change(input, { target: { files: [file] } });
+      });
+
+      await waitFor(() => {
+        expect(mockOnFileUploaded).toHaveBeenCalledWith("05_Attachments/2026-01-08-document-ABC12.pdf");
+      });
+    });
+
+    it("calls onFileUploaded for text file upload", async () => {
+      (globalThis.fetch as unknown) = mock(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true,
+            path: "05_Attachments/2026-01-08-text-ABC12.txt",
+          }),
+        } as Response)
+      );
+
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />);
+
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const file = new File(["text content"], "notes.txt", { type: "text/plain" });
+
+      act(() => {
+        fireEvent.change(input, { target: { files: [file] } });
+      });
+
+      await waitFor(() => {
+        expect(mockOnFileUploaded).toHaveBeenCalledWith("05_Attachments/2026-01-08-text-ABC12.txt");
+      });
+    });
+
+    it("does not call onFileUploaded when upload fails", async () => {
       (globalThis.fetch as unknown) = mock(() =>
         Promise.resolve({
           ok: false,
@@ -137,10 +202,10 @@ describe("ImageAttachButton", () => {
         } as Response)
       );
 
-      renderWithSession(<ImageAttachButton onImageUploaded={mockOnImageUploaded} />);
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />);
 
       const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-      const file = new File(["image data"], "photo.png", { type: "image/png" });
+      const file = new File(["file data"], "test.exe", { type: "application/x-msdownload" });
 
       act(() => {
         fireEvent.change(input, { target: { files: [file] } });
@@ -149,7 +214,7 @@ describe("ImageAttachButton", () => {
       // Wait a tick to ensure async operations complete
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      expect(mockOnImageUploaded).not.toHaveBeenCalled();
+      expect(mockOnFileUploaded).not.toHaveBeenCalled();
     });
 
     it("ignores empty file selection", () => {
@@ -161,7 +226,7 @@ describe("ImageAttachButton", () => {
       );
       (globalThis.fetch as unknown) = fetchMock;
 
-      renderWithSession(<ImageAttachButton onImageUploaded={mockOnImageUploaded} />);
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />);
 
       const input = document.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -186,10 +251,10 @@ describe("ImageAttachButton", () => {
         } as Response)
       );
 
-      renderWithSession(<ImageAttachButton onImageUploaded={mockOnImageUploaded} />);
+      renderWithSession(<FileAttachButton onFileUploaded={mockOnFileUploaded} />);
 
       const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-      const file = new File(["image data"], "large.png", { type: "image/png" });
+      const file = new File(["file data"], "large.png", { type: "image/png" });
 
       act(() => {
         fireEvent.change(input, { target: { files: [file] } });

@@ -175,6 +175,24 @@ describe("MarkdownViewer", () => {
       expect(screen.getByText("Item 3")).toBeDefined();
     });
 
+    it("renders list items with markdown links without extra span wrappers", () => {
+      const content = "- [08:25] Check [this link](https://example.com) for details";
+      const { container } = render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      const li = container.querySelector("li");
+      expect(li).toBeDefined();
+      // The li should contain text nodes and an anchor, not spans wrapping plain text
+      // Text before the link should be a text node, not wrapped in span
+      const spans = li?.querySelectorAll("span");
+      // Should have no spans (plain text is not wrapped)
+      expect(spans?.length ?? 0).toBe(0);
+    });
+
     it("renders code blocks", () => {
       const content = "```\nconst x = 1;\n```";
       render(<MarkdownViewer />, {

@@ -100,11 +100,13 @@ function processChildren(
     const processed: ReactNode[] = children.map((child, i): ReactNode => {
       if (typeof child === "string") {
         const parsed = parseWikiLinks(child, onLinkClick);
-        return parsed.length === 1 ? (
-          <span key={i}>{parsed[0]}</span>
-        ) : (
-          <span key={i}>{parsed}</span>
-        );
+        // If no wiki-links found (single string element), return string directly
+        // to avoid unnecessary span wrappers that can break list item layouts
+        if (parsed.length === 1 && typeof parsed[0] === "string") {
+          return parsed[0];
+        }
+        // Wiki-links found - wrap in span for proper keying of mixed content
+        return <span key={i}>{parsed}</span>;
       }
       return child as ReactNode;
     });

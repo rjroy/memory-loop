@@ -74,7 +74,7 @@ function MainContent(): React.ReactNode {
           <ModeToggle />
         </div>
         <div className="app-header__right">
-          {/* New session button moved to Discussion component */}
+          <span className="app-version">{__APP_VERSION__}</span>
         </div>
       </header>
 

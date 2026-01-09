@@ -186,6 +186,14 @@
   align-items: center;
 }
 
+.app-version {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  opacity: 0.6;
+  font-family: var(--font-family-mono, monospace);
+  letter-spacing: 0.02em;
+}
+
 /* Tablet and up - horizontal header layout */
 @media (min-width: 768px) {
   .app-header {

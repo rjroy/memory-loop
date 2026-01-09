@@ -24,27 +24,51 @@ import { uploadImage } from "./image-upload";
 import { serverLog as log } from "./logger";
 
 /**
- * Allowed image extensions for vault asset serving.
+ * Allowed extensions for vault asset serving (images, videos, PDFs).
  */
-const ALLOWED_IMAGE_EXTENSIONS = new Set([
+const ALLOWED_ASSET_EXTENSIONS = new Set([
+  // Images
   ".png",
   ".jpg",
   ".jpeg",
   ".gif",
   ".svg",
   ".webp",
+  ".avif",
+  ".bmp",
+  ".ico",
+  // Videos
+  ".mp4",
+  ".mov",
+  ".webm",
+  ".ogg",
+  ".m4v",
+  // Documents
+  ".pdf",
 ]);
 
 /**
- * Content-Type mapping for image extensions.
+ * Content-Type mapping for asset extensions.
  */
-const IMAGE_CONTENT_TYPES: Record<string, string> = {
+const ASSET_CONTENT_TYPES: Record<string, string> = {
+  // Images
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+  // Videos
+  ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm",
+  ".ogg": "video/ogg",
+  ".m4v": "video/x-m4v",
+  // Documents
+  ".pdf": "application/pdf",
 };
 
 /**
@@ -241,7 +265,7 @@ export const createApp = () => {
 
     // Validate file extension
     const ext = assetPath.substring(assetPath.lastIndexOf(".")).toLowerCase();
-    if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+    if (!ALLOWED_ASSET_EXTENSIONS.has(ext)) {
       return c.json({ error: "Invalid file type" }, 400);
     }
 
@@ -271,7 +295,7 @@ export const createApp = () => {
     // Read and serve the file
     try {
       const content = await readFile(fullPath);
-      const contentType = IMAGE_CONTENT_TYPES[ext] || "application/octet-stream";
+      const contentType = ASSET_CONTENT_TYPES[ext] || "application/octet-stream";
 
       return new Response(content, {
         status: 200,

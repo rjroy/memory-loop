@@ -1164,3 +1164,159 @@ describe("TXT file writing", () => {
     }
   });
 });
+
+// =============================================================================
+// CSV File Support Tests
+// =============================================================================
+
+describe("CSV file reading", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("reads CSV file content", async () => {
+    const content = "Name,Age,City\nAlice,30,NYC\nBob,25,LA";
+    await writeFile(join(testDir, "data.csv"), content);
+
+    const result = await readMarkdownFile(testDir, "data.csv");
+    expect(result.content).toBe(content);
+    expect(result.truncated).toBe(false);
+  });
+
+  test("reads nested CSV file", async () => {
+    await mkdir(join(testDir, "exports"));
+    const content = "id,value\n1,foo\n2,bar";
+    await writeFile(join(testDir, "exports", "report.csv"), content);
+
+    const result = await readMarkdownFile(testDir, "exports/report.csv");
+    expect(result.content).toBe(content);
+  });
+
+  test("reads CSV with quoted fields", async () => {
+    const content = 'Name,Address\nJohn,"123 Main St, Apt 4"';
+    await writeFile(join(testDir, "addresses.csv"), content);
+
+    const result = await readMarkdownFile(testDir, "addresses.csv");
+    expect(result.content).toBe(content);
+  });
+
+  test("reads uppercase CSV extension", async () => {
+    const content = "A,B\n1,2";
+    await writeFile(join(testDir, "DATA.CSV"), content);
+
+    const result = await readMarkdownFile(testDir, "DATA.CSV");
+    expect(result.content).toBe(content);
+  });
+});
+
+describe("CSV file writing", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("writes content to existing CSV file", async () => {
+    const originalContent = "old,data";
+    const newContent = "Name,Value\nfoo,bar";
+    await writeFile(join(testDir, "data.csv"), originalContent);
+
+    await writeMarkdownFile(testDir, "data.csv", newContent);
+
+    const fileContent = await readFile(join(testDir, "data.csv"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("throws FileNotFoundError for non-existent CSV file", async () => {
+    try {
+      await writeMarkdownFile(testDir, "missing.csv", "a,b\n1,2");
+      expect.unreachable("Should have thrown FileNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileNotFoundError);
+    }
+  });
+});
+
+// =============================================================================
+// TSV File Support Tests
+// =============================================================================
+
+describe("TSV file reading", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("reads TSV file content", async () => {
+    const content = "Name\tAge\tCity\nAlice\t30\tNYC";
+    await writeFile(join(testDir, "data.tsv"), content);
+
+    const result = await readMarkdownFile(testDir, "data.tsv");
+    expect(result.content).toBe(content);
+    expect(result.truncated).toBe(false);
+  });
+
+  test("reads nested TSV file", async () => {
+    await mkdir(join(testDir, "exports"));
+    const content = "id\tvalue\n1\tfoo";
+    await writeFile(join(testDir, "exports", "report.tsv"), content);
+
+    const result = await readMarkdownFile(testDir, "exports/report.tsv");
+    expect(result.content).toBe(content);
+  });
+
+  test("reads uppercase TSV extension", async () => {
+    const content = "A\tB\n1\t2";
+    await writeFile(join(testDir, "DATA.TSV"), content);
+
+    const result = await readMarkdownFile(testDir, "DATA.TSV");
+    expect(result.content).toBe(content);
+  });
+});
+
+describe("TSV file writing", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("writes content to existing TSV file", async () => {
+    const originalContent = "old\tdata";
+    const newContent = "Name\tValue\nfoo\tbar";
+    await writeFile(join(testDir, "data.tsv"), originalContent);
+
+    await writeMarkdownFile(testDir, "data.tsv", newContent);
+
+    const fileContent = await readFile(join(testDir, "data.tsv"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("throws FileNotFoundError for non-existent TSV file", async () => {
+    try {
+      await writeMarkdownFile(testDir, "missing.tsv", "a\tb\n1\t2");
+      expect.unreachable("Should have thrown FileNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileNotFoundError);
+    }
+  });
+});

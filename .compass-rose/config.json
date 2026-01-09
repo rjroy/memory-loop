@@ -2,7 +2,8 @@
   "project": {
     "owner": "rjroy",
     "owner_type": "user",
-    "number": 7
+    "number": 7,
+    "repository": "memory-loop"
   },
   "preferences": {
     "promptForLargeItems": true,

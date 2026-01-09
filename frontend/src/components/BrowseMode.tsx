@@ -21,14 +21,6 @@ import "./BrowseMode.css";
 const SAVE_ERROR_CODES = ["PATH_TRAVERSAL", "INVALID_FILE_TYPE", "FILE_NOT_FOUND", "INTERNAL_ERROR"] as const;
 
 /**
- * Props for BrowseMode component.
- */
-export interface BrowseModeProps {
-  /** Base URL for vault assets (images) */
-  assetBaseUrl?: string;
-}
-
-/**
  * BrowseMode provides a split-pane view for browsing vault files.
  *
  * Features:
@@ -37,7 +29,7 @@ export interface BrowseModeProps {
  * - Automatic root directory loading on mount
  * - Coordinates file selection between tree and viewer
  */
-export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
+export function BrowseMode(): React.ReactNode {
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
 
@@ -45,6 +37,9 @@ export function BrowseMode({ assetBaseUrl }: BrowseModeProps): React.ReactNode {
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
   const { browser, vault, cacheDirectory, clearDirectoryCache, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch } = useSession();
+
+  // Construct asset base URL with vaultId for image serving
+  const assetBaseUrl = vault ? `/vault/${vault.id}/assets` : "/vault/assets";
 
   const { viewMode } = browser;
 

@@ -85,6 +85,16 @@ export function isJsonFile(path: string): boolean {
 }
 
 /**
+ * Checks if a file path is a plain text file.
+ *
+ * @param path - File path to check
+ * @returns true if the file has .txt extension
+ */
+export function isTxtFile(path: string): boolean {
+  return path.toLowerCase().endsWith(".txt");
+}
+
+/**
  * Encodes a file path for use in URLs.
  * Encodes each path segment separately to preserve directory structure.
  *

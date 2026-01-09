@@ -453,15 +453,12 @@ describe("readMarkdownFile", () => {
     }
   });
 
-  test("throws InvalidFileTypeError for txt file", async () => {
+  test("reads txt file content", async () => {
     await writeFile(join(testDir, "notes.txt"), "text content");
 
-    try {
-      await readMarkdownFile(testDir, "notes.txt");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-    }
+    const result = await readMarkdownFile(testDir, "notes.txt");
+    expect(result.content).toBe("text content");
+    expect(result.truncated).toBe(false);
   });
 
   test("throws InvalidFileTypeError for file without extension", async () => {
@@ -789,15 +786,13 @@ describe("writeMarkdownFile", () => {
     }
   });
 
-  test("throws InvalidFileTypeError for txt file", async () => {
-    await writeFile(join(testDir, "notes.txt"), "text content");
+  test("writes content to existing txt file", async () => {
+    await writeFile(join(testDir, "notes.txt"), "original text");
 
-    try {
-      await writeMarkdownFile(testDir, "notes.txt", "new content");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-    }
+    await writeMarkdownFile(testDir, "notes.txt", "new content");
+
+    const fileContent = await readFile(join(testDir, "notes.txt"), "utf-8");
+    expect(fileContent).toBe("new content");
   });
 
   test("throws InvalidFileTypeError for file without extension", async () => {
@@ -1078,6 +1073,91 @@ describe("JSON file writing", () => {
   test("throws FileNotFoundError for non-existent JSON file", async () => {
     try {
       await writeMarkdownFile(testDir, "missing.json", "{}");
+      expect.unreachable("Should have thrown FileNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileNotFoundError);
+    }
+  });
+});
+
+// =============================================================================
+// TXT File Support Tests
+// =============================================================================
+
+describe("TXT file reading", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("reads TXT file content", async () => {
+    const content = "Plain text content\nwith multiple lines.";
+    await writeFile(join(testDir, "notes.txt"), content);
+
+    const result = await readMarkdownFile(testDir, "notes.txt");
+    expect(result.content).toBe(content);
+    expect(result.truncated).toBe(false);
+  });
+
+  test("reads nested TXT file", async () => {
+    await mkdir(join(testDir, "logs"));
+    const content = "Log entry 1\nLog entry 2";
+    await writeFile(join(testDir, "logs", "app.txt"), content);
+
+    const result = await readMarkdownFile(testDir, "logs/app.txt");
+    expect(result.content).toBe(content);
+  });
+
+  test("handles TXT file with uppercase extension", async () => {
+    const content = "Uppercase extension content";
+    await writeFile(join(testDir, "README.TXT"), content);
+
+    const result = await readMarkdownFile(testDir, "README.TXT");
+    expect(result.content).toBe(content);
+  });
+});
+
+describe("TXT file writing", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("writes content to existing TXT file", async () => {
+    const originalContent = "Original text";
+    const newContent = "Updated text\nwith new lines.";
+    await writeFile(join(testDir, "notes.txt"), originalContent);
+
+    await writeMarkdownFile(testDir, "notes.txt", newContent);
+
+    const fileContent = await readFile(join(testDir, "notes.txt"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("writes to nested TXT file", async () => {
+    await mkdir(join(testDir, "logs"));
+    await writeFile(join(testDir, "logs", "app.txt"), "old log");
+
+    const newContent = "new log entry";
+    await writeMarkdownFile(testDir, "logs/app.txt", newContent);
+
+    const fileContent = await readFile(join(testDir, "logs", "app.txt"), "utf-8");
+    expect(fileContent).toBe(newContent);
+  });
+
+  test("throws FileNotFoundError for non-existent TXT file", async () => {
+    try {
+      await writeMarkdownFile(testDir, "missing.txt", "content");
       expect.unreachable("Should have thrown FileNotFoundError");
     } catch (error) {
       expect(error).toBeInstanceOf(FileNotFoundError);

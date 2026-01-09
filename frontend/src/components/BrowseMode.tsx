@@ -16,9 +16,10 @@ import { ImageViewer } from "./ImageViewer";
 import { VideoViewer } from "./VideoViewer";
 import { PdfViewer } from "./PdfViewer";
 import { JsonViewer } from "./JsonViewer";
+import { TxtViewer } from "./TxtViewer";
 import { SearchHeader } from "./SearchHeader";
 import { SearchResults } from "./SearchResults";
-import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile } from "../utils/file-types";
+import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isTxtFile } from "../utils/file-types";
 import type { FileSearchResult, ContentSearchResult } from "@memory-loop/shared";
 import "./BrowseMode.css";
 
@@ -126,7 +127,7 @@ export function BrowseMode(): React.ReactNode {
     }
 
     // Check if this is a text file that needs loading
-    const isTextFile = isMarkdownFile(path) || isJsonFile(path);
+    const isTextFile = isMarkdownFile(path) || isJsonFile(path) || isTxtFile(path);
 
     // For text files, auto-load if not already loaded
     if (
@@ -506,6 +507,8 @@ export function BrowseMode(): React.ReactNode {
             <PdfViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
           ) : isJsonFile(browser.currentPath) ? (
             <JsonViewer onNavigate={handleNavigate} onSave={handleSave} />
+          ) : isTxtFile(browser.currentPath) ? (
+            <TxtViewer onNavigate={handleNavigate} onSave={handleSave} />
           ) : (
             <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} onSave={handleSave} />
           )}

@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { isImageFile, isMarkdownFile, IMAGE_EXTENSIONS } from "../file-types";
+import { isImageFile, isMarkdownFile, isTxtFile, IMAGE_EXTENSIONS } from "../file-types";
 
 describe("isImageFile", () => {
   it("returns true for common image extensions", () => {
@@ -78,6 +78,34 @@ describe("isMarkdownFile", () => {
 
   it("returns false for empty string", () => {
     expect(isMarkdownFile("")).toBe(false);
+  });
+});
+
+describe("isTxtFile", () => {
+  it("returns true for .txt files", () => {
+    expect(isTxtFile("notes.txt")).toBe(true);
+    expect(isTxtFile("readme.txt")).toBe(true);
+    expect(isTxtFile("log.txt")).toBe(true);
+  });
+
+  it("handles uppercase extensions", () => {
+    expect(isTxtFile("notes.TXT")).toBe(true);
+    expect(isTxtFile("README.Txt")).toBe(true);
+  });
+
+  it("handles paths with directories", () => {
+    expect(isTxtFile("docs/readme.txt")).toBe(true);
+    expect(isTxtFile("logs/2024-01-01.txt")).toBe(true);
+  });
+
+  it("returns false for non-txt files", () => {
+    expect(isTxtFile("photo.jpg")).toBe(false);
+    expect(isTxtFile("document.md")).toBe(false);
+    expect(isTxtFile("data.json")).toBe(false);
+  });
+
+  it("returns false for empty string", () => {
+    expect(isTxtFile("")).toBe(false);
   });
 });
 

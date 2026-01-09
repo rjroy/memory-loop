@@ -12,8 +12,10 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { FileTree } from "./FileTree";
 import { TaskList } from "./TaskList";
 import { MarkdownViewer } from "./MarkdownViewer";
+import { ImageViewer } from "./ImageViewer";
 import { SearchHeader } from "./SearchHeader";
 import { SearchResults } from "./SearchResults";
+import { isImageFile, isMarkdownFile } from "../utils/file-types";
 import type { FileSearchResult, ContentSearchResult } from "@memory-loop/shared";
 import "./BrowseMode.css";
 
@@ -36,7 +38,7 @@ export function BrowseMode(): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  const { browser, vault, cacheDirectory, clearDirectoryCache, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch } = useSession();
+  const { browser, vault, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch } = useSession();
 
   // Construct asset base URL with vaultId for image serving
   const assetBaseUrl = vault ? `/vault/${vault.id}/assets` : "/vault/assets";
@@ -103,29 +105,40 @@ export function BrowseMode(): React.ReactNode {
   }, [vault, hasSessionReady, viewMode, sendMessage, setTasksLoading]);
 
   // Auto-load file when currentPath is set externally (e.g., from RecentActivity View button)
-  // Only load if we have a file path and no content loaded yet
+  // Only load markdown files - images are rendered directly via asset URL
   const hasAutoLoadedRef = useRef<string | null>(null);
   useEffect(() => {
     const path = browser.currentPath;
 
-    // Reset auto-load ref when blocked so same file can be loaded again on future navigation
-    if (
-      !hasSessionReady ||
-      !path ||
-      !path.endsWith(".md") ||
-      browser.currentFileContent !== null ||
-      browser.fileError ||
-      browser.isLoading
-    ) {
+    // Skip if no path or not ready
+    if (!hasSessionReady || !path) {
       hasAutoLoadedRef.current = null;
       return;
     }
 
-    // Only auto-load .md files that haven't been auto-loaded for this path yet
-    if (hasAutoLoadedRef.current !== path) {
+    // Images don't need loading - they render directly from asset URL
+    if (isImageFile(path)) {
+      hasAutoLoadedRef.current = null;
+      return;
+    }
+
+    // For markdown files, auto-load if not already loaded
+    if (
+      isMarkdownFile(path) &&
+      browser.currentFileContent === null &&
+      !browser.fileError &&
+      !browser.isLoading &&
+      hasAutoLoadedRef.current !== path
+    ) {
       hasAutoLoadedRef.current = path;
       setFileLoading(true);
       sendMessage({ type: "read_file", path });
+      return;
+    }
+
+    // Reset ref when conditions aren't met (allows reload on future navigation)
+    if (!isMarkdownFile(path) || browser.currentFileContent !== null || browser.fileError || browser.isLoading) {
+      hasAutoLoadedRef.current = null;
     }
   }, [hasSessionReady, browser.currentPath, browser.currentFileContent, browser.fileError, browser.isLoading, sendMessage, setFileLoading]);
 
@@ -228,10 +241,16 @@ export function BrowseMode(): React.ReactNode {
   // Handle file selection from FileTree
   const handleFileSelect = useCallback(
     (path: string) => {
+      // For image files, just set the path - we render directly via asset URL
+      if (isImageFile(path)) {
+        setCurrentPath(path);
+        return;
+      }
+      // For markdown and other files, request content from backend
       setFileLoading(true);
       sendMessage({ type: "read_file", path });
     },
-    [sendMessage, setFileLoading]
+    [sendMessage, setFileLoading, setCurrentPath]
   );
 
   // Handle navigation from MarkdownViewer (wiki-links)
@@ -473,7 +492,11 @@ export function BrowseMode(): React.ReactNode {
           </span>
         </div>
         <div className="browse-mode__viewer-content">
-          <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} onSave={handleSave} />
+          {isImageFile(browser.currentPath) ? (
+            <ImageViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
+          ) : (
+            <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} onSave={handleSave} />
+          )}
         </div>
       </main>
 

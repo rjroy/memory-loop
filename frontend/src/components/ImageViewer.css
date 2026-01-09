@@ -1,0 +1,119 @@
+/**
+ * ImageViewer Component Styles
+ *
+ * Styling for displaying vault images with loading and error states.
+ */
+
+.image-viewer {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* Header with filename */
+.image-viewer__header {
+  display: flex;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--glass-bg-tertiary);
+  border-bottom: 1px solid var(--glass-border);
+  min-height: 44px;
+}
+
+.image-viewer__filename {
+  color: var(--color-text);
+  font-weight: var(--font-medium);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Image container */
+.image-viewer__container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: var(--spacing-md);
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  position: relative;
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .image-viewer__container {
+    background-color: var(--color-surface);
+  }
+}
+
+/* Image element */
+.image-viewer__image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  transition: opacity 0.3s ease;
+}
+
+.image-viewer__image--loading {
+  opacity: 0;
+  position: absolute;
+}
+
+/* Loading state */
+.image-viewer__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+}
+
+.image-viewer__spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-accent-primary-a20);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: image-viewer-spin 0.8s linear infinite;
+}
+
+@keyframes image-viewer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error state */
+.image-viewer__error {
+  text-align: center;
+  color: var(--color-text-secondary);
+  padding: var(--spacing-lg);
+}
+
+.image-viewer__error p {
+  margin: var(--spacing-xs) 0;
+}
+
+.image-viewer__error-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text-error);
+  word-break: break-all;
+}
+
+/* Mobile adjustments */
+@media (max-width: 767px) {
+  .image-viewer__container {
+    padding: var(--spacing-sm);
+    backdrop-filter: blur(4px);
+  }
+
+  .image-viewer__header {
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+}

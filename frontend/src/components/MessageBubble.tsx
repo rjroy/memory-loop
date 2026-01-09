@@ -54,8 +54,22 @@ const IMAGE_PATH_PATTERN =
   /(?:05_Attachments|Attachments|attachments|assets|images)\/[\w.-]+\.(png|jpg|jpeg|gif|webp)/gi;
 
 /**
- * Renders user message content with inline images.
- * Detects image paths and renders them as images.
+ * Transforms user message content by converting detected image paths to markdown syntax.
+ * This allows react-markdown to render both the markdown and inline images.
+ */
+function transformImagePaths(content: string, vaultId: string): string {
+  // Reset regex lastIndex for each call
+  IMAGE_PATH_PATTERN.lastIndex = 0;
+
+  return content.replace(IMAGE_PATH_PATTERN, (match) => {
+    const imageUrl = `/vault/${vaultId}/assets/${encodeAssetPath(match)}`;
+    return `![Attached: ${match}](${imageUrl})`;
+  });
+}
+
+/**
+ * Renders user message content with markdown support.
+ * Detects image paths and converts them to markdown image syntax before rendering.
  */
 function UserMessageContent({
   content,
@@ -64,57 +78,13 @@ function UserMessageContent({
   content: string;
   vaultId?: string;
 }): React.ReactNode {
-  if (!vaultId) {
-    return content;
-  }
+  const processedContent = vaultId ? transformImagePaths(content, vaultId) : content;
 
-  // Find all image path matches
-  const matches: { match: string; index: number }[] = [];
-  let match: RegExpExecArray | null;
-
-  // Reset regex lastIndex for each call
-  IMAGE_PATH_PATTERN.lastIndex = 0;
-
-  while ((match = IMAGE_PATH_PATTERN.exec(content)) !== null) {
-    matches.push({ match: match[0], index: match.index });
-  }
-
-  if (matches.length === 0) {
-    return content;
-  }
-
-  // Build elements array with text and images
-  const elements: React.ReactNode[] = [];
-  let lastIndex = 0;
-
-  matches.forEach((m, i) => {
-    // Text before this match
-    if (m.index > lastIndex) {
-      elements.push(content.slice(lastIndex, m.index));
-    }
-
-    // The image
-    const imagePath = m.match;
-    const imageUrl = `/vault/${vaultId}/assets/${encodeAssetPath(imagePath)}`;
-    elements.push(
-      <img
-        key={`img-${i}`}
-        src={imageUrl}
-        alt={`Attached: ${imagePath}`}
-        className="message-bubble__inline-image"
-        loading="lazy"
-      />
-    );
-
-    lastIndex = m.index + m.match.length;
-  });
-
-  // Remaining text after last match
-  if (lastIndex < content.length) {
-    elements.push(content.slice(lastIndex));
-  }
-
-  return <>{elements}</>;
+  return (
+    <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      {processedContent}
+    </Markdown>
+  );
 }
 
 /**

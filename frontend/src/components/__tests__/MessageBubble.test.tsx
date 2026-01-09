@@ -51,7 +51,7 @@ describe("MessageBubble", () => {
   });
 
   describe("user messages", () => {
-    it("renders user content as plain text", () => {
+    it("renders user content with markdown", () => {
       const message = createMessage({
         role: "user",
         content: "Hello world",
@@ -60,6 +60,57 @@ describe("MessageBubble", () => {
       const { container } = render(<MessageBubble message={message} />);
 
       expect(container.textContent).toContain("Hello world");
+    });
+
+    it("renders hr as decorative image in user messages", () => {
+      const message = createMessage({
+        role: "user",
+        content: "Before\n\n---\n\nAfter",
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const hrImage = container.querySelector("img.message-bubble__hr");
+      expect(hrImage).not.toBeNull();
+      expect(hrImage?.getAttribute("src")).toBe("/images/hr.webp");
+    });
+
+    it("renders blockquotes in user messages", () => {
+      const message = createMessage({
+        role: "user",
+        content: "> This is a quote",
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const blockquote = container.querySelector("blockquote");
+      expect(blockquote).not.toBeNull();
+      expect(blockquote?.textContent).toContain("This is a quote");
+    });
+
+    it("renders bold and italic in user messages", () => {
+      const message = createMessage({
+        role: "user",
+        content: "This is **bold** and *italic*",
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      expect(container.querySelector("strong")).not.toBeNull();
+      expect(container.querySelector("em")).not.toBeNull();
+    });
+
+    it("renders code blocks in user messages", () => {
+      const message = createMessage({
+        role: "user",
+        content: "Use `inline code` here",
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const code = container.querySelector("code");
+      expect(code).not.toBeNull();
+      expect(code?.textContent).toBe("inline code");
     });
   });
 

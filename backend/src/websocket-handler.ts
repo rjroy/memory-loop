@@ -32,6 +32,7 @@ import {
   listDirectory,
   readMarkdownFile,
   writeMarkdownFile,
+  deleteFile,
   FileBrowserError,
 } from "./file-browser";
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk";
@@ -412,6 +413,9 @@ export class WebSocketHandler {
         break;
       case "write_file":
         await this.handleWriteFile(ws, message.path, message.content);
+        break;
+      case "delete_file":
+        await this.handleDeleteFile(ws, message.path);
         break;
       case "get_recent_notes":
         await this.handleGetRecentNotes(ws);
@@ -1420,6 +1424,44 @@ export class WebSocketHandler {
       } else {
         const message =
           error instanceof Error ? error.message : "Failed to write file";
+        this.sendError(ws, "INTERNAL_ERROR", message);
+      }
+    }
+  }
+
+  /**
+   * Handles delete_file message.
+   * Deletes a file from the selected vault.
+   */
+  private async handleDeleteFile(
+    ws: WebSocketLike,
+    path: string
+  ): Promise<void> {
+    log.info(`Deleting file: ${path}`);
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for file deletion");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      await deleteFile(this.state.currentVault.contentRoot, path);
+      log.info(`File deleted: ${path}`);
+      this.send(ws, {
+        type: "file_deleted",
+        path,
+      });
+    } catch (error) {
+      log.error("File deletion failed", error);
+      if (error instanceof FileBrowserError) {
+        this.sendError(ws, error.code, error.message);
+      } else {
+        const message =
+          error instanceof Error ? error.message : "Failed to delete file";
         this.sendError(ws, "INTERNAL_ERROR", message);
       }
     }

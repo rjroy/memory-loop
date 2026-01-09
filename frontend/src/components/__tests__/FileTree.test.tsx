@@ -544,4 +544,119 @@ describe("FileTree", () => {
       expect(apiElements.length).toBeGreaterThan(0);
     });
   });
+
+  describe("delete file functionality", () => {
+    it("shows delete option in context menu for files", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteFile = mock(() => {});
+      render(<FileTree onDeleteFile={onDeleteFile} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+
+      // Should show delete option
+      expect(screen.getByText("Delete file")).toBeDefined();
+    });
+
+    it("does not show delete option for directories", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteFile = mock(() => {});
+      render(<FileTree onDeleteFile={onDeleteFile} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+
+      // Should not show delete option (only pin/unpin)
+      expect(screen.queryByText("Delete file")).toBeNull();
+    });
+
+    it("shows confirmation dialog when delete is clicked", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteFile = mock(() => {});
+      render(<FileTree onDeleteFile={onDeleteFile} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file and click delete
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+      fireEvent.click(screen.getByText("Delete file"));
+
+      // Should show confirmation dialog
+      expect(screen.getByText("Delete File?")).toBeDefined();
+      expect(screen.getByText("This cannot be undone! The file will be permanently deleted from your vault.")).toBeDefined();
+    });
+
+    it("calls onDeleteFile when deletion is confirmed", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteFile = mock(() => {});
+      render(<FileTree onDeleteFile={onDeleteFile} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file and click delete
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+      fireEvent.click(screen.getByText("Delete file"));
+
+      // Confirm deletion
+      fireEvent.click(screen.getByText("Delete"));
+
+      // Should call onDeleteFile with the file path
+      expect(onDeleteFile).toHaveBeenCalledWith("README.md");
+    });
+
+    it("does not call onDeleteFile when deletion is cancelled", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteFile = mock(() => {});
+      render(<FileTree onDeleteFile={onDeleteFile} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file and click delete
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+      fireEvent.click(screen.getByText("Delete file"));
+
+      // Cancel deletion
+      fireEvent.click(screen.getByText("Cancel"));
+
+      // Should not call onDeleteFile
+      expect(onDeleteFile).not.toHaveBeenCalled();
+    });
+
+    it("does not show delete option when onDeleteFile is not provided", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+
+      // Should not show delete option
+      expect(screen.queryByText("Delete file")).toBeNull();
+    });
+
+    it("shows delete option for files in nested directories", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", testFiles],
+        ["docs", docsFiles],
+      ]);
+      const expandedDirs = new Set<string>(["docs"]);
+      const onDeleteFile = mock(() => {});
+      render(<FileTree onDeleteFile={onDeleteFile} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on a nested file
+      const fileButton = screen.getByText("guide.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+
+      // Should show delete option
+      expect(screen.getByText("Delete file")).toBeDefined();
+
+      // Click delete and confirm
+      fireEvent.click(screen.getByText("Delete file"));
+      fireEvent.click(screen.getByText("Delete"));
+
+      // Should call with the full path
+      expect(onDeleteFile).toHaveBeenCalledWith("docs/guide.md");
+    });
+  });
 });

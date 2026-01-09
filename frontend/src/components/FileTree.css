@@ -306,3 +306,16 @@
   height: 14px;
   color: var(--color-text-accent-secondary);
 }
+
+/* Danger variant for destructive actions */
+.file-tree__context-menu-item--danger {
+  color: var(--color-error);
+}
+
+.file-tree__context-menu-item--danger:hover {
+  background: color-mix(in srgb, var(--color-error) 15%, transparent);
+}
+
+.file-tree__context-menu-item--danger .file-tree__icon-svg {
+  color: var(--color-error);
+}

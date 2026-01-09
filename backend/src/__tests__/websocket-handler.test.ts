@@ -137,6 +137,11 @@ const mockWriteMarkdownFile = mock<
   (...args: any[]) => Promise<void>
 >(() => Promise.resolve());
 
+const mockDeleteFile = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<void>
+>(() => Promise.resolve());
+
 // FileBrowserError mock class
 class MockFileBrowserError extends Error {
   constructor(
@@ -152,6 +157,7 @@ void mock.module("../file-browser", () => ({
   listDirectory: mockListDirectory,
   readMarkdownFile: mockReadMarkdownFile,
   writeMarkdownFile: mockWriteMarkdownFile,
+  deleteFile: mockDeleteFile,
   FileBrowserError: MockFileBrowserError,
 }));
 
@@ -379,6 +385,7 @@ describe("WebSocket Handler", () => {
     mockListDirectory.mockReset();
     mockReadMarkdownFile.mockReset();
     mockWriteMarkdownFile.mockReset();
+    mockDeleteFile.mockReset();
     mockGetInspiration.mockReset();
     mockGetAllTasks.mockReset();
     mockToggleTask.mockReset();
@@ -2788,6 +2795,190 @@ describe("WebSocket Handler", () => {
       if (message?.type === "error") {
         expect(message.code).toBe("INTERNAL_ERROR");
         expect(message.message).toContain("permission denied");
+      }
+    });
+  });
+
+  // ===========================================================================
+  // delete_file Handler Tests
+  // ===========================================================================
+
+  describe("delete_file handler", () => {
+    test("returns error if no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_file", path: "note.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toContain("No vault selected");
+      }
+    });
+
+    test("deletes file and returns file_deleted on success", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockDeleteFile.mockResolvedValue(undefined);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_file", path: "note.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("file_deleted");
+      if (message?.type === "file_deleted") {
+        expect(message.path).toBe("note.md");
+      }
+
+      expect(mockDeleteFile).toHaveBeenCalledWith(vault.path, "note.md");
+    });
+
+    test("deletes file in nested directory", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockDeleteFile.mockResolvedValue(undefined);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_file", path: "folder/subfolder/note.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("file_deleted");
+      if (message?.type === "file_deleted") {
+        expect(message.path).toBe("folder/subfolder/note.md");
+      }
+
+      expect(mockDeleteFile).toHaveBeenCalledWith(vault.path, "folder/subfolder/note.md");
+    });
+
+    test("returns error for non-existent file (FILE_NOT_FOUND)", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockDeleteFile.mockRejectedValue(
+        new MockFileBrowserError('File "missing.md" does not exist', "FILE_NOT_FOUND")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_file", path: "missing.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("FILE_NOT_FOUND");
+      }
+    });
+
+    test("returns error for path traversal attempt", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockDeleteFile.mockRejectedValue(
+        new MockFileBrowserError("Path is outside the vault boundary", "PATH_TRAVERSAL")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_file", path: "../outside/secret.txt" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("PATH_TRAVERSAL");
+      }
+    });
+
+    test("returns error when trying to delete directory", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockDeleteFile.mockRejectedValue(
+        new MockFileBrowserError("Can only delete files, not directories", "INVALID_FILE_TYPE")
+      );
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_file", path: "a-directory" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INVALID_FILE_TYPE");
+      }
+    });
+
+    test("returns INTERNAL_ERROR for unexpected errors", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockDeleteFile.mockRejectedValue(new Error("Disk failure"));
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "delete_file", path: "note.md" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toContain("Disk failure");
       }
     });
   });

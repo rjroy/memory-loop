@@ -419,6 +419,15 @@ export const GetSnippetsMessageSchema = z.object({
 });
 
 /**
+ * Client requests to delete a file from the vault
+ * Path is relative to vault content root
+ */
+export const DeleteFileMessageSchema = z.object({
+  type: z.literal("delete_file"),
+  path: z.string().min(1, "File path is required"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -444,6 +453,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SearchFilesMessageSchema,
   SearchContentMessageSchema,
   GetSnippetsMessageSchema,
+  DeleteFileMessageSchema,
 ]);
 
 // =============================================================================
@@ -736,6 +746,14 @@ export const IndexProgressMessageSchema = z.object({
 });
 
 /**
+ * Server confirms file was deleted successfully
+ */
+export const FileDeletedMessageSchema = z.object({
+  type: z.literal("file_deleted"),
+  path: z.string().min(1, "File path is required"),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -765,6 +783,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   SearchResultsMessageSchema,
   SnippetsMessageSchema,
   IndexProgressMessageSchema,
+  FileDeletedMessageSchema,
 ]);
 
 // =============================================================================
@@ -820,6 +839,7 @@ export type SetupVaultMessage = z.infer<typeof SetupVaultMessageSchema>;
 export type SearchFilesMessage = z.infer<typeof SearchFilesMessageSchema>;
 export type SearchContentMessage = z.infer<typeof SearchContentMessageSchema>;
 export type GetSnippetsMessage = z.infer<typeof GetSnippetsMessageSchema>;
+export type DeleteFileMessage = z.infer<typeof DeleteFileMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -851,6 +871,7 @@ export type SetupCompleteMessage = z.infer<typeof SetupCompleteMessageSchema>;
 export type SearchResultsMessage = z.infer<typeof SearchResultsMessageSchema>;
 export type SnippetsMessage = z.infer<typeof SnippetsMessageSchema>;
 export type IndexProgressMessage = z.infer<typeof IndexProgressMessageSchema>;
+export type FileDeletedMessage = z.infer<typeof FileDeletedMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

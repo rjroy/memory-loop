@@ -23,7 +23,7 @@ export const MAX_FILE_SIZE = 1024 * 1024; // 1MB
  * Allowed file extensions for text file reading/writing.
  * Lowercase, including the leading dot.
  */
-const ALLOWED_TEXT_EXTENSIONS = new Set([".md", ".json", ".txt"]);
+const ALLOWED_TEXT_EXTENSIONS = new Set([".md", ".json", ".txt", ".csv", ".tsv"]);
 
 /**
  * Checks if a file path has an allowed text extension.

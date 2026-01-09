@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, encodeAssetPath } from "./file-types";
+import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isCsvFile, encodeAssetPath } from "./file-types";
 
 describe("isImageFile", () => {
   test("returns true for common image extensions", () => {
@@ -112,6 +112,31 @@ describe("isJsonFile", () => {
     expect(isJsonFile("notes.md")).toBe(false);
     expect(isJsonFile("script.js")).toBe(false);
     expect(isJsonFile("data.jsonl")).toBe(false);
+  });
+});
+
+describe("isCsvFile", () => {
+  test("returns true for .csv files", () => {
+    expect(isCsvFile("data.csv")).toBe(true);
+    expect(isCsvFile("export.CSV")).toBe(true);
+  });
+
+  test("returns true for .tsv files", () => {
+    expect(isCsvFile("data.tsv")).toBe(true);
+    expect(isCsvFile("export.TSV")).toBe(true);
+  });
+
+  test("works with paths", () => {
+    expect(isCsvFile("exports/data.csv")).toBe(true);
+    expect(isCsvFile("deep/nested/path/file.tsv")).toBe(true);
+  });
+
+  test("returns false for non-csv files", () => {
+    expect(isCsvFile("photo.png")).toBe(false);
+    expect(isCsvFile("notes.md")).toBe(false);
+    expect(isCsvFile("data.json")).toBe(false);
+    expect(isCsvFile("script.js")).toBe(false);
+    expect(isCsvFile("noextension")).toBe(false);
   });
 });
 

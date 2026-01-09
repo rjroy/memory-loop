@@ -95,6 +95,17 @@ export function isTxtFile(path: string): boolean {
 }
 
 /**
+ * Checks if a file path is a CSV or TSV file.
+ *
+ * @param path - File path to check
+ * @returns true if the file has .csv or .tsv extension
+ */
+export function isCsvFile(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith(".csv") || lower.endsWith(".tsv");
+}
+
+/**
  * Encodes a file path for use in URLs.
  * Encodes each path segment separately to preserve directory structure.
  *

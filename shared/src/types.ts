@@ -94,6 +94,7 @@ export interface StoredToolInvocation {
  * @property content - Message text content
  * @property timestamp - ISO 8601 timestamp
  * @property toolInvocations - Tool invocations for assistant messages (optional)
+ * @property contextUsage - Percentage of context window used (0-100, assistant messages only)
  */
 export interface ConversationMessage {
   id: string;
@@ -101,6 +102,7 @@ export interface ConversationMessage {
   content: string;
   timestamp: string;
   toolInvocations?: StoredToolInvocation[];
+  contextUsage?: number;
 }
 
 /**

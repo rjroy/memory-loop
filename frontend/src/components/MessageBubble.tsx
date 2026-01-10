@@ -132,9 +132,16 @@ export function MessageBubble({ message, vaultId }: MessageBubbleProps): React.R
             />
           )}
         </div>
-        <span className="message-bubble__time">
-          {formatTime(message.timestamp)}
-        </span>
+        <div className="message-bubble__meta">
+          <span className="message-bubble__time">
+            {formatTime(message.timestamp)}
+          </span>
+          {message.role === "assistant" && message.contextUsage !== undefined && (
+            <span className="message-bubble__context-usage">
+              {message.contextUsage}%
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

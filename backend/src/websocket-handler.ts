@@ -57,11 +57,12 @@ export interface WebSocketLike {
 
 /**
  * Result from streaming SDK events.
- * Contains accumulated response text and tool invocations for persistence.
+ * Contains accumulated response text, tool invocations, and usage stats for persistence.
  */
 interface StreamingResult {
   content: string;
   toolInvocations: StoredToolInvocation[];
+  contextUsage?: number;
 }
 
 /**
@@ -669,6 +670,7 @@ export class WebSocketHandler {
           content: streamResult.content,
           timestamp: new Date().toISOString(),
           toolInvocations: streamResult.toolInvocations.length > 0 ? streamResult.toolInvocations : undefined,
+          contextUsage: streamResult.contextUsage,
         });
       }
 
@@ -744,6 +746,9 @@ export class WebSocketHandler {
     // Track content blocks by index for accumulating tool input JSON
     const contentBlocks = new Map<number, ContentBlockState>();
 
+    // Track context usage from result events (last one wins if multiple turns)
+    let contextUsage: number | undefined;
+
     for await (const event of queryResult.events) {
       // Check if connection is still open (readyState === 1)
       if (ws.readyState !== 1) {
@@ -779,9 +784,12 @@ export class WebSocketHandler {
           responseChunks.push(text);
         }
       } else if (eventType === "result") {
-        // Result events contain tool usage info - track for persistence
+        // Result events contain tool usage info and context stats - track for persistence
         // These come at the end of a turn with complete tool info
-        this.handleResultEvent(ws, rawEvent, toolsMap);
+        const usage = this.handleResultEvent(ws, rawEvent, toolsMap);
+        if (usage !== undefined) {
+          contextUsage = usage;
+        }
       } else if (eventType === "user") {
         // User events contain tool results (SDK creates these after tool execution)
         this.handleUserEvent(ws, rawEvent, toolsMap);
@@ -792,6 +800,7 @@ export class WebSocketHandler {
     return {
       content: responseChunks.join(""),
       toolInvocations: Array.from(toolsMap.values()),
+      contextUsage,
     };
   }
 
@@ -955,21 +964,62 @@ export class WebSocketHandler {
   }
 
   /**
-   * Handles result events containing tool usage.
-   * Sends tool_end events and ensures tools are tracked for persistence.
+   * Handles result events containing tool usage and context statistics.
+   * Sends tool_end events, ensures tools are tracked for persistence, and
+   * calculates context window usage percentage.
    *
    * Note: tool_start and tool_input are now sent during streaming via
    * handleStreamEvent. This method handles:
    * - tool_use blocks: Only tracks for persistence if not already tracked
    * - tool_result blocks: Sends tool_end and updates status
+   * - usage/modelUsage: Extracts token counts and calculates context percentage
+   *
+   * @returns Context usage percentage (0-100) if available, undefined otherwise
    */
   private handleResultEvent(
     ws: WebSocketLike,
     event: Record<string, unknown>,
     toolsMap: Map<string, StoredToolInvocation>
-  ): void {
+  ): number | undefined {
+    // Extract usage statistics from SDKResultMessage
+    // usage contains: input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens
+    // modelUsage contains per-model stats including contextWindow
+    const usage = event.usage as {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    } | undefined;
+
+    const modelUsage = event.modelUsage as Record<string, {
+      contextWindow?: number;
+    }> | undefined;
+
+    // Calculate context usage percentage
+    let contextUsage: number | undefined;
+    if (usage && modelUsage) {
+      const inputTokens = usage.input_tokens ?? 0;
+      const outputTokens = usage.output_tokens ?? 0;
+      const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
+      const cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
+      const totalTokens = inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens;
+
+      // Get context window from first model in modelUsage (typically only one)
+      const modelNames = Object.keys(modelUsage);
+      if (modelNames.length > 0) {
+        const contextWindow = modelUsage[modelNames[0]].contextWindow;
+        if (contextWindow && contextWindow > 0) {
+          contextUsage = Math.round((100 * totalTokens) / contextWindow);
+          // Clamp to 0-100 range
+          contextUsage = Math.max(0, Math.min(100, contextUsage));
+          log.debug(`Context usage: ${totalTokens}/${contextWindow} = ${contextUsage}%`);
+        }
+      }
+    }
+
+    // Process tool blocks from result content (existing logic)
     const result = event.result as Record<string, unknown> | undefined;
-    if (!result) return;
+    if (!result) return contextUsage;
 
     // Check for tool_use blocks in the result
     const content = result.content as
@@ -1030,6 +1080,8 @@ export class WebSocketHandler {
         }
       }
     }
+
+    return contextUsage;
   }
 
   /**

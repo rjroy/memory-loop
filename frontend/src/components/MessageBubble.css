@@ -191,6 +191,7 @@
   vertical-align: middle;
   margin-left: 4px;
   animation: pulse 1.5s ease-in-out infinite;
+  filter: hue-rotate(var(--holiday-hue-rotate, 0deg));
 }
 
 @keyframes pulse {

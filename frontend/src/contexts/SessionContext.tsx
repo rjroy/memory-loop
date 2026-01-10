@@ -109,6 +109,8 @@ export interface ConversationMessage {
   isStreaming?: boolean;
   /** Tool invocations for this message (assistant messages only) */
   toolInvocations?: ToolInvocation[];
+  /** Percentage of context window used (0-100, assistant messages only) */
+  contextUsage?: number;
 }
 
 /**

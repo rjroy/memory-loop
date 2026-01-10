@@ -127,4 +127,74 @@ describe("MessageBubble", () => {
       expect(container.textContent).toContain("Paragraph text");
     });
   });
+
+  describe("context usage display", () => {
+    it("displays context usage percentage for assistant messages", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        contextUsage: 42,
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const contextUsage = container.querySelector(".message-bubble__context-usage");
+      expect(contextUsage).not.toBeNull();
+      expect(contextUsage?.textContent).toBe("42%");
+    });
+
+    it("does not display context usage when undefined", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        contextUsage: undefined,
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const contextUsage = container.querySelector(".message-bubble__context-usage");
+      expect(contextUsage).toBeNull();
+    });
+
+    it("does not display context usage for user messages", () => {
+      const message = createMessage({
+        role: "user",
+        content: "User message",
+        contextUsage: 50,
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const contextUsage = container.querySelector(".message-bubble__context-usage");
+      expect(contextUsage).toBeNull();
+    });
+
+    it("displays 0% when context usage is 0", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        contextUsage: 0,
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const contextUsage = container.querySelector(".message-bubble__context-usage");
+      expect(contextUsage).not.toBeNull();
+      expect(contextUsage?.textContent).toBe("0%");
+    });
+
+    it("displays 100% when context usage is at maximum", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        contextUsage: 100,
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const contextUsage = container.querySelector(".message-bubble__context-usage");
+      expect(contextUsage).not.toBeNull();
+      expect(contextUsage?.textContent).toBe("100%");
+    });
+  });
 });

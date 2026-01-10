@@ -248,6 +248,8 @@ export interface SessionActions {
   completeToolInvocation: (toolUseId: string, output: unknown) => void;
   /** Set available slash commands from SDK */
   setSlashCommands: (commands: SlashCommand[]) => void;
+  /** Set context usage percentage on the last assistant message */
+  setLastMessageContextUsage: (contextUsage: number) => void;
   // Search actions
   /** Activate or deactivate search mode */
   setSearchActive: (isActive: boolean) => void;
@@ -333,6 +335,7 @@ type SessionAction =
   | { type: "UPDATE_TOOL_INPUT"; toolUseId: string; input: unknown }
   | { type: "COMPLETE_TOOL_INVOCATION"; toolUseId: string; output: unknown }
   | { type: "SET_SLASH_COMMANDS"; commands: SlashCommand[] }
+  | { type: "SET_LAST_MESSAGE_CONTEXT_USAGE"; contextUsage: number }
   // Search actions
   | { type: "SET_SEARCH_ACTIVE"; isActive: boolean }
   | { type: "SET_SEARCH_MODE"; mode: SearchMode }
@@ -998,6 +1001,18 @@ function sessionReducer(
         slashCommands: action.commands,
       };
 
+    case "SET_LAST_MESSAGE_CONTEXT_USAGE": {
+      if (state.messages.length === 0) return state;
+      const messages = [...state.messages];
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role !== "assistant") return state;
+      messages[messages.length - 1] = {
+        ...lastMessage,
+        contextUsage: action.contextUsage,
+      };
+      return { ...state, messages };
+    }
+
     // Search actions
     case "SET_SEARCH_ACTIVE":
       return {
@@ -1521,6 +1536,10 @@ export function SessionProvider({
     dispatch({ type: "SET_SLASH_COMMANDS", commands });
   }, []);
 
+  const setLastMessageContextUsage = useCallback((contextUsage: number) => {
+    dispatch({ type: "SET_LAST_MESSAGE_CONTEXT_USAGE", contextUsage });
+  }, []);
+
   // Search action creators
   const setSearchActive = useCallback((isActive: boolean) => {
     dispatch({ type: "SET_SEARCH_ACTIVE", isActive });
@@ -1598,6 +1617,7 @@ export function SessionProvider({
     updateToolInput,
     completeToolInvocation,
     setSlashCommands,
+    setLastMessageContextUsage,
     setSearchActive,
     setSearchMode,
     setSearchQuery,
@@ -1630,7 +1650,7 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setSearchResults, setSnippets, setSearchLoading } = useSession();
+  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setLastMessageContextUsage, setSearchResults, setSnippets, setSearchLoading } = useSession();
 
   // Use ref to access current messages in callback without causing re-renders
   const messagesRef = useRef(messages);
@@ -1693,8 +1713,11 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         }
 
         case "response_end":
-          // Mark message as complete
+          // Mark message as complete and update context usage if provided
           updateLastMessage("", false);
+          if (message.contextUsage !== undefined) {
+            setLastMessageContextUsage(message.contextUsage);
+          }
           break;
 
         // Search message handlers
@@ -1722,6 +1745,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           break;
       }
     },
-    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setSearchResults, setSnippets, setSearchLoading]
+    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setLastMessageContextUsage, setSearchResults, setSnippets, setSearchLoading]
   );
 }

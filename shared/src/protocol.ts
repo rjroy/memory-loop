@@ -514,6 +514,7 @@ export const ResponseChunkMessageSchema = z.object({
 export const ResponseEndMessageSchema = z.object({
   type: z.literal("response_end"),
   messageId: z.string().min(1),
+  contextUsage: z.number().min(0).max(100).optional(),
 });
 
 /**

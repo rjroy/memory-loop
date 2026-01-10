@@ -659,8 +659,12 @@ export class WebSocketHandler {
       log.info("Streaming SDK events...");
       const streamResult = await this.streamEvents(ws, messageId, queryResult);
 
-      // Send response_end
-      this.send(ws, { type: "response_end", messageId });
+      // Send response_end with context usage stats
+      this.send(ws, {
+        type: "response_end",
+        messageId,
+        contextUsage: streamResult.contextUsage,
+      });
 
       // Save assistant message to session after streaming completes
       if (streamResult.content.length > 0 || streamResult.toolInvocations.length > 0) {

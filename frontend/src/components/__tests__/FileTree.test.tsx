@@ -659,4 +659,100 @@ describe("FileTree", () => {
       expect(onDeleteFile).toHaveBeenCalledWith("docs/guide.md");
     });
   });
+
+  describe("think about functionality", () => {
+    it("shows think about option in context menu for files", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onThinkAbout = mock(() => {});
+      render(<FileTree onThinkAbout={onThinkAbout} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+
+      // Should show think about option
+      expect(screen.getByText("Think about")).toBeDefined();
+    });
+
+    it("does not show think about option for directories", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onThinkAbout = mock(() => {});
+      render(<FileTree onThinkAbout={onThinkAbout} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+
+      // Should not show think about option
+      expect(screen.queryByText("Think about")).toBeNull();
+    });
+
+    it("calls onThinkAbout when think about is clicked", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onThinkAbout = mock(() => {});
+      render(<FileTree onThinkAbout={onThinkAbout} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file and click think about
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+      fireEvent.click(screen.getByText("Think about"));
+
+      // Should call onThinkAbout with the file path
+      expect(onThinkAbout).toHaveBeenCalledWith("README.md");
+    });
+
+    it("does not show think about option when onThinkAbout is not provided", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+
+      // Should not show think about option
+      expect(screen.queryByText("Think about")).toBeNull();
+    });
+
+    it("shows think about option for files in nested directories", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", testFiles],
+        ["docs", docsFiles],
+      ]);
+      const expandedDirs = new Set<string>(["docs"]);
+      const onThinkAbout = mock(() => {});
+      render(<FileTree onThinkAbout={onThinkAbout} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on a nested file
+      const fileButton = screen.getByText("guide.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+
+      // Should show think about option
+      expect(screen.getByText("Think about")).toBeDefined();
+
+      // Click think about
+      fireEvent.click(screen.getByText("Think about"));
+
+      // Should call with the full path
+      expect(onThinkAbout).toHaveBeenCalledWith("docs/guide.md");
+    });
+
+    it("closes context menu after clicking think about", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onThinkAbout = mock(() => {});
+      render(<FileTree onThinkAbout={onThinkAbout} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      // Click think about
+      fireEvent.click(screen.getByText("Think about"));
+
+      // Context menu should be closed
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+  });
 });

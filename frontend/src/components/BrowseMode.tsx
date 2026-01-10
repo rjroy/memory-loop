@@ -28,6 +28,9 @@ import "./BrowseMode.css";
 /** Error codes that indicate save failure for adjust mode */
 const SAVE_ERROR_CODES = ["PATH_TRAVERSAL", "INVALID_FILE_TYPE", "FILE_NOT_FOUND", "INTERNAL_ERROR"] as const;
 
+/** Storage key for discussion draft (shared with Discussion component) */
+const DISCUSSION_DRAFT_STORAGE_KEY = "memory-loop-discussion-draft";
+
 /**
  * BrowseMode provides a split-pane view for browsing vault files.
  *
@@ -44,7 +47,7 @@ export function BrowseMode(): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  const { browser, vault, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch } = useSession();
+  const { browser, vault, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch, setMode } = useSession();
 
   // Construct asset base URL with vaultId for image serving
   const assetBaseUrl = vault ? `/vault/${vault.id}/assets` : "/vault/assets";
@@ -275,6 +278,27 @@ export function BrowseMode(): React.ReactNode {
       sendMessage({ type: "delete_file", path });
     },
     [sendMessage]
+  );
+
+  // Handle "Think about" from FileTree context menu
+  // Appends file path to discussion draft and navigates to Think tab
+  const handleThinkAbout = useCallback(
+    (path: string) => {
+      // Get current draft from localStorage
+      const currentDraft = localStorage.getItem(DISCUSSION_DRAFT_STORAGE_KEY) || "";
+
+      // Append the file path to the draft
+      const newDraft = currentDraft.trim()
+        ? `${currentDraft.trim()}\n${path}`
+        : path;
+
+      // Save back to localStorage
+      localStorage.setItem(DISCUSSION_DRAFT_STORAGE_KEY, newDraft);
+
+      // Navigate to Think (discussion) mode
+      setMode("discussion");
+    },
+    [setMode]
   );
 
   // Handle file selection from FileTree
@@ -512,7 +536,7 @@ export function BrowseMode(): React.ReactNode {
                 onRequestSnippets={handleRequestSnippets}
               />
             ) : viewMode === "files" ? (
-              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} />
+              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onThinkAbout={handleThinkAbout} />
             ) : (
               <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
             )}
@@ -627,7 +651,7 @@ export function BrowseMode(): React.ReactNode {
                   onRequestSnippets={handleRequestSnippets}
                 />
               ) : viewMode === "files" ? (
-                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} />
+                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onThinkAbout={handleThinkAbout} />
               ) : (
                 <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
               )}

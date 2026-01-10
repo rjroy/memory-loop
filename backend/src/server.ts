@@ -270,9 +270,9 @@ export const createApp = () => {
       return c.json({ error: "Invalid file type" }, 400);
     }
 
-    // Build full path and validate it's within vault
-    const fullPath = join(vault.path, assetPath);
-    if (!(await isPathWithinVault(vault.path, fullPath))) {
+    // Build full path and validate it's within vault contentRoot
+    const fullPath = join(vault.contentRoot, assetPath);
+    if (!(await isPathWithinVault(vault.contentRoot, fullPath))) {
       log.warn(`Path traversal attempt: ${assetPath}`);
       return c.json({ error: "Access denied" }, 403);
     }

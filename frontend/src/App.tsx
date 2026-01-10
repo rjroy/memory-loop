@@ -105,6 +105,18 @@ function AppShell(): React.ReactNode {
   const [isReady, setIsReady] = useState(false);
   const holiday = useHoliday();
 
+  // Set holiday attribute on <html> so it covers portaled dialogs
+  React.useEffect(() => {
+    if (holiday) {
+      document.documentElement.setAttribute("data-holiday", holiday);
+    } else {
+      document.documentElement.removeAttribute("data-holiday");
+    }
+    return () => {
+      document.documentElement.removeAttribute("data-holiday");
+    };
+  }, [holiday]);
+
   // Reset isReady when vault is cleared
   React.useEffect(() => {
     if (!vault) {
@@ -115,14 +127,14 @@ function AppShell(): React.ReactNode {
   // Show vault selection until a vault is selected and session is ready
   if (!vault || !isReady) {
     return (
-      <div className="app" data-holiday={holiday ?? undefined}>
+      <div className="app">
         <VaultSelect onReady={() => setIsReady(true)} />
       </div>
     );
   }
 
   return (
-    <div className="app" data-holiday={holiday ?? undefined}>
+    <div className="app">
       <MainContent />
     </div>
   );

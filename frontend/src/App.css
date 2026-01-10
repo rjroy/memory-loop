@@ -34,32 +34,32 @@
   z-index: 0;
 }
 
-/* Holiday-specific backgrounds */
-.app[data-holiday="christmas"]::before {
+/* Holiday-specific backgrounds (data-holiday is on <html> for portal support) */
+[data-holiday="christmas"] .app::before {
   background-image: url('/images/holiday/christmas-bg-vault.webp');
 }
 
-.app[data-holiday="valentine"]::before {
+[data-holiday="valentine"] .app::before {
   background-image: url('/images/holiday/valentine-bg-vault.webp');
 }
 
-.app[data-holiday="stpatricks"]::before {
+[data-holiday="stpatricks"] .app::before {
   background-image: url('/images/holiday/stpatricks-bg-vault.webp');
 }
 
-.app[data-holiday="easter"]::before {
+[data-holiday="easter"] .app::before {
   background-image: url('/images/holiday/easter-bg-vault.webp');
 }
 
-.app[data-holiday="summer"]::before {
+[data-holiday="summer"] .app::before {
   background-image: url('/images/holiday/summer-bg-vault.webp');
 }
 
-.app[data-holiday="halloween"]::before {
+[data-holiday="halloween"] .app::before {
   background-image: url('/images/holiday/halloween-bg-vault.webp');
 }
 
-.app[data-holiday="thanksgiving"]::before {
+[data-holiday="thanksgiving"] .app::before {
   background-image: url('/images/holiday/thanksgiving-bg-vault.webp');
 }
 

@@ -117,6 +117,7 @@ export interface ConversationMessage {
  * @property createdAt - ISO 8601 timestamp of session creation
  * @property lastActiveAt - ISO 8601 timestamp of last activity
  * @property messages - Conversation history for this session
+ * @property activeModel - Model identifier captured from SDK (optional)
  */
 export interface SessionMetadata {
   id: string;
@@ -125,6 +126,7 @@ export interface SessionMetadata {
   createdAt: string;
   lastActiveAt: string;
   messages: ConversationMessage[];
+  activeModel?: string;
 }
 
 /**

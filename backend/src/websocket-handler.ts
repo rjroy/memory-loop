@@ -18,6 +18,7 @@ import type {
   SDKPartialAssistantMessage,
   SDKResultMessage,
   SDKUserMessage,
+  SDKSystemMessage,
   ModelUsage,
 } from "@anthropic-ai/claude-agent-sdk";
 
@@ -131,6 +132,8 @@ export interface ConnectionState {
   pendingPermissions: Map<string, PendingPermissionRequest>;
   /** Search index manager for the current vault (null if no vault selected) */
   searchIndex: SearchIndexManager | null;
+  /** Active model captured from SDK system/init event (null if not yet received) */
+  activeModel: string | null;
 }
 
 /**
@@ -143,6 +146,7 @@ export function createConnectionState(): ConnectionState {
     activeQuery: null,
     pendingPermissions: new Map(),
     searchIndex: null,
+    activeModel: null,
   };
 }
 
@@ -817,7 +821,17 @@ export class WebSocketHandler {
           this.handleUserEvent(ws, event, toolsMap);
           break;
         }
-        // Ignore other event types (system, auth_status, etc.)
+        case "system": {
+          // TypeScript narrows to SDKSystemMessage
+          // Capture model from init event for context usage calculation
+          const systemEvent = event as SDKSystemMessage;
+          if (systemEvent.subtype === "init" && systemEvent.model) {
+            this.state.activeModel = systemEvent.model;
+            log.info(`Active model: ${systemEvent.model}`);
+          }
+          break;
+        }
+        // Ignore other event types (auth_status, etc.)
       }
     }
 
@@ -1043,16 +1057,17 @@ export class WebSocketHandler {
       const cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
       const totalTokens = inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens;
 
-      // Get context window from first model in modelUsage (typically only one)
+      // Get context window using stored model name (preferred) or fallback to first key
       const modelNames = Object.keys(modelUsage);
-      if (modelNames.length > 0) {
-        const modelStats: ModelUsage = modelUsage[modelNames[0]];
+      const modelName = this.state.activeModel ?? modelNames[0];
+      if (modelName && modelUsage[modelName]) {
+        const modelStats: ModelUsage = modelUsage[modelName];
         const contextWindow = modelStats.contextWindow;
         if (contextWindow && contextWindow > 0) {
           contextUsage = Math.round((100 * totalTokens) / contextWindow);
           // Clamp to 0-100 range
           contextUsage = Math.max(0, Math.min(100, contextUsage));
-          log.debug(`Context usage: ${totalTokens}/${contextWindow} = ${contextUsage}%`);
+          log.debug(`Context usage: ${totalTokens}/${contextWindow} = ${contextUsage}% (model: ${modelName})`);
         }
       }
     }

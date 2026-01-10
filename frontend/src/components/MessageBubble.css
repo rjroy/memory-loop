@@ -23,34 +23,50 @@
 }
 
 .message-bubble__content {
+  position: relative;
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius-lg);
   max-width: 100%;
   min-height: 120px;
 }
 
-.message-bubble--user .message-bubble__content {
-  background-color: var(--glass-bg-secondary);
-  color: var(--color-text);
-  border: 17px solid var(--glass-border);
-  border-bottom-right-radius: var(--radius-sm);
-  backdrop-filter: blur(var(--glass-blur));
+/* Border image pseudo-element for holiday tinting */
+.message-bubble__content::before {
+  content: '';
+  position: absolute;
+  inset: -17px; /* Extend to cover border area */
+  border: 17px solid transparent;
+  border-radius: var(--radius-lg);
   border-image-source: url('/images/border.webp');
   border-image-width: 70px;
   border-image-outset: 6px;
-  border-image-slice: 24.7% 21.5% 26.7% 21.1% fill;
+  border-image-slice: 24.7% 21.5% 26.7% 21.1%;
+  filter: hue-rotate(var(--holiday-hue-rotate, 0deg));
+  pointer-events: none;
+}
+
+.message-bubble--user .message-bubble__content {
+  background-color: var(--glass-bg-secondary);
+  color: var(--color-text);
+  border: 17px solid transparent;
+  border-bottom-right-radius: var(--radius-sm);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+.message-bubble--user .message-bubble__content::before {
+  border-bottom-right-radius: var(--radius-sm);
 }
 
 .message-bubble--assistant .message-bubble__content {
   background: var(--glass-bg-primary);
   color: var(--color-text);
-  border: 17px solid var(--glass-border);
+  border: 17px solid transparent;
   border-bottom-left-radius: var(--radius-sm);
   backdrop-filter: blur(var(--glass-blur));
-  border-image-source: url('/images/border.webp');
-  border-image-width: 70px;
-  border-image-outset: 6px;
-  border-image-slice: 24.7% 21.5% 26.7% 21.1% fill;
+}
+
+.message-bubble--assistant .message-bubble__content::before {
+  border-bottom-left-radius: var(--radius-sm);
 }
 
 @supports not (backdrop-filter: blur(10px)) {
@@ -146,6 +162,7 @@
   width: 100%;
   height: auto;
   margin: 1em 0;
+  filter: hue-rotate(var(--holiday-hue-rotate, 0deg));
 }
 
 .message-bubble__text h1,

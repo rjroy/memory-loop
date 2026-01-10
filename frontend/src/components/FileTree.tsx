@@ -21,6 +21,8 @@ export interface FileTreeProps {
   onLoadDirectory?: (path: string) => void;
   /** Callback when a file deletion is requested */
   onDeleteFile?: (path: string) => void;
+  /** Callback when "Think about" is selected for a file */
+  onThinkAbout?: (path: string) => void;
 }
 
 /**
@@ -295,6 +297,26 @@ function TrashIcon(): React.ReactNode {
 }
 
 /**
+ * Think/sparkle icon for "Think about" action.
+ */
+function ThinkIcon(): React.ReactNode {
+  return (
+    <svg
+      className="file-tree__icon-svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3v1m0 16v1m-9-9h1m16 0h1m-2.636-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m11.314 11.314l.707.707" />
+      <circle cx="12" cy="12" r="4" />
+    </svg>
+  );
+}
+
+/**
  * Context menu state for pin/unpin actions.
  */
 interface ContextMenuState {
@@ -315,7 +337,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkAbout }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -446,6 +468,11 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile }: FileTr
     setPendingDeletePath(contextMenu.path);
     closeContextMenu();
   }, [contextMenu.path, closeContextMenu]);
+
+  const handleThinkAbout = useCallback(() => {
+    onThinkAbout?.(contextMenu.path);
+    closeContextMenu();
+  }, [contextMenu.path, onThinkAbout, closeContextMenu]);
 
   const handleConfirmDelete = useCallback(() => {
     if (pendingDeletePath && onDeleteFile) {
@@ -590,6 +617,17 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile }: FileTr
             <PinIcon />
             <span>{isPinned ? "Unpin folder" : "Pin to top"}</span>
           </button>
+          {!contextMenu.isDirectory && onThinkAbout && (
+            <button
+              type="button"
+              className="file-tree__context-menu-item"
+              onClick={handleThinkAbout}
+              role="menuitem"
+            >
+              <ThinkIcon />
+              <span>Think about</span>
+            </button>
+          )}
           {!contextMenu.isDirectory && onDeleteFile && (
             <button
               type="button"

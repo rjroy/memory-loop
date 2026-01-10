@@ -13,6 +13,25 @@ import type {
   StoredToolInvocation,
   SlashCommand,
 } from "@memory-loop/shared";
+import type {
+  SDKMessage,
+  SDKPartialAssistantMessage,
+  SDKResultMessage,
+  SDKUserMessage,
+  ModelUsage,
+} from "@anthropic-ai/claude-agent-sdk";
+
+/**
+ * Type alias for raw stream events from the SDK.
+ * Not directly exported, so we extract it from the parent message type.
+ */
+type RawStreamEvent = SDKPartialAssistantMessage["event"];
+
+/**
+ * Stream events that have content (excludes error events).
+ * Used after error check to avoid ESLint unsafe-* errors.
+ */
+type ContentStreamEvent = Exclude<RawStreamEvent, { type: "error" }>;
 import { safeParseClientMessage } from "@memory-loop/shared";
 import { discoverVaults, getVaultById, getVaultGoals } from "./vault-manager";
 import { SearchIndexManager } from "./search/search-index";
@@ -769,36 +788,37 @@ export class WebSocketHandler {
         break;
       }
 
-      // Cast to unknown for flexible property checking
-      // The SDK types are more constrained than runtime events
-      const rawEvent = event as unknown as Record<string, unknown>;
-      const eventType = rawEvent.type as string;
-
       // Log all SDK events for diagnostics (debug level)
-      log.debug(`SDK event: ${eventType}`, this.summarizeEvent(rawEvent));
+      log.debug(`SDK event: ${event.type}`, this.summarizeEvent(event));
 
-      // Handle different event types
+      // Handle different event types using discriminated union narrowing
       // NOTE: We skip "assistant" events for text accumulation. The SDK emits
       // stream_event deltas for incremental text, then an assistant event with
       // the full content. Processing both would cause duplicate text.
-      if (eventType === "stream_event") {
-        // Streaming events (deltas, tool progress, etc.)
-        const text = this.handleStreamEvent(ws, messageId, rawEvent, toolsMap, contentBlocks);
-        if (text) {
-          responseChunks.push(text);
+      switch (event.type) {
+        case "stream_event": {
+          // TypeScript narrows to SDKPartialAssistantMessage
+          const text = this.handleStreamEvent(ws, messageId, event, toolsMap, contentBlocks);
+          if (text) {
+            responseChunks.push(text);
+          }
+          break;
         }
-      } else if (eventType === "result") {
-        // Result events contain tool usage info and context stats - track for persistence
-        // These come at the end of a turn with complete tool info
-        const usage = this.handleResultEvent(ws, rawEvent, toolsMap);
-        if (usage !== undefined) {
-          contextUsage = usage;
+        case "result": {
+          // TypeScript narrows to SDKResultMessage
+          const usage = this.handleResultEvent(ws, event, toolsMap);
+          if (usage !== undefined) {
+            contextUsage = usage;
+          }
+          break;
         }
-      } else if (eventType === "user") {
-        // User events contain tool results (SDK creates these after tool execution)
-        this.handleUserEvent(ws, rawEvent, toolsMap);
+        case "user": {
+          // TypeScript narrows to SDKUserMessage
+          this.handleUserEvent(ws, event, toolsMap);
+          break;
+        }
+        // Ignore other event types (system, auth_status, etc.)
       }
-      // Ignore other event types (system, auth_status, etc.)
     }
 
     return {
@@ -811,30 +831,50 @@ export class WebSocketHandler {
   /**
    * Creates a summary of an SDK event for logging.
    * Truncates large payloads to avoid log bloat.
+   *
+   * Note: ESLint disabled for unsafe-* rules because SDK's RawStreamEvent type
+   * includes variants that trigger these rules, but TypeScript validates correctness.
    */
-  private summarizeEvent(event: Record<string, unknown>): Record<string, unknown> {
+  /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
+  private summarizeEvent(event: SDKMessage): Record<string, unknown> {
     const summary: Record<string, unknown> = { type: event.type };
 
-    if (event.type === "stream_event" && event.event) {
-      const streamEvent = event.event as Record<string, unknown>;
+    if (event.type === "stream_event") {
+      const rawStreamEvent = event.event;
+
+      // Skip error events in summary (they don't have the expected structure)
+      if (rawStreamEvent.type === "error") {
+        summary.streamType = "error";
+        return summary;
+      }
+
+      // After error check, narrow to ContentStreamEvent for type safety
+      const streamEvent = rawStreamEvent as ContentStreamEvent;
       summary.streamType = streamEvent.type;
-      if (streamEvent.index !== undefined) {
+
+      if ("index" in streamEvent && typeof streamEvent.index === "number") {
         summary.index = streamEvent.index;
       }
+
       // Include content_block info for starts
-      if (streamEvent.content_block) {
-        const cb = streamEvent.content_block as Record<string, unknown>;
-        summary.contentBlock = { type: cb.type, id: cb.id, name: cb.name };
+      if (streamEvent.type === "content_block_start") {
+        const cb = streamEvent.content_block;
+        summary.contentBlock = {
+          type: cb.type,
+          id: "id" in cb ? cb.id : undefined,
+          name: "name" in cb ? cb.name : undefined,
+        };
       }
+
       // Include delta type for deltas
-      if (streamEvent.delta) {
-        const delta = streamEvent.delta as Record<string, unknown>;
-        summary.deltaType = delta.type;
+      if (streamEvent.type === "content_block_delta") {
+        summary.deltaType = streamEvent.delta.type;
       }
     }
 
     return summary;
   }
+  /* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 
   /**
    * Handles streaming events containing deltas and content block lifecycle.
@@ -844,30 +884,35 @@ export class WebSocketHandler {
    * - content_block_start: Signals a new content block (text or tool_use)
    * - content_block_delta: Contains incremental content (text_delta or input_json_delta)
    * - content_block_stop: Signals content block is complete
+   *
+   * Note: ESLint disabled for unsafe-* rules because SDK's RawStreamEvent type
+   * includes variants that trigger these rules, but TypeScript validates correctness.
    */
+  /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
   private handleStreamEvent(
     ws: WebSocketLike,
     messageId: string,
-    event: Record<string, unknown>,
+    event: SDKPartialAssistantMessage,
     toolsMap: Map<string, StoredToolInvocation>,
     contentBlocks: Map<number, ContentBlockState>
   ): string {
-    const streamEvent = event.event as Record<string, unknown> | undefined;
-    if (!streamEvent) return "";
+    const rawStreamEvent = event.event;
 
-    const streamType = streamEvent.type as string | undefined;
-    const blockIndex = streamEvent.index as number | undefined;
+    // Skip error events - they don't have the structure we need
+    if (rawStreamEvent.type === "error") {
+      log.warn("Stream error event received", { error: rawStreamEvent.error });
+      return "";
+    }
+
+    // After error check, narrow to ContentStreamEvent for type safety
+    const streamEvent = rawStreamEvent as ContentStreamEvent;
 
     // Handle content_block_start - new content block beginning
-    if (streamType === "content_block_start" && blockIndex !== undefined) {
-      const contentBlock = streamEvent.content_block as Record<string, unknown> | undefined;
-      if (!contentBlock) return "";
+    if (streamEvent.type === "content_block_start") {
+      const { index: blockIndex, content_block: contentBlock } = streamEvent;
 
-      const blockType = contentBlock.type as string;
-
-      if (blockType === "tool_use") {
-        const toolUseId = contentBlock.id as string;
-        const toolName = contentBlock.name as string;
+      if (contentBlock.type === "tool_use") {
+        const { id: toolUseId, name: toolName } = contentBlock;
 
         log.info(`Tool started: ${toolName} (${toolUseId})`);
 
@@ -892,7 +937,7 @@ export class WebSocketHandler {
           toolName,
           status: "running",
         });
-      } else if (blockType === "text") {
+      } else if (contentBlock.type === "text") {
         contentBlocks.set(blockIndex, { type: "text" });
       }
 
@@ -900,28 +945,23 @@ export class WebSocketHandler {
     }
 
     // Handle content_block_delta - incremental content
-    if (streamType === "content_block_delta") {
-      const delta = streamEvent.delta as Record<string, unknown> | undefined;
-      if (!delta) return "";
+    if (streamEvent.type === "content_block_delta") {
+      const { index: blockIndex, delta } = streamEvent;
 
-      const deltaType = delta.type as string;
-
-      // Text delta - stream to client (doesn't require index tracking)
-      if (deltaType === "text_delta") {
-        const text = delta.text as string | undefined;
-        if (text) {
-          this.send(ws, {
-            type: "response_chunk",
-            messageId,
-            content: text,
-          });
-          return text;
-        }
+      // Text delta - stream to client
+      if (delta.type === "text_delta") {
+        const { text } = delta;
+        this.send(ws, {
+          type: "response_chunk",
+          messageId,
+          content: text,
+        });
+        return text;
       }
 
-      // Input JSON delta - accumulate for tool input (requires index to track which tool)
-      if (deltaType === "input_json_delta" && blockIndex !== undefined) {
-        const partialJson = delta.partial_json as string | undefined;
+      // Input JSON delta - accumulate for tool input
+      if (delta.type === "input_json_delta") {
+        const { partial_json: partialJson } = delta;
         const block = contentBlocks.get(blockIndex);
         if (partialJson && block?.type === "tool_use" && block.inputJsonChunks) {
           block.inputJsonChunks.push(partialJson);
@@ -932,7 +972,8 @@ export class WebSocketHandler {
     }
 
     // Handle content_block_stop - content block complete
-    if (streamType === "content_block_stop" && blockIndex !== undefined) {
+    if (streamEvent.type === "content_block_stop") {
+      const { index: blockIndex } = streamEvent;
       const block = contentBlocks.get(blockIndex);
 
       if (block?.type === "tool_use" && block.toolUseId && block.inputJsonChunks) {
@@ -966,6 +1007,7 @@ export class WebSocketHandler {
 
     return "";
   }
+  /* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
 
   /**
    * Handles result events containing tool usage and context statistics.
@@ -978,26 +1020,19 @@ export class WebSocketHandler {
    * - tool_result blocks: Sends tool_end and updates status
    * - usage/modelUsage: Extracts token counts and calculates context percentage
    *
+   * Note: ESLint disabled for unsafe-* rules because SDK's SDKResultMessage type
+   * has usage fields that trigger these rules, but TypeScript validates correctness.
+   *
    * @returns Context usage percentage (0-100) if available, undefined otherwise
    */
+  /* eslint-disable @typescript-eslint/no-unsafe-assignment */
   private handleResultEvent(
     ws: WebSocketLike,
-    event: Record<string, unknown>,
+    event: SDKResultMessage,
     toolsMap: Map<string, StoredToolInvocation>
   ): number | undefined {
-    // Extract usage statistics from SDKResultMessage
-    // usage contains: input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens
-    // modelUsage contains per-model stats including contextWindow
-    const usage = event.usage as {
-      input_tokens?: number;
-      output_tokens?: number;
-      cache_creation_input_tokens?: number;
-      cache_read_input_tokens?: number;
-    } | undefined;
-
-    const modelUsage = event.modelUsage as Record<string, {
-      contextWindow?: number;
-    }> | undefined;
+    // Extract usage statistics - these are properly typed in SDKResultMessage
+    const { usage, modelUsage } = event;
 
     // Calculate context usage percentage
     let contextUsage: number | undefined;
@@ -1011,7 +1046,8 @@ export class WebSocketHandler {
       // Get context window from first model in modelUsage (typically only one)
       const modelNames = Object.keys(modelUsage);
       if (modelNames.length > 0) {
-        const contextWindow = modelUsage[modelNames[0]].contextWindow;
+        const modelStats: ModelUsage = modelUsage[modelNames[0]];
+        const contextWindow = modelStats.contextWindow;
         if (contextWindow && contextWindow > 0) {
           contextUsage = Math.round((100 * totalTokens) / contextWindow);
           // Clamp to 0-100 range
@@ -1021,72 +1057,72 @@ export class WebSocketHandler {
       }
     }
 
-    // Process tool blocks from result content (existing logic)
-    const result = event.result as Record<string, unknown> | undefined;
-    if (!result) return contextUsage;
+    // Process tool blocks from result content
+    // Note: The SDK types may not fully expose the result structure with content blocks,
+    // so we use cautious property checking for runtime safety
+    const rawEvent = event as unknown as { result?: { content?: unknown[] } };
+    const result = rawEvent.result;
+    if (!result || !Array.isArray(result.content)) return contextUsage;
 
-    // Check for tool_use blocks in the result
-    const content = result.content as
-      | Array<{
-          type: string;
-          name?: string;
-          id?: string;
-          input?: unknown;
-          tool_use_id?: string;
-          content?: unknown;
-        }>
-      | undefined;
+    for (const block of result.content) {
+      if (typeof block !== "object" || block === null || !("type" in block)) continue;
+      const typedBlock = block as {
+        type: string;
+        name?: string;
+        id?: string;
+        input?: unknown;
+        tool_use_id?: string;
+        content?: unknown;
+      };
 
-    if (content) {
-      for (const block of content) {
-        if (block.type === "tool_use" && block.name && block.id) {
-          // Check if we already tracked this tool from streaming events
-          const existing = toolsMap.get(block.id);
-          if (!existing) {
-            // Fallback: tool wasn't seen during streaming, track it now
-            log.debug(`Tool ${block.name} (${block.id}) tracked from result event (fallback)`);
-            toolsMap.set(block.id, {
-              toolUseId: block.id,
-              toolName: block.name,
-              status: "running",
-              input: block.input,
-            });
-            // Send tool_start and tool_input as fallback
-            this.send(ws, {
-              type: "tool_start",
-              toolName: block.name,
-              toolUseId: block.id,
-            });
-            if (block.input !== undefined) {
-              this.send(ws, {
-                type: "tool_input",
-                toolUseId: block.id,
-                input: block.input,
-              });
-            }
-          } else if (!existing.input && block.input !== undefined) {
-            // Update input if we didn't get it from streaming
-            existing.input = block.input;
-          }
-        } else if (block.type === "tool_result" && block.tool_use_id) {
-          log.info(`Tool completed: ${block.tool_use_id}`);
-          this.send(ws, {
-            type: "tool_end",
-            toolUseId: block.tool_use_id,
-            output: block.content ?? null,
+      if (typedBlock.type === "tool_use" && typedBlock.name && typedBlock.id) {
+        // Check if we already tracked this tool from streaming events
+        const existing = toolsMap.get(typedBlock.id);
+        if (!existing) {
+          // Fallback: tool wasn't seen during streaming, track it now
+          log.debug(`Tool ${typedBlock.name} (${typedBlock.id}) tracked from result event (fallback)`);
+          toolsMap.set(typedBlock.id, {
+            toolUseId: typedBlock.id,
+            toolName: typedBlock.name,
+            status: "running",
+            input: typedBlock.input,
           });
-          // Update tracked tool with output and mark complete
-          const tracked = toolsMap.get(block.tool_use_id);
-          if (tracked) {
-            tracked.output = block.content ?? null;
-            tracked.status = "complete";
+          // Send tool_start and tool_input as fallback
+          this.send(ws, {
+            type: "tool_start",
+            toolName: typedBlock.name,
+            toolUseId: typedBlock.id,
+          });
+          if (typedBlock.input !== undefined) {
+            this.send(ws, {
+              type: "tool_input",
+              toolUseId: typedBlock.id,
+              input: typedBlock.input,
+            });
           }
+        } else if (!existing.input && typedBlock.input !== undefined) {
+          // Update input if we didn't get it from streaming
+          existing.input = typedBlock.input;
+        }
+      } else if (typedBlock.type === "tool_result" && typedBlock.tool_use_id) {
+        log.info(`Tool completed: ${typedBlock.tool_use_id}`);
+        this.send(ws, {
+          type: "tool_end",
+          toolUseId: typedBlock.tool_use_id,
+          output: typedBlock.content ?? null,
+        });
+        // Update tracked tool with output and mark complete
+        const tracked = toolsMap.get(typedBlock.tool_use_id);
+        if (tracked) {
+          tracked.output = typedBlock.content ?? null;
+          tracked.status = "complete";
         }
       }
     }
 
     return contextUsage;
   }
+  /* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
   /**
    * Handles user events containing tool results.
@@ -1096,44 +1132,48 @@ export class WebSocketHandler {
    * - type: 'user'
    * - message: APIUserMessage (with content array containing tool_result blocks)
    * - tool_use_result?: unknown (convenience field with result data)
+   *
+   * Note: ESLint disabled for unsafe-* rules because SDK's SDKUserMessage type
+   * has message.content that triggers these rules, but TypeScript validates correctness.
    */
+  /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
   private handleUserEvent(
     ws: WebSocketLike,
-    event: Record<string, unknown>,
+    event: SDKUserMessage,
     toolsMap: Map<string, StoredToolInvocation>
   ): void {
     // The message field contains the APIUserMessage
-    const message = event.message as Record<string, unknown> | undefined;
-    if (!message) return;
+    const { message } = event;
 
-    // Check for tool_result blocks in message content
-    const content = message.content as
-      | Array<{
-          type: string;
-          tool_use_id?: string;
-          content?: unknown;
-        }>
-      | undefined;
-
-    if (!content || !Array.isArray(content)) return;
+    // message.content can be string or array of content blocks
+    const content = message.content;
+    if (!Array.isArray(content)) return;
 
     for (const block of content) {
-      if (block.type === "tool_result" && block.tool_use_id) {
-        log.info(`Tool completed (from user event): ${block.tool_use_id}`);
+      // Content blocks are a union type; narrow to tool_result blocks
+      if (typeof block !== "object" || block === null || !("type" in block)) continue;
+
+      if (block.type === "tool_result" && "tool_use_id" in block) {
+        const toolUseId = block.tool_use_id as string;
+        const output = "content" in block ? block.content : null;
+
+        log.info(`Tool completed (from user event): ${toolUseId}`);
         this.send(ws, {
           type: "tool_end",
-          toolUseId: block.tool_use_id,
-          output: block.content ?? null,
+          toolUseId,
+          output: output ?? null,
         });
+
         // Update tracked tool with output and mark complete
-        const tracked = toolsMap.get(block.tool_use_id);
+        const tracked = toolsMap.get(toolUseId);
         if (tracked) {
-          tracked.output = block.content ?? null;
+          tracked.output = output ?? null;
           tracked.status = "complete";
         }
       }
     }
   }
+  /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 
   /**
    * Handles resume_session message.

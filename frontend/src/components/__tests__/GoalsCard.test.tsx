@@ -1,14 +1,14 @@
 /**
  * Tests for GoalsCard component
  *
- * Tests rendering of goal sections, items, and accessibility.
+ * Tests rendering of goal sections, items, click behavior, and accessibility.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { GoalsCard } from "../GoalsCard";
-import { SessionProvider } from "../../contexts/SessionContext";
+import { SessionProvider, useSession } from "../../contexts/SessionContext";
 import type { GoalSection } from "@memory-loop/shared";
 
 // Test data
@@ -62,12 +62,12 @@ describe("GoalsCard", () => {
       expect(container.firstChild).toBeNull();
     });
 
-    it("renders goals section with region", () => {
+    it("renders goals card as a button", () => {
       render(<GoalsCard />, {
         wrapper: createTestWrapper(mockSections),
       });
 
-      expect(screen.getByRole("region", { name: "Goals" })).toBeDefined();
+      expect(screen.getByRole("button", { name: "Review goals" })).toBeDefined();
     });
 
     it("renders section titles", () => {
@@ -117,13 +117,13 @@ describe("GoalsCard", () => {
   });
 
   describe("accessibility", () => {
-    it("has accessible section with aria-label", () => {
+    it("has accessible button with aria-label", () => {
       render(<GoalsCard />, {
         wrapper: createTestWrapper(mockSections),
       });
 
-      const section = screen.getByRole("region", { name: "Goals" });
-      expect(section).toBeDefined();
+      const button = screen.getByRole("button", { name: "Review goals" });
+      expect(button).toBeDefined();
     });
 
     it("has aria-labels on list items", () => {
@@ -142,6 +142,58 @@ describe("GoalsCard", () => {
 
       const bullets = document.querySelectorAll('[aria-hidden="true"]');
       expect(bullets.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("click behavior", () => {
+    it("calls setDiscussionPrefill with /review-goals on click", () => {
+      let capturedPrefill = "";
+
+      function PrefillCapture({ children }: { children: ReactNode }) {
+        const { discussionPrefill } = useSession();
+        capturedPrefill = discussionPrefill ?? "";
+        return <>{children}</>;
+      }
+
+      function TestWrapper({ children }: { children: ReactNode }) {
+        return (
+          <SessionProvider initialGoals={mockSections}>
+            <PrefillCapture>{children}</PrefillCapture>
+          </SessionProvider>
+        );
+      }
+
+      render(<GoalsCard />, { wrapper: TestWrapper });
+
+      const button = screen.getByRole("button", { name: "Review goals" });
+      fireEvent.click(button);
+
+      expect(capturedPrefill).toBe("/review-goals");
+    });
+
+    it("sets mode to discussion on click", () => {
+      let capturedMode = "";
+
+      function ModeCapture({ children }: { children: ReactNode }) {
+        const { mode } = useSession();
+        capturedMode = mode;
+        return <>{children}</>;
+      }
+
+      function TestWrapper({ children }: { children: ReactNode }) {
+        return (
+          <SessionProvider initialGoals={mockSections}>
+            <ModeCapture>{children}</ModeCapture>
+          </SessionProvider>
+        );
+      }
+
+      render(<GoalsCard />, { wrapper: TestWrapper });
+
+      const button = screen.getByRole("button", { name: "Review goals" });
+      fireEvent.click(button);
+
+      expect(capturedMode).toBe("discussion");
     });
   });
 

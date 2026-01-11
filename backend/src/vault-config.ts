@@ -221,13 +221,22 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
     }
 
     if (Array.isArray(obj.slashCommands)) {
-      config.slashCommands = obj.slashCommands.filter(
-        (cmd): cmd is SlashCommand =>
-          typeof cmd === "object" &&
-          cmd !== null &&
-          typeof (cmd as Record<string, unknown>).name === "string" &&
-          typeof (cmd as Record<string, unknown>).description === "string"
-      );
+      config.slashCommands = obj.slashCommands
+        .filter(
+          (cmd): cmd is Record<string, unknown> =>
+            typeof cmd === "object" &&
+            cmd !== null &&
+            typeof (cmd as Record<string, unknown>).name === "string" &&
+            typeof (cmd as Record<string, unknown>).description === "string"
+        )
+        .map((cmd): SlashCommand => ({
+          name: cmd.name as string,
+          description: cmd.description as string,
+          // Sanitize argumentHint: only include if it's a non-empty string
+          ...(typeof cmd.argumentHint === "string" && cmd.argumentHint
+            ? { argumentHint: cmd.argumentHint }
+            : {}),
+        }));
     }
 
     // Validate generation settings (must be positive integers)

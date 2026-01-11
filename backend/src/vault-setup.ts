@@ -99,7 +99,7 @@ export interface SetupCompleteMarker {
 /**
  * Setup marker version for this implementation.
  */
-export const SETUP_VERSION = "1.0.0";
+export const SETUP_VERSION = "1.1.0";
 
 /**
  * Path to the setup marker file relative to vault root.

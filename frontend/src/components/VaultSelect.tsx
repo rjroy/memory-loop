@@ -52,6 +52,8 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
 
   // Track whether we've attempted auto-resume from localStorage
   const hasAttemptedAutoResumeRef = useRef(false);
+  // Track the last processed setup_complete vaultId to prevent re-processing
+  const lastProcessedSetupVaultIdRef = useRef<string | null>(null);
 
   // Fetch vaults on mount
   useEffect(() => {
@@ -175,12 +177,21 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     if (lastMessage?.type === "setup_complete") {
       const { vaultId, success, summary, errors } = lastMessage;
 
+      // Prevent re-processing the same setup_complete message
+      // This can happen because setVaults() triggers a re-render with the same lastMessage
+      if (lastProcessedSetupVaultIdRef.current === vaultId) {
+        return;
+      }
+
       // Verify this vault exists in our list (guards against stale messages)
       const vault = vaults.find((v) => v.id === vaultId);
       if (!vault) {
         console.warn(`[VaultSelect] Received setup_complete for unknown vault: ${vaultId}`);
         return;
       }
+
+      // Mark this message as processed before any state updates
+      lastProcessedSetupVaultIdRef.current = vaultId;
 
       // Update vault's setupComplete status in local state
       if (success) {
@@ -223,6 +234,8 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
 
     setSetupVaultId(vault.id);
     setError(null);
+    // Reset the processed ref so this vault's setup_complete will be processed
+    lastProcessedSetupVaultIdRef.current = null;
     console.log(`[VaultSelect] Starting setup for vault: ${vault.id}`);
     sendMessage({ type: "setup_vault", vaultId: vault.id });
   }

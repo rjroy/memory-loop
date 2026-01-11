@@ -67,6 +67,23 @@ import {
 import { runVaultSetup } from "./vault-setup";
 
 /**
+ * Sanitizes slash commands to ensure argumentHint is either a valid string or omitted.
+ * This prevents Zod validation errors on the client when argumentHint is null/undefined.
+ */
+function sanitizeSlashCommands(commands: SlashCommand[] | undefined): SlashCommand[] | undefined {
+  if (!commands || commands.length === 0) {
+    return undefined;
+  }
+  return commands.map((cmd) => ({
+    name: cmd.name,
+    description: cmd.description,
+    ...(typeof cmd.argumentHint === "string" && cmd.argumentHint
+      ? { argumentHint: cmd.argumentHint }
+      : {}),
+  }));
+}
+
+/**
  * WebSocket interface for sending messages.
  * Abstracts over different WebSocket implementations.
  */
@@ -517,7 +534,7 @@ export class WebSocketHandler {
         type: "session_ready",
         sessionId: "", // Will be populated after first query
         vaultId: vault.id,
-        slashCommands: cachedCommands && cachedCommands.length > 0 ? cachedCommands : undefined,
+        slashCommands: sanitizeSlashCommands(cachedCommands),
       });
       log.info(`Vault selection complete (${cachedCommands?.length ?? 0} cached commands)`);
     } catch (error) {
@@ -662,7 +679,7 @@ export class WebSocketHandler {
           sessionId: queryResult.sessionId,
           vaultId: this.state.currentVault.id,
           createdAt: new Date().toISOString(), // Session was just created
-          slashCommands: slashCommands.length > 0 ? slashCommands : undefined,
+          slashCommands: sanitizeSlashCommands(slashCommands),
         });
       }
 
@@ -1251,7 +1268,7 @@ export class WebSocketHandler {
         vaultId: this.state.currentVault.id,
         messages: metadata.messages,
         createdAt: metadata.createdAt,
-        slashCommands: cachedCommands && cachedCommands.length > 0 ? cachedCommands : undefined,
+        slashCommands: sanitizeSlashCommands(cachedCommands),
       });
     } catch (error) {
       log.error("Failed to load session for validation", error);
@@ -1294,7 +1311,7 @@ export class WebSocketHandler {
       type: "session_ready",
       sessionId: "", // Empty indicates new session will be created
       vaultId: this.state.currentVault.id,
-      slashCommands: cachedCommands && cachedCommands.length > 0 ? cachedCommands : undefined,
+      slashCommands: sanitizeSlashCommands(cachedCommands),
     });
   }
 

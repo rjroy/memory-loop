@@ -725,6 +725,27 @@ describe("vault-config", () => {
       const config = await loadVaultConfig(testDir);
       expect(config.slashCommands).toEqual([]);
     });
+
+    test("sanitizes null argumentHint to undefined", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          slashCommands: [
+            { name: "/test", description: "Test command", argumentHint: null },
+            { name: "/other", description: "Other command", argumentHint: "" },
+            { name: "/valid", description: "Valid hint", argumentHint: "file" },
+          ],
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.slashCommands).toHaveLength(3);
+      // null and empty string argumentHint should be omitted
+      expect(config.slashCommands?.[0]).toEqual({ name: "/test", description: "Test command" });
+      expect(config.slashCommands?.[1]).toEqual({ name: "/other", description: "Other command" });
+      // Valid string argumentHint should be preserved
+      expect(config.slashCommands?.[2]).toEqual({ name: "/valid", description: "Valid hint", argumentHint: "file" });
+    });
   });
 
   describe("saveSlashCommands", () => {

@@ -388,8 +388,8 @@ export class WebSocketHandler {
     const result = safeParseClientMessage(json);
     if (!result.success) {
       const errorMessage =
-        result.error.errors[0]?.message ?? "Invalid message format";
-      log.warn("Message validation failed", { json, errors: result.error.errors });
+        result.error.issues[0]?.message ?? "Invalid message format";
+      log.warn("Message validation failed", { json, errors: result.error.issues });
       this.sendError(ws, "VALIDATION_ERROR", errorMessage);
       return;
     }

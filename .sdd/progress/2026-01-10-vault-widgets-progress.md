@@ -12,13 +12,22 @@ authored_by:
 
 # Vault Widgets - Implementation Progress
 
-**Last Updated**: 2026-01-10 | **Status**: 0% complete (0 of 18 tasks)
+**Last Updated**: 2026-01-11 | **Status**: 44% complete (8 of 18 tasks)
 
 ## Current Session
-**Date**: 2026-01-10 | **Working On**: TASK-001: Widget Configuration Schema and Loader | **Blockers**: None
+**Date**: 2026-01-11 | **Working On**: TASK-008: Widget Engine Orchestrator | **Blockers**: None
 
 ## Completed Today
-- (none yet)
+- TASK-007: File Watcher with Debounce ✅ (commit: 4b55283, 3 iterations)
+
+## Completed Previously (2026-01-10)
+- TASK-001: Widget Configuration Schema and Loader ✅ (commit: d01ec46, 1 iteration)
+- TASK-002: Frontmatter Field Extraction ✅ (commit: 8cc4762, 1 iteration)
+- TASK-006: SQLite Cache with WAL Mode ✅ (commit: 3221c49, 1 iteration)
+- TASK-010: Widget Protocol Schemas ✅ (commit: 299240b, 1 iteration)
+- TASK-003: Aggregation Functions ✅ (commit: 00a99b1, 1 iteration)
+- TASK-004: Safe Expression Evaluator ✅ (commit: 56b2947, 1 iteration)
+- TASK-005: Similarity Comparators ✅ (commit: 7eb2769, 1 iteration)
 
 ## Discovered Issues
 - None
@@ -29,25 +38,33 @@ authored_by:
 
 ### Phase 1 - Foundation
 
-**In Progress** 🚧
-- [ ] TASK-001: Widget Configuration Schema and Loader
+**Completed** ✅
+- [x] TASK-001: Widget Configuration Schema and Loader - *Completed 2026-01-10*
+- [x] TASK-002: Frontmatter Field Extraction - *Completed 2026-01-10*
 
-**Upcoming** ⏳
-- [ ] TASK-002: Frontmatter Field Extraction
-- [ ] TASK-006: SQLite Cache with WAL Mode
-- [ ] TASK-010: Widget Protocol Schemas
+**Completed** ✅
+- [x] TASK-006: SQLite Cache with WAL Mode - *Completed 2026-01-10*
+
+**Completed** ✅
+- [x] TASK-010: Widget Protocol Schemas - *Completed 2026-01-10*
 
 ### Phase 2 - Computation
 
-**Upcoming** ⏳
-- [ ] TASK-003: Aggregation Functions
-- [ ] TASK-004: Safe Expression Evaluator
-- [ ] TASK-005: Similarity Comparators
-- [ ] TASK-007: File Watcher with Debounce
+**Completed** ✅
+- [x] TASK-003: Aggregation Functions - *Completed 2026-01-10*
+
+**Completed** ✅
+- [x] TASK-004: Safe Expression Evaluator - *Completed 2026-01-10*
+
+**Completed** ✅
+- [x] TASK-005: Similarity Comparators - *Completed 2026-01-10*
+
+**Completed** ✅
+- [x] TASK-007: File Watcher with Debounce - *Completed 2026-01-11*
 
 ### Phase 3 - Engine
 
-**Upcoming** ⏳
+**In Progress** 🚧
 - [ ] TASK-008: Widget Engine Orchestrator
 - [ ] TASK-009: Similarity Computation with Caching
 
@@ -81,7 +98,12 @@ authored_by:
 
 ## Technical Discoveries
 
-(none yet)
+### Discovery: Mocking Required for FileWatcher Tests
+**Task**: TASK-007
+**Context**: Initial integration tests using real filesystem had 10-15% failure rate due to timing-dependent filesystem events
+**Reason**: Chokidar event timing varies by OS and system load; real filesystem operations are non-deterministic
+**Decision**: Rewrote tests to mock chokidar and fs modules, making tests deterministic and fast (2.7s)
+**Date**: 2026-01-11
 
 ---
 
@@ -89,13 +111,14 @@ authored_by:
 
 | Component | Status |
 |-----------|--------|
-| widget-loader.ts | ⏳ Upcoming |
-| frontmatter.ts | ⏳ Upcoming |
-| aggregators.ts | ⏳ Upcoming |
-| expression-eval.ts | ⏳ Upcoming |
-| comparators.ts | ⏳ Upcoming |
-| widget-cache.ts | ⏳ Upcoming |
-| file-watcher.ts | ⏳ Upcoming |
+| schemas.ts | ✅ Complete (60 tests) |
+| widget-loader.ts | ✅ Complete (29 tests) |
+| frontmatter.ts | ✅ Complete (57 tests) |
+| aggregators.ts | ✅ Complete (122 tests) |
+| expression-eval.ts | ✅ Complete (150 tests) |
+| comparators.ts | ✅ Complete (100 tests) |
+| widget-cache.ts | ✅ Complete (39 tests) |
+| file-watcher.ts | ✅ Complete (36 tests) |
 | widget-engine.ts | ⏳ Upcoming |
 
 ---

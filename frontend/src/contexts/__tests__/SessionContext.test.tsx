@@ -3159,4 +3159,450 @@ describe("SessionContext", () => {
       expect(result.current.browser.search.snippetsCache.size).toBe(0);
     });
   });
+
+  describe("widget state management", () => {
+    // Test data for widgets
+    const testGroundWidget = {
+      widgetId: "collection-stats",
+      name: "Collection Stats",
+      type: "aggregate" as const,
+      location: "ground" as const,
+      display: { type: "summary-card" as const },
+      data: { totalItems: 42, totalValue: 1234 },
+      isEmpty: false,
+    };
+
+    const testRecallWidget = {
+      widgetId: "similar-items",
+      name: "Similar Items",
+      type: "similarity" as const,
+      location: "recall" as const,
+      display: { type: "list" as const, limit: 5 },
+      data: [{ path: "item1.md", score: 0.95 }],
+      isEmpty: false,
+    };
+
+    describe("initial widget state", () => {
+      it("provides empty widget state initially", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        expect(result.current.widgets.groundWidgets).toEqual([]);
+        expect(result.current.widgets.recallWidgets).toEqual([]);
+        expect(result.current.widgets.recallFilePath).toBeNull();
+        expect(result.current.widgets.isGroundLoading).toBe(false);
+        expect(result.current.widgets.isRecallLoading).toBe(false);
+        expect(result.current.widgets.groundError).toBeNull();
+        expect(result.current.widgets.recallError).toBeNull();
+        expect(result.current.widgets.pendingEdits.size).toBe(0);
+      });
+    });
+
+    describe("setGroundWidgets", () => {
+      it("sets ground widgets and clears loading/error state", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        // First set loading
+        act(() => {
+          result.current.setGroundWidgetsLoading(true);
+        });
+
+        expect(result.current.widgets.isGroundLoading).toBe(true);
+
+        // Then set widgets
+        act(() => {
+          result.current.setGroundWidgets([testGroundWidget]);
+        });
+
+        expect(result.current.widgets.groundWidgets).toEqual([testGroundWidget]);
+        expect(result.current.widgets.isGroundLoading).toBe(false);
+        expect(result.current.widgets.groundError).toBeNull();
+      });
+    });
+
+    describe("setRecallWidgets", () => {
+      it("sets recall widgets with file path and clears loading/error state", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        // First set loading
+        act(() => {
+          result.current.setRecallWidgetsLoading(true);
+        });
+
+        expect(result.current.widgets.isRecallLoading).toBe(true);
+
+        // Then set widgets
+        act(() => {
+          result.current.setRecallWidgets([testRecallWidget], "items/game.md");
+        });
+
+        expect(result.current.widgets.recallWidgets).toEqual([testRecallWidget]);
+        expect(result.current.widgets.recallFilePath).toBe("items/game.md");
+        expect(result.current.widgets.isRecallLoading).toBe(false);
+        expect(result.current.widgets.recallError).toBeNull();
+      });
+    });
+
+    describe("widget loading states", () => {
+      it("setGroundWidgetsLoading clears error when set to true", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        // Set an error first
+        act(() => {
+          result.current.setGroundWidgetsError("Widget config error");
+        });
+
+        expect(result.current.widgets.groundError).toBe("Widget config error");
+
+        // Setting loading to true should clear the error
+        act(() => {
+          result.current.setGroundWidgetsLoading(true);
+        });
+
+        expect(result.current.widgets.isGroundLoading).toBe(true);
+        expect(result.current.widgets.groundError).toBeNull();
+      });
+
+      it("setRecallWidgetsLoading clears error when set to true", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        // Set an error first
+        act(() => {
+          result.current.setRecallWidgetsError("Widget config error");
+        });
+
+        expect(result.current.widgets.recallError).toBe("Widget config error");
+
+        // Setting loading to true should clear the error
+        act(() => {
+          result.current.setRecallWidgetsLoading(true);
+        });
+
+        expect(result.current.widgets.isRecallLoading).toBe(true);
+        expect(result.current.widgets.recallError).toBeNull();
+      });
+    });
+
+    describe("widget error states", () => {
+      it("setGroundWidgetsError sets error and clears loading", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        // Set loading first
+        act(() => {
+          result.current.setGroundWidgetsLoading(true);
+        });
+
+        expect(result.current.widgets.isGroundLoading).toBe(true);
+
+        // Set error
+        act(() => {
+          result.current.setGroundWidgetsError("Computation failed");
+        });
+
+        expect(result.current.widgets.groundError).toBe("Computation failed");
+        expect(result.current.widgets.isGroundLoading).toBe(false);
+      });
+
+      it("setRecallWidgetsError sets error and clears loading", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        // Set loading first
+        act(() => {
+          result.current.setRecallWidgetsLoading(true);
+        });
+
+        expect(result.current.widgets.isRecallLoading).toBe(true);
+
+        // Set error
+        act(() => {
+          result.current.setRecallWidgetsError("Computation failed");
+        });
+
+        expect(result.current.widgets.recallError).toBe("Computation failed");
+        expect(result.current.widgets.isRecallLoading).toBe(false);
+      });
+    });
+
+    describe("pending edits", () => {
+      it("addPendingEdit adds entry with correct key format", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        act(() => {
+          result.current.addPendingEdit("items/game.md", "rating", 8);
+        });
+
+        expect(result.current.widgets.pendingEdits.get("items/game.md:rating")).toBe(8);
+      });
+
+      it("removePendingEdit removes entry by key", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        // Add two pending edits
+        act(() => {
+          result.current.addPendingEdit("items/game.md", "rating", 8);
+          result.current.addPendingEdit("items/game.md", "status", "owned");
+        });
+
+        expect(result.current.widgets.pendingEdits.size).toBe(2);
+
+        // Remove one
+        act(() => {
+          result.current.removePendingEdit("items/game.md", "rating");
+        });
+
+        expect(result.current.widgets.pendingEdits.size).toBe(1);
+        expect(result.current.widgets.pendingEdits.has("items/game.md:rating")).toBe(false);
+        expect(result.current.widgets.pendingEdits.get("items/game.md:status")).toBe("owned");
+      });
+
+      it("addPendingEdit updates existing key value", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        act(() => {
+          result.current.addPendingEdit("items/game.md", "rating", 5);
+        });
+
+        expect(result.current.widgets.pendingEdits.get("items/game.md:rating")).toBe(5);
+
+        // Update same key
+        act(() => {
+          result.current.addPendingEdit("items/game.md", "rating", 8);
+        });
+
+        expect(result.current.widgets.pendingEdits.get("items/game.md:rating")).toBe(8);
+        expect(result.current.widgets.pendingEdits.size).toBe(1);
+      });
+    });
+
+    describe("clearWidgetState", () => {
+      it("clears all widget state", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper(),
+        });
+
+        // Set up widget state
+        act(() => {
+          result.current.setGroundWidgets([testGroundWidget]);
+          result.current.setRecallWidgets([testRecallWidget], "items/game.md");
+          result.current.addPendingEdit("items/game.md", "rating", 8);
+          result.current.setGroundWidgetsError("Some error");
+        });
+
+        expect(result.current.widgets.groundWidgets).toHaveLength(1);
+        expect(result.current.widgets.recallWidgets).toHaveLength(1);
+        expect(result.current.widgets.pendingEdits.size).toBe(1);
+
+        // Clear all
+        act(() => {
+          result.current.clearWidgetState();
+        });
+
+        expect(result.current.widgets.groundWidgets).toEqual([]);
+        expect(result.current.widgets.recallWidgets).toEqual([]);
+        expect(result.current.widgets.recallFilePath).toBeNull();
+        expect(result.current.widgets.pendingEdits.size).toBe(0);
+        expect(result.current.widgets.groundError).toBeNull();
+        expect(result.current.widgets.recallError).toBeNull();
+      });
+    });
+
+    describe("vault switch clears widget state", () => {
+      it("SELECT_VAULT clears widget state", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper([testVault, testVault2]),
+        });
+
+        // Select first vault and set up widget state
+        act(() => {
+          result.current.selectVault(testVault);
+          result.current.setGroundWidgets([testGroundWidget]);
+          result.current.addPendingEdit("items/game.md", "rating", 8);
+        });
+
+        expect(result.current.widgets.groundWidgets).toHaveLength(1);
+        expect(result.current.widgets.pendingEdits.size).toBe(1);
+
+        // Switch to another vault
+        act(() => {
+          result.current.selectVault(testVault2);
+        });
+
+        // Widget state should be cleared
+        expect(result.current.widgets.groundWidgets).toEqual([]);
+        expect(result.current.widgets.pendingEdits.size).toBe(0);
+      });
+
+      it("CLEAR_VAULT clears widget state", () => {
+        const { result } = renderHook(() => useSession(), {
+          wrapper: createWrapper([testVault]),
+        });
+
+        // Select vault and set up widget state
+        act(() => {
+          result.current.selectVault(testVault);
+          result.current.setGroundWidgets([testGroundWidget]);
+          result.current.addPendingEdit("items/game.md", "rating", 8);
+        });
+
+        expect(result.current.widgets.groundWidgets).toHaveLength(1);
+        expect(result.current.widgets.pendingEdits.size).toBe(1);
+
+        // Clear vault
+        act(() => {
+          result.current.clearVault();
+        });
+
+        // Widget state should be cleared
+        expect(result.current.widgets.groundWidgets).toEqual([]);
+        expect(result.current.widgets.pendingEdits.size).toBe(0);
+      });
+    });
+  });
+
+  describe("useServerMessageHandler widget messages", () => {
+    // Test data for widgets
+    const testGroundWidget = {
+      widgetId: "collection-stats",
+      name: "Collection Stats",
+      type: "aggregate" as const,
+      location: "ground" as const,
+      display: { type: "summary-card" as const },
+      data: { totalItems: 42 },
+      isEmpty: false,
+    };
+
+    const testRecallWidget = {
+      widgetId: "similar-items",
+      name: "Similar Items",
+      type: "similarity" as const,
+      location: "recall" as const,
+      display: { type: "list" as const },
+      data: [],
+      isEmpty: false,
+    };
+
+    it("handles ground_widgets message", () => {
+      const { result } = renderHook(
+        () => {
+          const session = useSession();
+          const handleMessage = useServerMessageHandler();
+          return { session, handleMessage };
+        },
+        { wrapper: createWrapper() }
+      );
+
+      act(() => {
+        result.current.handleMessage({
+          type: "ground_widgets",
+          widgets: [testGroundWidget],
+        });
+      });
+
+      expect(result.current.session.widgets.groundWidgets).toEqual([testGroundWidget]);
+    });
+
+    it("handles recall_widgets message", () => {
+      const { result } = renderHook(
+        () => {
+          const session = useSession();
+          const handleMessage = useServerMessageHandler();
+          return { session, handleMessage };
+        },
+        { wrapper: createWrapper() }
+      );
+
+      act(() => {
+        result.current.handleMessage({
+          type: "recall_widgets",
+          path: "items/game.md",
+          widgets: [testRecallWidget],
+        });
+      });
+
+      expect(result.current.session.widgets.recallWidgets).toEqual([testRecallWidget]);
+      expect(result.current.session.widgets.recallFilePath).toBe("items/game.md");
+    });
+
+    it("handles widget_update message", () => {
+      const { result } = renderHook(
+        () => {
+          const session = useSession();
+          const handleMessage = useServerMessageHandler();
+          return { session, handleMessage };
+        },
+        { wrapper: createWrapper() }
+      );
+
+      const updatedWidget = { ...testGroundWidget, data: { totalItems: 50 } };
+
+      act(() => {
+        result.current.handleMessage({
+          type: "widget_update",
+          widgets: [updatedWidget],
+        });
+      });
+
+      expect(result.current.session.widgets.groundWidgets).toEqual([updatedWidget]);
+    });
+
+    it("handles widget_error message for ground widgets", () => {
+      const { result } = renderHook(
+        () => {
+          const session = useSession();
+          const handleMessage = useServerMessageHandler();
+          return { session, handleMessage };
+        },
+        { wrapper: createWrapper() }
+      );
+
+      act(() => {
+        result.current.handleMessage({
+          type: "widget_error",
+          error: "Failed to compute widgets",
+        });
+      });
+
+      expect(result.current.session.widgets.groundError).toBe("Failed to compute widgets");
+    });
+
+    it("handles widget_error message for recall widgets", () => {
+      const { result } = renderHook(
+        () => {
+          const session = useSession();
+          const handleMessage = useServerMessageHandler();
+          return { session, handleMessage };
+        },
+        { wrapper: createWrapper() }
+      );
+
+      act(() => {
+        result.current.handleMessage({
+          type: "widget_error",
+          error: "Failed to compute recall widgets",
+          filePath: "items/game.md",
+        });
+      });
+
+      expect(result.current.session.widgets.recallError).toBe("Failed to compute recall widgets");
+    });
+  });
 });

@@ -32,6 +32,7 @@
   display: block;
   width: 100%;
   height: auto;
+  min-height: auto;
   text-align: left;
   cursor: pointer;
   appearance: none;

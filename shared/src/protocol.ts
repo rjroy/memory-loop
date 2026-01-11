@@ -931,6 +931,8 @@ export const WidgetErrorMessageSchema = z.object({
   widgetId: z.string().optional(),
   /** Human-readable error message */
   error: z.string().min(1, "Error message is required"),
+  /** Optional file path if error is specific to a file */
+  filePath: z.string().optional(),
 });
 
 /**

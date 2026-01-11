@@ -296,6 +296,98 @@ void mock.module("../search/search-index", () => ({
   SearchIndexManager: MockSearchIndexManager,
 }));
 
+// Mock widgets module
+const mockComputeGroundWidgets = mock<
+  () => Promise<Array<{
+    widgetId: string;
+    name: string;
+    type: string;
+    location: string;
+    display: Record<string, unknown>;
+    data: unknown;
+    isEmpty: boolean;
+  }>>
+>(() => Promise.resolve([]));
+
+const mockComputeRecallWidgets = mock<
+  (filePath: string) => Promise<Array<{
+    widgetId: string;
+    name: string;
+    type: string;
+    location: string;
+    display: Record<string, unknown>;
+    data: unknown;
+    isEmpty: boolean;
+  }>>
+>(() => Promise.resolve([]));
+
+const mockHandleFilesChanged = mock<
+  (paths: string[]) => { invalidatedWidgets: string[]; totalEntriesInvalidated: number }
+>(() => ({ invalidatedWidgets: [], totalEntriesInvalidated: 0 }));
+
+const mockWidgetEngineShutdown = mock(() => {});
+const mockWidgetEngineInitialize = mock<
+  () => Promise<{ widgets: Array<{ id: string; config: { source: { pattern: string } } }>; errors: string[] }>
+>(() => Promise.resolve({ widgets: [], errors: [] }));
+
+const mockGetWidgets = mock<
+  () => Array<{ id: string; filePath: string; config: { location: string; source: { pattern: string }; name: string; type: string; display: Record<string, unknown> } }>
+>(() => []);
+
+// Mock WidgetEngine class
+class MockWidgetEngine {
+  computeGroundWidgets = mockComputeGroundWidgets;
+  computeRecallWidgets = mockComputeRecallWidgets;
+  handleFilesChanged = mockHandleFilesChanged;
+  shutdown = mockWidgetEngineShutdown;
+  initialize = mockWidgetEngineInitialize;
+  getWidgets = mockGetWidgets;
+  isInitialized = () => true;
+  getVaultPath = () => "/tmp/test-vault";
+  getVaultId = () => "test-vault";
+}
+
+const mockCreateWidgetEngine = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<{
+    engine: MockWidgetEngine;
+    loaderResult: { widgets: Array<{ id: string; config: { source: { pattern: string } } }>; errors: string[] };
+  }>
+>(() =>
+  Promise.resolve({
+    engine: new MockWidgetEngine(),
+    loaderResult: { widgets: [], errors: [] },
+  })
+);
+
+// Mock FileWatcher class
+const mockFileWatcherStart = mock<(patterns: string[]) => Promise<void>>(() => Promise.resolve());
+const mockFileWatcherStop = mock<() => Promise<void>>(() => Promise.resolve());
+
+class MockFileWatcher {
+  start = mockFileWatcherStart;
+  stop = mockFileWatcherStop;
+  isActive = () => true;
+  getVaultPath = () => "/tmp/test-vault";
+}
+
+const mockCreateFileWatcher = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => MockFileWatcher
+>(() => new MockFileWatcher());
+
+const mockParseFrontmatter = mock<
+  (content: string) => { data: Record<string, unknown>; content: string }
+>(() => ({ data: {}, content: "" }));
+
+void mock.module("../widgets", () => ({
+  WidgetEngine: MockWidgetEngine,
+  createWidgetEngine: mockCreateWidgetEngine,
+  FileWatcher: MockFileWatcher,
+  createFileWatcher: mockCreateFileWatcher,
+  parseFrontmatter: mockParseFrontmatter,
+}));
+
 // Import handler after mocks are set up
 import {
   WebSocketHandler,
@@ -393,6 +485,17 @@ describe("WebSocket Handler", () => {
     mockSearchFiles.mockReset();
     mockSearchContent.mockReset();
     mockGetSnippets.mockReset();
+    mockComputeGroundWidgets.mockReset();
+    mockComputeRecallWidgets.mockReset();
+    mockHandleFilesChanged.mockReset();
+    mockWidgetEngineShutdown.mockReset();
+    mockWidgetEngineInitialize.mockReset();
+    mockGetWidgets.mockReset();
+    mockCreateWidgetEngine.mockReset();
+    mockFileWatcherStart.mockReset();
+    mockFileWatcherStop.mockReset();
+    mockCreateFileWatcher.mockReset();
+    mockParseFrontmatter.mockReset();
 
     // Set default mock implementations
     mockDiscoverVaults.mockResolvedValue([]);
@@ -418,6 +521,18 @@ describe("WebSocket Handler", () => {
       incomplete: 0,
       total: 0,
     });
+    mockComputeGroundWidgets.mockResolvedValue([]);
+    mockComputeRecallWidgets.mockResolvedValue([]);
+    mockHandleFilesChanged.mockReturnValue({ invalidatedWidgets: [], totalEntriesInvalidated: 0 });
+    mockGetWidgets.mockReturnValue([]);
+    mockCreateWidgetEngine.mockResolvedValue({
+      engine: new MockWidgetEngine(),
+      loaderResult: { widgets: [], errors: [] },
+    });
+    mockCreateFileWatcher.mockReturnValue(new MockFileWatcher());
+    mockFileWatcherStart.mockResolvedValue(undefined);
+    mockFileWatcherStop.mockResolvedValue(undefined);
+    mockParseFrontmatter.mockReturnValue({ data: {}, content: "" });
     mockToggleTask.mockResolvedValue({
       success: true,
       newState: "x",
@@ -4173,6 +4288,356 @@ describe("WebSocket Handler", () => {
       expect(secondSearchIndex).not.toBeNull();
       // Verify a new searchIndex was created (different object instance)
       expect(secondSearchIndex).not.toBe(firstSearchIndex);
+    });
+  });
+
+  // ===========================================================================
+  // Widget Handler Tests
+  // ===========================================================================
+
+  describe("Widget Handlers", () => {
+    describe("get_ground_widgets", () => {
+      test("returns error when no vault selected", async () => {
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "get_ground_widgets" })
+        );
+
+        const message = ws.getLastMessage();
+        expect(message?.type).toBe("error");
+        if (message?.type === "error") {
+          expect(message.code).toBe("VAULT_NOT_FOUND");
+        }
+      });
+
+      test("returns empty widgets when no engine", async () => {
+        const vault = createMockVault();
+        mockGetVaultById.mockResolvedValue(vault);
+        // Make createWidgetEngine throw to simulate no engine
+        mockCreateWidgetEngine.mockRejectedValue(new Error("No widgets dir"));
+
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        // Select vault (widget engine will fail)
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+        );
+
+        // Clear messages
+        ws.messages.length = 0;
+
+        // Request ground widgets
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "get_ground_widgets" })
+        );
+
+        const message = ws.getLastMessage();
+        expect(message?.type).toBe("ground_widgets");
+        if (message?.type === "ground_widgets") {
+          expect(message.widgets).toEqual([]);
+        }
+      });
+
+      test("returns computed ground widgets", async () => {
+        const vault = createMockVault();
+        mockGetVaultById.mockResolvedValue(vault);
+
+        const mockWidgets = [
+          {
+            widgetId: "games-stats",
+            name: "Game Stats",
+            type: "aggregate" as const,
+            location: "ground" as const,
+            display: { type: "summary-card" as const },
+            data: { count: 42 },
+            isEmpty: false,
+          },
+        ];
+        mockComputeGroundWidgets.mockResolvedValue(mockWidgets);
+
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        // Select vault
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+        );
+
+        // Clear messages
+        ws.messages.length = 0;
+
+        // Request ground widgets
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "get_ground_widgets" })
+        );
+
+        const message = ws.getLastMessage();
+        expect(message?.type).toBe("ground_widgets");
+        if (message?.type === "ground_widgets") {
+          expect(message.widgets).toEqual(mockWidgets);
+        }
+      });
+    });
+
+    describe("get_recall_widgets", () => {
+      test("returns error when no vault selected", async () => {
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "get_recall_widgets", path: "Games/test.md" })
+        );
+
+        const message = ws.getLastMessage();
+        expect(message?.type).toBe("error");
+        if (message?.type === "error") {
+          expect(message.code).toBe("VAULT_NOT_FOUND");
+        }
+      });
+
+      test("returns computed recall widgets for file", async () => {
+        const vault = createMockVault();
+        mockGetVaultById.mockResolvedValue(vault);
+
+        const mockWidgets = [
+          {
+            widgetId: "similar-games",
+            name: "Similar Games",
+            type: "similarity" as const,
+            location: "recall" as const,
+            display: { type: "list" as const, limit: 5 },
+            data: [{ path: "Games/other.md", score: 0.85, title: "Other Game" }],
+            isEmpty: false,
+          },
+        ];
+        mockComputeRecallWidgets.mockResolvedValue(mockWidgets);
+
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        // Select vault
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+        );
+
+        // Clear messages
+        ws.messages.length = 0;
+
+        // Request recall widgets
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "get_recall_widgets", path: "Games/test.md" })
+        );
+
+        const message = ws.getLastMessage();
+        expect(message?.type).toBe("recall_widgets");
+        if (message?.type === "recall_widgets") {
+          expect(message.widgets).toEqual(mockWidgets);
+          expect(message.path).toBe("Games/test.md");
+        }
+      });
+    });
+
+    describe("widget_edit", () => {
+      test("returns error when no vault selected", async () => {
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({
+            type: "widget_edit",
+            path: "Games/test.md",
+            field: "rating",
+            value: 8,
+          })
+        );
+
+        const message = ws.getLastMessage();
+        expect(message?.type).toBe("error");
+        if (message?.type === "error") {
+          expect(message.code).toBe("VAULT_NOT_FOUND");
+        }
+      });
+
+      test("updates frontmatter and triggers recomputation", async () => {
+        const vault = createMockVault();
+        mockGetVaultById.mockResolvedValue(vault);
+
+        // Mock file content with frontmatter
+        mockReadMarkdownFile.mockResolvedValue({
+          content: "---\ntitle: Test\nrating: 5\n---\n# Content",
+          truncated: false,
+        });
+        mockParseFrontmatter.mockReturnValue({
+          data: { title: "Test", rating: 5 },
+          content: "# Content",
+        });
+
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        // Select vault
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+        );
+
+        // Clear messages
+        ws.messages.length = 0;
+
+        // Edit widget field
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({
+            type: "widget_edit",
+            path: "Games/test.md",
+            field: "rating",
+            value: 8,
+          })
+        );
+
+        // Should have called writeMarkdownFile
+        expect(mockWriteMarkdownFile).toHaveBeenCalled();
+
+        // Should have called handleFilesChanged to invalidate cache
+        expect(mockHandleFilesChanged).toHaveBeenCalledWith(["Games/test.md"]);
+      });
+    });
+
+    describe("widget initialization on vault select", () => {
+      test("initializes widget engine when vault is selected", async () => {
+        const vault = createMockVault();
+        mockGetVaultById.mockResolvedValue(vault);
+
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+        );
+
+        // Should have called createWidgetEngine
+        expect(mockCreateWidgetEngine).toHaveBeenCalledWith(
+          vault.contentRoot,
+          vault.id
+        );
+      });
+
+      test("starts file watcher when widgets have source patterns", async () => {
+        const vault = createMockVault();
+        mockGetVaultById.mockResolvedValue(vault);
+
+        // Return widgets with patterns
+        mockGetWidgets.mockReturnValue([
+          {
+            id: "test-widget",
+            filePath: "/widgets/test.yml",
+            config: {
+              location: "ground",
+              source: { pattern: "Games/**/*.md" },
+              name: "Test",
+              type: "aggregate",
+              display: { type: "summary-card" },
+            },
+          },
+        ]);
+
+        const mockEngine = new MockWidgetEngine();
+        mockEngine.getWidgets = mockGetWidgets;
+        mockCreateWidgetEngine.mockResolvedValue({
+          engine: mockEngine,
+          loaderResult: { widgets: [{ id: "test", config: { source: { pattern: "Games/**/*.md" } } }], errors: [] },
+        });
+
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+        );
+
+        // Should have created file watcher
+        expect(mockCreateFileWatcher).toHaveBeenCalled();
+        // Should have started file watcher with patterns
+        expect(mockFileWatcherStart).toHaveBeenCalledWith(["Games/**/*.md"]);
+      });
+    });
+
+    describe("widget cleanup on close", () => {
+      test("shuts down widget engine on close", async () => {
+        const vault = createMockVault();
+        mockGetVaultById.mockResolvedValue(vault);
+
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        // Select vault to initialize widgets
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+        );
+
+        // Close connection
+        await handler.onClose();
+
+        // Should have called shutdown
+        expect(mockWidgetEngineShutdown).toHaveBeenCalled();
+      });
+
+      test("stops file watcher on close", async () => {
+        const vault = createMockVault();
+        mockGetVaultById.mockResolvedValue(vault);
+
+        // Set up widgets so file watcher gets created
+        mockGetWidgets.mockReturnValue([
+          {
+            id: "test-widget",
+            filePath: "/widgets/test.yml",
+            config: {
+              location: "ground",
+              source: { pattern: "Games/**/*.md" },
+              name: "Test",
+              type: "aggregate",
+              display: { type: "summary-card" },
+            },
+          },
+        ]);
+
+        const mockEngine = new MockWidgetEngine();
+        mockEngine.getWidgets = mockGetWidgets;
+        mockCreateWidgetEngine.mockResolvedValue({
+          engine: mockEngine,
+          loaderResult: { widgets: [{ id: "test", config: { source: { pattern: "Games/**/*.md" } } }], errors: [] },
+        });
+
+        const handler = createWebSocketHandler();
+        const ws = createMockWebSocket();
+
+        // Select vault to initialize widgets
+        await handler.onMessage(
+          ws as unknown as Parameters<typeof handler.onMessage>[0],
+          JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+        );
+
+        // Close connection
+        await handler.onClose();
+
+        // Should have called stop
+        expect(mockFileWatcherStop).toHaveBeenCalled();
+      });
     });
   });
 });

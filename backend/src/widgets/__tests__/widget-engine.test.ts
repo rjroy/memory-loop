@@ -1004,6 +1004,507 @@ display:
 // Edge Cases
 // =============================================================================
 
+// =============================================================================
+// Public computeSimilarity API Tests
+// =============================================================================
+
+describe("computeSimilarity public API", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  test("returns similar items for a valid source path", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+    await writeMarkdownFile(gamesDir, "catan.md", {
+      title: "Catan",
+      tags: ["strategy", "trading"],
+      rating: 8,
+    });
+    await writeMarkdownFile(gamesDir, "monopoly.md", {
+      title: "Monopoly",
+      tags: ["trading", "family"],
+      rating: 6,
+    });
+    await writeMarkdownFile(gamesDir, "chess.md", {
+      title: "Chess",
+      tags: ["strategy", "abstract"],
+      rating: 9,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    const { result, computeTimeMs, cacheHit } = await engine.computeSimilarity(
+      "similarity",
+      "Games/catan.md"
+    );
+
+    expect(result).toBeInstanceOf(Array);
+    expect(result.length).toBe(2); // monopoly and chess (limit 3, but only 2 other games)
+    expect(computeTimeMs).toBeGreaterThan(0);
+    expect(cacheHit).toBe(false);
+
+    // Results should be sorted by score descending
+    expect(result[0].score).toBeGreaterThanOrEqual(result[1].score);
+
+    // Should not include the source file itself
+    expect(result.map((r) => r.path)).not.toContain("Games/catan.md");
+
+    engine.shutdown();
+  });
+
+  test("throws error for non-existent widget", async () => {
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    try {
+      await engine.computeSimilarity("nonexistent", "Games/catan.md");
+      expect.unreachable("Should have thrown");
+    } catch (error) {
+      expect((error as Error).message).toBe("Widget not found: nonexistent");
+    }
+
+    engine.shutdown();
+  });
+
+  test("throws error for non-similarity widget", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    await writeWidgetConfig(widgetsDir, "stats.yaml", aggregateWidgetYaml);
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    try {
+      await engine.computeSimilarity("stats", "Games/catan.md");
+      expect.unreachable("Should have thrown");
+    } catch (error) {
+      expect((error as Error).message).toBe("Widget stats is not a similarity widget");
+    }
+
+    engine.shutdown();
+  });
+
+  test("throws error when engine not initialized", async () => {
+    const engine = new WidgetEngine(testDir);
+
+    try {
+      await engine.computeSimilarity("similarity", "Games/catan.md");
+      expect.unreachable("Should have thrown");
+    } catch (error) {
+      expect((error as Error).message).toBe("Engine not initialized. Call initialize() first.");
+    }
+  });
+
+  test("returns empty result for missing source file", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+    await writeMarkdownFile(gamesDir, "catan.md", {
+      title: "Catan",
+      tags: ["strategy"],
+      rating: 8,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    const { result, cacheHit } = await engine.computeSimilarity(
+      "similarity",
+      "Games/nonexistent.md"
+    );
+
+    expect(result).toHaveLength(0);
+    expect(cacheHit).toBe(false);
+
+    engine.shutdown();
+  });
+
+  test("returns empty result when no files match pattern", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+    // No Games directory created
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    const { result } = await engine.computeSimilarity(
+      "similarity",
+      "Games/catan.md"
+    );
+
+    expect(result).toHaveLength(0);
+
+    engine.shutdown();
+  });
+
+  test("caches results and returns from cache on second call", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+    await writeMarkdownFile(gamesDir, "catan.md", {
+      title: "Catan",
+      tags: ["strategy"],
+      rating: 8,
+    });
+    await writeMarkdownFile(gamesDir, "monopoly.md", {
+      title: "Monopoly",
+      tags: ["trading"],
+      rating: 6,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    // First call - cache miss
+    const first = await engine.computeSimilarity("similarity", "Games/catan.md");
+    expect(first.cacheHit).toBe(false);
+
+    // Second call - cache hit
+    const second = await engine.computeSimilarity("similarity", "Games/catan.md");
+    expect(second.cacheHit).toBe(true);
+
+    // Results should be identical
+    expect(second.result).toEqual(first.result);
+
+    engine.shutdown();
+  });
+});
+
+// =============================================================================
+// handleFilesChanged Tests
+// =============================================================================
+
+describe("handleFilesChanged", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  test("invalidates cache when matching file changes", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+    await writeMarkdownFile(gamesDir, "catan.md", {
+      title: "Catan",
+      tags: ["strategy"],
+      rating: 8,
+    });
+    await writeMarkdownFile(gamesDir, "monopoly.md", {
+      title: "Monopoly",
+      tags: ["trading"],
+      rating: 6,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    // Populate cache
+    await engine.computeSimilarity("similarity", "Games/catan.md");
+    expect(engine.getCacheStats().similarityEntries).toBeGreaterThan(0);
+
+    // Handle file change
+    const result = engine.handleFilesChanged(["Games/catan.md"]);
+
+    expect(result.invalidatedWidgets).toContain("similarity");
+    expect(result.totalEntriesInvalidated).toBeGreaterThan(0);
+
+    // Cache should be cleared
+    expect(engine.getCacheStats().similarityEntries).toBe(0);
+
+    engine.shutdown();
+  });
+
+  test("does not invalidate cache for non-matching files", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+    const notesDir = await createVaultDir(testDir, "Notes");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+    await writeMarkdownFile(gamesDir, "catan.md", {
+      title: "Catan",
+      tags: ["strategy"],
+      rating: 8,
+    });
+    await writeMarkdownFile(gamesDir, "monopoly.md", {
+      title: "Monopoly",
+      tags: ["trading"],
+      rating: 6,
+    });
+    await writeMarkdownFile(notesDir, "note.md", { title: "A Note" });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    // Populate cache
+    await engine.computeSimilarity("similarity", "Games/catan.md");
+    const beforeStats = engine.getCacheStats();
+
+    // Handle file change for non-matching pattern
+    const result = engine.handleFilesChanged(["Notes/note.md"]);
+
+    expect(result.invalidatedWidgets).toHaveLength(0);
+    expect(result.totalEntriesInvalidated).toBe(0);
+
+    // Cache should be unchanged
+    expect(engine.getCacheStats().similarityEntries).toBe(beforeStats.similarityEntries);
+
+    engine.shutdown();
+  });
+
+  test("handles empty paths array", async () => {
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    const result = engine.handleFilesChanged([]);
+
+    expect(result.invalidatedWidgets).toHaveLength(0);
+    expect(result.totalEntriesInvalidated).toBe(0);
+
+    engine.shutdown();
+  });
+
+  test("handles uninitalized engine gracefully", () => {
+    const engine = new WidgetEngine(testDir);
+    // Not initialized
+
+    const result = engine.handleFilesChanged(["Games/catan.md"]);
+
+    expect(result.invalidatedWidgets).toHaveLength(0);
+    expect(result.totalEntriesInvalidated).toBe(0);
+  });
+
+  test("invalidates multiple widgets when multiple patterns match", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+    await writeWidgetConfig(widgetsDir, "stats.yaml", aggregateWidgetYaml);
+    await writeMarkdownFile(gamesDir, "catan.md", {
+      title: "Catan",
+      tags: ["strategy"],
+      rating: 8,
+      play_count: 10,
+    });
+    await writeMarkdownFile(gamesDir, "monopoly.md", {
+      title: "Monopoly",
+      tags: ["trading"],
+      rating: 6,
+      play_count: 5,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    // Populate both caches
+    await engine.computeGroundWidgets();
+    await engine.computeSimilarity("similarity", "Games/catan.md");
+
+    // Handle file change
+    const result = engine.handleFilesChanged(["Games/catan.md"]);
+
+    // Both widgets should be invalidated (both have pattern Games/**/*.md)
+    expect(result.invalidatedWidgets).toContain("similarity");
+    expect(result.invalidatedWidgets).toContain("stats");
+
+    engine.shutdown();
+  });
+});
+
+// =============================================================================
+// Performance Tests
+// =============================================================================
+
+describe("Performance benchmarks", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  test("cache hit returns in <100ms", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+    await writeMarkdownFile(gamesDir, "catan.md", {
+      title: "Catan",
+      tags: ["strategy", "trading"],
+      rating: 8,
+    });
+    await writeMarkdownFile(gamesDir, "monopoly.md", {
+      title: "Monopoly",
+      tags: ["trading"],
+      rating: 6,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    // First call - populate cache
+    await engine.computeSimilarity("similarity", "Games/catan.md");
+
+    // Warm up I/O (subsequent calls won't have cold start overhead)
+    await engine.computeSimilarity("similarity", "Games/catan.md");
+
+    // Measure cache hit time
+    const startTime = performance.now();
+    const result = await engine.computeSimilarity("similarity", "Games/catan.md");
+    const elapsedMs = performance.now() - startTime;
+
+    expect(result.cacheHit).toBe(true);
+    expect(elapsedMs).toBeLessThan(100); // REQ-F-14: <100ms for cached results
+    expect(result.computeTimeMs).toBeLessThan(100);
+
+    engine.shutdown();
+  });
+
+  test("ground widget cache hit returns in <100ms", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "stats.yaml", aggregateWidgetYaml);
+    await writeMarkdownFile(gamesDir, "catan.md", {
+      title: "Catan",
+      play_count: 10,
+      rating: 8,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    // First call - populate cache
+    await engine.computeGroundWidgets();
+
+    // Measure cache hit time
+    const startTime = performance.now();
+    const results = await engine.computeGroundWidgets();
+    const elapsedMs = performance.now() - startTime;
+
+    expect(results).toHaveLength(1);
+    expect(elapsedMs).toBeLessThan(100);
+    expect(results[0].computeTimeMs).toBeLessThan(100);
+
+    engine.shutdown();
+  });
+
+  test("handles larger collections reasonably", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+
+    // Create 50 game files (reasonable for a benchmark test)
+    const fileCount = 50;
+    for (let i = 0; i < fileCount; i++) {
+      await writeMarkdownFile(gamesDir, `game${i}.md`, {
+        title: `Game ${i}`,
+        tags: [`tag${i % 5}`, `category${i % 3}`],
+        rating: (i % 10) + 1,
+      });
+    }
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    // First computation (cache miss)
+    const startTime = performance.now();
+    const first = await engine.computeSimilarity("similarity", "Games/game0.md");
+    const firstElapsed = performance.now() - startTime;
+
+    expect(first.result.length).toBe(3); // limit is 3
+    expect(first.cacheHit).toBe(false);
+
+    // Second computation (cache hit) should be faster
+    const cacheStartTime = performance.now();
+    const second = await engine.computeSimilarity("similarity", "Games/game0.md");
+    const cacheElapsed = performance.now() - cacheStartTime;
+
+    expect(second.cacheHit).toBe(true);
+    expect(cacheElapsed).toBeLessThan(firstElapsed);
+    expect(cacheElapsed).toBeLessThan(100); // Cache hit should be fast
+
+    engine.shutdown();
+  });
+
+  test("cache invalidation followed by recomputation works correctly", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetYaml);
+    await writeMarkdownFile(gamesDir, "catan.md", {
+      title: "Catan",
+      tags: ["strategy"],
+      rating: 8,
+    });
+    await writeMarkdownFile(gamesDir, "monopoly.md", {
+      title: "Monopoly",
+      tags: ["trading"],
+      rating: 6,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    // Populate cache
+    const first = await engine.computeSimilarity("similarity", "Games/catan.md");
+    expect(first.cacheHit).toBe(false);
+
+    // Verify cache hit
+    const second = await engine.computeSimilarity("similarity", "Games/catan.md");
+    expect(second.cacheHit).toBe(true);
+
+    // Invalidate via file change
+    engine.handleFilesChanged(["Games/catan.md"]);
+
+    // Next call should be cache miss
+    const third = await engine.computeSimilarity("similarity", "Games/catan.md");
+    expect(third.cacheHit).toBe(false);
+
+    // And then cache hit again
+    const fourth = await engine.computeSimilarity("similarity", "Games/catan.md");
+    expect(fourth.cacheHit).toBe(true);
+
+    engine.shutdown();
+  });
+});
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
 describe("Edge cases", () => {
   let testDir: string;
 

@@ -900,6 +900,192 @@ export class WidgetEngine {
   }
 
   // ===========================================================================
+  // Public Similarity API
+  // ===========================================================================
+
+  /**
+   * Compute similarity for a specific item, returning top-N similar items.
+   *
+   * This is the public API for on-demand similarity computation.
+   * Results are cached with content version hash and returned in <100ms on cache hit.
+   *
+   * @param widgetId - Widget identifier (must be a similarity widget)
+   * @param sourcePath - Relative path to the source file
+   * @returns Computed similarity result with top-N similar items
+   * @throws Error if widget not found or not a similarity widget
+   */
+  async computeSimilarity(
+    widgetId: string,
+    sourcePath: string
+  ): Promise<{ result: SimilarItem[]; computeTimeMs: number; cacheHit: boolean }> {
+    if (!this.initialized) {
+      throw new Error("Engine not initialized. Call initialize() first.");
+    }
+
+    const startTime = performance.now();
+
+    // Find the widget
+    const widget = this.widgets.find((w) => w.id === widgetId);
+    if (!widget) {
+      throw new Error(`Widget not found: ${widgetId}`);
+    }
+
+    if (widget.config.type !== "similarity") {
+      throw new Error(`Widget ${widgetId} is not a similarity widget`);
+    }
+
+    // Load files matching the source pattern
+    const files = await this.loadMatchingFiles(widget.config.source.pattern);
+
+    if (files.length === 0) {
+      log.debug(`No files match pattern for widget ${widgetId}`);
+      return {
+        result: [],
+        computeTimeMs: performance.now() - startTime,
+        cacheHit: false,
+      };
+    }
+
+    // Find the current file
+    const currentFile = files.find((f) => f.path === sourcePath);
+    if (!currentFile) {
+      log.debug(`Source file not found in collection: ${sourcePath}`);
+      return {
+        result: [],
+        computeTimeMs: performance.now() - startTime,
+        cacheHit: false,
+      };
+    }
+
+    // Compute content hash for cache key
+    const contentHash = this.computeContentHash(files);
+
+    // Check similarity cache
+    if (this.cache) {
+      const cached = this.cache.getSimilarityResult(
+        this.vaultId,
+        widgetId,
+        sourcePath,
+        contentHash
+      );
+      if (cached) {
+        const computeTimeMs = performance.now() - startTime;
+        log.debug(`Similarity cache hit for ${widgetId}:${sourcePath} in ${computeTimeMs.toFixed(2)}ms`);
+        const cachedResult = JSON.parse(cached.similarItemsJson) as WidgetResult;
+        return {
+          result: cachedResult.data as SimilarItem[],
+          computeTimeMs,
+          cacheHit: true,
+        };
+      }
+    }
+
+    // Compute similarity
+    const widgetResult = this.computeSimilarityWidget(widget, currentFile, files, startTime);
+    const similarItems = widgetResult.data as SimilarItem[];
+
+    // Cache the result
+    if (this.cache) {
+      this.cache.setSimilarityResult(
+        this.vaultId,
+        widgetId,
+        sourcePath,
+        contentHash,
+        widgetResult
+      );
+    }
+
+    const computeTimeMs = performance.now() - startTime;
+    log.info(`Computed similarity for ${widgetId}:${sourcePath} in ${computeTimeMs.toFixed(2)}ms (${similarItems.length} results)`);
+
+    return {
+      result: similarItems,
+      computeTimeMs,
+      cacheHit: false,
+    };
+  }
+
+  // ===========================================================================
+  // File Change Handling
+  // ===========================================================================
+
+  /**
+   * Handle file change events from the file watcher.
+   *
+   * Invalidates similarity cache for all widgets whose source pattern matches
+   * any of the changed files. This ensures cache consistency when source files
+   * are modified.
+   *
+   * @param paths - Relative paths of changed files
+   * @returns Object with invalidation counts per widget
+   */
+  handleFilesChanged(paths: string[]): { invalidatedWidgets: string[]; totalEntriesInvalidated: number } {
+    if (!this.initialized || paths.length === 0) {
+      return { invalidatedWidgets: [], totalEntriesInvalidated: 0 };
+    }
+
+    log.info(`Handling file changes for ${paths.length} file(s)`);
+
+    const invalidatedWidgets: string[] = [];
+    let totalEntriesInvalidated = 0;
+
+    // For each widget, check if any changed file matches its source pattern
+    for (const widget of this.widgets) {
+      const matcher = picomatch(widget.config.source.pattern);
+      const hasMatchingFile = paths.some((p) => matcher(p));
+
+      if (hasMatchingFile) {
+        log.debug(`Invalidating cache for widget ${widget.id} (matching file changed)`);
+
+        // Invalidate both widget results and similarity results
+        const widgetCount = this.cache?.invalidateWidget(this.vaultId, widget.id) ?? 0;
+        const similarityCount = this.cache?.invalidateSimilarity(this.vaultId, widget.id) ?? 0;
+        const totalCount = widgetCount + similarityCount;
+
+        if (totalCount > 0) {
+          invalidatedWidgets.push(widget.id);
+          totalEntriesInvalidated += totalCount;
+        }
+      }
+    }
+
+    if (invalidatedWidgets.length > 0) {
+      log.info(`Invalidated ${totalEntriesInvalidated} cache entries for ${invalidatedWidgets.length} widget(s)`);
+    }
+
+    return { invalidatedWidgets, totalEntriesInvalidated };
+  }
+
+  /**
+   * Trigger background recomputation for widgets affected by file changes.
+   *
+   * This is an optional optimization: after invalidating cache, you can trigger
+   * background recomputation so results are ready when next requested.
+   *
+   * This method starts background tasks but does not wait for them to complete.
+   * Use `await` on the returned promise if you need to wait for completion.
+   *
+   * @param widgetIds - Widget IDs to recompute
+   */
+  triggerBackgroundRecomputation(widgetIds: string[]): void {
+    if (!this.initialized || widgetIds.length === 0) {
+      return;
+    }
+
+    const widgets = this.widgets.filter((w) => widgetIds.includes(w.id));
+    const groundWidgets = widgets.filter((w) => w.config.location === "ground");
+
+    // Recompute ground widgets in background
+    for (const widget of groundWidgets) {
+      if (!this.pendingRecomputations.has(widget.id)) {
+        this.pendingRecomputations.add(widget.id);
+        void this.computeWidget(widget, { force: true })
+          .finally(() => this.pendingRecomputations.delete(widget.id));
+      }
+    }
+  }
+
+  // ===========================================================================
   // Stale-While-Revalidate Support
   // ===========================================================================
 

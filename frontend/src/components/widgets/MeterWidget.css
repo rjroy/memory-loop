@@ -1,0 +1,72 @@
+/**
+ * MeterWidget Styles
+ *
+ * Gauge display with value, track, and fill.
+ */
+
+.meter-widget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.meter-widget__display {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--spacing-sm);
+}
+
+.meter-widget__value {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-widget__label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.meter-widget__track {
+  height: 8px;
+  background-color: rgba(var(--color-text-rgb), 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.meter-widget__fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width var(--transition-normal);
+}
+
+/* Color variations based on percentage */
+.meter-widget__fill--high {
+  background: linear-gradient(90deg, var(--color-success), var(--color-success-light, var(--color-success)));
+}
+
+.meter-widget__fill--medium {
+  background: linear-gradient(90deg, var(--color-accent), var(--color-accent-secondary));
+}
+
+.meter-widget__fill--low {
+  background: linear-gradient(90deg, var(--color-warning), var(--color-warning));
+}
+
+.meter-widget__fill--critical {
+  background: linear-gradient(90deg, var(--color-error), var(--color-error));
+}
+
+.meter-widget__range {
+  display: flex;
+  justify-content: space-between;
+}
+
+.meter-widget__min,
+.meter-widget__max {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}

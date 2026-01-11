@@ -3,9 +3,10 @@
  *
  * Displays goals from the vault's goals.md file.
  * Shows sections with headers and items parsed from markdown.
+ * Clickable to trigger /review-goals command.
  */
 
-import React from "react";
+import React, { useCallback } from "react";
 import { useSession } from "../contexts/SessionContext";
 import "./GoalsCard.css";
 
@@ -16,9 +17,15 @@ import "./GoalsCard.css";
  * - Displays sections with their markdown headers as titles
  * - Shows "..." if a section has more than 9 items
  * - Returns null if no goals file exists in the vault
+ * - Clicking the card triggers /review-goals command
  */
 export function GoalsCard(): React.ReactNode {
-  const { goals } = useSession();
+  const { goals, setDiscussionPrefill, setMode } = useSession();
+
+  const handleClick = useCallback(() => {
+    setDiscussionPrefill("/review-goals");
+    setMode("discussion");
+  }, [setDiscussionPrefill, setMode]);
 
   // Don't render if no goals data (either no goals file or not yet loaded)
   if (goals === null) {
@@ -31,7 +38,12 @@ export function GoalsCard(): React.ReactNode {
   }
 
   return (
-    <section className="goals-card" aria-label="Goals">
+    <button
+      type="button"
+      className="goals-card"
+      onClick={handleClick}
+      aria-label="Review goals"
+    >
       {goals.map((section, sectionIndex) => (
         <div key={sectionIndex} className="goals-card__section">
           <h3 className="goals-card__heading">{section.title}</h3>
@@ -61,6 +73,6 @@ export function GoalsCard(): React.ReactNode {
           </ul>
         </div>
       ))}
-    </section>
+    </button>
   );
 }

@@ -28,6 +28,24 @@
   backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--glass-shadow);
   font-family: var(--font-family-user);
+  /* Button reset and interaction */
+  display: block;
+  width: 100%;
+  height: auto;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.goals-card:hover {
+  border-color: var(--color-accent-secondary);
+  box-shadow: var(--glass-shadow), 0 0 0 1px var(--color-accent-secondary-muted, rgba(255, 255, 255, 0.1));
+}
+
+.goals-card:active {
+  transform: scale(0.99);
 }
 
 @supports not (backdrop-filter: blur(10px)) {

@@ -857,7 +857,7 @@ describe("Edge Cases", () => {
   });
 
   test("setup version is correct", () => {
-    expect(SETUP_VERSION).toBe("1.0.0");
+    expect(SETUP_VERSION).toBe("1.1.0");
   });
 
   test("marker path is correct", () => {

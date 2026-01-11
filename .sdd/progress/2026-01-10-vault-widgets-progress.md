@@ -2,7 +2,7 @@
 specification: [.sdd/specs/2026-01-10-vault-widgets.md](./../specs/2026-01-10-vault-widgets.md)
 plan: [.sdd/plans/2026-01-10-vault-widgets-plan.md](./../plans/2026-01-10-vault-widgets-plan.md)
 tasks: [.sdd/tasks/2026-01-10-vault-widgets-tasks.md](./../tasks/2026-01-10-vault-widgets-tasks.md)
-status: In Progress
+status: Complete
 version: 1.0.0
 created: 2026-01-10
 last_updated: 2026-01-11
@@ -12,10 +12,10 @@ authored_by:
 
 # Vault Widgets - Implementation Progress
 
-**Last Updated**: 2026-01-11 | **Status**: 78% complete (14 of 18 tasks)
+**Last Updated**: 2026-01-11 | **Status**: 100% complete (18 of 18 tasks) ✅
 
 ## Current Session
-**Date**: 2026-01-11 | **Working On**: TASK-015: Ground Widgets in HomeView | **Blockers**: None
+**Date**: 2026-01-11 | **Working On**: Complete | **Blockers**: None | **Loop Iteration**: N/A
 
 ## Completed Today
 - TASK-007: File Watcher with Debounce ✅ (commit: 4b55283, 3 iterations)
@@ -25,6 +25,10 @@ authored_by:
 - TASK-012: Widget State in SessionContext ✅ (commit: 4bd14bd, 1 iteration)
 - TASK-013: Widget Display Components ✅ (commit: 8197c9f, 1 iteration)
 - TASK-014: Widget Editing Controls ✅ (commit: pending, 1 iteration)
+- TASK-015: Ground Widgets in HomeView ✅ (commit: 2693b5c, 1 iteration)
+- TASK-016: Recall Widgets in BrowseMode ✅ (commit: d18aee1, 1 iteration)
+- TASK-017: Test Fixtures and Performance Benchmarks ✅ (commit: c1d07ff, 1 iteration)
+- TASK-018: End-to-End Integration Tests ✅ (commit: pending, 2 iterations)
 
 ## Completed Previously (2026-01-10)
 - TASK-001: Widget Configuration Schema and Loader ✅ (commit: d01ec46, 1 iteration)
@@ -82,17 +86,17 @@ authored_by:
 
 ### Phase 5 - Frontend
 
-**In Progress** 🚧
+**Completed** ✅
 - [x] TASK-013: Widget Display Components - *Completed 2026-01-11*
 - [x] TASK-014: Widget Editing Controls - *Completed 2026-01-11*
-- [ ] TASK-015: Ground Widgets in HomeView
-- [ ] TASK-016: Recall Widgets in BrowseMode
+- [x] TASK-015: Ground Widgets in HomeView - *Completed 2026-01-11*
+- [x] TASK-016: Recall Widgets in BrowseMode - *Completed 2026-01-11*
 
 ### Phase 6 - Testing
 
-**Upcoming** ⏳
-- [ ] TASK-017: Test Fixtures and Performance Benchmarks
-- [ ] TASK-018: End-to-End Integration Tests
+**Completed** ✅
+- [x] TASK-017: Test Fixtures and Performance Benchmarks - *Completed 2026-01-11*
+- [x] TASK-018: End-to-End Integration Tests - *Completed 2026-01-11*
 
 ---
 
@@ -109,6 +113,13 @@ authored_by:
 **Context**: Initial integration tests using real filesystem had 10-15% failure rate due to timing-dependent filesystem events
 **Reason**: Chokidar event timing varies by OS and system load; real filesystem operations are non-deterministic
 **Decision**: Rewrote tests to mock chokidar and fs modules, making tests deterministic and fast (2.7s)
+**Date**: 2026-01-11
+
+### Discovery: gray-matter Library Caches Parsed Data Objects
+**Task**: TASK-018
+**Context**: Integration tests were failing because reading the fixture file after writing to a temp file returned the temp file's content
+**Reason**: The gray-matter library appears to have internal caching that gets confused when you mutate the `.data` property of a parsed object. When we did `parsed.data.rating = 5`, it affected subsequent `matter()` calls even on different file content.
+**Decision**: Always create new data objects using spread syntax (`{ ...parsed.data, rating: 5 }`) instead of mutating in place when modifying frontmatter for write operations.
 **Date**: 2026-01-11
 
 ---
@@ -132,11 +143,15 @@ authored_by:
 | ListWidget.tsx | ✅ Complete (22 tests) |
 | MeterWidget.tsx | ✅ Complete (15 tests) |
 | EditableField.tsx | ✅ Complete (19 tests) |
+| HomeView.tsx (widgets) | ✅ Complete (14 tests) |
+| BrowseMode.tsx (widgets) | ✅ Complete (9 tests) |
+| widget-performance.test.ts | ✅ Complete (9 tests) |
+| widget-integration.test.ts | ✅ Complete (56 tests) |
 
 ---
 
 ## Notes for Next Session
-- Continue with Phase 5 Frontend tasks
-- TASK-015: Integrate ground widgets into HomeView
-- TASK-016: Integrate recall widgets into BrowseMode
-- Phase 6: Test fixtures and end-to-end tests
+- All 18 tasks complete!
+- Feature implementation finished
+- All acceptance criteria validated via integration tests
+- Ready for PR review and merge to main

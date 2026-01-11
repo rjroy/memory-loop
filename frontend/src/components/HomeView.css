@@ -108,9 +108,55 @@
   }
 }
 
+/* Ground Widgets Section */
+.home-view__widgets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.home-view__widgets--loading {
+  min-height: 150px;
+}
+
+.home-view__widget-skeleton {
+  height: 120px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.home-view__widgets--error {
+  padding: var(--spacing-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-xl);
+}
+
+.home-view__error {
+  font-size: var(--text-sm);
+  color: var(--color-error);
+  margin: 0;
+}
+
 /* Mobile adjustments for blur performance */
 @media (max-width: 767px) {
   .home-view__context-card {
     backdrop-filter: blur(4px);
+  }
+
+  .home-view__widget-skeleton {
+    height: 100px;
   }
 }

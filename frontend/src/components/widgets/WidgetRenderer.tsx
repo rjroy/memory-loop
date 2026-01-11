@@ -3,6 +3,7 @@
  *
  * Dispatches widget results to type-specific display components.
  * Handles empty states with consistent styling.
+ * Renders editable fields when widget has editable configuration.
  */
 
 import React from "react";
@@ -11,6 +12,7 @@ import { SummaryCardWidget } from "./SummaryCardWidget";
 import { TableWidget } from "./TableWidget";
 import { ListWidget } from "./ListWidget";
 import { MeterWidget } from "./MeterWidget";
+import { EditableField } from "./EditableField";
 import "./WidgetRenderer.css";
 
 /**
@@ -21,6 +23,14 @@ export interface WidgetRendererProps {
   widget: WidgetResult;
   /** Optional class name for styling */
   className?: string;
+  /** File path for editable fields (required for recall widgets) */
+  filePath?: string;
+  /** Callback to send edit to server */
+  onEdit?: (filePath: string, fieldPath: string, value: unknown) => void;
+  /** Map of pending edits: `${filePath}:${fieldPath}` -> value */
+  pendingEdits?: Map<string, unknown>;
+  /** Error for widget edits */
+  editError?: string | null;
 }
 
 /**
@@ -28,14 +38,20 @@ export interface WidgetRendererProps {
  *
  * - Dispatches to SummaryCardWidget, TableWidget, ListWidget, or MeterWidget
  * - Shows empty state for widgets with no data
+ * - Renders editable fields when widget has editable configuration
  * - Applies consistent wrapper styling
  */
 export function WidgetRenderer({
   widget,
   className = "",
+  filePath,
+  onEdit,
+  pendingEdits,
+  editError,
 }: WidgetRendererProps): React.ReactNode {
   const displayType = widget.display.type;
   const title = widget.display.title ?? widget.name;
+  const hasEditableFields = widget.editable && widget.editable.length > 0 && filePath && onEdit;
 
   // Handle empty state
   if (widget.isEmpty) {
@@ -68,6 +84,24 @@ export function WidgetRenderer({
         <h3 className="widget__title">{title}</h3>
       </header>
       <div className="widget__content">{content}</div>
+      {hasEditableFields && (
+        <div className="widget__editable">
+          {widget.editable!.map((field) => {
+            const editKey = `${filePath}:${field.field}`;
+            const isPending = pendingEdits?.has(editKey) ?? false;
+            return (
+              <EditableField
+                key={field.field}
+                field={field}
+                filePath={filePath}
+                onEdit={onEdit}
+                isPending={isPending}
+                error={editError}
+              />
+            );
+          })}
+        </div>
+      )}
     </article>
   );
 }

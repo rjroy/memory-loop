@@ -78,6 +78,13 @@
   margin: 0;
 }
 
+/* Editable fields section */
+.widget__editable {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--glass-border);
+}
+
 /* Mobile adjustments for blur performance */
 @media (max-width: 767px) {
   .widget {

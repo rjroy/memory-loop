@@ -13,3 +13,6 @@ export { SummaryCardWidget, type SummaryCardWidgetProps } from "./SummaryCardWid
 export { TableWidget, type TableWidgetProps } from "./TableWidget";
 export { ListWidget, type ListWidgetProps } from "./ListWidget";
 export { MeterWidget, type MeterWidgetProps } from "./MeterWidget";
+
+// Editable controls
+export { EditableField, type EditableFieldProps } from "./EditableField";

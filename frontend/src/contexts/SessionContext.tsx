@@ -21,7 +21,6 @@ import type {
   RecentNoteEntry,
   RecentDiscussionEntry,
   ConversationMessageProtocol,
-  GoalSection,
   TaskEntry,
   SlashCommand,
   FileSearchResult,
@@ -82,8 +81,8 @@ export interface SessionProviderProps {
   initialRecentNotes?: RecentNoteEntry[];
   /** Optional initial recent discussions (for testing) */
   initialRecentDiscussions?: RecentDiscussionEntry[];
-  /** Optional initial goals (for testing) */
-  initialGoals?: GoalSection[] | null;
+  /** Optional initial goals markdown content (for testing) */
+  initialGoals?: string | null;
   /** Optional initial session ID (for testing) */
   initialSessionId?: string | null;
   /** Optional initial health issues (for testing) */
@@ -292,7 +291,7 @@ export function SessionProvider({
     dispatch({ type: "REMOVE_DISCUSSION", sessionId });
   }, []);
 
-  const setGoals = useCallback((goals: GoalSection[] | null) => {
+  const setGoals = useCallback((goals: string | null) => {
     dispatch({ type: "SET_GOALS", goals });
   }, []);
 

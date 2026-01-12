@@ -176,7 +176,7 @@ export function HomeView(): React.ReactNode {
           break;
 
         case "goals":
-          setGoals(message.sections);
+          setGoals(message.content);
           break;
 
         case "inspiration":

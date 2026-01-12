@@ -21,7 +21,6 @@ import {
   detectInboxPath,
   detectGoalsPath,
   parseVault,
-  parseGoals,
   getVaultGoals,
 } from "../vault-manager";
 import type { VaultInfo } from "@memory-loop/shared";
@@ -780,162 +779,6 @@ describe("Edge Cases", () => {
 // =============================================================================
 
 describe("Goals Feature", () => {
-  describe("parseGoals", () => {
-    test("parses multiple sections from headers", () => {
-      const content = `# Goals
-
-## Active
-
-- [ ] Learn TypeScript
-- [ ] Build a web app
-
-## Completed
-
-- [x] Set up project
-`;
-      const sections = parseGoals(content);
-      expect(sections).toHaveLength(2);
-      expect(sections[0]).toEqual({
-        title: "Active",
-        items: ["Learn TypeScript", "Build a web app"],
-        hasMore: false,
-      });
-      expect(sections[1]).toEqual({
-        title: "Completed",
-        items: ["Set up project"],
-        hasMore: false,
-      });
-    });
-
-    test("strips checkbox prefixes from items", () => {
-      const content = `## Tasks
-
-- [x] Completed task
-- [ ] Incomplete task
-- [X] Also completed (uppercase)
-`;
-      const sections = parseGoals(content);
-      expect(sections).toHaveLength(1);
-      expect(sections[0].items).toEqual([
-        "Completed task",
-        "Incomplete task",
-        "Also completed (uppercase)",
-      ]);
-    });
-
-    test("strips list markers from items", () => {
-      const content = `## Tasks
-
-- Regular list item
-* Asterisk item
-Plain text item
-`;
-      const sections = parseGoals(content);
-      expect(sections).toHaveLength(1);
-      expect(sections[0].items).toEqual([
-        "Regular list item",
-        "Asterisk item",
-        "Plain text item",
-      ]);
-    });
-
-    test("handles any header level", () => {
-      const content = `# Level 1
-
-Item 1
-
-## Level 2
-
-Item 2
-
-### Level 3
-
-Item 3
-`;
-      const sections = parseGoals(content);
-      expect(sections).toHaveLength(3);
-      expect(sections[0].title).toBe("Level 1");
-      expect(sections[1].title).toBe("Level 2");
-      expect(sections[2].title).toBe("Level 3");
-    });
-
-    test("content before first header goes to default Goals section", () => {
-      const content = `First item
-Second item
-
-## Later Section
-
-Third item
-`;
-      const sections = parseGoals(content);
-      expect(sections).toHaveLength(2);
-      expect(sections[0]).toEqual({
-        title: "Goals",
-        items: ["First item", "Second item"],
-        hasMore: false,
-      });
-      expect(sections[1]).toEqual({
-        title: "Later Section",
-        items: ["Third item"],
-        hasMore: false,
-      });
-    });
-
-    test("returns empty array for empty content", () => {
-      const sections = parseGoals("");
-      expect(sections).toHaveLength(0);
-    });
-
-    test("limits items to 9 per section and sets hasMore", () => {
-      const content = `## Many Items
-
-Item 1
-Item 2
-Item 3
-Item 4
-Item 5
-Item 6
-Item 7
-Item 8
-Item 9
-Item 10
-Item 11
-`;
-      const sections = parseGoals(content);
-      expect(sections).toHaveLength(1);
-      expect(sections[0].items).toHaveLength(9);
-      expect(sections[0].items[8]).toBe("Item 9");
-      expect(sections[0].hasMore).toBe(true);
-    });
-
-    test("ignores empty lines", () => {
-      const content = `## Tasks
-
-Item 1
-
-Item 2
-
-
-Item 3
-`;
-      const sections = parseGoals(content);
-      expect(sections).toHaveLength(1);
-      expect(sections[0].items).toEqual(["Item 1", "Item 2", "Item 3"]);
-    });
-
-    test("ignores empty list items", () => {
-      const content = `## Tasks
-
--
-- Valid task
--
-`;
-      const sections = parseGoals(content);
-      expect(sections).toHaveLength(1);
-      expect(sections[0].items).toEqual(["Valid task"]);
-    });
-  });
-
   describe("detectGoalsPath", () => {
     let testDir: string;
 
@@ -1022,19 +865,17 @@ Item 3
       expect(goals).toBeNull();
     });
 
-    test("returns parsed goals when file exists", async () => {
+    test("returns raw content when file exists", async () => {
       const goalsDir = join(testDir, "06_Metadata", "memory-loop");
       await mkdir(goalsDir, { recursive: true });
-      await writeFile(
-        join(goalsDir, "goals.md"),
-        `# Goals
+      const goalsContent = `# Goals
 
 ## Active
 
 - [ ] First goal
 - [x] Second goal (done)
-`
-      );
+`;
+      await writeFile(join(goalsDir, "goals.md"), goalsContent);
 
       const vault: VaultInfo = {
         id: "test-vault",
@@ -1044,7 +885,7 @@ Item 3
         contentRoot: testDir,
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+        attachmentPath: "05_Attachments",
         goalsPath: GOALS_FILE_PATH,
         setupComplete: false,
         promptsPerGeneration: 5,
@@ -1053,14 +894,8 @@ Item 3
         badges: [],
       };
 
-      const sections = await getVaultGoals(vault);
-      expect(sections).not.toBeNull();
-      expect(sections).toHaveLength(1);
-      expect(sections![0]).toEqual({
-        title: "Active",
-        items: ["First goal", "Second goal (done)"],
-        hasMore: false,
-      });
+      const content = await getVaultGoals(vault);
+      expect(content).toBe(goalsContent);
     });
 
     test("returns null when file is missing despite goalsPath being set", async () => {

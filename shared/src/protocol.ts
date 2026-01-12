@@ -742,22 +742,12 @@ export const RecentActivityMessageSchema = z.object({
 });
 
 /**
- * Schema for a section of goals parsed from goals.md
- * Sections are created from markdown headers at any level
- */
-export const GoalSectionSchema = z.object({
-  title: z.string(),
-  items: z.array(z.string()),
-  hasMore: z.boolean(),
-});
-
-/**
  * Server sends goals from the vault's goals.md file
- * Returns null for sections if the file doesn't exist
+ * Returns null for content if the file doesn't exist
  */
 export const GoalsMessageSchema = z.object({
   type: z.literal("goals"),
-  sections: z.array(GoalSectionSchema).nullable(),
+  content: z.string().nullable(),
 });
 
 /**
@@ -1128,7 +1118,6 @@ export type DirectoryListingMessage = z.infer<typeof DirectoryListingMessageSche
 export type FileContentMessage = z.infer<typeof FileContentMessageSchema>;
 export type RecentNotesMessage = z.infer<typeof RecentNotesMessageSchema>;
 export type RecentActivityMessage = z.infer<typeof RecentActivityMessageSchema>;
-export type GoalSection = z.infer<typeof GoalSectionSchema>;
 export type GoalsMessage = z.infer<typeof GoalsMessageSchema>;
 export type InspirationItem = z.infer<typeof InspirationItemSchema>;
 export type InspirationMessage = z.infer<typeof InspirationMessageSchema>;

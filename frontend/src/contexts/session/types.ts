@@ -8,7 +8,6 @@ import type {
   FileEntry,
   RecentNoteEntry,
   RecentDiscussionEntry,
-  GoalSection,
   TaskEntry,
   ToolInvocation,
   SlashCommand,
@@ -183,8 +182,8 @@ export interface SessionState {
   recentNotes: RecentNoteEntry[];
   /** Recent discussion sessions for note mode */
   recentDiscussions: RecentDiscussionEntry[];
-  /** Goals from vault's goals.md file (null if no goals file exists) */
-  goals: GoalSection[] | null;
+  /** Goals markdown content from vault's goals.md file (null if no goals file exists) */
+  goals: string | null;
   /** Pre-filled text for discussion mode (from inspiration click) */
   discussionPrefill: string | null;
   /** Session ID pending resume (set by RecentActivity, consumed by Discussion) */
@@ -251,8 +250,8 @@ export interface SessionActions {
   setRecentDiscussions: (discussions: RecentDiscussionEntry[]) => void;
   /** Remove a discussion from the recent list (after deletion) */
   removeDiscussion: (sessionId: string) => void;
-  /** Set goals from vault's goals.md file */
-  setGoals: (goals: GoalSection[] | null) => void;
+  /** Set goals markdown content from vault's goals.md file */
+  setGoals: (goals: string | null) => void;
   /** Set discussion prefill text (from inspiration click) */
   setDiscussionPrefill: (text: string | null) => void;
   /** Set pending session ID for resume (called by RecentActivity) */

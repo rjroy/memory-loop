@@ -89,6 +89,10 @@ export const FieldConfigSchema = z
 
     // Expression-based computation (REQ-F-8, REQ-F-11)
     expr: z.string().optional(),
+
+    // Display control - when false, field is computed but not included in output
+    // Useful for intermediate values used by other expressions
+    visible: z.boolean().optional(), // Defaults to true when omitted
   })
   .refine(
     (data) => {

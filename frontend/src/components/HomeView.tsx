@@ -115,7 +115,9 @@ export function HomeView(): React.ReactNode {
     setDiscussionPrefill,
     removeDiscussion,
     widgets,
+    setGroundWidgets,
     setGroundWidgetsLoading,
+    setGroundWidgetsError,
   } = useSession();
 
   const hasSentVaultSelectionRef = useRef(false);
@@ -185,9 +187,22 @@ export function HomeView(): React.ReactNode {
         case "session_deleted":
           removeDiscussion(message.sessionId);
           break;
+
+        case "ground_widgets":
+          setGroundWidgets(message.widgets);
+          setGroundWidgetsLoading(false);
+          break;
+
+        case "widget_error":
+          // Only handle ground-level errors (no filePath means it's a ground widget error)
+          if (!message.filePath) {
+            setGroundWidgetsError(message.error);
+            setGroundWidgetsLoading(false);
+          }
+          break;
       }
     },
-    [setRecentNotes, setRecentDiscussions, setGoals, removeDiscussion]
+    [setRecentNotes, setRecentDiscussions, setGoals, removeDiscussion, setGroundWidgets, setGroundWidgetsLoading, setGroundWidgetsError]
   );
 
   // Callback to re-send vault selection on WebSocket reconnect

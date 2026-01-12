@@ -44,6 +44,7 @@ const DISCUSSION_DRAFT_STORAGE_KEY = "memory-loop-discussion-draft";
 export function BrowseMode(): React.ReactNode {
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
+  const [isWidgetsPanelCollapsed, setIsWidgetsPanelCollapsed] = useState(false);
 
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
@@ -622,31 +623,52 @@ export function BrowseMode(): React.ReactNode {
             <DownloadViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
           )}
         </div>
-        {/* Recall Widgets - shown when viewing files that match widget source patterns */}
-        {browser.currentPath && (
-          <div className="browse-mode__recall-widgets">
-            {widgets.isRecallLoading ? (
-              <div className="browse-mode__recall-widgets-loading" aria-label="Loading widgets">
-                <div className="browse-mode__widget-skeleton" aria-hidden="true" />
+        {/* Recall Widgets - collapsible panel shown when viewing files that match widget source patterns */}
+        {browser.currentPath && (widgets.isRecallLoading || widgets.recallError || (widgets.recallWidgets.length > 0 && widgets.recallFilePath === browser.currentPath)) && (
+          <div className={`browse-mode__recall-widgets ${isWidgetsPanelCollapsed ? "browse-mode__recall-widgets--collapsed" : ""}`}>
+            <button
+              type="button"
+              className="browse-mode__recall-widgets-header"
+              onClick={() => setIsWidgetsPanelCollapsed(!isWidgetsPanelCollapsed)}
+              aria-expanded={!isWidgetsPanelCollapsed}
+              aria-controls="recall-widgets-content"
+            >
+              <span className="browse-mode__recall-widgets-title">
+                Widgets
+                {!widgets.isRecallLoading && widgets.recallWidgets.length > 0 && (
+                  <span className="browse-mode__recall-widgets-count">({widgets.recallWidgets.length})</span>
+                )}
+              </span>
+              <span className={`browse-mode__recall-widgets-chevron ${isWidgetsPanelCollapsed ? "browse-mode__recall-widgets-chevron--collapsed" : ""}`}>
+                ▼
+              </span>
+            </button>
+            {!isWidgetsPanelCollapsed && (
+              <div id="recall-widgets-content" className="browse-mode__recall-widgets-content">
+                {widgets.isRecallLoading ? (
+                  <div className="browse-mode__recall-widgets-loading" aria-label="Loading widgets">
+                    <div className="browse-mode__widget-skeleton" aria-hidden="true" />
+                  </div>
+                ) : widgets.recallError ? (
+                  <div className="browse-mode__recall-widgets-error" aria-label="Widget error">
+                    <p className="browse-mode__error">{widgets.recallError}</p>
+                  </div>
+                ) : (
+                  <section className="browse-mode__widgets" aria-label="File widgets">
+                    {widgets.recallWidgets.map((widget) => (
+                      <WidgetRenderer
+                        key={widget.name}
+                        widget={widget}
+                        filePath={browser.currentPath}
+                        onEdit={handleWidgetEdit}
+                        pendingEdits={widgets.pendingEdits}
+                        editError={widgets.recallError}
+                      />
+                    ))}
+                  </section>
+                )}
               </div>
-            ) : widgets.recallError ? (
-              <div className="browse-mode__recall-widgets-error" aria-label="Widget error">
-                <p className="browse-mode__error">{widgets.recallError}</p>
-              </div>
-            ) : widgets.recallWidgets.length > 0 && widgets.recallFilePath === browser.currentPath ? (
-              <section className="browse-mode__widgets" aria-label="File widgets">
-                {widgets.recallWidgets.map((widget) => (
-                  <WidgetRenderer
-                    key={widget.name}
-                    widget={widget}
-                    filePath={browser.currentPath}
-                    onEdit={handleWidgetEdit}
-                    pendingEdits={widgets.pendingEdits}
-                    editError={widgets.recallError}
-                  />
-                ))}
-              </section>
-            ) : null}
+            )}
           </div>
         )}
       </main>

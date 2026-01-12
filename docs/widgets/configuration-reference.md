@@ -130,6 +130,28 @@ fields:
 
 See [Expression Language](./expression-language.md) for full syntax.
 
+### Field Visibility
+
+Control whether a field appears in the widget output using `visible`:
+
+```yaml
+fields:
+  # Hidden intermediate value - computed but not displayed
+  max_rating:
+    max: rating
+    visible: false
+
+  # Visible field using the hidden one
+  normalized:
+    expr: "safeDivide(this.rating, stats.max_rating) * 100"
+```
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `visible` | boolean | `true` | Whether to include field in output |
+
+Use `visible: false` for intermediate calculations that other expressions depend on but shouldn't be shown in the widget display.
+
 ## Dimension Configuration (Similarity Widgets)
 
 Define how similarity is computed between items.

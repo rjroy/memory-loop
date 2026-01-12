@@ -64,8 +64,6 @@ export {
   WidgetEngine,
   createWidgetEngine,
   type WidgetResult,
-  type CollectionStats,
-  type FieldStats,
   type SimilarItem,
   type ComputeOptions,
 } from "./widget-engine";

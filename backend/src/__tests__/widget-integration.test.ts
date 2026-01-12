@@ -1142,3 +1142,114 @@ describe("Additional integration scenarios", () => {
     expect(result.result.length).toBeLessThanOrEqual(5);
   });
 });
+
+// =============================================================================
+// Field Visibility Tests
+// =============================================================================
+
+describe("Field visibility filtering", () => {
+  test("visible: false fields are computed but not included in output", async () => {
+    // Create a temporary vault with a widget that has hidden fields
+    const tempVaultPath = join(TEMP_DIR, `vault-visibility-${Date.now()}`);
+    const widgetsDir = join(tempVaultPath, ".memory-loop", "widgets");
+    const notesDir = join(tempVaultPath, "notes");
+
+    // Create directories
+    await mkdir(widgetsDir, { recursive: true });
+    await mkdir(notesDir, { recursive: true });
+
+    // Create test notes with frontmatter
+    await writeFile(
+      join(notesDir, "note1.md"),
+      "---\nrating: 8\nweight: 2\n---\n# Note 1"
+    );
+    await writeFile(
+      join(notesDir, "note2.md"),
+      "---\nrating: 6\nweight: 3\n---\n# Note 2"
+    );
+
+    // Create widget with hidden intermediate field
+    const widgetConfig = `
+name: Test Widget
+type: aggregate
+location: ground
+source:
+  pattern: "notes/**/*.md"
+fields:
+  # Hidden field - computed but not displayed
+  avg_rating:
+    avg: rating
+    visible: false
+  # Visible field using the hidden one
+  rating_display:
+    expr: "stats.avg_rating * 10"
+display:
+  type: summary-card
+  title: Test
+`;
+    await writeFile(join(widgetsDir, "test.yaml"), widgetConfig);
+
+    // Create and compute widget
+    const { engine } = await createWidgetEngine(tempVaultPath);
+    try {
+      const widgets = await engine.computeGroundWidgets();
+      expect(widgets.length).toBe(1);
+
+      const widget = widgets[0];
+      const data = widget.data as Record<string, unknown>;
+
+      // avg_rating should NOT be in output (visible: false)
+      expect(data.avg_rating).toBeUndefined();
+
+      // rating_display SHOULD be in output and correctly computed
+      // (avg_rating = (8+6)/2 = 7, * 10 = 70)
+      expect(data.rating_display).toBe(70);
+    } finally {
+      engine.shutdown();
+      await rm(tempVaultPath, { recursive: true, force: true });
+    }
+  });
+
+  test("fields without visible property default to visible", async () => {
+    // Create a temporary vault
+    const tempVaultPath = join(TEMP_DIR, `vault-visible-default-${Date.now()}`);
+    const widgetsDir = join(tempVaultPath, ".memory-loop", "widgets");
+    const notesDir = join(tempVaultPath, "notes");
+
+    await mkdir(widgetsDir, { recursive: true });
+    await mkdir(notesDir, { recursive: true });
+
+    await writeFile(
+      join(notesDir, "note1.md"),
+      "---\ncount: 5\n---\n# Note 1"
+    );
+
+    // Widget with no visible property (should default to true)
+    const widgetConfig = `
+name: Default Visible
+type: aggregate
+location: ground
+source:
+  pattern: "notes/**/*.md"
+fields:
+  total:
+    count: true
+display:
+  type: summary-card
+  title: Test
+`;
+    await writeFile(join(widgetsDir, "test.yaml"), widgetConfig);
+
+    const { engine } = await createWidgetEngine(tempVaultPath);
+    try {
+      const widgets = await engine.computeGroundWidgets();
+      const data = widgets[0].data as Record<string, unknown>;
+
+      // total should be visible (default behavior)
+      expect(data.total).toBe(1);
+    } finally {
+      engine.shutdown();
+      await rm(tempVaultPath, { recursive: true, force: true });
+    }
+  });
+});

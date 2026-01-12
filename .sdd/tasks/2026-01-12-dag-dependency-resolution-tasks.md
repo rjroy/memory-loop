@@ -1,7 +1,7 @@
 ---
 specification: [.sdd/specs/2026-01-12-dag-dependency-resolution.md](./../specs/2026-01-12-dag-dependency-resolution.md)
 plan: [.sdd/plans/2026-01-12-dag-dependency-resolution-plan.md](./../plans/2026-01-12-dag-dependency-resolution-plan.md)
-status: Under Review
+status: Ready for Implementation
 version: 1.0.0
 created: 2026-01-12
 last_updated: 2026-01-12

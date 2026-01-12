@@ -161,3 +161,13 @@ export {
   createFileWatcher,
   type FileWatcherOptions,
 } from "./file-watcher";
+
+// =============================================================================
+// Dependency Graph
+// =============================================================================
+
+export {
+  buildDependencyGraph,
+  type DependencyGraph,
+  type FieldScope,
+} from "./dependency-graph";

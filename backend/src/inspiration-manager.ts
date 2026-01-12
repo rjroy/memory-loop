@@ -140,13 +140,28 @@ export async function isContextualGenerationNeeded(
 
   // Compare dates (year, month, day) - ignore time component
   const generatedDate = parsed.lastGenerated;
-  const sameDate =
-    generatedDate.getFullYear() === today.getFullYear() &&
-    generatedDate.getMonth() === today.getMonth() &&
-    generatedDate.getDate() === today.getDate();
-
-  // Generation needed if NOT the same date
-  return !sameDate;
+  // Only generate if the last generated date is in the past based on date
+  const yearDiff = generatedDate.getFullYear() - today.getFullYear();
+  if (yearDiff > 0) {
+    // Future year - never generate
+    return false;
+  } else if (yearDiff < 0) {
+    // Past year - always generate
+    return true;
+  } else {
+    // Same year - check month
+    const monthDiff = generatedDate.getMonth() - today.getMonth();
+    if (monthDiff > 0) {
+      // Future month - never generate
+      return false;
+    } else if (monthDiff < 0) {
+      // Past month - always generate
+      return true;
+    } else {
+      // Same month - check day
+      return generatedDate.getDate() < today.getDate();
+    }
+  }
 }
 
 /**
@@ -180,11 +195,16 @@ export async function isQuoteGenerationNeeded(
     parsed.weekNumber ?? getISOWeekNumber(parsed.lastGenerated);
   const generatedYear = parsed.lastGenerated.getFullYear();
 
-  // Same year AND same week = already generated this week
-  const sameWeek = generatedYear === currentYear && generatedWeek === currentWeek;
-
-  // Generation needed if NOT the same week
-  return !sameWeek;
+  if (generatedYear > currentYear) {
+    // Future year - never generated this week
+    return false;
+  } else if (generatedYear == currentYear) {
+    // Only generate if week number is less than current week
+    return generatedWeek < currentWeek;
+  } else {
+    // Past year - definitely needs generation
+    return true;
+  }
 }
 
 // =============================================================================

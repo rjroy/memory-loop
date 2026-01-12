@@ -2,12 +2,22 @@
  * Widget Engine
  *
  * Core orchestrator for widget computation, caching, and result formatting.
- * Coordinates two-phase computation (collection stats first, then per-item expressions),
- * manages cache with stale-while-revalidate pattern, and routes widgets by location.
+ * Coordinates DAG-based field computation where field dependencies are resolved
+ * via topological sort, manages cache with stale-while-revalidate pattern,
+ * and routes widgets by location.
+ *
+ * The computation model uses dependency graph analysis to determine field order:
+ * - Fields can reference previously computed values via `result.<fieldName>`
+ * - Cycles are detected before computation and affected fields return null
+ * - Backward compatible: existing configs without `result.*` work unchanged
  *
  * Spec Requirements:
+ * - REQ-F-1: Identify dependency relationships from `result.<fieldName>` references
+ * - REQ-F-2: Determine computation order that respects dependencies
+ * - REQ-F-3: Execute fields in dependency order, populating result context
  * - REQ-F-5: File discovery via glob patterns matching vault files
- * - REQ-F-9: Two-phase computation: collection stats computed first, then available to per-item expressions
+ * - REQ-F-10: Fields in cycles return null; non-cycle fields compute normally
+ * - REQ-F-12: Log cycle warnings but do not throw exceptions
  * - REQ-F-14: Similarity computed on-demand for a given item, returning top-N similar items
  * - REQ-F-16: Ground widgets appear on Home/Ground view
  * - REQ-F-17: Recall widgets appear on Browse/Recall view when viewing a matching file
@@ -15,8 +25,10 @@
  * - REQ-F-27: When glob pattern matches zero files, widget displays "no data" indicator
  *
  * Plan Reference:
- * - TD-4: Two-Phase Computation Model
- * - TD-5: Similarity Caching Strategy
+ * - TD-1: Standalone dependency-graph module
+ * - TD-5: Cycle Handling Strategy
+ * - TD-6: Result Context Integration
+ * - TD-7: Per-Item vs Collection Context
  * - TD-10: Widget Routing Logic
  */
 
@@ -33,6 +45,7 @@ import { getAggregator, sum, avg, stddev } from "./aggregators";
 import { evaluateExpression } from "./expression-eval";
 import { computeWeightedSimilarity } from "./comparators";
 import { WidgetCache, createWidgetCache } from "./widget-cache";
+import { createComputationPlan } from "./dependency-graph";
 
 const log = createLogger("WidgetEngine");
 
@@ -421,13 +434,18 @@ export class WidgetEngine {
   // ===========================================================================
 
   /**
-   * Compute an aggregate widget (Phase 1 + Phase 2).
+   * Compute an aggregate widget using DAG-ordered field computation.
    *
-   * Phase 1: Compute all aggregator fields (count, sum, avg, min, max, stddev)
-   * Phase 2: Evaluate expression fields with access to Phase 1 results via stats.*
+   * Uses dependency graph analysis to determine field computation order:
+   * 1. Build computation plan from field configs (detects cycles, determines order)
+   * 2. Log warnings for any cycles (REQ-F-12)
+   * 3. Compute fields in dependency order, accumulating results
+   * 4. Cycle fields return null; other fields compute normally (REQ-F-10)
    *
-   * The stats context is keyed by user-defined field names, not frontmatter paths.
-   * If user defines `max_rating: { max: rating }`, then `stats.max_rating` is available.
+   * The result context is available to expressions via both `stats.*` (legacy)
+   * and `result.*` (DAG dependencies). Both reference the same accumulator.
+   *
+   * Plan Reference: TD-5 (Cycle Handling), TD-6 (Result Context Integration)
    */
   private computeAggregateWidget(
     widget: LoadedWidget,
@@ -437,43 +455,53 @@ export class WidgetEngine {
     const config = widget.config;
     const fieldConfigs = config.fields ?? {};
 
-    // Phase 1: Compute all aggregator fields first
-    // These become available in stats.* for expression fields
-    const stats: Record<string, unknown> = {
-      count: files.length,
-    };
+    // Get computation plan with DAG ordering (TD-1)
+    const plan = createComputationPlan(fieldConfigs);
 
-    for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-      // Skip expression fields - they run in Phase 2
-      if (fieldConfig.expr) continue;
-
-      const value = this.computeAggregatorField(fieldConfig, files);
-      stats[fieldName] = value;
+    // Log warnings for cycles (REQ-F-12: warn but don't throw)
+    for (const warning of plan.warnings) {
+      log.warn(`Widget ${widget.id}: ${warning}`);
     }
 
-    // Phase 2: Evaluate expression fields with access to Phase 1 results
-    const data: Record<string, unknown> = { ...stats };
+    // Initialize result accumulator with built-in count (REQ-F-14)
+    const result: Record<string, unknown> = { count: files.length };
 
-    for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-      if (!fieldConfig.expr) continue;
+    // Compute fields in DAG order
+    for (const phase of plan.phases) {
+      for (const fieldName of phase.fields) {
+        // Cycle fields return null (REQ-F-10)
+        if (plan.cycleFields.has(fieldName)) {
+          result[fieldName] = null;
+          continue;
+        }
 
-      try {
-        const value = evaluateExpression(fieldConfig.expr, {
-          this: {},
-          stats,
-        });
-        data[fieldName] = value;
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
-        data[fieldName] = null;
+        const fieldConfig = fieldConfigs[fieldName];
+
+        if (phase.scope === "collection") {
+          // Aggregator field: operates across all items, produces single value
+          result[fieldName] = this.computeAggregatorField(fieldConfig, files);
+        } else {
+          // Expression field: evaluated once with collection context
+          // For ground widgets, `this` is empty (no current item)
+          try {
+            result[fieldName] = evaluateExpression(fieldConfig.expr!, {
+              this: {},
+              stats: result, // Legacy alias (REQ-F-13)
+              result: result, // DAG dependencies (TD-6)
+            });
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
+            result[fieldName] = null;
+          }
+        }
       }
     }
 
     // Filter to only user-defined visible fields
     // (stats.count is for expressions, not output unless user defines a count field)
     const visibleData: Record<string, unknown> = {};
-    for (const [fieldName, value] of Object.entries(data)) {
+    for (const [fieldName, value] of Object.entries(result)) {
       const fieldConfig = fieldConfigs[fieldName];
       // Only include fields that are defined in config AND not explicitly hidden
       if (fieldConfig && fieldConfig.visible !== false) {
@@ -495,11 +523,15 @@ export class WidgetEngine {
   }
 
   /**
-   * Compute an aggregate widget for a specific item.
-   * Useful for showing per-item computed values on recall view.
+   * Compute an aggregate widget for a specific item (recall widgets).
+   * Uses DAG-ordered computation with per-item context.
    *
-   * Same two-phase approach as computeAggregateWidget, but expressions
+   * Same DAG-based approach as computeAggregateWidget, but expressions
    * also have access to `this.*` for the current file's frontmatter.
+   * This enables per-item expressions like z-scores that reference both
+   * the item's values and collection-level statistics.
+   *
+   * Plan Reference: TD-6 (Result Context), TD-7 (Per-Item vs Collection Context)
    */
   private computeAggregateWidgetForItem(
     widget: LoadedWidget,
@@ -510,40 +542,53 @@ export class WidgetEngine {
     const config = widget.config;
     const fieldConfigs = config.fields ?? {};
 
-    // Phase 1: Compute all aggregator fields (same as collection level)
-    const stats: Record<string, unknown> = {
-      count: files.length,
-    };
+    // Get computation plan with DAG ordering (TD-1)
+    const plan = createComputationPlan(fieldConfigs);
 
-    for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-      if (fieldConfig.expr) continue;
-      const value = this.computeAggregatorField(fieldConfig, files);
-      stats[fieldName] = value;
+    // Log warnings for cycles (REQ-F-12: warn but don't throw)
+    for (const warning of plan.warnings) {
+      log.warn(`Widget ${widget.id}: ${warning}`);
     }
 
-    // Phase 2: Evaluate expression fields with access to stats AND current item
-    const data: Record<string, unknown> = { ...stats };
+    // Initialize result accumulator with built-in count (REQ-F-14)
+    const result: Record<string, unknown> = { count: files.length };
 
-    for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-      if (!fieldConfig.expr) continue;
+    // Compute fields in DAG order
+    for (const phase of plan.phases) {
+      for (const fieldName of phase.fields) {
+        // Cycle fields return null (REQ-F-10)
+        if (plan.cycleFields.has(fieldName)) {
+          result[fieldName] = null;
+          continue;
+        }
 
-      try {
-        const value = evaluateExpression(fieldConfig.expr, {
-          this: currentFile.frontmatter,
-          stats,
-        });
-        data[fieldName] = value;
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
-        data[fieldName] = null;
+        const fieldConfig = fieldConfigs[fieldName];
+
+        if (phase.scope === "collection") {
+          // Aggregator field: operates across all items, produces single value
+          result[fieldName] = this.computeAggregatorField(fieldConfig, files);
+        } else {
+          // Expression field: evaluated with item context (TD-7)
+          // `this` contains the current file's frontmatter for per-item access
+          try {
+            result[fieldName] = evaluateExpression(fieldConfig.expr!, {
+              this: currentFile.frontmatter, // Per-item context
+              stats: result, // Legacy alias (REQ-F-13)
+              result: result, // DAG dependencies (TD-6)
+            });
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
+            result[fieldName] = null;
+          }
+        }
       }
     }
 
     // Filter to only user-defined visible fields
     // (stats.count is for expressions, not output unless user defines a count field)
     const visibleData: Record<string, unknown> = {};
-    for (const [fieldName, value] of Object.entries(data)) {
+    for (const [fieldName, value] of Object.entries(result)) {
       const fieldConfig = fieldConfigs[fieldName];
       // Only include fields that are defined in config AND not explicitly hidden
       if (fieldConfig && fieldConfig.visible !== false) {

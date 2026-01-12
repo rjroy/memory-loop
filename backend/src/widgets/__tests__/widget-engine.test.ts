@@ -139,7 +139,7 @@ fields:
     stddev: rating
   # Expression-based computed fields
   normalized_rating:
-    expr: "zscore(this.rating, stats.rating_mean, stats.rating_stddev)"
+    expr: "zscore(this.rating, stats.rating_avg, stats.rating_stddev)"
   rating_percent:
     expr: "safeDivide(this.rating, stats.rating_max) * 100"
 display:

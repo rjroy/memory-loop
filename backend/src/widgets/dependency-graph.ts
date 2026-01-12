@@ -62,6 +62,41 @@ export interface SortResult {
   cycles: string[][];
 }
 
+/**
+ * A single phase of field computation.
+ *
+ * Fields within a phase can be computed in any order, but all fields
+ * in earlier phases must complete before later phases begin.
+ *
+ * Plan Reference: TD-2 (Data Model)
+ */
+export interface ComputationPhase {
+  /** Scope of fields in this phase (collection or item) */
+  scope: FieldScope;
+
+  /** Fields to compute in this phase */
+  fields: string[];
+}
+
+/**
+ * Complete computation plan for widget fields.
+ *
+ * Produced by createComputationPlan() after building and sorting the dependency graph.
+ * Contains the execution phases, cycle information, and any warning messages.
+ *
+ * Plan Reference: TD-2 (Data Model), TD-5 (Cycle Handling Strategy)
+ */
+export interface ComputationPlan {
+  /** Ordered execution phases; each phase's fields must complete before the next begins */
+  phases: ComputationPhase[];
+
+  /** Fields to skip due to cycles (their result will be null) */
+  cycleFields: Set<string>;
+
+  /** Warning messages for cycles and other issues (logged but no exceptions thrown) */
+  warnings: string[];
+}
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -342,13 +377,205 @@ export function topologicalSort(graph: DependencyGraph): SortResult {
     }
   }
 
-  // Build cycle arrays from participants
-  // For now, group all cycle participants into a single cycle representation
-  // TASK-003 will enhance this with proper cycle path tracing
+  // Build cycle arrays from participants using traceCyclePath
   const cycles: string[][] = [];
   if (cycleParticipants.length > 0) {
-    cycles.push(cycleParticipants);
+    // Track which participants have been assigned to a cycle
+    const assigned = new Set<string>();
+
+    for (const participant of cycleParticipants) {
+      if (!assigned.has(participant)) {
+        // Trace the cycle starting from this participant
+        const cyclePath = traceCyclePath(graph, participant, cycleParticipants);
+
+        // Mark all nodes in this cycle as assigned
+        for (const node of cyclePath) {
+          assigned.add(node);
+        }
+
+        cycles.push(cyclePath);
+      }
+    }
   }
 
   return { sorted, cycles };
+}
+
+// =============================================================================
+// Cycle Path Tracing
+// =============================================================================
+
+/**
+ * Trace a cycle path starting from a given node.
+ *
+ * Given a set of cycle participants (nodes with non-zero in-degree after Kahn's algorithm),
+ * this function follows the dependency edges to trace the actual cycle path.
+ *
+ * Algorithm:
+ * 1. Start at the given node
+ * 2. Follow dependencies that are also cycle participants
+ * 3. Continue until returning to the start node
+ * 4. Return the path as an array of field names
+ *
+ * The returned path forms a cycle: the last element depends on the first.
+ * For example, ["a", "b", "c"] represents a -> b -> c -> a.
+ *
+ * @param graph - The dependency graph
+ * @param startNode - The node to start tracing from (must be a cycle participant)
+ * @param cycleParticipants - All nodes identified as cycle participants
+ * @returns Array of field names forming the cycle path
+ *
+ * Spec Requirements: REQ-F-11 (cycle errors include cycle path)
+ * Plan Reference: TD-5 (trace cycle path for error message)
+ */
+export function traceCyclePath(
+  graph: DependencyGraph,
+  startNode: string,
+  cycleParticipants: string[]
+): string[] {
+  const participantSet = new Set(cycleParticipants);
+  const path: string[] = [startNode];
+  const visited = new Set<string>([startNode]);
+
+  let current = startNode;
+
+  // Follow dependencies that are also cycle participants
+  while (true) {
+    const deps = graph.edges.get(current) ?? new Set();
+
+    // Find a dependency that is a cycle participant and leads back to start
+    // or continues the cycle
+    let nextNode: string | null = null;
+
+    for (const dep of deps) {
+      if (participantSet.has(dep)) {
+        if (dep === startNode) {
+          // We've completed the cycle, return the path
+          return path;
+        }
+        if (!visited.has(dep)) {
+          // Continue following the cycle
+          nextNode = dep;
+          break;
+        }
+      }
+    }
+
+    if (nextNode === null) {
+      // No unvisited cycle participant found in dependencies
+      // This can happen with complex interconnected cycles
+      // Return what we have (the path represents a partial cycle)
+      return path;
+    }
+
+    path.push(nextNode);
+    visited.add(nextNode);
+    current = nextNode;
+  }
+}
+
+/**
+ * Format a cycle path as a human-readable error message.
+ *
+ * Converts a cycle path array into a string like "a -> b -> c -> a"
+ * where the final arrow points back to the first node to show the cycle.
+ *
+ * @param cyclePath - Array of field names in the cycle
+ * @returns Formatted string showing the cycle
+ *
+ * Spec Requirements: REQ-NF-4 (error messages include field names, not internal IDs)
+ */
+function formatCyclePath(cyclePath: string[]): string {
+  if (cyclePath.length === 0) {
+    return "";
+  }
+
+  // Add the first node at the end to show the cycle completing
+  return [...cyclePath, cyclePath[0]].join(" -> ");
+}
+
+// =============================================================================
+// Computation Plan Creation
+// =============================================================================
+
+/**
+ * Create a computation plan from field configurations.
+ *
+ * This is the main entry point for preparing widget field computation.
+ * It builds the dependency graph, performs topological sort, detects cycles,
+ * and organizes fields into execution phases.
+ *
+ * Cycle handling (TD-5):
+ * - Fields in cycles are added to cycleFields set (they return null)
+ * - Warning messages are generated for each cycle (logged, not thrown)
+ * - Non-cycle fields are organized into phases and computed normally
+ *
+ * Phase organization (TD-7):
+ * - Fields are grouped by scope (collection vs item)
+ * - All item-scope dependencies must complete before collection-scope fields
+ *   that depend on them (e.g., aggregating per-item expression results)
+ *
+ * @param fields - Record of field name to field configuration
+ * @returns ComputationPlan with phases, cycle fields, and warnings
+ *
+ * Spec Requirements:
+ * - REQ-F-9: Detect dependency cycles before computation begins
+ * - REQ-F-10: Fields in cycles return null; non-cycle fields compute normally
+ * - REQ-F-11: Cycle errors include cycle path
+ * - REQ-F-12: Log cycle warnings but do not throw exceptions
+ * - REQ-NF-4: Error messages include field names, not internal IDs
+ *
+ * Plan Reference: TD-5 (Cycle Handling Strategy)
+ */
+export function createComputationPlan(fields: Record<string, FieldConfig>): ComputationPlan {
+  // Build the dependency graph from field configurations
+  const graph = buildDependencyGraph(fields);
+
+  // Perform topological sort to get execution order and detect cycles
+  const sortResult = topologicalSort(graph);
+
+  // Initialize result structures
+  const cycleFields = new Set<string>();
+  const warnings: string[] = [];
+
+  // Process cycles: add to cycleFields and generate warning messages
+  for (const cyclePath of sortResult.cycles) {
+    // Add all nodes in this cycle to the cycleFields set
+    for (const field of cyclePath) {
+      cycleFields.add(field);
+    }
+
+    // Generate human-readable warning message (REQ-F-11, REQ-NF-4)
+    const formattedPath = formatCyclePath(cyclePath);
+    warnings.push(`Cycle detected: ${formattedPath}`);
+  }
+
+  // Build computation phases from sorted fields
+  // Group consecutive fields with the same scope into phases
+  const phases: ComputationPhase[] = [];
+
+  for (const field of sortResult.sorted) {
+    const fieldScope = graph.scope.get(field) ?? "item";
+
+    // Check if we can add to the current phase (same scope)
+    // or need to start a new phase
+    const lastPhase = phases[phases.length - 1];
+
+    if (lastPhase && lastPhase.scope === fieldScope) {
+      // Add to existing phase
+      lastPhase.fields.push(field);
+    } else {
+      // Start a new phase
+      phases.push({
+        scope: fieldScope,
+        fields: [field],
+      });
+    }
+  }
+
+  return {
+    phases,
+    cycleFields,
+    warnings,
+  };
 }

@@ -169,7 +169,11 @@ export {
 export {
   buildDependencyGraph,
   topologicalSort,
+  traceCyclePath,
+  createComputationPlan,
   type DependencyGraph,
   type FieldScope,
   type SortResult,
+  type ComputationPhase,
+  type ComputationPlan,
 } from "./dependency-graph";

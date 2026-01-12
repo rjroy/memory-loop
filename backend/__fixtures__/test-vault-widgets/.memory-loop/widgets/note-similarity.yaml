@@ -1,0 +1,22 @@
+# Note Similarity Widget
+# A recall widget that shows similar notes when viewing a specific note
+
+name: Similar Notes
+type: similarity
+location: recall
+source:
+  pattern: "notes/**/*.md"
+dimensions:
+  - field: tags
+    weight: 0.6
+    method: jaccard
+  - field: rating
+    weight: 0.3
+    method: proximity
+  - field: category
+    weight: 0.1
+    method: jaccard
+display:
+  type: list
+  limit: 5
+  title: Related Notes

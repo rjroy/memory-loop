@@ -1,0 +1,1171 @@
+/**
+ * Widget Engine
+ *
+ * Core orchestrator for widget computation, caching, and result formatting.
+ * Coordinates two-phase computation (collection stats first, then per-item expressions),
+ * manages cache with stale-while-revalidate pattern, and routes widgets by location.
+ *
+ * Spec Requirements:
+ * - REQ-F-5: File discovery via glob patterns matching vault files
+ * - REQ-F-9: Two-phase computation: collection stats computed first, then available to per-item expressions
+ * - REQ-F-14: Similarity computed on-demand for a given item, returning top-N similar items
+ * - REQ-F-16: Ground widgets appear on Home/Ground view
+ * - REQ-F-17: Recall widgets appear on Browse/Recall view when viewing a matching file
+ * - REQ-F-26: Stale-while-revalidate: serve cached results while recomputing in background
+ * - REQ-F-27: When glob pattern matches zero files, widget displays "no data" indicator
+ *
+ * Plan Reference:
+ * - TD-4: Two-Phase Computation Model
+ * - TD-5: Similarity Caching Strategy
+ * - TD-10: Widget Routing Logic
+ */
+
+import { readFile, stat } from "node:fs/promises";
+import { relative } from "node:path";
+import { createHash } from "node:crypto";
+import picomatch from "picomatch";
+
+import { createLogger } from "../logger";
+import type { WidgetConfig, FieldConfig, DisplayConfig, EditableField } from "./schemas";
+import { loadWidgetConfigs, type WidgetLoaderResult } from "./widget-loader";
+import { parseFrontmatter } from "./frontmatter";
+import { getAggregator, sum, avg, stddev } from "./aggregators";
+import { evaluateExpression } from "./expression-eval";
+import { computeWeightedSimilarity } from "./comparators";
+import { WidgetCache, createWidgetCache } from "./widget-cache";
+
+const log = createLogger("WidgetEngine");
+
+// =============================================================================
+// Types
+// =============================================================================
+
+/**
+ * Result of widget computation.
+ */
+export interface WidgetResult {
+  /** Widget identifier from filename */
+  widgetId: string;
+  /** Human-readable name from config */
+  name: string;
+  /** Widget computation type */
+  type: "aggregate" | "similarity";
+  /** Display location */
+  location: "ground" | "recall";
+  /** Display configuration */
+  display: DisplayConfig;
+  /** Computed data (type depends on widget type) */
+  data: unknown;
+  /** Optional editable fields */
+  editable?: EditableField[];
+  /** True when glob matches zero files (REQ-F-27) */
+  isEmpty: boolean;
+  /** Reason for empty state */
+  emptyReason?: string;
+  /** Computation time in milliseconds */
+  computeTimeMs?: number;
+}
+
+/**
+ * Collection statistics computed in Phase 1.
+ * Used by per-item expressions in Phase 2.
+ */
+export interface CollectionStats {
+  /** Total file count (includes files with missing fields) */
+  count: number;
+  /** Per-field statistics */
+  fields: Record<string, FieldStats>;
+}
+
+/**
+ * Statistics for a single field.
+ */
+export interface FieldStats {
+  sum: number | null;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+  stddev: number | null;
+  count: number;
+}
+
+/**
+ * File data loaded from vault.
+ */
+interface FileData {
+  /** Relative path from vault root */
+  path: string;
+  /** Absolute path */
+  absolutePath: string;
+  /** Parsed frontmatter data */
+  frontmatter: Record<string, unknown>;
+  /** File modification time (mtime) */
+  mtime: number;
+  /** File size in bytes */
+  size: number;
+}
+
+/**
+ * Loaded widget with its configuration.
+ */
+interface LoadedWidget {
+  id: string;
+  filePath: string;
+  config: WidgetConfig;
+}
+
+/**
+ * Options for engine computation.
+ */
+export interface ComputeOptions {
+  /** Force recomputation even if cache is valid */
+  force?: boolean;
+}
+
+/**
+ * Similar item result for similarity widgets.
+ */
+export interface SimilarItem {
+  /** Relative path to the similar file */
+  path: string;
+  /** Overall similarity score (0-1) */
+  score: number;
+  /** Per-dimension scores for debugging/display */
+  dimensions: Array<{
+    field: string;
+    method: string;
+    weight: number;
+    score: number;
+    skipped: boolean;
+  }>;
+  /** File title (from frontmatter or filename) */
+  title: string;
+}
+
+// =============================================================================
+// WidgetEngine Class
+// =============================================================================
+
+/**
+ * Main engine for computing and managing widgets.
+ *
+ * Lifecycle:
+ * 1. Create engine with vault path
+ * 2. Call initialize() to load widget configs and set up cache
+ * 3. Use computeGroundWidgets() for Home view
+ * 4. Use computeRecallWidgets(filePath) for Browse view
+ * 5. Call shutdown() when done
+ */
+export class WidgetEngine {
+  private readonly vaultPath: string;
+  private readonly vaultId: string;
+  private cache: WidgetCache | null = null;
+  private widgets: LoadedWidget[] = [];
+  private initialized = false;
+
+  // Background recomputation state
+  private pendingRecomputations: Set<string> = new Set();
+
+  constructor(vaultPath: string, vaultId?: string) {
+    this.vaultPath = vaultPath;
+    // Use vault path as ID if not provided (hash for uniqueness)
+    this.vaultId = vaultId ?? createHash("md5").update(vaultPath).digest("hex").slice(0, 8);
+  }
+
+  /**
+   * Returns true if the engine is initialized.
+   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Returns the vault path.
+   */
+  getVaultPath(): string {
+    return this.vaultPath;
+  }
+
+  /**
+   * Returns the vault ID.
+   */
+  getVaultId(): string {
+    return this.vaultId;
+  }
+
+  /**
+   * Returns loaded widgets.
+   */
+  getWidgets(): LoadedWidget[] {
+    return [...this.widgets];
+  }
+
+  /**
+   * Initialize the engine: load widget configs and set up cache.
+   *
+   * @returns Loader result with any widget config errors
+   */
+  async initialize(): Promise<WidgetLoaderResult> {
+    log.info(`Initializing widget engine for ${this.vaultPath}`);
+
+    // Load widget configurations
+    const loaderResult = await loadWidgetConfigs(this.vaultPath);
+    this.widgets = loaderResult.widgets;
+
+    // Initialize cache
+    this.cache = await createWidgetCache(this.vaultPath);
+
+    this.initialized = true;
+
+    log.info(`Engine initialized: ${this.widgets.length} widget(s), ${loaderResult.errors.length} error(s)`);
+
+    return loaderResult;
+  }
+
+  /**
+   * Shutdown the engine and release resources.
+   */
+  shutdown(): void {
+    log.info("Shutting down widget engine");
+
+    if (this.cache) {
+      this.cache.close();
+      this.cache = null;
+    }
+
+    this.widgets = [];
+    this.pendingRecomputations.clear();
+    this.initialized = false;
+  }
+
+  // ===========================================================================
+  // Ground Widgets (Home View)
+  // ===========================================================================
+
+  /**
+   * Compute all ground widgets for the vault dashboard.
+   *
+   * @param options - Computation options
+   * @returns Array of widget results
+   */
+  async computeGroundWidgets(options: ComputeOptions = {}): Promise<WidgetResult[]> {
+    if (!this.initialized) {
+      throw new Error("Engine not initialized. Call initialize() first.");
+    }
+
+    const groundWidgets = this.widgets.filter((w) => w.config.location === "ground");
+
+    if (groundWidgets.length === 0) {
+      log.debug("No ground widgets configured");
+      return [];
+    }
+
+    log.info(`Computing ${groundWidgets.length} ground widget(s)`);
+
+    const results = await Promise.all(
+      groundWidgets.map((w) => this.computeWidget(w, options))
+    );
+
+    return results;
+  }
+
+  // ===========================================================================
+  // Recall Widgets (Browse View)
+  // ===========================================================================
+
+  /**
+   * Compute recall widgets for a specific file.
+   *
+   * Only computes widgets whose source pattern matches the given file path.
+   *
+   * @param filePath - Relative path to the file being viewed
+   * @param options - Computation options
+   * @returns Array of widget results for this file
+   */
+  async computeRecallWidgets(
+    filePath: string,
+    options: ComputeOptions = {}
+  ): Promise<WidgetResult[]> {
+    if (!this.initialized) {
+      throw new Error("Engine not initialized. Call initialize() first.");
+    }
+
+    const recallWidgets = this.widgets.filter((w) => w.config.location === "recall");
+
+    if (recallWidgets.length === 0) {
+      log.debug("No recall widgets configured");
+      return [];
+    }
+
+    // Filter to widgets whose source pattern matches the current file
+    const applicableWidgets = recallWidgets.filter((w) => {
+      const matcher = picomatch(w.config.source.pattern);
+      return matcher(filePath);
+    });
+
+    if (applicableWidgets.length === 0) {
+      log.debug(`No recall widgets match file: ${filePath}`);
+      return [];
+    }
+
+    log.info(`Computing ${applicableWidgets.length} recall widget(s) for ${filePath}`);
+
+    const results = await Promise.all(
+      applicableWidgets.map((w) => this.computeWidgetForItem(w, filePath, options))
+    );
+
+    return results;
+  }
+
+  // ===========================================================================
+  // Widget Computation
+  // ===========================================================================
+
+  /**
+   * Compute a single widget.
+   * Handles caching with stale-while-revalidate pattern.
+   */
+  private async computeWidget(
+    widget: LoadedWidget,
+    options: ComputeOptions = {}
+  ): Promise<WidgetResult> {
+    const startTime = performance.now();
+
+    // Load files matching the source pattern
+    const files = await this.loadMatchingFiles(widget.config.source.pattern);
+
+    // Handle empty results
+    if (files.length === 0) {
+      return this.createEmptyResult(widget, startTime);
+    }
+
+    // Compute content hash for cache key
+    const contentHash = this.computeContentHash(files);
+
+    // Check cache (unless force flag is set)
+    if (!options.force && this.cache) {
+      const cached = this.cache.getWidgetResult(this.vaultId, widget.id, contentHash);
+      if (cached) {
+        log.debug(`Cache hit for widget ${widget.id}`);
+        const result = JSON.parse(cached.resultJson) as WidgetResult;
+        result.computeTimeMs = performance.now() - startTime;
+        return result;
+      }
+    }
+
+    // Compute based on widget type
+    let result: WidgetResult;
+    if (widget.config.type === "aggregate") {
+      result = this.computeAggregateWidget(widget, files, startTime);
+    } else {
+      // Similarity widgets on ground view show collection summary
+      result = this.computeSimilarityWidgetSummary(widget, files, startTime);
+    }
+
+    // Cache the result
+    if (this.cache) {
+      this.cache.setWidgetResult(this.vaultId, widget.id, contentHash, result);
+    }
+
+    return result;
+  }
+
+  /**
+   * Compute a widget for a specific item (recall widgets, similarity).
+   */
+  private async computeWidgetForItem(
+    widget: LoadedWidget,
+    filePath: string,
+    options: ComputeOptions = {}
+  ): Promise<WidgetResult> {
+    const startTime = performance.now();
+
+    // Load all files matching the source pattern
+    const files = await this.loadMatchingFiles(widget.config.source.pattern);
+
+    // Handle empty results
+    if (files.length === 0) {
+      return this.createEmptyResult(widget, startTime);
+    }
+
+    // Find the current file
+    const currentFile = files.find((f) => f.path === filePath);
+    if (!currentFile) {
+      return this.createEmptyResult(widget, startTime, `File not found: ${filePath}`);
+    }
+
+    // Compute content hash for cache key
+    const contentHash = this.computeContentHash(files);
+
+    if (widget.config.type === "similarity") {
+      // Check similarity cache
+      if (!options.force && this.cache) {
+        const cached = this.cache.getSimilarityResult(
+          this.vaultId,
+          widget.id,
+          filePath,
+          contentHash
+        );
+        if (cached) {
+          log.debug(`Similarity cache hit for ${widget.id}:${filePath}`);
+          const result = JSON.parse(cached.similarItemsJson) as WidgetResult;
+          result.computeTimeMs = performance.now() - startTime;
+          return result;
+        }
+      }
+
+      const result = this.computeSimilarityWidget(
+        widget,
+        currentFile,
+        files,
+        startTime
+      );
+
+      // Cache similarity result
+      if (this.cache) {
+        this.cache.setSimilarityResult(
+          this.vaultId,
+          widget.id,
+          filePath,
+          contentHash,
+          result
+        );
+      }
+
+      return result;
+    } else {
+      // Aggregate widget for specific item - compute per-item values
+      return this.computeAggregateWidgetForItem(widget, currentFile, files, startTime);
+    }
+  }
+
+  // ===========================================================================
+  // Aggregate Widget Computation
+  // ===========================================================================
+
+  /**
+   * Compute an aggregate widget (Phase 1 + Phase 2).
+   */
+  private computeAggregateWidget(
+    widget: LoadedWidget,
+    files: FileData[],
+    startTime: number
+  ): WidgetResult {
+    const config = widget.config;
+
+    // Phase 1: Compute collection statistics
+    const collectionStats = this.computeCollectionStats(files, config.fields ?? {});
+
+    // Phase 2: Compute per-field results
+    const data: Record<string, unknown> = {};
+
+    for (const [fieldName, fieldConfig] of Object.entries(config.fields ?? {})) {
+      if (fieldConfig.expr) {
+        // Expression-based field - evaluate for collection
+        // For aggregate widgets without a specific item, use collection-level expression
+        const statsContext = this.buildStatsContext(collectionStats);
+        try {
+          const value = evaluateExpression(fieldConfig.expr, {
+            this: {},
+            stats: statsContext,
+          });
+          data[fieldName] = value;
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
+          data[fieldName] = null;
+        }
+      } else {
+        // Simple aggregation - get from stats
+        const aggValue = this.getAggregationValue(fieldConfig, collectionStats);
+        data[fieldName] = aggValue;
+      }
+    }
+
+    return {
+      widgetId: widget.id,
+      name: config.name,
+      type: "aggregate",
+      location: config.location,
+      display: config.display,
+      data,
+      editable: config.editable,
+      isEmpty: false,
+      computeTimeMs: performance.now() - startTime,
+    };
+  }
+
+  /**
+   * Compute an aggregate widget for a specific item.
+   * Useful for showing per-item computed values on recall view.
+   */
+  private computeAggregateWidgetForItem(
+    widget: LoadedWidget,
+    currentFile: FileData,
+    files: FileData[],
+    startTime: number
+  ): WidgetResult {
+    const config = widget.config;
+
+    // Phase 1: Compute collection statistics
+    const collectionStats = this.computeCollectionStats(files, config.fields ?? {});
+
+    // Phase 2: Compute per-item values
+    const statsContext = this.buildStatsContext(collectionStats);
+    const data: Record<string, unknown> = {};
+
+    for (const [fieldName, fieldConfig] of Object.entries(config.fields ?? {})) {
+      if (fieldConfig.expr) {
+        // Expression-based field
+        try {
+          const value = evaluateExpression(fieldConfig.expr, {
+            this: currentFile.frontmatter,
+            stats: statsContext,
+          });
+          data[fieldName] = value;
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
+          data[fieldName] = null;
+        }
+      } else {
+        // Simple aggregation - same as collection level
+        const aggValue = this.getAggregationValue(fieldConfig, collectionStats);
+        data[fieldName] = aggValue;
+      }
+    }
+
+    return {
+      widgetId: widget.id,
+      name: config.name,
+      type: "aggregate",
+      location: config.location,
+      display: config.display,
+      data,
+      editable: config.editable,
+      isEmpty: false,
+      computeTimeMs: performance.now() - startTime,
+    };
+  }
+
+  /**
+   * Compute collection-level statistics (Phase 1).
+   */
+  private computeCollectionStats(
+    files: FileData[],
+    fieldConfigs: Record<string, FieldConfig>
+  ): CollectionStats {
+    const stats: CollectionStats = {
+      count: files.length,
+      fields: {},
+    };
+
+    // Collect all field paths we need to aggregate
+    const fieldPaths = new Set<string>();
+
+    for (const [, fieldConfig] of Object.entries(fieldConfigs)) {
+      // Get field paths from aggregation configs
+      if (fieldConfig.sum) fieldPaths.add(fieldConfig.sum);
+      if (fieldConfig.avg) fieldPaths.add(fieldConfig.avg);
+      if (fieldConfig.min) fieldPaths.add(fieldConfig.min);
+      if (fieldConfig.max) fieldPaths.add(fieldConfig.max);
+      if (fieldConfig.stddev) fieldPaths.add(fieldConfig.stddev);
+    }
+
+    // Compute stats for each field path
+    for (const fieldPath of fieldPaths) {
+      const values = files.map((f) => this.getFieldValue(f.frontmatter, fieldPath));
+      const numericValues = values.map((v) =>
+        typeof v === "number" ? v : v === null || v === undefined ? null : null
+      );
+
+      stats.fields[fieldPath] = {
+        sum: sum(numericValues),
+        avg: avg(numericValues),
+        min: getAggregator("min")!(numericValues),
+        max: getAggregator("max")!(numericValues),
+        stddev: stddev(numericValues),
+        count: numericValues.filter((v) => v !== null).length,
+      };
+    }
+
+    return stats;
+  }
+
+  /**
+   * Get aggregation value from field config and stats.
+   */
+  private getAggregationValue(
+    fieldConfig: FieldConfig,
+    stats: CollectionStats
+  ): number | null {
+    if (fieldConfig.count) {
+      return stats.count;
+    }
+    if (fieldConfig.sum && stats.fields[fieldConfig.sum]) {
+      return stats.fields[fieldConfig.sum].sum;
+    }
+    if (fieldConfig.avg && stats.fields[fieldConfig.avg]) {
+      return stats.fields[fieldConfig.avg].avg;
+    }
+    if (fieldConfig.min && stats.fields[fieldConfig.min]) {
+      return stats.fields[fieldConfig.min].min;
+    }
+    if (fieldConfig.max && stats.fields[fieldConfig.max]) {
+      return stats.fields[fieldConfig.max].max;
+    }
+    if (fieldConfig.stddev && stats.fields[fieldConfig.stddev]) {
+      return stats.fields[fieldConfig.stddev].stddev;
+    }
+    return null;
+  }
+
+  /**
+   * Build stats context object for expression evaluation.
+   */
+  private buildStatsContext(stats: CollectionStats): Record<string, unknown> {
+    const context: Record<string, unknown> = {
+      count: stats.count,
+    };
+
+    // Flatten field stats into context with naming convention:
+    // fieldPath_sum, fieldPath_avg, fieldPath_min, fieldPath_max, fieldPath_stddev
+    for (const [fieldPath, fieldStats] of Object.entries(stats.fields)) {
+      const safeName = fieldPath.replace(/\./g, "_");
+      context[`${safeName}_sum`] = fieldStats.sum;
+      context[`${safeName}_avg`] = fieldStats.avg;
+      context[`${safeName}_mean`] = fieldStats.avg; // Alias
+      context[`${safeName}_min`] = fieldStats.min;
+      context[`${safeName}_max`] = fieldStats.max;
+      context[`${safeName}_stddev`] = fieldStats.stddev;
+      context[`${safeName}_count`] = fieldStats.count;
+    }
+
+    return context;
+  }
+
+  // ===========================================================================
+  // Similarity Widget Computation
+  // ===========================================================================
+
+  /**
+   * Compute similarity widget for a specific item.
+   */
+  private computeSimilarityWidget(
+    widget: LoadedWidget,
+    currentFile: FileData,
+    files: FileData[],
+    startTime: number
+  ): WidgetResult {
+    const config = widget.config;
+    const dimensions = config.dimensions ?? [];
+    const limit = config.display.limit ?? 10;
+
+    // Compute similarity against all other files
+    const similarities: SimilarItem[] = [];
+
+    for (const file of files) {
+      // Skip self
+      if (file.path === currentFile.path) {
+        continue;
+      }
+
+      const result = computeWeightedSimilarity(
+        currentFile.frontmatter,
+        file.frontmatter,
+        dimensions
+      );
+
+      similarities.push({
+        path: file.path,
+        score: result.score,
+        dimensions: result.dimensions,
+        title: this.getFileTitle(file),
+      });
+    }
+
+    // Sort by score descending and take top N
+    similarities.sort((a, b) => b.score - a.score);
+    const topSimilar = similarities.slice(0, limit);
+
+    return {
+      widgetId: widget.id,
+      name: config.name,
+      type: "similarity",
+      location: config.location,
+      display: config.display,
+      data: topSimilar,
+      editable: config.editable,
+      isEmpty: false,
+      computeTimeMs: performance.now() - startTime,
+    };
+  }
+
+  /**
+   * Compute similarity widget summary for ground view.
+   * Shows collection info rather than per-item similarities.
+   */
+  private computeSimilarityWidgetSummary(
+    widget: LoadedWidget,
+    files: FileData[],
+    startTime: number
+  ): WidgetResult {
+    const config = widget.config;
+
+    // For ground view, show metadata about the similarity widget
+    const data = {
+      itemCount: files.length,
+      dimensions: config.dimensions?.map((d) => ({
+        field: d.field,
+        weight: d.weight,
+        method: d.method,
+      })),
+      message: `Similarity widget with ${files.length} items. View a file to see similar items.`,
+    };
+
+    return {
+      widgetId: widget.id,
+      name: config.name,
+      type: "similarity",
+      location: config.location,
+      display: config.display,
+      data,
+      editable: config.editable,
+      isEmpty: false,
+      computeTimeMs: performance.now() - startTime,
+    };
+  }
+
+  // ===========================================================================
+  // File Loading
+  // ===========================================================================
+
+  /**
+   * Load files matching a glob pattern.
+   * Uses Bun's built-in glob functionality.
+   */
+  private async loadMatchingFiles(pattern: string): Promise<FileData[]> {
+    let matchedPaths: string[];
+    try {
+      // Use Bun's built-in Glob class
+      const globInstance = new Bun.Glob(pattern);
+      const matches = globInstance.scanSync({
+        cwd: this.vaultPath,
+        absolute: true,
+        onlyFiles: true,
+      });
+      matchedPaths = Array.from(matches);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      log.error(`Glob error for pattern ${pattern}: ${errorMsg}`);
+      return [];
+    }
+
+    if (matchedPaths.length === 0) {
+      log.debug(`No files match pattern: ${pattern}`);
+      return [];
+    }
+
+    log.debug(`Found ${matchedPaths.length} file(s) matching: ${pattern}`);
+
+    // Load file data in parallel
+    const filePromises = matchedPaths.map(async (absolutePath): Promise<FileData | null> => {
+      try {
+        const content = await readFile(absolutePath, "utf-8");
+        const stats = await stat(absolutePath);
+        const { data: frontmatter } = parseFrontmatter(content);
+
+        return {
+          path: relative(this.vaultPath, absolutePath),
+          absolutePath,
+          frontmatter,
+          mtime: stats.mtimeMs,
+          size: stats.size,
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        log.warn(`Failed to load file ${absolutePath}: ${errorMsg}`);
+        return null;
+      }
+    });
+
+    const results = await Promise.all(filePromises);
+    return results.filter((f): f is FileData => f !== null);
+  }
+
+  // ===========================================================================
+  // Helpers
+  // ===========================================================================
+
+  /**
+   * Create an empty result for a widget.
+   */
+  private createEmptyResult(
+    widget: LoadedWidget,
+    startTime: number,
+    reason?: string
+  ): WidgetResult {
+    return {
+      widgetId: widget.id,
+      name: widget.config.name,
+      type: widget.config.type,
+      location: widget.config.location,
+      display: widget.config.display,
+      data: null,
+      editable: widget.config.editable,
+      isEmpty: true,
+      emptyReason: reason ?? `No files match ${widget.config.source.pattern}`,
+      computeTimeMs: performance.now() - startTime,
+    };
+  }
+
+  /**
+   * Compute content hash from file metadata.
+   * Hash is based on sorted list of path:mtime:size strings.
+   */
+  private computeContentHash(files: FileData[]): string {
+    const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
+    const hashInput = sorted.map((f) => `${f.path}:${f.mtime}:${f.size}`).join("\n");
+    return createHash("sha256").update(hashInput).digest("hex").slice(0, 16);
+  }
+
+  /**
+   * Get a field value from frontmatter using dot-notation path.
+   */
+  private getFieldValue(data: Record<string, unknown>, path: string): unknown {
+    const parts = path.split(".");
+    let current: unknown = data;
+
+    for (const part of parts) {
+      if (current === null || current === undefined) {
+        return null;
+      }
+      if (typeof current !== "object") {
+        return null;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+
+    return current === undefined ? null : current;
+  }
+
+  /**
+   * Get a display title for a file.
+   */
+  private getFileTitle(file: FileData): string {
+    // Try frontmatter title first
+    const fmTitle = file.frontmatter.title;
+    if (typeof fmTitle === "string" && fmTitle.length > 0) {
+      return fmTitle;
+    }
+
+    // Fall back to filename without extension
+    const basename = file.path.split("/").pop() ?? file.path;
+    return basename.replace(/\.md$/i, "");
+  }
+
+  // ===========================================================================
+  // Cache Management
+  // ===========================================================================
+
+  /**
+   * Invalidate all cache entries for a specific widget.
+   */
+  invalidateWidget(widgetId: string): void {
+    if (this.cache) {
+      const widgetCount = this.cache.invalidateWidget(this.vaultId, widgetId);
+      const similarityCount = this.cache.invalidateSimilarity(this.vaultId, widgetId);
+      log.debug(`Invalidated cache for widget ${widgetId}: ${widgetCount + similarityCount} entries`);
+    }
+  }
+
+  /**
+   * Invalidate all cache entries for this vault.
+   */
+  invalidateAll(): void {
+    if (this.cache) {
+      const count = this.cache.invalidateVault(this.vaultId);
+      log.debug(`Invalidated all cache for vault: ${count} entries`);
+    }
+  }
+
+  /**
+   * Get cache statistics.
+   */
+  getCacheStats(): { usingFallback: boolean; widgetEntries: number; similarityEntries: number } {
+    if (this.cache) {
+      return this.cache.getStats();
+    }
+    return { usingFallback: true, widgetEntries: 0, similarityEntries: 0 };
+  }
+
+  // ===========================================================================
+  // Public Similarity API
+  // ===========================================================================
+
+  /**
+   * Compute similarity for a specific item, returning top-N similar items.
+   *
+   * This is the public API for on-demand similarity computation.
+   * Results are cached with content version hash and returned in <100ms on cache hit.
+   *
+   * @param widgetId - Widget identifier (must be a similarity widget)
+   * @param sourcePath - Relative path to the source file
+   * @returns Computed similarity result with top-N similar items
+   * @throws Error if widget not found or not a similarity widget
+   */
+  async computeSimilarity(
+    widgetId: string,
+    sourcePath: string
+  ): Promise<{ result: SimilarItem[]; computeTimeMs: number; cacheHit: boolean }> {
+    if (!this.initialized) {
+      throw new Error("Engine not initialized. Call initialize() first.");
+    }
+
+    const startTime = performance.now();
+
+    // Find the widget
+    const widget = this.widgets.find((w) => w.id === widgetId);
+    if (!widget) {
+      throw new Error(`Widget not found: ${widgetId}`);
+    }
+
+    if (widget.config.type !== "similarity") {
+      throw new Error(`Widget ${widgetId} is not a similarity widget`);
+    }
+
+    // Load files matching the source pattern
+    const files = await this.loadMatchingFiles(widget.config.source.pattern);
+
+    if (files.length === 0) {
+      log.debug(`No files match pattern for widget ${widgetId}`);
+      return {
+        result: [],
+        computeTimeMs: performance.now() - startTime,
+        cacheHit: false,
+      };
+    }
+
+    // Find the current file
+    const currentFile = files.find((f) => f.path === sourcePath);
+    if (!currentFile) {
+      log.debug(`Source file not found in collection: ${sourcePath}`);
+      return {
+        result: [],
+        computeTimeMs: performance.now() - startTime,
+        cacheHit: false,
+      };
+    }
+
+    // Compute content hash for cache key
+    const contentHash = this.computeContentHash(files);
+
+    // Check similarity cache
+    if (this.cache) {
+      const cached = this.cache.getSimilarityResult(
+        this.vaultId,
+        widgetId,
+        sourcePath,
+        contentHash
+      );
+      if (cached) {
+        const computeTimeMs = performance.now() - startTime;
+        log.debug(`Similarity cache hit for ${widgetId}:${sourcePath} in ${computeTimeMs.toFixed(2)}ms`);
+        const cachedResult = JSON.parse(cached.similarItemsJson) as WidgetResult;
+        return {
+          result: cachedResult.data as SimilarItem[],
+          computeTimeMs,
+          cacheHit: true,
+        };
+      }
+    }
+
+    // Compute similarity
+    const widgetResult = this.computeSimilarityWidget(widget, currentFile, files, startTime);
+    const similarItems = widgetResult.data as SimilarItem[];
+
+    // Cache the result
+    if (this.cache) {
+      this.cache.setSimilarityResult(
+        this.vaultId,
+        widgetId,
+        sourcePath,
+        contentHash,
+        widgetResult
+      );
+    }
+
+    const computeTimeMs = performance.now() - startTime;
+    log.info(`Computed similarity for ${widgetId}:${sourcePath} in ${computeTimeMs.toFixed(2)}ms (${similarItems.length} results)`);
+
+    return {
+      result: similarItems,
+      computeTimeMs,
+      cacheHit: false,
+    };
+  }
+
+  // ===========================================================================
+  // File Change Handling
+  // ===========================================================================
+
+  /**
+   * Handle file change events from the file watcher.
+   *
+   * Invalidates similarity cache for all widgets whose source pattern matches
+   * any of the changed files. This ensures cache consistency when source files
+   * are modified.
+   *
+   * @param paths - Relative paths of changed files
+   * @returns Object with invalidation counts per widget
+   */
+  handleFilesChanged(paths: string[]): { invalidatedWidgets: string[]; totalEntriesInvalidated: number } {
+    if (!this.initialized || paths.length === 0) {
+      return { invalidatedWidgets: [], totalEntriesInvalidated: 0 };
+    }
+
+    log.info(`Handling file changes for ${paths.length} file(s)`);
+
+    const invalidatedWidgets: string[] = [];
+    let totalEntriesInvalidated = 0;
+
+    // For each widget, check if any changed file matches its source pattern
+    for (const widget of this.widgets) {
+      const matcher = picomatch(widget.config.source.pattern);
+      const hasMatchingFile = paths.some((p) => matcher(p));
+
+      if (hasMatchingFile) {
+        log.debug(`Invalidating cache for widget ${widget.id} (matching file changed)`);
+
+        // Invalidate both widget results and similarity results
+        const widgetCount = this.cache?.invalidateWidget(this.vaultId, widget.id) ?? 0;
+        const similarityCount = this.cache?.invalidateSimilarity(this.vaultId, widget.id) ?? 0;
+        const totalCount = widgetCount + similarityCount;
+
+        if (totalCount > 0) {
+          invalidatedWidgets.push(widget.id);
+          totalEntriesInvalidated += totalCount;
+        }
+      }
+    }
+
+    if (invalidatedWidgets.length > 0) {
+      log.info(`Invalidated ${totalEntriesInvalidated} cache entries for ${invalidatedWidgets.length} widget(s)`);
+    }
+
+    return { invalidatedWidgets, totalEntriesInvalidated };
+  }
+
+  /**
+   * Trigger background recomputation for widgets affected by file changes.
+   *
+   * This is an optional optimization: after invalidating cache, you can trigger
+   * background recomputation so results are ready when next requested.
+   *
+   * This method starts background tasks but does not wait for them to complete.
+   * Use `await` on the returned promise if you need to wait for completion.
+   *
+   * @param widgetIds - Widget IDs to recompute
+   */
+  triggerBackgroundRecomputation(widgetIds: string[]): void {
+    if (!this.initialized || widgetIds.length === 0) {
+      return;
+    }
+
+    const widgets = this.widgets.filter((w) => widgetIds.includes(w.id));
+    const groundWidgets = widgets.filter((w) => w.config.location === "ground");
+
+    // Recompute ground widgets in background
+    for (const widget of groundWidgets) {
+      if (!this.pendingRecomputations.has(widget.id)) {
+        this.pendingRecomputations.add(widget.id);
+        void this.computeWidget(widget, { force: true })
+          .finally(() => this.pendingRecomputations.delete(widget.id));
+      }
+    }
+  }
+
+  // ===========================================================================
+  // Stale-While-Revalidate Support
+  // ===========================================================================
+
+  /**
+   * Compute widgets with stale-while-revalidate pattern.
+   * Returns cached results immediately if available, triggers background recomputation.
+   *
+   * @param type - "ground" or "recall"
+   * @param filePath - For recall widgets, the file being viewed
+   * @returns Widget results (may be stale)
+   */
+  async computeWithStaleWhileRevalidate(
+    type: "ground" | "recall",
+    filePath?: string
+  ): Promise<{ results: WidgetResult[]; isStale: boolean }> {
+    if (type === "ground") {
+      // Try to get cached ground widgets
+      const groundWidgets = this.widgets.filter((w) => w.config.location === "ground");
+      const cachedResults: WidgetResult[] = [];
+      let hasStale = false;
+
+      for (const widget of groundWidgets) {
+        const files = await this.loadMatchingFiles(widget.config.source.pattern);
+        if (files.length === 0) {
+          cachedResults.push(this.createEmptyResult(widget, performance.now()));
+          continue;
+        }
+
+        const contentHash = this.computeContentHash(files);
+        const cached = this.cache?.getWidgetResult(this.vaultId, widget.id, contentHash);
+
+        if (cached) {
+          cachedResults.push(JSON.parse(cached.resultJson) as WidgetResult);
+        } else {
+          // No cache hit - need fresh computation
+          hasStale = true;
+          cachedResults.push(await this.computeWidget(widget));
+        }
+      }
+
+      // If any were stale, trigger background recomputation for freshness
+      if (hasStale && !this.pendingRecomputations.has("ground")) {
+        this.pendingRecomputations.add("ground");
+        // Background recompute (fire and forget, explicitly ignored)
+        void this.computeGroundWidgets({ force: true })
+          .catch((err) => {
+            log.error("Background ground widget recomputation failed", err);
+          })
+          .finally(() => this.pendingRecomputations.delete("ground"));
+      }
+
+      return { results: cachedResults, isStale: hasStale };
+    } else {
+      // Recall widgets
+      if (!filePath) {
+        return { results: [], isStale: false };
+      }
+
+      const results = await this.computeRecallWidgets(filePath);
+      return { results, isStale: false };
+    }
+  }
+}
+
+// =============================================================================
+// Factory Function
+// =============================================================================
+
+/**
+ * Create and initialize a WidgetEngine for a vault.
+ *
+ * @param vaultPath - Absolute path to vault root
+ * @param vaultId - Optional vault identifier (defaults to hashed path)
+ * @returns Initialized engine and any loader errors
+ */
+export async function createWidgetEngine(
+  vaultPath: string,
+  vaultId?: string
+): Promise<{ engine: WidgetEngine; loaderResult: WidgetLoaderResult }> {
+  const engine = new WidgetEngine(vaultPath, vaultId);
+  const loaderResult = await engine.initialize();
+  return { engine, loaderResult };
+}

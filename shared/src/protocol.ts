@@ -176,6 +176,105 @@ export const ConversationMessageSchema = z.object({
 });
 
 // =============================================================================
+// Widget Display Schemas
+// =============================================================================
+
+/**
+ * Display types for widgets (REQ-F-18).
+ * - summary-card: Key-value pairs for collection stats
+ * - table: Rows/columns for ranked lists
+ * - list: Ordered items for similar items
+ * - meter: Single value with scale (e.g., HEPCAT score)
+ */
+export const WidgetDisplayTypeSchema = z.enum(["summary-card", "table", "list", "meter"]);
+
+/**
+ * Widget type schema for computation type (REQ-F-4).
+ * - aggregate: Collection-level statistics (sum, avg, count, etc.)
+ * - similarity: Per-item similarity ranking against other items
+ */
+export const WidgetTypeSchema = z.enum(["aggregate", "similarity"]);
+
+/**
+ * Widget location schema (REQ-F-16, REQ-F-17).
+ * - ground: Appears on Home/Ground view (global dashboard)
+ * - recall: Appears on Browse/Recall view when viewing a matching file
+ */
+export const WidgetLocationSchema = z.enum(["ground", "recall"]);
+
+/**
+ * Display configuration for widget rendering.
+ * Type-specific fields are validated at runtime.
+ */
+export const WidgetDisplayConfigSchema = z.object({
+  /** Display component type */
+  type: WidgetDisplayTypeSchema,
+  /** Optional custom title (defaults to widget name) */
+  title: z.string().optional(),
+  /** Column names for table display */
+  columns: z.array(z.string()).optional(),
+  /** Maximum items for list display */
+  limit: z.number().int().positive().optional(),
+  /** Minimum value for meter display */
+  min: z.number().optional(),
+  /** Maximum value for meter display */
+  max: z.number().optional(),
+});
+
+/**
+ * Input types for editable frontmatter fields (REQ-F-20).
+ */
+export const WidgetEditableTypeSchema = z.enum(["slider", "number", "text", "date", "select"]);
+
+/**
+ * Configuration for an editable frontmatter field (REQ-F-20, REQ-F-21).
+ * Widgets can declare editable fields that users can modify.
+ */
+export const WidgetEditableFieldSchema = z.object({
+  /** Frontmatter field path to edit (e.g., "rating" or "status") */
+  field: z.string().min(1, "Editable field path is required"),
+  /** Input type for editing */
+  type: WidgetEditableTypeSchema,
+  /** User-facing label for the input */
+  label: z.string().min(1, "Editable field label is required"),
+  /** Options for select type */
+  options: z.array(z.string()).optional(),
+  /** Minimum value for slider/number types */
+  min: z.number().optional(),
+  /** Maximum value for slider/number types */
+  max: z.number().optional(),
+  /** Step increment for slider/number types */
+  step: z.number().positive().optional(),
+  /** Current value of the field (populated at runtime) */
+  currentValue: z.unknown().optional(),
+});
+
+/**
+ * Widget computation result (TD-13, REQ-F-27).
+ * Represents the computed output of a widget for display.
+ */
+export const WidgetResultSchema = z.object({
+  /** Unique identifier for the widget */
+  widgetId: z.string().min(1, "Widget ID is required"),
+  /** Human-readable widget name */
+  name: z.string().min(1, "Widget name is required"),
+  /** Computation type */
+  type: WidgetTypeSchema,
+  /** Display location */
+  location: WidgetLocationSchema,
+  /** Display configuration */
+  display: WidgetDisplayConfigSchema,
+  /** Computed data (structure depends on widget type) */
+  data: z.unknown(),
+  /** True when glob matches zero files (REQ-F-27) */
+  isEmpty: z.boolean(),
+  /** Reason for empty state (e.g., "No files match pattern") */
+  emptyReason: z.string().optional(),
+  /** Optional editable fields (REQ-F-20) */
+  editable: z.array(WidgetEditableFieldSchema).optional(),
+});
+
+// =============================================================================
 // Search Result Schemas
 // =============================================================================
 
@@ -429,6 +528,38 @@ export const DeleteFileMessageSchema = z.object({
 });
 
 /**
+ * Client requests ground widgets for current vault (REQ-F-16).
+ * Ground widgets appear on the Home/Ground view.
+ */
+export const GetGroundWidgetsMessageSchema = z.object({
+  type: z.literal("get_ground_widgets"),
+});
+
+/**
+ * Client requests recall widgets for a specific file (REQ-F-17).
+ * Recall widgets appear on the Browse/Recall view when viewing a matching file.
+ */
+export const GetRecallWidgetsMessageSchema = z.object({
+  type: z.literal("get_recall_widgets"),
+  /** Path to the file being viewed (relative to content root) */
+  path: z.string().min(1, "File path is required"),
+});
+
+/**
+ * Client requests to edit a frontmatter field via widget (REQ-F-20, REQ-F-21, REQ-F-22).
+ * The edit modifies a single frontmatter field in the source file.
+ */
+export const WidgetEditMessageSchema = z.object({
+  type: z.literal("widget_edit"),
+  /** File path (relative to content root) */
+  path: z.string().min(1, "File path is required"),
+  /** Frontmatter field path (dot-notation, e.g., "rating" or "bgg.play_count") */
+  field: z.string().min(1, "Field path is required"),
+  /** New value for the field */
+  value: z.unknown(),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -455,6 +586,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SearchContentMessageSchema,
   GetSnippetsMessageSchema,
   DeleteFileMessageSchema,
+  GetGroundWidgetsMessageSchema,
+  GetRecallWidgetsMessageSchema,
+  WidgetEditMessageSchema,
 ]);
 
 // =============================================================================
@@ -756,6 +890,52 @@ export const FileDeletedMessageSchema = z.object({
 });
 
 /**
+ * Server sends ground widgets for the current vault (REQ-F-16).
+ * Response to get_ground_widgets request.
+ */
+export const GroundWidgetsMessageSchema = z.object({
+  type: z.literal("ground_widgets"),
+  /** Array of computed widget results for Home/Ground view */
+  widgets: z.array(WidgetResultSchema),
+});
+
+/**
+ * Server sends recall widgets for a specific file (REQ-F-17).
+ * Response to get_recall_widgets request.
+ */
+export const RecallWidgetsMessageSchema = z.object({
+  type: z.literal("recall_widgets"),
+  /** Path to the file these widgets are for */
+  path: z.string().min(1, "File path is required"),
+  /** Array of computed widget results for Browse/Recall view */
+  widgets: z.array(WidgetResultSchema),
+});
+
+/**
+ * Server sends updated widgets after edit or file change (REQ-F-22).
+ * Pushed to client when widget recomputation completes.
+ */
+export const WidgetUpdateMessageSchema = z.object({
+  type: z.literal("widget_update"),
+  /** Updated widget results */
+  widgets: z.array(WidgetResultSchema),
+});
+
+/**
+ * Server reports a widget configuration or computation error (REQ-F-3).
+ * Sent when widget config is invalid or computation fails.
+ */
+export const WidgetErrorMessageSchema = z.object({
+  type: z.literal("widget_error"),
+  /** Optional widget ID if error is specific to one widget */
+  widgetId: z.string().optional(),
+  /** Human-readable error message */
+  error: z.string().min(1, "Error message is required"),
+  /** Optional file path if error is specific to a file */
+  filePath: z.string().optional(),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -786,6 +966,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   SnippetsMessageSchema,
   IndexProgressMessageSchema,
   FileDeletedMessageSchema,
+  GroundWidgetsMessageSchema,
+  RecallWidgetsMessageSchema,
+  WidgetUpdateMessageSchema,
+  WidgetErrorMessageSchema,
 ]);
 
 // =============================================================================
@@ -818,6 +1002,15 @@ export type FileSearchResult = z.infer<typeof FileSearchResultSchema>;
 export type ContentSearchResult = z.infer<typeof ContentSearchResultSchema>;
 export type ContextSnippet = z.infer<typeof ContextSnippetSchema>;
 
+// Widget types
+export type WidgetDisplayType = z.infer<typeof WidgetDisplayTypeSchema>;
+export type WidgetType = z.infer<typeof WidgetTypeSchema>;
+export type WidgetLocation = z.infer<typeof WidgetLocationSchema>;
+export type WidgetDisplayConfig = z.infer<typeof WidgetDisplayConfigSchema>;
+export type WidgetEditableType = z.infer<typeof WidgetEditableTypeSchema>;
+export type WidgetEditableField = z.infer<typeof WidgetEditableFieldSchema>;
+export type WidgetResult = z.infer<typeof WidgetResultSchema>;
+
 // Client message types
 export type SelectVaultMessage = z.infer<typeof SelectVaultMessageSchema>;
 export type CaptureNoteMessage = z.infer<typeof CaptureNoteMessageSchema>;
@@ -842,6 +1035,9 @@ export type SearchFilesMessage = z.infer<typeof SearchFilesMessageSchema>;
 export type SearchContentMessage = z.infer<typeof SearchContentMessageSchema>;
 export type GetSnippetsMessage = z.infer<typeof GetSnippetsMessageSchema>;
 export type DeleteFileMessage = z.infer<typeof DeleteFileMessageSchema>;
+export type GetGroundWidgetsMessage = z.infer<typeof GetGroundWidgetsMessageSchema>;
+export type GetRecallWidgetsMessage = z.infer<typeof GetRecallWidgetsMessageSchema>;
+export type WidgetEditMessage = z.infer<typeof WidgetEditMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -874,6 +1070,10 @@ export type SearchResultsMessage = z.infer<typeof SearchResultsMessageSchema>;
 export type SnippetsMessage = z.infer<typeof SnippetsMessageSchema>;
 export type IndexProgressMessage = z.infer<typeof IndexProgressMessageSchema>;
 export type FileDeletedMessage = z.infer<typeof FileDeletedMessageSchema>;
+export type GroundWidgetsMessage = z.infer<typeof GroundWidgetsMessageSchema>;
+export type RecallWidgetsMessage = z.infer<typeof RecallWidgetsMessageSchema>;
+export type WidgetUpdateMessage = z.infer<typeof WidgetUpdateMessageSchema>;
+export type WidgetErrorMessage = z.infer<typeof WidgetErrorMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

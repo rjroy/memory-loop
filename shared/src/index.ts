@@ -39,6 +39,14 @@ export {
   FileSearchResultSchema,
   ContentSearchResultSchema,
   ContextSnippetSchema,
+  // Widget schemas
+  WidgetDisplayTypeSchema,
+  WidgetTypeSchema,
+  WidgetLocationSchema,
+  WidgetDisplayConfigSchema,
+  WidgetEditableTypeSchema,
+  WidgetEditableFieldSchema,
+  WidgetResultSchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -104,6 +112,14 @@ export type {
   FileSearchResult,
   ContentSearchResult,
   ContextSnippet,
+  // Widget types
+  WidgetDisplayType,
+  WidgetType,
+  WidgetLocation,
+  WidgetDisplayConfig,
+  WidgetEditableType,
+  WidgetEditableField,
+  WidgetResult,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

@@ -1,0 +1,22 @@
+# Similarity Performance Widget
+# Tests REQ-NF-2: <500ms for 1000 items
+# Tests REQ-SC-3: <100ms cached
+
+name: Performance Similarity
+type: similarity
+location: recall
+source:
+  pattern: "notes/**/*.md"
+dimensions:
+  - field: tags
+    weight: 0.5
+    method: jaccard
+  - field: rating
+    weight: 0.3
+    method: proximity
+  - field: category
+    weight: 0.2
+    method: jaccard
+display:
+  type: list
+  limit: 10

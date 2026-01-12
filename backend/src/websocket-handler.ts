@@ -65,6 +65,14 @@ import {
   slashCommandsEqual,
 } from "./vault-config";
 import { runVaultSetup } from "./vault-setup";
+import {
+  WidgetEngine,
+  createWidgetEngine,
+  FileWatcher,
+  createFileWatcher,
+  parseFrontmatter,
+} from "./widgets";
+import matter from "gray-matter";
 
 /**
  * Sanitizes slash commands to ensure argumentHint is either a valid string or omitted.
@@ -151,6 +159,10 @@ export interface ConnectionState {
   searchIndex: SearchIndexManager | null;
   /** Active model captured from SDK system/init event (null if not yet received) */
   activeModel: string | null;
+  /** Widget engine for computing vault widgets (null if no vault selected) */
+  widgetEngine: WidgetEngine | null;
+  /** File watcher for widget source files (null if no vault selected) */
+  widgetWatcher: FileWatcher | null;
 }
 
 /**
@@ -164,6 +176,8 @@ export function createConnectionState(): ConnectionState {
     pendingPermissions: new Map(),
     searchIndex: null,
     activeModel: null,
+    widgetEngine: null,
+    widgetWatcher: null,
   };
 }
 
@@ -360,7 +374,7 @@ export class WebSocketHandler {
 
   /**
    * Handles the connection close event.
-   * Cleans up any active queries.
+   * Cleans up any active queries and widget resources.
    */
   async onClose(): Promise<void> {
     log.info("Connection closed, cleaning up...");
@@ -373,6 +387,23 @@ export class WebSocketHandler {
         // Ignore interrupt errors on close
       }
       this.state.activeQuery = null;
+    }
+
+    // Clean up widget resources
+    if (this.state.widgetWatcher) {
+      log.info("Stopping widget file watcher");
+      try {
+        await this.state.widgetWatcher.stop();
+      } catch {
+        // Ignore stop errors on close
+      }
+      this.state.widgetWatcher = null;
+    }
+
+    if (this.state.widgetEngine) {
+      log.info("Shutting down widget engine");
+      this.state.widgetEngine.shutdown();
+      this.state.widgetEngine = null;
     }
 
     // Reset state
@@ -494,6 +525,15 @@ export class WebSocketHandler {
       case "get_snippets":
         await this.handleGetSnippets(ws, message.path, message.query);
         break;
+      case "get_ground_widgets":
+        await this.handleGetGroundWidgets(ws);
+        break;
+      case "get_recall_widgets":
+        await this.handleGetRecallWidgets(ws, message.path);
+        break;
+      case "widget_edit":
+        await this.handleWidgetEdit(ws, message.path, message.field, message.value);
+        break;
     }
   }
 
@@ -517,11 +557,62 @@ export class WebSocketHandler {
 
       log.info(`Vault found: ${vault.name} at ${vault.path}`);
 
+      // Clean up any existing widget resources before switching vaults
+      if (this.state.widgetWatcher) {
+        await this.state.widgetWatcher.stop();
+        this.state.widgetWatcher = null;
+      }
+      if (this.state.widgetEngine) {
+        this.state.widgetEngine.shutdown();
+        this.state.widgetEngine = null;
+      }
+
       // Update state with selected vault
       this.state.currentVault = vault;
       this.state.currentSessionId = null;
       this.state.activeQuery = null;
       this.state.searchIndex = new SearchIndexManager(vault.contentRoot);
+
+      // Initialize widget engine for the vault
+      try {
+        const { engine, loaderResult } = await createWidgetEngine(vault.contentRoot, vault.id);
+        this.state.widgetEngine = engine;
+
+        // Log any widget configuration errors (but don't block vault selection)
+        if (loaderResult.errors.length > 0) {
+          log.warn(`Widget config errors for vault ${vault.id}:`, loaderResult.errors);
+        }
+
+        // Initialize file watcher if we have widgets with source patterns
+        const widgets = engine.getWidgets();
+        if (widgets.length > 0) {
+          // Collect unique glob patterns from all widgets
+          const patterns = [...new Set(widgets.map((w) => w.config.source.pattern))];
+
+          // Create file watcher that triggers widget_update on changes
+          this.state.widgetWatcher = createFileWatcher(
+            vault.contentRoot,
+            (changedPaths) => {
+              // Handle file changes: invalidate cache and send widget_update
+              this.handleWidgetFileChanges(ws, changedPaths);
+            }
+          );
+
+          // Start watching
+          await this.state.widgetWatcher.start(patterns);
+          log.info(`Widget watcher started with ${patterns.length} pattern(s)`);
+        }
+
+        log.info(`Widget engine initialized: ${widgets.length} widget(s)`);
+      } catch (widgetError) {
+        // Widget initialization failure should not block vault selection
+        log.error("Failed to initialize widget engine (continuing without widgets)", widgetError);
+        // Send widget_error so frontend knows widgets are unavailable
+        this.send(ws, {
+          type: "widget_error",
+          error: widgetError instanceof Error ? widgetError.message : "Widget initialization failed",
+        });
+      }
 
       // Load cached slash commands for immediate autocomplete
       const vaultConfig = await loadVaultConfig(vault.path);
@@ -1949,6 +2040,279 @@ export class WebSocketHandler {
         error instanceof Error ? error.message : "Failed to get snippets";
       this.sendError(ws, "INTERNAL_ERROR", message);
     }
+  }
+
+  // ===========================================================================
+  // Widget Handlers
+  // ===========================================================================
+
+  /**
+   * Handles get_ground_widgets message.
+   * Returns computed ground widgets for the vault dashboard.
+   */
+  private async handleGetGroundWidgets(ws: WebSocketLike): Promise<void> {
+    log.info("Getting ground widgets");
+
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for ground widgets");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    if (!this.state.widgetEngine) {
+      log.warn("Widget engine not initialized");
+      this.send(ws, {
+        type: "ground_widgets",
+        widgets: [],
+      });
+      return;
+    }
+
+    try {
+      const widgets = await this.state.widgetEngine.computeGroundWidgets();
+      log.info(`Computed ${widgets.length} ground widget(s)`);
+
+      this.send(ws, {
+        type: "ground_widgets",
+        widgets,
+      });
+    } catch (error) {
+      log.error("Failed to compute ground widgets", error);
+      this.send(ws, {
+        type: "widget_error",
+        error: error instanceof Error ? error.message : "Failed to compute ground widgets",
+      });
+    }
+  }
+
+  /**
+   * Handles get_recall_widgets message.
+   * Returns computed recall widgets for a specific file.
+   */
+  private async handleGetRecallWidgets(
+    ws: WebSocketLike,
+    filePath: string
+  ): Promise<void> {
+    log.info(`Getting recall widgets for: ${filePath}`);
+
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for recall widgets");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    if (!this.state.widgetEngine) {
+      log.warn("Widget engine not initialized");
+      this.send(ws, {
+        type: "recall_widgets",
+        path: filePath,
+        widgets: [],
+      });
+      return;
+    }
+
+    try {
+      const widgets = await this.state.widgetEngine.computeRecallWidgets(filePath);
+      log.info(`Computed ${widgets.length} recall widget(s) for ${filePath}`);
+
+      this.send(ws, {
+        type: "recall_widgets",
+        path: filePath,
+        widgets,
+      });
+    } catch (error) {
+      log.error(`Failed to compute recall widgets for ${filePath}`, error);
+      this.send(ws, {
+        type: "widget_error",
+        filePath,
+        error: error instanceof Error ? error.message : "Failed to compute recall widgets",
+      });
+    }
+  }
+
+  /**
+   * Handles widget_edit message.
+   * Updates a frontmatter field and triggers widget recomputation.
+   */
+  private async handleWidgetEdit(
+    ws: WebSocketLike,
+    filePath: string,
+    fieldPath: string,
+    value: unknown
+  ): Promise<void> {
+    log.info(`Widget edit: ${filePath} -> ${fieldPath} = ${JSON.stringify(value)}`);
+
+    if (!this.state.currentVault) {
+      log.warn("No vault selected for widget edit");
+      this.sendError(
+        ws,
+        "VAULT_NOT_FOUND",
+        "No vault selected. Send select_vault first."
+      );
+      return;
+    }
+
+    try {
+      // Read the current file content
+      const { content } = await readMarkdownFile(
+        this.state.currentVault.contentRoot,
+        filePath
+      );
+
+      // Parse frontmatter
+      const parsed = parseFrontmatter(content);
+      const frontmatter = parsed.data;
+
+      // Update the field using dot-notation path
+      this.setNestedValue(frontmatter, fieldPath, value);
+
+      // Serialize back to markdown using gray-matter
+      const newContent = matter.stringify(parsed.content, frontmatter);
+
+      // Write the updated content
+      await writeMarkdownFile(
+        this.state.currentVault.contentRoot,
+        filePath,
+        newContent
+      );
+
+      log.info(`Widget edit successful: ${filePath}`);
+
+      // Recompute widgets affected by this file change
+      // The file watcher will trigger widget_update, but we can also send
+      // an immediate update for this specific file's recall widgets
+      if (this.state.widgetEngine) {
+        // Invalidate cache for affected widgets
+        this.state.widgetEngine.handleFilesChanged([filePath]);
+
+        // Compute and send updated recall widgets for the edited file
+        const recallWidgets = await this.state.widgetEngine.computeRecallWidgets(filePath);
+        if (recallWidgets.length > 0) {
+          this.send(ws, {
+            type: "widget_update",
+            widgets: recallWidgets,
+          });
+        }
+
+        // Also recompute ground widgets since they might be affected
+        const groundWidgets = await this.state.widgetEngine.computeGroundWidgets();
+        if (groundWidgets.length > 0) {
+          this.send(ws, {
+            type: "widget_update",
+            widgets: groundWidgets,
+          });
+        }
+      }
+    } catch (error) {
+      log.error(`Widget edit failed: ${filePath}`, error);
+
+      if (error instanceof FileBrowserError) {
+        this.sendError(ws, error.code, error.message);
+      } else {
+        this.send(ws, {
+          type: "widget_error",
+          filePath,
+          error: error instanceof Error ? error.message : "Failed to edit widget field",
+        });
+      }
+    }
+  }
+
+  /**
+   * Handles file change events from the widget file watcher.
+   * Invalidates cache and sends widget_update to client.
+   */
+  private handleWidgetFileChanges(ws: WebSocketLike, changedPaths: string[]): void {
+    if (!this.state.widgetEngine || changedPaths.length === 0) {
+      return;
+    }
+
+    log.info(`Widget file changes detected: ${changedPaths.length} file(s)`);
+
+    // Invalidate cache for affected widgets
+    const { invalidatedWidgets, totalEntriesInvalidated } =
+      this.state.widgetEngine.handleFilesChanged(changedPaths);
+
+    if (invalidatedWidgets.length === 0) {
+      log.debug("No widgets affected by file changes");
+      return;
+    }
+
+    log.info(
+      `Invalidated ${totalEntriesInvalidated} cache entries for ${invalidatedWidgets.length} widget(s)`
+    );
+
+    // Recompute and send updated widgets
+    // We use a fire-and-forget pattern here since this is called from the file watcher callback
+    void this.recomputeAndSendWidgets(ws, invalidatedWidgets);
+  }
+
+  /**
+   * Recomputes widgets and sends widget_update message.
+   * Called after file changes invalidate cached widget data.
+   */
+  private async recomputeAndSendWidgets(
+    ws: WebSocketLike,
+    invalidatedWidgetIds: string[]
+  ): Promise<void> {
+    if (!this.state.widgetEngine || ws.readyState !== 1) {
+      return;
+    }
+
+    try {
+      // Get all widgets that need recomputation
+      const widgets = this.state.widgetEngine.getWidgets();
+      const affectedGroundWidgets = widgets.filter(
+        (w) => w.config.location === "ground" && invalidatedWidgetIds.includes(w.id)
+      );
+
+      // Recompute ground widgets if any were affected
+      if (affectedGroundWidgets.length > 0) {
+        const groundResults = await this.state.widgetEngine.computeGroundWidgets();
+        if (groundResults.length > 0 && ws.readyState === 1) {
+          this.send(ws, {
+            type: "widget_update",
+            widgets: groundResults,
+          });
+          log.info(`Sent widget_update with ${groundResults.length} ground widget(s)`);
+        }
+      }
+    } catch (error) {
+      log.error("Failed to recompute widgets after file change", error);
+      // Don't send error to client for background recomputation failures
+    }
+  }
+
+  /**
+   * Sets a nested value in an object using dot-notation path.
+   * Creates intermediate objects as needed.
+   */
+  private setNestedValue(
+    obj: Record<string, unknown>,
+    path: string,
+    value: unknown
+  ): void {
+    const parts = path.split(".");
+    let current = obj;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!(part in current) || typeof current[part] !== "object" || current[part] === null) {
+        current[part] = {};
+      }
+      current = current[part] as Record<string, unknown>;
+    }
+
+    const lastPart = parts[parts.length - 1];
+    current[lastPart] = value;
   }
 }
 

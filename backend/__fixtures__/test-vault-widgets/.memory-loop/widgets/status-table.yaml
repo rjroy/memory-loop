@@ -1,0 +1,20 @@
+# Status Table Widget
+# A ground widget showing notes organized by status
+
+name: Notes by Status
+type: aggregate
+location: ground
+source:
+  pattern: "notes/**/*.md"
+fields:
+  note_count:
+    count: true
+  avg_rating:
+    avg: rating
+display:
+  type: table
+  columns:
+    - Title
+    - Status
+    - Rating
+  title: All Notes

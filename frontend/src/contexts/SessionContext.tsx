@@ -14,7 +14,7 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry, ToolInvocation, SlashCommand, FileSearchResult, ContentSearchResult, ContextSnippet } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry, ToolInvocation, SlashCommand, FileSearchResult, ContentSearchResult, ContextSnippet, WidgetResult } from "@memory-loop/shared";
 
 /**
  * Application mode: home, note capture, discussion, or browse.
@@ -51,6 +51,28 @@ export interface SearchState {
   expandedPaths: Set<string>;
   /** Snippets for expanded content results, keyed by path */
   snippetsCache: Map<string, ContextSnippet[]>;
+}
+
+/**
+ * Widget state for vault widgets.
+ */
+export interface WidgetState {
+  /** Ground widgets for Home/Ground view */
+  groundWidgets: WidgetResult[];
+  /** Recall widgets for Browse/Recall view */
+  recallWidgets: WidgetResult[];
+  /** Current file path for recall widgets (null if none) */
+  recallFilePath: string | null;
+  /** Whether ground widgets are loading */
+  isGroundLoading: boolean;
+  /** Whether recall widgets are loading */
+  isRecallLoading: boolean;
+  /** Error message from ground widget computation */
+  groundError: string | null;
+  /** Error message from recall widget computation */
+  recallError: string | null;
+  /** Pending edits map: filePath:fieldPath -> value (for optimistic updates) */
+  pendingEdits: Map<string, unknown>;
 }
 
 /**
@@ -138,6 +160,8 @@ export interface SessionState {
   messages: ConversationMessage[];
   /** Browser state for file browsing mode */
   browser: BrowserState;
+  /** Widget state for vault widgets */
+  widgets: WidgetState;
   /** Recent captured notes for note mode */
   recentNotes: RecentNoteEntry[];
   /** Recent discussion sessions for note mode */
@@ -267,6 +291,25 @@ export interface SessionActions {
   setSnippets: (path: string, snippets: ContextSnippet[]) => void;
   /** Clear search and return to file tree */
   clearSearch: () => void;
+  // Widget actions
+  /** Set ground widgets from server */
+  setGroundWidgets: (widgets: WidgetResult[]) => void;
+  /** Set recall widgets from server */
+  setRecallWidgets: (widgets: WidgetResult[], filePath: string) => void;
+  /** Set ground widgets loading state */
+  setGroundWidgetsLoading: (isLoading: boolean) => void;
+  /** Set recall widgets loading state */
+  setRecallWidgetsLoading: (isLoading: boolean) => void;
+  /** Set ground widgets error */
+  setGroundWidgetsError: (error: string | null) => void;
+  /** Set recall widgets error */
+  setRecallWidgetsError: (error: string | null) => void;
+  /** Add pending edit (optimistic update) */
+  addPendingEdit: (filePath: string, fieldPath: string, value: unknown) => void;
+  /** Remove pending edit (server confirmed or failed) */
+  removePendingEdit: (filePath: string, fieldPath: string) => void;
+  /** Clear all widget state (when switching vaults) */
+  clearWidgetState: () => void;
 }
 
 /**
@@ -344,7 +387,17 @@ type SessionAction =
   | { type: "SET_SEARCH_LOADING"; isLoading: boolean }
   | { type: "TOGGLE_RESULT_EXPANDED"; path: string }
   | { type: "SET_SNIPPETS"; path: string; snippets: ContextSnippet[] }
-  | { type: "CLEAR_SEARCH" };
+  | { type: "CLEAR_SEARCH" }
+  // Widget actions
+  | { type: "SET_GROUND_WIDGETS"; widgets: WidgetResult[] }
+  | { type: "SET_RECALL_WIDGETS"; widgets: WidgetResult[]; filePath: string }
+  | { type: "SET_GROUND_WIDGETS_LOADING"; isLoading: boolean }
+  | { type: "SET_RECALL_WIDGETS_LOADING"; isLoading: boolean }
+  | { type: "SET_GROUND_WIDGETS_ERROR"; error: string | null }
+  | { type: "SET_RECALL_WIDGETS_ERROR"; error: string | null }
+  | { type: "ADD_PENDING_EDIT"; filePath: string; fieldPath: string; value: unknown }
+  | { type: "REMOVE_PENDING_EDIT"; filePath: string; fieldPath: string }
+  | { type: "CLEAR_WIDGET_STATE" };
 
 /**
  * Generates a unique message ID.
@@ -392,6 +445,22 @@ function createInitialSearchState(): SearchState {
     isLoading: false,
     expandedPaths: new Set(),
     snippetsCache: new Map(),
+  };
+}
+
+/**
+ * Creates initial widget state.
+ */
+function createInitialWidgetState(): WidgetState {
+  return {
+    groundWidgets: [],
+    recallWidgets: [],
+    recallFilePath: null,
+    isGroundLoading: false,
+    isRecallLoading: false,
+    groundError: null,
+    recallError: null,
+    pendingEdits: new Map(),
   };
 }
 
@@ -452,6 +521,8 @@ function sessionReducer(
         messages: [],
         // Clear browser state when switching vaults (REQ-F-23)
         browser: createInitialBrowserState(),
+        // Clear widget state when switching vaults
+        widgets: createInitialWidgetState(),
         // Clear recent activity when switching vaults
         recentNotes: [],
         recentDiscussions: [],
@@ -472,6 +543,7 @@ function sessionReducer(
         sessionId: null,
         messages: [],
         browser: createInitialBrowserState(),
+        widgets: createInitialWidgetState(),
         recentNotes: [],
         recentDiscussions: [],
         goals: null,
@@ -1135,6 +1207,102 @@ function sessionReducer(
         },
       };
 
+    // Widget actions
+    case "SET_GROUND_WIDGETS":
+      return {
+        ...state,
+        widgets: {
+          ...state.widgets,
+          groundWidgets: action.widgets,
+          isGroundLoading: false,
+          groundError: null,
+        },
+      };
+
+    case "SET_RECALL_WIDGETS":
+      return {
+        ...state,
+        widgets: {
+          ...state.widgets,
+          recallWidgets: action.widgets,
+          recallFilePath: action.filePath,
+          isRecallLoading: false,
+          recallError: null,
+        },
+      };
+
+    case "SET_GROUND_WIDGETS_LOADING":
+      return {
+        ...state,
+        widgets: {
+          ...state.widgets,
+          isGroundLoading: action.isLoading,
+          groundError: action.isLoading ? null : state.widgets.groundError,
+        },
+      };
+
+    case "SET_RECALL_WIDGETS_LOADING":
+      return {
+        ...state,
+        widgets: {
+          ...state.widgets,
+          isRecallLoading: action.isLoading,
+          recallError: action.isLoading ? null : state.widgets.recallError,
+        },
+      };
+
+    case "SET_GROUND_WIDGETS_ERROR":
+      return {
+        ...state,
+        widgets: {
+          ...state.widgets,
+          groundError: action.error,
+          isGroundLoading: false,
+        },
+      };
+
+    case "SET_RECALL_WIDGETS_ERROR":
+      return {
+        ...state,
+        widgets: {
+          ...state.widgets,
+          recallError: action.error,
+          isRecallLoading: false,
+        },
+      };
+
+    case "ADD_PENDING_EDIT": {
+      const key = `${action.filePath}:${action.fieldPath}`;
+      const newPendingEdits = new Map(state.widgets.pendingEdits);
+      newPendingEdits.set(key, action.value);
+      return {
+        ...state,
+        widgets: {
+          ...state.widgets,
+          pendingEdits: newPendingEdits,
+        },
+      };
+    }
+
+    case "REMOVE_PENDING_EDIT": {
+      const key = `${action.filePath}:${action.fieldPath}`;
+      const newPendingEdits = new Map(state.widgets.pendingEdits);
+      newPendingEdits.delete(key);
+      return {
+        ...state,
+        widgets: {
+          ...state.widgets,
+          pendingEdits: newPendingEdits,
+        },
+      };
+    }
+
+    case "CLEAR_WIDGET_STATE":
+      return {
+        ...state,
+        widgets: createInitialWidgetState(),
+      };
+
     default:
       return state;
   }
@@ -1150,6 +1318,7 @@ const initialState: SessionState = {
   mode: "home",
   messages: [],
   browser: createInitialBrowserState(),
+  widgets: createInitialWidgetState(),
   recentNotes: [],
   recentDiscussions: [],
   goals: null,
@@ -1573,6 +1742,43 @@ export function SessionProvider({
     dispatch({ type: "CLEAR_SEARCH" });
   }, []);
 
+  // Widget action creators
+  const setGroundWidgets = useCallback((widgets: WidgetResult[]) => {
+    dispatch({ type: "SET_GROUND_WIDGETS", widgets });
+  }, []);
+
+  const setRecallWidgets = useCallback((widgets: WidgetResult[], filePath: string) => {
+    dispatch({ type: "SET_RECALL_WIDGETS", widgets, filePath });
+  }, []);
+
+  const setGroundWidgetsLoading = useCallback((isLoading: boolean) => {
+    dispatch({ type: "SET_GROUND_WIDGETS_LOADING", isLoading });
+  }, []);
+
+  const setRecallWidgetsLoading = useCallback((isLoading: boolean) => {
+    dispatch({ type: "SET_RECALL_WIDGETS_LOADING", isLoading });
+  }, []);
+
+  const setGroundWidgetsError = useCallback((error: string | null) => {
+    dispatch({ type: "SET_GROUND_WIDGETS_ERROR", error });
+  }, []);
+
+  const setRecallWidgetsError = useCallback((error: string | null) => {
+    dispatch({ type: "SET_RECALL_WIDGETS_ERROR", error });
+  }, []);
+
+  const addPendingEdit = useCallback((filePath: string, fieldPath: string, value: unknown) => {
+    dispatch({ type: "ADD_PENDING_EDIT", filePath, fieldPath, value });
+  }, []);
+
+  const removePendingEdit = useCallback((filePath: string, fieldPath: string) => {
+    dispatch({ type: "REMOVE_PENDING_EDIT", filePath, fieldPath });
+  }, []);
+
+  const clearWidgetState = useCallback(() => {
+    dispatch({ type: "CLEAR_WIDGET_STATE" });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -1626,6 +1832,15 @@ export function SessionProvider({
     toggleResultExpanded,
     setSnippets,
     clearSearch,
+    setGroundWidgets,
+    setRecallWidgets,
+    setGroundWidgetsLoading,
+    setRecallWidgetsLoading,
+    setGroundWidgetsError,
+    setRecallWidgetsError,
+    addPendingEdit,
+    removePendingEdit,
+    clearWidgetState,
   };
 
   return (
@@ -1650,7 +1865,7 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setLastMessageContextUsage, setSearchResults, setSnippets, setSearchLoading } = useSession();
+  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setLastMessageContextUsage, setSearchResults, setSnippets, setSearchLoading, setGroundWidgets, setRecallWidgets, setGroundWidgetsError, setRecallWidgetsError } = useSession();
 
   // Use ref to access current messages in callback without causing re-renders
   const messagesRef = useRef(messages);
@@ -1740,11 +1955,34 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           setSearchLoading(message.stage !== "complete");
           break;
 
+        // Widget message handlers
+        case "ground_widgets":
+          setGroundWidgets(message.widgets);
+          break;
+
+        case "recall_widgets":
+          setRecallWidgets(message.widgets, message.path);
+          break;
+
+        case "widget_update":
+          // Widget updates are always ground widgets (recall widgets are file-specific)
+          setGroundWidgets(message.widgets);
+          break;
+
+        case "widget_error":
+          // Route error to ground or recall based on filePath presence
+          if (message.filePath) {
+            setRecallWidgetsError(message.error);
+          } else {
+            setGroundWidgetsError(message.error);
+          }
+          break;
+
         // Other message types handled elsewhere
         default:
           break;
       }
     },
-    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setLastMessageContextUsage, setSearchResults, setSnippets, setSearchLoading]
+    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setLastMessageContextUsage, setSearchResults, setSnippets, setSearchLoading, setGroundWidgets, setRecallWidgets, setGroundWidgetsError, setRecallWidgetsError]
   );
 }

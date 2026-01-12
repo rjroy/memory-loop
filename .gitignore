@@ -12,10 +12,19 @@ dist/
 
 # Application data
 .memory-loop/
+# Exception for test fixtures (keep widget configs, not cache)
+!backend/__fixtures__/**/.memory-loop/
+backend/__fixtures__/**/.memory-loop/cache.db
+backend/__fixtures__/**/.memory-loop/cache.db-*
 
 # Test artifacts
-test-*/
 coverage/
+
+# Test fixture directories - keep configs, gitignore generated files
+!backend/__fixtures__/test-vault-widgets/
+!backend/__fixtures__/test-vault-1000/
+# Generated 1000-file notes (regenerated on test run)
+backend/__fixtures__/test-vault-1000/notes/
 
 # OS artifacts
 .DS_Store

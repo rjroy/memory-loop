@@ -8,7 +8,7 @@
  * 4. Write setup completion marker
  */
 
-import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -89,6 +89,7 @@ export interface SetupCompleteMarker {
   commandsInstalled: string[];
   paraCreated: string[];
   claudeMdUpdated: boolean;
+  gitignoreUpdated: boolean;
   errors?: string[];
 }
 
@@ -125,6 +126,17 @@ export const DEFAULT_ARCHIVES_PATH = "04_Archive";
  * Path to CLAUDE.md backup relative to vault root.
  */
 export const CLAUDEMD_BACKUP_PATH = ".memory-loop/claude-md-backup.md";
+
+/**
+ * SQLite cache files that should be gitignored.
+ * These are placed in .memory-loop/ directory.
+ */
+export const SQLITE_IGNORE_PATTERNS = ["cache.db", "cache.db-shm", "cache.db-wal"];
+
+/**
+ * Path to .gitignore for Memory Loop files (relative to vault root).
+ */
+export const MEMORY_LOOP_GITIGNORE_PATH = ".memory-loop/.gitignore";
 
 // =============================================================================
 // Command Installation
@@ -538,6 +550,115 @@ export async function updateClaudeMd(
 }
 
 // =============================================================================
+// Gitignore Update
+// =============================================================================
+
+/**
+ * Updates or creates .memory-loop/.gitignore to exclude SQLite cache files.
+ * The .gitignore is placed inside .memory-loop/ so patterns match files in that directory.
+ *
+ * @param vaultPath - Absolute path to the vault root
+ * @returns Setup step result
+ */
+export async function updateGitignore(
+  vaultPath: string
+): Promise<SetupStepResult> {
+  log.info(`Updating .memory-loop/.gitignore in ${vaultPath}`);
+
+  const gitignorePath = join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH);
+  const gitignoreDir = dirname(gitignorePath);
+
+  // Validate path is within vault boundary
+  try {
+    await validatePath(vaultPath, MEMORY_LOOP_GITIGNORE_PATH);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      message: "Failed to validate .gitignore path",
+      error: message,
+    };
+  }
+
+  // Create .memory-loop directory if needed
+  try {
+    await mkdir(gitignoreDir, { recursive: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      message: "Failed to create .memory-loop directory",
+      error: message,
+    };
+  }
+
+  // Read existing .gitignore or start with empty content
+  let existingContent = "";
+  const gitignoreExists = await fileExists(gitignorePath);
+
+  if (gitignoreExists) {
+    try {
+      existingContent = await readFile(gitignorePath, "utf-8");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        message: "Failed to read existing .gitignore",
+        error: message,
+      };
+    }
+  }
+
+  // Check which patterns are missing
+  const missingPatterns = SQLITE_IGNORE_PATTERNS.filter((pattern) => {
+    // Check if the pattern exists as a line (not as part of another pattern)
+    const regex = new RegExp(`^${pattern.replace(".", "\\.")}$`, "m");
+    return !regex.test(existingContent);
+  });
+
+  if (missingPatterns.length === 0) {
+    log.debug("All SQLite patterns already present in .memory-loop/.gitignore");
+    return {
+      success: true,
+      message: ".memory-loop/.gitignore already up to date",
+    };
+  }
+
+  // Build the gitignore content
+  const gitignoreSection = `# SQLite cache files
+${missingPatterns.join("\n")}
+`;
+
+  // Append to existing content (ensure newline separation)
+  const newContent = existingContent.endsWith("\n") || existingContent === ""
+    ? existingContent + gitignoreSection
+    : existingContent + "\n" + gitignoreSection;
+
+  // Write the updated .gitignore
+  try {
+    await writeFile(gitignorePath, newContent, "utf-8");
+    log.info(
+      gitignoreExists
+        ? `Updated .memory-loop/.gitignore with ${missingPatterns.length} pattern(s)`
+        : `Created .memory-loop/.gitignore with ${missingPatterns.length} pattern(s)`
+    );
+    return {
+      success: true,
+      message: gitignoreExists
+        ? `Added ${missingPatterns.length} pattern(s) to .memory-loop/.gitignore`
+        : `Created .memory-loop/.gitignore with ${missingPatterns.length} pattern(s)`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      message: "Failed to write .memory-loop/.gitignore",
+      error: message,
+    };
+  }
+}
+
+// =============================================================================
 // Setup Marker
 // =============================================================================
 
@@ -620,9 +741,9 @@ export async function isSetupComplete(vaultPath: string): Promise<boolean> {
  * Steps:
  * 1. Install command templates
  * 2. Create PARA directories
- * 3. Write setup marker
- *
- * Note: CLAUDE.md update via SDK will be added in TASK-004.
+ * 3. Update CLAUDE.md with Memory Loop context
+ * 4. Update .gitignore with SQLite cache patterns
+ * 5. Write setup marker
  *
  * @param vaultId - ID of the vault to set up
  * @returns Setup result with summary and any errors
@@ -674,13 +795,22 @@ export async function runVaultSetup(vaultId: string): Promise<SetupResult> {
     errors.push(`CLAUDE.md: ${claudeMdResult.error}`);
   }
 
-  // Step 4: Write setup marker (always attempt, even with partial failures)
+  // Step 4: Update .gitignore with SQLite cache patterns
+  const gitignoreResult = await updateGitignore(vaultPath);
+  summary.push(gitignoreResult.message);
+  const gitignoreUpdated = gitignoreResult.success;
+  if (!gitignoreResult.success && gitignoreResult.error) {
+    errors.push(`.gitignore: ${gitignoreResult.error}`);
+  }
+
+  // Step 5: Write setup marker (always attempt, even with partial failures)
   const marker: SetupCompleteMarker = {
     completedAt: new Date().toISOString(),
     version: SETUP_VERSION,
     commandsInstalled,
     paraCreated,
     claudeMdUpdated,
+    gitignoreUpdated,
     errors: errors.length > 0 ? errors : undefined,
   };
 

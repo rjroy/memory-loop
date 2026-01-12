@@ -2315,8 +2315,8 @@ That's all!`;
 // =============================================================================
 
 describe("Generation Constants", () => {
-  test("GENERATION_MODEL is claude-3-haiku", () => {
-    expect(GENERATION_MODEL).toBe("claude-3-haiku-20240307");
+  test("GENERATION_MODEL is haiku", () => {
+    expect(GENERATION_MODEL).toBe("haiku");
   });
 
   test("MAX_GENERATION_CONTEXT is 3000", () => {

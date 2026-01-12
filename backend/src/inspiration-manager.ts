@@ -746,7 +746,7 @@ export async function appendAndPrune(
 // =============================================================================
 
 /** Model to use for generation (cost-efficient) */
-export const GENERATION_MODEL = "claude-3-haiku-20240307";
+export const GENERATION_MODEL = "haiku";
 
 /** Maximum context characters for generation prompts */
 export const MAX_GENERATION_CONTEXT = 3000;

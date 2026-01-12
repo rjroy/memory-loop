@@ -466,15 +466,15 @@ export class WidgetEngine {
     // Initialize result accumulator with built-in count (REQ-F-14)
     const result: Record<string, unknown> = { count: files.length };
 
+    // Set cycle fields to null before computation (REQ-F-10)
+    // Cycle fields are excluded from phases, so we must handle them separately
+    for (const cycleField of plan.cycleFields) {
+      result[cycleField] = null;
+    }
+
     // Compute fields in DAG order
     for (const phase of plan.phases) {
       for (const fieldName of phase.fields) {
-        // Cycle fields return null (REQ-F-10)
-        if (plan.cycleFields.has(fieldName)) {
-          result[fieldName] = null;
-          continue;
-        }
-
         const fieldConfig = fieldConfigs[fieldName];
 
         if (phase.scope === "collection") {
@@ -553,15 +553,15 @@ export class WidgetEngine {
     // Initialize result accumulator with built-in count (REQ-F-14)
     const result: Record<string, unknown> = { count: files.length };
 
+    // Set cycle fields to null before computation (REQ-F-10)
+    // Cycle fields are excluded from phases, so we must handle them separately
+    for (const cycleField of plan.cycleFields) {
+      result[cycleField] = null;
+    }
+
     // Compute fields in DAG order
     for (const phase of plan.phases) {
       for (const fieldName of phase.fields) {
-        // Cycle fields return null (REQ-F-10)
-        if (plan.cycleFields.has(fieldName)) {
-          result[fieldName] = null;
-          continue;
-        }
-
         const fieldConfig = fieldConfigs[fieldName];
 
         if (phase.scope === "collection") {

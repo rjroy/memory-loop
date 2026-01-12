@@ -192,29 +192,85 @@ expr: "lerp(0, 100, this.progress)"  # t=0.5 returns 50
 
 ## Two-Phase Computation
 
-Widget computation happens in two phases:
+Widget computation happens in two phases. Understanding this is key to using `stats.*` correctly.
 
-**Phase 1 (Collection Stats):** Simple aggregators run first:
+### What is `stats`?
 
-```yaml
-fields:
-  total_pages:
-    sum: pages
-  avg_rating:
-    avg: rating
-```
-
-**Phase 2 (Per-Item Expressions):** Expressions run second and can reference Phase 1 results:
+`stats` contains the results of aggregator fields **that you explicitly define** in the same widget. Nothing is automatic. If you don't define an aggregator, it won't exist in `stats`.
 
 ```yaml
 fields:
-  # Phase 1
+  # You define this field, you choose the name "max_rating"
   max_rating:
     max: rating
 
-  # Phase 2 - can use stats.max_rating
+  # Now stats.max_rating exists because YOU defined it above
+  # stats.min_rating does NOT exist (you didn't define it)
+  normalized:
+    expr: "safeDivide(this.rating, stats.max_rating)"
+```
+
+### Phase 1: Aggregators
+
+First, all aggregator fields are computed across the collection:
+
+```yaml
+fields:
+  # These run in Phase 1
+  total_pages:        # You name it
+    sum: pages        # "sum the 'pages' frontmatter field"
+  avg_rating:         # You name it
+    avg: rating       # "average the 'rating' frontmatter field"
+  book_count:         # You name it
+    count: true       # "count matching files"
+```
+
+After Phase 1, `stats` contains:
+- `stats.total_pages` (because you defined `total_pages`)
+- `stats.avg_rating` (because you defined `avg_rating`)
+- `stats.book_count` (because you defined `book_count`)
+
+### Phase 2: Expressions
+
+Then, expression fields run and can reference Phase 1 results:
+
+```yaml
+fields:
+  # Phase 1 - define the aggregations you need
+  max_rating:
+    max: rating
+  collection_avg:
+    avg: rating
+
+  # Phase 2 - reference them via stats.*
   normalized_rating:
     expr: "safeDivide(this.rating, stats.max_rating)"
+  above_average:
+    expr: "this.rating > stats.collection_avg ? 1 : 0"
+```
+
+### Common Mistake
+
+This **won't work** because `stats.rating` doesn't exist:
+
+```yaml
+fields:
+  # WRONG - there's no aggregator named "rating"
+  normalized:
+    expr: "this.rating / stats.rating"  # stats.rating is undefined!
+```
+
+You must define the aggregator first:
+
+```yaml
+fields:
+  # Define what you need
+  max_rating:
+    max: rating
+
+  # Now you can use it
+  normalized:
+    expr: "this.rating / stats.max_rating"  # Works!
 ```
 
 ## Security

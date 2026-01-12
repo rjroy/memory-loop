@@ -66,6 +66,8 @@ export {
   type WidgetResult,
   type SimilarItem,
   type ComputeOptions,
+  type WidgetHealthIssue,
+  type HealthReportCallback,
 } from "./widget-engine";
 
 // =============================================================================

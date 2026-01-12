@@ -54,6 +54,22 @@ const log = createLogger("WidgetEngine");
 // =============================================================================
 
 /**
+ * Health issue parameters for reporting widget computation issues.
+ */
+export interface WidgetHealthIssue {
+  id: string;
+  severity: "error" | "warning";
+  message: string;
+  details?: string;
+}
+
+/**
+ * Callback for reporting health issues from widget computation.
+ * Used to surface cycle warnings and other computation issues to the UI.
+ */
+export type HealthReportCallback = (issue: WidgetHealthIssue) => void;
+
+/**
  * Result of widget computation.
  */
 export interface WidgetResult {
@@ -156,6 +172,9 @@ export class WidgetEngine {
   // Background recomputation state
   private pendingRecomputations: Set<string> = new Set();
 
+  // Health reporting callback for surfacing issues to UI
+  private healthCallback: HealthReportCallback | null = null;
+
   constructor(vaultPath: string, vaultId?: string) {
     this.vaultPath = vaultPath;
     // Use vault path as ID if not provided (hash for uniqueness)
@@ -188,6 +207,14 @@ export class WidgetEngine {
    */
   getWidgets(): LoadedWidget[] {
     return [...this.widgets];
+  }
+
+  /**
+   * Set a callback for health issue reporting.
+   * Called when computation issues (like cycles) are detected.
+   */
+  setHealthCallback(callback: HealthReportCallback): void {
+    this.healthCallback = callback;
   }
 
   /**
@@ -458,10 +485,8 @@ export class WidgetEngine {
     // Get computation plan with DAG ordering (TD-1)
     const plan = createComputationPlan(fieldConfigs);
 
-    // Log warnings for cycles (REQ-F-12: warn but don't throw)
-    for (const warning of plan.warnings) {
-      log.warn(`Widget ${widget.id}: ${warning}`);
-    }
+    // Log and report warnings for cycles (REQ-F-12: warn but don't throw)
+    this.reportCycleWarnings(widget.id, config.name, plan);
 
     // Initialize result accumulator with built-in count (REQ-F-14)
     const result: Record<string, unknown> = { count: files.length };
@@ -483,17 +508,13 @@ export class WidgetEngine {
         } else {
           // Expression field: evaluated once with collection context
           // For ground widgets, `this` is empty (no current item)
-          try {
-            result[fieldName] = evaluateExpression(fieldConfig.expr!, {
-              this: {},
-              stats: result, // Legacy alias (REQ-F-13)
-              result: result, // DAG dependencies (TD-6)
-            });
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
-            result[fieldName] = null;
-          }
+          result[fieldName] = this.evaluateExpressionWithHealth(
+            widget.id,
+            config.name,
+            fieldName,
+            fieldConfig.expr!,
+            { this: {}, stats: result, result: result }
+          );
         }
       }
     }
@@ -545,10 +566,8 @@ export class WidgetEngine {
     // Get computation plan with DAG ordering (TD-1)
     const plan = createComputationPlan(fieldConfigs);
 
-    // Log warnings for cycles (REQ-F-12: warn but don't throw)
-    for (const warning of plan.warnings) {
-      log.warn(`Widget ${widget.id}: ${warning}`);
-    }
+    // Log and report warnings for cycles (REQ-F-12: warn but don't throw)
+    this.reportCycleWarnings(widget.id, config.name, plan);
 
     // Initialize result accumulator with built-in count (REQ-F-14)
     const result: Record<string, unknown> = { count: files.length };
@@ -570,17 +589,13 @@ export class WidgetEngine {
         } else {
           // Expression field: evaluated with item context (TD-7)
           // `this` contains the current file's frontmatter for per-item access
-          try {
-            result[fieldName] = evaluateExpression(fieldConfig.expr!, {
-              this: currentFile.frontmatter, // Per-item context
-              stats: result, // Legacy alias (REQ-F-13)
-              result: result, // DAG dependencies (TD-6)
-            });
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
-            result[fieldName] = null;
-          }
+          result[fieldName] = this.evaluateExpressionWithHealth(
+            widget.id,
+            config.name,
+            fieldName,
+            fieldConfig.expr!,
+            { this: currentFile.frontmatter, stats: result, result: result }
+          );
         }
       }
     }
@@ -660,6 +675,52 @@ export class WidgetEngine {
     }
 
     return null;
+  }
+
+  /**
+   * Report cycle warnings to both logger and health callback.
+   */
+  private reportCycleWarnings(
+    widgetId: string,
+    widgetName: string,
+    plan: { warnings: string[]; cycleFields: Set<string> }
+  ): void {
+    for (const warning of plan.warnings) {
+      log.warn(`Widget ${widgetId}: ${warning}`);
+      // Report cycle warning to health UI
+      this.healthCallback?.({
+        id: `widget_cycle_${widgetId}_${Array.from(plan.cycleFields).join("_")}`,
+        severity: "warning",
+        message: `Dependency cycle in widget "${widgetName}"`,
+        details: warning,
+      });
+    }
+  }
+
+  /**
+   * Evaluate expression and report errors to health callback.
+   */
+  private evaluateExpressionWithHealth(
+    widgetId: string,
+    widgetName: string,
+    fieldName: string,
+    expression: string,
+    context: { this: Record<string, unknown>; stats: Record<string, unknown>; result: Record<string, unknown> }
+  ): unknown {
+    try {
+      return evaluateExpression(expression, context);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
+      // Report expression error to health UI
+      this.healthCallback?.({
+        id: `widget_expr_${widgetId}_${fieldName}`,
+        severity: "warning",
+        message: `Expression error in widget "${widgetName}"`,
+        details: `Field "${fieldName}": ${errorMsg}`,
+      });
+      return null;
+    }
   }
 
   // ===========================================================================

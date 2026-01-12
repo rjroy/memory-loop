@@ -345,6 +345,7 @@ class MockWidgetEngine {
   isInitialized = () => true;
   getVaultPath = () => "/tmp/test-vault";
   getVaultId = () => "test-vault";
+  setHealthCallback = () => {}; // No-op for tests
 }
 
 const mockCreateWidgetEngine = mock<

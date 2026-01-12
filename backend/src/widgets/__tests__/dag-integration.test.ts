@@ -932,6 +932,60 @@ describe("DAG Edge Cases", () => {
     }
   });
 
+  test("health callback receives cycle warnings", async () => {
+    // Test: setHealthCallback receives cycle warnings during computation
+    const widgetsDir = await createWidgetsDir(testDir);
+    const dataDir = await createVaultDir(testDir, "Data");
+
+    const widgetYaml = `
+name: Cycle Widget
+type: aggregate
+location: ground
+source:
+  pattern: "Data/**/*.md"
+fields:
+  x:
+    expr: "result.y + 1"
+  y:
+    expr: "result.x + 1"
+  normal:
+    sum: value
+display:
+  type: summary-card
+`;
+
+    await writeWidgetConfig(widgetsDir, "cycle-health.yaml", widgetYaml);
+    await writeMarkdownFile(dataDir, "item.md", { title: "Item", value: 10 });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    // Track health issues
+    const healthIssues: Array<{
+      id: string;
+      severity: "error" | "warning";
+      message: string;
+      details?: string;
+    }> = [];
+
+    engine.setHealthCallback((issue) => {
+      healthIssues.push(issue);
+    });
+
+    await engine.computeGroundWidgets();
+
+    // Should have received a cycle warning
+    expect(healthIssues.length).toBeGreaterThan(0);
+    const cycleIssue = healthIssues.find((i) => i.id.includes("cycle"));
+    expect(cycleIssue).toBeDefined();
+    expect(cycleIssue!.severity).toBe("warning");
+    expect(cycleIssue!.message).toContain("Dependency cycle");
+    expect(cycleIssue!.details).toContain("x");
+    expect(cycleIssue!.details).toContain("y");
+
+    engine.shutdown();
+  });
+
   test("self-referencing field produces null", async () => {
     // Test: A field that references itself should be detected as a cycle
     const widgetsDir = await createWidgetsDir(testDir);

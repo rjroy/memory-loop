@@ -8,6 +8,7 @@ import type {
   BrowserState,
   SearchState,
   WidgetState,
+  HealthState,
   SessionState,
 } from "./types.js";
 import { loadPersistedViewMode } from "./storage.js";
@@ -41,6 +42,16 @@ export function createInitialWidgetState(): WidgetState {
     groundError: null,
     recallError: null,
     pendingEdits: new Map(),
+  };
+}
+
+/**
+ * Creates initial health state.
+ */
+export function createInitialHealthState(): HealthState {
+  return {
+    issues: [],
+    isExpanded: false,
   };
 }
 
@@ -81,6 +92,7 @@ export function createInitialSessionState(): SessionState {
     messages: [],
     browser: createInitialBrowserState(),
     widgets: createInitialWidgetState(),
+    health: createInitialHealthState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,

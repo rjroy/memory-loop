@@ -560,6 +560,16 @@ export const WidgetEditMessageSchema = z.object({
 });
 
 /**
+ * Client requests to dismiss a health issue.
+ * Dismissed issues won't reappear until vault is reselected.
+ */
+export const DismissHealthIssueMessageSchema = z.object({
+  type: z.literal("dismiss_health_issue"),
+  /** ID of the issue to dismiss */
+  issueId: z.string().min(1, "Issue ID is required"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -589,6 +599,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   GetGroundWidgetsMessageSchema,
   GetRecallWidgetsMessageSchema,
   WidgetEditMessageSchema,
+  DismissHealthIssueMessageSchema,
 ]);
 
 // =============================================================================
@@ -935,6 +946,59 @@ export const WidgetErrorMessageSchema = z.object({
   filePath: z.string().optional(),
 });
 
+// =============================================================================
+// Health Reporting Schemas
+// =============================================================================
+
+/**
+ * Severity level for health issues.
+ * - error: Blocking issues that prevent functionality
+ * - warning: Degraded functionality (partial success)
+ */
+export const HealthSeveritySchema = z.enum(["error", "warning"]);
+
+/**
+ * Category for health issues, used for grouping and filtering.
+ */
+export const HealthCategorySchema = z.enum([
+  "widget_config",   // Widget YAML parse/validation errors
+  "widget_compute",  // Widget computation failures
+  "vault_config",    // .memory-loop.json issues
+  "file_watcher",    // File watcher issues
+  "cache",           // Cache failures
+  "general",         // Other issues
+]);
+
+/**
+ * Individual health issue reported by the backend.
+ */
+export const HealthIssueSchema = z.object({
+  /** Unique identifier for dismissal */
+  id: z.string().min(1, "Issue ID is required"),
+  /** Severity level */
+  severity: HealthSeveritySchema,
+  /** Issue category */
+  category: HealthCategorySchema,
+  /** Human-readable error message */
+  message: z.string().min(1, "Message is required"),
+  /** Technical details (file path, stack trace, etc.) */
+  details: z.string().optional(),
+  /** When the issue was reported (ISO 8601) */
+  timestamp: z.string().min(1, "Timestamp is required"),
+  /** Whether user can dismiss this issue */
+  dismissible: z.boolean(),
+});
+
+/**
+ * Server sends health report with all current issues.
+ * Sent on vault selection and when issues change.
+ */
+export const HealthReportMessageSchema = z.object({
+  type: z.literal("health_report"),
+  /** Array of current health issues */
+  issues: z.array(HealthIssueSchema),
+});
+
 /**
  * Discriminated union of all server message types
  */
@@ -970,6 +1034,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   RecallWidgetsMessageSchema,
   WidgetUpdateMessageSchema,
   WidgetErrorMessageSchema,
+  HealthReportMessageSchema,
 ]);
 
 // =============================================================================
@@ -1011,6 +1076,12 @@ export type WidgetEditableType = z.infer<typeof WidgetEditableTypeSchema>;
 export type WidgetEditableField = z.infer<typeof WidgetEditableFieldSchema>;
 export type WidgetResult = z.infer<typeof WidgetResultSchema>;
 
+// Health types
+export type HealthSeverity = z.infer<typeof HealthSeveritySchema>;
+export type HealthCategory = z.infer<typeof HealthCategorySchema>;
+export type HealthIssue = z.infer<typeof HealthIssueSchema>;
+export type HealthReportMessage = z.infer<typeof HealthReportMessageSchema>;
+
 // Client message types
 export type SelectVaultMessage = z.infer<typeof SelectVaultMessageSchema>;
 export type CaptureNoteMessage = z.infer<typeof CaptureNoteMessageSchema>;
@@ -1038,6 +1109,7 @@ export type DeleteFileMessage = z.infer<typeof DeleteFileMessageSchema>;
 export type GetGroundWidgetsMessage = z.infer<typeof GetGroundWidgetsMessageSchema>;
 export type GetRecallWidgetsMessage = z.infer<typeof GetRecallWidgetsMessageSchema>;
 export type WidgetEditMessage = z.infer<typeof WidgetEditMessageSchema>;
+export type DismissHealthIssueMessage = z.infer<typeof DismissHealthIssueMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types

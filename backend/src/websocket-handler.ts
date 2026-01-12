@@ -55,6 +55,7 @@ import {
 } from "./vault-config.js";
 import { runVaultSetup } from "./vault-setup.js";
 import { createWidgetEngine, createFileWatcher } from "./widgets/index.js";
+import { createHealthCollector } from "./health-collector.js";
 
 // Import extracted handlers
 import {
@@ -466,6 +467,9 @@ export class WebSocketHandler {
       case "widget_edit":
         await handleWidgetEdit(ctx, message.path, message.field, message.value);
         break;
+      case "dismiss_health_issue":
+        this.state.healthCollector?.dismiss(message.issueId);
+        break;
 
       // Home/dashboard handlers (extracted)
       case "capture_note":
@@ -525,12 +529,23 @@ export class WebSocketHandler {
         this.state.widgetEngine.shutdown();
         this.state.widgetEngine = null;
       }
+      // Clear health collector (will be recreated below)
+      if (this.state.healthCollector) {
+        this.state.healthCollector.clear();
+        this.state.healthCollector = null;
+      }
 
       // Update state
       this.state.currentVault = vault;
       this.state.currentSessionId = null;
       this.state.activeQuery = null;
       this.state.searchIndex = new SearchIndexManager(vault.contentRoot);
+
+      // Create health collector and subscribe to changes
+      this.state.healthCollector = createHealthCollector();
+      this.state.healthCollector.subscribe((issues) => {
+        this.send(ws, { type: "health_report", issues });
+      });
 
       // Initialize widget engine
       try {
@@ -540,11 +555,14 @@ export class WebSocketHandler {
         if (loaderResult.errors.length > 0) {
           log.warn(`Widget config errors for vault ${vault.id}:`, loaderResult.errors);
           for (const err of loaderResult.errors) {
-            this.send(ws, {
-              type: "widget_error",
-              widgetId: err.id || undefined,
-              error: `Config error in ${err.filePath}: ${err.error}`,
-              filePath: err.filePath,
+            // Report to health collector for aggregated display
+            this.state.healthCollector?.report({
+              id: `widget_config_${err.id || err.filePath}`,
+              severity: "error",
+              category: "widget_config",
+              message: `Widget config error: ${err.id || "unknown"}`,
+              details: `${err.filePath}: ${err.error}`,
+              dismissible: false, // Config errors shouldn't be dismissed
             });
           }
         }
@@ -571,9 +589,15 @@ export class WebSocketHandler {
         log.info(`Widget engine initialized: ${widgets.length} widget(s)`);
       } catch (widgetError) {
         log.error("Failed to initialize widget engine (continuing without widgets)", widgetError);
-        this.send(ws, {
-          type: "widget_error",
-          error: widgetError instanceof Error ? widgetError.message : "Widget initialization failed",
+        const errorMessage = widgetError instanceof Error ? widgetError.message : "Widget initialization failed";
+        // Report to health collector
+        this.state.healthCollector?.report({
+          id: "widget_engine_init",
+          severity: "error",
+          category: "widget_config",
+          message: "Widget engine initialization failed",
+          details: errorMessage,
+          dismissible: false,
         });
       }
 

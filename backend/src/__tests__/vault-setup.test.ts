@@ -21,12 +21,15 @@ import {
   createClaudeMdBackup,
   buildClaudeMdPrompt,
   updateClaudeMd,
+  updateGitignore,
   setQueryFunction,
   resetQueryFunction,
   SETUP_VERSION,
   SETUP_MARKER_PATH,
   COMMANDS_DEST_PATH,
   CLAUDEMD_BACKUP_PATH,
+  SQLITE_IGNORE_PATTERNS,
+  MEMORY_LOOP_GITIGNORE_PATH,
   type SetupCompleteMarker,
   type QueryFunction,
 } from "../vault-setup";
@@ -362,6 +365,7 @@ describe("writeSetupMarker", () => {
       commandsInstalled: ["test.md"],
       paraCreated: ["Projects"],
       claudeMdUpdated: false,
+      gitignoreUpdated: false,
     };
 
     const result = await writeSetupMarker(vaultPath, marker);
@@ -377,6 +381,7 @@ describe("writeSetupMarker", () => {
       commandsInstalled: ["daily-debrief.md", "weekly-debrief.md"],
       paraCreated: ["Projects", "Areas"],
       claudeMdUpdated: true,
+      gitignoreUpdated: true,
     };
 
     const result = await writeSetupMarker(vaultPath, marker);
@@ -392,6 +397,7 @@ describe("writeSetupMarker", () => {
     expect(parsed.commandsInstalled).toEqual(["daily-debrief.md", "weekly-debrief.md"]);
     expect(parsed.paraCreated).toEqual(["Projects", "Areas"]);
     expect(parsed.claudeMdUpdated).toBe(true);
+    expect(parsed.gitignoreUpdated).toBe(true);
   });
 
   test("includes errors in marker when present", async () => {
@@ -401,6 +407,7 @@ describe("writeSetupMarker", () => {
       commandsInstalled: [],
       paraCreated: [],
       claudeMdUpdated: false,
+      gitignoreUpdated: false,
       errors: ["Failed to create Projects", "Failed to update CLAUDE.md"],
     };
 
@@ -425,6 +432,7 @@ describe("writeSetupMarker", () => {
       commandsInstalled: [],
       paraCreated: [],
       claudeMdUpdated: false,
+      gitignoreUpdated: false,
     };
     await writeSetupMarker(vaultPath, marker1);
 
@@ -435,6 +443,7 @@ describe("writeSetupMarker", () => {
       commandsInstalled: ["updated.md"],
       paraCreated: ["All"],
       claudeMdUpdated: true,
+      gitignoreUpdated: true,
     };
     const result = await writeSetupMarker(vaultPath, marker2);
 
@@ -467,6 +476,7 @@ describe("isSetupComplete", () => {
       commandsInstalled: [],
       paraCreated: [],
       claudeMdUpdated: false,
+      gitignoreUpdated: false,
     };
     await writeSetupMarker(vaultPath, marker);
 
@@ -645,6 +655,145 @@ describe("updateClaudeMd", () => {
 });
 
 // =============================================================================
+// updateGitignore Tests
+// =============================================================================
+
+describe("updateGitignore", () => {
+  test("creates .memory-loop/.gitignore when it does not exist", async () => {
+    const result = await updateGitignore(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(await fileExists(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH))).toBe(true);
+    expect(result.message).toContain("Created");
+  });
+
+  test("creates .memory-loop directory if needed", async () => {
+    const result = await updateGitignore(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(await directoryExists(join(vaultPath, ".memory-loop"))).toBe(true);
+  });
+
+  test("includes all SQLite cache patterns", async () => {
+    await updateGitignore(vaultPath);
+
+    const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
+
+    for (const pattern of SQLITE_IGNORE_PATTERNS) {
+      expect(content).toContain(pattern);
+    }
+  });
+
+  test("includes SQLite cache section header", async () => {
+    await updateGitignore(vaultPath);
+
+    const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
+
+    expect(content).toContain("# SQLite cache");
+  });
+
+  test("adds patterns to existing .gitignore", async () => {
+    // Create .memory-loop directory and existing .gitignore
+    await mkdir(join(vaultPath, ".memory-loop"), { recursive: true });
+    const existingContent = "# Existing patterns\n*.tmp\n";
+    await writeFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), existingContent);
+
+    const result = await updateGitignore(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("Added");
+
+    const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
+
+    // Original content preserved
+    expect(content).toContain("*.tmp");
+
+    // New patterns added
+    for (const pattern of SQLITE_IGNORE_PATTERNS) {
+      expect(content).toContain(pattern);
+    }
+  });
+
+  test("does not duplicate patterns if already present", async () => {
+    await mkdir(join(vaultPath, ".memory-loop"), { recursive: true });
+    const existingContent = `# SQLite cache files
+cache.db
+cache.db-shm
+cache.db-wal
+`;
+    await writeFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), existingContent);
+
+    const result = await updateGitignore(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("already up to date");
+
+    const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
+
+    // Count occurrences of cache.db
+    const matches = content.match(/^cache\.db$/gm);
+    expect(matches?.length).toBe(1);
+  });
+
+  test("adds only missing patterns when some exist", async () => {
+    await mkdir(join(vaultPath, ".memory-loop"), { recursive: true });
+    const existingContent = `# Partial patterns
+cache.db
+`;
+    await writeFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), existingContent);
+
+    const result = await updateGitignore(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("2 pattern(s)");
+
+    const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
+
+    // Should only have one cache.db
+    const cacheDbMatches = content.match(/^cache\.db$/gm);
+    expect(cacheDbMatches?.length).toBe(1);
+
+    // Should have the other two patterns
+    expect(content).toContain("cache.db-shm");
+    expect(content).toContain("cache.db-wal");
+  });
+
+  test("handles .gitignore without trailing newline", async () => {
+    await mkdir(join(vaultPath, ".memory-loop"), { recursive: true });
+    const existingContent = "*.tmp"; // No trailing newline
+    await writeFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), existingContent);
+
+    const result = await updateGitignore(vaultPath);
+
+    expect(result.success).toBe(true);
+
+    const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
+
+    // Original content preserved
+    expect(content).toContain("*.tmp");
+    // Proper separation from new content
+    expect(content).toContain("\n");
+  });
+
+  test("pattern matching is line-based", async () => {
+    // Test that "cache.db" doesn't match "mycache.db" or "cache.db.backup"
+    await mkdir(join(vaultPath, ".memory-loop"), { recursive: true });
+    const existingContent = `mycache.db
+cache.db.backup
+`;
+    await writeFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), existingContent);
+
+    const result = await updateGitignore(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("3 pattern(s)");
+
+    const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
+    expect(content).toContain("cache.db\n");
+  });
+});
+
+// =============================================================================
 // runVaultSetup Tests
 // =============================================================================
 
@@ -735,6 +884,26 @@ describe("runVaultSetup", () => {
     const marker = JSON.parse(content) as SetupCompleteMarker;
 
     expect(marker.claudeMdUpdated).toBe(false);
+  });
+
+  test("creates .memory-loop/.gitignore with SQLite patterns", async () => {
+    await runVaultSetup("test-vault");
+
+    expect(await fileExists(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH))).toBe(true);
+
+    const gitignoreContent = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
+    expect(gitignoreContent).toContain("cache.db");
+    expect(gitignoreContent).toContain("cache.db-shm");
+    expect(gitignoreContent).toContain("cache.db-wal");
+  });
+
+  test("marker has gitignoreUpdated as true on success", async () => {
+    await runVaultSetup("test-vault");
+
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const marker = JSON.parse(content) as SetupCompleteMarker;
+
+    expect(marker.gitignoreUpdated).toBe(true);
   });
 
   test("respects custom paths from .memory-loop.json", async () => {

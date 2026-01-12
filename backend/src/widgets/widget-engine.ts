@@ -67,29 +67,6 @@ export interface WidgetResult {
 }
 
 /**
- * Collection statistics computed in Phase 1.
- * Used by per-item expressions in Phase 2.
- */
-export interface CollectionStats {
-  /** Total file count (includes files with missing fields) */
-  count: number;
-  /** Per-field statistics */
-  fields: Record<string, FieldStats>;
-}
-
-/**
- * Statistics for a single field.
- */
-export interface FieldStats {
-  sum: number | null;
-  avg: number | null;
-  min: number | null;
-  max: number | null;
-  stddev: number | null;
-  count: number;
-}
-
-/**
  * File data loaded from vault.
  */
 interface FileData {
@@ -445,6 +422,12 @@ export class WidgetEngine {
 
   /**
    * Compute an aggregate widget (Phase 1 + Phase 2).
+   *
+   * Phase 1: Compute all aggregator fields (count, sum, avg, min, max, stddev)
+   * Phase 2: Evaluate expression fields with access to Phase 1 results via stats.*
+   *
+   * The stats context is keyed by user-defined field names, not frontmatter paths.
+   * If user defines `max_rating: { max: rating }`, then `stats.max_rating` is available.
    */
   private computeAggregateWidget(
     widget: LoadedWidget,
@@ -452,33 +435,38 @@ export class WidgetEngine {
     startTime: number
   ): WidgetResult {
     const config = widget.config;
+    const fieldConfigs = config.fields ?? {};
 
-    // Phase 1: Compute collection statistics
-    const collectionStats = this.computeCollectionStats(files, config.fields ?? {});
+    // Phase 1: Compute all aggregator fields first
+    // These become available in stats.* for expression fields
+    const stats: Record<string, unknown> = {
+      count: files.length,
+    };
 
-    // Phase 2: Compute per-field results
-    const data: Record<string, unknown> = {};
+    for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+      // Skip expression fields - they run in Phase 2
+      if (fieldConfig.expr) continue;
 
-    for (const [fieldName, fieldConfig] of Object.entries(config.fields ?? {})) {
-      if (fieldConfig.expr) {
-        // Expression-based field - evaluate for collection
-        // For aggregate widgets without a specific item, use collection-level expression
-        const statsContext = this.buildStatsContext(collectionStats);
-        try {
-          const value = evaluateExpression(fieldConfig.expr, {
-            this: {},
-            stats: statsContext,
-          });
-          data[fieldName] = value;
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
-          data[fieldName] = null;
-        }
-      } else {
-        // Simple aggregation - get from stats
-        const aggValue = this.getAggregationValue(fieldConfig, collectionStats);
-        data[fieldName] = aggValue;
+      const value = this.computeAggregatorField(fieldConfig, files);
+      stats[fieldName] = value;
+    }
+
+    // Phase 2: Evaluate expression fields with access to Phase 1 results
+    const data: Record<string, unknown> = { ...stats };
+
+    for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+      if (!fieldConfig.expr) continue;
+
+      try {
+        const value = evaluateExpression(fieldConfig.expr, {
+          this: {},
+          stats,
+        });
+        data[fieldName] = value;
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
+        data[fieldName] = null;
       }
     }
 
@@ -498,6 +486,9 @@ export class WidgetEngine {
   /**
    * Compute an aggregate widget for a specific item.
    * Useful for showing per-item computed values on recall view.
+   *
+   * Same two-phase approach as computeAggregateWidget, but expressions
+   * also have access to `this.*` for the current file's frontmatter.
    */
   private computeAggregateWidgetForItem(
     widget: LoadedWidget,
@@ -506,32 +497,35 @@ export class WidgetEngine {
     startTime: number
   ): WidgetResult {
     const config = widget.config;
+    const fieldConfigs = config.fields ?? {};
 
-    // Phase 1: Compute collection statistics
-    const collectionStats = this.computeCollectionStats(files, config.fields ?? {});
+    // Phase 1: Compute all aggregator fields (same as collection level)
+    const stats: Record<string, unknown> = {
+      count: files.length,
+    };
 
-    // Phase 2: Compute per-item values
-    const statsContext = this.buildStatsContext(collectionStats);
-    const data: Record<string, unknown> = {};
+    for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+      if (fieldConfig.expr) continue;
+      const value = this.computeAggregatorField(fieldConfig, files);
+      stats[fieldName] = value;
+    }
 
-    for (const [fieldName, fieldConfig] of Object.entries(config.fields ?? {})) {
-      if (fieldConfig.expr) {
-        // Expression-based field
-        try {
-          const value = evaluateExpression(fieldConfig.expr, {
-            this: currentFile.frontmatter,
-            stats: statsContext,
-          });
-          data[fieldName] = value;
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
-          data[fieldName] = null;
-        }
-      } else {
-        // Simple aggregation - same as collection level
-        const aggValue = this.getAggregationValue(fieldConfig, collectionStats);
-        data[fieldName] = aggValue;
+    // Phase 2: Evaluate expression fields with access to stats AND current item
+    const data: Record<string, unknown> = { ...stats };
+
+    for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+      if (!fieldConfig.expr) continue;
+
+      try {
+        const value = evaluateExpression(fieldConfig.expr, {
+          this: currentFile.frontmatter,
+          stats,
+        });
+        data[fieldName] = value;
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        log.warn(`Expression error for ${fieldName}: ${errorMsg}`);
+        data[fieldName] = null;
       }
     }
 
@@ -549,99 +543,56 @@ export class WidgetEngine {
   }
 
   /**
-   * Compute collection-level statistics (Phase 1).
+   * Compute a single aggregator field value from files.
+   *
+   * Handles count, sum, avg, min, max, stddev aggregators.
+   * Returns null if no valid values found.
    */
-  private computeCollectionStats(
-    files: FileData[],
-    fieldConfigs: Record<string, FieldConfig>
-  ): CollectionStats {
-    const stats: CollectionStats = {
-      count: files.length,
-      fields: {},
-    };
-
-    // Collect all field paths we need to aggregate
-    const fieldPaths = new Set<string>();
-
-    for (const [, fieldConfig] of Object.entries(fieldConfigs)) {
-      // Get field paths from aggregation configs
-      if (fieldConfig.sum) fieldPaths.add(fieldConfig.sum);
-      if (fieldConfig.avg) fieldPaths.add(fieldConfig.avg);
-      if (fieldConfig.min) fieldPaths.add(fieldConfig.min);
-      if (fieldConfig.max) fieldPaths.add(fieldConfig.max);
-      if (fieldConfig.stddev) fieldPaths.add(fieldConfig.stddev);
-    }
-
-    // Compute stats for each field path
-    for (const fieldPath of fieldPaths) {
-      const values = files.map((f) => this.getFieldValue(f.frontmatter, fieldPath));
-      const numericValues = values.map((v) =>
-        typeof v === "number" ? v : v === null || v === undefined ? null : null
-      );
-
-      stats.fields[fieldPath] = {
-        sum: sum(numericValues),
-        avg: avg(numericValues),
-        min: getAggregator("min")!(numericValues),
-        max: getAggregator("max")!(numericValues),
-        stddev: stddev(numericValues),
-        count: numericValues.filter((v) => v !== null).length,
-      };
-    }
-
-    return stats;
-  }
-
-  /**
-   * Get aggregation value from field config and stats.
-   */
-  private getAggregationValue(
+  private computeAggregatorField(
     fieldConfig: FieldConfig,
-    stats: CollectionStats
+    files: FileData[]
   ): number | null {
+    // Count is special - just return file count
     if (fieldConfig.count) {
-      return stats.count;
+      return files.length;
     }
-    if (fieldConfig.sum && stats.fields[fieldConfig.sum]) {
-      return stats.fields[fieldConfig.sum].sum;
+
+    // Determine which frontmatter field path to aggregate
+    const fieldPath =
+      fieldConfig.sum ??
+      fieldConfig.avg ??
+      fieldConfig.min ??
+      fieldConfig.max ??
+      fieldConfig.stddev;
+
+    if (!fieldPath) {
+      return null;
     }
-    if (fieldConfig.avg && stats.fields[fieldConfig.avg]) {
-      return stats.fields[fieldConfig.avg].avg;
+
+    // Extract numeric values from all files
+    const numericValues = files.map((f) => {
+      const value = this.getFieldValue(f.frontmatter, fieldPath);
+      return typeof value === "number" ? value : null;
+    });
+
+    // Apply the requested aggregation
+    if (fieldConfig.sum) {
+      return sum(numericValues);
     }
-    if (fieldConfig.min && stats.fields[fieldConfig.min]) {
-      return stats.fields[fieldConfig.min].min;
+    if (fieldConfig.avg) {
+      return avg(numericValues);
     }
-    if (fieldConfig.max && stats.fields[fieldConfig.max]) {
-      return stats.fields[fieldConfig.max].max;
+    if (fieldConfig.min) {
+      return getAggregator("min")!(numericValues);
     }
-    if (fieldConfig.stddev && stats.fields[fieldConfig.stddev]) {
-      return stats.fields[fieldConfig.stddev].stddev;
+    if (fieldConfig.max) {
+      return getAggregator("max")!(numericValues);
     }
+    if (fieldConfig.stddev) {
+      return stddev(numericValues);
+    }
+
     return null;
-  }
-
-  /**
-   * Build stats context object for expression evaluation.
-   */
-  private buildStatsContext(stats: CollectionStats): Record<string, unknown> {
-    const context: Record<string, unknown> = {
-      count: stats.count,
-    };
-
-    // Flatten field stats into context with naming convention:
-    // fieldPath_sum, fieldPath_avg, fieldPath_min, fieldPath_max, fieldPath_stddev
-    for (const [fieldPath, fieldStats] of Object.entries(stats.fields)) {
-      const safeName = fieldPath.replace(/\./g, "_");
-      context[`${safeName}_sum`] = fieldStats.sum;
-      context[`${safeName}_avg`] = fieldStats.avg;
-      context[`${safeName}_mean`] = fieldStats.avg; // Alias
-      context[`${safeName}_min`] = fieldStats.min;
-      context[`${safeName}_max`] = fieldStats.max;
-      context[`${safeName}_stddev`] = fieldStats.stddev;
-      context[`${safeName}_count`] = fieldStats.count;
-    }
-
-    return context;
   }
 
   // ===========================================================================

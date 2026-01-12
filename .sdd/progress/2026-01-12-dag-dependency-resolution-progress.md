@@ -2,7 +2,7 @@
 specification: [.sdd/specs/2026-01-12-dag-dependency-resolution.md](./../specs/2026-01-12-dag-dependency-resolution.md)
 plan: [.sdd/plans/2026-01-12-dag-dependency-resolution-plan.md](./../plans/2026-01-12-dag-dependency-resolution-plan.md)
 tasks: [.sdd/tasks/2026-01-12-dag-dependency-resolution-tasks.md](./../tasks/2026-01-12-dag-dependency-resolution-tasks.md)
-status: In Progress
+status: Complete
 version: 1.0.0
 created: 2026-01-12
 last_updated: 2026-01-12
@@ -12,48 +12,50 @@ authored_by:
 
 # DAG-Based Dependency Resolution - Implementation Progress
 
-**Last Updated**: 2026-01-12 | **Status**: 12.5% complete (1 of 8 tasks)
+**Last Updated**: 2026-01-12 | **Status**: 100% complete (8 of 8 tasks)
 
 ## Current Session
-**Date**: 2026-01-12 | **Working On**: TASK-002: Implement topological sort with Kahn's algorithm | **Blockers**: None | **Loop Iteration**: 1
+**Date**: 2026-01-12 | **Working On**: Complete | **Blockers**: None
 
 ## Completed Today
 - TASK-001: Create dependency-graph.ts with types and graph building ✅ (commit: fa59d69, 2 iterations)
+- TASK-002: Implement topological sort with Kahn's algorithm ✅ (commit: 1e01214, 1 iteration)
+- TASK-003: Implement cycle detection and error messages ✅ (commit: d29b7ef, 1 iteration)
+- TASK-004: Extend ExpressionContext to include result ✅ (commit: 6a509a9, 1 iteration)
+- TASK-005: Unit tests for dependency-graph.ts ✅ (covered in TASK-001, TASK-002)
+- TASK-006: Refactor widget-engine computation to use DAG ordering ✅ (commit: e2632dc, 1 iteration)
+- TASK-007: Integration tests for DAG-ordered computation ✅ (commit: 0db8924, 1 iteration)
+- TASK-008: Backward compatibility tests ✅ (commit: 0db8924, 1 iteration)
 
 ## Discovered Issues
-(none yet)
+(none - all tests pass)
 
 ---
 
 ## Overall Progress
 
-### Phase 1 - Foundation (can parallelize)
+### Phase 1 - Foundation (completed)
 
-**In Progress**
-- [x] TASK-001: Create dependency-graph.ts with types and graph building - *Completed 2026-01-12* ✅
-- [ ] TASK-004: Extend ExpressionContext to include result - *Pending*
+- [x] TASK-001: Create dependency-graph.ts with types and graph building ✅
+- [x] TASK-004: Extend ExpressionContext to include result ✅
 
-### Phase 2 - Core Algorithm
+### Phase 2 - Core Algorithm (completed)
 
-**In Progress**
-- [ ] TASK-002: Implement topological sort with Kahn's algorithm - *In Progress* ✨
-- [ ] TASK-003: Implement cycle detection and error messages - *Pending*
+- [x] TASK-002: Implement topological sort with Kahn's algorithm ✅
+- [x] TASK-003: Implement cycle detection and error messages ✅
 
-### Phase 3 - Testing Foundation
+### Phase 3 - Testing Foundation (completed)
 
-**Pending**
-- [ ] TASK-005: Unit tests for dependency-graph.ts - *Partially complete (12 tests added during TASK-001)*
+- [x] TASK-005: Unit tests for dependency-graph.ts ✅
 
-### Phase 4 - Integration (critical path)
+### Phase 4 - Integration (completed)
 
-**Pending**
-- [ ] TASK-006: Refactor widget-engine computation to use DAG ordering - *Pending*
+- [x] TASK-006: Refactor widget-engine computation to use DAG ordering ✅
 
-### Phase 5 - Validation (can parallelize)
+### Phase 5 - Validation (completed)
 
-**Pending**
-- [ ] TASK-007: Integration tests for DAG-ordered computation - *Pending*
-- [ ] TASK-008: Backward compatibility tests - *Pending*
+- [x] TASK-007: Integration tests for DAG-ordered computation ✅
+- [x] TASK-008: Backward compatibility tests ✅
 
 ---
 
@@ -81,15 +83,44 @@ authored_by:
 
 ## Test Coverage
 
-| Component | Status |
-|-----------|--------|
-| dependency-graph.ts | ✅ Partial (12 tests, buildDependencyGraph coverage) |
-| expression-eval.ts (result access) | Pending (TASK-004) |
-| widget-engine.ts (DAG ordering) | Pending (TASK-007, TASK-008) |
+| Component | Status | Tests |
+|-----------|--------|-------|
+| dependency-graph.ts | ✅ Complete | 20 tests (graph building, topological sort, cycle detection) |
+| expression-eval.ts (result access) | ✅ Complete | 150 tests (all existing tests pass with new result context) |
+| widget-engine.ts (DAG ordering) | ✅ Complete | 51 tests + 17 DAG integration tests |
+
+**Total new tests added**: 37 tests
+**Total test suite**: 238+ widget-related tests passing
 
 ---
 
-## Notes for Next Session
-- TASK-001 complete, moving to TASK-002 (topological sort)
-- TASK-004 can be done in parallel with TASK-002/TASK-003
-- Critical path: TASK-002 → TASK-003 → TASK-006
+## Commits Summary
+
+| Commit | Task | Description |
+|--------|------|-------------|
+| fa59d69 | TASK-001 | Add dependency-graph module with graph building |
+| 1e01214 | TASK-002 | Implement topological sort with Kahn's algorithm |
+| d29b7ef | TASK-003 | Add cycle path tracing and computation plan |
+| 6a509a9 | TASK-004 | Extend ExpressionContext with result namespace |
+| e2632dc | TASK-006 | Refactor widget-engine to use DAG ordering |
+| 0db8924 | TASK-007/008 | Add DAG integration and backward compatibility tests |
+
+---
+
+## Feature Summary
+
+The DAG-Based Dependency Resolution feature is now complete. Key capabilities:
+
+1. **Dependency Graph Analysis**: Fields can reference other fields via `result.*` syntax
+2. **Topological Sort**: Kahn's algorithm ensures correct execution order
+3. **Cycle Detection**: Cycles are identified, logged as warnings, and cycle fields return null
+4. **Backward Compatibility**: Existing configs using `stats.*` continue to work unchanged
+5. **Comprehensive Testing**: 37 new tests covering DAG computation, cycles, and compatibility
+
+Example usage:
+```yaml
+fields:
+  max_score: { max: "this.score" }
+  normalized: { expr: "this.score / result.max_score * 100" }
+  total_normalized: { sum: "result.normalized" }
+```

@@ -2,7 +2,10 @@
  * Expression Evaluation
  *
  * Safe expression evaluation using expr-eval with custom functions and security validation.
- * Expressions can reference frontmatter fields via `this.*` and collection stats via `stats.*`.
+ * Expressions can reference three namespaces:
+ * - `this.*` - Current item's frontmatter fields
+ * - `stats.*` - Collection-level statistics (from aggregators)
+ * - `result.*` - Previously computed field values (for DAG-based dependencies)
  *
  * Spec Requirements:
  * - REQ-F-8: Per-item computed fields using a safe expression language
@@ -13,6 +16,8 @@
  * Plan Reference:
  * - TD-1: Expression Language Selection (expr-eval)
  * - TD-4: Two-Phase Computation Model
+ * - TD-6: Result Context Integration (DAG dependencies)
+ * - TD-7: Per-Item vs Collection Context
  */
 
 import { Parser, type Expression, type Value } from "expr-eval";
@@ -70,12 +75,34 @@ export class ExpressionEvaluationError extends Error {
 
 /**
  * Context passed to expression evaluation.
- * - `this`: Current item's frontmatter fields
- * - `stats`: Collection-level statistics (from Phase 1 computation)
+ *
+ * Three namespaces are available to expressions:
+ * - `this`: Current item's frontmatter fields (item-scope)
+ * - `stats`: Collection-level statistics from aggregators (collection-scope)
+ * - `result`: Previously computed field values for DAG-based cross-field references
+ *
+ * The `result` namespace enables fields to depend on other computed fields.
+ * For example, `result.max_score` accesses the value computed by a field named `max_score`
+ * that was evaluated earlier in the dependency order.
+ *
+ * When `result` is undefined (legacy callers), expressions referencing `result.*`
+ * will return undefined, which is normalized to null by the evaluation pipeline.
+ *
+ * @see TD-6 (Result Context Integration) in the DAG dependency plan
+ * @see TD-7 (Per-Item vs Collection Context) for scope distinctions
  */
 export interface ExpressionContext {
+  /** Current item's frontmatter fields (item-scope) */
   this: Record<string, unknown>;
+  /** Collection-level statistics from aggregators */
   stats: Record<string, unknown>;
+  /**
+   * Previously computed field values from the DAG computation.
+   * Optional for backward compatibility with existing callers.
+   * - In item-scope expressions: contains per-item computed values
+   * - In collection-scope contexts: contains aggregated values
+   */
+  result?: Record<string, unknown>;
 }
 
 /**
@@ -421,15 +448,23 @@ export function validateExpressionSecurity(expression: string): void {
 
 /**
  * Flatten nested context objects for expr-eval.
- * Converts { this: { rating: 5 }, stats: { rating_mean: 4 } }
- * into { this: { rating: 5 }, stats: { rating_mean: 4 } }
+ * Converts { this: { rating: 5 }, stats: { rating_mean: 4 }, result: { max_score: 10 } }
+ * into an object where expressions can access this.rating, stats.rating_mean, or result.max_score.
  *
- * This allows expressions to use this.rating or stats.rating_mean syntax.
+ * This allows expressions to use:
+ * - `this.rating` for item frontmatter
+ * - `stats.rating_mean` for collection statistics
+ * - `result.max_score` for previously computed field values (DAG dependencies)
+ *
  * Custom functions are registered on the Parser instance, not in the context.
  *
  * Note: We cast to Value because expr-eval's type definitions are incomplete.
  * The library actually accepts nested objects, but the types only declare
  * a simpler Value type.
+ *
+ * When context.result is undefined (legacy callers), we provide an empty object
+ * so that result.* references return undefined (normalized to null) rather than
+ * throwing an error.
  */
 function flattenContext(context: ExpressionContext): Value {
   // The expr-eval library accepts nested objects, but the type definitions
@@ -437,6 +472,7 @@ function flattenContext(context: ExpressionContext): Value {
   return {
     this: context.this,
     stats: context.stats,
+    result: context.result ?? {},
   } as unknown as Value;
 }
 
@@ -451,7 +487,8 @@ const DEFAULT_TIMEOUT_MS = 1000;
  * Parse and evaluate an expression with the given context.
  *
  * @param expression - The expression string to evaluate
- * @param context - Context containing `this` (current item) and `stats` (collection stats)
+ * @param context - Context containing `this` (current item), `stats` (collection stats),
+ *                  and optionally `result` (previously computed field values)
  * @param options - Evaluation options (timeout, etc.)
  * @returns The evaluation result, or null if the result is undefined/NaN/Infinity
  * @throws ExpressionSecurityError if expression contains blocked content
@@ -460,6 +497,7 @@ const DEFAULT_TIMEOUT_MS = 1000;
  *
  * @example
  * ```ts
+ * // Basic example with this and stats
  * const result = evaluateExpression(
  *   "zscore(this.rating, stats.rating_mean, stats.rating_stddev)",
  *   {
@@ -468,6 +506,17 @@ const DEFAULT_TIMEOUT_MS = 1000;
  *   }
  * );
  * // result = 1.0
+ *
+ * // Example with result context for cross-field dependencies
+ * const normalized = evaluateExpression(
+ *   "this.score / result.max_score",
+ *   {
+ *     this: { score: 85 },
+ *     stats: {},
+ *     result: { max_score: 100 }
+ *   }
+ * );
+ * // normalized = 0.85
  * ```
  */
 export function evaluateExpression(

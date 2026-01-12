@@ -552,6 +552,18 @@ export class WebSocketHandler {
         const { engine, loaderResult } = await createWidgetEngine(vault.contentRoot, vault.id);
         this.state.widgetEngine = engine;
 
+        // Connect health callback for widget computation issues (cycles, expression errors)
+        engine.setHealthCallback((issue) => {
+          this.state.healthCollector?.report({
+            id: issue.id,
+            severity: issue.severity,
+            category: "widget_compute",
+            message: issue.message,
+            details: issue.details,
+            dismissible: true, // Computation warnings can be dismissed
+          });
+        });
+
         if (loaderResult.errors.length > 0) {
           log.warn(`Widget config errors for vault ${vault.id}:`, loaderResult.errors);
           for (const err of loaderResult.errors) {

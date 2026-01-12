@@ -66,6 +66,8 @@ export {
   type WidgetResult,
   type SimilarItem,
   type ComputeOptions,
+  type WidgetHealthIssue,
+  type HealthReportCallback,
 } from "./widget-engine";
 
 // =============================================================================
@@ -161,3 +163,19 @@ export {
   createFileWatcher,
   type FileWatcherOptions,
 } from "./file-watcher";
+
+// =============================================================================
+// Dependency Graph
+// =============================================================================
+
+export {
+  buildDependencyGraph,
+  topologicalSort,
+  traceCyclePath,
+  createComputationPlan,
+  type DependencyGraph,
+  type FieldScope,
+  type SortResult,
+  type ComputationPhase,
+  type ComputationPlan,
+} from "./dependency-graph";

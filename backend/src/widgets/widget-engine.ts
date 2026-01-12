@@ -470,13 +470,24 @@ export class WidgetEngine {
       }
     }
 
+    // Filter to only user-defined visible fields
+    // (stats.count is for expressions, not output unless user defines a count field)
+    const visibleData: Record<string, unknown> = {};
+    for (const [fieldName, value] of Object.entries(data)) {
+      const fieldConfig = fieldConfigs[fieldName];
+      // Only include fields that are defined in config AND not explicitly hidden
+      if (fieldConfig && fieldConfig.visible !== false) {
+        visibleData[fieldName] = value;
+      }
+    }
+
     return {
       widgetId: widget.id,
       name: config.name,
       type: "aggregate",
       location: config.location,
       display: config.display,
-      data,
+      data: visibleData,
       editable: config.editable,
       isEmpty: false,
       computeTimeMs: performance.now() - startTime,
@@ -529,13 +540,24 @@ export class WidgetEngine {
       }
     }
 
+    // Filter to only user-defined visible fields
+    // (stats.count is for expressions, not output unless user defines a count field)
+    const visibleData: Record<string, unknown> = {};
+    for (const [fieldName, value] of Object.entries(data)) {
+      const fieldConfig = fieldConfigs[fieldName];
+      // Only include fields that are defined in config AND not explicitly hidden
+      if (fieldConfig && fieldConfig.visible !== false) {
+        visibleData[fieldName] = value;
+      }
+    }
+
     return {
       widgetId: widget.id,
       name: config.name,
       type: "aggregate",
       location: config.location,
       display: config.display,
-      data,
+      data: visibleData,
       editable: config.editable,
       isEmpty: false,
       computeTimeMs: performance.now() - startTime,

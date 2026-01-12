@@ -14,1404 +14,60 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import type { VaultInfo, ServerMessage, FileEntry, RecentNoteEntry, RecentDiscussionEntry, ConversationMessageProtocol, GoalSection, TaskEntry, ToolInvocation, SlashCommand, FileSearchResult, ContentSearchResult, ContextSnippet, WidgetResult } from "@memory-loop/shared";
+import type {
+  VaultInfo,
+  ServerMessage,
+  FileEntry,
+  RecentNoteEntry,
+  RecentDiscussionEntry,
+  ConversationMessageProtocol,
+  GoalSection,
+  TaskEntry,
+  SlashCommand,
+  FileSearchResult,
+  ContentSearchResult,
+  ContextSnippet,
+  WidgetResult,
+} from "@memory-loop/shared";
 
-/**
- * Application mode: home, note capture, discussion, or browse.
- */
-export type AppMode = "home" | "note" | "discussion" | "browse";
+import {
+  type AppMode,
+  type BrowseViewMode,
+  type SearchMode,
+  type ConversationMessage,
+  type SessionContextValue,
+  sessionReducer,
+  createInitialSessionState,
+  generateMessageId,
+  loadPersistedVaultId,
+  loadPersistedBrowserPath,
+  loadPinnedFolders,
+  persistVaultId,
+  persistBrowserPath,
+  persistPinnedFolders,
+  persistViewMode,
+} from "./session/index.js";
 
-/**
- * View mode for the browse tab: files or tasks.
- */
-export type BrowseViewMode = "files" | "tasks";
-
-/**
- * Search mode: files (fuzzy name) or content (full-text).
- */
-export type SearchMode = "files" | "content";
-
-/**
- * Search state for the browse tab.
- */
-export interface SearchState {
-  /** Whether search is currently active */
-  isActive: boolean;
-  /** Current search mode */
-  mode: SearchMode;
-  /** Current search query */
-  query: string;
-  /** File search results (when mode is "files") */
-  fileResults: FileSearchResult[];
-  /** Content search results (when mode is "content") */
-  contentResults: ContentSearchResult[];
-  /** Whether search is in progress */
-  isLoading: boolean;
-  /** Expanded content result paths (for showing snippets) */
-  expandedPaths: Set<string>;
-  /** Snippets for expanded content results, keyed by path */
-  snippetsCache: Map<string, ContextSnippet[]>;
-}
-
-/**
- * Widget state for vault widgets.
- */
-export interface WidgetState {
-  /** Ground widgets for Home/Ground view */
-  groundWidgets: WidgetResult[];
-  /** Recall widgets for Browse/Recall view */
-  recallWidgets: WidgetResult[];
-  /** Current file path for recall widgets (null if none) */
-  recallFilePath: string | null;
-  /** Whether ground widgets are loading */
-  isGroundLoading: boolean;
-  /** Whether recall widgets are loading */
-  isRecallLoading: boolean;
-  /** Error message from ground widget computation */
-  groundError: string | null;
-  /** Error message from recall widget computation */
-  recallError: string | null;
-  /** Pending edits map: filePath:fieldPath -> value (for optimistic updates) */
-  pendingEdits: Map<string, unknown>;
-}
-
-/**
- * Browser state for vault file browsing.
- */
-export interface BrowserState {
-  /** Current path being viewed (empty string for root) */
-  currentPath: string;
-  /** Set of expanded directory paths */
-  expandedDirs: Set<string>;
-  /** Cache of directory listings keyed by path */
-  directoryCache: Map<string, FileEntry[]>;
-  /** Current file content being viewed */
-  currentFileContent: string | null;
-  /** Whether current file content was truncated */
-  currentFileTruncated: boolean;
-  /** Error message if last file operation failed */
-  fileError: string | null;
-  /** Whether a file operation is in progress */
-  isLoading: boolean;
-  /** Pinned folder paths for quick access */
-  pinnedFolders: string[];
-  /** Whether currently in adjust (edit) mode (REQ-F-7) */
-  isAdjusting: boolean;
-  /** Content being edited in adjust mode (REQ-F-8) */
-  adjustContent: string;
-  /** Error message if save operation failed (REQ-F-14) */
-  adjustError: string | null;
-  /** Whether a save operation is in progress */
-  isSaving: boolean;
-  /** Current view mode: files or tasks */
-  viewMode: BrowseViewMode;
-  /** Task list from configured directories */
-  tasks: TaskEntry[];
-  /** Whether task loading is in progress */
-  isTasksLoading: boolean;
-  /** Error message from task operations */
-  tasksError: string | null;
-  /** Search state for the browse tab */
-  search: SearchState;
-}
-
-/**
- * Message in the conversation history.
- */
-export interface ConversationMessage {
-  /** Unique message ID */
-  id: string;
-  /** Role: user or assistant */
-  role: "user" | "assistant";
-  /** Message content */
-  content: string;
-  /** Timestamp */
-  timestamp: Date;
-  /** Whether this message is still streaming */
-  isStreaming?: boolean;
-  /** Tool invocations for this message (assistant messages only) */
-  toolInvocations?: ToolInvocation[];
-  /** Percentage of context window used (0-100, assistant messages only) */
-  contextUsage?: number;
-}
-
-/**
- * Pending tool update queued when tool_input/tool_end arrives before tool_start.
- */
-interface PendingToolUpdate {
-  input?: unknown;
-  output?: unknown;
-  status?: "complete";
-}
-
-/**
- * Session state stored in context.
- */
-export interface SessionState {
-  /** Currently selected vault */
-  vault: VaultInfo | null;
-  /** Current session ID (from server) */
-  sessionId: string | null;
-  /** Session start timestamp (from server) */
-  sessionStartTime: Date | null;
-  /** Current application mode */
-  mode: AppMode;
-  /** Conversation history for discussion mode */
-  messages: ConversationMessage[];
-  /** Browser state for file browsing mode */
-  browser: BrowserState;
-  /** Widget state for vault widgets */
-  widgets: WidgetState;
-  /** Recent captured notes for note mode */
-  recentNotes: RecentNoteEntry[];
-  /** Recent discussion sessions for note mode */
-  recentDiscussions: RecentDiscussionEntry[];
-  /** Goals from vault's goals.md file (null if no goals file exists) */
-  goals: GoalSection[] | null;
-  /** Pre-filled text for discussion mode (from inspiration click) */
-  discussionPrefill: string | null;
-  /** Session ID pending resume (set by RecentActivity, consumed by Discussion) */
-  pendingSessionId: string | null;
-  /** Whether the new session confirmation dialog is shown (persists across tab switches) */
-  showNewSessionDialog: boolean;
-  /** Whether user wants a new session (skip auto-resume on reconnect) */
-  wantsNewSession: boolean;
-  /** Pending tool updates queued due to race conditions (tool_input/tool_end before tool_start) */
-  pendingToolUpdates: Map<string, PendingToolUpdate>;
-  /** Flag to prepend line break before next text chunk (set after tool completion) */
-  needsLineBreakBeforeText: boolean;
-  /** Available slash commands from the SDK (empty if not yet loaded or unsupported) */
-  slashCommands: SlashCommand[];
-}
-
-/**
- * Actions for session state management.
- */
-export interface SessionActions {
-  /** Select a vault */
-  selectVault: (vault: VaultInfo) => void;
-  /** Clear the current vault (return to vault selection) */
-  clearVault: () => void;
-  /** Set the session ID */
-  setSessionId: (sessionId: string) => void;
-  /** Set the session start time */
-  setSessionStartTime: (timestamp: Date) => void;
-  /** Set the application mode */
-  setMode: (mode: AppMode) => void;
-  /** Add a message to conversation history */
-  addMessage: (message: Omit<ConversationMessage, "id" | "timestamp">) => void;
-  /** Update the last message (for streaming) */
-  updateLastMessage: (content: string, isStreaming?: boolean) => void;
-  /** Clear all messages */
-  clearMessages: () => void;
-  /** Start a new session */
-  startNewSession: () => void;
-  /** Set messages from server (on session resume) */
-  setMessages: (messages: ConversationMessageProtocol[]) => void;
-  /** Set the current browsing path */
-  setCurrentPath: (path: string) => void;
-  /** Toggle directory expand/collapse state */
-  toggleDirectory: (path: string) => void;
-  /** Cache a directory listing */
-  cacheDirectory: (path: string, entries: FileEntry[]) => void;
-  /** Set file content from server response */
-  setFileContent: (content: string, truncated: boolean) => void;
-  /** Set file error from server response */
-  setFileError: (error: string) => void;
-  /** Set loading state for file operations */
-  setFileLoading: (isLoading: boolean) => void;
-  /** Clear all browser state (cache, expanded dirs, current file) */
-  clearBrowserState: () => void;
-  /** Clear only directory cache and expanded dirs (preserves pinned folders) */
-  clearDirectoryCache: () => void;
-  /** Set recent notes */
-  setRecentNotes: (notes: RecentNoteEntry[]) => void;
-  /** Pin a folder for quick access */
-  pinFolder: (path: string) => void;
-  /** Unpin a folder */
-  unpinFolder: (path: string) => void;
-  /** Set recent discussions */
-  setRecentDiscussions: (discussions: RecentDiscussionEntry[]) => void;
-  /** Remove a discussion from the recent list (after deletion) */
-  removeDiscussion: (sessionId: string) => void;
-  /** Set goals from vault's goals.md file */
-  setGoals: (goals: GoalSection[] | null) => void;
-  /** Set discussion prefill text (from inspiration click) */
-  setDiscussionPrefill: (text: string | null) => void;
-  /** Set pending session ID for resume (called by RecentActivity) */
-  setPendingSessionId: (sessionId: string | null) => void;
-  /** Set new session dialog visibility (persists across tab switches) */
-  setShowNewSessionDialog: (show: boolean) => void;
-  /** Enter adjust mode (copies currentFileContent to adjustContent) */
-  startAdjust: () => void;
-  /** Update the content being edited in adjust mode */
-  updateAdjustContent: (content: string) => void;
-  /** Cancel adjust mode and discard changes */
-  cancelAdjust: () => void;
-  /** Begin save operation (sets isSaving) */
-  startSave: () => void;
-  /** Save completed successfully */
-  saveSuccess: () => void;
-  /** Save failed with error (preserves adjustContent per REQ-F-15) */
-  saveError: (error: string) => void;
-  /** Set the browse view mode (files or tasks) */
-  setViewMode: (mode: BrowseViewMode) => void;
-  /** Set tasks from server response */
-  setTasks: (tasks: TaskEntry[]) => void;
-  /** Set tasks loading state */
-  setTasksLoading: (isLoading: boolean) => void;
-  /** Set tasks error message */
-  setTasksError: (error: string | null) => void;
-  /** Update a single task (for optimistic updates) */
-  updateTask: (filePath: string, lineNumber: number, newState: string) => void;
-  /** Add a tool invocation to the last assistant message */
-  addToolToLastMessage: (toolUseId: string, toolName: string) => void;
-  /** Update tool input for a specific tool invocation */
-  updateToolInput: (toolUseId: string, input: unknown) => void;
-  /** Mark a tool invocation as complete with output */
-  completeToolInvocation: (toolUseId: string, output: unknown) => void;
-  /** Set available slash commands from SDK */
-  setSlashCommands: (commands: SlashCommand[]) => void;
-  /** Set context usage percentage on the last assistant message */
-  setLastMessageContextUsage: (contextUsage: number) => void;
-  // Search actions
-  /** Activate or deactivate search mode */
-  setSearchActive: (isActive: boolean) => void;
-  /** Set search mode (files or content) */
-  setSearchMode: (mode: SearchMode) => void;
-  /** Set search query */
-  setSearchQuery: (query: string) => void;
-  /** Set search results from server */
-  setSearchResults: (mode: SearchMode, fileResults?: FileSearchResult[], contentResults?: ContentSearchResult[]) => void;
-  /** Set search loading state */
-  setSearchLoading: (isLoading: boolean) => void;
-  /** Toggle expanded state for a content result */
-  toggleResultExpanded: (path: string) => void;
-  /** Set snippets for a content result */
-  setSnippets: (path: string, snippets: ContextSnippet[]) => void;
-  /** Clear search and return to file tree */
-  clearSearch: () => void;
-  // Widget actions
-  /** Set ground widgets from server */
-  setGroundWidgets: (widgets: WidgetResult[]) => void;
-  /** Set recall widgets from server */
-  setRecallWidgets: (widgets: WidgetResult[], filePath: string) => void;
-  /** Set ground widgets loading state */
-  setGroundWidgetsLoading: (isLoading: boolean) => void;
-  /** Set recall widgets loading state */
-  setRecallWidgetsLoading: (isLoading: boolean) => void;
-  /** Set ground widgets error */
-  setGroundWidgetsError: (error: string | null) => void;
-  /** Set recall widgets error */
-  setRecallWidgetsError: (error: string | null) => void;
-  /** Add pending edit (optimistic update) */
-  addPendingEdit: (filePath: string, fieldPath: string, value: unknown) => void;
-  /** Remove pending edit (server confirmed or failed) */
-  removePendingEdit: (filePath: string, fieldPath: string) => void;
-  /** Clear all widget state (when switching vaults) */
-  clearWidgetState: () => void;
-}
-
-/**
- * Combined context value.
- */
-export type SessionContextValue = SessionState & SessionActions;
+// Re-export types for consumers
+export type {
+  AppMode,
+  BrowseViewMode,
+  SearchMode,
+  SearchState,
+  WidgetState,
+  BrowserState,
+  ConversationMessage,
+  PendingToolUpdate,
+  SessionState,
+  SessionActions,
+  SessionContextValue,
+} from "./session/types.js";
+export { STORAGE_KEY_VAULT } from "./session/storage.js";
 
 /**
  * Session context instance.
  */
 const SessionContext = createContext<SessionContextValue | null>(null);
-
-/**
- * localStorage keys for persisting state.
- * Note: Session messages are NOT persisted locally - server is source of truth.
- */
-export const STORAGE_KEY_VAULT = "memory-loop:vaultId";
-const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";
-const STORAGE_KEY_PINNED_FOLDERS_PREFIX = "memory-loop:pinnedFolders:";
-const STORAGE_KEY_VIEW_MODE = "memory-loop:viewMode";
-
-/**
- * Action types for reducer.
- */
-type SessionAction =
-  | { type: "SELECT_VAULT"; vault: VaultInfo }
-  | { type: "CLEAR_VAULT" }
-  | { type: "SET_SESSION_ID"; sessionId: string }
-  | { type: "SET_SESSION_START_TIME"; timestamp: Date }
-  | { type: "SET_MODE"; mode: AppMode }
-  | { type: "ADD_MESSAGE"; message: ConversationMessage }
-  | { type: "UPDATE_LAST_MESSAGE"; content: string; isStreaming?: boolean }
-  | { type: "CLEAR_MESSAGES" }
-  | { type: "START_NEW_SESSION" }
-  | { type: "SET_MESSAGES"; messages: ConversationMessageProtocol[] }
-  | { type: "SET_CURRENT_PATH"; path: string }
-  | { type: "TOGGLE_DIRECTORY"; path: string }
-  | { type: "CACHE_DIRECTORY"; path: string; entries: FileEntry[] }
-  | { type: "SET_FILE_CONTENT"; content: string; truncated: boolean }
-  | { type: "SET_FILE_ERROR"; error: string }
-  | { type: "SET_FILE_LOADING"; isLoading: boolean }
-  | { type: "CLEAR_BROWSER_STATE" }
-  | { type: "CLEAR_DIRECTORY_CACHE" }
-  | { type: "SET_RECENT_NOTES"; notes: RecentNoteEntry[] }
-  | { type: "SET_RECENT_DISCUSSIONS"; discussions: RecentDiscussionEntry[] }
-  | { type: "REMOVE_DISCUSSION"; sessionId: string }
-  | { type: "PIN_FOLDER"; path: string }
-  | { type: "UNPIN_FOLDER"; path: string }
-  | { type: "SET_PINNED_FOLDERS"; paths: string[] }
-  | { type: "SET_GOALS"; goals: GoalSection[] | null }
-  | { type: "SET_DISCUSSION_PREFILL"; text: string | null }
-  | { type: "SET_PENDING_SESSION_ID"; sessionId: string | null }
-  | { type: "SET_SHOW_NEW_SESSION_DIALOG"; show: boolean }
-  | { type: "START_ADJUST" }
-  | { type: "UPDATE_ADJUST_CONTENT"; content: string }
-  | { type: "CANCEL_ADJUST" }
-  | { type: "START_SAVE" }
-  | { type: "SAVE_SUCCESS" }
-  | { type: "SAVE_ERROR"; error: string }
-  | { type: "SET_VIEW_MODE"; mode: BrowseViewMode }
-  | { type: "SET_TASKS"; tasks: TaskEntry[] }
-  | { type: "SET_TASKS_LOADING"; isLoading: boolean }
-  | { type: "SET_TASKS_ERROR"; error: string | null }
-  | { type: "UPDATE_TASK"; filePath: string; lineNumber: number; newState: string }
-  | { type: "ADD_TOOL_TO_LAST_MESSAGE"; toolUseId: string; toolName: string }
-  | { type: "UPDATE_TOOL_INPUT"; toolUseId: string; input: unknown }
-  | { type: "COMPLETE_TOOL_INVOCATION"; toolUseId: string; output: unknown }
-  | { type: "SET_SLASH_COMMANDS"; commands: SlashCommand[] }
-  | { type: "SET_LAST_MESSAGE_CONTEXT_USAGE"; contextUsage: number }
-  // Search actions
-  | { type: "SET_SEARCH_ACTIVE"; isActive: boolean }
-  | { type: "SET_SEARCH_MODE"; mode: SearchMode }
-  | { type: "SET_SEARCH_QUERY"; query: string }
-  | { type: "SET_SEARCH_RESULTS"; mode: SearchMode; fileResults?: FileSearchResult[]; contentResults?: ContentSearchResult[] }
-  | { type: "SET_SEARCH_LOADING"; isLoading: boolean }
-  | { type: "TOGGLE_RESULT_EXPANDED"; path: string }
-  | { type: "SET_SNIPPETS"; path: string; snippets: ContextSnippet[] }
-  | { type: "CLEAR_SEARCH" }
-  // Widget actions
-  | { type: "SET_GROUND_WIDGETS"; widgets: WidgetResult[] }
-  | { type: "SET_RECALL_WIDGETS"; widgets: WidgetResult[]; filePath: string }
-  | { type: "SET_GROUND_WIDGETS_LOADING"; isLoading: boolean }
-  | { type: "SET_RECALL_WIDGETS_LOADING"; isLoading: boolean }
-  | { type: "SET_GROUND_WIDGETS_ERROR"; error: string | null }
-  | { type: "SET_RECALL_WIDGETS_ERROR"; error: string | null }
-  | { type: "ADD_PENDING_EDIT"; filePath: string; fieldPath: string; value: unknown }
-  | { type: "REMOVE_PENDING_EDIT"; filePath: string; fieldPath: string }
-  | { type: "CLEAR_WIDGET_STATE" };
-
-/**
- * Generates a unique message ID.
- */
-function generateMessageId(): string {
-  return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-/**
- * Loads persisted view mode from localStorage.
- */
-function loadPersistedViewMode(): BrowseViewMode {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_VIEW_MODE);
-    if (stored === "tasks" || stored === "files") {
-      return stored;
-    }
-  } catch {
-    // Ignore storage errors
-  }
-  return "files";
-}
-
-/**
- * Persists view mode to localStorage.
- */
-function persistViewMode(mode: BrowseViewMode): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_VIEW_MODE, mode);
-  } catch {
-    // Ignore storage errors
-  }
-}
-
-/**
- * Creates initial search state.
- */
-function createInitialSearchState(): SearchState {
-  return {
-    isActive: false,
-    mode: "files",
-    query: "",
-    fileResults: [],
-    contentResults: [],
-    isLoading: false,
-    expandedPaths: new Set(),
-    snippetsCache: new Map(),
-  };
-}
-
-/**
- * Creates initial widget state.
- */
-function createInitialWidgetState(): WidgetState {
-  return {
-    groundWidgets: [],
-    recallWidgets: [],
-    recallFilePath: null,
-    isGroundLoading: false,
-    isRecallLoading: false,
-    groundError: null,
-    recallError: null,
-    pendingEdits: new Map(),
-  };
-}
-
-/**
- * Creates initial browser state.
- */
-function createInitialBrowserState(): BrowserState {
-  return {
-    currentPath: "",
-    expandedDirs: new Set(),
-    directoryCache: new Map(),
-    currentFileContent: null,
-    currentFileTruncated: false,
-    fileError: null,
-    isLoading: false,
-    pinnedFolders: [],
-    isAdjusting: false,
-    adjustContent: "",
-    adjustError: null,
-    isSaving: false,
-    viewMode: loadPersistedViewMode(),
-    tasks: [],
-    isTasksLoading: false,
-    tasksError: null,
-    search: createInitialSearchState(),
-  };
-}
-
-/**
- * Finds the index of the message containing a tool with the given ID.
- * Searches from end to beginning (most recent first).
- * Returns -1 if no message contains the tool.
- */
-function findMessageWithTool(messages: ConversationMessage[], toolUseId: string): number {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (msg.role === "assistant" && msg.toolInvocations?.some(t => t.toolUseId === toolUseId)) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-/**
- * Session state reducer.
- */
-function sessionReducer(
-  state: SessionState,
-  action: SessionAction
-): SessionState {
-  switch (action.type) {
-    case "SELECT_VAULT":
-      return {
-        ...state,
-        vault: action.vault,
-        // Clear session when switching vaults
-        sessionId: null,
-        messages: [],
-        // Clear browser state when switching vaults (REQ-F-23)
-        browser: createInitialBrowserState(),
-        // Clear widget state when switching vaults
-        widgets: createInitialWidgetState(),
-        // Clear recent activity when switching vaults
-        recentNotes: [],
-        recentDiscussions: [],
-        // Clear goals when switching vaults
-        goals: null,
-        // Clear transient UI state when switching vaults
-        discussionPrefill: null,
-        showNewSessionDialog: false,
-        wantsNewSession: false,
-        // Clear slash commands when switching vaults (will be re-fetched on session_ready)
-        slashCommands: [],
-      };
-
-    case "CLEAR_VAULT":
-      return {
-        ...state,
-        vault: null,
-        sessionId: null,
-        messages: [],
-        browser: createInitialBrowserState(),
-        widgets: createInitialWidgetState(),
-        recentNotes: [],
-        recentDiscussions: [],
-        goals: null,
-        discussionPrefill: null,
-        showNewSessionDialog: false,
-        wantsNewSession: false,
-        slashCommands: [],
-      };
-
-    case "SET_SESSION_ID":
-      return {
-        ...state,
-        sessionId: action.sessionId,
-        wantsNewSession: false, // Clear when session is established
-      };
-
-    case "SET_SESSION_START_TIME":
-      return {
-        ...state,
-        sessionStartTime: action.timestamp,
-      };
-
-    case "SET_MODE":
-      // Preserve browser state when switching modes (REQ-F-22)
-      return {
-        ...state,
-        mode: action.mode,
-      };
-
-    case "ADD_MESSAGE":
-      return {
-        ...state,
-        messages: [...state.messages, action.message],
-      };
-
-    case "UPDATE_LAST_MESSAGE": {
-      if (state.messages.length === 0) return state;
-      const messages = [...state.messages];
-      const lastMessage = messages[messages.length - 1];
-      // Only update streaming assistant messages to prevent race condition
-      // where response_chunk arrives before response_start is committed to state
-      if (lastMessage.role !== "assistant") {
-        console.warn(
-          "[SessionContext] UPDATE_LAST_MESSAGE ignored: last message is not an assistant message"
-        );
-        return state;
-      }
-      // If a tool just completed and we have new content, prepend a line break
-      // to separate the post-tool text from the pre-tool text.
-      const prefix = state.needsLineBreakBeforeText && action.content ? "\n\n" : "";
-      messages[messages.length - 1] = {
-        ...lastMessage,
-        content: lastMessage.content + prefix + action.content,
-        isStreaming: action.isStreaming ?? lastMessage.isStreaming,
-      };
-      return {
-        ...state,
-        messages,
-        // Only clear the flag when we actually added the line break prefix.
-        needsLineBreakBeforeText: prefix ? false : state.needsLineBreakBeforeText,
-      };
-    }
-
-    case "CLEAR_MESSAGES":
-      return {
-        ...state,
-        messages: [],
-        pendingToolUpdates: new Map(),
-        needsLineBreakBeforeText: false,
-      };
-
-    case "START_NEW_SESSION":
-      return {
-        ...state,
-        sessionId: null,
-        messages: [],
-        pendingToolUpdates: new Map(),
-        needsLineBreakBeforeText: false,
-        wantsNewSession: true,
-      };
-
-    case "SET_MESSAGES":
-      // When loading messages from server (session resume), clear any pending
-      // tool updates from previous connection attempts - server state is truth.
-      console.log(`[Session] Setting messages from server: ${action.messages.length}`);
-      return {
-        ...state,
-        messages: action.messages.map((msg) => ({
-          ...msg,
-          // Ensure timestamps are Date objects (may be strings from JSON)
-          timestamp: new Date(msg.timestamp),
-          // Fix stale "running" tools from interrupted sessions.
-          // If a tool is still "running" in a persisted message, it means the
-          // connection was closed before tool_result arrived. Mark as complete
-          // to prevent spinner from showing forever.
-          toolInvocations: msg.toolInvocations?.map((tool) =>
-            tool.status === "running"
-              ? { ...tool, status: "complete" as const, output: "[Connection closed before tool completed]" }
-              : tool
-          ),
-        })),
-        pendingToolUpdates: new Map(),
-        needsLineBreakBeforeText: false,
-      };
-
-    case "SET_CURRENT_PATH":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          currentPath: action.path,
-          // Clear file content when changing path
-          currentFileContent: null,
-          currentFileTruncated: false,
-          fileError: null,
-          // Clear adjust state when navigating (REQ-F-9)
-          isAdjusting: false,
-          adjustContent: "",
-          adjustError: null,
-          isSaving: false,
-        },
-      };
-
-    case "TOGGLE_DIRECTORY": {
-      const newExpandedDirs = new Set(state.browser.expandedDirs);
-      if (newExpandedDirs.has(action.path)) {
-        newExpandedDirs.delete(action.path);
-      } else {
-        newExpandedDirs.add(action.path);
-      }
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          expandedDirs: newExpandedDirs,
-        },
-      };
-    }
-
-    case "CACHE_DIRECTORY": {
-      const newCache = new Map(state.browser.directoryCache);
-      newCache.set(action.path, action.entries);
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          directoryCache: newCache,
-        },
-      };
-    }
-
-    case "SET_FILE_CONTENT":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          currentFileContent: action.content,
-          currentFileTruncated: action.truncated,
-          fileError: null,
-          isLoading: false,
-        },
-      };
-
-    case "SET_FILE_ERROR":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          currentFileContent: null,
-          currentFileTruncated: false,
-          fileError: action.error,
-          isLoading: false,
-        },
-      };
-
-    case "SET_FILE_LOADING":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          isLoading: action.isLoading,
-          // Clear error when starting new operation
-          fileError: action.isLoading ? null : state.browser.fileError,
-        },
-      };
-
-    case "CLEAR_BROWSER_STATE":
-      return {
-        ...state,
-        browser: createInitialBrowserState(),
-      };
-
-    case "CLEAR_DIRECTORY_CACHE":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          directoryCache: new Map(),
-          expandedDirs: new Set(),
-        },
-      };
-
-    case "SET_RECENT_NOTES":
-      return {
-        ...state,
-        recentNotes: action.notes,
-      };
-
-    case "PIN_FOLDER": {
-      // Don't add duplicates
-      if (state.browser.pinnedFolders.includes(action.path)) {
-        return state;
-      }
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          pinnedFolders: [...state.browser.pinnedFolders, action.path],
-        },
-      };
-    }
-
-    case "UNPIN_FOLDER":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          pinnedFolders: state.browser.pinnedFolders.filter(
-            (p) => p !== action.path
-          ),
-        },
-      };
-
-    case "SET_PINNED_FOLDERS":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          pinnedFolders: action.paths,
-        },
-      };
-
-    case "SET_RECENT_DISCUSSIONS":
-      return {
-        ...state,
-        recentDiscussions: action.discussions,
-      };
-
-    case "REMOVE_DISCUSSION":
-      return {
-        ...state,
-        recentDiscussions: state.recentDiscussions.filter(
-          (d) => d.sessionId !== action.sessionId
-        ),
-      };
-
-    case "SET_GOALS":
-      return {
-        ...state,
-        goals: action.goals,
-      };
-
-    case "SET_DISCUSSION_PREFILL":
-      return {
-        ...state,
-        discussionPrefill: action.text,
-      };
-
-    case "SET_PENDING_SESSION_ID":
-      return {
-        ...state,
-        pendingSessionId: action.sessionId,
-        // Clear wantsNewSession - explicit resume request overrides "new session" intent
-        wantsNewSession: action.sessionId ? false : state.wantsNewSession,
-      };
-
-    case "SET_SHOW_NEW_SESSION_DIALOG":
-      return {
-        ...state,
-        showNewSessionDialog: action.show,
-      };
-
-    case "START_ADJUST":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          isAdjusting: true,
-          // Copy currentFileContent to adjustContent for editing
-          adjustContent: state.browser.currentFileContent ?? "",
-          adjustError: null,
-          isSaving: false,
-        },
-      };
-
-    case "UPDATE_ADJUST_CONTENT":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          adjustContent: action.content,
-        },
-      };
-
-    case "CANCEL_ADJUST":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          isAdjusting: false,
-          adjustContent: "",
-          adjustError: null,
-          isSaving: false,
-        },
-      };
-
-    case "START_SAVE":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          isSaving: true,
-          adjustError: null,
-        },
-      };
-
-    case "SAVE_SUCCESS":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          isAdjusting: false,
-          adjustContent: "",
-          adjustError: null,
-          isSaving: false,
-        },
-      };
-
-    case "SAVE_ERROR":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          isSaving: false,
-          // Preserve adjustContent on error (REQ-F-15)
-          adjustError: action.error,
-        },
-      };
-
-    case "SET_VIEW_MODE":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          viewMode: action.mode,
-        },
-      };
-
-    case "SET_TASKS":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          tasks: action.tasks,
-          isTasksLoading: false,
-          tasksError: null,
-        },
-      };
-
-    case "SET_TASKS_LOADING":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          isTasksLoading: action.isLoading,
-          // Clear error when starting new operation
-          tasksError: action.isLoading ? null : state.browser.tasksError,
-        },
-      };
-
-    case "SET_TASKS_ERROR":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          tasksError: action.error,
-          isTasksLoading: false,
-        },
-      };
-
-    case "UPDATE_TASK": {
-      // Find and update the task by filePath and lineNumber (optimistic update)
-      const updatedTasks = state.browser.tasks.map((task) =>
-        task.filePath === action.filePath && task.lineNumber === action.lineNumber
-          ? { ...task, state: action.newState }
-          : task
-      );
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          tasks: updatedTasks,
-        },
-      };
-    }
-
-    case "ADD_TOOL_TO_LAST_MESSAGE": {
-      // Add a new tool invocation to the last assistant message.
-      // Due to React batching, tool_start may arrive before response_start is
-      // committed to state. If no streaming assistant message exists, create one
-      // to ensure the tool has somewhere to go.
-
-      // Check for pending updates (tool_input/tool_end that arrived before tool_start)
-      const pendingUpdate = state.pendingToolUpdates.get(action.toolUseId);
-      const newTool: ToolInvocation = {
-        toolUseId: action.toolUseId,
-        toolName: action.toolName,
-        status: pendingUpdate?.status ?? "running",
-        ...(pendingUpdate?.input !== undefined && { input: pendingUpdate.input }),
-        ...(pendingUpdate?.output !== undefined && { output: pendingUpdate.output }),
-      };
-
-      // Remove from pending if it was there
-      let pendingToolUpdates = state.pendingToolUpdates;
-      if (pendingUpdate) {
-        pendingToolUpdates = new Map(state.pendingToolUpdates);
-        pendingToolUpdates.delete(action.toolUseId);
-      }
-
-      const messages = [...state.messages];
-      const lastMessage = messages[messages.length - 1];
-      const lastIsStreamingAssistant =
-        lastMessage?.role === "assistant" && lastMessage.isStreaming;
-
-      if (lastIsStreamingAssistant) {
-        // Normal case: add tool to existing streaming assistant message
-        messages[messages.length - 1] = {
-          ...lastMessage,
-          toolInvocations: [...(lastMessage.toolInvocations ?? []), newTool],
-        };
-      } else {
-        // Race condition: tool_start arrived before response_start was committed.
-        // Create a placeholder assistant message to hold the tool.
-        console.warn(
-          `[SessionContext] ADD_TOOL_TO_LAST_MESSAGE: no streaming assistant message, creating one for tool ${action.toolUseId}`
-        );
-        const placeholderMessage: ConversationMessage = {
-          id: generateMessageId(),
-          role: "assistant",
-          content: "",
-          timestamp: new Date(),
-          isStreaming: true,
-          toolInvocations: [newTool],
-        };
-        messages.push(placeholderMessage);
-      }
-
-      return { ...state, messages, pendingToolUpdates };
-    }
-
-    case "UPDATE_TOOL_INPUT": {
-      // Update the input of a tool invocation
-      // Search all messages (not just last) in case the tool is in an earlier message
-      const messages = [...state.messages];
-      const foundMessageIndex = findMessageWithTool(messages, action.toolUseId);
-
-      if (foundMessageIndex === -1) {
-        // Tool not found - queue the update for when tool_start arrives
-        console.warn(
-          `[SessionContext] UPDATE_TOOL_INPUT: tool ${action.toolUseId} not found, queueing update`
-        );
-        const pendingToolUpdates = new Map(state.pendingToolUpdates);
-        const existing = pendingToolUpdates.get(action.toolUseId) ?? {};
-        pendingToolUpdates.set(action.toolUseId, { ...existing, input: action.input });
-        return { ...state, pendingToolUpdates };
-      }
-
-      const targetMessage = messages[foundMessageIndex];
-      const updatedTools = targetMessage.toolInvocations!.map((tool) =>
-        tool.toolUseId === action.toolUseId
-          ? { ...tool, input: action.input }
-          : tool
-      );
-      messages[foundMessageIndex] = {
-        ...targetMessage,
-        toolInvocations: updatedTools,
-      };
-      return { ...state, messages };
-    }
-
-    case "COMPLETE_TOOL_INVOCATION": {
-      // Mark a tool invocation as complete with output
-      // Search all messages (not just last) in case the tool is in an earlier message
-      const messages = [...state.messages];
-      const foundMessageIndex = findMessageWithTool(messages, action.toolUseId);
-
-      if (foundMessageIndex === -1) {
-        // Tool not found - queue the completion for when tool_start arrives
-        const pendingToolUpdates = new Map(state.pendingToolUpdates);
-        const existing = pendingToolUpdates.get(action.toolUseId) ?? {};
-        pendingToolUpdates.set(action.toolUseId, {
-          ...existing,
-          output: action.output,
-          status: "complete",
-        });
-        // Set flag so next text chunk gets a line break prefix
-        return { ...state, pendingToolUpdates, needsLineBreakBeforeText: true };
-      }
-
-      const targetMessage = messages[foundMessageIndex];
-      const updatedTools = targetMessage.toolInvocations!.map((tool) =>
-        tool.toolUseId === action.toolUseId
-          ? { ...tool, output: action.output, status: "complete" as const }
-          : tool
-      );
-      messages[foundMessageIndex] = {
-        ...targetMessage,
-        toolInvocations: updatedTools,
-      };
-      // Set flag so next text chunk gets a line break prefix
-      return { ...state, messages, needsLineBreakBeforeText: true };
-    }
-
-    case "SET_SLASH_COMMANDS":
-      return {
-        ...state,
-        slashCommands: action.commands,
-      };
-
-    case "SET_LAST_MESSAGE_CONTEXT_USAGE": {
-      if (state.messages.length === 0) return state;
-      const messages = [...state.messages];
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role !== "assistant") return state;
-      messages[messages.length - 1] = {
-        ...lastMessage,
-        contextUsage: action.contextUsage,
-      };
-      return { ...state, messages };
-    }
-
-    // Search actions
-    case "SET_SEARCH_ACTIVE":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          search: {
-            ...state.browser.search,
-            isActive: action.isActive,
-            // Clear results when deactivating search
-            ...(action.isActive ? {} : {
-              query: "",
-              fileResults: [],
-              contentResults: [],
-              isLoading: false,
-              expandedPaths: new Set<string>(),
-              snippetsCache: new Map<string, ContextSnippet[]>(),
-            }),
-          },
-        },
-      };
-
-    case "SET_SEARCH_MODE":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          search: {
-            ...state.browser.search,
-            mode: action.mode,
-            // Clear results when switching modes
-            fileResults: [],
-            contentResults: [],
-            expandedPaths: new Set<string>(),
-            snippetsCache: new Map<string, ContextSnippet[]>(),
-          },
-        },
-      };
-
-    case "SET_SEARCH_QUERY":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          search: {
-            ...state.browser.search,
-            query: action.query,
-          },
-        },
-      };
-
-    case "SET_SEARCH_RESULTS":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          search: {
-            ...state.browser.search,
-            isLoading: false,
-            // Only update results for the matching mode
-            ...(action.mode === "files"
-              ? { fileResults: action.fileResults ?? [] }
-              : { contentResults: action.contentResults ?? [] }),
-          },
-        },
-      };
-
-    case "SET_SEARCH_LOADING":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          search: {
-            ...state.browser.search,
-            isLoading: action.isLoading,
-          },
-        },
-      };
-
-    case "TOGGLE_RESULT_EXPANDED": {
-      const newExpandedPaths = new Set(state.browser.search.expandedPaths);
-      if (newExpandedPaths.has(action.path)) {
-        newExpandedPaths.delete(action.path);
-      } else {
-        newExpandedPaths.add(action.path);
-      }
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          search: {
-            ...state.browser.search,
-            expandedPaths: newExpandedPaths,
-          },
-        },
-      };
-    }
-
-    case "SET_SNIPPETS": {
-      const newSnippetsCache = new Map(state.browser.search.snippetsCache);
-      newSnippetsCache.set(action.path, action.snippets);
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          search: {
-            ...state.browser.search,
-            snippetsCache: newSnippetsCache,
-          },
-        },
-      };
-    }
-
-    case "CLEAR_SEARCH":
-      return {
-        ...state,
-        browser: {
-          ...state.browser,
-          search: createInitialSearchState(),
-        },
-      };
-
-    // Widget actions
-    case "SET_GROUND_WIDGETS":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          groundWidgets: action.widgets,
-          isGroundLoading: false,
-          groundError: null,
-        },
-      };
-
-    case "SET_RECALL_WIDGETS":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          recallWidgets: action.widgets,
-          recallFilePath: action.filePath,
-          isRecallLoading: false,
-          recallError: null,
-        },
-      };
-
-    case "SET_GROUND_WIDGETS_LOADING":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          isGroundLoading: action.isLoading,
-          groundError: action.isLoading ? null : state.widgets.groundError,
-        },
-      };
-
-    case "SET_RECALL_WIDGETS_LOADING":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          isRecallLoading: action.isLoading,
-          recallError: action.isLoading ? null : state.widgets.recallError,
-        },
-      };
-
-    case "SET_GROUND_WIDGETS_ERROR":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          groundError: action.error,
-          isGroundLoading: false,
-        },
-      };
-
-    case "SET_RECALL_WIDGETS_ERROR":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          recallError: action.error,
-          isRecallLoading: false,
-        },
-      };
-
-    case "ADD_PENDING_EDIT": {
-      const key = `${action.filePath}:${action.fieldPath}`;
-      const newPendingEdits = new Map(state.widgets.pendingEdits);
-      newPendingEdits.set(key, action.value);
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          pendingEdits: newPendingEdits,
-        },
-      };
-    }
-
-    case "REMOVE_PENDING_EDIT": {
-      const key = `${action.filePath}:${action.fieldPath}`;
-      const newPendingEdits = new Map(state.widgets.pendingEdits);
-      newPendingEdits.delete(key);
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          pendingEdits: newPendingEdits,
-        },
-      };
-    }
-
-    case "CLEAR_WIDGET_STATE":
-      return {
-        ...state,
-        widgets: createInitialWidgetState(),
-      };
-
-    default:
-      return state;
-  }
-}
-
-/**
- * Initial state for session.
- */
-const initialState: SessionState = {
-  vault: null,
-  sessionId: null,
-  sessionStartTime: null,
-  mode: "home",
-  messages: [],
-  browser: createInitialBrowserState(),
-  widgets: createInitialWidgetState(),
-  recentNotes: [],
-  recentDiscussions: [],
-  goals: null,
-  discussionPrefill: null,
-  pendingSessionId: null,
-  showNewSessionDialog: false,
-  wantsNewSession: false,
-  pendingToolUpdates: new Map(),
-  needsLineBreakBeforeText: false,
-  slashCommands: [],
-};
-
-/**
- * Loads persisted vault ID from localStorage.
- */
-function loadPersistedVaultId(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY_VAULT);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Persists vault ID to localStorage.
- */
-function persistVaultId(vaultId: string | null): void {
-  try {
-    if (vaultId) {
-      localStorage.setItem(STORAGE_KEY_VAULT, vaultId);
-    } else {
-      localStorage.removeItem(STORAGE_KEY_VAULT);
-    }
-  } catch {
-    // Ignore storage errors
-  }
-}
-
-/**
- * Loads persisted browser path from localStorage.
- */
-function loadPersistedBrowserPath(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY_BROWSER_PATH);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Persists browser path to localStorage.
- */
-function persistBrowserPath(path: string): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_BROWSER_PATH, path);
-  } catch {
-    // Ignore storage errors
-  }
-}
-
-/**
- * Loads pinned folders for a specific vault from localStorage.
- */
-function loadPinnedFolders(vaultId: string): string[] {
-  try {
-    const stored = localStorage.getItem(
-      STORAGE_KEY_PINNED_FOLDERS_PREFIX + vaultId
-    );
-    if (stored) {
-      const parsed: unknown = JSON.parse(stored);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((p): p is string => typeof p === "string");
-      }
-    }
-  } catch {
-    // Ignore storage errors
-  }
-  return [];
-}
-
-/**
- * Persists pinned folders for a specific vault to localStorage.
- */
-function persistPinnedFolders(vaultId: string, paths: string[]): void {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY_PINNED_FOLDERS_PREFIX + vaultId,
-      JSON.stringify(paths)
-    );
-  } catch {
-    // Ignore storage errors
-  }
-}
 
 /**
  * Props for SessionProvider.
@@ -1430,6 +86,10 @@ export interface SessionProviderProps {
   initialSessionId?: string | null;
 }
 
+// ----------------------------------------------------------------------------
+// SessionProvider component
+// ----------------------------------------------------------------------------
+
 /**
  * Session context provider component.
  */
@@ -1441,13 +101,13 @@ export function SessionProvider({
   initialGoals,
   initialSessionId,
 }: SessionProviderProps): React.ReactNode {
-  const [state, dispatch] = useReducer(sessionReducer, {
-    ...initialState,
+  const [state, dispatch] = useReducer(sessionReducer, undefined, () => ({
+    ...createInitialSessionState(),
     recentNotes: initialRecentNotes ?? [],
     recentDiscussions: initialRecentDiscussions ?? [],
     goals: initialGoals ?? null,
     sessionId: initialSessionId ?? null,
-  });
+  }));
 
   // Persist vault ID when it changes
   useEffect(() => {
@@ -1463,10 +123,9 @@ export function SessionProvider({
 
   // Track if pinned folders have been loaded for current vault
   const pinnedFoldersLoadedRef = useRef<string | null>(null);
-  // Track if we just dispatched SET_PINNED_FOLDERS and state hasn't updated yet
   const justLoadedPinsRef = useRef(false);
 
-  // Load pinned folders when vault changes (must run before persist effect)
+  // Load pinned folders when vault changes
   useEffect(() => {
     if (state.vault && pinnedFoldersLoadedRef.current !== state.vault.id) {
       const pinnedFolders = loadPinnedFolders(state.vault.id);
@@ -1478,12 +137,9 @@ export function SessionProvider({
     }
   }, [state.vault?.id]);
 
-  // Persist pinned folders when they change (per vault)
-  // Only persist after initial load is complete for this vault
+  // Persist pinned folders when they change
   useEffect(() => {
     if (state.vault && pinnedFoldersLoadedRef.current === state.vault.id) {
-      // Skip the persist that runs before SET_PINNED_FOLDERS takes effect
-      // (state is still [] but we just loaded non-empty pins from storage)
       if (justLoadedPinsRef.current) {
         justLoadedPinsRef.current = false;
         return;
@@ -1492,11 +148,8 @@ export function SessionProvider({
     }
   }, [state.vault, state.browser.pinnedFolders]);
 
-  // Load persisted state on mount only
-  // Note: Session restoration (sessionId + messages) is handled by VaultSelect
-  // after sending resume_session to the server
+  // Load persisted state on mount
   useEffect(() => {
-    // Load persisted vault if vaults are provided
     if (initialVaults && initialVaults.length > 0) {
       const persistedVaultId = loadPersistedVaultId();
       if (persistedVaultId) {
@@ -1507,14 +160,13 @@ export function SessionProvider({
       }
     }
 
-    // Load persisted browser path
     const persistedBrowserPath = loadPersistedBrowserPath();
     if (persistedBrowserPath) {
       dispatch({ type: "SET_CURRENT_PATH", path: persistedBrowserPath });
     }
   }, [initialVaults]);
 
-  // Action creators
+  // Action creators using useCallback for stable references
   const selectVault = useCallback((vault: VaultInfo) => {
     dispatch({ type: "SELECT_VAULT", vault });
   }, []);
@@ -1572,7 +224,7 @@ export function SessionProvider({
     []
   );
 
-  // Browser action creators
+  // Browser actions
   const setCurrentPath = useCallback((path: string) => {
     dispatch({ type: "SET_CURRENT_PATH", path });
   }, []);
@@ -1617,9 +269,12 @@ export function SessionProvider({
     dispatch({ type: "UNPIN_FOLDER", path });
   }, []);
 
-  const setRecentDiscussions = useCallback((discussions: RecentDiscussionEntry[]) => {
-    dispatch({ type: "SET_RECENT_DISCUSSIONS", discussions });
-  }, []);
+  const setRecentDiscussions = useCallback(
+    (discussions: RecentDiscussionEntry[]) => {
+      dispatch({ type: "SET_RECENT_DISCUSSIONS", discussions });
+    },
+    []
+  );
 
   const removeDiscussion = useCallback((sessionId: string) => {
     dispatch({ type: "REMOVE_DISCUSSION", sessionId });
@@ -1641,7 +296,7 @@ export function SessionProvider({
     dispatch({ type: "SET_SHOW_NEW_SESSION_DIALOG", show });
   }, []);
 
-  // Adjust mode action creators
+  // Adjust mode actions
   const startAdjust = useCallback(() => {
     dispatch({ type: "START_ADJUST" });
   }, []);
@@ -1666,7 +321,7 @@ export function SessionProvider({
     dispatch({ type: "SAVE_ERROR", error });
   }, []);
 
-  // Task-related action creators
+  // Task actions
   const setViewMode = useCallback((mode: BrowseViewMode) => {
     dispatch({ type: "SET_VIEW_MODE", mode });
     persistViewMode(mode);
@@ -1684,22 +339,31 @@ export function SessionProvider({
     dispatch({ type: "SET_TASKS_ERROR", error });
   }, []);
 
-  const updateTask = useCallback((filePath: string, lineNumber: number, newState: string) => {
-    dispatch({ type: "UPDATE_TASK", filePath, lineNumber, newState });
-  }, []);
+  const updateTask = useCallback(
+    (filePath: string, lineNumber: number, newState: string) => {
+      dispatch({ type: "UPDATE_TASK", filePath, lineNumber, newState });
+    },
+    []
+  );
 
-  // Tool invocation action creators
-  const addToolToLastMessage = useCallback((toolUseId: string, toolName: string) => {
-    dispatch({ type: "ADD_TOOL_TO_LAST_MESSAGE", toolUseId, toolName });
-  }, []);
+  // Tool invocation actions
+  const addToolToLastMessage = useCallback(
+    (toolUseId: string, toolName: string) => {
+      dispatch({ type: "ADD_TOOL_TO_LAST_MESSAGE", toolUseId, toolName });
+    },
+    []
+  );
 
   const updateToolInput = useCallback((toolUseId: string, input: unknown) => {
     dispatch({ type: "UPDATE_TOOL_INPUT", toolUseId, input });
   }, []);
 
-  const completeToolInvocation = useCallback((toolUseId: string, output: unknown) => {
-    dispatch({ type: "COMPLETE_TOOL_INVOCATION", toolUseId, output });
-  }, []);
+  const completeToolInvocation = useCallback(
+    (toolUseId: string, output: unknown) => {
+      dispatch({ type: "COMPLETE_TOOL_INVOCATION", toolUseId, output });
+    },
+    []
+  );
 
   const setSlashCommands = useCallback((commands: SlashCommand[]) => {
     dispatch({ type: "SET_SLASH_COMMANDS", commands });
@@ -1709,7 +373,7 @@ export function SessionProvider({
     dispatch({ type: "SET_LAST_MESSAGE_CONTEXT_USAGE", contextUsage });
   }, []);
 
-  // Search action creators
+  // Search actions
   const setSearchActive = useCallback((isActive: boolean) => {
     dispatch({ type: "SET_SEARCH_ACTIVE", isActive });
   }, []);
@@ -1722,9 +386,16 @@ export function SessionProvider({
     dispatch({ type: "SET_SEARCH_QUERY", query });
   }, []);
 
-  const setSearchResults = useCallback((mode: SearchMode, fileResults?: FileSearchResult[], contentResults?: ContentSearchResult[]) => {
-    dispatch({ type: "SET_SEARCH_RESULTS", mode, fileResults, contentResults });
-  }, []);
+  const setSearchResults = useCallback(
+    (
+      mode: SearchMode,
+      fileResults?: FileSearchResult[],
+      contentResults?: ContentSearchResult[]
+    ) => {
+      dispatch({ type: "SET_SEARCH_RESULTS", mode, fileResults, contentResults });
+    },
+    []
+  );
 
   const setSearchLoading = useCallback((isLoading: boolean) => {
     dispatch({ type: "SET_SEARCH_LOADING", isLoading });
@@ -1734,22 +405,28 @@ export function SessionProvider({
     dispatch({ type: "TOGGLE_RESULT_EXPANDED", path });
   }, []);
 
-  const setSnippets = useCallback((path: string, snippets: ContextSnippet[]) => {
-    dispatch({ type: "SET_SNIPPETS", path, snippets });
-  }, []);
+  const setSnippets = useCallback(
+    (path: string, snippets: ContextSnippet[]) => {
+      dispatch({ type: "SET_SNIPPETS", path, snippets });
+    },
+    []
+  );
 
   const clearSearch = useCallback(() => {
     dispatch({ type: "CLEAR_SEARCH" });
   }, []);
 
-  // Widget action creators
+  // Widget actions
   const setGroundWidgets = useCallback((widgets: WidgetResult[]) => {
     dispatch({ type: "SET_GROUND_WIDGETS", widgets });
   }, []);
 
-  const setRecallWidgets = useCallback((widgets: WidgetResult[], filePath: string) => {
-    dispatch({ type: "SET_RECALL_WIDGETS", widgets, filePath });
-  }, []);
+  const setRecallWidgets = useCallback(
+    (widgets: WidgetResult[], filePath: string) => {
+      dispatch({ type: "SET_RECALL_WIDGETS", widgets, filePath });
+    },
+    []
+  );
 
   const setGroundWidgetsLoading = useCallback((isLoading: boolean) => {
     dispatch({ type: "SET_GROUND_WIDGETS_LOADING", isLoading });
@@ -1767,13 +444,19 @@ export function SessionProvider({
     dispatch({ type: "SET_RECALL_WIDGETS_ERROR", error });
   }, []);
 
-  const addPendingEdit = useCallback((filePath: string, fieldPath: string, value: unknown) => {
-    dispatch({ type: "ADD_PENDING_EDIT", filePath, fieldPath, value });
-  }, []);
+  const addPendingEdit = useCallback(
+    (filePath: string, fieldPath: string, value: unknown) => {
+      dispatch({ type: "ADD_PENDING_EDIT", filePath, fieldPath, value });
+    },
+    []
+  );
 
-  const removePendingEdit = useCallback((filePath: string, fieldPath: string) => {
-    dispatch({ type: "REMOVE_PENDING_EDIT", filePath, fieldPath });
-  }, []);
+  const removePendingEdit = useCallback(
+    (filePath: string, fieldPath: string) => {
+      dispatch({ type: "REMOVE_PENDING_EDIT", filePath, fieldPath });
+    },
+    []
+  );
 
   const clearWidgetState = useCallback(() => {
     dispatch({ type: "CLEAR_WIDGET_STATE" });
@@ -1865,9 +548,25 @@ export function useSession(): SessionContextValue {
  * Call this in a component that has access to both useWebSocket and useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
-  const { messages, setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setLastMessageContextUsage, setSearchResults, setSnippets, setSearchLoading, setGroundWidgets, setRecallWidgets, setGroundWidgetsError, setRecallWidgetsError } = useSession();
+  const {
+    messages,
+    setSessionId,
+    setSessionStartTime,
+    setMessages,
+    addMessage,
+    updateLastMessage,
+    setPendingSessionId,
+    setSlashCommands,
+    setLastMessageContextUsage,
+    setSearchResults,
+    setSnippets,
+    setSearchLoading,
+    setGroundWidgets,
+    setRecallWidgets,
+    setGroundWidgetsError,
+    setRecallWidgetsError,
+  } = useSession();
 
-  // Use ref to access current messages in callback without causing re-renders
   const messagesRef = useRef(messages);
   useEffect(() => {
     messagesRef.current = messages;
@@ -1880,27 +579,24 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           if (message.sessionId) {
             setSessionId(message.sessionId);
           }
-          // If server sent createdAt (session start time), update state
           if (message.createdAt) {
             setSessionStartTime(new Date(message.createdAt));
           }
-          // If server sent messages (resuming session), replace local state
           if (message.messages && message.messages.length > 0) {
             setMessages(message.messages);
           }
-          // Set slash commands from SDK (defaults to empty array if not present)
           setSlashCommands(message.slashCommands ?? []);
-          // Clear pending session ID (resume complete)
           setPendingSessionId(null);
           break;
 
         case "response_start": {
-          // Start a new assistant message, but only if one doesn't already exist.
-          // A streaming assistant message may already exist if tool_start arrived
-          // before response_start was committed to state (race condition handling).
           const currentMessages = messagesRef.current;
           const lastMessage = currentMessages[currentMessages.length - 1];
-          if (!lastMessage || lastMessage.role !== "assistant" || !lastMessage.isStreaming) {
+          if (
+            !lastMessage ||
+            lastMessage.role !== "assistant" ||
+            !lastMessage.isStreaming
+          ) {
             addMessage({
               role: "assistant",
               content: "",
@@ -1911,11 +607,13 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         }
 
         case "response_chunk": {
-          // Check if we have a streaming assistant message to update
-          // If not, create one first (handles race condition when clicking "New" during an active response)
           const currentMessages = messagesRef.current;
           const lastMessage = currentMessages[currentMessages.length - 1];
-          if (!lastMessage || lastMessage.role !== "assistant" || !lastMessage.isStreaming) {
+          if (
+            !lastMessage ||
+            lastMessage.role !== "assistant" ||
+            !lastMessage.isStreaming
+          ) {
             addMessage({
               role: "assistant",
               content: message.content,
@@ -1928,34 +626,36 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         }
 
         case "response_end":
-          // Mark message as complete and update context usage if provided
           updateLastMessage("", false);
           if (message.contextUsage !== undefined) {
             setLastMessageContextUsage(message.contextUsage);
           }
           break;
 
-        // Search message handlers
         case "search_results":
-          // Update search results based on mode
           if (message.mode === "files") {
-            setSearchResults("files", message.results as FileSearchResult[], undefined);
+            setSearchResults(
+              "files",
+              message.results as FileSearchResult[],
+              undefined
+            );
           } else {
-            setSearchResults("content", undefined, message.results as ContentSearchResult[]);
+            setSearchResults(
+              "content",
+              undefined,
+              message.results as ContentSearchResult[]
+            );
           }
           break;
 
         case "snippets":
-          // Update snippets cache for the specified file
           setSnippets(message.path, message.snippets);
           break;
 
         case "index_progress":
-          // Show loading indicator during indexing, clear when complete
           setSearchLoading(message.stage !== "complete");
           break;
 
-        // Widget message handlers
         case "ground_widgets":
           setGroundWidgets(message.widgets);
           break;
@@ -1965,12 +665,10 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           break;
 
         case "widget_update":
-          // Widget updates are always ground widgets (recall widgets are file-specific)
           setGroundWidgets(message.widgets);
           break;
 
         case "widget_error":
-          // Route error to ground or recall based on filePath presence
           if (message.filePath) {
             setRecallWidgetsError(message.error);
           } else {
@@ -1978,11 +676,26 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           }
           break;
 
-        // Other message types handled elsewhere
         default:
           break;
       }
     },
-    [setSessionId, setSessionStartTime, setMessages, addMessage, updateLastMessage, setPendingSessionId, setSlashCommands, setLastMessageContextUsage, setSearchResults, setSnippets, setSearchLoading, setGroundWidgets, setRecallWidgets, setGroundWidgetsError, setRecallWidgetsError]
+    [
+      setSessionId,
+      setSessionStartTime,
+      setMessages,
+      addMessage,
+      updateLastMessage,
+      setPendingSessionId,
+      setSlashCommands,
+      setLastMessageContextUsage,
+      setSearchResults,
+      setSnippets,
+      setSearchLoading,
+      setGroundWidgets,
+      setRecallWidgets,
+      setGroundWidgetsError,
+      setRecallWidgetsError,
+    ]
   );
 }

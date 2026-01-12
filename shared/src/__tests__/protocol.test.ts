@@ -47,6 +47,12 @@ import {
   TaskToggledMessageSchema,
   ToolPermissionRequestMessageSchema,
   SetupCompleteMessageSchema,
+  // Health schemas
+  HealthSeveritySchema,
+  HealthCategorySchema,
+  HealthIssueSchema,
+  HealthReportMessageSchema,
+  DismissHealthIssueMessageSchema,
   // Supporting schemas
   VaultInfoSchema,
   ErrorCodeSchema,
@@ -1776,6 +1782,332 @@ describe("Server -> Client Messages", () => {
     test("rejects non-array summary", () => {
       const msg = { type: "setup_complete", vaultId: "v1", success: true, summary: "not an array" };
       expect(() => SetupCompleteMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
+  // ===========================================================================
+  // Health Schema Tests
+  // ===========================================================================
+
+  describe("HealthSeveritySchema", () => {
+    test("accepts 'error'", () => {
+      expect(HealthSeveritySchema.parse("error")).toBe("error");
+    });
+
+    test("accepts 'warning'", () => {
+      expect(HealthSeveritySchema.parse("warning")).toBe("warning");
+    });
+
+    test("rejects invalid severity", () => {
+      expect(() => HealthSeveritySchema.parse("info")).toThrow(ZodError);
+      expect(() => HealthSeveritySchema.parse("critical")).toThrow(ZodError);
+      expect(() => HealthSeveritySchema.parse("")).toThrow(ZodError);
+    });
+  });
+
+  describe("HealthCategorySchema", () => {
+    const validCategories = [
+      "widget_config",
+      "widget_compute",
+      "vault_config",
+      "file_watcher",
+      "cache",
+      "general",
+    ] as const;
+
+    for (const category of validCategories) {
+      test(`accepts '${category}'`, () => {
+        expect(HealthCategorySchema.parse(category)).toBe(category);
+      });
+    }
+
+    test("rejects invalid category", () => {
+      expect(() => HealthCategorySchema.parse("unknown")).toThrow(ZodError);
+      expect(() => HealthCategorySchema.parse("widget")).toThrow(ZodError);
+      expect(() => HealthCategorySchema.parse("")).toThrow(ZodError);
+    });
+  });
+
+  describe("HealthIssueSchema", () => {
+    const validIssue = {
+      id: "issue-123",
+      severity: "error" as const,
+      category: "widget_config" as const,
+      message: "Failed to parse widget configuration",
+      timestamp: "2024-01-15T10:30:00Z",
+      dismissible: true,
+    };
+
+    test("accepts valid health issue", () => {
+      const result = HealthIssueSchema.parse(validIssue);
+      expect(result.id).toBe("issue-123");
+      expect(result.severity).toBe("error");
+      expect(result.category).toBe("widget_config");
+      expect(result.message).toBe("Failed to parse widget configuration");
+      expect(result.dismissible).toBe(true);
+    });
+
+    test("accepts issue with details", () => {
+      const issueWithDetails = {
+        ...validIssue,
+        details: "/path/to/config.yaml: invalid syntax at line 5",
+      };
+      const result = HealthIssueSchema.parse(issueWithDetails);
+      expect(result.details).toBe("/path/to/config.yaml: invalid syntax at line 5");
+    });
+
+    test("accepts issue without details", () => {
+      const result = HealthIssueSchema.parse(validIssue);
+      expect(result.details).toBeUndefined();
+    });
+
+    test("accepts warning severity", () => {
+      const warning = { ...validIssue, severity: "warning" as const };
+      const result = HealthIssueSchema.parse(warning);
+      expect(result.severity).toBe("warning");
+    });
+
+    test("accepts all valid categories", () => {
+      const categories = ["widget_config", "widget_compute", "vault_config", "file_watcher", "cache", "general"] as const;
+      for (const category of categories) {
+        const issue = { ...validIssue, category };
+        const result = HealthIssueSchema.parse(issue);
+        expect(result.category).toBe(category);
+      }
+    });
+
+    test("accepts dismissible false", () => {
+      const nonDismissible = { ...validIssue, dismissible: false };
+      const result = HealthIssueSchema.parse(nonDismissible);
+      expect(result.dismissible).toBe(false);
+    });
+
+    test("rejects missing id", () => {
+      const noId = {
+        severity: validIssue.severity,
+        category: validIssue.category,
+        message: validIssue.message,
+        timestamp: validIssue.timestamp,
+        dismissible: validIssue.dismissible,
+      };
+      expect(() => HealthIssueSchema.parse(noId)).toThrow(ZodError);
+    });
+
+    test("rejects empty id", () => {
+      const emptyId = { ...validIssue, id: "" };
+      expect(() => HealthIssueSchema.parse(emptyId)).toThrow(ZodError);
+    });
+
+    test("rejects missing severity", () => {
+      const noSeverity = {
+        id: validIssue.id,
+        category: validIssue.category,
+        message: validIssue.message,
+        timestamp: validIssue.timestamp,
+        dismissible: validIssue.dismissible,
+      };
+      expect(() => HealthIssueSchema.parse(noSeverity)).toThrow(ZodError);
+    });
+
+    test("rejects invalid severity", () => {
+      const invalidSeverity = { ...validIssue, severity: "critical" };
+      expect(() => HealthIssueSchema.parse(invalidSeverity)).toThrow(ZodError);
+    });
+
+    test("rejects missing category", () => {
+      const noCategory = {
+        id: validIssue.id,
+        severity: validIssue.severity,
+        message: validIssue.message,
+        timestamp: validIssue.timestamp,
+        dismissible: validIssue.dismissible,
+      };
+      expect(() => HealthIssueSchema.parse(noCategory)).toThrow(ZodError);
+    });
+
+    test("rejects invalid category", () => {
+      const invalidCategory = { ...validIssue, category: "unknown" };
+      expect(() => HealthIssueSchema.parse(invalidCategory)).toThrow(ZodError);
+    });
+
+    test("rejects missing message", () => {
+      const noMessage = {
+        id: validIssue.id,
+        severity: validIssue.severity,
+        category: validIssue.category,
+        timestamp: validIssue.timestamp,
+        dismissible: validIssue.dismissible,
+      };
+      expect(() => HealthIssueSchema.parse(noMessage)).toThrow(ZodError);
+    });
+
+    test("rejects empty message", () => {
+      const emptyMessage = { ...validIssue, message: "" };
+      expect(() => HealthIssueSchema.parse(emptyMessage)).toThrow(ZodError);
+    });
+
+    test("rejects missing timestamp", () => {
+      const noTimestamp = {
+        id: validIssue.id,
+        severity: validIssue.severity,
+        category: validIssue.category,
+        message: validIssue.message,
+        dismissible: validIssue.dismissible,
+      };
+      expect(() => HealthIssueSchema.parse(noTimestamp)).toThrow(ZodError);
+    });
+
+    test("rejects missing dismissible", () => {
+      const noDismissible = {
+        id: validIssue.id,
+        severity: validIssue.severity,
+        category: validIssue.category,
+        message: validIssue.message,
+        timestamp: validIssue.timestamp,
+      };
+      expect(() => HealthIssueSchema.parse(noDismissible)).toThrow(ZodError);
+    });
+  });
+
+  describe("HealthReportMessageSchema", () => {
+    test("accepts valid health report with issues", () => {
+      const msg = {
+        type: "health_report" as const,
+        issues: [
+          {
+            id: "issue-1",
+            severity: "error" as const,
+            category: "widget_config" as const,
+            message: "Config error",
+            timestamp: "2024-01-15T10:30:00Z",
+            dismissible: true,
+          },
+          {
+            id: "issue-2",
+            severity: "warning" as const,
+            category: "cache" as const,
+            message: "Cache warning",
+            timestamp: "2024-01-15T10:31:00Z",
+            dismissible: false,
+          },
+        ],
+      };
+      const result = HealthReportMessageSchema.parse(msg);
+      expect(result.type).toBe("health_report");
+      expect(result.issues).toHaveLength(2);
+      expect(result.issues[0].severity).toBe("error");
+      expect(result.issues[1].severity).toBe("warning");
+    });
+
+    test("accepts health report with empty issues array", () => {
+      const msg = { type: "health_report" as const, issues: [] };
+      const result = HealthReportMessageSchema.parse(msg);
+      expect(result.type).toBe("health_report");
+      expect(result.issues).toHaveLength(0);
+    });
+
+    test("rejects missing type", () => {
+      const msg = { issues: [] };
+      expect(() => HealthReportMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects wrong type", () => {
+      const msg = { type: "health_update", issues: [] };
+      expect(() => HealthReportMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing issues", () => {
+      const msg = { type: "health_report" };
+      expect(() => HealthReportMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-array issues", () => {
+      const msg = { type: "health_report", issues: "not an array" };
+      expect(() => HealthReportMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects invalid issue in array", () => {
+      const msg = {
+        type: "health_report",
+        issues: [{ id: "issue-1", severity: "invalid" }],
+      };
+      expect(() => HealthReportMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
+  describe("DismissHealthIssueMessageSchema", () => {
+    test("accepts valid dismiss message", () => {
+      const msg = { type: "dismiss_health_issue" as const, issueId: "issue-123" };
+      const result = DismissHealthIssueMessageSchema.parse(msg);
+      expect(result.type).toBe("dismiss_health_issue");
+      expect(result.issueId).toBe("issue-123");
+    });
+
+    test("rejects missing type", () => {
+      const msg = { issueId: "issue-123" };
+      expect(() => DismissHealthIssueMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects wrong type", () => {
+      const msg = { type: "dismiss_issue", issueId: "issue-123" };
+      expect(() => DismissHealthIssueMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing issueId", () => {
+      const msg = { type: "dismiss_health_issue" };
+      expect(() => DismissHealthIssueMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects empty issueId", () => {
+      const msg = { type: "dismiss_health_issue", issueId: "" };
+      expect(() => DismissHealthIssueMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
+  describe("Health messages in discriminated unions", () => {
+    test("ServerMessageSchema parses health_report", () => {
+      const msg = {
+        type: "health_report" as const,
+        issues: [
+          {
+            id: "issue-1",
+            severity: "error" as const,
+            category: "general" as const,
+            message: "Test error",
+            timestamp: "2024-01-15T10:30:00Z",
+            dismissible: true,
+          },
+        ],
+      };
+      const result = ServerMessageSchema.parse(msg);
+      expect(result.type).toBe("health_report");
+    });
+
+    test("ClientMessageSchema parses dismiss_health_issue", () => {
+      const msg = { type: "dismiss_health_issue" as const, issueId: "issue-123" };
+      const result = ClientMessageSchema.parse(msg);
+      expect(result.type).toBe("dismiss_health_issue");
+    });
+
+    test("safeParseServerMessage handles health_report", () => {
+      const msg = {
+        type: "health_report",
+        issues: [],
+      };
+      const result = safeParseServerMessage(msg);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.type).toBe("health_report");
+      }
+    });
+
+    test("safeParseClientMessage handles dismiss_health_issue", () => {
+      const msg = { type: "dismiss_health_issue", issueId: "test-id" };
+      const result = safeParseClientMessage(msg);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.type).toBe("dismiss_health_issue");
+      }
     });
   });
 

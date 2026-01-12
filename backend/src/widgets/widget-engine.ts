@@ -504,7 +504,8 @@ export class WidgetEngine {
 
         if (phase.scope === "collection") {
           // Aggregator field: operates across all items, produces single value
-          result[fieldName] = this.computeAggregatorField(fieldConfig, files);
+          // Pass field configs and current results to enable result.X references
+          result[fieldName] = this.computeAggregatorField(fieldConfig, files, fieldConfigs, result);
         } else {
           // Expression field: evaluated once with collection context
           // For ground widgets, `this` is empty (no current item)
@@ -585,7 +586,8 @@ export class WidgetEngine {
 
         if (phase.scope === "collection") {
           // Aggregator field: operates across all items, produces single value
-          result[fieldName] = this.computeAggregatorField(fieldConfig, files);
+          // Pass field configs and current results to enable result.X references
+          result[fieldName] = this.computeAggregatorField(fieldConfig, files, fieldConfigs, result);
         } else {
           // Expression field: evaluated with item context (TD-7)
           // `this` contains the current file's frontmatter for per-item access
@@ -629,10 +631,26 @@ export class WidgetEngine {
    *
    * Handles count, sum, avg, min, max, stddev aggregators.
    * Returns null if no valid values found.
+   *
+   * Field paths support three contexts:
+   * - `this.X` or plain `X`: Extract from frontmatter (e.g., `avg: this.rating` or `avg: rating`)
+   * - `result.X`: Extract from previously computed per-item field values (e.g., `avg: result.adjusted_score`)
+   *
+   * When using `result.X`, the aggregator will:
+   * 1. Look up the field config for X
+   * 2. If X is an expression, evaluate it for each file to get per-item values
+   * 3. Aggregate those per-item values
+   *
+   * @param fieldConfig - The field configuration for this aggregator
+   * @param files - Array of file data to aggregate over
+   * @param allFieldConfigs - All field configs (needed to resolve result.X references)
+   * @param currentResults - Current result accumulator (for expression context)
    */
   private computeAggregatorField(
     fieldConfig: FieldConfig,
-    files: FileData[]
+    files: FileData[],
+    allFieldConfigs?: Record<string, FieldConfig>,
+    currentResults?: Record<string, unknown>
   ): number | null {
     // Count is special - just return file count
     if (fieldConfig.count) {
@@ -640,22 +658,33 @@ export class WidgetEngine {
     }
 
     // Determine which frontmatter field path to aggregate
-    const fieldPath =
+    const rawFieldPath =
       fieldConfig.sum ??
       fieldConfig.avg ??
       fieldConfig.min ??
       fieldConfig.max ??
       fieldConfig.stddev;
 
-    if (!fieldPath) {
+    if (!rawFieldPath) {
       return null;
     }
 
-    // Extract numeric values from all files
-    const numericValues = files.map((f) => {
-      const value = this.getFieldValue(f.frontmatter, fieldPath);
-      return typeof value === "number" ? value : null;
-    });
+    // Parse the field path to determine source context
+    const { source, path } = this.parseFieldPath(rawFieldPath);
+
+    // Extract numeric values from all files based on source context
+    let numericValues: (number | null)[];
+
+    if (source === "result") {
+      // result.X - extract from per-item computed values
+      numericValues = this.extractResultValues(path, files, allFieldConfigs, currentResults);
+    } else {
+      // this.X or plain X - extract from frontmatter
+      numericValues = files.map((f) => {
+        const value = this.getFieldValue(f.frontmatter, path);
+        return typeof value === "number" ? value : null;
+      });
+    }
 
     // Apply the requested aggregation
     if (fieldConfig.sum) {
@@ -675,6 +704,205 @@ export class WidgetEngine {
     }
 
     return null;
+  }
+
+  /**
+   * Parse a field path to determine its source context.
+   *
+   * Supported formats:
+   * - `this.field.path` -> { source: "this", path: "field.path" }
+   * - `result.fieldName` -> { source: "result", path: "fieldName" }
+   * - `plain.path` -> { source: "this", path: "plain.path" } (backward compatible)
+   *
+   * @param fieldPath - The raw field path from config
+   * @returns Object with source context and resolved path
+   */
+  private parseFieldPath(fieldPath: string): { source: "this" | "result"; path: string } {
+    if (fieldPath.startsWith("this.")) {
+      return { source: "this", path: fieldPath.slice(5) };
+    }
+    if (fieldPath.startsWith("result.")) {
+      return { source: "result", path: fieldPath.slice(7) };
+    }
+    // Backward compatible: plain paths are treated as this.X
+    return { source: "this", path: fieldPath };
+  }
+
+  /**
+   * Extract numeric values from per-item computed results.
+   *
+   * When an aggregator references `result.X`, we need to:
+   * 1. Find the field config for X
+   * 2. If X is an expression, evaluate it for each file to get per-item values
+   * 3. If X is a collection-scope aggregator, return that single value for all files
+   *
+   * For chained expressions (X depends on Y), this method recursively computes
+   * all necessary per-item values before evaluating the target expression.
+   *
+   * @param fieldName - The field name to extract (without result. prefix)
+   * @param files - Array of file data
+   * @param allFieldConfigs - All field configurations
+   * @param currentResults - Current result accumulator
+   * @returns Array of numeric values, one per file
+   */
+  private extractResultValues(
+    fieldName: string,
+    files: FileData[],
+    allFieldConfigs?: Record<string, FieldConfig>,
+    currentResults?: Record<string, unknown>
+  ): (number | null)[] {
+    // Check if this field has a config with an expression (item-scope)
+    const targetFieldConfig = allFieldConfigs?.[fieldName];
+
+    if (targetFieldConfig?.expr) {
+      // Item-scope expression: evaluate for each file to get per-item values
+      // This is the core use case for result.X in aggregators
+      return files.map((file) => {
+        // Build per-item result context by computing any expression dependencies
+        const perItemResult = this.buildPerItemResultContext(
+          file,
+          fieldName,
+          allFieldConfigs ?? {},
+          currentResults ?? {}
+        );
+
+        try {
+          const context = {
+            this: file.frontmatter,
+            stats: currentResults ?? {},
+            result: perItemResult,
+          };
+          const value = evaluateExpression(targetFieldConfig.expr!, context);
+          return typeof value === "number" ? value : null;
+        } catch {
+          return null;
+        }
+      });
+    }
+
+    // If field is already computed (collection-scope aggregator), use that value
+    // This handles the unusual case of aggregating over another aggregator's result
+    if (currentResults && fieldName in currentResults) {
+      const existingValue = currentResults[fieldName];
+      if (typeof existingValue === "number") {
+        // Collection-scope value - repeat for aggregation (though this is unusual)
+        return files.map(() => existingValue);
+      }
+      // Non-numeric result, return nulls
+      return files.map(() => null);
+    }
+
+    // No config found and not in results - return nulls
+    return files.map(() => null);
+  }
+
+  /**
+   * Build per-item result context for expression evaluation.
+   *
+   * When evaluating an expression that depends on other expressions via result.*,
+   * we need to compute those dependencies first. This method recursively computes
+   * all expression dependencies for a single file.
+   *
+   * @param file - The file to compute values for
+   * @param targetField - The field we're ultimately trying to compute
+   * @param allFieldConfigs - All field configurations
+   * @param currentResults - Current collection-level results
+   * @returns Result context with per-item computed values
+   */
+  private buildPerItemResultContext(
+    file: FileData,
+    targetField: string,
+    allFieldConfigs: Record<string, FieldConfig>,
+    currentResults: Record<string, unknown>
+  ): Record<string, unknown> {
+    // Start with collection-level results (aggregators only, not expressions)
+    // We need to exclude expression results because those are computed with empty `this`
+    // in ground widgets and need to be recomputed per-file
+    const perItemResult: Record<string, unknown> = {};
+
+    // Copy only collection-scope (aggregator) values from currentResults
+    for (const [fieldName, value] of Object.entries(currentResults)) {
+      const fieldConfig = allFieldConfigs[fieldName];
+      // A field is collection-scope if it has an aggregator (count, sum, avg, etc.)
+      const isAggregator =
+        fieldConfig?.count ||
+        fieldConfig?.sum ||
+        fieldConfig?.avg ||
+        fieldConfig?.min ||
+        fieldConfig?.max ||
+        fieldConfig?.stddev;
+
+      if (isAggregator) {
+        perItemResult[fieldName] = value;
+      }
+      // Skip expression fields - they need per-item computation
+    }
+
+    // Find all expression fields that the target might depend on
+    // by extracting result.* references from the target expression
+    const targetConfig = allFieldConfigs[targetField];
+    if (!targetConfig?.expr) {
+      return perItemResult;
+    }
+
+    // Extract result.* references from the expression
+    const resultRefs = this.extractResultReferences(targetConfig.expr);
+
+    // Recursively compute each referenced expression field
+    const computed = new Set<string>();
+    const toCompute = [...resultRefs];
+
+    while (toCompute.length > 0) {
+      const fieldName = toCompute.shift()!;
+
+      // Skip if already computed or if it's a collection-scope value (aggregator)
+      if (computed.has(fieldName) || fieldName in perItemResult) {
+        continue;
+      }
+
+      const fieldConfig = allFieldConfigs[fieldName];
+      if (fieldConfig?.expr) {
+        // Check for more dependencies
+        const moreDeps = this.extractResultReferences(fieldConfig.expr);
+        for (const dep of moreDeps) {
+          if (!computed.has(dep) && !(dep in perItemResult)) {
+            toCompute.unshift(dep); // Add to front for depth-first
+          }
+        }
+
+        // Compute this expression for the file
+        try {
+          const context = {
+            this: file.frontmatter,
+            stats: currentResults,
+            result: perItemResult,
+          };
+          perItemResult[fieldName] = evaluateExpression(fieldConfig.expr, context);
+        } catch {
+          perItemResult[fieldName] = null;
+        }
+
+        computed.add(fieldName);
+      }
+    }
+
+    return perItemResult;
+  }
+
+  /**
+   * Extract result.* field references from an expression string.
+   *
+   * @param expression - The expression to analyze
+   * @returns Array of field names referenced via result.*
+   */
+  private extractResultReferences(expression: string): string[] {
+    const pattern = /result\.(\w+)/g;
+    const refs: string[] = [];
+    let match;
+    while ((match = pattern.exec(expression)) !== null) {
+      refs.push(match[1]);
+    }
+    return [...new Set(refs)];
   }
 
   /**

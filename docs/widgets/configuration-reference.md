@@ -105,15 +105,55 @@ fields:
 | `max` | `max: fieldPath` | Maximum value |
 | `stddev` | `stddev: fieldPath` | Standard deviation (requires 2+ values) |
 
-### Field Paths
+### Field Paths and Context Prefixes
 
-Access nested frontmatter using dot notation:
+Aggregators support context prefixes to specify where values come from:
+
+| Prefix | Description | Example |
+|--------|-------------|---------|
+| `this.` | Frontmatter value (explicit) | `sum: this.pages` |
+| `result.` | Previously computed expression | `avg: result.adjusted_score` |
+| *(none)* | Frontmatter value (implicit) | `sum: pages` |
+
+**Frontmatter references** (`this.*` or plain path):
 
 ```yaml
 # Frontmatter: { bgg: { rating: 7.5 } }
 fields:
   board_game_rating:
-    avg: bgg.rating
+    avg: bgg.rating           # Implicit: same as this.bgg.rating
+  explicit_rating:
+    avg: this.bgg.rating      # Explicit: clearer intent
+```
+
+**Expression result references** (`result.*`):
+
+Aggregate over values computed by expression fields:
+
+```yaml
+fields:
+  # Expression field - computed per item
+  adjusted_score:
+    expr: "this.rating * this.weight"
+
+  # Aggregator referencing the expression result
+  avg_adjusted:
+    avg: result.adjusted_score    # Averages the per-item adjusted_score values
+```
+
+This enables powerful patterns where you transform values before aggregating:
+
+```yaml
+fields:
+  # Normalize each item's rating to 0-100 scale
+  normalized:
+    expr: "this.rating * 10"
+
+  # Then aggregate the normalized values
+  avg_normalized:
+    avg: result.normalized
+  max_normalized:
+    max: result.normalized
 ```
 
 ### Expression-Based Fields

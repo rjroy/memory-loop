@@ -32,18 +32,48 @@ expr: "this.bgg.rating + this.bgg.weight"  # Returns 10.3
 
 ### `stats` - Collection Statistics
 
-Access Phase 1 aggregate results in Phase 2 expressions:
+Access aggregator results in expressions:
 
 ```yaml
 fields:
-  # Phase 1: computed first
+  # Aggregator: computed across collection
   mean_rating:
     avg: rating
 
-  # Phase 2: can reference Phase 1 results
+  # Expression: can reference aggregator results via stats
   deviation_from_mean:
     expr: "this.rating - stats.mean_rating"
 ```
+
+### `result` - Computed Field Results
+
+Access other computed field values. For expressions, this allows chaining computations:
+
+```yaml
+fields:
+  # First expression
+  base_score:
+    expr: "this.rating * 10"
+
+  # Second expression referencing the first
+  adjusted_score:
+    expr: "result.base_score + this.bonus"
+```
+
+**In aggregators**, `result.*` enables aggregating over transformed values:
+
+```yaml
+fields:
+  # Transform each item
+  weighted_rating:
+    expr: "this.rating * this.weight"
+
+  # Aggregate the transformed values
+  avg_weighted:
+    avg: result.weighted_rating
+```
+
+See [Configuration Reference](./configuration-reference.md#field-paths-and-context-prefixes) for more aggregator examples.
 
 ## Operators
 
@@ -190,9 +220,17 @@ Linear interpolation:
 expr: "lerp(0, 100, this.progress)"  # t=0.5 returns 50
 ```
 
-## Two-Phase Computation
+## DAG-Based Computation
 
-Widget computation happens in two phases. Understanding this is key to using `stats.*` correctly.
+Widget fields are computed using a Directed Acyclic Graph (DAG) that automatically determines the correct order based on dependencies. This means you can reference other fields freely without worrying about declaration order.
+
+### How Dependencies Work
+
+The engine analyzes each field to find references to other fields:
+- `stats.X` references → depends on aggregator field X
+- `result.X` references → depends on computed field X
+
+Fields are then computed in topological order, ensuring dependencies are resolved first.
 
 ### What is `stats`?
 
@@ -210,39 +248,57 @@ fields:
     expr: "safeDivide(this.rating, stats.max_rating)"
 ```
 
-### Phase 1: Aggregators
+### Aggregators
 
-First, all aggregator fields are computed across the collection:
+Aggregators compute a single value across all matching files:
 
 ```yaml
 fields:
-  # These run in Phase 1
-  total_pages:        # You name it
-    sum: pages        # "sum the 'pages' frontmatter field"
-  avg_rating:         # You name it
-    avg: rating       # "average the 'rating' frontmatter field"
-  book_count:         # You name it
-    count: true       # "count matching files"
+  total_pages:
+    sum: pages        # Sum frontmatter 'pages' field
+  avg_rating:
+    avg: rating       # Average frontmatter 'rating' field
+  book_count:
+    count: true       # Count matching files
 ```
 
-After Phase 1, `stats` contains:
+After computation, `stats` contains:
 - `stats.total_pages` (because you defined `total_pages`)
 - `stats.avg_rating` (because you defined `avg_rating`)
 - `stats.book_count` (because you defined `book_count`)
 
-### Phase 2: Expressions
+### Aggregators with `result.*`
 
-Then, expression fields run and can reference Phase 1 results:
+Aggregators can reference expression results using `result.*`:
 
 ```yaml
 fields:
-  # Phase 1 - define the aggregations you need
+  # Expression: computed per item
+  adjusted_rating:
+    expr: "this.rating * this.confidence"
+
+  # Aggregator: aggregates the per-item expression values
+  avg_adjusted:
+    avg: result.adjusted_rating
+```
+
+When an aggregator references `result.X`, the engine:
+1. Computes expression X for each file individually
+2. Aggregates those per-item values
+
+This enables powerful transform-then-aggregate patterns.
+
+### Expressions
+
+Expressions compute values that can reference frontmatter (`this.*`), aggregator results (`stats.*`), and other computed fields (`result.*`):
+
+```yaml
+fields:
   max_rating:
     max: rating
   collection_avg:
     avg: rating
 
-  # Phase 2 - reference them via stats.*
   normalized_rating:
     expr: "safeDivide(this.rating, stats.max_rating)"
   above_average:

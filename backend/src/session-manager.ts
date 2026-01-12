@@ -23,6 +23,8 @@ import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 import { sessionLog as log } from "./logger";
 import { createVaultTransferServer } from "./vault-transfer";
 
+/** Model to use for strategic discussions (reasoning) */
+export const DISCUSSION_MODEL = "opus";
 /**
  * Default SDK options for Discussion mode.
  *
@@ -48,6 +50,7 @@ export const DISCUSSION_MODE_OPTIONS: Partial<Options> = {
     "WebSearch",
     "TodoRead",
   ],
+  model: DISCUSSION_MODEL,
   // Auto-accept file edits - the user is working in their own vault
   permissionMode: "acceptEdits",
   // Prevent runaway conversations (100 turns = ~200 messages)

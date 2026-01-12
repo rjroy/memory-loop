@@ -474,6 +474,9 @@ Steps:
 6. Keep the update concise and focused on operational information`;
 }
 
+/** Model to use for setup (balanced) */
+export const SETUP_MODEL = "sonnet";
+
 /**
  * Updates CLAUDE.md with Memory Loop context using the Claude Agent SDK.
  * The LLM uses Read and Edit tools to make targeted changes.
@@ -508,6 +511,7 @@ export async function updateClaudeMd(
       prompt,
       options: {
         cwd: vaultPath,
+        model: SETUP_MODEL,
         maxTurns: 10,
         allowedTools: ["Read", "Edit"],
         permissionMode: "acceptEdits",

@@ -1131,6 +1131,9 @@ export class WidgetEngine {
         this.pendingRecomputations.add("ground");
         // Background recompute (fire and forget, explicitly ignored)
         void this.computeGroundWidgets({ force: true })
+          .catch((err) => {
+            log.error("Background ground widget recomputation failed", err);
+          })
           .finally(() => this.pendingRecomputations.delete("ground"));
       }
 

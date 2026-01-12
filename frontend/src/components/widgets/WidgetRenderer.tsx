@@ -86,7 +86,7 @@ export function WidgetRenderer({
       <div className="widget__content">{content}</div>
       {hasEditableFields && (
         <div className="widget__editable">
-          {widget.editable!.map((field) => {
+          {widget.editable?.map((field) => {
             const editKey = `${filePath}:${field.field}`;
             const isPending = pendingEdits?.has(editKey) ?? false;
             return (

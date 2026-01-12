@@ -273,7 +273,6 @@ function TextInput({
       className="editable-field__text"
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value)}
-      onBlur={(e) => onChange(e.target.value)}
       disabled={disabled}
     />
   );

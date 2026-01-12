@@ -306,7 +306,8 @@ export function cosineSimilarity(a: unknown, b: unknown): number {
     return 0;
   }
 
-  // Ensure vectors have the same length by padding with zeros
+  // Ensure vectors have the same length by padding with zeros.
+  // Safe to mutate vecA/vecB because toNumberArray always returns fresh arrays.
   const maxLen = Math.max(vecA.length, vecB.length);
   while (vecA.length < maxLen) vecA.push(0);
   while (vecB.length < maxLen) vecB.push(0);

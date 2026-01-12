@@ -428,8 +428,10 @@ export class FileWatcher {
     this.contentHashes.set(absolutePath, newHash);
 
     if (eventType === "add" && oldHash === undefined) {
-      // New file, only report after initial scan (isRunning is true)
-      // During initial scan, we just populate hashes without reporting
+      // New file: only report after initial scan completes (when isRunning is true).
+      // During the initial chokidar "ready" scan, isRunning is still false, so files
+      // discovered then populate contentHashes but don't trigger onFilesChanged callbacks.
+      // This prevents a flood of "new file" events for existing vault content at startup.
       return this.isRunning;
     }
 

@@ -12,13 +12,13 @@ authored_by:
 
 # DAG-Based Dependency Resolution - Implementation Progress
 
-**Last Updated**: 2026-01-12 | **Status**: 0% complete (0 of 8 tasks)
+**Last Updated**: 2026-01-12 | **Status**: 12.5% complete (1 of 8 tasks)
 
 ## Current Session
-**Date**: 2026-01-12 | **Working On**: TASK-001: Create dependency-graph.ts with types and graph building | **Blockers**: None | **Loop Iteration**: 1
+**Date**: 2026-01-12 | **Working On**: TASK-002: Implement topological sort with Kahn's algorithm | **Blockers**: None | **Loop Iteration**: 1
 
 ## Completed Today
-(none yet)
+- TASK-001: Create dependency-graph.ts with types and graph building ✅ (commit: fa59d69, 2 iterations)
 
 ## Discovered Issues
 (none yet)
@@ -30,19 +30,19 @@ authored_by:
 ### Phase 1 - Foundation (can parallelize)
 
 **In Progress**
-- [ ] TASK-001: Create dependency-graph.ts with types and graph building - *In Progress* ✨
+- [x] TASK-001: Create dependency-graph.ts with types and graph building - *Completed 2026-01-12* ✅
 - [ ] TASK-004: Extend ExpressionContext to include result - *Pending*
 
 ### Phase 2 - Core Algorithm
 
-**Pending**
-- [ ] TASK-002: Implement topological sort with Kahn's algorithm - *Pending*
+**In Progress**
+- [ ] TASK-002: Implement topological sort with Kahn's algorithm - *In Progress* ✨
 - [ ] TASK-003: Implement cycle detection and error messages - *Pending*
 
 ### Phase 3 - Testing Foundation
 
 **Pending**
-- [ ] TASK-005: Unit tests for dependency-graph.ts - *Pending*
+- [ ] TASK-005: Unit tests for dependency-graph.ts - *Partially complete (12 tests added during TASK-001)*
 
 ### Phase 4 - Integration (critical path)
 
@@ -59,13 +59,23 @@ authored_by:
 
 ## Deviations from Plan
 
-(none yet)
+### Discovery: Expression dependency extraction approach changed
+**Task**: TASK-001
+**Context**: Original plan called for using `getExpressionVariables()` to extract result.* dependencies from expressions
+**Reason**: `getExpressionVariables()` returns only top-level variable names (e.g., "result"), not full property paths (e.g., "result.x")
+**Decision**: Used regex pattern matching (`/result\.(\w+)/g`) instead, while still calling `getExpressionVariables()` for security validation
+**Date**: 2026-01-12
 
 ---
 
 ## Technical Discoveries
 
-(none yet)
+### Discovery: expr-eval parser returns variable names without property paths
+**Task**: TASK-001
+**Context**: Expected `getExpressionVariables("result.x * 2")` to return `["result.x"]`, but it returns `["result"]`
+**Reason**: The expr-eval library's `variables()` method returns only top-level identifiers, not dot-notation property accesses
+**Decision**: Implemented regex-based extraction for `result.*` patterns as a workaround
+**Date**: 2026-01-12
 
 ---
 
@@ -73,12 +83,13 @@ authored_by:
 
 | Component | Status |
 |-----------|--------|
-| dependency-graph.ts | Pending (TASK-005) |
+| dependency-graph.ts | ✅ Partial (12 tests, buildDependencyGraph coverage) |
 | expression-eval.ts (result access) | Pending (TASK-004) |
 | widget-engine.ts (DAG ordering) | Pending (TASK-007, TASK-008) |
 
 ---
 
 ## Notes for Next Session
-- Starting implementation with TASK-001 and TASK-004 (parallelizable)
-- Critical path: TASK-001 → TASK-002 → TASK-003 → TASK-006
+- TASK-001 complete, moving to TASK-002 (topological sort)
+- TASK-004 can be done in parallel with TASK-002/TASK-003
+- Critical path: TASK-002 → TASK-003 → TASK-006

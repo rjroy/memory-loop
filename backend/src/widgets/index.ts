@@ -168,6 +168,8 @@ export {
 
 export {
   buildDependencyGraph,
+  topologicalSort,
   type DependencyGraph,
   type FieldScope,
+  type SortResult,
 } from "./dependency-graph";

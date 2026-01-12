@@ -49,6 +49,19 @@ export interface DependencyGraph {
   scope: Map<string, FieldScope>;
 }
 
+/**
+ * Result of topological sort (TD-2 Data Model).
+ *
+ * Contains the sorted execution order and any detected cycles.
+ */
+export interface SortResult {
+  /** Fields in valid execution order (dependencies before dependents) */
+  sorted: string[];
+
+  /** Arrays of cycle paths (each cycle as an array of field names); empty if no cycles */
+  cycles: string[][];
+}
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -234,4 +247,108 @@ export function buildDependencyGraph(fields: Record<string, FieldConfig>): Depen
   }
 
   return { nodes, edges, scope };
+}
+
+// =============================================================================
+// Topological Sort
+// =============================================================================
+
+/**
+ * Perform topological sort using Kahn's algorithm (TD-4).
+ *
+ * Kahn's algorithm uses a BFS approach:
+ * 1. Calculate in-degree (number of incoming edges) for each node
+ * 2. Add all nodes with in-degree 0 to a queue
+ * 3. While queue not empty:
+ *    - Remove node from queue, add to sorted output
+ *    - For each dependent of this node, decrease its in-degree
+ *    - If dependent's in-degree becomes 0, add to queue
+ * 4. If sorted output has fewer nodes than graph, remaining nodes are in cycles
+ *
+ * Time complexity: O(V+E) where V = nodes, E = edges
+ *
+ * @param graph - The dependency graph to sort
+ * @returns SortResult with sorted fields and cycle information
+ *
+ * Spec Requirements:
+ * - REQ-F-2: Determine computation order that respects dependencies
+ * - REQ-F-9: Detect dependency cycles before computation begins
+ *
+ * Plan Reference: TD-4 (Kahn's algorithm)
+ */
+export function topologicalSort(graph: DependencyGraph): SortResult {
+  const { nodes, edges } = graph;
+
+  // Build reverse adjacency list: field -> fields that depend on it (dependents)
+  // This is needed because `edges` maps field -> dependencies, but Kahn's algorithm
+  // needs to know which fields to update when a dependency is satisfied.
+  const dependents = new Map<string, Set<string>>();
+  for (const node of nodes) {
+    dependents.set(node, new Set());
+  }
+  for (const [field, deps] of edges) {
+    for (const dep of deps) {
+      // If dep exists in the graph, add field as a dependent of dep
+      if (dependents.has(dep)) {
+        dependents.get(dep)!.add(field);
+      }
+    }
+  }
+
+  // Calculate in-degree for each node (number of dependencies)
+  const inDegree = new Map<string, number>();
+  for (const node of nodes) {
+    const deps = edges.get(node) ?? new Set();
+    inDegree.set(node, deps.size);
+  }
+
+  // Initialize queue with nodes that have no dependencies (in-degree = 0)
+  // Use an array as a queue, maintaining insertion order for stability
+  const queue: string[] = [];
+  for (const node of nodes) {
+    if (inDegree.get(node) === 0) {
+      queue.push(node);
+    }
+  }
+
+  // Process queue: extract nodes in dependency order
+  const sorted: string[] = [];
+
+  while (queue.length > 0) {
+    // Remove first node from queue (FIFO for stability)
+    const node = queue.shift()!;
+    sorted.push(node);
+
+    // For each field that depends on this node, decrease its in-degree
+    const nodeDependents = dependents.get(node) ?? new Set();
+    for (const dependent of nodeDependents) {
+      const currentInDegree = inDegree.get(dependent)!;
+      const newInDegree = currentInDegree - 1;
+      inDegree.set(dependent, newInDegree);
+
+      // If dependent now has all dependencies satisfied, add to queue
+      if (newInDegree === 0) {
+        queue.push(dependent);
+      }
+    }
+  }
+
+  // Identify cycle participants: nodes not in sorted output
+  // Per Kahn's algorithm, remaining nodes with non-zero in-degree form cycles
+  const cycleParticipants: string[] = [];
+  for (const node of nodes) {
+    if (!sorted.includes(node)) {
+      cycleParticipants.push(node);
+    }
+  }
+
+  // Build cycle arrays from participants
+  // For now, group all cycle participants into a single cycle representation
+  // TASK-003 will enhance this with proper cycle path tracing
+  const cycles: string[][] = [];
+  if (cycleParticipants.length > 0) {
+    cycles.push(cycleParticipants);
+  }
+
+  return { sorted, cycles };
 }

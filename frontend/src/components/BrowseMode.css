@@ -309,16 +309,74 @@
   }
 }
 
-/* Recall Widgets Section */
+/* Recall Widgets Section - Collapsible Panel */
 .browse-mode__recall-widgets {
   flex-shrink: 0;
-  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  max-height: 40vh;
   border-top: 1px solid var(--glass-border);
   background: var(--glass-bg-secondary);
 }
 
-.browse-mode__recall-widgets:empty {
-  display: none;
+.browse-mode__recall-widgets--collapsed {
+  max-height: none;
+}
+
+.browse-mode__recall-widgets-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--glass-bg-tertiary);
+  border: none;
+  border-bottom: 1px solid var(--glass-border);
+  cursor: pointer;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: background-color 0.2s ease;
+}
+
+.browse-mode__recall-widgets-header:hover {
+  background: var(--color-accent-primary-a10);
+}
+
+.browse-mode__recall-widgets-header:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.browse-mode__recall-widgets-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.browse-mode__recall-widgets-count {
+  font-weight: var(--font-normal);
+  color: var(--color-text-secondary);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.browse-mode__recall-widgets-chevron {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.browse-mode__recall-widgets-chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
+.browse-mode__recall-widgets-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--spacing-md);
 }
 
 .browse-mode__recall-widgets-loading {
@@ -395,7 +453,15 @@
   }
 
   .browse-mode__recall-widgets {
+    max-height: 50vh;
+  }
+
+  .browse-mode__recall-widgets-content {
     padding: var(--spacing-sm);
+  }
+
+  .browse-mode__recall-widgets-header {
+    padding: var(--spacing-xs) var(--spacing-sm);
   }
 
   .browse-mode__widget-skeleton {

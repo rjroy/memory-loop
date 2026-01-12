@@ -578,9 +578,25 @@ export class WebSocketHandler {
         const { engine, loaderResult } = await createWidgetEngine(vault.contentRoot, vault.id);
         this.state.widgetEngine = engine;
 
-        // Log any widget configuration errors (but don't block vault selection)
+        // Send widget configuration errors to frontend for debugging
         if (loaderResult.errors.length > 0) {
           log.warn(`Widget config errors for vault ${vault.id}:`, loaderResult.errors);
+          // Send each error to frontend so user can see what's wrong
+          for (const err of loaderResult.errors) {
+            this.send(ws, {
+              type: "widget_error",
+              widgetId: err.id || undefined,
+              error: `Config error in ${err.filePath}: ${err.error}`,
+              filePath: err.filePath,
+            });
+          }
+        }
+
+        // Log debug info about successfully loaded widgets
+        if (loaderResult.widgets.length > 0) {
+          log.info(`Loaded widgets: ${loaderResult.widgets.map(w => `${w.id} (${w.config.location}, pattern: ${w.config.source.pattern})`).join(", ")}`);
+        } else if (loaderResult.hasWidgetsDir) {
+          log.info("Widgets directory exists but no valid widgets were loaded");
         }
 
         // Initialize file watcher if we have widgets with source patterns
@@ -2073,8 +2089,24 @@ export class WebSocketHandler {
     }
 
     try {
+      // Log the loaded widgets for debugging
+      const loadedWidgets = this.state.widgetEngine.getWidgets();
+      log.info(`Widget engine has ${loadedWidgets.length} widget(s) loaded`);
+      for (const w of loadedWidgets) {
+        log.info(`  - ${w.id}: location=${w.config.location}, type=${w.config.type}, pattern=${w.config.source.pattern}`);
+      }
+
       const widgets = await this.state.widgetEngine.computeGroundWidgets();
       log.info(`Computed ${widgets.length} ground widget(s)`);
+
+      // Log details about each computed widget for debugging
+      for (const w of widgets) {
+        if (w.isEmpty) {
+          log.info(`  - ${w.widgetId}: EMPTY (${w.emptyReason})`);
+        } else {
+          log.info(`  - ${w.widgetId}: data=${JSON.stringify(w.data).slice(0, 100)}...`);
+        }
+      }
 
       this.send(ws, {
         type: "ground_widgets",

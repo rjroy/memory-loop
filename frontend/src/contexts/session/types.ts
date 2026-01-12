@@ -18,6 +18,7 @@ import type {
   WidgetResult,
   VaultInfo,
   ConversationMessageProtocol,
+  HealthIssue,
 } from "@memory-loop/shared";
 
 /**
@@ -77,6 +78,16 @@ export interface WidgetState {
   recallError: string | null;
   /** Pending edits map: filePath:fieldPath -> value (for optimistic updates) */
   pendingEdits: Map<string, unknown>;
+}
+
+/**
+ * Health state for backend health reporting.
+ */
+export interface HealthState {
+  /** Current health issues from backend */
+  issues: HealthIssue[];
+  /** Whether the health panel is expanded */
+  isExpanded: boolean;
 }
 
 /**
@@ -166,6 +177,8 @@ export interface SessionState {
   browser: BrowserState;
   /** Widget state for vault widgets */
   widgets: WidgetState;
+  /** Health state for backend health reporting */
+  health: HealthState;
   /** Recent captured notes for note mode */
   recentNotes: RecentNoteEntry[];
   /** Recent discussion sessions for note mode */
@@ -314,6 +327,13 @@ export interface SessionActions {
   removePendingEdit: (filePath: string, fieldPath: string) => void;
   /** Clear all widget state (when switching vaults) */
   clearWidgetState: () => void;
+  // Health actions
+  /** Set health issues from server */
+  setHealthIssues: (issues: HealthIssue[]) => void;
+  /** Toggle health panel expanded state */
+  toggleHealthExpanded: () => void;
+  /** Dismiss a health issue (also sends to server) */
+  dismissHealthIssue: (issueId: string) => void;
 }
 
 /**

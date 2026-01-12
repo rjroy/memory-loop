@@ -28,6 +28,7 @@ import type {
   ContentSearchResult,
   ContextSnippet,
   WidgetResult,
+  HealthIssue,
 } from "@memory-loop/shared";
 
 import {
@@ -55,6 +56,7 @@ export type {
   SearchMode,
   SearchState,
   WidgetState,
+  HealthState,
   BrowserState,
   ConversationMessage,
   PendingToolUpdate,
@@ -84,6 +86,10 @@ export interface SessionProviderProps {
   initialGoals?: GoalSection[] | null;
   /** Optional initial session ID (for testing) */
   initialSessionId?: string | null;
+  /** Optional initial health issues (for testing) */
+  initialHealthIssues?: HealthIssue[];
+  /** Optional initial health expanded state (for testing) */
+  initialHealthExpanded?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -100,6 +106,8 @@ export function SessionProvider({
   initialRecentDiscussions,
   initialGoals,
   initialSessionId,
+  initialHealthIssues,
+  initialHealthExpanded,
 }: SessionProviderProps): React.ReactNode {
   const [state, dispatch] = useReducer(sessionReducer, undefined, () => ({
     ...createInitialSessionState(),
@@ -107,6 +115,10 @@ export function SessionProvider({
     recentDiscussions: initialRecentDiscussions ?? [],
     goals: initialGoals ?? null,
     sessionId: initialSessionId ?? null,
+    health: {
+      issues: initialHealthIssues ?? [],
+      isExpanded: initialHealthExpanded ?? false,
+    },
   }));
 
   // Persist vault ID when it changes
@@ -462,6 +474,19 @@ export function SessionProvider({
     dispatch({ type: "CLEAR_WIDGET_STATE" });
   }, []);
 
+  // Health actions
+  const setHealthIssues = useCallback((issues: HealthIssue[]) => {
+    dispatch({ type: "SET_HEALTH_ISSUES", issues });
+  }, []);
+
+  const toggleHealthExpanded = useCallback(() => {
+    dispatch({ type: "TOGGLE_HEALTH_EXPANDED" });
+  }, []);
+
+  const dismissHealthIssue = useCallback((issueId: string) => {
+    dispatch({ type: "DISMISS_HEALTH_ISSUE", issueId });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -524,6 +549,9 @@ export function SessionProvider({
     addPendingEdit,
     removePendingEdit,
     clearWidgetState,
+    setHealthIssues,
+    toggleHealthExpanded,
+    dismissHealthIssue,
   };
 
   return (
@@ -565,6 +593,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     setRecallWidgets,
     setGroundWidgetsError,
     setRecallWidgetsError,
+    setHealthIssues,
   } = useSession();
 
   const messagesRef = useRef(messages);
@@ -676,6 +705,10 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           }
           break;
 
+        case "health_report":
+          setHealthIssues(message.issues);
+          break;
+
         default:
           break;
       }
@@ -696,6 +729,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
       setRecallWidgets,
       setGroundWidgetsError,
       setRecallWidgetsError,
+      setHealthIssues,
     ]
   );
 }

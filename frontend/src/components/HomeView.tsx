@@ -11,6 +11,7 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { RecentActivity } from "./RecentActivity";
 import { GoalsCard } from "./GoalsCard";
 import { InspirationCard } from "./InspirationCard";
+import { HealthPanel } from "./HealthPanel";
 import type {
   ClientMessage,
   InspirationItem,
@@ -327,6 +328,9 @@ export function HomeView(): React.ReactNode {
 
       {/* Recent Activity */}
       <RecentActivity onDeleteSession={handleDeleteSession} />
+
+      {/* Health Issues */}
+      <HealthPanel />
     </div>
   );
 }

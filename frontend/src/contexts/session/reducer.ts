@@ -18,6 +18,7 @@ import type {
   VaultInfo,
   ConversationMessageProtocol,
   ToolInvocation,
+  HealthIssue,
 } from "@memory-loop/shared";
 
 import type {
@@ -32,6 +33,7 @@ import type {
 import {
   createInitialBrowserState,
   createInitialWidgetState,
+  createInitialHealthState,
   createInitialSearchState,
   generateMessageId,
 } from "./initial-state.js";
@@ -100,7 +102,11 @@ export type SessionAction =
   | { type: "SET_RECALL_WIDGETS_ERROR"; error: string | null }
   | { type: "ADD_PENDING_EDIT"; filePath: string; fieldPath: string; value: unknown }
   | { type: "REMOVE_PENDING_EDIT"; filePath: string; fieldPath: string }
-  | { type: "CLEAR_WIDGET_STATE" };
+  | { type: "CLEAR_WIDGET_STATE" }
+  // Health actions
+  | { type: "SET_HEALTH_ISSUES"; issues: HealthIssue[] }
+  | { type: "TOGGLE_HEALTH_EXPANDED" }
+  | { type: "DISMISS_HEALTH_ISSUE"; issueId: string };
 
 // ----------------------------------------------------------------------------
 // Helper functions for reducer
@@ -169,6 +175,7 @@ function handleSelectVault(state: SessionState, vault: VaultInfo): SessionState 
     messages: [],
     browser: createInitialBrowserState(),
     widgets: createInitialWidgetState(),
+    health: createInitialHealthState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,
@@ -187,6 +194,7 @@ function handleClearVault(state: SessionState): SessionState {
     messages: [],
     browser: createInitialBrowserState(),
     widgets: createInitialWidgetState(),
+    health: createInitialHealthState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,
@@ -743,6 +751,28 @@ export function sessionReducer(
 
     case "CLEAR_WIDGET_STATE":
       return { ...state, widgets: createInitialWidgetState() };
+
+    // Health actions
+    case "SET_HEALTH_ISSUES":
+      return {
+        ...state,
+        health: { ...state.health, issues: action.issues },
+      };
+
+    case "TOGGLE_HEALTH_EXPANDED":
+      return {
+        ...state,
+        health: { ...state.health, isExpanded: !state.health.isExpanded },
+      };
+
+    case "DISMISS_HEALTH_ISSUE":
+      return {
+        ...state,
+        health: {
+          ...state.health,
+          issues: state.health.issues.filter((i) => i.id !== action.issueId),
+        },
+      };
 
     default:
       return state;

@@ -47,6 +47,12 @@ export {
   WidgetEditableTypeSchema,
   WidgetEditableFieldSchema,
   WidgetResultSchema,
+  // Health schemas
+  HealthSeveritySchema,
+  HealthCategorySchema,
+  HealthIssueSchema,
+  HealthReportMessageSchema,
+  DismissHealthIssueMessageSchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -120,6 +126,12 @@ export type {
   WidgetEditableType,
   WidgetEditableField,
   WidgetResult,
+  // Health types
+  HealthSeverity,
+  HealthCategory,
+  HealthIssue,
+  HealthReportMessage,
+  DismissHealthIssueMessage,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

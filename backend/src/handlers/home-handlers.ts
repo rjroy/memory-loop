@@ -127,11 +127,11 @@ export async function handleGetGoals(ctx: HandlerContext): Promise<void> {
   }
 
   try {
-    const sections = await getVaultGoals(ctx.state.currentVault);
-    log.info(`Found ${sections?.length ?? 0} goal sections`);
+    const content = await getVaultGoals(ctx.state.currentVault);
+    log.info(`Goals content: ${content ? `${content.length} chars` : "null"}`);
     ctx.send({
       type: "goals",
-      sections,
+      content,
     });
   } catch (error) {
     log.error("Failed to get goals", error);

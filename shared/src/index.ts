@@ -27,8 +27,6 @@ export {
   RecentDiscussionEntrySchema,
   // Tool invocation schema
   ToolInvocationSchema,
-  // Goals schemas
-  GoalSectionSchema,
   // Inspiration schemas
   InspirationItemSchema,
   GetInspirationMessageSchema,
@@ -106,8 +104,6 @@ export type {
   RecentDiscussionEntry,
   // Tool invocation type
   ToolInvocation,
-  // Goal types
-  GoalSection,
   // Inspiration types
   InspirationItem,
   GetInspirationMessage,

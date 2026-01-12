@@ -1,7 +1,7 @@
 /**
  * GoalsCard Component Styles
  *
- * Displays goals with glassmorphism styling consistent with HomeView.
+ * Displays goals markdown with glassmorphism styling consistent with HomeView.
  */
 
 .goals-card::before {
@@ -55,15 +55,20 @@
   }
 }
 
-.goals-card__section {
-  margin-bottom: var(--spacing-md);
+/* Markdown content container */
+.goals-card__content {
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
 }
 
-.goals-card__section:last-child {
-  margin-bottom: 0;
-}
-
-.goals-card__heading {
+/* Markdown headings */
+.goals-card__content h1,
+.goals-card__content h2,
+.goals-card__content h3,
+.goals-card__content h4,
+.goals-card__content h5,
+.goals-card__content h6 {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
   color: var(--color-text-accent-secondary);
@@ -72,41 +77,74 @@
   margin: 0 0 var(--spacing-sm) 0;
 }
 
-.goals-card__list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
+.goals-card__content h1:not(:first-child),
+.goals-card__content h2:not(:first-child),
+.goals-card__content h3:not(:first-child),
+.goals-card__content h4:not(:first-child),
+.goals-card__content h5:not(:first-child),
+.goals-card__content h6:not(:first-child) {
+  margin-top: var(--spacing-md);
 }
 
-.goals-card__item {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacing-sm);
-  font-size: var(--text-sm);
+/* Markdown paragraphs */
+.goals-card__content p {
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.goals-card__content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Markdown lists */
+.goals-card__content ul,
+.goals-card__content ol {
+  margin: 0 0 var(--spacing-sm) 0;
+  padding-left: var(--spacing-lg);
+}
+
+.goals-card__content ul:last-child,
+.goals-card__content ol:last-child {
+  margin-bottom: 0;
+}
+
+.goals-card__content li {
+  margin-bottom: var(--spacing-xs);
+}
+
+.goals-card__content li:last-child {
+  margin-bottom: 0;
+}
+
+/* Task list checkboxes (GFM) */
+.goals-card__content input[type="checkbox"] {
+  margin-right: var(--spacing-xs);
+  pointer-events: none;
+}
+
+/* Strong and emphasis */
+.goals-card__content strong {
+  font-weight: var(--font-weight-bold);
   color: var(--color-text);
-  line-height: var(--line-height-normal);
 }
 
-.goals-card__bullet {
-  flex-shrink: 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-  line-height: var(--line-height-normal);
-}
-
-.goals-card__text {
-  flex: 1;
-}
-
-.goals-card__item--more {
-  color: var(--color-text-muted);
-}
-
-.goals-card__text--more {
+.goals-card__content em {
   font-style: italic;
+}
+
+/* Links (non-interactive in button context) */
+.goals-card__content a {
+  color: var(--color-accent-secondary);
+  text-decoration: none;
+  pointer-events: none;
+}
+
+/* Code */
+.goals-card__content code {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+  background: var(--color-surface-elevated);
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-sm);
 }
 
 /* Mobile adjustments for blur performance */

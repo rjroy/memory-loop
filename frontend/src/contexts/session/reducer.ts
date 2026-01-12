@@ -8,7 +8,6 @@ import type {
   FileEntry,
   RecentNoteEntry,
   RecentDiscussionEntry,
-  GoalSection,
   TaskEntry,
   SlashCommand,
   FileSearchResult,
@@ -66,7 +65,7 @@ export type SessionAction =
   | { type: "PIN_FOLDER"; path: string }
   | { type: "UNPIN_FOLDER"; path: string }
   | { type: "SET_PINNED_FOLDERS"; paths: string[] }
-  | { type: "SET_GOALS"; goals: GoalSection[] | null }
+  | { type: "SET_GOALS"; goals: string | null }
   | { type: "SET_DISCUSSION_PREFILL"; text: string | null }
   | { type: "SET_PENDING_SESSION_ID"; sessionId: string | null }
   | { type: "SET_SHOW_NEW_SESSION_DIALOG"; show: boolean }

@@ -438,90 +438,12 @@ export function getVaultMetadataPath(vault: VaultInfo): string {
 }
 
 /**
- * Maximum number of items to show per section.
- */
-const MAX_ITEMS_PER_SECTION = 9;
-
-/**
- * A section of goals parsed from goals.md.
- */
-export interface GoalSection {
-  title: string;
-  items: string[];
-  hasMore: boolean;
-}
-
-/**
- * Parses goals from a goals.md file.
- * Treats any markdown header as a section title.
- * Each non-blank line is an item (list prefixes are stripped).
- * Items are limited to 9 per section.
- *
- * @param content - The content of goals.md
- * @returns Array of goal sections
- */
-export function parseGoals(content: string): GoalSection[] {
-  const lines = content.split("\n");
-  const sections: GoalSection[] = [];
-
-  let currentSection: GoalSection = { title: "Goals", items: [], hasMore: false };
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-
-    // Check for any header level (# ## ### etc)
-    const headerMatch = trimmed.match(/^#+\s+(.+)$/);
-    if (headerMatch) {
-      // Save previous section if it has items
-      if (currentSection.items.length > 0) {
-        sections.push(currentSection);
-      }
-      // Start new section
-      currentSection = { title: headerMatch[1].trim(), items: [], hasMore: false };
-      continue;
-    }
-
-    // Skip blank lines
-    if (!trimmed) {
-      continue;
-    }
-
-    // Strip list prefixes: "- [ ] ", "- [x] ", "- ", "* ", etc.
-    let itemText = trimmed;
-    // Match: optional list marker (- or *), optional checkbox, then content
-    const listMatch = trimmed.match(/^[-*]\s*(?:\[[ xX]\]\s*)?(.*)$/);
-    if (listMatch) {
-      itemText = listMatch[1].trim();
-    }
-
-    // Skip empty items
-    if (!itemText) {
-      continue;
-    }
-
-    // Add item if under limit, otherwise mark hasMore
-    if (currentSection.items.length < MAX_ITEMS_PER_SECTION) {
-      currentSection.items.push(itemText);
-    } else {
-      currentSection.hasMore = true;
-    }
-  }
-
-  // Don't forget the last section
-  if (currentSection.items.length > 0) {
-    sections.push(currentSection);
-  }
-
-  return sections;
-}
-
-/**
- * Reads and parses goals from a vault's goals.md file.
+ * Reads goals from a vault's goals.md file.
  *
  * @param vault - The VaultInfo object
- * @returns Array of goal sections, or null if no goals file exists
+ * @returns Raw markdown content, or null if no goals file exists
  */
-export async function getVaultGoals(vault: VaultInfo): Promise<GoalSection[] | null> {
+export async function getVaultGoals(vault: VaultInfo): Promise<string | null> {
   if (!vault.goalsPath) {
     return null;
   }
@@ -529,8 +451,7 @@ export async function getVaultGoals(vault: VaultInfo): Promise<GoalSection[] | n
   const goalsFullPath = join(vault.contentRoot, vault.goalsPath);
 
   try {
-    const content = await readFile(goalsFullPath, "utf-8");
-    return parseGoals(content);
+    return await readFile(goalsFullPath, "utf-8");
   } catch {
     log.warn(`Failed to read goals file: ${goalsFullPath}`);
     return null;

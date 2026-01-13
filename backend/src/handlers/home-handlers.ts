@@ -18,7 +18,11 @@ import { getVaultGoals } from "../vault-manager.js";
 import { getInspiration } from "../inspiration-manager.js";
 import { getAllTasks, toggleTask } from "../task-manager.js";
 import { getRecentSessions } from "../session-manager.js";
-import { loadVaultConfig } from "../vault-config.js";
+import {
+  loadVaultConfig,
+  resolveRecentCaptures,
+  resolveRecentDiscussions,
+} from "../vault-config.js";
 import { FileBrowserError } from "../file-browser.js";
 import { wsLog as log } from "../logger.js";
 
@@ -97,9 +101,13 @@ export async function handleGetRecentActivity(ctx: HandlerContext): Promise<void
   }
 
   try {
+    const config = await loadVaultConfig(ctx.state.currentVault.path);
+    const capturesLimit = resolveRecentCaptures(config);
+    const discussionsLimit = resolveRecentDiscussions(config);
+
     const [captures, discussions] = await Promise.all([
-      getRecentNotes(ctx.state.currentVault, 5),
-      getRecentSessions(ctx.state.currentVault.id, 5),
+      getRecentNotes(ctx.state.currentVault, capturesLimit),
+      getRecentSessions(ctx.state.currentVault.path, discussionsLimit),
     ]);
     log.info(`Found ${captures.length} captures and ${discussions.length} discussions`);
     ctx.send({

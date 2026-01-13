@@ -28,7 +28,7 @@ import {
   SETUP_MARKER_PATH,
   COMMANDS_DEST_PATH,
   CLAUDEMD_BACKUP_PATH,
-  SQLITE_IGNORE_PATTERNS,
+  MEMORY_LOOP_IGNORE_PATTERNS,
   MEMORY_LOOP_GITIGNORE_PATH,
   type SetupCompleteMarker,
   type QueryFunction,
@@ -679,17 +679,17 @@ describe("updateGitignore", () => {
 
     const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
 
-    for (const pattern of SQLITE_IGNORE_PATTERNS) {
+    for (const pattern of MEMORY_LOOP_IGNORE_PATTERNS) {
       expect(content).toContain(pattern);
     }
   });
 
-  test("includes SQLite cache section header", async () => {
+  test("includes Memory Loop section header", async () => {
     await updateGitignore(vaultPath);
 
     const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
 
-    expect(content).toContain("# SQLite cache");
+    expect(content).toContain("# Memory Loop cache and session files");
   });
 
   test("adds patterns to existing .gitignore", async () => {
@@ -709,17 +709,18 @@ describe("updateGitignore", () => {
     expect(content).toContain("*.tmp");
 
     // New patterns added
-    for (const pattern of SQLITE_IGNORE_PATTERNS) {
+    for (const pattern of MEMORY_LOOP_IGNORE_PATTERNS) {
       expect(content).toContain(pattern);
     }
   });
 
   test("does not duplicate patterns if already present", async () => {
     await mkdir(join(vaultPath, ".memory-loop"), { recursive: true });
-    const existingContent = `# SQLite cache files
+    const existingContent = `# Memory Loop cache and session files
 cache.db
 cache.db-shm
 cache.db-wal
+sessions/
 `;
     await writeFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), existingContent);
 
@@ -745,7 +746,7 @@ cache.db
     const result = await updateGitignore(vaultPath);
 
     expect(result.success).toBe(true);
-    expect(result.message).toContain("2 pattern(s)");
+    expect(result.message).toContain("3 pattern(s)");
 
     const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
 
@@ -753,9 +754,10 @@ cache.db
     const cacheDbMatches = content.match(/^cache\.db$/gm);
     expect(cacheDbMatches?.length).toBe(1);
 
-    // Should have the other two patterns
+    // Should have the other patterns
     expect(content).toContain("cache.db-shm");
     expect(content).toContain("cache.db-wal");
+    expect(content).toContain("sessions/");
   });
 
   test("handles .gitignore without trailing newline", async () => {
@@ -786,10 +788,11 @@ cache.db.backup
     const result = await updateGitignore(vaultPath);
 
     expect(result.success).toBe(true);
-    expect(result.message).toContain("3 pattern(s)");
+    expect(result.message).toContain("4 pattern(s)");
 
     const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
     expect(content).toContain("cache.db\n");
+    expect(content).toContain("sessions/");
   });
 });
 

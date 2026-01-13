@@ -128,10 +128,15 @@ export const DEFAULT_ARCHIVES_PATH = "04_Archive";
 export const CLAUDEMD_BACKUP_PATH = ".memory-loop/claude-md-backup.md";
 
 /**
- * SQLite cache files that should be gitignored.
- * These are placed in .memory-loop/ directory.
+ * Files and directories that should be gitignored within .memory-loop/.
+ * Includes SQLite cache files and session data.
  */
-export const SQLITE_IGNORE_PATTERNS = ["cache.db", "cache.db-shm", "cache.db-wal"];
+export const MEMORY_LOOP_IGNORE_PATTERNS = [
+  "cache.db",
+  "cache.db-shm",
+  "cache.db-wal",
+  "sessions/",
+];
 
 /**
  * Path to .gitignore for Memory Loop files (relative to vault root).
@@ -614,14 +619,14 @@ export async function updateGitignore(
   }
 
   // Check which patterns are missing
-  const missingPatterns = SQLITE_IGNORE_PATTERNS.filter((pattern) => {
+  const missingPatterns = MEMORY_LOOP_IGNORE_PATTERNS.filter((pattern) => {
     // Check if the pattern exists as a line (not as part of another pattern)
-    const regex = new RegExp(`^${pattern.replace(".", "\\.")}$`, "m");
+    const regex = new RegExp(`^${pattern.replace(".", "\\.").replace("/", "\\/")}$`, "m");
     return !regex.test(existingContent);
   });
 
   if (missingPatterns.length === 0) {
-    log.debug("All SQLite patterns already present in .memory-loop/.gitignore");
+    log.debug("All patterns already present in .memory-loop/.gitignore");
     return {
       success: true,
       message: ".memory-loop/.gitignore already up to date",
@@ -629,7 +634,7 @@ export async function updateGitignore(
   }
 
   // Build the gitignore content
-  const gitignoreSection = `# SQLite cache files
+  const gitignoreSection = `# Memory Loop cache and session files
 ${missingPatterns.join("\n")}
 `;
 

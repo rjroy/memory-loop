@@ -119,20 +119,20 @@ function createMockQueryGenerator(
 
 describe("Session Manager", () => {
   let testDir: string;
+  let vaultPath: string;
   let sessionsDir: string;
-  const originalHome = process.env.HOME;
 
   beforeEach(async () => {
-    // Create unique test directory
+    // Create unique test directory (acts as vault root)
     testDir = join(
       tmpdir(),
       `session-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
     );
     await mkdir(testDir, { recursive: true });
 
-    // Set HOME to test directory for sessions storage
-    process.env.HOME = testDir;
-    sessionsDir = join(testDir, SESSIONS_DIR);
+    // vaultPath is the test directory
+    vaultPath = testDir;
+    sessionsDir = join(vaultPath, SESSIONS_DIR);
 
     // Reset mocks
     mockQuery.mockReset();
@@ -140,13 +140,6 @@ describe("Session Manager", () => {
   });
 
   afterEach(async () => {
-    // Restore HOME
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
-
     // Cleanup test directory
     try {
       await rm(testDir, { recursive: true, force: true });
@@ -239,7 +232,7 @@ describe("Session Manager", () => {
 
   describe("getSessionsDir", () => {
     test("creates sessions directory if missing", async () => {
-      const dir = await getSessionsDir();
+      const dir = await getSessionsDir(vaultPath);
       expect(dir).toBe(sessionsDir);
 
       // Verify directory was created
@@ -250,33 +243,19 @@ describe("Session Manager", () => {
 
     test("returns existing directory", async () => {
       await mkdir(sessionsDir, { recursive: true });
-      const dir = await getSessionsDir();
+      const dir = await getSessionsDir(vaultPath);
       expect(dir).toBe(sessionsDir);
-    });
-
-    test("falls back to cwd when HOME is not set", async () => {
-      delete process.env.HOME;
-      const originalCwd = process.cwd();
-
-      // Temporarily change to test dir
-      process.chdir(testDir);
-      try {
-        const dir = await getSessionsDir();
-        expect(dir).toBe(join(testDir, SESSIONS_DIR));
-      } finally {
-        process.chdir(originalCwd);
-      }
     });
   });
 
   describe("getSessionFilePath", () => {
     test("returns correct path", async () => {
-      const path = await getSessionFilePath("session-abc");
+      const path = await getSessionFilePath(vaultPath, "session-abc");
       expect(path).toBe(join(sessionsDir, "session-abc.json"));
     });
 
     test("creates sessions directory", async () => {
-      await getSessionFilePath("any-session");
+      await getSessionFilePath(vaultPath, "any-session");
 
       const { stat } = await import("node:fs/promises");
       const stats = await stat(sessionsDir);
@@ -285,7 +264,7 @@ describe("Session Manager", () => {
 
     test("rejects path traversal with ../", async () => {
       try {
-        await getSessionFilePath("../../../etc/passwd");
+        await getSessionFilePath(vaultPath, "../../../etc/passwd");
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -295,7 +274,7 @@ describe("Session Manager", () => {
 
     test("rejects path traversal with forward slashes", async () => {
       try {
-        await getSessionFilePath("foo/bar/baz");
+        await getSessionFilePath(vaultPath, "foo/bar/baz");
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -305,7 +284,7 @@ describe("Session Manager", () => {
 
     test("rejects path traversal with backslashes", async () => {
       try {
-        await getSessionFilePath("foo\\bar\\baz");
+        await getSessionFilePath(vaultPath, "foo\\bar\\baz");
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -315,7 +294,7 @@ describe("Session Manager", () => {
 
     test("rejects empty session ID", async () => {
       try {
-        await getSessionFilePath("");
+        await getSessionFilePath(vaultPath, "");
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -325,7 +304,7 @@ describe("Session Manager", () => {
 
     test("rejects very long session ID", async () => {
       try {
-        await getSessionFilePath("a".repeat(300));
+        await getSessionFilePath(vaultPath, "a".repeat(300));
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -334,12 +313,12 @@ describe("Session Manager", () => {
     });
 
     test("allows valid UUID-style session IDs", async () => {
-      const path = await getSessionFilePath("550e8400-e29b-41d4-a716-446655440000");
+      const path = await getSessionFilePath(vaultPath, "550e8400-e29b-41d4-a716-446655440000");
       expect(path).toBe(join(sessionsDir, "550e8400-e29b-41d4-a716-446655440000.json"));
     });
 
     test("allows alphanumeric with underscores and dots", async () => {
-      const path = await getSessionFilePath("session_v2.1_test");
+      const path = await getSessionFilePath(vaultPath, "session_v2.1_test");
       expect(path).toBe(join(sessionsDir, "session_v2.1_test.json"));
     });
   });
@@ -350,7 +329,7 @@ describe("Session Manager", () => {
 
   describe("saveSession", () => {
     test("saves session metadata to JSON file", async () => {
-      const metadata = createMockMetadata();
+      const metadata = createMockMetadata({ vaultPath });
       await saveSession(metadata);
 
       const filePath = join(sessionsDir, `${metadata.id}.json`);
@@ -363,7 +342,7 @@ describe("Session Manager", () => {
     });
 
     test("overwrites existing session", async () => {
-      const metadata = createMockMetadata();
+      const metadata = createMockMetadata({ vaultPath });
       await saveSession(metadata);
 
       metadata.lastActiveAt = "2025-06-15T12:00:00.000Z";
@@ -377,7 +356,7 @@ describe("Session Manager", () => {
     });
 
     test("formats JSON with indentation", async () => {
-      const metadata = createMockMetadata();
+      const metadata = createMockMetadata({ vaultPath });
       await saveSession(metadata);
 
       const filePath = join(sessionsDir, `${metadata.id}.json`);
@@ -390,15 +369,15 @@ describe("Session Manager", () => {
 
   describe("loadSession", () => {
     test("returns null for non-existent session", async () => {
-      const result = await loadSession("non-existent-id");
+      const result = await loadSession(vaultPath, "non-existent-id");
       expect(result).toBeNull();
     });
 
     test("loads existing session", async () => {
-      const metadata = createMockMetadata();
+      const metadata = createMockMetadata({ vaultPath });
       await saveSession(metadata);
 
-      const loaded = await loadSession(metadata.id);
+      const loaded = await loadSession(vaultPath, metadata.id);
 
       expect(loaded).not.toBeNull();
       expect(loaded!.id).toBe(metadata.id);
@@ -414,7 +393,7 @@ describe("Session Manager", () => {
       await writeFile(filePath, "not valid json");
 
       try {
-        await loadSession("bad-json");
+        await loadSession(vaultPath, "bad-json");
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -428,7 +407,7 @@ describe("Session Manager", () => {
       await writeFile(filePath, JSON.stringify({ id: "test" }));
 
       try {
-        await loadSession("missing-fields");
+        await loadSession(vaultPath, "missing-fields");
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -439,46 +418,46 @@ describe("Session Manager", () => {
 
   describe("deleteSession", () => {
     test("returns false for non-existent session", async () => {
-      const result = await deleteSession("non-existent");
+      const result = await deleteSession(vaultPath, "non-existent");
       expect(result).toBe(false);
     });
 
     test("deletes existing session", async () => {
-      const metadata = createMockMetadata();
+      const metadata = createMockMetadata({ vaultPath });
       await saveSession(metadata);
 
-      const result = await deleteSession(metadata.id);
+      const result = await deleteSession(vaultPath, metadata.id);
       expect(result).toBe(true);
 
-      const loaded = await loadSession(metadata.id);
+      const loaded = await loadSession(vaultPath, metadata.id);
       expect(loaded).toBeNull();
     });
   });
 
   describe("listSessionsByVault", () => {
     test("returns empty array for non-existent directory", async () => {
-      const sessions = await listSessionsByVault("any-vault");
+      const sessions = await listSessionsByVault(vaultPath);
       expect(sessions).toEqual([]);
     });
 
-    test("returns sessions for matching vault", async () => {
-      await saveSession(createMockMetadata({ id: "session-1", vaultId: "vault-a" }));
-      await saveSession(createMockMetadata({ id: "session-2", vaultId: "vault-a" }));
-      await saveSession(createMockMetadata({ id: "session-3", vaultId: "vault-b" }));
+    test("returns all sessions in vault directory", async () => {
+      await saveSession(createMockMetadata({ id: "session-1", vaultPath }));
+      await saveSession(createMockMetadata({ id: "session-2", vaultPath }));
+      await saveSession(createMockMetadata({ id: "session-3", vaultPath }));
 
-      const sessions = await listSessionsByVault("vault-a");
+      const sessions = await listSessionsByVault(vaultPath);
 
-      expect(sessions).toHaveLength(2);
+      expect(sessions).toHaveLength(3);
       expect(sessions).toContain("session-1");
       expect(sessions).toContain("session-2");
-      expect(sessions).not.toContain("session-3");
+      expect(sessions).toContain("session-3");
     });
 
     test("ignores non-JSON files", async () => {
-      await saveSession(createMockMetadata({ id: "valid", vaultId: "vault-a" }));
+      await saveSession(createMockMetadata({ id: "valid", vaultId: "vault-a", vaultPath }));
       await writeFile(join(sessionsDir, "not-a-session.txt"), "text content");
 
-      const sessions = await listSessionsByVault("vault-a");
+      const sessions = await listSessionsByVault(vaultPath);
 
       expect(sessions).toHaveLength(1);
       expect(sessions).toContain("valid");
@@ -487,7 +466,8 @@ describe("Session Manager", () => {
 
   describe("getRecentSessions", () => {
     test("returns empty array for non-existent directory", async () => {
-      const sessions = await getRecentSessions("any-vault");
+      const nonExistentPath = join(testDir, "non-existent-vault");
+      const sessions = await getRecentSessions(nonExistentPath);
       expect(sessions).toEqual([]);
     });
 
@@ -495,23 +475,26 @@ describe("Session Manager", () => {
       await saveSession(createMockMetadata({
         id: "old-session",
         vaultId: "vault-a",
+        vaultPath,
         lastActiveAt: "2025-01-01T00:00:00.000Z",
         messages: [{ id: "1", role: "user", content: "Old message", timestamp: "2025-01-01T00:00:00.000Z" }],
       }));
       await saveSession(createMockMetadata({
         id: "new-session",
         vaultId: "vault-a",
+        vaultPath,
         lastActiveAt: "2025-06-15T12:00:00.000Z",
         messages: [{ id: "2", role: "user", content: "New message", timestamp: "2025-06-15T12:00:00.000Z" }],
       }));
       await saveSession(createMockMetadata({
         id: "mid-session",
         vaultId: "vault-a",
+        vaultPath,
         lastActiveAt: "2025-03-10T08:00:00.000Z",
         messages: [{ id: "3", role: "user", content: "Mid message", timestamp: "2025-03-10T08:00:00.000Z" }],
       }));
 
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       expect(sessions).toHaveLength(3);
       expect(sessions[0].sessionId).toBe("new-session");
@@ -524,47 +507,32 @@ describe("Session Manager", () => {
         await saveSession(createMockMetadata({
           id: `session-${i}`,
           vaultId: "vault-a",
+          vaultPath,
           lastActiveAt: new Date(2025, 0, i + 1).toISOString(),
           messages: [{ id: `${i}`, role: "user", content: `Message ${i}`, timestamp: new Date().toISOString() }],
         }));
       }
 
-      const sessions = await getRecentSessions("vault-a", 3);
+      const sessions = await getRecentSessions(vaultPath, 3);
 
       expect(sessions).toHaveLength(3);
-    });
-
-    test("filters by vault ID", async () => {
-      await saveSession(createMockMetadata({
-        id: "vault-a-session",
-        vaultId: "vault-a",
-        messages: [{ id: "1", role: "user", content: "A message", timestamp: new Date().toISOString() }],
-      }));
-      await saveSession(createMockMetadata({
-        id: "vault-b-session",
-        vaultId: "vault-b",
-        messages: [{ id: "2", role: "user", content: "B message", timestamp: new Date().toISOString() }],
-      }));
-
-      const sessions = await getRecentSessions("vault-a");
-
-      expect(sessions).toHaveLength(1);
-      expect(sessions[0].sessionId).toBe("vault-a-session");
     });
 
     test("ignores sessions with no messages", async () => {
       await saveSession(createMockMetadata({
         id: "has-messages",
         vaultId: "vault-a",
+        vaultPath,
         messages: [{ id: "1", role: "user", content: "Hello", timestamp: new Date().toISOString() }],
       }));
       await saveSession(createMockMetadata({
         id: "no-messages",
         vaultId: "vault-a",
+        vaultPath,
         messages: [],
       }));
 
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       expect(sessions).toHaveLength(1);
       expect(sessions[0].sessionId).toBe("has-messages");
@@ -574,6 +542,7 @@ describe("Session Manager", () => {
       await saveSession(createMockMetadata({
         id: "preview-test",
         vaultId: "vault-a",
+        vaultPath,
         messages: [
           { id: "1", role: "user", content: "First user question", timestamp: new Date().toISOString() },
           { id: "2", role: "assistant", content: "Response", timestamp: new Date().toISOString() },
@@ -581,7 +550,7 @@ describe("Session Manager", () => {
         ],
       }));
 
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       expect(sessions[0].preview).toBe("First user question");
     });
@@ -591,10 +560,11 @@ describe("Session Manager", () => {
       await saveSession(createMockMetadata({
         id: "long-preview",
         vaultId: "vault-a",
+        vaultPath,
         messages: [{ id: "1", role: "user", content: longMessage, timestamp: new Date().toISOString() }],
       }));
 
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       expect(sessions[0].preview.length).toBe(100);
       expect(sessions[0].preview.endsWith("…")).toBe(true);
@@ -604,10 +574,11 @@ describe("Session Manager", () => {
       await saveSession(createMockMetadata({
         id: "multiline-preview",
         vaultId: "vault-a",
+        vaultPath,
         messages: [{ id: "1", role: "user", content: "First line\nSecond line\nThird line", timestamp: new Date().toISOString() }],
       }));
 
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       expect(sessions[0].preview).toBe("First line");
     });
@@ -616,6 +587,7 @@ describe("Session Manager", () => {
       await saveSession(createMockMetadata({
         id: "count-test",
         vaultId: "vault-a",
+        vaultPath,
         messages: [
           { id: "1", role: "user", content: "Q1", timestamp: new Date().toISOString() },
           { id: "2", role: "assistant", content: "A1", timestamp: new Date().toISOString() },
@@ -623,7 +595,7 @@ describe("Session Manager", () => {
         ],
       }));
 
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       expect(sessions[0].messageCount).toBe(3);
     });
@@ -632,11 +604,12 @@ describe("Session Manager", () => {
       await saveSession(createMockMetadata({
         id: "time-test",
         vaultId: "vault-a",
+        vaultPath,
         lastActiveAt: "2025-06-15T14:30:00.000Z",
         messages: [{ id: "1", role: "user", content: "Hello", timestamp: new Date().toISOString() }],
       }));
 
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       // Time and date will be in local timezone, so we just verify they're strings
       expect(typeof sessions[0].time).toBe("string");
@@ -649,12 +622,13 @@ describe("Session Manager", () => {
       await saveSession(createMockMetadata({
         id: "valid-session",
         vaultId: "vault-a",
+        vaultPath,
         messages: [{ id: "1", role: "user", content: "Hello", timestamp: new Date().toISOString() }],
       }));
       await writeFile(join(sessionsDir, "corrupted.json"), "not valid json");
 
       // Should not throw, should return valid sessions
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       expect(sessions).toHaveLength(1);
       expect(sessions[0].sessionId).toBe("valid-session");
@@ -664,11 +638,12 @@ describe("Session Manager", () => {
       await saveSession(createMockMetadata({
         id: "valid",
         vaultId: "vault-a",
+        vaultPath,
         messages: [{ id: "1", role: "user", content: "Hello", timestamp: new Date().toISOString() }],
       }));
       await writeFile(join(sessionsDir, "not-a-session.txt"), "text content");
 
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       expect(sessions).toHaveLength(1);
       expect(sessions[0].sessionId).toBe("valid");
@@ -678,10 +653,11 @@ describe("Session Manager", () => {
       await saveSession(createMockMetadata({
         id: "assistant-only",
         vaultId: "vault-a",
+        vaultPath,
         messages: [{ id: "1", role: "assistant", content: "Hello", timestamp: new Date().toISOString() }],
       }));
 
-      const sessions = await getRecentSessions("vault-a");
+      const sessions = await getRecentSessions(vaultPath);
 
       expect(sessions[0].preview).toBe("Discussion");
     });
@@ -690,6 +666,7 @@ describe("Session Manager", () => {
   describe("touchSession", () => {
     test("updates lastActiveAt timestamp", async () => {
       const metadata = createMockMetadata({
+        vaultPath,
         lastActiveAt: "2025-01-01T00:00:00.000Z",
       });
       await saveSession(metadata);
@@ -697,15 +674,15 @@ describe("Session Manager", () => {
       // Wait a tiny bit to ensure different timestamp
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      await touchSession(metadata.id);
+      await touchSession(vaultPath, metadata.id);
 
-      const loaded = await loadSession(metadata.id);
+      const loaded = await loadSession(vaultPath, metadata.id);
       expect(loaded!.lastActiveAt).not.toBe("2025-01-01T00:00:00.000Z");
     });
 
     test("does nothing for non-existent session", async () => {
       // Should not throw
-      await touchSession("non-existent");
+      await touchSession(vaultPath, "non-existent");
     });
   });
 
@@ -733,7 +710,7 @@ describe("Session Manager", () => {
     });
 
     test("saves session metadata", async () => {
-      const vault = createMockVault();
+      const vault = createMockVault({ path: vaultPath });
       const mockGenerator = createMockQueryGenerator("saved-session-id");
       mockQuery.mockReturnValue(mockGenerator);
 
@@ -741,7 +718,7 @@ describe("Session Manager", () => {
 
       expect(result.sessionId).toBe("saved-session-id");
 
-      const loaded = await loadSession("saved-session-id");
+      const loaded = await loadSession(vaultPath, "saved-session-id");
       expect(loaded).not.toBeNull();
       expect(loaded!.vaultId).toBe(vault.id);
       expect(loaded!.vaultPath).toBe(vault.path);
@@ -811,7 +788,7 @@ describe("Session Manager", () => {
   describe("resumeSession", () => {
     test("throws for non-existent session", async () => {
       try {
-        await resumeSession("non-existent", "Continue");
+        await resumeSession(vaultPath, "non-existent", "Continue");
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -820,13 +797,13 @@ describe("Session Manager", () => {
     });
 
     test("calls SDK query with resume option", async () => {
-      const metadata = createMockMetadata({ id: "existing-session" });
+      const metadata = createMockMetadata({ id: "existing-session", vaultPath });
       await saveSession(metadata);
 
       const mockGenerator = createMockQueryGenerator("existing-session");
       mockQuery.mockReturnValue(mockGenerator);
 
-      await resumeSession("existing-session", "Continue");
+      await resumeSession(vaultPath, "existing-session", "Continue");
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
       const calls = mockQuery.mock.calls;
@@ -841,6 +818,7 @@ describe("Session Manager", () => {
     test("updates lastActiveAt on resume", async () => {
       const metadata = createMockMetadata({
         id: "resume-session",
+        vaultPath,
         lastActiveAt: "2025-01-01T00:00:00.000Z",
       });
       await saveSession(metadata);
@@ -848,16 +826,16 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("resume-session");
       mockQuery.mockReturnValue(mockGenerator);
 
-      await resumeSession("resume-session", "Continue");
+      await resumeSession(vaultPath, "resume-session", "Continue");
 
-      const updated = await loadSession("resume-session");
+      const updated = await loadSession(vaultPath, "resume-session");
       expect(updated!.lastActiveAt).not.toBe("2025-01-01T00:00:00.000Z");
     });
   });
 
   describe("querySession", () => {
     test("creates new session when no sessionId provided", async () => {
-      const vault = createMockVault();
+      const vault = createMockVault({ path: vaultPath });
       const mockGenerator = createMockQueryGenerator("auto-created-session");
       mockQuery.mockReturnValue(mockGenerator);
 
@@ -873,7 +851,7 @@ describe("Session Manager", () => {
     });
 
     test("resumes session when sessionId provided", async () => {
-      const vault = createMockVault();
+      const vault = createMockVault({ path: vaultPath });
       const metadata = createMockMetadata({
         id: "existing-for-query",
         vaultId: vault.id,
@@ -902,27 +880,27 @@ describe("Session Manager", () => {
 
   describe("Edge Cases", () => {
     test("handles session ID with special characters", async () => {
-      const metadata = createMockMetadata({ id: "session-with-uuid-abc123" });
+      const metadata = createMockMetadata({ id: "session-with-uuid-abc123", vaultPath });
       await saveSession(metadata);
 
-      const loaded = await loadSession("session-with-uuid-abc123");
+      const loaded = await loadSession(vaultPath, "session-with-uuid-abc123");
       expect(loaded).not.toBeNull();
       expect(loaded!.id).toBe("session-with-uuid-abc123");
     });
 
     test("handles concurrent session saves", async () => {
       const promises = Array.from({ length: 10 }, (_, i) =>
-        saveSession(createMockMetadata({ id: `concurrent-${i}`, vaultId: "vault-a" }))
+        saveSession(createMockMetadata({ id: `concurrent-${i}`, vaultId: "vault-a", vaultPath }))
       );
 
       await Promise.all(promises);
 
-      const sessions = await listSessionsByVault("vault-a");
+      const sessions = await listSessionsByVault(vaultPath);
       expect(sessions).toHaveLength(10);
     });
 
     test("handles empty prompt", async () => {
-      const vault = createMockVault();
+      const vault = createMockVault({ path: vaultPath });
       const mockGenerator = createMockQueryGenerator("empty-prompt-session");
       mockQuery.mockReturnValue(mockGenerator);
 
@@ -937,7 +915,11 @@ describe("Session Manager", () => {
     });
 
     test("preserves vault path with spaces", async () => {
-      const vault = createMockVault({ path: "/path/with spaces/vault" });
+      // Create test directory with spaces
+      const spacePath = join(testDir, "path with spaces");
+      await mkdir(spacePath, { recursive: true });
+
+      const vault = createMockVault({ path: spacePath });
       const mockGenerator = createMockQueryGenerator("spaces-session");
       mockQuery.mockReturnValue(mockGenerator);
 
@@ -947,7 +929,7 @@ describe("Session Manager", () => {
       expect(calls.length).toBeGreaterThan(0);
       const callArgs = calls[0]?.[0] as { options: { cwd: string } } | undefined;
       expect(callArgs).toBeDefined();
-      expect(callArgs!.options.cwd).toBe("/path/with spaces/vault");
+      expect(callArgs!.options.cwd).toBe(spacePath);
     });
   });
 });

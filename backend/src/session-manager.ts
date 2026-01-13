@@ -62,7 +62,7 @@ export const DISCUSSION_MODE_OPTIONS: Partial<Options> = {
 };
 
 /**
- * Base directory for storing session metadata.
+ * Relative path within vault for storing session metadata.
  */
 export const SESSIONS_DIR = ".memory-loop/sessions";
 
@@ -120,15 +120,14 @@ export function mapSdkError(error: unknown): string {
 }
 
 /**
- * Gets the absolute path to the sessions directory.
+ * Gets the absolute path to the sessions directory for a vault.
  * Creates the directory if it doesn't exist.
  *
- * @returns Absolute path to sessions directory
+ * @param vaultPath - Absolute path to the vault root directory
+ * @returns Absolute path to sessions directory within the vault
  */
-export async function getSessionsDir(): Promise<string> {
-  // Use HOME directory as base, falling back to current directory
-  const homeDir = process.env.HOME ?? process.cwd();
-  const sessionsDir = join(homeDir, SESSIONS_DIR);
+export async function getSessionsDir(vaultPath: string): Promise<string> {
+  const sessionsDir = join(vaultPath, SESSIONS_DIR);
 
   // Ensure directory exists
   await mkdir(sessionsDir, { recursive: true });
@@ -178,25 +177,27 @@ export function validateSessionId(sessionId: string): boolean {
 /**
  * Gets the absolute path to a session file.
  *
+ * @param vaultPath - Absolute path to the vault root directory
  * @param sessionId - The session ID
  * @returns Absolute path to session JSON file
  * @throws SessionError if session ID is invalid
  */
-export async function getSessionFilePath(sessionId: string): Promise<string> {
+export async function getSessionFilePath(vaultPath: string, sessionId: string): Promise<string> {
   validateSessionId(sessionId);
-  const sessionsDir = await getSessionsDir();
+  const sessionsDir = await getSessionsDir(vaultPath);
   return join(sessionsDir, `${sessionId}.json`);
 }
 
 /**
  * Saves session metadata to disk.
+ * Uses metadata.vaultPath to determine storage location.
  *
  * @param metadata - The session metadata to save
  * @throws SessionError if storage fails
  */
 export async function saveSession(metadata: SessionMetadata): Promise<void> {
   try {
-    const filePath = await getSessionFilePath(metadata.id);
+    const filePath = await getSessionFilePath(metadata.vaultPath, metadata.id);
     const content = JSON.stringify(metadata, null, 2);
     await writeFile(filePath, content, "utf-8");
   } catch (error) {
@@ -211,15 +212,17 @@ export async function saveSession(metadata: SessionMetadata): Promise<void> {
 /**
  * Loads session metadata from disk.
  *
+ * @param vaultPath - Absolute path to the vault root directory
  * @param sessionId - The session ID to load
  * @returns SessionMetadata or null if not found
  * @throws SessionError if the file exists but is invalid
  */
 export async function loadSession(
+  vaultPath: string,
   sessionId: string
 ): Promise<SessionMetadata | null> {
   try {
-    const filePath = await getSessionFilePath(sessionId);
+    const filePath = await getSessionFilePath(vaultPath, sessionId);
 
     // Check if file exists
     if (!(await fileExists(filePath))) {
@@ -262,12 +265,13 @@ export async function loadSession(
 /**
  * Deletes session metadata from disk.
  *
+ * @param vaultPath - Absolute path to the vault root directory
  * @param sessionId - The session ID to delete
  * @returns true if deleted, false if not found
  */
-export async function deleteSession(sessionId: string): Promise<boolean> {
+export async function deleteSession(vaultPath: string, sessionId: string): Promise<boolean> {
   try {
-    const filePath = await getSessionFilePath(sessionId);
+    const filePath = await getSessionFilePath(vaultPath, sessionId);
 
     if (!(await fileExists(filePath))) {
       return false;
@@ -283,12 +287,12 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 /**
  * Lists all session IDs for a given vault.
  *
- * @param vaultId - The vault ID to filter by
+ * @param vaultPath - Absolute path to the vault root directory
  * @returns Array of session IDs
  */
-export async function listSessionsByVault(vaultId: string): Promise<string[]> {
+export async function listSessionsByVault(vaultPath: string): Promise<string[]> {
   try {
-    const sessionsDir = await getSessionsDir();
+    const sessionsDir = await getSessionsDir(vaultPath);
 
     if (!(await directoryExists(sessionsDir))) {
       return [];
@@ -303,11 +307,7 @@ export async function listSessionsByVault(vaultId: string): Promise<string[]> {
       }
 
       const sessionId = file.slice(0, -5); // Remove .json extension
-      const metadata = await loadSession(sessionId);
-
-      if (metadata && metadata.vaultId === vaultId) {
-        sessionIds.push(sessionId);
-      }
+      sessionIds.push(sessionId);
     }
 
     return sessionIds;
@@ -319,16 +319,16 @@ export async function listSessionsByVault(vaultId: string): Promise<string[]> {
 /**
  * Gets recent discussion sessions for a vault, sorted by last activity.
  *
- * @param vaultId - The vault ID to filter by
+ * @param vaultPath - Absolute path to the vault root directory
  * @param limit - Maximum number of discussions to return (default 5)
  * @returns Array of RecentDiscussionEntry objects, sorted by most recent first
  */
 export async function getRecentSessions(
-  vaultId: string,
+  vaultPath: string,
   limit = 5
 ): Promise<RecentDiscussionEntry[]> {
   try {
-    const sessionsDir = await getSessionsDir();
+    const sessionsDir = await getSessionsDir(vaultPath);
 
     if (!(await directoryExists(sessionsDir))) {
       return [];
@@ -344,9 +344,9 @@ export async function getRecentSessions(
 
       const sessionId = file.slice(0, -5);
       try {
-        const metadata = await loadSession(sessionId);
+        const metadata = await loadSession(vaultPath, sessionId);
 
-        if (metadata && metadata.vaultId === vaultId && metadata.messages.length > 0) {
+        if (metadata && metadata.messages.length > 0) {
           sessions.push({
             metadata,
             lastActive: new Date(metadata.lastActiveAt),
@@ -389,15 +389,15 @@ export async function getRecentSessions(
 /**
  * Prunes old sessions for a vault, keeping only the most recent ones.
  *
- * @param vaultId - The vault ID to prune sessions for
+ * @param vaultPath - Absolute path to the vault root directory
  * @param keepCount - Number of sessions to keep (default: 5)
  */
 export async function pruneOldSessions(
-  vaultId: string,
+  vaultPath: string,
   keepCount = 5
 ): Promise<void> {
   try {
-    const sessionsDir = await getSessionsDir();
+    const sessionsDir = await getSessionsDir(vaultPath);
 
     if (!(await directoryExists(sessionsDir))) {
       return;
@@ -413,9 +413,9 @@ export async function pruneOldSessions(
 
       const sessionId = file.slice(0, -5);
       try {
-        const metadata = await loadSession(sessionId);
+        const metadata = await loadSession(vaultPath, sessionId);
 
-        if (metadata && metadata.vaultId === vaultId) {
+        if (metadata) {
           sessions.push({
             sessionId,
             lastActive: new Date(metadata.lastActiveAt),
@@ -460,10 +460,11 @@ function truncatePreview(text: string, maxLength: number): string {
 /**
  * Updates the lastActiveAt timestamp for a session.
  *
+ * @param vaultPath - Absolute path to the vault root directory
  * @param sessionId - The session ID to update
  */
-export async function touchSession(sessionId: string): Promise<void> {
-  const metadata = await loadSession(sessionId);
+export async function touchSession(vaultPath: string, sessionId: string): Promise<void> {
+  const metadata = await loadSession(vaultPath, sessionId);
   if (metadata) {
     metadata.lastActiveAt = new Date().toISOString();
     await saveSession(metadata);
@@ -473,14 +474,14 @@ export async function touchSession(sessionId: string): Promise<void> {
 /**
  * Gets the most recent session ID for a vault, if one exists.
  *
- * @param vaultId - The vault ID to look up
+ * @param vaultPath - Absolute path to the vault root directory
  * @returns The most recent session ID, or null if no session exists for this vault
  */
 export async function getSessionForVault(
-  vaultId: string
+  vaultPath: string
 ): Promise<string | null> {
   try {
-    const sessionsDir = await getSessionsDir();
+    const sessionsDir = await getSessionsDir(vaultPath);
 
     if (!(await directoryExists(sessionsDir))) {
       return null;
@@ -499,13 +500,13 @@ export async function getSessionForVault(
 
       let metadata;
       try {
-        metadata = await loadSession(sessionId);
+        metadata = await loadSession(vaultPath, sessionId);
       } catch {
         // Skip corrupted session files
         continue;
       }
 
-      if (metadata && metadata.vaultId === vaultId) {
+      if (metadata) {
         const lastActiveAt = new Date(metadata.lastActiveAt);
         if (Number.isNaN(lastActiveAt.getTime())) {
           // Skip sessions with invalid timestamps
@@ -526,15 +527,17 @@ export async function getSessionForVault(
 /**
  * Appends a message to a session's conversation history.
  *
+ * @param vaultPath - Absolute path to the vault root directory
  * @param sessionId - The session ID
  * @param message - The message to append
  * @throws SessionError if session not found
  */
 export async function appendMessage(
+  vaultPath: string,
   sessionId: string,
   message: ConversationMessage
 ): Promise<void> {
-  const metadata = await loadSession(sessionId);
+  const metadata = await loadSession(vaultPath, sessionId);
   if (!metadata) {
     throw new SessionError(
       `Session "${sessionId}" not found`,
@@ -722,7 +725,7 @@ export async function createSession(
     log.info("Session metadata saved");
 
     // Prune old sessions in background (non-blocking, errors logged internally)
-    void pruneOldSessions(vault.id);
+    void pruneOldSessions(vault.path);
 
     // Return wrapped result
     return {
@@ -743,6 +746,7 @@ export async function createSession(
 /**
  * Resumes an existing Claude Agent SDK session.
  *
+ * @param vaultPath - Absolute path to the vault root directory
  * @param sessionId - The session ID to resume
  * @param prompt - The prompt to send
  * @param options - Additional SDK options
@@ -750,6 +754,7 @@ export async function createSession(
  * @returns SessionQueryResult with session ID and event stream
  */
 export async function resumeSession(
+  vaultPath: string,
   sessionId: string,
   prompt: string,
   options?: Partial<Options>,
@@ -758,7 +763,7 @@ export async function resumeSession(
   log.info(`Resuming session: ${sessionId}`);
 
   // Load existing session metadata
-  const metadata = await loadSession(sessionId);
+  const metadata = await loadSession(vaultPath, sessionId);
 
   if (!metadata) {
     log.warn(`Session not found: ${sessionId}`);
@@ -850,7 +855,7 @@ export async function querySession(
   requestToolPermission?: ToolPermissionCallback
 ): Promise<SessionQueryResult> {
   if (sessionId) {
-    return resumeSession(sessionId, prompt, options, requestToolPermission);
+    return resumeSession(vault.path, sessionId, prompt, options, requestToolPermission);
   }
   return createSession(vault, prompt, options, requestToolPermission);
 }

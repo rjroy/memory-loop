@@ -116,6 +116,18 @@ export interface VaultConfig {
    * Paths are relative to content root.
    */
   pinnedAssets?: string[];
+
+  /**
+   * Number of recent captures to display on the home screen.
+   * Default: 5
+   */
+  recentCaptures?: number;
+
+  /**
+   * Number of recent discussions to display on the home screen.
+   * Default: 5
+   */
+  recentDiscussions?: number;
 }
 
 /**
@@ -152,6 +164,16 @@ export const DEFAULT_MAX_POOL_SIZE = 50;
  * Default number of quotes to generate per week.
  */
 export const DEFAULT_QUOTES_PER_WEEK = 1;
+
+/**
+ * Default number of recent captures to display.
+ */
+export const DEFAULT_RECENT_CAPTURES = 5;
+
+/**
+ * Default number of recent discussions to display.
+ */
+export const DEFAULT_RECENT_DISCUSSIONS = 5;
 
 /**
  * Valid badge color names.
@@ -256,6 +278,14 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
 
     if (typeof obj.quotesPerWeek === "number" && obj.quotesPerWeek > 0) {
       config.quotesPerWeek = Math.floor(obj.quotesPerWeek);
+    }
+
+    if (typeof obj.recentCaptures === "number" && obj.recentCaptures > 0) {
+      config.recentCaptures = Math.floor(obj.recentCaptures);
+    }
+
+    if (typeof obj.recentDiscussions === "number" && obj.recentDiscussions > 0) {
+      config.recentDiscussions = Math.floor(obj.recentDiscussions);
     }
 
     // Validate badges array
@@ -438,6 +468,26 @@ export function resolveBadges(config: VaultConfig): Badge[] {
  */
 export function resolvePinnedAssets(config: VaultConfig): string[] {
   return config.pinnedAssets ?? [];
+}
+
+/**
+ * Resolves the number of recent captures to display.
+ *
+ * @param config - Vault configuration
+ * @returns Number of recent captures (default: 5)
+ */
+export function resolveRecentCaptures(config: VaultConfig): number {
+  return config.recentCaptures ?? DEFAULT_RECENT_CAPTURES;
+}
+
+/**
+ * Resolves the number of recent discussions to display.
+ *
+ * @param config - Vault configuration
+ * @returns Number of recent discussions (default: 5)
+ */
+export function resolveRecentDiscussions(config: VaultConfig): number {
+  return config.recentDiscussions ?? DEFAULT_RECENT_DISCUSSIONS;
 }
 
 /**

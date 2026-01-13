@@ -75,6 +75,32 @@ fields:
 
 See [Configuration Reference](./configuration-reference.md#field-paths-and-context-prefixes) for more aggregator examples.
 
+### `included` - Other Widgets' Results
+
+When a widget uses the `includes` configuration, it can access the computed results of other widgets:
+
+```yaml
+# In widget config
+includes:
+  - "Base Stats"
+
+fields:
+  normalized:
+    expr: "this.value / included['Base Stats'].max_value"
+```
+
+Access included widget results using:
+- `included.WidgetName.fieldName` for simple widget names
+- `included['Widget Name'].fieldName` for names with spaces
+
+```yaml
+fields:
+  comparison:
+    expr: "included['Books Stats'].avg_rating - included['Movies Stats'].avg_rating"
+```
+
+The `included` context contains all results from widgets listed in your `includes` array, plus any widgets they transitively include. See [Configuration Reference](./configuration-reference.md#includes-configuration) for full details.
+
 ## Operators
 
 ### Arithmetic

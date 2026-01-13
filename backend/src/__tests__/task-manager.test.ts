@@ -410,20 +410,20 @@ describe("parseTasksFromFile", () => {
   });
 
   test("returns empty array for non-existent file", async () => {
-    const tasks = await parseTasksFromFile(testDir, "nonexistent.md");
+    const tasks = await parseTasksFromFile(testDir, "nonexistent.md", "inbox");
     expect(tasks).toEqual([]);
   });
 
   test("returns empty array for file with no tasks", async () => {
     await writeFile(join(testDir, "note.md"), "# Just a heading\n\nSome text");
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toEqual([]);
   });
 
   test("parses single task", async () => {
     await writeFile(join(testDir, "note.md"), "- [ ] Buy groceries");
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({
       text: "Buy groceries",
@@ -443,7 +443,7 @@ describe("parseTasksFromFile", () => {
 `;
     await writeFile(join(testDir, "note.md"), content);
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(3);
     expect(tasks[0].text).toBe("Task one");
     expect(tasks[0].state).toBe(" ");
@@ -466,7 +466,7 @@ describe("parseTasksFromFile", () => {
 `;
     await writeFile(join(testDir, "note.md"), content);
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(6);
     expect(tasks.map((t) => t.state)).toEqual([" ", "x", "/", "?", "b", "f"]);
   });
@@ -478,7 +478,7 @@ describe("parseTasksFromFile", () => {
 `;
     await writeFile(join(testDir, "note.md"), content);
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(3);
     // All tasks should be found regardless of indentation
     expect(tasks[0].text).toBe("Root task");
@@ -495,7 +495,7 @@ Line 4
 `;
     await writeFile(join(testDir, "note.md"), content);
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(2);
     expect(tasks[0].lineNumber).toBe(3);
     expect(tasks[1].lineNumber).toBe(5);
@@ -505,7 +505,7 @@ Line 4
     await mkdir(join(testDir, "folder"));
     await writeFile(join(testDir, "folder", "note.md"), "- [ ] Task");
 
-    const tasks = await parseTasksFromFile(testDir, "folder/note.md");
+    const tasks = await parseTasksFromFile(testDir, "folder/note.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].filePath).toBe("folder/note.md");
   });
@@ -513,14 +513,14 @@ Line 4
   test("handles empty file", async () => {
     await writeFile(join(testDir, "empty.md"), "");
 
-    const tasks = await parseTasksFromFile(testDir, "empty.md");
+    const tasks = await parseTasksFromFile(testDir, "empty.md", "inbox");
     expect(tasks).toEqual([]);
   });
 
   test("handles file with only whitespace", async () => {
     await writeFile(join(testDir, "whitespace.md"), "   \n\n\t\n   ");
 
-    const tasks = await parseTasksFromFile(testDir, "whitespace.md");
+    const tasks = await parseTasksFromFile(testDir, "whitespace.md", "inbox");
     expect(tasks).toEqual([]);
   });
 
@@ -530,7 +530,7 @@ Line 4
       '- [ ] Task with *bold*, _italic_, `code`, and "quotes"'
     );
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].text).toBe('Task with *bold*, _italic_, `code`, and "quotes"');
   });
@@ -541,7 +541,7 @@ Line 4
       "- [ ] Task with emoji \u{1F525} and Japanese \u65E5\u672C\u8A9E"
     );
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].text).toContain("\u{1F525}");
     expect(tasks[0].text).toContain("\u65E5\u672C\u8A9E");
@@ -556,20 +556,20 @@ Line 4
 `;
     await writeFile(join(testDir, "note.md"), content);
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].text).toBe("Actual task");
   });
 
   test("returns empty array for path traversal", async () => {
-    const tasks = await parseTasksFromFile(testDir, "../outside.md");
+    const tasks = await parseTasksFromFile(testDir, "../outside.md", "inbox");
     expect(tasks).toEqual([]);
   });
 
   test("handles task at end of file without newline", async () => {
     await writeFile(join(testDir, "note.md"), "- [ ] No trailing newline");
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].text).toBe("No trailing newline");
   });
@@ -580,7 +580,7 @@ Line 4
 `;
     await writeFile(join(testDir, "note.md"), content);
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].lineNumber).toBe(2);
   });
@@ -591,7 +591,7 @@ Line 4
       "- [ ] Task with comment <!-- comment -->"
     );
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].text).toBe("Task with comment <!-- comment -->");
   });
@@ -603,7 +603,7 @@ Line 4
 `;
     await writeFile(join(testDir, "note.md"), content);
 
-    const tasks = await parseTasksFromFile(testDir, "note.md");
+    const tasks = await parseTasksFromFile(testDir, "note.md", "inbox");
     expect(tasks).toHaveLength(3);
     expect(tasks[0].lineNumber).toBe(1);
     expect(tasks[1].lineNumber).toBe(2);
@@ -872,7 +872,7 @@ describe("Edge Cases", () => {
       "- [ ] Task 1\r\n- [ ] Task 2\r\n"
     );
 
-    const tasks = await parseTasksFromFile(testDir, "00_Inbox/windows.md");
+    const tasks = await parseTasksFromFile(testDir, "00_Inbox/windows.md", "inbox");
     expect(tasks).toHaveLength(2);
   });
 
@@ -882,7 +882,7 @@ describe("Edge Cases", () => {
       "- [ ] Task 1\n- [ ] Task 2\r\n- [ ] Task 3\r"
     );
 
-    const tasks = await parseTasksFromFile(testDir, "00_Inbox/mixed.md");
+    const tasks = await parseTasksFromFile(testDir, "00_Inbox/mixed.md", "inbox");
     // Should find tasks regardless of line endings
     expect(tasks.length).toBeGreaterThanOrEqual(2);
   });
@@ -891,7 +891,7 @@ describe("Edge Cases", () => {
     const longText = "A".repeat(1000);
     await writeFile(join(testDir, "00_Inbox", "long.md"), `- [ ] ${longText}`);
 
-    const tasks = await parseTasksFromFile(testDir, "00_Inbox/long.md");
+    const tasks = await parseTasksFromFile(testDir, "00_Inbox/long.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].text).toBe(longText);
   });
@@ -899,7 +899,7 @@ describe("Edge Cases", () => {
   test("handles task with only emoji text", async () => {
     await writeFile(join(testDir, "00_Inbox", "emoji.md"), "- [ ] \u{1F389}\u{1F525}\u{2728}");
 
-    const tasks = await parseTasksFromFile(testDir, "00_Inbox/emoji.md");
+    const tasks = await parseTasksFromFile(testDir, "00_Inbox/emoji.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].text).toBe("\u{1F389}\u{1F525}\u{2728}");
   });
@@ -917,7 +917,7 @@ describe("Edge Cases", () => {
     // Parse all concurrently
     const files = await scanTasksFromDirectory(testDir, "00_Inbox");
     const results = await Promise.all(
-      files.map((f) => parseTasksFromFile(testDir, f))
+      files.map((f) => parseTasksFromFile(testDir, f, "inbox"))
     );
 
     const allTasks = results.flat();
@@ -936,7 +936,7 @@ date: 2025-01-01
 `;
     await writeFile(join(testDir, "00_Inbox", "frontmatter.md"), content);
 
-    const tasks = await parseTasksFromFile(testDir, "00_Inbox/frontmatter.md");
+    const tasks = await parseTasksFromFile(testDir, "00_Inbox/frontmatter.md", "inbox");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].text).toBe("Task after frontmatter");
   });
@@ -952,7 +952,7 @@ date: 2025-01-01
 `;
     await writeFile(join(testDir, "00_Inbox", "codeblock.md"), content);
 
-    const tasks = await parseTasksFromFile(testDir, "00_Inbox/codeblock.md");
+    const tasks = await parseTasksFromFile(testDir, "00_Inbox/codeblock.md", "inbox");
     // Both match because we don't track code block context
     expect(tasks.length).toBeGreaterThanOrEqual(1);
     // The real task should definitely be found

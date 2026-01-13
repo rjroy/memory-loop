@@ -20,6 +20,7 @@ export {
   // File browser schemas
   FileEntrySchema,
   // Task schemas
+  TaskCategorySchema,
   TaskEntrySchema,
   // Recent notes schemas
   RecentNoteEntrySchema,
@@ -97,6 +98,7 @@ export type {
   // File browser types
   FileEntry,
   // Task types
+  TaskCategory,
   TaskEntry,
   // Recent notes types
   RecentNoteEntry,

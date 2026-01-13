@@ -8,7 +8,7 @@
 
 import { readdir, readFile, writeFile, lstat, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
-import type { TaskEntry } from "@memory-loop/shared";
+import type { TaskEntry, TaskCategory } from "@memory-loop/shared";
 import { createLogger } from "./logger";
 import {
   validatePath,
@@ -160,11 +160,13 @@ export async function scanTasksFromDirectory(
  *
  * @param vaultPath - Absolute path to the vault root
  * @param relativePath - Relative file path from vault root
+ * @param category - Category indicating source directory (inbox, projects, or areas)
  * @returns Array of TaskEntry objects found in the file
  */
 export async function parseTasksFromFile(
   vaultPath: string,
-  relativePath: string
+  relativePath: string,
+  category: TaskCategory
 ): Promise<TaskEntry[]> {
   log.debug(`Parsing tasks from: ${relativePath}`);
 
@@ -224,6 +226,7 @@ export async function parseTasksFromFile(
         filePath: relativePath,
         lineNumber: i + 1, // 1-indexed
         fileMtime,
+        category,
       });
     }
   }
@@ -239,6 +242,7 @@ export async function parseTasksFromFile(
 /**
  * Gets all tasks from configured vault directories.
  * Scans inbox, projects, and areas directories in parallel.
+ * Each task is tagged with its source category for grouping.
  *
  * @param vaultPath - Absolute path to the vault root (content root)
  * @param config - Vault configuration
@@ -264,23 +268,23 @@ export async function getAllTasks(
     scanTasksFromDirectory(vaultPath, areaPath),
   ]);
 
-  // Combine all files (remove duplicates if any overlap)
-  const allFiles = [...new Set([...inboxFiles, ...projectFiles, ...areaFiles])];
+  log.debug(`Files found: inbox=${inboxFiles.length}, projects=${projectFiles.length}, areas=${areaFiles.length}`);
 
-  log.debug(`Total files to parse: ${allFiles.length}`);
+  // Parse tasks from each directory with its category in parallel
+  const [inboxTasks, projectTasks, areaTasks] = await Promise.all([
+    Promise.all(inboxFiles.map((filePath) => parseTasksFromFile(vaultPath, filePath, "inbox"))),
+    Promise.all(projectFiles.map((filePath) => parseTasksFromFile(vaultPath, filePath, "projects"))),
+    Promise.all(areaFiles.map((filePath) => parseTasksFromFile(vaultPath, filePath, "areas"))),
+  ]);
 
-  // Parse tasks from all files in parallel
-  const taskArrays = await Promise.all(
-    allFiles.map((filePath) => parseTasksFromFile(vaultPath, filePath))
-  );
+  // Flatten results from each category
+  const tasks: TaskEntry[] = [
+    ...inboxTasks.flat(),
+    ...projectTasks.flat(),
+    ...areaTasks.flat(),
+  ];
 
-  // Flatten results
-  const tasks: TaskEntry[] = [];
-  for (const fileTasksArr of taskArrays) {
-    tasks.push(...fileTasksArr);
-  }
-
-  // Sort by file path, then by line number
+  // Sort by file path, then by line number (frontend handles category grouping)
   tasks.sort((a, b) => {
     const pathCompare = a.filePath.localeCompare(b.filePath);
     if (pathCompare !== 0) return pathCompare;

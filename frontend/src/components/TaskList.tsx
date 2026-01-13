@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useCallback, useRef, useState, useEffect } from "react";
-import type { TaskEntry } from "@memory-loop/shared";
+import type { TaskEntry, TaskCategory } from "@memory-loop/shared";
 import { useSession } from "../contexts/SessionContext";
 import "./TaskList.css";
 
@@ -302,43 +302,72 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
   // Track original states for rollback on error
   const pendingTogglesRef = useRef<Map<string, string>>(new Map());
 
-  // Filter and group tasks by file path
-  const groupedTasks = useMemo(() => {
+  // Category display order: Inbox first, then Projects, then Areas
+  const CATEGORY_ORDER: TaskCategory[] = ["inbox", "projects", "areas"];
+
+  // Category display names for headers
+  const CATEGORY_LABELS: Record<TaskCategory, string> = {
+    inbox: "Inbox",
+    projects: "Projects",
+    areas: "Areas",
+  };
+
+  // Filter and group tasks by category, then by file path
+  const groupedByCategory = useMemo(() => {
     // Filter out completed tasks if hideCompleted is true
     const filteredTasks = hideCompleted
       ? tasks.filter((t) => t.state !== "x")
       : tasks;
 
-    const groups = new Map<string, TaskEntry[]>();
+    // Group by category first, then by file path within each category
+    const categoryGroups = new Map<TaskCategory, Map<string, TaskEntry[]>>();
+
     for (const task of filteredTasks) {
-      const existing = groups.get(task.filePath);
+      let categoryMap = categoryGroups.get(task.category);
+      if (!categoryMap) {
+        categoryMap = new Map<string, TaskEntry[]>();
+        categoryGroups.set(task.category, categoryMap);
+      }
+
+      const existing = categoryMap.get(task.filePath);
       if (existing) {
         existing.push(task);
       } else {
-        groups.set(task.filePath, [task]);
+        categoryMap.set(task.filePath, [task]);
       }
     }
-    // Sort tasks within each group by line number
-    for (const taskList of groups.values()) {
-      taskList.sort((a, b) => a.lineNumber - b.lineNumber);
+
+    // Sort tasks within each file group by line number
+    for (const categoryMap of categoryGroups.values()) {
+      for (const taskList of categoryMap.values()) {
+        taskList.sort((a, b) => a.lineNumber - b.lineNumber);
+      }
     }
-    return groups;
+
+    return categoryGroups;
   }, [tasks, hideCompleted]);
 
-  // Get file paths sorted by modification time (newest first)
-  // Must be before any early returns to maintain consistent hook ordering
-  const sortedFilePaths = useMemo(() => {
-    const paths = Array.from(groupedTasks.keys());
-    return paths.sort((a, b) => {
-      const tasksA = groupedTasks.get(a);
-      const tasksB = groupedTasks.get(b);
-      // Get mtime from first task in each group (all tasks in a file have same mtime)
-      const mtimeA = tasksA?.[0]?.fileMtime ?? 0;
-      const mtimeB = tasksB?.[0]?.fileMtime ?? 0;
-      // Sort descending (newest first)
-      return mtimeB - mtimeA;
-    });
-  }, [groupedTasks]);
+  // Get file paths sorted by mtime within each category
+  // Returns array of { category, filePaths } in category order
+  const sortedCategories = useMemo(() => {
+    return CATEGORY_ORDER
+      .filter((category) => groupedByCategory.has(category))
+      .map((category) => {
+        const fileGroups = groupedByCategory.get(category)!;
+        const paths = Array.from(fileGroups.keys());
+
+        // Sort file paths by mtime descending (newest first)
+        paths.sort((a, b) => {
+          const tasksA = fileGroups.get(a);
+          const tasksB = fileGroups.get(b);
+          const mtimeA = tasksA?.[0]?.fileMtime ?? 0;
+          const mtimeB = tasksB?.[0]?.fileMtime ?? 0;
+          return mtimeB - mtimeA;
+        });
+
+        return { category, filePaths: paths };
+      });
+  }, [groupedByCategory]);
 
   // Calculate total counts for display (before early returns for consistent hook ordering)
   const completedCount = tasks.filter((t) => t.state === "x").length;
@@ -528,18 +557,27 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
           {completedCount} / {totalCount}
         </span>
       </div>
-      {sortedFilePaths.map((filePath) => {
-        const fileTasks = groupedTasks.get(filePath);
-        if (!fileTasks) return null;
+      {sortedCategories.map(({ category, filePaths }) => {
+        const fileGroups = groupedByCategory.get(category);
+        if (!fileGroups) return null;
         return (
-          <TaskGroup
-            key={filePath}
-            filePath={filePath}
-            tasks={fileTasks}
-            onToggle={handleToggle}
-            onFileSelect={onFileSelect}
-            onContextMenu={handleContextMenu}
-          />
+          <section key={category} className="task-list__category">
+            <h3 className="task-list__category-header">{CATEGORY_LABELS[category]}</h3>
+            {filePaths.map((filePath) => {
+              const fileTasks = fileGroups.get(filePath);
+              if (!fileTasks) return null;
+              return (
+                <TaskGroup
+                  key={filePath}
+                  filePath={filePath}
+                  tasks={fileTasks}
+                  onToggle={handleToggle}
+                  onFileSelect={onFileSelect}
+                  onContextMenu={handleContextMenu}
+                />
+              );
+            })}
+          </section>
         );
       })}
 

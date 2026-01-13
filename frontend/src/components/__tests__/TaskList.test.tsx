@@ -76,9 +76,9 @@ describe("TaskList", () => {
   describe("task grouping", () => {
     it("groups tasks by file path", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task 1", state: " ", filePath: "folder/file1.md", lineNumber: 1, fileMtime: 1000 },
-        { text: "Task 2", state: " ", filePath: "folder/file1.md", lineNumber: 2, fileMtime: 1000 },
-        { text: "Task 3", state: " ", filePath: "folder/file2.md", lineNumber: 1, fileMtime: 2000 },
+        { text: "Task 1", state: " ", filePath: "folder/file1.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
+        { text: "Task 2", state: " ", filePath: "folder/file1.md", lineNumber: 2, fileMtime: 1000, category: "inbox" },
+        { text: "Task 3", state: " ", filePath: "folder/file2.md", lineNumber: 1, fileMtime: 2000, category: "inbox" },
       ];
 
       render(
@@ -94,9 +94,9 @@ describe("TaskList", () => {
 
     it("displays rollup count (completed / total) per file", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
-        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000 },
-        { text: "Task 3", state: " ", filePath: "file.md", lineNumber: 3, fileMtime: 1000 },
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
+        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000, category: "inbox" },
+        { text: "Task 3", state: " ", filePath: "file.md", lineNumber: 3, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -116,7 +116,7 @@ describe("TaskList", () => {
   describe("state indicators", () => {
     it("shows empty checkbox for incomplete tasks (state=' ')", () => {
       const tasks: TaskEntry[] = [
-        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -132,7 +132,7 @@ describe("TaskList", () => {
 
     it("shows checked checkbox for complete tasks (state='x')", () => {
       const tasks: TaskEntry[] = [
-        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -150,7 +150,7 @@ describe("TaskList", () => {
   describe("task toggle", () => {
     it("calls onToggleTask when toggle button is clicked", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task to toggle", state: " ", filePath: "file.md", lineNumber: 5, fileMtime: 1000 },
+        { text: "Task to toggle", state: " ", filePath: "file.md", lineNumber: 5, fileMtime: 1000, category: "inbox" },
       ];
 
       let toggledFilePath = "";
@@ -187,7 +187,7 @@ describe("TaskList", () => {
 
     it("rolls back optimistic update when onToggleTask returns false", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task to rollback", state: " ", filePath: "file.md", lineNumber: 5, fileMtime: 1000 },
+        { text: "Task to rollback", state: " ", filePath: "file.md", lineNumber: 5, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -215,7 +215,7 @@ describe("TaskList", () => {
   describe("touch targets", () => {
     it("has 44px minimum touch target class applied (REQ-NF-2)", () => {
       const tasks: TaskEntry[] = [
-        { text: "Touch target test", state: " ", filePath: "touch.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Touch target test", state: " ", filePath: "touch.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -237,7 +237,7 @@ describe("TaskList", () => {
   describe("accessibility", () => {
     it("provides aria-label for toggle buttons with task state", () => {
       const tasks: TaskEntry[] = [
-        { text: "Accessible task", state: "x", filePath: "access.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Accessible task", state: "x", filePath: "access.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -256,7 +256,7 @@ describe("TaskList", () => {
   describe("hide completed toggle", () => {
     it("renders hide completed checkbox in header", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -272,8 +272,8 @@ describe("TaskList", () => {
 
     it("filters out completed tasks when toggle is active", () => {
       const tasks: TaskEntry[] = [
-        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
-        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000 },
+        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
+        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -297,9 +297,9 @@ describe("TaskList", () => {
 
     it("displays total count as completed / total in header", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
-        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000 },
-        { text: "Task 3", state: " ", filePath: "file.md", lineNumber: 3, fileMtime: 1000 },
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
+        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000, category: "inbox" },
+        { text: "Task 3", state: " ", filePath: "file.md", lineNumber: 3, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -315,8 +315,8 @@ describe("TaskList", () => {
 
     it("keeps total count unchanged when hide toggle is active", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
-        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000 },
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
+        { text: "Task 2", state: "x", filePath: "file.md", lineNumber: 2, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -338,9 +338,9 @@ describe("TaskList", () => {
   describe("sort by modification time", () => {
     it("sorts files by mtime descending (newest first)", () => {
       const tasks: TaskEntry[] = [
-        { text: "Old file task", state: " ", filePath: "old.md", lineNumber: 1, fileMtime: 1000 },
-        { text: "New file task", state: " ", filePath: "new.md", lineNumber: 1, fileMtime: 3000 },
-        { text: "Mid file task", state: " ", filePath: "mid.md", lineNumber: 1, fileMtime: 2000 },
+        { text: "Old file task", state: " ", filePath: "old.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
+        { text: "New file task", state: " ", filePath: "new.md", lineNumber: 1, fileMtime: 3000, category: "inbox" },
+        { text: "Mid file task", state: " ", filePath: "mid.md", lineNumber: 1, fileMtime: 2000, category: "inbox" },
       ];
 
       render(
@@ -361,8 +361,8 @@ describe("TaskList", () => {
 
     it("handles files with mtime=0 (sorted last)", () => {
       const tasks: TaskEntry[] = [
-        { text: "No mtime task", state: " ", filePath: "unknown.md", lineNumber: 1, fileMtime: 0 },
-        { text: "Has mtime task", state: " ", filePath: "known.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "No mtime task", state: " ", filePath: "unknown.md", lineNumber: 1, fileMtime: 0, category: "inbox" },
+        { text: "Has mtime task", state: " ", filePath: "known.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -383,7 +383,7 @@ describe("TaskList", () => {
   describe("left-click toggle behavior", () => {
     it("toggles from incomplete to complete on left-click", () => {
       const tasks: TaskEntry[] = [
-        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Incomplete task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -405,7 +405,7 @@ describe("TaskList", () => {
 
     it("toggles from complete to incomplete on left-click", () => {
       const tasks: TaskEntry[] = [
-        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Complete task", state: "x", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -427,7 +427,7 @@ describe("TaskList", () => {
 
     it("toggles from special state to incomplete on left-click", () => {
       const tasks: TaskEntry[] = [
-        { text: "Partial task", state: "/", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Partial task", state: "/", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -451,7 +451,7 @@ describe("TaskList", () => {
   describe("context menu", () => {
     it("opens context menu on right-click", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -472,7 +472,7 @@ describe("TaskList", () => {
 
     it("displays special state options in context menu", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -495,7 +495,7 @@ describe("TaskList", () => {
 
     it("selects state from context menu", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task to update", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task to update", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       let toggledFilePath = "";
@@ -540,7 +540,7 @@ describe("TaskList", () => {
 
     it("closes context menu on escape key", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(
@@ -566,7 +566,7 @@ describe("TaskList", () => {
 
     it("closes context menu on click outside", () => {
       const tasks: TaskEntry[] = [
-        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task with menu", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
       ];
 
       render(

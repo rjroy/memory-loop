@@ -106,10 +106,11 @@ describe("TaskList", () => {
       );
 
       // 1 completed (x), 3 total - appears in both header and per-group count
-      // Find the group header button by its aria-expanded attribute
-      const groupHeader = screen.getByRole("button", { expanded: true });
-      expect(groupHeader.textContent).toContain("1 / 3");
-      expect(groupHeader.textContent).toContain("file.md");
+      // Find the file group header button by its class (not the category header)
+      const groupHeader = document.querySelector(".task-list__group-header");
+      expect(groupHeader).not.toBeNull();
+      expect(groupHeader!.textContent).toContain("1 / 3");
+      expect(groupHeader!.textContent).toContain("file.md");
     });
   });
 
@@ -349,9 +350,9 @@ describe("TaskList", () => {
         </SessionProvider>
       );
 
-      // Get all group headers in order
-      const headers = screen.getAllByRole("button", { expanded: true });
-      const fileNames = headers.map((h) => h.textContent);
+      // Get all file group headers in order (not category headers)
+      const headers = document.querySelectorAll(".task-list__group-header");
+      const fileNames = Array.from(headers).map((h) => h.textContent);
 
       // Should be newest first: new.md, mid.md, old.md
       expect(fileNames[0]).toContain("new.md");
@@ -371,8 +372,9 @@ describe("TaskList", () => {
         </SessionProvider>
       );
 
-      const headers = screen.getAllByRole("button", { expanded: true });
-      const fileNames = headers.map((h) => h.textContent);
+      // Get all file group headers (not category headers)
+      const headers = document.querySelectorAll(".task-list__group-header");
+      const fileNames = Array.from(headers).map((h) => h.textContent);
 
       // File with mtime should come first, mtime=0 last
       expect(fileNames[0]).toContain("known.md");

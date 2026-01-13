@@ -46,6 +46,12 @@ import { evaluateExpression } from "./expression-eval";
 import { computeWeightedSimilarity } from "./comparators";
 import { WidgetCache, createWidgetCache } from "./widget-cache";
 import { createComputationPlan } from "./dependency-graph";
+import {
+  resolveWidgetIncludes,
+  getIncludeChain,
+  type IncludesResolution,
+  type LoadedWidget as IncludesLoadedWidget,
+} from "./widget-includes";
 
 const log = createLogger("WidgetEngine");
 
@@ -175,6 +181,13 @@ export class WidgetEngine {
   // Health reporting callback for surfacing issues to UI
   private healthCallback: HealthReportCallback | null = null;
 
+  // Widget includes resolution (for cross-widget references)
+  private includesResolution: IncludesResolution | null = null;
+  private widgetsByName: Map<string, LoadedWidget> = new Map();
+
+  // Cached widget results for include resolution (keyed by widget name)
+  private computedWidgetResults: Map<string, Record<string, unknown>> = new Map();
+
   constructor(vaultPath: string, vaultId?: string) {
     this.vaultPath = vaultPath;
     // Use vault path as ID if not provided (hash for uniqueness)
@@ -229,8 +242,25 @@ export class WidgetEngine {
     const loaderResult = await loadWidgetConfigs(this.vaultPath);
     this.widgets = loaderResult.widgets;
 
+    // Build widget name lookup map
+    this.widgetsByName.clear();
+    for (const widget of this.widgets) {
+      this.widgetsByName.set(widget.config.name, widget);
+    }
+
+    // Resolve widget includes and detect circular dependencies
+    this.includesResolution = resolveWidgetIncludes(
+      this.widgets as IncludesLoadedWidget[]
+    );
+
+    // Report circular dependency errors to health callback
+    this.reportIncludesErrors();
+
     // Initialize cache
     this.cache = await createWidgetCache(this.vaultPath);
+
+    // Clear any cached widget results from previous initialization
+    this.computedWidgetResults.clear();
 
     this.initialized = true;
 
@@ -251,8 +281,51 @@ export class WidgetEngine {
     }
 
     this.widgets = [];
+    this.widgetsByName.clear();
+    this.includesResolution = null;
+    this.computedWidgetResults.clear();
     this.pendingRecomputations.clear();
     this.initialized = false;
+  }
+
+  /**
+   * Report includes resolution errors to the health callback.
+   * Called during initialization after resolving widget includes.
+   */
+  private reportIncludesErrors(): void {
+    if (!this.includesResolution) {
+      return;
+    }
+
+    // Report circular dependency errors
+    for (const cycleDesc of this.includesResolution.cycleDescriptions) {
+      log.error(`Widget circular dependency: ${cycleDesc}`);
+      this.healthCallback?.({
+        id: `widget_include_cycle_${cycleDesc.replace(/[^a-zA-Z0-9]/g, "_")}`,
+        severity: "error",
+        message: "Circular widget dependency detected",
+        details: `Cycle: ${cycleDesc}. Widgets in this cycle cannot be computed.`,
+      });
+    }
+
+    // Report invalid includes (references to non-existent widgets)
+    for (const [widgetName, invalidNames] of this.includesResolution.invalidIncludes) {
+      const invalidList = invalidNames.join(", ");
+      log.warn(`Widget "${widgetName}" includes non-existent widgets: ${invalidList}`);
+      this.healthCallback?.({
+        id: `widget_invalid_include_${widgetName.replace(/[^a-zA-Z0-9]/g, "_")}`,
+        severity: "warning",
+        message: `Widget "${widgetName}" has invalid includes`,
+        details: `Referenced widgets not found: ${invalidList}`,
+      });
+    }
+  }
+
+  /**
+   * Check if a widget is in a circular dependency.
+   */
+  private isWidgetInCycle(widgetName: string): boolean {
+    return this.includesResolution?.cycleWidgets.has(widgetName) ?? false;
   }
 
   // ===========================================================================
@@ -261,6 +334,9 @@ export class WidgetEngine {
 
   /**
    * Compute all ground widgets for the vault dashboard.
+   *
+   * Widgets are computed in dependency order when includes are used.
+   * Widgets in circular dependency cycles return error results.
    *
    * @param options - Computation options
    * @returns Array of widget results
@@ -279,11 +355,52 @@ export class WidgetEngine {
 
     log.info(`Computing ${groundWidgets.length} ground widget(s)`);
 
-    const results = await Promise.all(
-      groundWidgets.map((w) => this.computeWidget(w, options))
-    );
+    // Always clear cached results at the start of computation to ensure
+    // a consistent state for this computation run. Results are rebuilt
+    // as each widget is computed (either fresh or from cache).
+    this.computedWidgetResults.clear();
+
+    // Compute widgets in dependency order using the resolved computation order
+    const results: WidgetResult[] = [];
+    const computationOrder = this.includesResolution?.computationOrder ?? [];
+
+    // First, compute widgets in dependency order
+    for (const widgetName of computationOrder) {
+      const widget = this.widgetsByName.get(widgetName);
+      if (!widget || widget.config.location !== "ground") {
+        continue;
+      }
+
+      const result = await this.computeWidget(widget, options);
+      results.push(result);
+    }
+
+    // Then, handle widgets in cycles (they get error results)
+    for (const widget of groundWidgets) {
+      if (this.isWidgetInCycle(widget.config.name)) {
+        results.push(this.createCycleErrorResult(widget, performance.now()));
+      }
+    }
 
     return results;
+  }
+
+  /**
+   * Create an error result for a widget in a circular dependency.
+   */
+  private createCycleErrorResult(widget: LoadedWidget, startTime: number): WidgetResult {
+    return {
+      widgetId: widget.id,
+      name: widget.config.name,
+      type: widget.config.type,
+      location: widget.config.location,
+      display: widget.config.display,
+      data: null,
+      editable: widget.config.editable,
+      isEmpty: true,
+      emptyReason: "Widget is part of a circular dependency and cannot be computed",
+      computeTimeMs: performance.now() - startTime,
+    };
   }
 
   // ===========================================================================
@@ -366,6 +483,12 @@ export class WidgetEngine {
         log.debug(`Cache hit for widget ${widget.id}`);
         const result = JSON.parse(cached.resultJson) as WidgetResult;
         result.computeTimeMs = performance.now() - startTime;
+
+        // Store cached result for includes so dependent widgets can access this widget's data
+        if (result.data && typeof result.data === "object") {
+          this.computedWidgetResults.set(widget.config.name, result.data as Record<string, unknown>);
+        }
+
         return result;
       }
     }
@@ -472,6 +595,9 @@ export class WidgetEngine {
    * The result context is available to expressions via both `stats.*` (legacy)
    * and `result.*` (DAG dependencies). Both reference the same accumulator.
    *
+   * When the widget has `includes`, results from included widgets are available
+   * via `included.WidgetName.fieldName` in expressions.
+   *
    * Plan Reference: TD-5 (Cycle Handling), TD-6 (Result Context Integration)
    */
   private computeAggregateWidget(
@@ -487,6 +613,9 @@ export class WidgetEngine {
 
     // Log and report warnings for cycles (REQ-F-12: warn but don't throw)
     this.reportCycleWarnings(widget.id, config.name, plan);
+
+    // Build included context from cached results of included widgets
+    const included = this.buildIncludedContext(config.name);
 
     // Initialize result accumulator with built-in count (REQ-F-14)
     const result: Record<string, unknown> = { count: files.length };
@@ -509,16 +638,20 @@ export class WidgetEngine {
         } else {
           // Expression field: evaluated once with collection context
           // For ground widgets, `this` is empty (no current item)
+          // `included` provides access to included widgets' results
           result[fieldName] = this.evaluateExpressionWithHealth(
             widget.id,
             config.name,
             fieldName,
             fieldConfig.expr!,
-            { this: {}, stats: result, result: result }
+            { this: {}, stats: result, result: result, included }
           );
         }
       }
     }
+
+    // Cache this widget's results for use by widgets that include it
+    this.computedWidgetResults.set(config.name, { ...result });
 
     // Filter to only user-defined visible fields
     // (stats.count is for expressions, not output unless user defines a count field)
@@ -545,6 +678,36 @@ export class WidgetEngine {
   }
 
   /**
+   * Build the included context for a widget.
+   *
+   * Returns a map of widget name -> cached results for all widgets
+   * in the include chain (direct and transitive includes).
+   *
+   * @param widgetName - The widget to build context for
+   * @returns Object mapping included widget names to their results
+   */
+  private buildIncludedContext(widgetName: string): Record<string, Record<string, unknown>> {
+    const included: Record<string, Record<string, unknown>> = {};
+
+    // Get the include chain (already in dependency order)
+    const includeChain = getIncludeChain(
+      widgetName,
+      this.widgetsByName,
+      this.includesResolution?.cycleWidgets ?? new Set()
+    );
+
+    // Add cached results for each included widget
+    for (const includedName of includeChain) {
+      const cachedResult = this.computedWidgetResults.get(includedName);
+      if (cachedResult) {
+        included[includedName] = cachedResult;
+      }
+    }
+
+    return included;
+  }
+
+  /**
    * Compute an aggregate widget for a specific item (recall widgets).
    * Uses DAG-ordered computation with per-item context.
    *
@@ -552,6 +715,9 @@ export class WidgetEngine {
    * also have access to `this.*` for the current file's frontmatter.
    * This enables per-item expressions like z-scores that reference both
    * the item's values and collection-level statistics.
+   *
+   * When the widget has `includes`, results from included widgets are available
+   * via `included.WidgetName.fieldName` in expressions.
    *
    * Plan Reference: TD-6 (Result Context), TD-7 (Per-Item vs Collection Context)
    */
@@ -569,6 +735,9 @@ export class WidgetEngine {
 
     // Log and report warnings for cycles (REQ-F-12: warn but don't throw)
     this.reportCycleWarnings(widget.id, config.name, plan);
+
+    // Build included context from cached results of included widgets
+    const included = this.buildIncludedContext(config.name);
 
     // Initialize result accumulator with built-in count (REQ-F-14)
     const result: Record<string, unknown> = { count: files.length };
@@ -591,12 +760,13 @@ export class WidgetEngine {
         } else {
           // Expression field: evaluated with item context (TD-7)
           // `this` contains the current file's frontmatter for per-item access
+          // `included` provides access to included widgets' results
           result[fieldName] = this.evaluateExpressionWithHealth(
             widget.id,
             config.name,
             fieldName,
             fieldConfig.expr!,
-            { this: currentFile.frontmatter, stats: result, result: result }
+            { this: currentFile.frontmatter, stats: result, result: result, included }
           );
         }
       }
@@ -933,7 +1103,12 @@ export class WidgetEngine {
     widgetName: string,
     fieldName: string,
     expression: string,
-    context: { this: Record<string, unknown>; stats: Record<string, unknown>; result: Record<string, unknown> }
+    context: {
+      this: Record<string, unknown>;
+      stats: Record<string, unknown>;
+      result: Record<string, unknown>;
+      included?: Record<string, Record<string, unknown>>;
+    }
   ): unknown {
     try {
       return evaluateExpression(expression, context);

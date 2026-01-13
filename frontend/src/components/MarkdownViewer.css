@@ -90,7 +90,7 @@
   overflow-y: auto;
   padding: var(--spacing-md) var(--spacing-lg);
   line-height: 1.6;
-  background-color: var(--glass-bg);
+  background-color: rgba( from var(--glass-bg) r g b / 0.5 );
   backdrop-filter: blur(var(--glass-blur));
 }
 

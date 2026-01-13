@@ -150,6 +150,12 @@
   text-underline-offset: 2px;
 }
 
+.message-bubble__text img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+}
+
 .message-bubble__text blockquote {
   margin: 0.5em 0;
   padding-left: 0.75em;

@@ -325,7 +325,7 @@ describe("BrowseMode", () => {
       ws.simulateMessage({
         type: "tasks",
         tasks: [
-          { text: "Test task", state: " ", filePath: "test.md", lineNumber: 1, fileMtime: 1000 },
+          { text: "Test task", state: " ", filePath: "test.md", lineNumber: 1, fileMtime: 1000, category: "inbox" },
         ],
         incomplete: 1,
         total: 1,

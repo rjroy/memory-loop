@@ -1719,8 +1719,8 @@ describe("SessionContext", () => {
       });
 
       const tasks = [
-        { text: "Task 1", state: " ", filePath: "folder/file.md", lineNumber: 1, fileMtime: 1000 },
-        { text: "Task 2", state: "x", filePath: "folder/file.md", lineNumber: 2, fileMtime: 1000 },
+        { text: "Task 1", state: " ", filePath: "folder/file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" as const },
+        { text: "Task 2", state: "x", filePath: "folder/file.md", lineNumber: 2, fileMtime: 1000, category: "inbox" as const },
       ];
 
       act(() => {
@@ -1805,9 +1805,9 @@ describe("SessionContext", () => {
       });
 
       const tasks = [
-        { text: "Task 1", state: " ", filePath: "folder/file.md", lineNumber: 1, fileMtime: 1000 },
-        { text: "Task 2", state: " ", filePath: "folder/file.md", lineNumber: 2, fileMtime: 1000 },
-        { text: "Task 3", state: " ", filePath: "other/file.md", lineNumber: 1, fileMtime: 2000 },
+        { text: "Task 1", state: " ", filePath: "folder/file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" as const },
+        { text: "Task 2", state: " ", filePath: "folder/file.md", lineNumber: 2, fileMtime: 1000, category: "inbox" as const },
+        { text: "Task 3", state: " ", filePath: "other/file.md", lineNumber: 1, fileMtime: 2000, category: "inbox" as const },
       ];
 
       act(() => {
@@ -1830,7 +1830,7 @@ describe("SessionContext", () => {
       });
 
       const tasks = [
-        { text: "Task 1", state: " ", filePath: "folder/file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task 1", state: " ", filePath: "folder/file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" as const },
       ];
 
       act(() => {
@@ -1851,7 +1851,7 @@ describe("SessionContext", () => {
       });
 
       const tasks = [
-        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+        { text: "Task 1", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" as const },
       ];
 
       act(() => {
@@ -1878,7 +1878,7 @@ describe("SessionContext", () => {
         result.current.selectVault(testVault);
         result.current.setViewMode("tasks");
         result.current.setTasks([
-          { text: "Task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+          { text: "Task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" as const },
         ]);
       });
 
@@ -1902,7 +1902,7 @@ describe("SessionContext", () => {
       act(() => {
         result.current.selectVault(testVault);
         result.current.setTasks([
-          { text: "Task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+          { text: "Task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" as const },
         ]);
       });
 
@@ -1924,7 +1924,7 @@ describe("SessionContext", () => {
       // Set up task state
       act(() => {
         result.current.setTasks([
-          { text: "Task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000 },
+          { text: "Task", state: " ", filePath: "file.md", lineNumber: 1, fileMtime: 1000, category: "inbox" as const },
         ]);
         result.current.setTasksError("Some error");
       });

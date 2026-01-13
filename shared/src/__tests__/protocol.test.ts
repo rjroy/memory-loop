@@ -226,6 +226,7 @@ describe("TaskEntrySchema", () => {
       filePath: "00_Inbox/2025-01-01.md",
       lineNumber: 5,
       fileMtime: 1704067200000,
+      category: "inbox",
     };
     const result = TaskEntrySchema.parse(task);
     expect(result.text).toBe("Buy groceries");
@@ -241,6 +242,7 @@ describe("TaskEntrySchema", () => {
       filePath: "01_Projects/project.md",
       lineNumber: 10,
       fileMtime: 1704067200000,
+      category: "inbox",
     };
     const result = TaskEntrySchema.parse(task);
     expect(result.state).toBe("x");
@@ -255,6 +257,7 @@ describe("TaskEntrySchema", () => {
         filePath: "test.md",
         lineNumber: 1,
         fileMtime: 1704067200000,
+        category: "inbox",
       };
       expect(() => TaskEntrySchema.parse(task)).not.toThrow();
     }
@@ -268,6 +271,7 @@ describe("TaskEntrySchema", () => {
       filePath: "test.md",
       lineNumber: 1,
       fileMtime: 1704067200000,
+      category: "inbox",
     };
     const result = TaskEntrySchema.parse(task);
     expect(result.text).toBe("");
@@ -280,6 +284,7 @@ describe("TaskEntrySchema", () => {
       filePath: "test.md",
       lineNumber: 1,
       fileMtime: 1704067200000,
+      category: "inbox",
     };
     const result = TaskEntrySchema.parse(task);
     expect(result.text).toContain("\u{1F525}");
@@ -292,6 +297,7 @@ describe("TaskEntrySchema", () => {
       filePath: "test.md",
       lineNumber: 1,
       fileMtime: 1704067200000,
+      category: "inbox",
     };
     expect(() => TaskEntrySchema.parse(task)).toThrow(ZodError);
   });
@@ -1456,6 +1462,7 @@ describe("Server -> Client Messages", () => {
             filePath: "00_Inbox/today.md",
             lineNumber: 5,
             fileMtime: 1704067200000,
+            category: "inbox" as const,
           },
           {
             text: "Finish report",
@@ -1463,6 +1470,7 @@ describe("Server -> Client Messages", () => {
             filePath: "01_Projects/work.md",
             lineNumber: 10,
             fileMtime: 1704067200000,
+            category: "projects" as const,
           },
         ],
         incomplete: 1,
@@ -1498,6 +1506,7 @@ describe("Server -> Client Messages", () => {
         filePath: "test.md",
         lineNumber: i + 1,
         fileMtime: 1704067200000,
+        category: "inbox" as const,
       }));
       const msg = {
         type: "tasks" as const,
@@ -1512,7 +1521,7 @@ describe("Server -> Client Messages", () => {
     test("rejects invalid task in tasks array", () => {
       const msg = {
         type: "tasks",
-        tasks: [{ text: "Valid", state: "xx", filePath: "test.md", lineNumber: 1, fileMtime: 1704067200000 }], // invalid state
+        tasks: [{ text: "Valid", state: "xx", filePath: "test.md", lineNumber: 1, fileMtime: 1704067200000, category: "inbox" }], // invalid state
         incomplete: 0,
         total: 1,
       };
@@ -2153,7 +2162,7 @@ describe("Server -> Client Messages", () => {
         {
           type: "tasks",
           tasks: [
-            { text: "Buy milk", state: " ", filePath: "inbox.md", lineNumber: 1, fileMtime: 1704067200000 },
+            { text: "Buy milk", state: " ", filePath: "inbox.md", lineNumber: 1, fileMtime: 1704067200000, category: "inbox" },
           ],
           incomplete: 1,
           total: 1,

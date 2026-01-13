@@ -96,6 +96,35 @@
 }
 
 /* ============================================
+   Category Section
+   ============================================ */
+
+.task-list__category {
+  margin-bottom: var(--spacing-md);
+}
+
+.task-list__category-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: 0 var(--spacing-xs) var(--spacing-xs);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--glass-border);
+
+  /* Sticky category header */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+/* ============================================
    Task Group
    ============================================ */
 

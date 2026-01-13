@@ -94,6 +94,11 @@ export const FileEntrySchema = z.object({
 });
 
 /**
+ * Schema for task category - indicates which directory the task was found in
+ */
+export const TaskCategorySchema = z.enum(["inbox", "projects", "areas"]);
+
+/**
  * Schema for a task entry parsed from markdown files
  * Tasks are lines matching /^\s*- \[(.)\] (.+)$/
  */
@@ -108,6 +113,8 @@ export const TaskEntrySchema = z.object({
   lineNumber: z.number().int().min(1, "Line number must be at least 1"),
   /** File modification time (Unix timestamp in ms) for sorting */
   fileMtime: z.number().int().min(0),
+  /** Category indicating source directory (inbox, projects, or areas) */
+  category: TaskCategorySchema,
 });
 
 /**
@@ -1066,6 +1073,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
 export type FileEntry = z.infer<typeof FileEntrySchema>;
 
 // Task types
+export type TaskCategory = z.infer<typeof TaskCategorySchema>;
 export type TaskEntry = z.infer<typeof TaskEntrySchema>;
 
 // Recent notes types

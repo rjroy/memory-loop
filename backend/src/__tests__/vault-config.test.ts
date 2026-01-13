@@ -29,7 +29,9 @@ import {
   resolveMaxPoolSize,
   resolveQuotesPerWeek,
   resolveBadges,
+  resolvePinnedAssets,
   saveSlashCommands,
+  savePinnedAssets,
   slashCommandsEqual,
   type VaultConfig,
 } from "../vault-config";
@@ -1073,6 +1075,159 @@ describe("vault-config", () => {
     test("returns empty array when configured as empty", () => {
       const result = resolveBadges({ badges: [] });
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("loadVaultConfig with pinnedAssets", () => {
+    test("loads config with valid pinnedAssets array", async () => {
+      const pinnedAssets = ["folder1", "folder2/subfolder", "notes/daily.md"];
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ pinnedAssets })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.pinnedAssets).toEqual(pinnedAssets);
+    });
+
+    test("loads config with pinnedAssets alongside other fields", async () => {
+      const configData = {
+        contentRoot: "content",
+        pinnedAssets: ["pinned/folder"],
+      };
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify(configData)
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.contentRoot).toBe("content");
+      expect(config.pinnedAssets).toEqual(["pinned/folder"]);
+    });
+
+    test("filters out non-string pinnedAssets entries", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          pinnedAssets: [
+            "valid/path",
+            null,
+            42,
+            { nested: "object" },
+            "another/valid",
+            "",
+          ],
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.pinnedAssets).toEqual(["valid/path", "another/valid"]);
+    });
+
+    test("returns undefined pinnedAssets when not an array", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ pinnedAssets: "not an array" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.pinnedAssets).toBeUndefined();
+    });
+
+    test("returns empty array when pinnedAssets is empty array", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ pinnedAssets: [] })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.pinnedAssets).toEqual([]);
+    });
+  });
+
+  describe("resolvePinnedAssets", () => {
+    test("returns empty array when pinnedAssets not configured", () => {
+      const result = resolvePinnedAssets({});
+      expect(result).toEqual([]);
+    });
+
+    test("returns empty array when pinnedAssets is undefined", () => {
+      const result = resolvePinnedAssets({ pinnedAssets: undefined });
+      expect(result).toEqual([]);
+    });
+
+    test("returns configured pinnedAssets", () => {
+      const pinnedAssets = ["folder1", "folder2/subfolder"];
+      const result = resolvePinnedAssets({ pinnedAssets });
+      expect(result).toEqual(pinnedAssets);
+    });
+
+    test("returns empty array when configured as empty", () => {
+      const result = resolvePinnedAssets({ pinnedAssets: [] });
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("savePinnedAssets", () => {
+    test("creates config file with pinnedAssets when none exists", async () => {
+      const paths = ["folder1", "folder2/subfolder"];
+
+      await savePinnedAssets(testDir, paths);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.pinnedAssets).toEqual(paths);
+    });
+
+    test("preserves existing config fields when saving pinnedAssets", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ contentRoot: "content", inboxPath: "inbox" })
+      );
+
+      const paths = ["pinned/folder"];
+      await savePinnedAssets(testDir, paths);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.contentRoot).toBe("content");
+      expect(parsed.inboxPath).toBe("inbox");
+      expect(parsed.pinnedAssets).toEqual(paths);
+    });
+
+    test("updates existing pinnedAssets", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          pinnedAssets: ["old/path"],
+        })
+      );
+
+      const newPaths = ["new/path1", "new/path2"];
+      await savePinnedAssets(testDir, newPaths);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.pinnedAssets).toEqual(newPaths);
+    });
+
+    test("saves empty array when no paths", async () => {
+      await savePinnedAssets(testDir, []);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.pinnedAssets).toEqual([]);
+    });
+
+    test("handles invalid existing JSON by starting fresh", async () => {
+      await writeFile(join(testDir, CONFIG_FILE_NAME), "{ invalid }");
+
+      const paths = ["folder"];
+      await savePinnedAssets(testDir, paths);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as VaultConfig;
+      expect(parsed.pinnedAssets).toEqual(paths);
     });
   });
 });

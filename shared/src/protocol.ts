@@ -570,6 +570,24 @@ export const DismissHealthIssueMessageSchema = z.object({
 });
 
 /**
+ * Client requests pinned assets for current vault
+ * Returns paths stored in .memory-loop.json
+ */
+export const GetPinnedAssetsMessageSchema = z.object({
+  type: z.literal("get_pinned_assets"),
+});
+
+/**
+ * Client updates pinned assets for current vault
+ * Saves paths to .memory-loop.json
+ */
+export const SetPinnedAssetsMessageSchema = z.object({
+  type: z.literal("set_pinned_assets"),
+  /** Array of paths (relative to content root) to pin */
+  paths: z.array(z.string()),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -600,6 +618,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   GetRecallWidgetsMessageSchema,
   WidgetEditMessageSchema,
   DismissHealthIssueMessageSchema,
+  GetPinnedAssetsMessageSchema,
+  SetPinnedAssetsMessageSchema,
 ]);
 
 // =============================================================================
@@ -990,6 +1010,16 @@ export const HealthReportMessageSchema = z.object({
 });
 
 /**
+ * Server sends pinned assets for the current vault.
+ * Response to get_pinned_assets or set_pinned_assets request.
+ */
+export const PinnedAssetsMessageSchema = z.object({
+  type: z.literal("pinned_assets"),
+  /** Array of pinned asset paths (relative to content root) */
+  paths: z.array(z.string()),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -1025,6 +1055,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   WidgetUpdateMessageSchema,
   WidgetErrorMessageSchema,
   HealthReportMessageSchema,
+  PinnedAssetsMessageSchema,
 ]);
 
 // =============================================================================
@@ -1100,6 +1131,8 @@ export type GetGroundWidgetsMessage = z.infer<typeof GetGroundWidgetsMessageSche
 export type GetRecallWidgetsMessage = z.infer<typeof GetRecallWidgetsMessageSchema>;
 export type WidgetEditMessage = z.infer<typeof WidgetEditMessageSchema>;
 export type DismissHealthIssueMessage = z.infer<typeof DismissHealthIssueMessageSchema>;
+export type GetPinnedAssetsMessage = z.infer<typeof GetPinnedAssetsMessageSchema>;
+export type SetPinnedAssetsMessage = z.infer<typeof SetPinnedAssetsMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -1135,6 +1168,7 @@ export type GroundWidgetsMessage = z.infer<typeof GroundWidgetsMessageSchema>;
 export type RecallWidgetsMessage = z.infer<typeof RecallWidgetsMessageSchema>;
 export type WidgetUpdateMessage = z.infer<typeof WidgetUpdateMessageSchema>;
 export type WidgetErrorMessage = z.infer<typeof WidgetErrorMessageSchema>;
+export type PinnedAssetsMessage = z.infer<typeof PinnedAssetsMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

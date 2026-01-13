@@ -119,6 +119,22 @@ export function BrowseMode(): React.ReactNode {
     }
   }, [vault, hasSessionReady, browser.directoryCache, sendMessage, setFileLoading]);
 
+  // Load pinned assets from server after session is ready
+  const hasFetchedPinnedAssetsRef = useRef(false);
+  useEffect(() => {
+    if (vault && hasSessionReady && !hasFetchedPinnedAssetsRef.current) {
+      hasFetchedPinnedAssetsRef.current = true;
+      sendMessage({ type: "get_pinned_assets" });
+    }
+  }, [vault, hasSessionReady, sendMessage]);
+
+  // Reset pinned assets fetch flag on vault change or reconnect
+  useEffect(() => {
+    if (!hasSessionReady) {
+      hasFetchedPinnedAssetsRef.current = false;
+    }
+  }, [hasSessionReady]);
+
   // Load tasks when viewMode is "tasks"
   useEffect(() => {
     if (vault && hasSessionReady && viewMode === "tasks") {
@@ -395,6 +411,14 @@ export function BrowseMode(): React.ReactNode {
     [sendMessage, addPendingEdit]
   );
 
+  // Handle pinned assets change from FileTree - sync to server
+  const handlePinnedAssetsChange = useCallback(
+    (paths: string[]) => {
+      sendMessage({ type: "set_pinned_assets", paths });
+    },
+    [sendMessage]
+  );
+
   // Toggle tree collapse state
   const toggleTreeCollapse = useCallback(() => {
     setIsTreeCollapsed((prev) => !prev);
@@ -581,7 +605,7 @@ export function BrowseMode(): React.ReactNode {
                 onRequestSnippets={handleRequestSnippets}
               />
             ) : viewMode === "files" ? (
-              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onThinkAbout={handleThinkAbout} />
+              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} />
             ) : (
               <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
             )}
@@ -744,7 +768,7 @@ export function BrowseMode(): React.ReactNode {
                   onRequestSnippets={handleRequestSnippets}
                 />
               ) : viewMode === "files" ? (
-                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onThinkAbout={handleThinkAbout} />
+                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} />
               ) : (
                 <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
               )}

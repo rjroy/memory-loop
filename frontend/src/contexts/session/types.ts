@@ -246,6 +246,8 @@ export interface SessionActions {
   pinFolder: (path: string) => void;
   /** Unpin a folder */
   unpinFolder: (path: string) => void;
+  /** Set all pinned assets (from server response) */
+  setPinnedAssets: (paths: string[]) => void;
   /** Set recent discussions */
   setRecentDiscussions: (discussions: RecentDiscussionEntry[]) => void;
   /** Remove a discussion from the recent list (after deletion) */

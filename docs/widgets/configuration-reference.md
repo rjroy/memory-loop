@@ -29,6 +29,7 @@ Each `.yaml` file defines one widget.
 | `dimensions` | array | For similarity | Similarity dimensions |
 | `display` | object | Yes | Display configuration |
 | `editable` | array | No | Editable frontmatter fields |
+| `includes` | array | No | Widget names to include (cross-widget references) |
 
 ## Source Configuration
 
@@ -70,6 +71,101 @@ filter:
 filter:
   type: book
   status: read
+```
+
+## Includes Configuration
+
+Reference other widgets to access their computed results in your expressions.
+
+```yaml
+name: Books Dashboard
+includes:
+  - "Reading Stats"
+  - "Genre Breakdown"
+fields:
+  combined_score:
+    expr: "included['Reading Stats'].avg_rating * included['Genre Breakdown'].diversity_index"
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `includes` | `string[]` | Array of widget names to include |
+
+### How Includes Work
+
+When a widget includes other widgets:
+
+1. **Dependency order**: Included widgets are computed first
+2. **Access via `included`**: Results are available in expressions as `included.WidgetName.fieldName` or `included['Widget Name'].fieldName`
+3. **Transitive includes**: If Widget A includes Widget B, and B includes Widget C, then A has access to both B and C
+
+### Circular Dependencies
+
+Circular dependencies (A includes B, B includes A) are detected at initialization and reported as errors. Widgets in a cycle cannot be computed and display an error state.
+
+### Invalid Includes
+
+References to non-existent widgets are reported as warnings. The widget will still compute, but the missing include will not be available in the `included` context.
+
+### Use Cases
+
+**Cross-collection analysis**: Reference stats from different file patterns.
+
+```yaml
+# books-stats.yaml
+name: Books Stats
+source:
+  pattern: "Books/**/*.md"
+fields:
+  avg_rating:
+    avg: rating
+
+# movies-stats.yaml
+name: Movies Stats
+source:
+  pattern: "Movies/**/*.md"
+fields:
+  avg_rating:
+    avg: rating
+
+# media-comparison.yaml
+name: Media Comparison
+includes:
+  - "Books Stats"
+  - "Movies Stats"
+source:
+  pattern: "**/*.md"  # Dummy pattern for ground widget
+fields:
+  book_avg:
+    expr: "included['Books Stats'].avg_rating"
+  movie_avg:
+    expr: "included['Movies Stats'].avg_rating"
+  difference:
+    expr: "included['Books Stats'].avg_rating - included['Movies Stats'].avg_rating"
+```
+
+**Derived calculations**: Build on computed values from specialized widgets.
+
+```yaml
+# base-stats.yaml
+name: Base Stats
+source:
+  pattern: "Data/**/*.md"
+fields:
+  mean:
+    avg: value
+  stddev:
+    stddev: value
+
+# normalized-view.yaml
+name: Normalized View
+includes:
+  - "Base Stats"
+source:
+  pattern: "Data/**/*.md"
+fields:
+  zscore:
+    expr: "zscore(this.value, included['Base Stats'].mean, included['Base Stats'].stddev)"
 ```
 
 ## Field Configuration (Aggregate Widgets)

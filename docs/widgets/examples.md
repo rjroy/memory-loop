@@ -459,6 +459,126 @@ editable:
       - mixed
 ```
 
+## Cross-Widget References
+
+Use `includes` to reference computed values from other widgets.
+
+### Media Collection Comparison
+
+Compare statistics across different collections by including their widgets.
+
+```yaml
+# books-stats.yaml
+name: Books Stats
+type: aggregate
+location: ground
+source:
+  pattern: "Books/**/*.md"
+fields:
+  count:
+    count: true
+  avg_rating:
+    avg: rating
+  total_pages:
+    sum: pages
+display:
+  type: summary-card
+  title: Books
+```
+
+```yaml
+# movies-stats.yaml
+name: Movies Stats
+type: aggregate
+location: ground
+source:
+  pattern: "Movies/**/*.md"
+fields:
+  count:
+    count: true
+  avg_rating:
+    avg: rating
+  total_runtime:
+    sum: runtime
+display:
+  type: summary-card
+  title: Movies
+```
+
+```yaml
+# media-dashboard.yaml
+name: Media Dashboard
+type: aggregate
+location: ground
+includes:
+  - "Books Stats"
+  - "Movies Stats"
+source:
+  pattern: "**/*.md"
+fields:
+  total_items:
+    expr: "included['Books Stats'].count + included['Movies Stats'].count"
+  books_avg:
+    expr: "included['Books Stats'].avg_rating"
+  movies_avg:
+    expr: "included['Movies Stats'].avg_rating"
+  rating_difference:
+    expr: "included['Books Stats'].avg_rating - included['Movies Stats'].avg_rating"
+  better_rated:
+    expr: "included['Books Stats'].avg_rating > included['Movies Stats'].avg_rating ? 'Books' : 'Movies'"
+display:
+  type: summary-card
+  title: Media Comparison
+```
+
+### Normalized Scores with Shared Statistics
+
+Use a base statistics widget to normalize values across items.
+
+```yaml
+# game-base-stats.yaml
+name: Game Base Stats
+type: aggregate
+location: ground
+source:
+  pattern: "Games/**/*.md"
+fields:
+  mean_rating:
+    avg: bgg.rating
+  stddev_rating:
+    stddev: bgg.rating
+  max_rating:
+    max: bgg.rating
+  min_rating:
+    min: bgg.rating
+display:
+  type: summary-card
+  title: Rating Distribution
+```
+
+```yaml
+# game-analysis.yaml
+name: Game Analysis
+type: aggregate
+location: recall
+includes:
+  - "Game Base Stats"
+source:
+  pattern: "Games/**/*.md"
+fields:
+  raw_rating:
+    expr: "this.bgg.rating"
+  zscore:
+    expr: "zscore(this.bgg.rating, included['Game Base Stats'].mean_rating, included['Game Base Stats'].stddev_rating)"
+  percentile:
+    expr: "percentile(this.bgg.rating, included['Game Base Stats'].mean_rating, included['Game Base Stats'].stddev_rating)"
+  normalized_0_100:
+    expr: "normalize(this.bgg.rating, included['Game Base Stats'].min_rating, included['Game Base Stats'].max_rating) * 100"
+display:
+  type: summary-card
+  title: Rating Analysis
+```
+
 ## Frontmatter Templates
 
 Example frontmatter for the widgets above:

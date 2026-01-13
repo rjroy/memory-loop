@@ -1567,6 +1567,213 @@ describe("WebSocket Handler", () => {
       // Wait for first to complete
       await firstPromise;
     });
+
+    test("surfaces SDK stream error events to frontend", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Simulate SDK returning a stream error event (e.g., invalid slash command)
+      const events = [
+        { type: "system", subtype: "init", session_id: "error-session" },
+        {
+          type: "stream_event",
+          event: {
+            type: "error",
+            error: {
+              type: "invalid_request_error",
+              message: "Unknown slash command: /nonexistent",
+            },
+          },
+        },
+      ];
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "error-session",
+        events: (async function* () {
+          for (const event of events) {
+            yield event;
+          }
+        })(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Send discussion message that triggers error
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "/nonexistent" })
+      );
+
+      const messages = ws.getMessages();
+
+      // Should have an error message with SDK_ERROR code
+      const errorMessage = messages.find(
+        (m) => m.type === "error" && m.code === "SDK_ERROR"
+      );
+      expect(errorMessage).toBeDefined();
+      if (errorMessage?.type === "error") {
+        expect(errorMessage.message).toBe("Unknown slash command: /nonexistent");
+      }
+    });
+
+    test("surfaces SDK stream error with missing message field", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Simulate SDK error with only type field (no message)
+      const events = [
+        { type: "system", subtype: "init", session_id: "error-session" },
+        {
+          type: "stream_event",
+          event: {
+            type: "error",
+            error: {
+              type: "rate_limit_error",
+            },
+          },
+        },
+      ];
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "error-session",
+        events: (async function* () {
+          for (const event of events) {
+            yield event;
+          }
+        })(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
+      );
+
+      const messages = ws.getMessages();
+      const errorMessage = messages.find(
+        (m) => m.type === "error" && m.code === "SDK_ERROR"
+      );
+      expect(errorMessage).toBeDefined();
+      if (errorMessage?.type === "error") {
+        // Falls back to error type when message is missing
+        expect(errorMessage.message).toBe("rate_limit_error");
+      }
+    });
+
+    test("surfaces SDK result error events to frontend", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Simulate SDK returning a result error
+      const events = [
+        { type: "system", subtype: "init", session_id: "error-session" },
+        {
+          type: "result",
+          subtype: "error_during_execution",
+          errors: ["Tool execution failed: Permission denied"],
+          is_error: true,
+          usage: null,
+          modelUsage: null,
+        },
+      ];
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "error-session",
+        events: (async function* () {
+          for (const event of events) {
+            yield event;
+          }
+        })(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Run something" })
+      );
+
+      const messages = ws.getMessages();
+      const errorMessage = messages.find(
+        (m) => m.type === "error" && m.code === "SDK_ERROR"
+      );
+      expect(errorMessage).toBeDefined();
+      if (errorMessage?.type === "error") {
+        expect(errorMessage.message).toBe("Tool execution failed: Permission denied");
+      }
+    });
+
+    test("surfaces SDK max_turns error to frontend", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      // Simulate SDK max turns error (no errors array, uses subtype fallback)
+      const events = [
+        { type: "system", subtype: "init", session_id: "error-session" },
+        {
+          type: "result",
+          subtype: "error_max_turns",
+          is_error: true,
+          usage: null,
+          modelUsage: null,
+        },
+      ];
+
+      mockCreateSession.mockResolvedValue({
+        sessionId: "error-session",
+        events: (async function* () {
+          for (const event of events) {
+            yield event;
+          }
+        })(),
+        interrupt: mockInterrupt,
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "discussion_message", text: "Long conversation" })
+      );
+
+      const messages = ws.getMessages();
+      const errorMessage = messages.find(
+        (m) => m.type === "error" && m.code === "SDK_ERROR"
+      );
+      expect(errorMessage).toBeDefined();
+      if (errorMessage?.type === "error") {
+        expect(errorMessage.message).toBe("Conversation reached maximum turns limit.");
+      }
+    });
   });
 
   // ===========================================================================

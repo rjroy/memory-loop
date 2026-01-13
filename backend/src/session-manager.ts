@@ -22,6 +22,7 @@ import { directoryExists, fileExists } from "./vault-manager";
 import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 import { sessionLog as log } from "./logger";
 import { createVaultTransferServer } from "./vault-transfer";
+import { loadVaultConfig, resolveRecentDiscussions } from "./vault-config";
 
 /** Model to use for strategic discussions (reasoning) */
 export const DISCUSSION_MODEL = "opus";
@@ -725,7 +726,11 @@ export async function createSession(
     log.info("Session metadata saved");
 
     // Prune old sessions in background (non-blocking, errors logged internally)
-    void pruneOldSessions(vault.path);
+    void (async () => {
+      const config = await loadVaultConfig(vault.path);
+      const keepCount = resolveRecentDiscussions(config);
+      await pruneOldSessions(vault.path, keepCount);
+    })();
 
     // Return wrapped result
     return {

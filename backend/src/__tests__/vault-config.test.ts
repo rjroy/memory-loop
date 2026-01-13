@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { readFile } from "node:fs/promises";
 import {
   CONFIG_FILE_NAME,
+  SLASH_COMMANDS_FILE,
   DEFAULT_METADATA_PATH,
   DEFAULT_PROJECT_PATH,
   DEFAULT_AREA_PATH,
@@ -18,6 +19,7 @@ import {
   DEFAULT_MAX_POOL_SIZE,
   DEFAULT_QUOTES_PER_WEEK,
   loadVaultConfig,
+  loadSlashCommands,
   resolveContentRoot,
   resolveMetadataPath,
   resolveGoalsPath,
@@ -659,162 +661,158 @@ describe("vault-config", () => {
     });
   });
 
-  describe("loadVaultConfig with slashCommands", () => {
-    test("loads config with valid slashCommands array", async () => {
+  describe("loadSlashCommands", () => {
+    test("returns undefined when cache file does not exist", async () => {
+      const commands = await loadSlashCommands(testDir);
+      expect(commands).toBeUndefined();
+    });
+
+    test("loads valid slash commands array", async () => {
       const commands: SlashCommand[] = [
         { name: "/commit", description: "Create a commit" },
         { name: "/review", description: "Review code", argumentHint: "file" },
       ];
+      await mkdir(join(testDir, ".memory-loop"), { recursive: true });
       await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ slashCommands: commands })
+        join(testDir, SLASH_COMMANDS_FILE),
+        JSON.stringify(commands)
       );
 
-      const config = await loadVaultConfig(testDir);
-      expect(config.slashCommands).toEqual(commands);
+      const result = await loadSlashCommands(testDir);
+      expect(result).toEqual(commands);
     });
 
-    test("loads config with slashCommands alongside other fields", async () => {
-      const configData = {
-        contentRoot: "content",
-        slashCommands: [{ name: "/help", description: "Get help" }],
-      };
+    test("filters out invalid slash command entries", async () => {
+      await mkdir(join(testDir, ".memory-loop"), { recursive: true });
       await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify(configData)
+        join(testDir, SLASH_COMMANDS_FILE),
+        JSON.stringify([
+          { name: "/valid", description: "Valid command" },
+          { name: "/missing-desc" }, // Missing description
+          { description: "Missing name" }, // Missing name
+          null,
+          "not an object",
+          42,
+        ])
       );
 
-      const config = await loadVaultConfig(testDir);
-      expect(config.contentRoot).toBe("content");
-      expect(config.slashCommands).toEqual([{ name: "/help", description: "Get help" }]);
+      const result = await loadSlashCommands(testDir);
+      expect(result).toEqual([{ name: "/valid", description: "Valid command" }]);
     });
 
-    test("filters out invalid slashCommand entries", async () => {
+    test("returns undefined when cache is not an array", async () => {
+      await mkdir(join(testDir, ".memory-loop"), { recursive: true });
       await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          slashCommands: [
-            { name: "/valid", description: "Valid command" },
-            { name: "/missing-desc" }, // Missing description
-            { description: "Missing name" }, // Missing name
-            null,
-            "not an object",
-            42,
-          ],
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.slashCommands).toEqual([{ name: "/valid", description: "Valid command" }]);
-    });
-
-    test("returns undefined slashCommands when not an array", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ slashCommands: "not an array" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.slashCommands).toBeUndefined();
-    });
-
-    test("returns empty array when slashCommands is empty array", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
+        join(testDir, SLASH_COMMANDS_FILE),
         JSON.stringify({ slashCommands: [] })
       );
 
-      const config = await loadVaultConfig(testDir);
-      expect(config.slashCommands).toEqual([]);
+      const result = await loadSlashCommands(testDir);
+      expect(result).toBeUndefined();
+    });
+
+    test("returns empty array when cache is empty array", async () => {
+      await mkdir(join(testDir, ".memory-loop"), { recursive: true });
+      await writeFile(join(testDir, SLASH_COMMANDS_FILE), JSON.stringify([]));
+
+      const result = await loadSlashCommands(testDir);
+      expect(result).toEqual([]);
     });
 
     test("sanitizes null argumentHint to undefined", async () => {
+      await mkdir(join(testDir, ".memory-loop"), { recursive: true });
       await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          slashCommands: [
-            { name: "/test", description: "Test command", argumentHint: null },
-            { name: "/other", description: "Other command", argumentHint: "" },
-            { name: "/valid", description: "Valid hint", argumentHint: "file" },
-          ],
-        })
+        join(testDir, SLASH_COMMANDS_FILE),
+        JSON.stringify([
+          { name: "/test", description: "Test command", argumentHint: null },
+          { name: "/other", description: "Other command", argumentHint: "" },
+          { name: "/valid", description: "Valid hint", argumentHint: "file" },
+        ])
       );
 
-      const config = await loadVaultConfig(testDir);
-      expect(config.slashCommands).toHaveLength(3);
+      const result = await loadSlashCommands(testDir);
+      expect(result).toHaveLength(3);
       // null and empty string argumentHint should be omitted
-      expect(config.slashCommands?.[0]).toEqual({ name: "/test", description: "Test command" });
-      expect(config.slashCommands?.[1]).toEqual({ name: "/other", description: "Other command" });
+      expect(result?.[0]).toEqual({ name: "/test", description: "Test command" });
+      expect(result?.[1]).toEqual({ name: "/other", description: "Other command" });
       // Valid string argumentHint should be preserved
-      expect(config.slashCommands?.[2]).toEqual({ name: "/valid", description: "Valid hint", argumentHint: "file" });
+      expect(result?.[2]).toEqual({ name: "/valid", description: "Valid hint", argumentHint: "file" });
+    });
+
+    test("returns undefined when cache file is invalid JSON", async () => {
+      await mkdir(join(testDir, ".memory-loop"), { recursive: true });
+      await writeFile(join(testDir, SLASH_COMMANDS_FILE), "{ invalid }");
+
+      const result = await loadSlashCommands(testDir);
+      expect(result).toBeUndefined();
     });
   });
 
   describe("saveSlashCommands", () => {
-    test("creates config file with slashCommands when none exists", async () => {
+    test("creates cache file and directory when none exists", async () => {
       const commands: SlashCommand[] = [
         { name: "/commit", description: "Create a commit" },
       ];
 
       await saveSlashCommands(testDir, commands);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
-      expect(parsed.slashCommands).toEqual(commands);
+      const content = await readFile(join(testDir, SLASH_COMMANDS_FILE), "utf-8");
+      const parsed = JSON.parse(content) as SlashCommand[];
+      expect(parsed).toEqual(commands);
     });
 
-    test("preserves existing config fields when saving slashCommands", async () => {
-      // Create existing config
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ contentRoot: "content", inboxPath: "inbox" })
-      );
-
+    test("creates directory if it does not exist", async () => {
       const commands: SlashCommand[] = [{ name: "/test", description: "Test" }];
       await saveSlashCommands(testDir, commands);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
-      expect(parsed.contentRoot).toBe("content");
-      expect(parsed.inboxPath).toBe("inbox");
-      expect(parsed.slashCommands).toEqual(commands);
+      const content = await readFile(join(testDir, SLASH_COMMANDS_FILE), "utf-8");
+      const parsed = JSON.parse(content) as SlashCommand[];
+      expect(parsed).toEqual(commands);
     });
 
-    test("updates existing slashCommands", async () => {
-      // Create existing config with slashCommands
+    test("updates existing cache file", async () => {
+      // Create existing cache
+      await mkdir(join(testDir, ".memory-loop"), { recursive: true });
       await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          slashCommands: [{ name: "/old", description: "Old command" }],
-        })
+        join(testDir, SLASH_COMMANDS_FILE),
+        JSON.stringify([{ name: "/old", description: "Old command" }])
       );
 
       const newCommands: SlashCommand[] = [{ name: "/new", description: "New command" }];
       await saveSlashCommands(testDir, newCommands);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
-      expect(parsed.slashCommands).toEqual(newCommands);
+      const content = await readFile(join(testDir, SLASH_COMMANDS_FILE), "utf-8");
+      const parsed = JSON.parse(content) as SlashCommand[];
+      expect(parsed).toEqual(newCommands);
     });
 
     test("saves empty array when no commands", async () => {
       await saveSlashCommands(testDir, []);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
-      expect(parsed.slashCommands).toEqual([]);
+      const content = await readFile(join(testDir, SLASH_COMMANDS_FILE), "utf-8");
+      const parsed = JSON.parse(content) as SlashCommand[];
+      expect(parsed).toEqual([]);
     });
 
-    test("handles invalid existing JSON by starting fresh", async () => {
-      // Create invalid JSON
-      await writeFile(join(testDir, CONFIG_FILE_NAME), "{ invalid }");
+    test("does not affect main config file", async () => {
+      // Create existing main config
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ contentRoot: "content" })
+      );
 
       const commands: SlashCommand[] = [{ name: "/test", description: "Test" }];
       await saveSlashCommands(testDir, commands);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
-      expect(parsed.slashCommands).toEqual(commands);
+      // Main config should be unchanged
+      const mainContent = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const mainParsed = JSON.parse(mainContent) as VaultConfig;
+      expect(mainParsed).toEqual({ contentRoot: "content" });
+
+      // Slash commands should be in separate file
+      const cacheContent = await readFile(join(testDir, SLASH_COMMANDS_FILE), "utf-8");
+      const cacheParsed = JSON.parse(cacheContent) as SlashCommand[];
+      expect(cacheParsed).toEqual(commands);
     });
   });
 

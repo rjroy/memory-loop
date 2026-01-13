@@ -6,8 +6,8 @@
  * for vaults where content is in a subdirectory (e.g., Quartz sites).
  */
 
-import { readFile, writeFile } from "node:fs/promises";
-import { join, normalize } from "node:path";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { join, normalize, dirname } from "node:path";
 import type { SlashCommand, Badge, BadgeColor } from "@memory-loop/shared";
 import { fileExists } from "./vault-manager";
 import { createLogger } from "./logger";
@@ -18,6 +18,12 @@ const log = createLogger("VaultConfig");
  * Configuration file name.
  */
 export const CONFIG_FILE_NAME = ".memory-loop.json";
+
+/**
+ * Slash commands cache file path (relative to vault root).
+ * Stored separately from main config to keep ephemeral cache data out of user config.
+ */
+export const SLASH_COMMANDS_FILE = ".memory-loop/slash-commands.json";
 
 /**
  * Per-vault configuration options.
@@ -78,12 +84,6 @@ export interface VaultConfig {
    * Default: "05_Attachments"
    */
   attachmentPath?: string;
-
-  /**
-   * Cached slash commands from Claude Code SDK.
-   * Stored to provide autocomplete before SDK session is established.
-   */
-  slashCommands?: SlashCommand[];
 
   /**
    * Number of prompts to generate per generation cycle.
@@ -246,25 +246,6 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
 
     if (typeof obj.attachmentPath === "string") {
       config.attachmentPath = obj.attachmentPath;
-    }
-
-    if (Array.isArray(obj.slashCommands)) {
-      config.slashCommands = obj.slashCommands
-        .filter(
-          (cmd): cmd is Record<string, unknown> =>
-            typeof cmd === "object" &&
-            cmd !== null &&
-            typeof (cmd as Record<string, unknown>).name === "string" &&
-            typeof (cmd as Record<string, unknown>).description === "string"
-        )
-        .map((cmd): SlashCommand => ({
-          name: cmd.name as string,
-          description: cmd.description as string,
-          // Sanitize argumentHint: only include if it's a non-empty string
-          ...(typeof cmd.argumentHint === "string" && cmd.argumentHint
-            ? { argumentHint: cmd.argumentHint }
-            : {}),
-        }));
     }
 
     // Validate generation settings (must be positive integers)
@@ -524,8 +505,54 @@ export async function savePinnedAssets(
 }
 
 /**
- * Saves slash commands to the vault configuration file.
- * Preserves existing configuration fields while updating slashCommands.
+ * Loads cached slash commands from .memory-loop/slash-commands.json.
+ *
+ * @param vaultPath - Absolute path to the vault root directory
+ * @returns Array of slash commands, or undefined if no cache exists
+ */
+export async function loadSlashCommands(
+  vaultPath: string
+): Promise<SlashCommand[] | undefined> {
+  const cachePath = join(vaultPath, SLASH_COMMANDS_FILE);
+
+  if (!(await fileExists(cachePath))) {
+    return undefined;
+  }
+
+  try {
+    const content = await readFile(cachePath, "utf-8");
+    const parsed = JSON.parse(content) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      log.warn(`Invalid slash commands cache format in ${cachePath}: expected array`);
+      return undefined;
+    }
+
+    return parsed
+      .filter(
+        (cmd): cmd is Record<string, unknown> =>
+          typeof cmd === "object" &&
+          cmd !== null &&
+          typeof (cmd as Record<string, unknown>).name === "string" &&
+          typeof (cmd as Record<string, unknown>).description === "string"
+      )
+      .map((cmd): SlashCommand => ({
+        name: cmd.name as string,
+        description: cmd.description as string,
+        ...(typeof cmd.argumentHint === "string" && cmd.argumentHint
+          ? { argumentHint: cmd.argumentHint }
+          : {}),
+      }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.warn(`Failed to load slash commands cache from ${cachePath}: ${message}`);
+    return undefined;
+  }
+}
+
+/**
+ * Saves slash commands to .memory-loop/slash-commands.json.
+ * Creates the .memory-loop directory if it doesn't exist.
  *
  * @param vaultPath - Absolute path to the vault root directory
  * @param commands - Slash commands to cache
@@ -534,26 +561,13 @@ export async function saveSlashCommands(
   vaultPath: string,
   commands: SlashCommand[]
 ): Promise<void> {
-  const configPath = join(vaultPath, CONFIG_FILE_NAME);
+  const cachePath = join(vaultPath, SLASH_COMMANDS_FILE);
 
-  let existingConfig: Record<string, unknown> = {};
+  // Ensure .memory-loop directory exists
+  await mkdir(dirname(cachePath), { recursive: true });
 
-  if (await fileExists(configPath)) {
-    try {
-      const content = await readFile(configPath, "utf-8");
-      const parsed = JSON.parse(content) as unknown;
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        existingConfig = parsed as Record<string, unknown>;
-      }
-    } catch {
-      // If we can't read existing config, start fresh
-    }
-  }
-
-  existingConfig.slashCommands = commands;
-
-  await writeFile(configPath, JSON.stringify(existingConfig, null, 2) + "\n", "utf-8");
-  log.info(`Cached ${commands.length} slash commands to ${configPath}`);
+  await writeFile(cachePath, JSON.stringify(commands, null, 2) + "\n", "utf-8");
+  log.info(`Cached ${commands.length} slash commands to ${cachePath}`);
 }
 
 /**

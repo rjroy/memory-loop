@@ -291,6 +291,13 @@ export const WidgetConfigSchema = z
 
     /** Optional editable fields (REQ-F-20) */
     editable: z.array(EditableFieldSchema).optional(),
+
+    /**
+     * Optional list of widget names to include.
+     * Included widgets' stats and results become available in expressions.
+     * Circular dependencies are detected and reported as errors.
+     */
+    includes: z.array(z.string().min(1)).optional(),
   })
   .refine(
     (data) => {

@@ -103,6 +103,12 @@ export interface ExpressionContext {
    * - In collection-scope contexts: contains aggregated values
    */
   result?: Record<string, unknown>;
+  /**
+   * Results from included widgets.
+   * Maps widget name -> computed field values.
+   * Enables cross-widget references: `included.WidgetName.fieldName`
+   */
+  included?: Record<string, Record<string, unknown>>;
 }
 
 /**
@@ -670,6 +676,7 @@ function flattenContext(context: ExpressionContext): Value {
     this: context.this,
     stats: context.stats,
     result: context.result ?? {},
+    included: context.included ?? {},
   } as unknown as Value;
 }
 

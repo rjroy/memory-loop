@@ -1109,7 +1109,7 @@ describe("WebSocket Handler", () => {
         JSON.stringify({ type: "get_recent_activity" })
       );
 
-      expect(mockGetRecentSessions).toHaveBeenCalledWith(vault.id, 5);
+      expect(mockGetRecentSessions).toHaveBeenCalledWith(vault.path, 5);
     });
 
     test("handles errors gracefully", async () => {
@@ -1238,6 +1238,7 @@ describe("WebSocket Handler", () => {
 
       // resumeSession should have been called (with optional args)
       expect(mockResumeSession).toHaveBeenCalledWith(
+        vault.path,
         "first-session",
         "Second message",
         undefined, // no extra options
@@ -1338,14 +1339,14 @@ describe("WebSocket Handler", () => {
 
       // Verify tool invocations are persisted with the assistant message
       const appendCalls = mockAppendMessage.mock.calls as Array<
-        [string, { role: string; toolInvocations?: Array<{ toolUseId: string; toolName: string; input?: unknown; output?: unknown; status: string }> }]
+        [string, string, { role: string; toolInvocations?: Array<{ toolUseId: string; toolName: string; input?: unknown; output?: unknown; status: string }> }]
       >;
       // Second call is the assistant message (first is user message)
       const assistantMessageCall = appendCalls.find(
-        (call) => call[1]?.role === "assistant"
+        (call) => call[2]?.role === "assistant"
       );
       expect(assistantMessageCall).toBeDefined();
-      const assistantMessage = assistantMessageCall![1];
+      const assistantMessage = assistantMessageCall![2];
       expect(assistantMessage.toolInvocations).toBeDefined();
       expect(assistantMessage.toolInvocations).toHaveLength(1);
       expect(assistantMessage.toolInvocations![0]).toEqual({
@@ -1496,13 +1497,13 @@ describe("WebSocket Handler", () => {
 
       // Verify the tool was saved as complete (not running) to prevent spinner on resume
       const appendCalls = mockAppendMessage.mock.calls as Array<
-        [string, { role: string; toolInvocations?: Array<{ toolUseId: string; status: string; output?: unknown }> }]
+        [string, string, { role: string; toolInvocations?: Array<{ toolUseId: string; status: string; output?: unknown }> }]
       >;
       const assistantMessageCall = appendCalls.find(
-        (call) => call[1]?.role === "assistant"
+        (call) => call[2]?.role === "assistant"
       );
       expect(assistantMessageCall).toBeDefined();
-      const assistantMessage = assistantMessageCall![1];
+      const assistantMessage = assistantMessageCall![2];
       expect(assistantMessage.toolInvocations).toBeDefined();
       expect(assistantMessage.toolInvocations![0].status).toBe("complete");
       expect(assistantMessage.toolInvocations![0].output).toBe("[Connection closed before tool completed]");
@@ -2072,18 +2073,8 @@ describe("WebSocket Handler", () => {
       }
     });
 
-    test("resumes session and sets vault when no vault pre-selected", async () => {
-      // Session exists with valid vault
-      mockLoadSession.mockResolvedValue({
-        id: "session-123",
-        vaultId: "test-vault",
-        vaultPath: "/tmp/test-vault",
-        createdAt: new Date().toISOString(),
-        lastActiveAt: new Date().toISOString(),
-        messages: [],
-      });
-      mockGetVaultById.mockResolvedValue(createMockVault());
-
+    test("sends error when no vault pre-selected", async () => {
+      // With per-vault session storage, vault must be selected first
       const handler = createWebSocketHandler();
       const ws = createMockWebSocket();
 
@@ -2094,15 +2085,11 @@ describe("WebSocket Handler", () => {
       );
 
       const message = ws.getLastMessage();
-      expect(message?.type).toBe("session_ready");
-      if (message?.type === "session_ready") {
-        expect(message.sessionId).toBe("session-123");
-        expect(message.vaultId).toBe("test-vault");
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VAULT_NOT_FOUND");
+        expect(message.message).toBe("Please select a vault first");
       }
-
-      const state = handler.getState();
-      expect(state.currentVault?.id).toBe("test-vault");
-      expect(state.currentSessionId).toBe("session-123");
     });
 
     test("sends error if session vault no longer exists", async () => {
@@ -2133,11 +2120,19 @@ describe("WebSocket Handler", () => {
     });
 
     test("sends error if loadSession throws an exception", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
       // Simulate storage failure or corruption
       mockLoadSession.mockRejectedValue(new Error("Storage read failed"));
 
       const handler = createWebSocketHandler();
       const ws = createMockWebSocket();
+
+      // Select vault first
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
 
       await handler.onMessage(
         ws as unknown as Parameters<typeof handler.onMessage>[0],

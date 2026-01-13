@@ -688,6 +688,7 @@ export class WebSocketHandler {
       if (this.state.currentSessionId) {
         log.info(`Resuming session: ${this.state.currentSessionId}`);
         queryResult = await resumeSession(
+          this.state.currentVault.path,
           this.state.currentSessionId,
           text,
           undefined,
@@ -722,7 +723,7 @@ export class WebSocketHandler {
       }
 
       const userMessageId = generateMessageId();
-      await appendMessage(queryResult.sessionId, {
+      await appendMessage(this.state.currentVault.path, queryResult.sessionId, {
         id: userMessageId,
         role: "user",
         content: text,
@@ -741,7 +742,7 @@ export class WebSocketHandler {
       });
 
       if (streamResult.content.length > 0 || streamResult.toolInvocations.length > 0) {
-        await appendMessage(queryResult.sessionId, {
+        await appendMessage(this.state.currentVault.path, queryResult.sessionId, {
           id: messageId,
           role: "assistant",
           content: streamResult.content,
@@ -800,7 +801,14 @@ export class WebSocketHandler {
     sessionId: string
   ): Promise<void> {
     try {
-      const metadata = await loadSession(sessionId);
+      // Vault must be selected to find session (sessions stored per-vault)
+      if (!this.state.currentVault) {
+        log.warn("Cannot resume session: no vault selected");
+        this.sendError(ws, "VAULT_NOT_FOUND", "Please select a vault first");
+        return;
+      }
+
+      const metadata = await loadSession(this.state.currentVault.path, sessionId);
 
       if (!metadata) {
         log.warn(`Session not found: ${sessionId}`);
@@ -808,23 +816,12 @@ export class WebSocketHandler {
         return;
       }
 
-      if (this.state.currentVault && metadata.vaultId !== this.state.currentVault.id) {
+      if (metadata.vaultId !== this.state.currentVault.id) {
         log.warn(
           `Session ${sessionId} belongs to vault ${metadata.vaultId}, not ${this.state.currentVault.id}`
         );
         this.sendError(ws, "SESSION_INVALID", "Session belongs to a different vault");
         return;
-      }
-
-      if (!this.state.currentVault) {
-        const vault = await getVaultById(metadata.vaultId);
-        if (!vault) {
-          log.warn(`Vault ${metadata.vaultId} from session not found`);
-          this.sendError(ws, "VAULT_NOT_FOUND", "Session's vault no longer exists");
-          return;
-        }
-        this.state.currentVault = vault;
-        log.info(`Set vault from session: ${vault.name}`);
       }
 
       this.state.currentSessionId = sessionId;
@@ -891,6 +888,12 @@ export class WebSocketHandler {
   ): Promise<void> {
     log.info(`Deleting session: ${sessionId.slice(0, 8)}...`);
 
+    if (!this.state.currentVault) {
+      log.warn("Cannot delete session: no vault selected");
+      this.sendError(ws, "VAULT_NOT_FOUND", "Please select a vault first");
+      return;
+    }
+
     if (this.state.currentSessionId === sessionId) {
       log.warn("Attempted to delete active session");
       this.sendError(ws, "SESSION_INVALID", "Cannot delete the currently active session");
@@ -898,7 +901,7 @@ export class WebSocketHandler {
     }
 
     try {
-      const deleted = await deleteSession(sessionId);
+      const deleted = await deleteSession(this.state.currentVault.path, sessionId);
       if (deleted) {
         log.info(`Session deleted: ${sessionId.slice(0, 8)}...`);
         this.send(ws, { type: "session_deleted", sessionId });

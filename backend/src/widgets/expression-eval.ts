@@ -322,6 +322,33 @@ export const customFunctions = {
   },
 
   /**
+   * Approximate the error function (erf) for a given number.
+   * This implementation uses a numerical approximation.
+   * @param x - The input value
+   * @returns Approximate erf(x), or null if input is invalid
+   */
+  erf(x: unknown): number | null {
+    if (typeof x !== "number" || !Number.isFinite(x)) return null;
+
+    // Abramowitz & Stegun 7.1.26 approximation
+    const sign = x < 0 ? -1 : 1;
+    const a1 = 0.254829592;
+    const a2 = -0.284496736;
+    const a3 = 1.421413741;
+    const a4 = -1.453152027;
+    const a5 = 1.061405429;
+    const p = 0.3275911;
+
+    const absX = Math.abs(x);
+    const t = 1 / (1 + p * absX);
+    const y =
+      1 -
+      (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t) * Math.exp(-absX * absX);
+
+    return sign * y;
+  },
+
+  /**
    * Compute z-score (standard score) for a value.
    * z-score = (value - mean) / stddev
    *
@@ -339,6 +366,52 @@ export const customFunctions = {
     if (stddev === 0) return null;
 
     return (value - mean) / stddev;
+  },
+
+  /**
+   * Use zscore to convert a value to a percentile (0-100).
+   * Assumes a normal distribution.
+   * @param value - The value to convert
+   * @param mean - The population mean
+   * @param stddev - The population standard deviation
+   * @returns Percentile (0-100), or null if stddev is 0 or arguments are invalid
+   */
+  percentile(value: unknown, mean: unknown, stddev: unknown): number | null {
+    const z = customFunctions.zscore(value, mean, stddev);
+    if (z === null) return null;
+
+    // Convert z-score to percentile using the cumulative distribution function (CDF)
+    // for a standard normal distribution
+    const e = customFunctions.erf(z / Math.SQRT2);
+    if (e === null) return null;
+
+    const percentile = 0.5 * (1 + e) * 100;
+    return percentile;
+  },
+
+  /**
+   * Use zscore to convert a value to a arbitrary score between 0 and maxScore.
+   * Assumes a normal distribution.
+   * @param value - The value to convert
+   * @param mean - The population mean
+   * @param stddev - The population standard deviation
+   * @param maxScore - The maximum score (default: 100)
+   * @returns Score between 0 and maxScore, or null if stddev is 0 or arguments are invalid
+   */
+  zscoreToScore(
+    value: unknown,
+    mean: unknown,
+    stddev: unknown,
+    maxScore: unknown = 100
+  ): number | null {
+    const percentile = customFunctions.percentile(value, mean, stddev);
+    if (percentile === null) return null;
+
+    if (typeof maxScore !== "number" || !Number.isFinite(maxScore) || maxScore < 0) {
+      return null;
+    }
+
+    return (percentile / 100) * maxScore;
   },
 
   /**
@@ -372,6 +445,130 @@ export const customFunctions = {
    */
   coalesce(x: unknown, defaultVal: unknown): unknown {
     return x === null || x === undefined ? defaultVal : x;
+  },
+
+  /**
+   * Return the arithmetic mean of an arbitrary number of values.
+   * Skips non-numeric values.
+   * @see https://en.wikipedia.org/wiki/Arithmetic_mean
+   * @param values - Values to compute mean for
+   * @returns Arithmetic mean
+   */
+  mean(...values: unknown[]): number | null {
+    let sum = 0;
+    let n = 0;
+
+    for (const val of values) {
+      if (typeof val !== "number" || !Number.isFinite(val)) {
+        continue;
+      }
+      sum += val;
+      n += 1;
+    }
+
+    if (n === 0) return null;
+    return sum / n;
+  },
+
+  /**
+   * Return the harmonic mean of an arbitrary number of values.
+   * Skips non-numeric and zero values.
+   1 / H = (1/n) * Σ (1/xi)
+   * @see https://en.wikipedia.org/wiki/Harmonic_mean
+   * @param values - Values to compute harmonic mean for
+   * @returns Harmonic mean
+   */
+  harmonicMean(...values: unknown[]): number | null {
+    let n = 0;
+    let denomSum = 0;
+
+    for (const val of values) {
+      if (typeof val !== "number" || !Number.isFinite(val) || val === 0) {
+        continue;
+      }
+      denomSum += 1 / val;
+      n += 1;
+    }
+    
+    if (n === 0 || denomSum === 0) return null;
+    return n / denomSum;
+  },
+
+  /**
+   * Scale a value to the 0-1 range based on min/max bounds.
+   * @param x - Value to normalize
+   * @param minVal - Minimum of the range
+   * @param maxVal - Maximum of the range
+   * @returns Normalized value (0-1), or null if arguments are invalid or min equals max
+   *
+   * @example
+   * normalize(8, 1, 10) => 0.778 (approximately)
+   * normalize(5, 0, 10) => 0.5
+   */
+  normalize(x: unknown, minVal: unknown, maxVal: unknown): number | null {
+    if (typeof x !== "number" || !Number.isFinite(x)) return null;
+    if (typeof minVal !== "number" || !Number.isFinite(minVal)) return null;
+    if (typeof maxVal !== "number" || !Number.isFinite(maxVal)) return null;
+    if (maxVal === minVal) return null; // Avoid division by zero
+    return (x - minVal) / (maxVal - minVal);
+  },
+
+  /**
+   * Linear interpolation between two values.
+   * @param a - Start value
+   * @param b - End value
+   * @param t - Interpolation factor (0 = a, 1 = b, 0.5 = midpoint)
+   * @returns Interpolated value, or null if arguments are invalid
+   *
+   * @example
+   * lerp(0, 100, 0.5) => 50
+   * lerp(10, 20, 0.25) => 12.5
+   */
+  lerp(a: unknown, b: unknown, t: unknown): number | null {
+    if (typeof a !== "number" || !Number.isFinite(a)) return null;
+    if (typeof b !== "number" || !Number.isFinite(b)) return null;
+    if (typeof t !== "number" || !Number.isFinite(t)) return null;
+    return a + (b - a) * t;
+  },
+
+  /**
+   * Return the weighted mean of values with corresponding weights.
+   * Skips non-numeric values and weights.
+   * Negative weights are treated as their absolute values, but will reduce the total weighted sum.
+   * @see https://en.wikipedia.org/wiki/Weighted_arithmetic_mean
+   * @param values - Values to compute weighted mean for
+   * @param weights - Corresponding weights
+   * @returns Weighted mean
+   */
+  weightedMean(values: unknown[], weights: unknown[]): number | null {
+    if (!Array.isArray(values) || !Array.isArray(weights) || values.length !== weights.length) {
+      return null;
+    }
+
+    let weightedSum = 0;
+    let weightTotal = 0;
+
+    const length = Math.min(values.length, weights.length);
+
+    for (let i = 0; i < length; i++) {
+      const val = values[i];
+      const weight = weights[i];
+
+      if (
+        typeof val !== "number" ||
+        !Number.isFinite(val) ||
+        typeof weight !== "number" ||
+        !Number.isFinite(weight)
+      ) {
+        continue;
+      }
+
+      weightedSum += val * weight;
+      weightTotal += Math.abs(weight);
+    }
+
+    if (weightTotal === 0) return null;
+    return weightedSum / weightTotal;
   },
 };
 
@@ -756,3 +953,4 @@ export function getExpressionVariables(expression: string): string[] | null {
     return null;
   }
 }
+

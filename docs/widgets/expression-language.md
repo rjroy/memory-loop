@@ -214,10 +214,70 @@ expr: "normalize(this.rating, 1, 10)"  # 8 becomes 0.778
 
 ### `lerp(a, b, t)`
 
-Linear interpolation:
+Linear interpolation between two values:
 
 ```yaml
 expr: "lerp(0, 100, this.progress)"  # t=0.5 returns 50
+```
+
+### `mean(...values)`
+
+Arithmetic mean of multiple values (skips non-numeric):
+
+```yaml
+expr: "mean(this.rating1, this.rating2, this.rating3)"
+```
+
+### `harmonicMean(...values)`
+
+Harmonic mean of multiple values (skips non-numeric and zeros):
+
+```yaml
+expr: "harmonicMean(this.speed1, this.speed2)"  # Useful for averaging rates
+```
+
+### `weightedMean(values, weights)`
+
+Weighted arithmetic mean with corresponding weights. Requires array arguments:
+
+```yaml
+# This function is primarily useful when called programmatically.
+# For inline weighted calculations, use explicit math:
+expr: "(this.q1 * 0.2 + this.q2 * 0.3 + this.q3 * 0.5) / (0.2 + 0.3 + 0.5)"
+```
+
+### `zscore(value, mean, stddev)`
+
+Compute z-score (standard score) for a value:
+
+```yaml
+expr: "zscore(this.rating, stats.mean_rating, stats.stddev_rating)"
+```
+
+Returns null if stddev is 0.
+
+### `percentile(value, mean, stddev)`
+
+Convert a value to a percentile (0-100) assuming normal distribution:
+
+```yaml
+expr: "percentile(this.rating, stats.mean_rating, stats.stddev_rating)"
+```
+
+### `zscoreToScore(value, mean, stddev, maxScore)`
+
+Convert a value to a score between 0 and maxScore (default 100):
+
+```yaml
+expr: "zscoreToScore(this.rating, stats.mean_rating, stats.stddev_rating, 10)"
+```
+
+### `erf(x)`
+
+Error function approximation (useful for statistical calculations):
+
+```yaml
+expr: "erf(this.zscore / sqrt(2))"  # Part of CDF calculation
 ```
 
 ## DAG-Based Computation

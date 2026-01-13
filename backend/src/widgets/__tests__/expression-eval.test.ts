@@ -424,6 +424,81 @@ describe("evaluateExpression - custom functions", () => {
     });
   });
 
+  describe("normalize()", () => {
+    test("scales value to 0-1 range", () => {
+      expect(evaluateExpression("normalize(5, 0, 10)", createContext())).toBe(0.5);
+    });
+
+    test("min value returns 0", () => {
+      expect(evaluateExpression("normalize(0, 0, 10)", createContext())).toBe(0);
+    });
+
+    test("max value returns 1", () => {
+      expect(evaluateExpression("normalize(10, 0, 10)", createContext())).toBe(1);
+    });
+
+    test("value outside range extrapolates", () => {
+      expect(evaluateExpression("normalize(15, 0, 10)", createContext())).toBe(1.5);
+      expect(evaluateExpression("normalize(-5, 0, 10)", createContext())).toBe(-0.5);
+    });
+
+    test("works with non-zero min", () => {
+      // (8 - 1) / (10 - 1) = 7/9 ≈ 0.778
+      const result = evaluateExpression("normalize(8, 1, 10)", createContext());
+      expect(result).toBeCloseTo(0.778, 2);
+    });
+
+    test("normalize with field values", () => {
+      const context = createContext({ rating: 7 }, { rating_min: 1, rating_max: 10 });
+      const result = evaluateExpression("normalize(this.rating, stats.rating_min, stats.rating_max)", context);
+      expect(result).toBeCloseTo(0.667, 2);
+    });
+
+    test("normalize returns null when min equals max", () => {
+      expect(customFunctions.normalize(5, 5, 5)).toBeNull();
+    });
+
+    test("normalize with non-numbers returns null", () => {
+      expect(customFunctions.normalize("5", 0, 10)).toBeNull();
+      expect(customFunctions.normalize(5, "0", 10)).toBeNull();
+      expect(customFunctions.normalize(5, 0, "10")).toBeNull();
+    });
+  });
+
+  describe("lerp()", () => {
+    test("interpolates at midpoint", () => {
+      expect(evaluateExpression("lerp(0, 100, 0.5)", createContext())).toBe(50);
+    });
+
+    test("t=0 returns first value", () => {
+      expect(evaluateExpression("lerp(10, 20, 0)", createContext())).toBe(10);
+    });
+
+    test("t=1 returns second value", () => {
+      expect(evaluateExpression("lerp(10, 20, 1)", createContext())).toBe(20);
+    });
+
+    test("interpolates at quarter point", () => {
+      expect(evaluateExpression("lerp(0, 100, 0.25)", createContext())).toBe(25);
+    });
+
+    test("extrapolates beyond range", () => {
+      expect(evaluateExpression("lerp(0, 100, 1.5)", createContext())).toBe(150);
+      expect(evaluateExpression("lerp(0, 100, -0.5)", createContext())).toBe(-50);
+    });
+
+    test("lerp with field values", () => {
+      const context = createContext({ progress: 0.75 }, { min_score: 0, max_score: 100 });
+      expect(evaluateExpression("lerp(stats.min_score, stats.max_score, this.progress)", context)).toBe(75);
+    });
+
+    test("lerp with non-numbers returns null", () => {
+      expect(customFunctions.lerp("0", 100, 0.5)).toBeNull();
+      expect(customFunctions.lerp(0, "100", 0.5)).toBeNull();
+      expect(customFunctions.lerp(0, 100, "0.5")).toBeNull();
+    });
+  });
+
   describe("zscore()", () => {
     test("computes z-score correctly", () => {
       // z = (value - mean) / stddev = (8 - 5) / 2 = 1.5

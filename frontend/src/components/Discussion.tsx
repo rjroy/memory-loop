@@ -41,6 +41,8 @@ export function Discussion(): React.ReactNode {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasSentVaultSelectionRef = useRef(false);
   const prevSessionIdRef = useRef<string | null>(null);
+  // Track session ID to resume after vault selection (for per-vault session storage)
+  const pendingResumeRef = useRef<string | null>(null);
 
   const {
     vault,
@@ -130,7 +132,8 @@ export function Discussion(): React.ReactNode {
     onMessage: handleMessage,
   });
 
-  // Send vault selection or resume session when WebSocket connects (initial or reconnect)
+  // Send vault selection when WebSocket connects (initial or reconnect)
+  // Sessions are stored per-vault, so we must select vault before resuming any session.
   useEffect(() => {
     if (
       connectionStatus === "connected" &&
@@ -142,30 +145,33 @@ export function Discussion(): React.ReactNode {
       // Priority 0: If user wants a new session, skip auto-resume entirely
       if (wantsNewSession) {
         console.log("[Discussion] wantsNewSession=true, starting fresh session");
+        pendingResumeRef.current = null;
         sendMessage({ type: "select_vault", vaultId: vault.id });
         return;
       }
 
-      // Priority 1: If RecentActivity set a pendingSessionId, resume that session
+      // Priority 1: If RecentActivity set a pendingSessionId, queue it for resume after vault selection
       if (pendingSessionId) {
-        console.log(`[Discussion] Resuming pending session: ${pendingSessionId.slice(0, 8)}...`);
-        sendMessage({ type: "resume_session", sessionId: pendingSessionId });
+        console.log(`[Discussion] Will resume pending session after vault selection: ${pendingSessionId.slice(0, 8)}...`);
+        pendingResumeRef.current = pendingSessionId;
+        sendMessage({ type: "select_vault", vaultId: vault.id });
         return;
       }
 
-      // Priority 2: If we have a current sessionId, resume it (e.g., on reconnect)
+      // Priority 2: If we have a current sessionId, queue it for resume (e.g., on reconnect)
       if (sessionId) {
-        console.log(`[Discussion] Resuming session on reconnect: ${sessionId.slice(0, 8)}...`);
-        sendMessage({ type: "resume_session", sessionId });
+        console.log(`[Discussion] Will resume session on reconnect after vault selection: ${sessionId.slice(0, 8)}...`);
+        pendingResumeRef.current = sessionId;
+        sendMessage({ type: "select_vault", vaultId: vault.id });
         return;
       }
 
-      // Priority 3: Check API for existing session, or start fresh
+      // Priority 3: Check API for existing session to auto-resume, or start fresh
+      pendingResumeRef.current = null;
       void (async () => {
         try {
           const response = await fetch(`/api/sessions/${vault.id}`);
           if (!response.ok) {
-            // Non-2xx status - fall back to selecting vault
             console.warn(`[Discussion] Session check failed with status ${response.status}, selecting vault`);
             sendMessage({ type: "select_vault", vaultId: vault.id });
             return;
@@ -173,12 +179,13 @@ export function Discussion(): React.ReactNode {
           const data = (await response.json()) as { sessionId: string | null };
 
           if (data.sessionId) {
-            console.log(`[Discussion] Found existing session: ${data.sessionId.slice(0, 8)}...`);
-            sendMessage({ type: "resume_session", sessionId: data.sessionId });
+            // Store session to resume after vault selection
+            console.log(`[Discussion] Found existing session, will resume after vault selection: ${data.sessionId.slice(0, 8)}...`);
+            pendingResumeRef.current = data.sessionId;
           } else {
             console.log(`[Discussion] No existing session, selecting vault: ${vault.id}`);
-            sendMessage({ type: "select_vault", vaultId: vault.id });
           }
+          sendMessage({ type: "select_vault", vaultId: vault.id });
         } catch (err) {
           console.warn("[Discussion] Failed to check session, selecting vault:", err);
           sendMessage({ type: "select_vault", vaultId: vault.id });
@@ -214,9 +221,25 @@ export function Discussion(): React.ReactNode {
       console.log("[Discussion] Session not found, starting fresh");
       startNewSession();
       setPendingSessionId(null); // Clear pending to prevent retry on reconnect
+      pendingResumeRef.current = null;
       sendMessage({ type: "select_vault", vaultId: vault.id });
     }
   }, [lastMessage, vault, sendMessage, startNewSession, setPendingSessionId]);
+
+  // After vault is selected (session_ready with empty sessionId), send resume_session if needed
+  useEffect(() => {
+    if (
+      lastMessage?.type === "session_ready" &&
+      !lastMessage.sessionId && // Empty sessionId means vault selected, no session yet
+      pendingResumeRef.current &&
+      connectionStatus === "connected"
+    ) {
+      const resumeId = pendingResumeRef.current;
+      pendingResumeRef.current = null;
+      console.log(`[Discussion] Vault selected, now resuming session: ${resumeId.slice(0, 8)}...`);
+      sendMessage({ type: "resume_session", sessionId: resumeId });
+    }
+  }, [lastMessage, connectionStatus, sendMessage]);
 
   // Load prefill or draft on mount - prefill takes precedence over localStorage draft
   // Using a ref to capture the initial prefill value avoids needing to suppress exhaustive-deps

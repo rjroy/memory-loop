@@ -900,7 +900,30 @@ describe("Discussion", () => {
         expect(wsInstances.length).toBeGreaterThan(0);
       });
 
-      // Should send resume_session with the pendingSessionId
+      const ws = wsInstances[wsInstances.length - 1];
+
+      // With per-vault session storage, select_vault is sent first
+      await waitFor(() => {
+        const selectMessages = sentMessages.filter(
+          (m) => m.type === "select_vault"
+        );
+        expect(selectMessages.length).toBe(1);
+        expect(selectMessages[0]).toEqual({
+          type: "select_vault",
+          vaultId: testVault.id,
+        });
+      });
+
+      // Simulate vault selection response (empty sessionId means vault selected, no session yet)
+      act(() => {
+        ws.simulateMessage({
+          type: "session_ready",
+          sessionId: "",
+          vaultId: testVault.id,
+        });
+      });
+
+      // After vault selection, should send resume_session with the pendingSessionId
       await waitFor(() => {
         const resumeMessages = sentMessages.filter(
           (m) => m.type === "resume_session"
@@ -949,7 +972,26 @@ describe("Discussion", () => {
         expect(wsInstances.length).toBeGreaterThan(0);
       });
 
-      // Should resume the PENDING session, not the existing one
+      const ws = wsInstances[wsInstances.length - 1];
+
+      // With per-vault session storage, select_vault is sent first
+      await waitFor(() => {
+        const selectMessages = sentMessages.filter(
+          (m) => m.type === "select_vault"
+        );
+        expect(selectMessages.length).toBe(1);
+      });
+
+      // Simulate vault selection response
+      act(() => {
+        ws.simulateMessage({
+          type: "session_ready",
+          sessionId: "",
+          vaultId: testVault.id,
+        });
+      });
+
+      // After vault selection, should resume the PENDING session, not the existing one
       await waitFor(() => {
         const resumeMessages = sentMessages.filter(
           (m) => m.type === "resume_session"

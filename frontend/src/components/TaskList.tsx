@@ -288,6 +288,9 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
   // State for hiding completed tasks
   const [hideCompleted, setHideCompleted] = useState(false);
 
+  // State for collapsed categories
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<TaskCategory>>(new Set());
+
   // Context menu state for task state selection
   const [contextMenu, setContextMenu] = useState<TaskContextMenuState>({
     isOpen: false,
@@ -372,6 +375,19 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
   // Calculate total counts for display (before early returns for consistent hook ordering)
   const completedCount = tasks.filter((t) => t.state === "x").length;
   const totalCount = tasks.length;
+
+  // Toggle category collapse state
+  const toggleCategory = useCallback((category: TaskCategory) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  }, []);
 
   // Handle task toggle with optimistic update
   const handleToggle = useCallback(
@@ -560,10 +576,38 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
       {sortedCategories.map(({ category, filePaths }) => {
         const fileGroups = groupedByCategory.get(category);
         if (!fileGroups) return null;
+        const isCategoryCollapsed = collapsedCategories.has(category);
+
+        // Calculate category rollup: completed / total tasks in this category
+        let categoryCompleted = 0;
+        let categoryTotal = 0;
+        for (const taskList of fileGroups.values()) {
+          for (const task of taskList) {
+            categoryTotal++;
+            if (task.state === "x") categoryCompleted++;
+          }
+        }
+
         return (
           <section key={category} className="task-list__category">
-            <h3 className="task-list__category-header">{CATEGORY_LABELS[category]}</h3>
-            {filePaths.map((filePath) => {
+            <button
+              type="button"
+              className="task-list__category-header"
+              onClick={() => toggleCategory(category)}
+              aria-expanded={!isCategoryCollapsed}
+            >
+              <span
+                className="task-list__group-chevron"
+                data-collapsed={isCategoryCollapsed}
+              >
+                <ChevronIcon />
+              </span>
+              <span className="task-list__category-name">{CATEGORY_LABELS[category]}</span>
+              <span className="task-list__category-count">
+                {categoryCompleted} / {categoryTotal}
+              </span>
+            </button>
+            {!isCategoryCollapsed && filePaths.map((filePath) => {
               const fileTasks = fileGroups.get(filePath);
               if (!fileTasks) return null;
               return (

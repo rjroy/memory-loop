@@ -583,6 +583,10 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         case "session_ready":
           if (message.sessionId) {
             setSessionId(message.sessionId);
+            // Only clear pendingSessionId when a session is actually established.
+            // Empty sessionId means vault was selected but no session yet (e.g., from select_vault).
+            // We need to preserve pendingSessionId so Discussion can send resume_session.
+            setPendingSessionId(null);
           }
           if (message.createdAt) {
             setSessionStartTime(new Date(message.createdAt));
@@ -591,7 +595,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
             setMessages(message.messages);
           }
           setSlashCommands(message.slashCommands ?? []);
-          setPendingSessionId(null);
           break;
 
         case "response_start": {

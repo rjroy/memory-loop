@@ -1094,7 +1094,19 @@ export class WebSocketHandler {
     const rawStreamEvent = event.event;
 
     if (rawStreamEvent.type === "error") {
+      // Extract error details from SDK stream event
+      const errorEvent = rawStreamEvent as { type: "error"; error: { type?: string; message?: string } };
+      const errorMessage = errorEvent.error?.message ?? errorEvent.error?.type ?? "Unknown SDK error during streaming";
+
       log.warn("Stream error event received", { error: rawStreamEvent.error });
+
+      // Send error to frontend so user sees what went wrong
+      this.send(ws, {
+        type: "error",
+        code: "SDK_ERROR",
+        message: errorMessage,
+      });
+
       return "";
     }
 
@@ -1200,6 +1212,45 @@ export class WebSocketHandler {
     event: SDKResultMessage,
     toolsMap: Map<string, StoredToolInvocation>
   ): number | undefined {
+    // Check for error results and surface them to frontend
+    if (event.subtype !== "success") {
+      const errorEvent = event as {
+        subtype: string;
+        errors?: string[];
+        is_error?: boolean;
+      };
+
+      // Build a user-friendly error message
+      let errorMessage: string;
+      if (errorEvent.errors && errorEvent.errors.length > 0) {
+        errorMessage = errorEvent.errors.join("; ");
+      } else {
+        // Fallback to subtype-based messages
+        switch (errorEvent.subtype) {
+          case "error_max_turns":
+            errorMessage = "Conversation reached maximum turns limit.";
+            break;
+          case "error_max_budget_usd":
+            errorMessage = "Conversation exceeded budget limit.";
+            break;
+          case "error_max_structured_output_retries":
+            errorMessage = "Failed to generate structured output after maximum retries.";
+            break;
+          case "error_during_execution":
+          default:
+            errorMessage = "An error occurred during execution.";
+        }
+      }
+
+      log.warn(`SDK result error: ${errorEvent.subtype}`, { errors: errorEvent.errors });
+
+      this.send(ws, {
+        type: "error",
+        code: "SDK_ERROR",
+        message: errorMessage,
+      });
+    }
+
     const { usage, modelUsage } = event;
 
     let contextUsage: number | undefined;

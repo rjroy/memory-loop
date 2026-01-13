@@ -416,7 +416,8 @@
 
 .browse-mode__widgets {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: var(--spacing-md);
 }
 
@@ -450,6 +451,12 @@
     to {
       transform: translateX(0);
     }
+  }
+
+  .browse-mode__widgets {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: var(--spacing-sm);
   }
 
   .browse-mode__recall-widgets {

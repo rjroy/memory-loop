@@ -52,6 +52,8 @@ import {
   loadVaultConfig,
   saveSlashCommands,
   slashCommandsEqual,
+  savePinnedAssets,
+  resolvePinnedAssets,
 } from "./vault-config.js";
 import { runVaultSetup } from "./vault-setup.js";
 import { createWidgetEngine, createFileWatcher } from "./widgets/index.js";
@@ -469,6 +471,14 @@ export class WebSocketHandler {
         break;
       case "dismiss_health_issue":
         this.state.healthCollector?.dismiss(message.issueId);
+        break;
+
+      // Pinned assets handlers
+      case "get_pinned_assets":
+        await this.handleGetPinnedAssets(ws);
+        break;
+      case "set_pinned_assets":
+        await this.handleSetPinnedAssets(ws, message.paths);
         break;
 
       // Home/dashboard handlers (extracted)
@@ -968,6 +978,50 @@ export class WebSocketHandler {
         console.warn("Failed to abort query:", error);
       }
       this.state.activeQuery = null;
+    }
+  }
+
+  /**
+   * Handles get_pinned_assets message.
+   * Returns pinned assets from .memory-loop.json for the current vault.
+   */
+  private async handleGetPinnedAssets(ws: WebSocketLike): Promise<void> {
+    if (!this.state.currentVault) {
+      this.sendError(ws, "VAULT_NOT_FOUND", "No vault selected");
+      return;
+    }
+
+    try {
+      const config = await loadVaultConfig(this.state.currentVault.path);
+      const paths = resolvePinnedAssets(config);
+      this.send(ws, { type: "pinned_assets", paths });
+    } catch (error) {
+      log.error("Failed to get pinned assets", error);
+      const message = error instanceof Error ? error.message : "Failed to get pinned assets";
+      this.sendError(ws, "INTERNAL_ERROR", message);
+    }
+  }
+
+  /**
+   * Handles set_pinned_assets message.
+   * Saves pinned assets to .memory-loop.json for the current vault.
+   */
+  private async handleSetPinnedAssets(
+    ws: WebSocketLike,
+    paths: string[]
+  ): Promise<void> {
+    if (!this.state.currentVault) {
+      this.sendError(ws, "VAULT_NOT_FOUND", "No vault selected");
+      return;
+    }
+
+    try {
+      await savePinnedAssets(this.state.currentVault.path, paths);
+      this.send(ws, { type: "pinned_assets", paths });
+    } catch (error) {
+      log.error("Failed to save pinned assets", error);
+      const message = error instanceof Error ? error.message : "Failed to save pinned assets";
+      this.sendError(ws, "INTERNAL_ERROR", message);
     }
   }
 

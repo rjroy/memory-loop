@@ -110,6 +110,12 @@ export interface VaultConfig {
    * Each badge has text and a named color from the theme palette.
    */
   badges?: Badge[];
+
+  /**
+   * Pinned assets (files and folders) for quick access in the Recall tab.
+   * Paths are relative to content root.
+   */
+  pinnedAssets?: string[];
 }
 
 /**
@@ -265,6 +271,13 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
       );
     }
 
+    // Validate pinnedAssets array
+    if (Array.isArray(obj.pinnedAssets)) {
+      config.pinnedAssets = obj.pinnedAssets.filter(
+        (path): path is string => typeof path === "string" && path.length > 0
+      );
+    }
+
     return config;
   } catch (error) {
     // JSON parse error or read error
@@ -415,6 +428,49 @@ export function resolveQuotesPerWeek(config: VaultConfig): number {
  */
 export function resolveBadges(config: VaultConfig): Badge[] {
   return config.badges ?? [];
+}
+
+/**
+ * Resolves pinned assets from configuration.
+ *
+ * @param config - Vault configuration
+ * @returns Array of pinned asset paths (default: empty array)
+ */
+export function resolvePinnedAssets(config: VaultConfig): string[] {
+  return config.pinnedAssets ?? [];
+}
+
+/**
+ * Saves pinned assets to the vault configuration file.
+ * Preserves existing configuration fields while updating pinnedAssets.
+ *
+ * @param vaultPath - Absolute path to the vault root directory
+ * @param paths - Pinned asset paths to save
+ */
+export async function savePinnedAssets(
+  vaultPath: string,
+  paths: string[]
+): Promise<void> {
+  const configPath = join(vaultPath, CONFIG_FILE_NAME);
+
+  let existingConfig: Record<string, unknown> = {};
+
+  if (await fileExists(configPath)) {
+    try {
+      const content = await readFile(configPath, "utf-8");
+      const parsed = JSON.parse(content) as unknown;
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        existingConfig = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // If we can't read existing config, start fresh
+    }
+  }
+
+  existingConfig.pinnedAssets = paths;
+
+  await writeFile(configPath, JSON.stringify(existingConfig, null, 2) + "\n", "utf-8");
+  log.info(`Saved ${paths.length} pinned assets to ${configPath}`);
 }
 
 /**

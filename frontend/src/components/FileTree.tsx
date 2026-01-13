@@ -23,6 +23,8 @@ export interface FileTreeProps {
   onDeleteFile?: (path: string) => void;
   /** Callback when "Think about" is selected for a file */
   onThinkAbout?: (path: string) => void;
+  /** Callback when pinned assets change (for server sync) */
+  onPinnedAssetsChange?: (paths: string[]) => void;
 }
 
 /**
@@ -337,7 +339,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkAbout }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkAbout, onPinnedAssetsChange }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -455,14 +457,24 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkA
   }, []);
 
   const handlePinFolder = useCallback(() => {
-    pinFolder(contextMenu.path);
+    const path = contextMenu.path;
+    pinFolder(path);
+    // Compute new list and notify parent for server sync
+    if (onPinnedAssetsChange && !pinnedFolders.includes(path)) {
+      onPinnedAssetsChange([...pinnedFolders, path]);
+    }
     closeContextMenu();
-  }, [contextMenu.path, pinFolder, closeContextMenu]);
+  }, [contextMenu.path, pinFolder, closeContextMenu, pinnedFolders, onPinnedAssetsChange]);
 
   const handleUnpinFolder = useCallback(() => {
-    unpinFolder(contextMenu.path);
+    const path = contextMenu.path;
+    unpinFolder(path);
+    // Compute new list and notify parent for server sync
+    if (onPinnedAssetsChange) {
+      onPinnedAssetsChange(pinnedFolders.filter((p) => p !== path));
+    }
     closeContextMenu();
-  }, [contextMenu.path, unpinFolder, closeContextMenu]);
+  }, [contextMenu.path, unpinFolder, closeContextMenu, pinnedFolders, onPinnedAssetsChange]);
 
   const handleDeleteClick = useCallback(() => {
     setPendingDeletePath(contextMenu.path);

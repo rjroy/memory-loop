@@ -41,10 +41,8 @@ import {
   generateMessageId,
   loadPersistedVaultId,
   loadPersistedBrowserPath,
-  loadPinnedFolders,
   persistVaultId,
   persistBrowserPath,
-  persistPinnedFolders,
   persistViewMode,
 } from "./session/index.js";
 
@@ -131,33 +129,6 @@ export function SessionProvider({
   useEffect(() => {
     persistBrowserPath(state.browser.currentPath);
   }, [state.browser.currentPath]);
-
-  // Track if pinned folders have been loaded for current vault
-  const pinnedFoldersLoadedRef = useRef<string | null>(null);
-  const justLoadedPinsRef = useRef(false);
-
-  // Load pinned folders when vault changes
-  useEffect(() => {
-    if (state.vault && pinnedFoldersLoadedRef.current !== state.vault.id) {
-      const pinnedFolders = loadPinnedFolders(state.vault.id);
-      pinnedFoldersLoadedRef.current = state.vault.id;
-      if (pinnedFolders.length > 0) {
-        justLoadedPinsRef.current = true;
-        dispatch({ type: "SET_PINNED_FOLDERS", paths: pinnedFolders });
-      }
-    }
-  }, [state.vault?.id]);
-
-  // Persist pinned folders when they change
-  useEffect(() => {
-    if (state.vault && pinnedFoldersLoadedRef.current === state.vault.id) {
-      if (justLoadedPinsRef.current) {
-        justLoadedPinsRef.current = false;
-        return;
-      }
-      persistPinnedFolders(state.vault.id, state.browser.pinnedFolders);
-    }
-  }, [state.vault, state.browser.pinnedFolders]);
 
   // Load persisted state on mount
   useEffect(() => {
@@ -278,6 +249,10 @@ export function SessionProvider({
 
   const unpinFolder = useCallback((path: string) => {
     dispatch({ type: "UNPIN_FOLDER", path });
+  }, []);
+
+  const setPinnedAssets = useCallback((paths: string[]) => {
+    dispatch({ type: "SET_PINNED_FOLDERS", paths });
   }, []);
 
   const setRecentDiscussions = useCallback(
@@ -509,6 +484,7 @@ export function SessionProvider({
     setRecentNotes,
     pinFolder,
     unpinFolder,
+    setPinnedAssets,
     setRecentDiscussions,
     removeDiscussion,
     setGoals,
@@ -593,6 +569,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     setGroundWidgetsError,
     setRecallWidgetsError,
     setHealthIssues,
+    setPinnedAssets,
   } = useSession();
 
   const messagesRef = useRef(messages);
@@ -708,6 +685,10 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           setHealthIssues(message.issues);
           break;
 
+        case "pinned_assets":
+          setPinnedAssets(message.paths);
+          break;
+
         default:
           break;
       }
@@ -729,6 +710,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
       setGroundWidgetsError,
       setRecallWidgetsError,
       setHealthIssues,
+      setPinnedAssets,
     ]
   );
 }

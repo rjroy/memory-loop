@@ -50,6 +50,7 @@ import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk.
 import { wsLog as log } from "./logger.js";
 import {
   loadVaultConfig,
+  loadSlashCommands,
   saveSlashCommands,
   slashCommandsEqual,
   savePinnedAssets,
@@ -228,8 +229,8 @@ export class WebSocketHandler {
       // Update cache if commands changed
       if (this.state.currentVault) {
         try {
-          const vaultConfig = await loadVaultConfig(this.state.currentVault.path);
-          if (!slashCommandsEqual(vaultConfig.slashCommands, commands)) {
+          const cachedCommands = await loadSlashCommands(this.state.currentVault.path);
+          if (!slashCommandsEqual(cachedCommands, commands)) {
             log.info("Slash commands changed, updating cache");
             await saveSlashCommands(this.state.currentVault.path, commands);
           }
@@ -623,8 +624,7 @@ export class WebSocketHandler {
         });
       }
 
-      const vaultConfig = await loadVaultConfig(vault.path);
-      const cachedCommands = vaultConfig.slashCommands;
+      const cachedCommands = await loadSlashCommands(vault.path);
 
       log.info("Sending session_ready");
       this.send(ws, {
@@ -827,8 +827,7 @@ export class WebSocketHandler {
       this.state.currentSessionId = sessionId;
       log.info(`Resuming session ${sessionId} with ${metadata.messages.length} messages`);
 
-      const vaultConfig = await loadVaultConfig(this.state.currentVault.path);
-      const cachedCommands = vaultConfig.slashCommands;
+      const cachedCommands = await loadSlashCommands(this.state.currentVault.path);
 
       this.send(ws, {
         type: "session_ready",
@@ -868,8 +867,7 @@ export class WebSocketHandler {
 
     this.state.currentSessionId = null;
 
-    const vaultConfig = await loadVaultConfig(this.state.currentVault.path);
-    const cachedCommands = vaultConfig.slashCommands;
+    const cachedCommands = await loadSlashCommands(this.state.currentVault.path);
 
     this.send(ws, {
       type: "session_ready",

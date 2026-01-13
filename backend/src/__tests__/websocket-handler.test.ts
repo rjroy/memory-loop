@@ -223,8 +223,13 @@ const mockLoadVaultConfig = mock<
   (vaultPath: string) => Promise<Record<string, unknown>>
 >(() => Promise.resolve({}));
 
+const mockLoadSlashCommands = mock<
+  (vaultPath: string) => Promise<Array<{ name: string; description: string; argumentHint?: string }> | undefined>
+>(() => Promise.resolve(undefined));
+
 void mock.module("../vault-config", () => ({
   loadVaultConfig: mockLoadVaultConfig,
+  loadSlashCommands: mockLoadSlashCommands,
 }));
 
 // Mock vault setup
@@ -2257,9 +2262,7 @@ describe("WebSocket Handler", () => {
         { name: "/recall", description: "Search vault" },
         { name: "/tasks", description: "List tasks" },
       ];
-      mockLoadVaultConfig.mockResolvedValue({
-        slashCommands: cachedCommands,
-      });
+      mockLoadSlashCommands.mockResolvedValue(cachedCommands);
 
       mockCreateSession.mockResolvedValue({
         sessionId: "session-to-clear",

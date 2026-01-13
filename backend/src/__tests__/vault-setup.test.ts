@@ -721,6 +721,7 @@ cache.db
 cache.db-shm
 cache.db-wal
 sessions/
+slash-commands.json
 `;
     await writeFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), existingContent);
 
@@ -746,7 +747,7 @@ cache.db
     const result = await updateGitignore(vaultPath);
 
     expect(result.success).toBe(true);
-    expect(result.message).toContain("3 pattern(s)");
+    expect(result.message).toContain("4 pattern(s)");
 
     const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
 
@@ -758,6 +759,7 @@ cache.db
     expect(content).toContain("cache.db-shm");
     expect(content).toContain("cache.db-wal");
     expect(content).toContain("sessions/");
+    expect(content).toContain("slash-commands.json");
   });
 
   test("handles .gitignore without trailing newline", async () => {
@@ -788,11 +790,12 @@ cache.db.backup
     const result = await updateGitignore(vaultPath);
 
     expect(result.success).toBe(true);
-    expect(result.message).toContain("4 pattern(s)");
+    expect(result.message).toContain("5 pattern(s)");
 
     const content = await readFile(join(vaultPath, MEMORY_LOOP_GITIGNORE_PATH), "utf-8");
     expect(content).toContain("cache.db\n");
     expect(content).toContain("sessions/");
+    expect(content).toContain("slash-commands.json");
   });
 });
 

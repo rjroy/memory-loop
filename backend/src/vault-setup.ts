@@ -129,13 +129,14 @@ export const CLAUDEMD_BACKUP_PATH = ".memory-loop/claude-md-backup.md";
 
 /**
  * Files and directories that should be gitignored within .memory-loop/.
- * Includes SQLite cache files and session data.
+ * Includes SQLite cache files, session data, and slash command cache.
  */
 export const MEMORY_LOOP_IGNORE_PATTERNS = [
   "cache.db",
   "cache.db-shm",
   "cache.db-wal",
   "sessions/",
+  "slash-commands.json",
 ];
 
 /**

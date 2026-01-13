@@ -175,7 +175,7 @@ function topologicalSort(graph: WidgetGraph): {
   // Remaining nodes with non-zero in-degree are in cycles
   const cycleParticipants: string[] = [];
   for (const node of nodes) {
-    if (!sorted.includes(node)) {
+    if (inDegree.get(node)! > 0) {
       cycleParticipants.push(node);
     }
   }

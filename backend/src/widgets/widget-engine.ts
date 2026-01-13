@@ -355,10 +355,10 @@ export class WidgetEngine {
 
     log.info(`Computing ${groundWidgets.length} ground widget(s)`);
 
-    // Clear cached results for fresh computation (unless using cache)
-    if (options.force) {
-      this.computedWidgetResults.clear();
-    }
+    // Always clear cached results at the start of computation to ensure
+    // a consistent state for this computation run. Results are rebuilt
+    // as each widget is computed (either fresh or from cache).
+    this.computedWidgetResults.clear();
 
     // Compute widgets in dependency order using the resolved computation order
     const results: WidgetResult[] = [];
@@ -483,6 +483,12 @@ export class WidgetEngine {
         log.debug(`Cache hit for widget ${widget.id}`);
         const result = JSON.parse(cached.resultJson) as WidgetResult;
         result.computeTimeMs = performance.now() - startTime;
+
+        // Store cached result for includes so dependent widgets can access this widget's data
+        if (result.data && typeof result.data === "object") {
+          this.computedWidgetResults.set(widget.config.name, result.data as Record<string, unknown>);
+        }
+
         return result;
       }
     }

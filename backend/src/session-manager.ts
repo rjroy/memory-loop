@@ -30,7 +30,6 @@ import { loadVaultConfig, resolveRecentDiscussions, resolveDiscussionModel } fro
  * These options configure Claude for interactive vault exploration:
  * - allowedTools: Auto-allow read operations without user prompts
  * - permissionMode: Accept file edits in the vault automatically
- * - maxTurns: Prevent runaway conversations (50 turns = ~100 messages)
  * - maxBudgetUsd: Hard cost cap as safety net
  * - includePartialMessages: Enable streaming for real-time responses
  *
@@ -55,8 +54,6 @@ export const DISCUSSION_MODE_OPTIONS: Partial<Options> = {
   // Model is set dynamically from vault config (default: "opus")
   // Auto-accept file edits - the user is working in their own vault
   permissionMode: "acceptEdits",
-  // Prevent runaway conversations (100 turns = ~200 messages)
-  maxTurns: 100,
   // Hard cost cap as safety net ($2 is generous for a single conversation)
   maxBudgetUsd: 2.0,
   // Enable streaming for real-time response display
@@ -706,7 +703,6 @@ export async function createSession(
       model: mergedOptions.model,
       allowedTools: mergedOptions.allowedTools,
       permissionMode: mergedOptions.permissionMode,
-      maxTurns: mergedOptions.maxTurns,
       hasCanUseTool: !!mergedOptions.canUseTool,
     });
     const queryResult = query({
@@ -823,7 +819,6 @@ export async function resumeSession(
       model: mergedOptions.model,
       allowedTools: mergedOptions.allowedTools,
       permissionMode: mergedOptions.permissionMode,
-      maxTurns: mergedOptions.maxTurns,
       hasCanUseTool: !!mergedOptions.canUseTool,
     });
     const queryResult = query({

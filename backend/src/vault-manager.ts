@@ -18,6 +18,9 @@ import {
   resolvePromptsPerGeneration,
   resolveMaxPoolSize,
   resolveQuotesPerWeek,
+  resolveRecentCaptures,
+  resolveRecentDiscussions,
+  resolveDiscussionModel,
   resolveBadges,
   type VaultConfig,
 } from "./vault-config";
@@ -310,9 +313,12 @@ export async function parseVault(
     goalsPath,
     attachmentPath,
     setupComplete,
+    discussionModel: resolveDiscussionModel(config),
     promptsPerGeneration: resolvePromptsPerGeneration(config),
     maxPoolSize: resolveMaxPoolSize(config),
     quotesPerWeek: resolveQuotesPerWeek(config),
+    recentCaptures: resolveRecentCaptures(config),
+    recentDiscussions: resolveRecentDiscussions(config),
     badges: resolveBadges(config),
   };
 }

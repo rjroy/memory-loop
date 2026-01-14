@@ -393,10 +393,17 @@
   border-color: oklch(from var(--color-accent-quartary) l c calc(h + 15) / 0.30);
 }
 
+/* Card actions row for setup and gear buttons */
+.vault-select__card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+
 /* Setup button */
 .vault-select__setup-btn {
-  align-self: flex-end;
-  margin-top: var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
@@ -440,6 +447,39 @@
   border-top-color: var(--color-accent-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
+}
+
+/* Gear button for config editor (TASK-008) */
+.vault-select__gear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vault-select__gear-btn:hover:not(:disabled) {
+  color: var(--color-text-secondary);
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+}
+
+.vault-select__gear-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.vault-select__gear-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .vault-select__card-spinner {

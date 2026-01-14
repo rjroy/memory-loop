@@ -37,10 +37,11 @@ import {
   resolveDiscussionModel,
   saveSlashCommands,
   savePinnedAssets,
+  saveVaultConfig,
   slashCommandsEqual,
   type VaultConfig,
 } from "../vault-config";
-import type { SlashCommand } from "@memory-loop/shared";
+import type { SlashCommand, EditableVaultConfig } from "@memory-loop/shared";
 
 describe("vault-config", () => {
   let testDir: string;
@@ -1334,6 +1335,307 @@ describe("vault-config", () => {
       const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
       const parsed = JSON.parse(content) as VaultConfig;
       expect(parsed.pinnedAssets).toEqual(paths);
+    });
+  });
+
+  describe("saveVaultConfig", () => {
+    test("preserves non-editable fields (contentRoot, inboxPath, metadataPath, projectPath, areaPath, attachmentPath, pinnedAssets)", async () => {
+      // Create existing config with non-editable fields
+      const existingConfig = {
+        contentRoot: "content",
+        inboxPath: "inbox",
+        metadataPath: "meta/memory-loop",
+        projectPath: "custom_projects",
+        areaPath: "custom_areas",
+        attachmentPath: "custom_attachments",
+        pinnedAssets: ["pinned/folder", "pinned/file.md"],
+      };
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify(existingConfig)
+      );
+
+      // Save editable config
+      const editableConfig: EditableVaultConfig = {
+        title: "New Title",
+        discussionModel: "sonnet",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      // Verify non-editable fields are preserved
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.contentRoot).toBe("content");
+      expect(parsed.inboxPath).toBe("inbox");
+      expect(parsed.metadataPath).toBe("meta/memory-loop");
+      expect(parsed.projectPath).toBe("custom_projects");
+      expect(parsed.areaPath).toBe("custom_areas");
+      expect(parsed.attachmentPath).toBe("custom_attachments");
+      expect(parsed.pinnedAssets).toEqual(["pinned/folder", "pinned/file.md"]);
+      // And editable fields are updated
+      expect(parsed.title).toBe("New Title");
+      expect(parsed.discussionModel).toBe("sonnet");
+    });
+
+    test("creates file when it does not exist and values are non-default", async () => {
+      const editableConfig: EditableVaultConfig = {
+        title: "My Vault",
+        subtitle: "Personal Notes",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.title).toBe("My Vault");
+      expect(parsed.subtitle).toBe("Personal Notes");
+    });
+
+    test("does NOT create file if all values are defaults (undefined or empty badges)", async () => {
+      // Empty editable config (all defaults)
+      const editableConfig: EditableVaultConfig = {};
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      // File should NOT exist
+      const configPath = join(testDir, CONFIG_FILE_NAME);
+      let fileExists = true;
+      try {
+        await readFile(configPath, "utf-8");
+      } catch {
+        fileExists = false;
+      }
+      expect(fileExists).toBe(false);
+    });
+
+    test("does NOT create file if only empty badges array provided", async () => {
+      const editableConfig: EditableVaultConfig = {
+        badges: [],
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      // File should NOT exist
+      const configPath = join(testDir, CONFIG_FILE_NAME);
+      let fileExists = true;
+      try {
+        await readFile(configPath, "utf-8");
+      } catch {
+        fileExists = false;
+      }
+      expect(fileExists).toBe(false);
+    });
+
+    test("merges only editable fields over existing config", async () => {
+      // Create existing config with mixed fields
+      const existingConfig = {
+        title: "Old Title",
+        subtitle: "Old Subtitle",
+        contentRoot: "content",
+        discussionModel: "opus",
+        promptsPerGeneration: 5,
+      };
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify(existingConfig)
+      );
+
+      // Save only title and badges
+      const editableConfig: EditableVaultConfig = {
+        title: "New Title",
+        badges: [{ text: "Work", color: "blue" }],
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      // Updated fields
+      expect(parsed.title).toBe("New Title");
+      expect(parsed.badges).toEqual([{ text: "Work", color: "blue" }]);
+      // Unchanged editable fields (not provided, so original remains)
+      expect(parsed.subtitle).toBe("Old Subtitle");
+      expect(parsed.discussionModel).toBe("opus");
+      expect(parsed.promptsPerGeneration).toBe(5);
+      // Non-editable field preserved
+      expect(parsed.contentRoot).toBe("content");
+    });
+
+    test("returns success true on successful write", async () => {
+      const editableConfig: EditableVaultConfig = {
+        title: "Test Vault",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+    });
+
+    test("returns success false with error on write failure", async () => {
+      // Create a directory at the config path to cause a write failure
+      const configPath = join(testDir, CONFIG_FILE_NAME);
+      await mkdir(configPath, { recursive: true });
+
+      const editableConfig: EditableVaultConfig = {
+        title: "Test Vault",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(typeof result.error).toBe("string");
+        expect(result.error.length).toBeGreaterThan(0);
+      }
+    });
+
+    test("handles malformed existing JSON gracefully by overwriting", async () => {
+      // Create invalid JSON
+      await writeFile(join(testDir, CONFIG_FILE_NAME), "{ invalid json }");
+
+      const editableConfig: EditableVaultConfig = {
+        title: "New Title",
+        discussionModel: "haiku",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      // Should have overwritten with new config
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.title).toBe("New Title");
+      expect(parsed.discussionModel).toBe("haiku");
+    });
+
+    test("saves all editable fields correctly", async () => {
+      const editableConfig: EditableVaultConfig = {
+        title: "Complete Vault",
+        subtitle: "All Fields",
+        discussionModel: "sonnet",
+        promptsPerGeneration: 10,
+        maxPoolSize: 100,
+        quotesPerWeek: 3,
+        recentCaptures: 10,
+        recentDiscussions: 8,
+        badges: [
+          { text: "Work", color: "blue" },
+          { text: "Personal", color: "green" },
+        ],
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.title).toBe("Complete Vault");
+      expect(parsed.subtitle).toBe("All Fields");
+      expect(parsed.discussionModel).toBe("sonnet");
+      expect(parsed.promptsPerGeneration).toBe(10);
+      expect(parsed.maxPoolSize).toBe(100);
+      expect(parsed.quotesPerWeek).toBe(3);
+      expect(parsed.recentCaptures).toBe(10);
+      expect(parsed.recentDiscussions).toBe(8);
+      expect(parsed.badges).toEqual([
+        { text: "Work", color: "blue" },
+        { text: "Personal", color: "green" },
+      ]);
+    });
+
+    test("updates existing file when file exists even with all defaults", async () => {
+      // Create existing file with non-editable content
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ contentRoot: "content", title: "Old Title" })
+      );
+
+      // Save empty editable config (all defaults)
+      const editableConfig: EditableVaultConfig = {};
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      // File should still exist with original content preserved
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.contentRoot).toBe("content");
+      expect(parsed.title).toBe("Old Title");
+    });
+
+    test("handles non-object existing JSON by starting fresh", async () => {
+      // Create JSON array instead of object
+      await writeFile(join(testDir, CONFIG_FILE_NAME), '["array", "data"]');
+
+      const editableConfig: EditableVaultConfig = {
+        title: "Fresh Start",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.title).toBe("Fresh Start");
+    });
+
+    test("handles null JSON by starting fresh", async () => {
+      await writeFile(join(testDir, CONFIG_FILE_NAME), "null");
+
+      const editableConfig: EditableVaultConfig = {
+        subtitle: "After Null",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.subtitle).toBe("After Null");
+    });
+
+    test("preserves unknown fields in existing config", async () => {
+      // Create existing config with an unknown field
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          customField: "custom value",
+          anotherUnknown: 42,
+          title: "Old Title",
+        })
+      );
+
+      const editableConfig: EditableVaultConfig = {
+        title: "New Title",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.title).toBe("New Title");
+      expect(parsed.customField).toBe("custom value");
+      expect(parsed.anotherUnknown).toBe(42);
+    });
+
+    test("writes pretty-printed JSON with trailing newline", async () => {
+      const editableConfig: EditableVaultConfig = {
+        title: "Test",
+      };
+      await saveVaultConfig(testDir, editableConfig);
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      // Should be pretty-printed (contains newlines beyond just trailing)
+      expect(content).toContain("\n");
+      // Should end with newline
+      expect(content.endsWith("\n")).toBe(true);
+      // Should be valid JSON
+      expect(() => JSON.parse(content) as unknown).not.toThrow();
     });
   });
 });

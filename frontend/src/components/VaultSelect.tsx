@@ -11,6 +11,7 @@ import type { VaultInfo } from "@memory-loop/shared";
 import { useSession, STORAGE_KEY_VAULT } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { Toast, type ToastVariant } from "./Toast";
+import { ConfigEditorDialog, type EditableVaultConfig } from "./ConfigEditorDialog";
 import "./VaultSelect.css";
 
 /**
@@ -46,6 +47,15 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastVariant, setToastVariant] = useState<ToastVariant>("success");
   const [toastMessage, setToastMessage] = useState("");
+
+  // Config editor dialog state (TASK-008)
+  const [configEditorOpen, setConfigEditorOpen] = useState(false);
+  const [configEditorVault, setConfigEditorVault] = useState<VaultInfo | null>(null);
+  // Config save state (TASK-010)
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configSaveError, setConfigSaveError] = useState<string | null>(null);
+  // Track the config being saved so we can update local state on success (TASK-010)
+  const pendingConfigRef = useRef<EditableVaultConfig | null>(null);
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
@@ -220,6 +230,55 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     }
   }, [lastMessage, vaults]);
 
+  // Handle config_updated response (TASK-010)
+  useEffect(() => {
+    if (lastMessage?.type === "config_updated" && configSaving) {
+      setConfigSaving(false);
+
+      if (lastMessage.success) {
+        const savedConfig = pendingConfigRef.current;
+        const vaultId = configEditorVault?.id;
+
+        // Update local vault state with the saved config values
+        if (vaultId && savedConfig) {
+          setVaults((prev) =>
+            prev.map((v) =>
+              v.id === vaultId
+                ? {
+                    ...v,
+                    // Map EditableVaultConfig fields to VaultInfo fields
+                    name: savedConfig.title ?? v.name,
+                    subtitle: savedConfig.subtitle ?? v.subtitle,
+                    promptsPerGeneration: savedConfig.promptsPerGeneration ?? v.promptsPerGeneration,
+                    maxPoolSize: savedConfig.maxPoolSize ?? v.maxPoolSize,
+                    quotesPerWeek: savedConfig.quotesPerWeek ?? v.quotesPerWeek,
+                    badges: savedConfig.badges ?? v.badges,
+                  }
+                : v
+            )
+          );
+        }
+
+        // Clear pending config
+        pendingConfigRef.current = null;
+
+        // Show success toast
+        setToastVariant("success");
+        setToastMessage("Settings saved");
+        setToastVisible(true);
+
+        // Close dialog
+        setConfigEditorOpen(false);
+        setConfigEditorVault(null);
+        console.log("[VaultSelect] Config saved successfully");
+      } else {
+        // Show error in dialog
+        setConfigSaveError(lastMessage.error ?? "Failed to save settings");
+        console.warn("[VaultSelect] Config save failed:", lastMessage.error);
+      }
+    }
+  }, [lastMessage, configSaving, configEditorVault]);
+
   // Toast dismiss handler
   const handleToastDismiss = useCallback(() => {
     setToastVisible(false);
@@ -238,6 +297,31 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     lastProcessedSetupVaultIdRef.current = null;
     console.log(`[VaultSelect] Starting setup for vault: ${vault.id}`);
     sendMessage({ type: "setup_vault", vaultId: vault.id });
+  }
+
+  // Handle gear button click - open config editor (TASK-008)
+  function handleGearClick(vault: VaultInfo, e: React.MouseEvent) {
+    e.stopPropagation(); // Prevent card selection
+    setConfigEditorVault(vault);
+    setConfigEditorOpen(true);
+    setConfigSaveError(null); // Clear any previous error (TASK-010)
+  }
+
+  // Handle config editor save - send update_vault_config via WebSocket (TASK-010)
+  function handleConfigSave(config: EditableVaultConfig) {
+    if (!configEditorVault) return;
+
+    setConfigSaving(true);
+    setConfigSaveError(null);
+    pendingConfigRef.current = config; // Store for local state update on success
+    console.log(`[VaultSelect] Saving config for vault: ${configEditorVault.id}`, config);
+    sendMessage({ type: "update_vault_config", config, vaultId: configEditorVault.id });
+  }
+
+  // Handle config editor cancel
+  function handleConfigCancel() {
+    setConfigEditorOpen(false);
+    setConfigEditorVault(null);
   }
 
   // Handle vault card click - check for existing session via API
@@ -414,22 +498,47 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
                   </span>
                 ))}
               </div>
-              {vault.hasClaudeMd && (
+              {/* Card actions row with setup and gear buttons */}
+              <div className="vault-select__card-actions">
+                {vault.hasClaudeMd && (
+                  <button
+                    type="button"
+                    className={`vault-select__setup-btn ${
+                      setupVaultId === vault.id ? "vault-select__setup-btn--loading" : ""
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSetupClick(vault);
+                    }}
+                    disabled={selectedVaultId !== null || setupVaultId !== null}
+                    aria-label={vault.setupComplete ? `Reconfigure ${vault.name}` : `Setup ${vault.name}`}
+                  >
+                    {vault.setupComplete ? "Reconfigure" : "Setup"}
+                  </button>
+                )}
+                {/* Config Editor Gear Button (TASK-008) */}
                 <button
                   type="button"
-                  className={`vault-select__setup-btn ${
-                    setupVaultId === vault.id ? "vault-select__setup-btn--loading" : ""
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSetupClick(vault);
-                  }}
+                  className="vault-select__gear-btn"
+                  onClick={(e) => handleGearClick(vault, e)}
                   disabled={selectedVaultId !== null || setupVaultId !== null}
-                  aria-label={vault.setupComplete ? `Reconfigure ${vault.name}` : `Setup ${vault.name}`}
+                  aria-label={`Configure ${vault.name} settings`}
                 >
-                  {vault.setupComplete ? "Reconfigure" : "Setup"}
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
                 </button>
-              )}
+              </div>
               {selectedVaultId === vault.id && (
                 <div className="vault-select__card-spinner" aria-label="Connecting" />
               )}
@@ -437,6 +546,28 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
           </li>
         ))}
       </ul>
+
+      {/* Config Editor Dialog (TASK-008, TASK-010) */}
+      {configEditorVault && (
+        <ConfigEditorDialog
+          isOpen={configEditorOpen}
+          initialConfig={{
+            title: configEditorVault.name,
+            subtitle: configEditorVault.subtitle,
+            discussionModel: configEditorVault.discussionModel,
+            promptsPerGeneration: configEditorVault.promptsPerGeneration,
+            maxPoolSize: configEditorVault.maxPoolSize,
+            quotesPerWeek: configEditorVault.quotesPerWeek,
+            recentCaptures: configEditorVault.recentCaptures,
+            recentDiscussions: configEditorVault.recentDiscussions,
+            badges: configEditorVault.badges,
+          }}
+          onSave={handleConfigSave}
+          onCancel={handleConfigCancel}
+          isSaving={configSaving}
+          saveError={configSaveError}
+        />
+      )}
 
       <Toast
         isVisible={toastVisible}

@@ -90,4 +90,18 @@ MOCK_SDK=true              # Test without API calls
 - Backend tests use filesystem operations in temp directories
 - Frontend tests use `@testing-library/react` + happy-dom
 - Mock the WebSocket and SDK for isolation
-- **Do not run `bun run test`** (the combined command). Running multiple test instances concurrently causes resource conflicts. Use targeted tests or `./git-hooks/pre-commit.sh` instead.
+
+### Running Tests (IMPORTANT)
+
+**For full test suites**: Always use `./git-hooks/pre-commit.sh`. This runs all tests correctly.
+
+**For targeted tests**: Use the specific test file path:
+```bash
+bun run --cwd backend test src/__tests__/vault-config.test.ts
+bun run --cwd frontend test src/components/__tests__/Home.test.tsx
+```
+
+**DO NOT**:
+- Run `bun run test` (combined command causes resource conflicts)
+- Run `bun run --cwd <module> test` without a specific file (runs all tests in module)
+- Pipe test output through `head` or `tail` (truncates output, hides results)

@@ -132,6 +132,12 @@
   }
 }
 
+.app-vault-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .app-vault-btn {
   display: inline-flex;
   align-items: center;
@@ -172,6 +178,36 @@
 
 .app-vault-btn:active {
   transform: scale(0.98);
+}
+
+/* Gear button for vault settings */
+.app-gear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  margin-top: var(--spacing-xs);
+  margin-left: var(--spacing-xs);
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.app-gear-btn:hover {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  border-color: var(--color-border);
+}
+
+.app-gear-btn:active {
+  transform: scale(0.95);
 }
 
 .app-header__center {

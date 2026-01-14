@@ -8,7 +8,7 @@
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, normalize, dirname } from "node:path";
-import type { SlashCommand, Badge, BadgeColor } from "@memory-loop/shared";
+import type { SlashCommand, Badge, BadgeColor, EditableVaultConfig } from "@memory-loop/shared";
 import { fileExists } from "./vault-manager";
 import { createLogger } from "./logger";
 
@@ -183,14 +183,19 @@ export const DEFAULT_RECENT_CAPTURES = 5;
 export const DEFAULT_RECENT_DISCUSSIONS = 5;
 
 /**
- * Default model for Discussion mode.
- */
-export const DEFAULT_DISCUSSION_MODEL = "opus";
-
-/**
  * Valid discussion model values.
  */
 export const VALID_DISCUSSION_MODELS = ["opus", "sonnet", "haiku"] as const;
+
+/**
+ * Discussion model type.
+ */
+export type DiscussionModel = (typeof VALID_DISCUSSION_MODELS)[number];
+
+/**
+ * Default model for Discussion mode.
+ */
+export const DEFAULT_DISCUSSION_MODEL: DiscussionModel = "opus";
 
 /**
  * Valid badge color names.
@@ -502,8 +507,8 @@ export function resolveRecentDiscussions(config: VaultConfig): number {
  * @param config - Vault configuration
  * @returns Model name (default: "opus")
  */
-export function resolveDiscussionModel(config: VaultConfig): string {
-  return config.discussionModel ?? DEFAULT_DISCUSSION_MODEL;
+export function resolveDiscussionModel(config: VaultConfig): DiscussionModel {
+  return (config.discussionModel as DiscussionModel | undefined) ?? DEFAULT_DISCUSSION_MODEL;
 }
 
 /**
@@ -537,6 +542,116 @@ export async function savePinnedAssets(
 
   await writeFile(configPath, JSON.stringify(existingConfig, null, 2) + "\n", "utf-8");
   log.info(`Saved ${paths.length} pinned assets to ${configPath}`);
+}
+
+/**
+ * Result type for saveVaultConfig operation.
+ */
+export type SaveConfigResult =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Checks if the editable config contains only default/undefined values.
+ */
+function isAllDefaults(config: EditableVaultConfig): boolean {
+  return (
+    config.title === undefined &&
+    config.subtitle === undefined &&
+    config.discussionModel === undefined &&
+    config.promptsPerGeneration === undefined &&
+    config.maxPoolSize === undefined &&
+    config.quotesPerWeek === undefined &&
+    config.recentCaptures === undefined &&
+    config.recentDiscussions === undefined &&
+    (config.badges === undefined || config.badges.length === 0)
+  );
+}
+
+/**
+ * Saves editable vault configuration fields to .memory-loop.json.
+ * Preserves existing configuration fields (paths, pinnedAssets) while updating editable fields.
+ *
+ * Per spec constraint: Does NOT create the file if it doesn't exist and all values are defaults.
+ *
+ * @param vaultPath - Absolute path to the vault root directory
+ * @param editableConfig - Editable configuration fields to save
+ * @returns Result indicating success or error with message
+ */
+export async function saveVaultConfig(
+  vaultPath: string,
+  editableConfig: EditableVaultConfig
+): Promise<SaveConfigResult> {
+  const configPath = join(vaultPath, CONFIG_FILE_NAME);
+
+  try {
+    const configExists = await fileExists(configPath);
+
+    // If file doesn't exist and all values are defaults, don't create it
+    if (!configExists && isAllDefaults(editableConfig)) {
+      log.debug("Skipping config save: file doesn't exist and all values are defaults");
+      return { success: true };
+    }
+
+    // Load existing config to preserve non-editable fields
+    let existingConfig: Record<string, unknown> = {};
+
+    if (configExists) {
+      try {
+        const content = await readFile(configPath, "utf-8");
+        const parsed = JSON.parse(content) as unknown;
+        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+          existingConfig = parsed as Record<string, unknown>;
+        }
+      } catch {
+        // If we can't parse existing config, log warning but continue
+        // We'll overwrite with the new config, preserving what we can
+        log.warn(`Could not parse existing config at ${configPath}, will overwrite`);
+      }
+    }
+
+    // Build merged config: start with existing, then apply editable fields
+    const mergedConfig: Record<string, unknown> = { ...existingConfig };
+
+    // Apply editable fields (only if defined in input)
+    if (editableConfig.title !== undefined) {
+      mergedConfig.title = editableConfig.title;
+    }
+    if (editableConfig.subtitle !== undefined) {
+      mergedConfig.subtitle = editableConfig.subtitle;
+    }
+    if (editableConfig.discussionModel !== undefined) {
+      mergedConfig.discussionModel = editableConfig.discussionModel;
+    }
+    if (editableConfig.promptsPerGeneration !== undefined) {
+      mergedConfig.promptsPerGeneration = editableConfig.promptsPerGeneration;
+    }
+    if (editableConfig.maxPoolSize !== undefined) {
+      mergedConfig.maxPoolSize = editableConfig.maxPoolSize;
+    }
+    if (editableConfig.quotesPerWeek !== undefined) {
+      mergedConfig.quotesPerWeek = editableConfig.quotesPerWeek;
+    }
+    if (editableConfig.recentCaptures !== undefined) {
+      mergedConfig.recentCaptures = editableConfig.recentCaptures;
+    }
+    if (editableConfig.recentDiscussions !== undefined) {
+      mergedConfig.recentDiscussions = editableConfig.recentDiscussions;
+    }
+    if (editableConfig.badges !== undefined) {
+      mergedConfig.badges = editableConfig.badges;
+    }
+
+    // Write merged config back to file
+    await writeFile(configPath, JSON.stringify(mergedConfig, null, 2) + "\n", "utf-8");
+
+    log.info(`Saved vault config to ${configPath}`);
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error(`Failed to save vault config to ${configPath}: ${message}`);
+    return { success: false, error: message };
+  }
 }
 
 /**

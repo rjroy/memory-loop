@@ -38,7 +38,7 @@
   /* Text Hierarchy (from accents) */
   --color-text-primary: oklch(from var(--color-accent-primary) 0.96 0.01 h);
   --color-text-secondary: oklch(from var(--color-accent-primary) 0.89 0.02 h);
-  --color-text-muted: oklch(from var(--color-accent-secondary) 0.72 0.12 h);
+  --color-text-muted: oklch(from var(--color-accent-secondary) 0.45 0.05 h);
   --color-text-heading: var(--color-text-accent-quartary);
   --color-text-highlight: oklch(from var(--color-text-accent-quartary) calc(l + 0.15) c h);
 

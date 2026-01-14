@@ -61,9 +61,12 @@ export interface VaultInfo {
   goalsPath?: string;
   attachmentPath: string;
   setupComplete: boolean;
+  discussionModel?: "opus" | "sonnet" | "haiku";
   promptsPerGeneration: number;
   maxPoolSize: number;
   quotesPerWeek: number;
+  recentCaptures?: number;
+  recentDiscussions?: number;
   badges: Badge[];
 }
 

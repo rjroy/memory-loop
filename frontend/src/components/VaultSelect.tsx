@@ -554,12 +554,13 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
           initialConfig={{
             title: configEditorVault.name,
             subtitle: configEditorVault.subtitle,
+            discussionModel: configEditorVault.discussionModel,
             promptsPerGeneration: configEditorVault.promptsPerGeneration,
             maxPoolSize: configEditorVault.maxPoolSize,
             quotesPerWeek: configEditorVault.quotesPerWeek,
+            recentCaptures: configEditorVault.recentCaptures,
+            recentDiscussions: configEditorVault.recentDiscussions,
             badges: configEditorVault.badges,
-            // Note: discussionModel, recentCaptures, recentDiscussions not in VaultInfo
-            // They will use defaults in ConfigEditorDialog
           }}
           onSave={handleConfigSave}
           onCancel={handleConfigCancel}

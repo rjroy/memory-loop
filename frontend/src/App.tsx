@@ -182,9 +182,12 @@ function MainContent(): React.ReactNode {
           initialConfig={{
             title: vault.name,
             subtitle: vault.subtitle,
+            discussionModel: vault.discussionModel,
             promptsPerGeneration: vault.promptsPerGeneration,
             maxPoolSize: vault.maxPoolSize,
             quotesPerWeek: vault.quotesPerWeek,
+            recentCaptures: vault.recentCaptures,
+            recentDiscussions: vault.recentDiscussions,
             badges: vault.badges,
           }}
           onSave={handleConfigSave}

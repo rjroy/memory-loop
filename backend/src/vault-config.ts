@@ -183,14 +183,19 @@ export const DEFAULT_RECENT_CAPTURES = 5;
 export const DEFAULT_RECENT_DISCUSSIONS = 5;
 
 /**
- * Default model for Discussion mode.
- */
-export const DEFAULT_DISCUSSION_MODEL = "opus";
-
-/**
  * Valid discussion model values.
  */
 export const VALID_DISCUSSION_MODELS = ["opus", "sonnet", "haiku"] as const;
+
+/**
+ * Discussion model type.
+ */
+export type DiscussionModel = (typeof VALID_DISCUSSION_MODELS)[number];
+
+/**
+ * Default model for Discussion mode.
+ */
+export const DEFAULT_DISCUSSION_MODEL: DiscussionModel = "opus";
 
 /**
  * Valid badge color names.
@@ -502,8 +507,8 @@ export function resolveRecentDiscussions(config: VaultConfig): number {
  * @param config - Vault configuration
  * @returns Model name (default: "opus")
  */
-export function resolveDiscussionModel(config: VaultConfig): string {
-  return config.discussionModel ?? DEFAULT_DISCUSSION_MODEL;
+export function resolveDiscussionModel(config: VaultConfig): DiscussionModel {
+  return (config.discussionModel as DiscussionModel | undefined) ?? DEFAULT_DISCUSSION_MODEL;
 }
 
 /**

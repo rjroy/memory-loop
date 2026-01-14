@@ -87,9 +87,12 @@ export const VaultInfoSchema = z.object({
   goalsPath: z.string().optional(),
   attachmentPath: z.string().min(1, "Attachment path is required"),
   setupComplete: z.boolean(),
+  discussionModel: DiscussionModelSchema.optional(),
   promptsPerGeneration: z.number().int().positive(),
   maxPoolSize: z.number().int().positive(),
   quotesPerWeek: z.number().int().positive(),
+  recentCaptures: z.number().int().positive().optional(),
+  recentDiscussions: z.number().int().positive().optional(),
   badges: z.array(BadgeSchema),
 });
 

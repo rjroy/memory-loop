@@ -60,6 +60,10 @@ export interface ConfigEditorDialogProps {
   initialConfig: EditableVaultConfig;
   onSave: (config: EditableVaultConfig) => void;
   onCancel: () => void;
+  /** Show loading indicator during save (TASK-010) */
+  isSaving?: boolean;
+  /** Show inline error message if save failed (TASK-010) */
+  saveError?: string | null;
 }
 
 /**
@@ -318,6 +322,8 @@ export function ConfigEditorDialog({
   initialConfig,
   onSave,
   onCancel,
+  isSaving = false,
+  saveError = null,
 }: ConfigEditorDialogProps): React.ReactNode {
   const dialogTitleId = useId();
   const titleInputId = useId();
@@ -351,13 +357,15 @@ export function ConfigEditorDialog({
   );
 
   // Cancel attempt - show confirmation if there are changes
+  // Disable cancel while saving (TASK-010)
   const handleCancelAttempt = useCallback(() => {
+    if (isSaving) return; // Prevent cancel during save
     if (hasChanges) {
       setShowUnsavedConfirm(true);
     } else {
       onCancel();
     }
-  }, [hasChanges, onCancel]);
+  }, [hasChanges, onCancel, isSaving]);
 
   // Handle backdrop click - trigger cancel behavior
   const handleBackdropClick = useCallback(
@@ -421,6 +429,7 @@ export function ConfigEditorDialog({
               className="config-editor__close-btn"
               onClick={handleCancelAttempt}
               aria-label="Close"
+              disabled={isSaving}
             >
               <svg
                 width="20"
@@ -712,21 +721,30 @@ export function ConfigEditorDialog({
 
           {/* Footer with actions */}
           <div className="config-editor__footer">
-            <button
-              type="button"
-              className="config-editor__btn config-editor__btn--cancel"
-              onClick={handleCancelAttempt}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="config-editor__btn config-editor__btn--save"
-              onClick={handleSave}
-              disabled={!hasChanges}
-            >
-              Save
-            </button>
+            {/* Save error display (TASK-010) */}
+            {saveError && (
+              <div className="config-editor__error" role="alert">
+                {saveError}
+              </div>
+            )}
+            <div className="config-editor__footer-actions">
+              <button
+                type="button"
+                className="config-editor__btn config-editor__btn--cancel"
+                onClick={handleCancelAttempt}
+                disabled={isSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`config-editor__btn config-editor__btn--save${isSaving ? " config-editor__btn--loading" : ""}`}
+                onClick={handleSave}
+                disabled={!hasChanges || isSaving}
+              >
+                {isSaving ? "Saving..." : "Save"}
+              </button>
+            </div>
           </div>
         </div>
       </div>

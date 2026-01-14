@@ -51,6 +51,11 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   // Config editor dialog state (TASK-008)
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
   const [configEditorVault, setConfigEditorVault] = useState<VaultInfo | null>(null);
+  // Config save state (TASK-010)
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configSaveError, setConfigSaveError] = useState<string | null>(null);
+  // Track the config being saved so we can update local state on success (TASK-010)
+  const pendingConfigRef = useRef<EditableVaultConfig | null>(null);
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
@@ -225,6 +230,55 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     }
   }, [lastMessage, vaults]);
 
+  // Handle config_updated response (TASK-010)
+  useEffect(() => {
+    if (lastMessage?.type === "config_updated" && configSaving) {
+      setConfigSaving(false);
+
+      if (lastMessage.success) {
+        const savedConfig = pendingConfigRef.current;
+        const vaultId = configEditorVault?.id;
+
+        // Update local vault state with the saved config values
+        if (vaultId && savedConfig) {
+          setVaults((prev) =>
+            prev.map((v) =>
+              v.id === vaultId
+                ? {
+                    ...v,
+                    // Map EditableVaultConfig fields to VaultInfo fields
+                    name: savedConfig.title ?? v.name,
+                    subtitle: savedConfig.subtitle ?? v.subtitle,
+                    promptsPerGeneration: savedConfig.promptsPerGeneration ?? v.promptsPerGeneration,
+                    maxPoolSize: savedConfig.maxPoolSize ?? v.maxPoolSize,
+                    quotesPerWeek: savedConfig.quotesPerWeek ?? v.quotesPerWeek,
+                    badges: savedConfig.badges ?? v.badges,
+                  }
+                : v
+            )
+          );
+        }
+
+        // Clear pending config
+        pendingConfigRef.current = null;
+
+        // Show success toast
+        setToastVariant("success");
+        setToastMessage("Settings saved");
+        setToastVisible(true);
+
+        // Close dialog
+        setConfigEditorOpen(false);
+        setConfigEditorVault(null);
+        console.log("[VaultSelect] Config saved successfully");
+      } else {
+        // Show error in dialog
+        setConfigSaveError(lastMessage.error ?? "Failed to save settings");
+        console.warn("[VaultSelect] Config save failed:", lastMessage.error);
+      }
+    }
+  }, [lastMessage, configSaving, configEditorVault]);
+
   // Toast dismiss handler
   const handleToastDismiss = useCallback(() => {
     setToastVisible(false);
@@ -250,14 +304,18 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     e.stopPropagation(); // Prevent card selection
     setConfigEditorVault(vault);
     setConfigEditorOpen(true);
+    setConfigSaveError(null); // Clear any previous error (TASK-010)
   }
 
-  // Handle config editor save (TASK-010 will add WebSocket integration)
+  // Handle config editor save - send update_vault_config via WebSocket (TASK-010)
   function handleConfigSave(config: EditableVaultConfig) {
-    // TODO: TASK-010 will implement WebSocket save
-    console.log("Config save:", config);
-    setConfigEditorOpen(false);
-    setConfigEditorVault(null);
+    if (!configEditorVault) return;
+
+    setConfigSaving(true);
+    setConfigSaveError(null);
+    pendingConfigRef.current = config; // Store for local state update on success
+    console.log(`[VaultSelect] Saving config for vault: ${configEditorVault.id}`, config);
+    sendMessage({ type: "update_vault_config", config, vaultId: configEditorVault.id });
   }
 
   // Handle config editor cancel
@@ -489,7 +547,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         ))}
       </ul>
 
-      {/* Config Editor Dialog (TASK-008) */}
+      {/* Config Editor Dialog (TASK-008, TASK-010) */}
       {configEditorVault && (
         <ConfigEditorDialog
           isOpen={configEditorOpen}
@@ -505,6 +563,8 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
           }}
           onSave={handleConfigSave}
           onCancel={handleConfigCancel}
+          isSaving={configSaving}
+          saveError={configSaveError}
         />
       )}
 

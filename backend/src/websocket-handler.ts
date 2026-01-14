@@ -487,7 +487,7 @@ export class WebSocketHandler {
 
       // Vault config handlers
       case "update_vault_config":
-        await this.handleUpdateVaultConfig(ws, message.config);
+        await this.handleUpdateVaultConfig(ws, message.config, message.vaultId);
         break;
 
       // Home/dashboard handlers (extracted)
@@ -1037,16 +1037,24 @@ export class WebSocketHandler {
   /**
    * Handles update_vault_config message.
    * Validates and saves editable vault configuration fields.
+   * @param vaultId - Optional explicit vault ID for editing before vault selection
    */
   private async handleUpdateVaultConfig(
     ws: WebSocketLike,
-    config: EditableVaultConfig
+    config: EditableVaultConfig,
+    vaultId?: string
   ): Promise<void> {
-    if (!this.state.currentVault) {
+    // Determine which vault to update: explicit vaultId takes priority, then currentVault
+    let targetVault = this.state.currentVault;
+    if (vaultId) {
+      targetVault = await getVaultById(vaultId);
+    }
+
+    if (!targetVault) {
       this.send(ws, {
         type: "config_updated",
         success: false,
-        error: "No vault selected",
+        error: vaultId ? `Vault not found: ${vaultId}` : "No vault selected",
       });
       return;
     }
@@ -1065,10 +1073,10 @@ export class WebSocketHandler {
     }
 
     // Save validated config
-    const result = await saveVaultConfig(this.state.currentVault.path, validation.data);
+    const result = await saveVaultConfig(targetVault.path, validation.data);
 
     if (result.success) {
-      log.info(`Vault config updated for ${this.state.currentVault.id}`);
+      log.info(`Vault config updated for ${targetVault.id}`);
       this.send(ws, { type: "config_updated", success: true });
     } else {
       log.error(`Failed to save vault config: ${result.error}`);

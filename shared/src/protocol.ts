@@ -637,6 +637,8 @@ export const UpdateVaultConfigMessageSchema = z.object({
   type: z.literal("update_vault_config"),
   /** Configuration fields to update */
   config: EditableVaultConfigSchema,
+  /** Optional vault ID for editing before vault selection (VaultSelect use case) */
+  vaultId: z.string().optional(),
 });
 
 /**

@@ -479,16 +479,6 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
               )}
               <p className="vault-select__vault-path">{vault.path}</p>
               <div className="vault-select__vault-badges">
-                {vault.hasClaudeMd && (
-                  <span className="vault-select__badge vault-select__badge--claude">
-                    CLAUDE.md
-                  </span>
-                )}
-                {vault.setupComplete && (
-                  <span className="vault-select__badge vault-select__badge--setup">
-                    Memory Loop
-                  </span>
-                )}
                 {vault.badges.map((badge, index) => (
                   <span
                     key={`${badge.text}-${index}`}
@@ -497,6 +487,16 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
                     {badge.text}
                   </span>
                 ))}
+                {vault.setupComplete && (
+                  <span className="vault-select__badge vault-select__badge--setup">
+                    Memory Loop
+                  </span>
+                )}
+                {vault.hasClaudeMd && (
+                  <span className="vault-select__badge vault-select__badge--claude">
+                    CLAUDE.md
+                  </span>
+                )}
               </div>
               {/* Card actions row with setup and gear buttons */}
               <div className="vault-select__card-actions">

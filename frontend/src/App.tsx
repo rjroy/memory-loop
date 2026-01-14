@@ -19,6 +19,7 @@ import { NoteCapture } from "./components/NoteCapture";
 import { Discussion } from "./components/Discussion";
 import { BrowseMode } from "./components/BrowseMode";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { ConfigEditorDialog, type EditableVaultConfig } from "./components/ConfigEditorDialog";
 import { useHoliday } from "./hooks/useHoliday";
 import "./App.css";
 
@@ -33,6 +34,7 @@ type DialogType = "changeVault" | null;
 function MainContent(): React.ReactNode {
   const { mode, vault, clearVault } = useSession();
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
+  const [configEditorOpen, setConfigEditorOpen] = useState(false);
   const holiday = useHoliday();
 
   // Use holiday-specific logo if available
@@ -51,6 +53,20 @@ function MainContent(): React.ReactNode {
     setActiveDialog(null);
   }
 
+  function handleGearClick() {
+    setConfigEditorOpen(true);
+  }
+
+  function handleConfigSave(config: EditableVaultConfig) {
+    // TODO: TASK-010 will implement WebSocket save
+    console.log("Config save from App header:", config);
+    setConfigEditorOpen(false);
+  }
+
+  function handleConfigCancel() {
+    setConfigEditorOpen(false);
+  }
+
   return (
     <>
       <header className="app-header">
@@ -60,14 +76,36 @@ function MainContent(): React.ReactNode {
             <h1 className="app-title">Memory Loop</h1>
           </div>
           {vault && (
-            <button
-              type="button"
-              className="app-vault-btn"
-              onClick={handleChangeVault}
-              aria-label="Change vault"
-            >
-              {vault.name}
-            </button>
+            <>
+              <button
+                type="button"
+                className="app-vault-btn"
+                onClick={handleChangeVault}
+                aria-label="Change vault"
+              >
+                {vault.name}
+              </button>
+              <button
+                type="button"
+                className="app-gear-btn"
+                onClick={handleGearClick}
+                aria-label="Vault settings"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+            </>
           )}
         </div>
         <div className="app-header__center">
@@ -84,6 +122,22 @@ function MainContent(): React.ReactNode {
         {mode === "discussion" && <Discussion />}
         {mode === "browse" && <BrowseMode />}
       </main>
+
+      {vault && (
+        <ConfigEditorDialog
+          isOpen={configEditorOpen}
+          initialConfig={{
+            title: vault.name,
+            subtitle: vault.subtitle,
+            promptsPerGeneration: vault.promptsPerGeneration,
+            maxPoolSize: vault.maxPoolSize,
+            quotesPerWeek: vault.quotesPerWeek,
+            badges: vault.badges,
+          }}
+          onSave={handleConfigSave}
+          onCancel={handleConfigCancel}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={activeDialog === "changeVault"}

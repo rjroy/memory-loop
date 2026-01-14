@@ -11,6 +11,7 @@ import type { VaultInfo } from "@memory-loop/shared";
 import { useSession, STORAGE_KEY_VAULT } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { Toast, type ToastVariant } from "./Toast";
+import { ConfigEditorDialog, type EditableVaultConfig } from "./ConfigEditorDialog";
 import "./VaultSelect.css";
 
 /**
@@ -46,6 +47,10 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastVariant, setToastVariant] = useState<ToastVariant>("success");
   const [toastMessage, setToastMessage] = useState("");
+
+  // Config editor dialog state (TASK-008)
+  const [configEditorOpen, setConfigEditorOpen] = useState(false);
+  const [configEditorVault, setConfigEditorVault] = useState<VaultInfo | null>(null);
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
@@ -240,6 +245,27 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     sendMessage({ type: "setup_vault", vaultId: vault.id });
   }
 
+  // Handle gear button click - open config editor (TASK-008)
+  function handleGearClick(vault: VaultInfo, e: React.MouseEvent) {
+    e.stopPropagation(); // Prevent card selection
+    setConfigEditorVault(vault);
+    setConfigEditorOpen(true);
+  }
+
+  // Handle config editor save (TASK-010 will add WebSocket integration)
+  function handleConfigSave(config: EditableVaultConfig) {
+    // TODO: TASK-010 will implement WebSocket save
+    console.log("Config save:", config);
+    setConfigEditorOpen(false);
+    setConfigEditorVault(null);
+  }
+
+  // Handle config editor cancel
+  function handleConfigCancel() {
+    setConfigEditorOpen(false);
+    setConfigEditorVault(null);
+  }
+
   // Handle vault card click - check for existing session via API
   async function handleVaultClick(vault: VaultInfo) {
     if (connectionStatus !== "connected") {
@@ -414,22 +440,47 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
                   </span>
                 ))}
               </div>
-              {vault.hasClaudeMd && (
+              {/* Card actions row with setup and gear buttons */}
+              <div className="vault-select__card-actions">
+                {vault.hasClaudeMd && (
+                  <button
+                    type="button"
+                    className={`vault-select__setup-btn ${
+                      setupVaultId === vault.id ? "vault-select__setup-btn--loading" : ""
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSetupClick(vault);
+                    }}
+                    disabled={selectedVaultId !== null || setupVaultId !== null}
+                    aria-label={vault.setupComplete ? `Reconfigure ${vault.name}` : `Setup ${vault.name}`}
+                  >
+                    {vault.setupComplete ? "Reconfigure" : "Setup"}
+                  </button>
+                )}
+                {/* Config Editor Gear Button (TASK-008) */}
                 <button
                   type="button"
-                  className={`vault-select__setup-btn ${
-                    setupVaultId === vault.id ? "vault-select__setup-btn--loading" : ""
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSetupClick(vault);
-                  }}
+                  className="vault-select__gear-btn"
+                  onClick={(e) => handleGearClick(vault, e)}
                   disabled={selectedVaultId !== null || setupVaultId !== null}
-                  aria-label={vault.setupComplete ? `Reconfigure ${vault.name}` : `Setup ${vault.name}`}
+                  aria-label={`Configure ${vault.name} settings`}
                 >
-                  {vault.setupComplete ? "Reconfigure" : "Setup"}
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
                 </button>
-              )}
+              </div>
               {selectedVaultId === vault.id && (
                 <div className="vault-select__card-spinner" aria-label="Connecting" />
               )}
@@ -437,6 +488,25 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
           </li>
         ))}
       </ul>
+
+      {/* Config Editor Dialog (TASK-008) */}
+      {configEditorVault && (
+        <ConfigEditorDialog
+          isOpen={configEditorOpen}
+          initialConfig={{
+            title: configEditorVault.name,
+            subtitle: configEditorVault.subtitle,
+            promptsPerGeneration: configEditorVault.promptsPerGeneration,
+            maxPoolSize: configEditorVault.maxPoolSize,
+            quotesPerWeek: configEditorVault.quotesPerWeek,
+            badges: configEditorVault.badges,
+            // Note: discussionModel, recentCaptures, recentDiscussions not in VaultInfo
+            // They will use defaults in ConfigEditorDialog
+          }}
+          onSave={handleConfigSave}
+          onCancel={handleConfigCancel}
+        />
+      )}
 
       <Toast
         isVisible={toastVisible}

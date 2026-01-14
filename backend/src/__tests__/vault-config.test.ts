@@ -18,6 +18,8 @@ import {
   DEFAULT_PROMPTS_PER_GENERATION,
   DEFAULT_MAX_POOL_SIZE,
   DEFAULT_QUOTES_PER_WEEK,
+  DEFAULT_DISCUSSION_MODEL,
+  VALID_DISCUSSION_MODELS,
   loadVaultConfig,
   loadSlashCommands,
   resolveContentRoot,
@@ -32,6 +34,7 @@ import {
   resolveQuotesPerWeek,
   resolveBadges,
   resolvePinnedAssets,
+  resolveDiscussionModel,
   saveSlashCommands,
   savePinnedAssets,
   slashCommandsEqual,
@@ -97,6 +100,18 @@ describe("vault-config", () => {
   describe("DEFAULT_QUOTES_PER_WEEK", () => {
     test("exports expected default quotes per week", () => {
       expect(DEFAULT_QUOTES_PER_WEEK).toBe(1);
+    });
+  });
+
+  describe("DEFAULT_DISCUSSION_MODEL", () => {
+    test("exports expected default discussion model", () => {
+      expect(DEFAULT_DISCUSSION_MODEL).toBe("opus");
+    });
+  });
+
+  describe("VALID_DISCUSSION_MODELS", () => {
+    test("exports expected valid model options", () => {
+      expect(VALID_DISCUSSION_MODELS).toEqual(["opus", "sonnet", "haiku"]);
     });
   });
 
@@ -658,6 +673,99 @@ describe("vault-config", () => {
       expect(config.promptsPerGeneration).toBe(5);
       expect(config.maxPoolSize).toBe(50);
       expect(config.quotesPerWeek).toBe(2);
+    });
+  });
+
+  describe("loadVaultConfig with discussionModel", () => {
+    test("loads config with valid discussionModel opus", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ discussionModel: "opus" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.discussionModel).toBe("opus");
+    });
+
+    test("loads config with valid discussionModel sonnet", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ discussionModel: "sonnet" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.discussionModel).toBe("sonnet");
+    });
+
+    test("loads config with valid discussionModel haiku", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ discussionModel: "haiku" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.discussionModel).toBe("haiku");
+    });
+
+    test("ignores invalid discussionModel value", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ discussionModel: "invalid-model" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.discussionModel).toBeUndefined();
+    });
+
+    test("ignores non-string discussionModel value", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ discussionModel: 123 })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.discussionModel).toBeUndefined();
+    });
+
+    test("loads discussionModel alongside other fields", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          contentRoot: "content",
+          discussionModel: "sonnet",
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.contentRoot).toBe("content");
+      expect(config.discussionModel).toBe("sonnet");
+    });
+  });
+
+  describe("resolveDiscussionModel", () => {
+    test("returns default when discussionModel not configured", () => {
+      const result = resolveDiscussionModel({});
+      expect(result).toBe(DEFAULT_DISCUSSION_MODEL);
+    });
+
+    test("returns default when discussionModel is undefined", () => {
+      const result = resolveDiscussionModel({ discussionModel: undefined });
+      expect(result).toBe(DEFAULT_DISCUSSION_MODEL);
+    });
+
+    test("returns configured discussionModel opus", () => {
+      const result = resolveDiscussionModel({ discussionModel: "opus" });
+      expect(result).toBe("opus");
+    });
+
+    test("returns configured discussionModel sonnet", () => {
+      const result = resolveDiscussionModel({ discussionModel: "sonnet" });
+      expect(result).toBe("sonnet");
+    });
+
+    test("returns configured discussionModel haiku", () => {
+      const result = resolveDiscussionModel({ discussionModel: "haiku" });
+      expect(result).toBe("haiku");
     });
   });
 

@@ -22,10 +22,8 @@ import { directoryExists, fileExists } from "./vault-manager";
 import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 import { sessionLog as log } from "./logger";
 import { createVaultTransferServer } from "./vault-transfer";
-import { loadVaultConfig, resolveRecentDiscussions } from "./vault-config";
+import { loadVaultConfig, resolveRecentDiscussions, resolveDiscussionModel } from "./vault-config";
 
-/** Model to use for strategic discussions (reasoning) */
-export const DISCUSSION_MODEL = "opus";
 /**
  * Default SDK options for Discussion mode.
  *
@@ -35,6 +33,9 @@ export const DISCUSSION_MODEL = "opus";
  * - maxTurns: Prevent runaway conversations (50 turns = ~100 messages)
  * - maxBudgetUsd: Hard cost cap as safety net
  * - includePartialMessages: Enable streaming for real-time responses
+ *
+ * Note: The model is configured per-vault via .memory-loop.json and
+ * is set dynamically in createSession/resumeSession.
  *
  * Note: Task tool is intentionally excluded from allowedTools because
  * subagents inherit parent tools by default, which could bypass permission
@@ -51,7 +52,7 @@ export const DISCUSSION_MODE_OPTIONS: Partial<Options> = {
     "WebSearch",
     "TodoRead",
   ],
-  model: DISCUSSION_MODEL,
+  // Model is set dynamically from vault config (default: "opus")
   // Auto-accept file edits - the user is working in their own vault
   permissionMode: "acceptEdits",
   // Prevent runaway conversations (100 turns = ~200 messages)
@@ -675,11 +676,17 @@ export async function createSession(
     // Create SDK query with vault's cwd, project settings, and discussion mode defaults
     log.info("Calling Claude Agent SDK query()...");
 
+    // Load vault config to get discussion model
+    const config = await loadVaultConfig(vault.path);
+    const model = resolveDiscussionModel(config);
+    log.info(`Using discussion model: ${model}`);
+
     // Create vault transfer MCP server for this session
     const vaultTransferServer = createVaultTransferServer();
 
     const mergedOptions: Partial<Options> = {
       ...DISCUSSION_MODE_OPTIONS,
+      model, // Set model from vault config
       ...options, // Merge defaults then caller options, then force specific fields below
       cwd: vault.path,
       settingSources: ["project", "user"],
@@ -696,6 +703,7 @@ export async function createSession(
     }
 
     log.debug("SDK options:", {
+      model: mergedOptions.model,
       allowedTools: mergedOptions.allowedTools,
       permissionMode: mergedOptions.permissionMode,
       maxTurns: mergedOptions.maxTurns,
@@ -784,11 +792,17 @@ export async function resumeSession(
     // Create SDK query with resume option and discussion mode defaults
     log.info("Calling Claude Agent SDK query() with resume...");
 
+    // Load vault config to get discussion model
+    const config = await loadVaultConfig(vaultPath);
+    const model = resolveDiscussionModel(config);
+    log.info(`Using discussion model: ${model}`);
+
     // Create vault transfer MCP server for this session
     const vaultTransferServer = createVaultTransferServer();
 
     const mergedOptions: Partial<Options> = {
       ...DISCUSSION_MODE_OPTIONS,
+      model, // Set model from vault config
       ...options, // Merge defaults then caller options, then force specific fields below
       resume: sessionId,
       cwd: metadata.vaultPath,
@@ -806,6 +820,7 @@ export async function resumeSession(
     }
 
     log.debug("SDK options:", {
+      model: mergedOptions.model,
       allowedTools: mergedOptions.allowedTools,
       permissionMode: mergedOptions.permissionMode,
       maxTurns: mergedOptions.maxTurns,

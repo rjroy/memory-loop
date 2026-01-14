@@ -128,6 +128,13 @@ export interface VaultConfig {
    * Default: 5
    */
   recentDiscussions?: number;
+
+  /**
+   * Model to use for Discussion mode conversations.
+   * Valid values: "opus", "sonnet", "haiku"
+   * Default: "opus"
+   */
+  discussionModel?: string;
 }
 
 /**
@@ -174,6 +181,16 @@ export const DEFAULT_RECENT_CAPTURES = 5;
  * Default number of recent discussions to display.
  */
 export const DEFAULT_RECENT_DISCUSSIONS = 5;
+
+/**
+ * Default model for Discussion mode.
+ */
+export const DEFAULT_DISCUSSION_MODEL = "opus";
+
+/**
+ * Valid discussion model values.
+ */
+export const VALID_DISCUSSION_MODELS = ["opus", "sonnet", "haiku"] as const;
 
 /**
  * Valid badge color names.
@@ -267,6 +284,14 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
 
     if (typeof obj.recentDiscussions === "number" && obj.recentDiscussions > 0) {
       config.recentDiscussions = Math.floor(obj.recentDiscussions);
+    }
+
+    // Validate discussionModel (must be a valid model name)
+    if (
+      typeof obj.discussionModel === "string" &&
+      VALID_DISCUSSION_MODELS.includes(obj.discussionModel as typeof VALID_DISCUSSION_MODELS[number])
+    ) {
+      config.discussionModel = obj.discussionModel;
     }
 
     // Validate badges array
@@ -469,6 +494,16 @@ export function resolveRecentCaptures(config: VaultConfig): number {
  */
 export function resolveRecentDiscussions(config: VaultConfig): number {
   return config.recentDiscussions ?? DEFAULT_RECENT_DISCUSSIONS;
+}
+
+/**
+ * Resolves the discussion model to use.
+ *
+ * @param config - Vault configuration
+ * @returns Model name (default: "opus")
+ */
+export function resolveDiscussionModel(config: VaultConfig): string {
+  return config.discussionModel ?? DEFAULT_DISCUSSION_MODEL;
 }
 
 /**

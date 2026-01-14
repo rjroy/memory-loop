@@ -77,29 +77,172 @@ See [Configuration Reference](./configuration-reference.md#field-paths-and-conte
 
 ### `included` - Other Widgets' Results
 
-When a widget uses the `includes` configuration, it can access the computed results of other widgets:
+When a widget uses the `includes` configuration, it can access the computed results of other widgets via the `included` context variable.
+
+#### The Mental Model
+
+Think of `included` as a dictionary of pre-computed widget results. Each key is a widget name, and each value is that widget's computed fields (the same values you'd see in `stats` if you were inside that widget).
 
 ```yaml
-# In widget config
-includes:
-  - "Base Stats"
+# Step 1: Define a widget that computes statistics
+# base-stats.yaml
+name: Base Stats
+type: aggregate
+source:
+  pattern: "Data/**/*.md"
+fields:
+  max_value:
+    max: value
+  mean_value:
+    avg: value
+```
 
+```yaml
+# Step 2: Include it in another widget to access its results
+# derived-widget.yaml
+name: Derived Widget
+type: aggregate
+includes:
+  - "Base Stats"    # <-- This populates included['Base Stats']
+source:
+  pattern: "Data/**/*.md"
 fields:
   normalized:
     expr: "this.value / included['Base Stats'].max_value"
 ```
 
-Access included widget results using:
-- `included.WidgetName.fieldName` for simple widget names
-- `included['Widget Name'].fieldName` for names with spaces
+When `Derived Widget` runs:
+1. The engine sees `includes: ["Base Stats"]`
+2. It computes `Base Stats` first (dependency ordering)
+3. The results are made available as `included['Base Stats']`
+4. Your expressions can now reference `included['Base Stats'].max_value`, `included['Base Stats'].mean_value`, etc.
+
+#### Syntax
+
+Access included widget results using bracket notation:
+
+```yaml
+# Always use bracket notation with quotes
+included['Widget Name'].fieldName
+```
+
+For widget names without spaces, you can also use dot notation:
+
+```yaml
+# These are equivalent when the widget name has no spaces
+included['BaseStats'].max_value
+included.BaseStats.max_value
+```
+
+Bracket notation with quotes is recommended for consistency, since most widget names contain spaces.
+
+#### Practical Examples
+
+**Cross-collection comparison:**
+
+```yaml
+# Compare ratings across different content types
+includes:
+  - "Books Stats"
+  - "Movies Stats"
+fields:
+  books_avg:
+    expr: "included['Books Stats'].avg_rating"
+  movies_avg:
+    expr: "included['Movies Stats'].avg_rating"
+  difference:
+    expr: "included['Books Stats'].avg_rating - included['Movies Stats'].avg_rating"
+  better_rated:
+    expr: "included['Books Stats'].avg_rating > included['Movies Stats'].avg_rating ? 'Books' : 'Movies'"
+```
+
+**Normalization with shared statistics:**
+
+```yaml
+# Use collection-wide stats to normalize individual items
+includes:
+  - "Game Base Stats"
+fields:
+  zscore:
+    expr: "zscore(this.bgg.rating, included['Game Base Stats'].mean_rating, included['Game Base Stats'].stddev_rating)"
+  percentile:
+    expr: "percentile(this.bgg.rating, included['Game Base Stats'].mean_rating, included['Game Base Stats'].stddev_rating)"
+```
+
+#### What Fields Are Available?
+
+The `included` context contains the **aggregator results** from the included widget. These are the same values that widget would access via `stats` internally.
+
+If `Base Stats` defines these fields:
+```yaml
+fields:
+  max_value:
+    max: value
+  mean_value:
+    avg: value
+  calculated:
+    expr: "this.value * 2"  # Per-item expression, NOT an aggregator
+```
+
+Then `included['Base Stats']` contains:
+- `included['Base Stats'].max_value` - the max aggregator result
+- `included['Base Stats'].mean_value` - the avg aggregator result
+
+The per-item expression field `calculated` is not included because it varies per file, not a single collection-level value.
+
+#### Error Handling
+
+**Non-existent widget**: If you reference a widget that doesn't exist, the include is reported as a warning during widget initialization. The expression will receive `undefined`, which typically evaluates to `null`.
+
+```yaml
+# Warning: "Dashboard" includes non-existent widget "Typo Stats"
+includes:
+  - "Typo Stats"
+fields:
+  value:
+    expr: "included['Typo Stats'].count"  # Returns null
+```
+
+**Non-existent field**: If the included widget exists but doesn't have the field you reference, the expression returns `undefined` (normalized to `null`).
+
+```yaml
+includes:
+  - "Base Stats"
+fields:
+  value:
+    expr: "included['Base Stats'].nonexistent_field"  # Returns null
+```
+
+**Handle missing values with `coalesce`:**
 
 ```yaml
 fields:
-  comparison:
-    expr: "included['Books Stats'].avg_rating - included['Movies Stats'].avg_rating"
+  safe_value:
+    expr: "coalesce(included['Base Stats'].max_value, 100)"  # Default to 100 if missing
 ```
 
-The `included` context contains all results from widgets listed in your `includes` array, plus any widgets they transitively include. See [Configuration Reference](./configuration-reference.md#includes-configuration) for full details.
+#### Transitive Includes
+
+If Widget A includes Widget B, and Widget B includes Widget C, then Widget A has access to both B and C via `included`.
+
+```yaml
+# Widget C: defines count
+# Widget B: includes C, defines avg_rating
+# Widget A: includes B
+
+# In Widget A, you can access both:
+fields:
+  from_b:
+    expr: "included['Widget B'].avg_rating"
+  from_c:
+    expr: "included['Widget C'].count"
+```
+
+#### Circular Dependencies
+
+Circular dependencies (A includes B, B includes A) are detected and reported as errors. Widgets in a cycle cannot be computed and will display an error state.
+
+See [Configuration Reference](./configuration-reference.md#includes-configuration) for complete configuration details.
 
 ## Operators
 

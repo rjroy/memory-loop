@@ -77,7 +77,7 @@ function MainContent(): React.ReactNode {
     setConfigSaveError(null);
     pendingConfigRef.current = config; // Store for local state update on success
     console.log(`[App] Saving config for vault: ${vault.id}`, config);
-    sendMessage({ type: "update_vault_config", config });
+    sendMessage({ type: "update_vault_config", config, vaultId: vault.id });
   }
 
   function handleConfigCancel() {

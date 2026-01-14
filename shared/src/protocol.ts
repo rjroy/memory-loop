@@ -33,6 +33,41 @@ export const BadgeSchema = z.object({
   color: BadgeColorSchema,
 });
 
+/**
+ * Schema for Badge with strict validation for editable config.
+ * Used when validating user input for badge editing (max 20 chars).
+ */
+export const EditableBadgeSchema = z.object({
+  text: z.string().min(1, "Badge text is required").max(20, "Badge text must be 20 characters or less"),
+  color: BadgeColorSchema,
+});
+
+// =============================================================================
+// Editable Vault Config Schema
+// =============================================================================
+
+/**
+ * Schema for discussion model selection - the three Claude model tiers
+ */
+export const DiscussionModelSchema = z.enum(["opus", "sonnet", "haiku"]);
+
+/**
+ * Schema for editable vault configuration fields.
+ * All fields are optional to support partial updates.
+ * Constraints match the spec requirements.
+ */
+export const EditableVaultConfigSchema = z.object({
+  title: z.string().optional(),
+  subtitle: z.string().optional(),
+  discussionModel: DiscussionModelSchema.optional(),
+  promptsPerGeneration: z.number().int().min(1).max(20).optional(),
+  maxPoolSize: z.number().int().min(10).max(200).optional(),
+  quotesPerWeek: z.number().int().min(0).max(7).optional(),
+  recentCaptures: z.number().int().min(1).max(20).optional(),
+  recentDiscussions: z.number().int().min(1).max(20).optional(),
+  badges: z.array(EditableBadgeSchema).max(5).optional(),
+});
+
 // =============================================================================
 // Vault Info Schema
 // =============================================================================
@@ -595,6 +630,16 @@ export const SetPinnedAssetsMessageSchema = z.object({
 });
 
 /**
+ * Client requests to update vault configuration.
+ * Partial updates are supported (only provided fields are updated).
+ */
+export const UpdateVaultConfigMessageSchema = z.object({
+  type: z.literal("update_vault_config"),
+  /** Configuration fields to update */
+  config: EditableVaultConfigSchema,
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -627,6 +672,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   DismissHealthIssueMessageSchema,
   GetPinnedAssetsMessageSchema,
   SetPinnedAssetsMessageSchema,
+  UpdateVaultConfigMessageSchema,
 ]);
 
 // =============================================================================
@@ -1027,6 +1073,18 @@ export const PinnedAssetsMessageSchema = z.object({
 });
 
 /**
+ * Server confirms vault configuration update.
+ * Response to update_vault_config request.
+ */
+export const ConfigUpdatedMessageSchema = z.object({
+  type: z.literal("config_updated"),
+  /** Whether the update was successful */
+  success: z.boolean(),
+  /** Error message if success is false */
+  error: z.string().optional(),
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -1063,6 +1121,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   WidgetErrorMessageSchema,
   HealthReportMessageSchema,
   PinnedAssetsMessageSchema,
+  ConfigUpdatedMessageSchema,
 ]);
 
 // =============================================================================
@@ -1111,6 +1170,15 @@ export type HealthCategory = z.infer<typeof HealthCategorySchema>;
 export type HealthIssue = z.infer<typeof HealthIssueSchema>;
 export type HealthReportMessage = z.infer<typeof HealthReportMessageSchema>;
 
+// Badge types
+export type Badge = z.infer<typeof BadgeSchema>;
+export type BadgeColor = z.infer<typeof BadgeColorSchema>;
+export type EditableBadge = z.infer<typeof EditableBadgeSchema>;
+
+// Vault config types
+export type DiscussionModel = z.infer<typeof DiscussionModelSchema>;
+export type EditableVaultConfig = z.infer<typeof EditableVaultConfigSchema>;
+
 // Client message types
 export type SelectVaultMessage = z.infer<typeof SelectVaultMessageSchema>;
 export type CaptureNoteMessage = z.infer<typeof CaptureNoteMessageSchema>;
@@ -1141,6 +1209,7 @@ export type WidgetEditMessage = z.infer<typeof WidgetEditMessageSchema>;
 export type DismissHealthIssueMessage = z.infer<typeof DismissHealthIssueMessageSchema>;
 export type GetPinnedAssetsMessage = z.infer<typeof GetPinnedAssetsMessageSchema>;
 export type SetPinnedAssetsMessage = z.infer<typeof SetPinnedAssetsMessageSchema>;
+export type UpdateVaultConfigMessage = z.infer<typeof UpdateVaultConfigMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -1177,6 +1246,7 @@ export type RecallWidgetsMessage = z.infer<typeof RecallWidgetsMessageSchema>;
 export type WidgetUpdateMessage = z.infer<typeof WidgetUpdateMessageSchema>;
 export type WidgetErrorMessage = z.infer<typeof WidgetErrorMessageSchema>;
 export type PinnedAssetsMessage = z.infer<typeof PinnedAssetsMessageSchema>;
+export type ConfigUpdatedMessage = z.infer<typeof ConfigUpdatedMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

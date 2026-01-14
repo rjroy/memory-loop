@@ -279,6 +279,188 @@
   color: var(--color-text-muted);
 }
 
+/* Slider field styles */
+.config-editor__slider-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.config-editor__slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.config-editor__slider {
+  flex: 1;
+  min-height: 44px;
+  cursor: pointer;
+  accent-color: var(--color-accent-primary);
+}
+
+.config-editor__slider-value {
+  min-width: 3ch;
+  text-align: right;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+/* Badge Editor */
+.badge-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.badge-editor__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.badge-editor__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  color: white;
+}
+
+.badge-editor__chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: var(--color-white-a20);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.badge-editor__chip-remove:hover {
+  background: var(--color-white-a40);
+}
+
+.badge-editor__add-btn {
+  align-self: flex-start;
+  min-height: 36px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  border: 1px dashed var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.badge-editor__add-btn:hover:not(:disabled) {
+  border-color: var(--color-accent-primary);
+  color: var(--color-text);
+}
+
+.badge-editor__add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Add badge form */
+.badge-editor__add-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: var(--color-black-a20);
+  border-radius: var(--radius-md);
+}
+
+.badge-editor__color-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.badge-editor__color-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.badge-editor__color-btn:hover {
+  transform: scale(1.1);
+}
+
+.badge-editor__color-btn--selected {
+  border-color: white;
+  box-shadow: 0 0 0 2px var(--color-accent-primary);
+}
+
+.badge-editor__text-input {
+  flex: 1;
+  min-height: 36px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.badge-editor__text-input:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+}
+
+.badge-editor__char-count {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.badge-editor__add-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  justify-content: flex-end;
+}
+
+.badge-editor__confirm-btn,
+.badge-editor__cancel-btn {
+  min-height: 32px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.badge-editor__confirm-btn {
+  background: var(--color-accent-primary);
+  color: white;
+}
+
+.badge-editor__confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.badge-editor__cancel-btn {
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+}
+
 /* Mobile adjustments */
 @media (max-width: 767px) {
   .config-editor__backdrop {

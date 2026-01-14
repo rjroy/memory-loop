@@ -227,9 +227,14 @@ const mockLoadSlashCommands = mock<
   (vaultPath: string) => Promise<Array<{ name: string; description: string; argumentHint?: string }> | undefined>
 >(() => Promise.resolve(undefined));
 
+const mockSaveVaultConfig = mock<
+  (vaultPath: string, config: Record<string, unknown>) => Promise<{ success: true } | { success: false; error: string }>
+>(() => Promise.resolve({ success: true }));
+
 void mock.module("../vault-config", () => ({
   loadVaultConfig: mockLoadVaultConfig,
   loadSlashCommands: mockLoadSlashCommands,
+  saveVaultConfig: mockSaveVaultConfig,
 }));
 
 // Mock vault setup
@@ -488,6 +493,7 @@ describe("WebSocket Handler", () => {
     mockGetAllTasks.mockReset();
     mockToggleTask.mockReset();
     mockLoadVaultConfig.mockReset();
+    mockSaveVaultConfig.mockReset();
     mockSearchFiles.mockReset();
     mockSearchContent.mockReset();
     mockGetSnippets.mockReset();
@@ -4844,6 +4850,335 @@ describe("WebSocket Handler", () => {
         // Should have called stop
         expect(mockFileWatcherStop).toHaveBeenCalled();
       });
+    });
+  });
+
+  describe("update_vault_config handler", () => {
+    test("returns config_updated with success true on valid config", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSaveVaultConfig.mockResolvedValue({ success: true });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // First select the vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Then update config
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: { title: "New Title", discussionModel: "sonnet" },
+        })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("config_updated");
+      if (message?.type === "config_updated") {
+        expect(message.success).toBe(true);
+        expect(message.error).toBeUndefined();
+      }
+    });
+
+    test("calls saveVaultConfig with validated config", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSaveVaultConfig.mockResolvedValue({ success: true });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // First select the vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Then update config
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: {
+            title: "Test Vault",
+            subtitle: "Personal Notes",
+            discussionModel: "haiku",
+            promptsPerGeneration: 10,
+          },
+        })
+      );
+
+      expect(mockSaveVaultConfig).toHaveBeenCalledWith(vault.path, {
+        title: "Test Vault",
+        subtitle: "Personal Notes",
+        discussionModel: "haiku",
+        promptsPerGeneration: 10,
+      });
+    });
+
+    test("returns config_updated with error when no vault selected", async () => {
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // Try to update config without selecting vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: { title: "New Title" },
+        })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("config_updated");
+      if (message?.type === "config_updated") {
+        expect(message.success).toBe(false);
+        expect(message.error).toBe("No vault selected");
+      }
+    });
+
+    test("returns config_updated with error when saveVaultConfig fails", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSaveVaultConfig.mockResolvedValue({
+        success: false,
+        error: "Permission denied: cannot write to config file",
+      });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // First select the vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Then update config
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: { title: "New Title" },
+        })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("config_updated");
+      if (message?.type === "config_updated") {
+        expect(message.success).toBe(false);
+        expect(message.error).toBe("Permission denied: cannot write to config file");
+      }
+    });
+
+    test("returns VALIDATION_ERROR on invalid config (promptsPerGeneration out of range)", async () => {
+      // Note: Protocol-level validation catches invalid config before reaching handler
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // First select the vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Try to update config with invalid value (max is 20)
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: { promptsPerGeneration: 100 },
+        })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+      // Should not have called saveVaultConfig
+      expect(mockSaveVaultConfig).not.toHaveBeenCalled();
+    });
+
+    test("returns VALIDATION_ERROR on invalid discussionModel", async () => {
+      // Note: Protocol-level validation catches invalid config before reaching handler
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // First select the vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Try to update config with invalid model
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: { discussionModel: "invalid-model" },
+        })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+
+    test("validates badges array correctly", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSaveVaultConfig.mockResolvedValue({ success: true });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // First select the vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Update config with valid badges
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: {
+            badges: [
+              { text: "Work", color: "blue" },
+              { text: "Personal", color: "green" },
+            ],
+          },
+        })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("config_updated");
+      if (message?.type === "config_updated") {
+        expect(message.success).toBe(true);
+      }
+      expect(mockSaveVaultConfig).toHaveBeenCalledWith(vault.path, {
+        badges: [
+          { text: "Work", color: "blue" },
+          { text: "Personal", color: "green" },
+        ],
+      });
+    });
+
+    test("rejects badges with invalid color at protocol level", async () => {
+      // Note: Protocol-level validation catches invalid badge color before reaching handler
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // First select the vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Try to update config with invalid badge color
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: {
+            badges: [{ text: "Invalid", color: "pink" }],
+          },
+        })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+
+    test("rejects badges exceeding max count (5) at protocol level", async () => {
+      // Note: Protocol-level validation catches too many badges before reaching handler
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // First select the vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Try to update config with too many badges
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: {
+            badges: [
+              { text: "One", color: "blue" },
+              { text: "Two", color: "green" },
+              { text: "Three", color: "red" },
+              { text: "Four", color: "yellow" },
+              { text: "Five", color: "purple" },
+              { text: "Six", color: "orange" },
+            ],
+          },
+        })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+
+    test("accepts empty config (all defaults)", async () => {
+      const vault = createMockVault();
+      mockGetVaultById.mockResolvedValue(vault);
+      mockSaveVaultConfig.mockResolvedValue({ success: true });
+
+      const handler = createWebSocketHandler();
+      const ws = createMockWebSocket();
+
+      // First select the vault
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
+      );
+
+      // Update with empty config
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({
+          type: "update_vault_config",
+          config: {},
+        })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("config_updated");
+      if (message?.type === "config_updated") {
+        expect(message.success).toBe(true);
+      }
+      expect(mockSaveVaultConfig).toHaveBeenCalledWith(vault.path, {});
     });
   });
 });

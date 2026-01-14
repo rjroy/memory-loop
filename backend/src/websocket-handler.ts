@@ -11,7 +11,9 @@ import type {
   ErrorCode,
   StoredToolInvocation,
   SlashCommand,
+  EditableVaultConfig,
 } from "@memory-loop/shared";
+import { EditableVaultConfigSchema } from "@memory-loop/shared";
 import type {
   SDKMessage,
   SDKPartialAssistantMessage,
@@ -55,6 +57,7 @@ import {
   slashCommandsEqual,
   savePinnedAssets,
   resolvePinnedAssets,
+  saveVaultConfig,
 } from "./vault-config.js";
 import { runVaultSetup } from "./vault-setup.js";
 import { createWidgetEngine, createFileWatcher } from "./widgets/index.js";
@@ -480,6 +483,11 @@ export class WebSocketHandler {
         break;
       case "set_pinned_assets":
         await this.handleSetPinnedAssets(ws, message.paths);
+        break;
+
+      // Vault config handlers
+      case "update_vault_config":
+        await this.handleUpdateVaultConfig(ws, message.config);
         break;
 
       // Home/dashboard handlers (extracted)
@@ -1023,6 +1031,52 @@ export class WebSocketHandler {
       log.error("Failed to save pinned assets", error);
       const message = error instanceof Error ? error.message : "Failed to save pinned assets";
       this.sendError(ws, "INTERNAL_ERROR", message);
+    }
+  }
+
+  /**
+   * Handles update_vault_config message.
+   * Validates and saves editable vault configuration fields.
+   */
+  private async handleUpdateVaultConfig(
+    ws: WebSocketLike,
+    config: EditableVaultConfig
+  ): Promise<void> {
+    if (!this.state.currentVault) {
+      this.send(ws, {
+        type: "config_updated",
+        success: false,
+        error: "No vault selected",
+      });
+      return;
+    }
+
+    // Validate config against schema
+    const validation = EditableVaultConfigSchema.safeParse(config);
+    if (!validation.success) {
+      const errorMessage = validation.error.issues[0]?.message ?? "Invalid configuration";
+      log.warn("Vault config validation failed", { errors: validation.error.issues });
+      this.send(ws, {
+        type: "config_updated",
+        success: false,
+        error: errorMessage,
+      });
+      return;
+    }
+
+    // Save validated config
+    const result = await saveVaultConfig(this.state.currentVault.path, validation.data);
+
+    if (result.success) {
+      log.info(`Vault config updated for ${this.state.currentVault.id}`);
+      this.send(ws, { type: "config_updated", success: true });
+    } else {
+      log.error(`Failed to save vault config: ${result.error}`);
+      this.send(ws, {
+        type: "config_updated",
+        success: false,
+        error: result.error,
+      });
     }
   }
 

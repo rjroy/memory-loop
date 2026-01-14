@@ -431,23 +431,42 @@ export class WidgetEngine {
       return [];
     }
 
-    // Filter to widgets whose source pattern matches the current file
-    const applicableWidgets = recallWidgets.filter((w) => {
-      const matcher = picomatch(w.config.source.pattern);
-      return matcher(filePath);
-    });
+    // Compute widgets in dependency order using the resolved computation order
+    const results: WidgetResult[] = [];
+    const computationOrder = this.includesResolution?.computationOrder ?? [];
 
-    if (applicableWidgets.length === 0) {
-      log.debug(`No recall widgets match file: ${filePath}`);
-      return [];
+    log.info(`Possibly computing ${recallWidgets.length} recall widget(s) for ${filePath}`);
+
+    // First, compute widgets in dependency order
+    for (const widgetName of computationOrder) {
+      const widget = this.widgetsByName.get(widgetName);
+      if (!widget || widget.config.location !== "recall") {
+        continue;
+      }
+      const matcher = picomatch(widget.config.source.pattern);
+      if (!matcher(filePath)) {
+        continue;
+      }
+
+      const result = await this.computeWidgetForItem(widget, filePath, options);
+      results.push(result);
     }
 
-    log.info(`Computing ${applicableWidgets.length} recall widget(s) for ${filePath}`);
+    // Then, handle widgets in cycles (they get error results)
+    for (const widget of recallWidgets) {
+      if (this.isWidgetInCycle(widget.config.name)) {
+        const matcher = picomatch(widget.config.source.pattern);
+        if (!matcher(filePath)) {
+          continue;
+        }
+        results.push(this.createCycleErrorResult(widget, performance.now()));
+      }
+    }
 
-    const results = await Promise.all(
-      applicableWidgets.map((w) => this.computeWidgetForItem(w, filePath, options))
-    );
 
+    if (results.length === 0) { 
+      log.debug(`No recall widgets match file: ${filePath}`);
+    }
     return results;
   }
 
@@ -771,6 +790,9 @@ export class WidgetEngine {
         }
       }
     }
+
+    // Cache this widget's results for use by widgets that include it
+    this.computedWidgetResults.set(config.name, { ...result });
 
     // Filter to only user-defined visible fields
     // (stats.count is for expressions, not output unless user defines a count field)

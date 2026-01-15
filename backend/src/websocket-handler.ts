@@ -104,6 +104,8 @@ import {
   handleToggleTask,
 } from "./handlers/home-handlers.js";
 
+import { handleTriggerSync } from "./handlers/sync-handlers.js";
+
 // Re-export types for external consumers
 export type { WebSocketLike, ConnectionState };
 export { createConnectionState, generateMessageId };
@@ -576,6 +578,11 @@ export class WebSocketHandler {
         break;
       case "toggle_task":
         await handleToggleTask(ctx, message.filePath, message.lineNumber, message.newState);
+        break;
+
+      // Sync handlers (extracted)
+      case "trigger_sync":
+        await handleTriggerSync(ctx, message.mode, message.pipeline);
         break;
     }
   }

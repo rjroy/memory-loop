@@ -11,7 +11,6 @@
   border-radius: var(--radius-xl);
   backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--glass-shadow);
-  overflow: hidden;
 }
 
 .health-panel--has-errors {

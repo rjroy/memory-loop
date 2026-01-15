@@ -232,11 +232,16 @@ Input: ["deck building", "worker place", "unrelated term"]
 Canonical: ["Deck Building", "Worker Placement", "Area Control"]
 Output: ["Deck Building", "Worker Placement", null]`;
 
-    const response = await this.client.messages.create({
-      model: NORMALIZATION_MODEL,
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const response = await this.client.messages.create(
+      {
+        model: NORMALIZATION_MODEL,
+        max_tokens: 1024,
+        messages: [{ role: "user", content: prompt }],
+      },
+      {
+        timeout: this.timeoutMs,
+      }
+    );
 
     // Extract text from response
     const textContent = response.content.find((c) => c.type === "text");

@@ -2245,6 +2245,7 @@ describe("Server -> Client Messages", () => {
       "vault_config",
       "file_watcher",
       "cache",
+      "sync",
       "general",
     ] as const;
 

@@ -17,6 +17,9 @@ import { requireVault } from "./types.js";
 import { createSyncPipelineManager, type SyncMode, type SyncProgress } from "../sync/sync-pipeline.js";
 import { wsLog as log } from "../logger.js";
 
+/** Health issue ID for sync errors */
+const SYNC_ERROR_ID = "sync_error";
+
 /**
  * Handles trigger_sync message.
  * Initiates a sync of external data pipelines for the selected vault.
@@ -85,6 +88,24 @@ export async function handleTriggerSync(
 
     log.info(`Sync completed: ${message} (${result.duration}ms)`);
 
+    // Report to health collector on errors, resolve on success
+    if (hasErrors) {
+      const errorDetails = result.errors
+        .map((e) => `${e.file || "Pipeline"}: ${e.message}`)
+        .join("\n");
+      ctx.state.healthCollector?.report({
+        id: SYNC_ERROR_ID,
+        severity: "error",
+        category: "sync",
+        message: `External data sync failed for ${result.errors.length} file${result.errors.length === 1 ? "" : "s"}`,
+        details: errorDetails,
+        dismissible: true,
+      });
+    } else {
+      // Resolve any previous sync error on success
+      ctx.state.healthCollector?.resolve(SYNC_ERROR_ID);
+    }
+
     ctx.send({
       type: "sync_status",
       status,
@@ -101,6 +122,16 @@ export async function handleTriggerSync(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sync failed unexpectedly";
     log.error(`Sync failed: ${message}`);
+
+    // Report critical sync failure to health collector
+    ctx.state.healthCollector?.report({
+      id: SYNC_ERROR_ID,
+      severity: "error",
+      category: "sync",
+      message: "External data sync failed",
+      details: message,
+      dismissible: true,
+    });
 
     ctx.send({
       type: "sync_status",

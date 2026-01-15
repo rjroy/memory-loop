@@ -1101,6 +1101,7 @@ export const HealthCategorySchema = z.enum([
   "vault_config",    // .memory-loop.json issues
   "file_watcher",    // File watcher issues
   "cache",           // Cache failures
+  "sync",            // External data sync failures
   "general",         // Other issues
 ]);
 

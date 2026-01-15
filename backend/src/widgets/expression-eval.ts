@@ -120,6 +120,23 @@ export interface EvaluateOptions {
 }
 
 // =============================================================================
+// Block Expression Detection
+// =============================================================================
+
+/**
+ * Check if an expression is a block expression (multi-line JavaScript-like syntax).
+ * Block expressions start with '{' and end with '}' and can contain
+ * variable declarations, conditionals, loops, and return statements.
+ *
+ * @param expression - The expression string to check
+ * @returns true if the expression is a block expression
+ */
+function isBlockExpression(expression: string): boolean {
+  const trimmed = expression.trim();
+  return trimmed.startsWith("{") && trimmed.endsWith("}");
+}
+
+// =============================================================================
 // Security Configuration
 // =============================================================================
 
@@ -471,14 +488,11 @@ export const customFunctions = {
 
     for (const part of parts) {
       const trimmed = part.trim();
-      try {
         const num = Number(trimmed);
+
         if (typeof num === "number" && Number.isFinite(num)) {
           nums.push(num);
         }
-      } catch {
-        // Ignore invalid numbers 
-      }
     }
 
     return nums;
@@ -493,6 +507,11 @@ export const customFunctions = {
    */
   sum(...values: unknown[]): number {
     let total = 0;
+    
+    // If values[0] is an array, use its elements instead (variadic vs array input)
+    if (values.length === 1 && Array.isArray(values[0])) {
+      values = values[0];
+    }
 
     for (const val of values) {
       if (typeof val !== "number" || !Number.isFinite(val)) {
@@ -517,6 +536,11 @@ export const customFunctions = {
     let result = 1;
     let hasValid = false;
 
+    // If values[0] is an array, use its elements instead (variadic vs array input)
+    if (values.length === 1 && Array.isArray(values[0])) {
+      values = values[0];
+    }
+
     for (const val of values) {
       if (typeof val !== "number" || !Number.isFinite(val)) {
         continue;
@@ -538,6 +562,11 @@ export const customFunctions = {
   mean(...values: unknown[]): number | null {
     let sum = 0;
     let n = 0;
+
+    // If values[0] is an array, use its elements instead (variadic vs array input)
+    if (values.length === 1 && Array.isArray(values[0])) {
+      values = values[0];
+    }
 
     for (const val of values) {
       if (typeof val !== "number" || !Number.isFinite(val)) {
@@ -562,6 +591,11 @@ export const customFunctions = {
   harmonicMean(...values: unknown[]): number | null {
     let n = 0;
     let denomSum = 0;
+
+    // If values[0] is an array, use its elements instead (variadic vs array input)
+    if (values.length === 1 && Array.isArray(values[0])) {
+      values = values[0];
+    }
 
     for (const val of values) {
       if (typeof val !== "number" || !Number.isFinite(val) || val === 0) {
@@ -720,6 +754,43 @@ export function validateExpressionSecurity(expression: string): void {
   }
 }
 
+/**
+ * Validate a block expression string for security issues (REQ-NF-5).
+ * Similar to validateExpressionSecurity but allows block syntax.
+ *
+ * Block expressions legitimately use { } for their body, so we skip
+ * the object literal check. We still check for blocked keywords and
+ * dangerous patterns like prototype manipulation.
+ *
+ * @param expression - The block expression string to validate
+ * @throws ExpressionSecurityError if blocked content is found
+ */
+function validateBlockExpressionSecurity(expression: string): void {
+  // Check for blocked keywords
+  for (const keyword of BLOCKED_KEYWORDS) {
+    const regex = new RegExp(`\\b${keyword}\\b`, "i");
+    if (regex.test(expression)) {
+      throw new ExpressionSecurityError(
+        `Block expression contains blocked keyword: "${keyword}"`,
+        expression,
+        keyword
+      );
+    }
+  }
+
+  // Check for blocked patterns (prototype manipulation, etc.)
+  // Note: We use all patterns here since they don't conflict with block syntax
+  for (const pattern of BLOCKED_PATTERNS) {
+    if (pattern.test(expression)) {
+      throw new ExpressionSecurityError(
+        `Block expression contains blocked pattern: ${pattern.source}`,
+        expression,
+        pattern.source
+      );
+    }
+  }
+}
+
 // =============================================================================
 // Context Flattening
 // =============================================================================
@@ -803,6 +874,11 @@ export function evaluateExpression(
   context: ExpressionContext,
   options: EvaluateOptions = {}
 ): unknown {
+  // Check if this is a block expression and delegate to block evaluator
+  if (isBlockExpression(expression)) {
+    return evaluateBlockExpression(expression, context, options);
+  }
+
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const startTime = performance.now();
 
@@ -884,6 +960,180 @@ function normalizeResult(result: unknown): unknown {
 }
 
 // =============================================================================
+// Block Expression Evaluation
+// =============================================================================
+
+/**
+ * Evaluate a block expression with JavaScript-like syntax.
+ *
+ * Block expressions allow more complex logic than simple expr-eval expressions:
+ * - Variable declarations (var, let, const)
+ * - Conditionals (if/else)
+ * - Array methods and operations
+ * - Return statements
+ *
+ * The same context namespaces are available:
+ * - `this.*` - Current item's frontmatter fields (accessed as `this.fieldName`)
+ * - `stats.*` - Collection-level statistics
+ * - `result.*` - Previously computed field values
+ * - `included.*` - Results from included widgets
+ * - All custom functions (splitNums, sum, mean, etc.)
+ *
+ * Security: Block expressions are sandboxed to prevent access to Node.js/browser
+ * globals. Dangerous keywords and patterns are blocked before evaluation.
+ *
+ * @param expression - Block expression starting with '{' and ending with '}'
+ * @param context - Context containing this, stats, result, included
+ * @param options - Evaluation options (timeout, etc.)
+ * @returns The value from the return statement, or null if no return
+ * @throws ExpressionSecurityError if blocked content is found
+ * @throws ExpressionTimeoutError if evaluation exceeds timeout
+ * @throws ExpressionEvaluationError if parsing or evaluation fails
+ *
+ * @example
+ * ```ts
+ * const result = evaluateBlockExpression(
+ *   `{
+ *     var nums = splitNums(this.dimensions, 'x');
+ *     if (nums.length !== 3) return null;
+ *     return product(nums);
+ *   }`,
+ *   { this: { dimensions: "10x20x30" }, stats: {} }
+ * );
+ * // result = 6000
+ * ```
+ */
+function evaluateBlockExpression(
+  expression: string,
+  context: ExpressionContext,
+  options: EvaluateOptions = {}
+): unknown {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const startTime = performance.now();
+
+  // Security validation for block expressions
+  validateBlockExpressionSecurity(expression);
+
+  // Check timeout after security validation
+  const afterSecurityCheck = performance.now();
+  if (afterSecurityCheck - startTime > timeoutMs) {
+    throw new ExpressionTimeoutError(
+      `Block expression validation exceeded ${timeoutMs}ms timeout`,
+      expression,
+      afterSecurityCheck - startTime
+    );
+  }
+
+  // Extract the block body (remove outer braces)
+  const trimmed = expression.trim();
+  const blockBody = trimmed.slice(1, -1);
+
+  // Build parameter names for the function
+  // Custom functions are passed as individual parameters
+  const customFunctionNames = Object.keys(customFunctions);
+  const functionParams = ["stats", "result", "included", ...customFunctionNames];
+
+  // Build the function body with:
+  // 1. Strict mode for better security
+  // 2. Shadowed dangerous globals to prevent escape
+  // Note: We cannot shadow reserved keywords like 'import', 'export', 'eval'
+  // as variable names in strict mode. These are already blocked by keyword validation.
+  const shadowedGlobals = [
+    "require",
+    "module",
+    "exports",
+    "process",
+    "global",
+    "globalThis",
+    "window",
+    "document",
+    "self",
+    "Function",
+    "fetch",
+    "XMLHttpRequest",
+    "WebSocket",
+    "fs",
+    "child_process",
+    "setTimeout",
+    "setInterval",
+    "setImmediate",
+    "clearTimeout",
+    "clearInterval",
+  ];
+
+  const shadowDeclarations = shadowedGlobals
+    .map((g) => `const ${g} = undefined;`)
+    .join("\n    ");
+
+  const functionBody = `
+    "use strict";
+    ${shadowDeclarations}
+    ${blockBody}
+  `;
+
+  // Create the function
+  // Security note: We use Function constructor intentionally for block expression
+  // evaluation. Security is enforced through keyword blocking, pattern validation,
+  // and global shadowing above.
+  let fn: (...args: unknown[]) => unknown;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional for block expression evaluation
+    fn = new Function(...functionParams, functionBody) as (...args: unknown[]) => unknown;
+  } catch (error) {
+    throw new ExpressionEvaluationError(
+      `Failed to parse block expression: ${error instanceof Error ? error.message : String(error)}`,
+      expression,
+      error
+    );
+  }
+
+  // Check timeout after parsing
+  const afterParsing = performance.now();
+  if (afterParsing - startTime > timeoutMs) {
+    throw new ExpressionTimeoutError(
+      `Block expression parsing exceeded ${timeoutMs}ms timeout`,
+      expression,
+      afterParsing - startTime
+    );
+  }
+
+  // Build the arguments array in the same order as functionParams
+  const customFunctionValues = customFunctionNames.map(
+    (name) => customFunctions[name as keyof typeof customFunctions]
+  );
+  const args = [
+    context.stats,
+    context.result ?? {},
+    context.included ?? {},
+    ...customFunctionValues,
+  ];
+
+  // Execute the function with context.this as the 'this' value
+  let result: unknown;
+  try {
+    result = fn.call(context.this, ...args);
+  } catch (error) {
+    throw new ExpressionEvaluationError(
+      `Failed to evaluate block expression: ${error instanceof Error ? error.message : String(error)}`,
+      expression,
+      error
+    );
+  }
+
+  // Check timeout after evaluation
+  const elapsed = performance.now() - startTime;
+  if (elapsed > timeoutMs) {
+    throw new ExpressionTimeoutError(
+      `Block expression evaluation exceeded ${timeoutMs}ms timeout`,
+      expression,
+      elapsed
+    );
+  }
+
+  return normalizeResult(result);
+}
+
+// =============================================================================
 // Batch Evaluation
 // =============================================================================
 
@@ -929,6 +1179,27 @@ export function evaluateBatch(
   stats: Record<string, unknown>,
   options: EvaluateOptions = {}
 ): BatchEvaluationResult[] {
+  // For block expressions, delegate to evaluateExpression for each item
+  // (block expressions use Function constructor, not expr-eval parser)
+  if (isBlockExpression(expression)) {
+    // Pre-validate security for block expressions (same as simple expressions)
+    validateBlockExpressionSecurity(expression);
+
+    return items.map((item) => {
+      try {
+        const context: ExpressionContext = { this: item, stats };
+        const value = evaluateBlockExpression(expression, context, options);
+        return { value, success: true };
+      } catch (error) {
+        return {
+          value: null,
+          error: error instanceof Error ? error.message : String(error),
+          success: false,
+        };
+      }
+    });
+  }
+
   // Pre-validate expression once for security
   validateExpressionSecurity(expression);
 
@@ -999,7 +1270,23 @@ export function evaluateBatch(
  */
 export function validateExpression(expression: string): { valid: boolean; error?: string } {
   try {
-    // Check security
+    // Handle block expressions separately
+    if (isBlockExpression(expression)) {
+      // Check block security
+      validateBlockExpressionSecurity(expression);
+
+      // Try to parse by creating a function (without executing it)
+      const trimmed = expression.trim();
+      const blockBody = trimmed.slice(1, -1);
+      const customFunctionNames = Object.keys(customFunctions);
+      const functionParams = ["stats", "result", "included", ...customFunctionNames];
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional for block validation
+      new Function(...functionParams, `"use strict"; ${blockBody}`);
+
+      return { valid: true };
+    }
+
+    // Check security for simple expressions
     validateExpressionSecurity(expression);
 
     // Try to parse
@@ -1027,6 +1314,12 @@ export function validateExpression(expression: string): { valid: boolean; error?
  */
 export function getExpressionVariables(expression: string): string[] | null {
   try {
+    // Block expressions don't support variable extraction
+    // (would require JavaScript static analysis)
+    if (isBlockExpression(expression)) {
+      return null;
+    }
+
     validateExpressionSecurity(expression);
     const parser = createParser();
     const parsed = parser.parse(expression);

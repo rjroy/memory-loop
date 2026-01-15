@@ -743,16 +743,21 @@ describe("evaluateExpression - security (REQ-NF-5)", () => {
   });
 
   describe("object literal blocking", () => {
-    test("blocks object literal syntax", () => {
-      expect(() => evaluateExpression("{ x: 1 }", createContext())).toThrow(
+    test("object literal syntax in simple expressions is blocked", () => {
+      // Note: "{ x: 1 }" by itself is now treated as a block expression
+      // (which is valid JavaScript - a label followed by a value).
+      // Object literal blocking applies to expressions that aren't blocks.
+      // An expression like "var obj = { x: 1 }" would be blocked in simple expr-eval.
+      expect(() => evaluateExpression("y + { x: 1 }", createContext())).toThrow(
         ExpressionSecurityError
       );
     });
 
-    test("blocks nested object literals", () => {
-      expect(() => evaluateExpression("{ nested: { value: 1 } }", createContext())).toThrow(
-        ExpressionSecurityError
-      );
+    test("simple braces are valid as block expressions", () => {
+      // "{ x: 1 }" is valid JavaScript - a block with label 'x' and expression '1'
+      // The block returns undefined (normalized to null) since there's no return
+      const result = evaluateExpression("{ x: 1 }", createContext());
+      expect(result).toBeNull();
     });
   });
 
@@ -1153,5 +1158,619 @@ describe("real-world widget expression scenarios", () => {
       context
     );
     expect(result).toBe(5);
+  });
+});
+
+// =============================================================================
+// Block Expression Tests
+// =============================================================================
+
+describe("evaluateExpression - block expressions", () => {
+  describe("basic block syntax", () => {
+    test("simple return statement", () => {
+      const result = evaluateExpression("{ return 42; }", createContext());
+      expect(result).toBe(42);
+    });
+
+    test("variable declaration and return", () => {
+      const result = evaluateExpression(
+        "{ var x = 10; return x * 2; }",
+        createContext()
+      );
+      expect(result).toBe(20);
+    });
+
+    test("let declaration", () => {
+      const result = evaluateExpression(
+        "{ let x = 5; let y = 3; return x + y; }",
+        createContext()
+      );
+      expect(result).toBe(8);
+    });
+
+    test("const declaration", () => {
+      const result = evaluateExpression(
+        "{ const factor = 2.5; return factor * 4; }",
+        createContext()
+      );
+      expect(result).toBe(10);
+    });
+
+    test("multiline block with whitespace", () => {
+      const result = evaluateExpression(
+        `{
+          var a = 1;
+          var b = 2;
+          var c = 3;
+          return a + b + c;
+        }`,
+        createContext()
+      );
+      expect(result).toBe(6);
+    });
+
+    test("block with no return returns null (undefined normalized)", () => {
+      const result = evaluateExpression("{ var x = 5; }", createContext());
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("this context access", () => {
+    test("access this fields in block", () => {
+      const context = createContext({ rating: 8, weight: 2.5 });
+      const result = evaluateExpression(
+        "{ return this.rating * this.weight; }",
+        context
+      );
+      expect(result).toBe(20);
+    });
+
+    test("access nested this fields", () => {
+      const context = createContext({ bgg: { rating: 7.5, weight: 3.0 } });
+      const result = evaluateExpression(
+        "{ return this.bgg.rating + this.bgg.weight; }",
+        context
+      );
+      expect(result).toBe(10.5);
+    });
+
+    test("conditional based on this field", () => {
+      const context = createContext({ rating: 8.5 });
+      const result = evaluateExpression(
+        `{
+          if (this.rating >= 8) return "excellent";
+          if (this.rating >= 6) return "good";
+          return "fair";
+        }`,
+        context
+      );
+      expect(result).toBe("excellent");
+    });
+  });
+
+  describe("stats and result context access", () => {
+    test("access stats in block", () => {
+      const context: ExpressionContext = {
+        this: { rating: 8 },
+        stats: { rating_mean: 7, rating_max: 10 },
+      };
+      const result = evaluateExpression(
+        "{ return (this.rating - stats.rating_mean) / stats.rating_max; }",
+        context
+      );
+      expect(result).toBe(0.1);
+    });
+
+    test("access result context in block", () => {
+      const context: ExpressionContext = {
+        this: { score: 85 },
+        stats: {},
+        result: { max_score: 100 },
+      };
+      const result = evaluateExpression(
+        "{ return this.score / result.max_score; }",
+        context
+      );
+      expect(result).toBe(0.85);
+    });
+
+    test("access included widget results", () => {
+      const context: ExpressionContext = {
+        this: {},
+        stats: {},
+        included: { WeightWidget: { normalized_weight: 0.5 } },
+      };
+      const result = evaluateExpression(
+        "{ return included.WeightWidget.normalized_weight * 100; }",
+        context
+      );
+      expect(result).toBe(50);
+    });
+  });
+
+  describe("custom functions in blocks", () => {
+    test("splitNums function", () => {
+      const context = createContext({ dimensions: "10x20x30" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.dimensions, 'x');
+          if (nums === null || nums.length !== 3) return null;
+          return nums[0] + nums[1] + nums[2];
+        }`,
+        context
+      );
+      expect(result).toBe(60);
+    });
+
+    test("sum function with array", () => {
+      const context = createContext({ values: "1,2,3,4,5" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.values, ',');
+          return sum(nums);
+        }`,
+        context
+      );
+      expect(result).toBe(15);
+    });
+
+    test("mean function", () => {
+      const context = createContext({ values: "10,20,30" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.values, ',');
+          return mean(nums);
+        }`,
+        context
+      );
+      expect(result).toBe(20);
+    });
+
+    test("product function", () => {
+      const context = createContext({ dimensions: "2x3x4" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.dimensions, 'x');
+          return product(nums);
+        }`,
+        context
+      );
+      expect(result).toBe(24);
+    });
+
+    test("clamp function in block", () => {
+      const result = evaluateExpression(
+        `{
+          var value = 150;
+          return clamp(value, 0, 100);
+        }`,
+        createContext()
+      );
+      expect(result).toBe(100);
+    });
+
+    test("roundTo function in block", () => {
+      const result = evaluateExpression(
+        `{
+          var pi = 3.14159265;
+          return roundTo(pi, 3);
+        }`,
+        createContext()
+      );
+      expect(result).toBe(3.142);
+    });
+
+    test("zscore function in block", () => {
+      const context: ExpressionContext = {
+        this: { rating: 8.5 },
+        stats: { rating_mean: 7.0, rating_stddev: 1.5 },
+      };
+      const result = evaluateExpression(
+        `{
+          var z = zscore(this.rating, stats.rating_mean, stats.rating_stddev);
+          return roundTo(z, 2);
+        }`,
+        context
+      );
+      expect(result).toBe(1);
+    });
+
+    test("isNull and coalesce in block", () => {
+      const context = createContext({ value: null, fallback: 42 });
+      const result = evaluateExpression(
+        `{
+          if (isNull(this.value)) {
+            return coalesce(this.value, this.fallback);
+          }
+          return this.value;
+        }`,
+        context
+      );
+      expect(result).toBe(42);
+    });
+  });
+
+  describe("array operations in blocks", () => {
+    test("array sort", () => {
+      const context = createContext({ values: "3,1,4,1,5,9,2,6" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.values, ',');
+          nums.sort((a, b) => a - b);
+          return nums[0];
+        }`,
+        context
+      );
+      expect(result).toBe(1);
+    });
+
+    test("array filter", () => {
+      const context = createContext({ values: "1,2,3,4,5,6,7,8,9,10" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.values, ',');
+          var evens = nums.filter(n => n % 2 === 0);
+          return sum(evens);
+        }`,
+        context
+      );
+      expect(result).toBe(30); // 2+4+6+8+10
+    });
+
+    test("array map", () => {
+      const context = createContext({ values: "1,2,3" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.values, ',');
+          var doubled = nums.map(n => n * 2);
+          return sum(doubled);
+        }`,
+        context
+      );
+      expect(result).toBe(12); // 2+4+6
+    });
+
+    test("array reduce", () => {
+      const context = createContext({ values: "1,2,3,4" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.values, ',');
+          return nums.reduce((acc, n) => acc + n, 0);
+        }`,
+        context
+      );
+      expect(result).toBe(10);
+    });
+  });
+
+  describe("control flow in blocks", () => {
+    test("if-else statement", () => {
+      const context = createContext({ score: 75 });
+      const result = evaluateExpression(
+        `{
+          if (this.score >= 90) {
+            return 'A';
+          } else if (this.score >= 80) {
+            return 'B';
+          } else if (this.score >= 70) {
+            return 'C';
+          } else {
+            return 'F';
+          }
+        }`,
+        context
+      );
+      expect(result).toBe("C");
+    });
+
+    test("early return", () => {
+      const context = createContext({ value: null });
+      const result = evaluateExpression(
+        `{
+          if (isNull(this.value)) return -1;
+          return this.value * 2;
+        }`,
+        context
+      );
+      expect(result).toBe(-1);
+    });
+
+    test("for loop", () => {
+      const result = evaluateExpression(
+        `{
+          var sum = 0;
+          for (var i = 1; i <= 5; i++) {
+            sum += i;
+          }
+          return sum;
+        }`,
+        createContext()
+      );
+      expect(result).toBe(15);
+    });
+
+    test("while loop", () => {
+      const result = evaluateExpression(
+        `{
+          var n = 5;
+          var factorial = 1;
+          while (n > 1) {
+            factorial *= n;
+            n--;
+          }
+          return factorial;
+        }`,
+        createContext()
+      );
+      expect(result).toBe(120);
+    });
+  });
+
+  describe("real-world block expression scenarios", () => {
+    test("box volume calculation from dimensions string", () => {
+      const context = createContext({ box_size: "10x20x30" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.box_size, 'x');
+          if (nums === null || nums.length !== 3) return null;
+          return product(nums);
+        }`,
+        context
+      );
+      expect(result).toBe(6000);
+    });
+
+    test("normalized shelf space calculation", () => {
+      const context = createContext({ box_size: "10x20x30" });
+      const result = evaluateExpression(
+        `{
+          var nums = splitNums(this.box_size, 'x');
+          if (nums === null || nums.length !== 3) return null;
+
+          nums.sort((l, r) => l - r);
+          var width = nums[0] / 10;
+          var height = nums[1] / 10;
+          var depth = nums[2] / 10;
+
+          return roundTo(width * height * depth, 2);
+        }`,
+        context
+      );
+      expect(result).toBe(6);
+    });
+
+    test("weighted score calculation", () => {
+      const context = createContext({
+        ratings: "8,7,9",
+        weights: "0.5,0.3,0.2",
+      });
+      const result = evaluateExpression(
+        `{
+          var ratings = splitNums(this.ratings, ',');
+          var weights = splitNums(this.weights, ',');
+          if (ratings === null || weights === null) return null;
+          return roundTo(weightedMean(ratings, weights), 2);
+        }`,
+        context
+      );
+      expect(result).toBe(7.9); // (8*0.5 + 7*0.3 + 9*0.2) / 1.0
+    });
+
+    test("complex scoring with multiple conditions", () => {
+      const context: ExpressionContext = {
+        this: {
+          rating: 8.5,
+          plays: 10,
+          owned: true,
+          weight: 2.5,
+        },
+        stats: {
+          rating_mean: 7.0,
+          plays_mean: 5,
+        },
+      };
+      const result = evaluateExpression(
+        `{
+          var score = 0;
+
+          // Rating contribution
+          if (this.rating >= 8) score += 30;
+          else if (this.rating >= 7) score += 20;
+          else score += 10;
+
+          // Play frequency bonus
+          if (this.plays > stats.plays_mean) {
+            score += 20;
+          }
+
+          // Ownership bonus
+          if (this.owned) score += 10;
+
+          // Weight penalty for heavy games
+          if (this.weight > 3) score -= 10;
+
+          return score;
+        }`,
+        context
+      );
+      expect(result).toBe(60); // 30 + 20 + 10 + 0
+    });
+  });
+});
+
+describe("block expression security", () => {
+  test("blocks require keyword in block", () => {
+    expect(() =>
+      evaluateExpression("{ return require('fs'); }", createContext())
+    ).toThrow(ExpressionSecurityError);
+  });
+
+  test("blocks process access in block", () => {
+    expect(() =>
+      evaluateExpression("{ return process.env; }", createContext())
+    ).toThrow(ExpressionSecurityError);
+  });
+
+  test("blocks global access in block", () => {
+    expect(() =>
+      evaluateExpression("{ return global.something; }", createContext())
+    ).toThrow(ExpressionSecurityError);
+  });
+
+  test("blocks setTimeout in block", () => {
+    expect(() =>
+      evaluateExpression("{ setTimeout(() => {}, 0); return 1; }", createContext())
+    ).toThrow(ExpressionSecurityError);
+  });
+
+  test("blocks fetch in block", () => {
+    expect(() =>
+      evaluateExpression("{ return fetch('http://bad.com'); }", createContext())
+    ).toThrow(ExpressionSecurityError);
+  });
+
+  test("blocks __proto__ access in block", () => {
+    expect(() =>
+      evaluateExpression("{ return this.__proto__; }", createContext())
+    ).toThrow(ExpressionSecurityError);
+  });
+
+  test("blocks prototype access in block", () => {
+    expect(() =>
+      evaluateExpression("{ return Array.prototype; }", createContext())
+    ).toThrow(ExpressionSecurityError);
+  });
+
+  test("blocks constructor access in block", () => {
+    expect(() =>
+      evaluateExpression("{ return this.constructor; }", createContext())
+    ).toThrow(ExpressionSecurityError);
+  });
+
+  test("standard JS globals are available in blocks", () => {
+    // Test that standard JavaScript globals like Math and JSON are available
+    const result = evaluateExpression(
+      `{
+        var hasJSON = typeof JSON !== 'undefined';
+        var hasMath = typeof Math !== 'undefined';
+        return hasMath && hasJSON;
+      }`,
+      createContext()
+    );
+    expect(result).toBe(true);
+  });
+});
+
+describe("block expression error handling", () => {
+  test("syntax error in block throws ExpressionEvaluationError", () => {
+    expect(() =>
+      evaluateExpression("{ var x = ; return x; }", createContext())
+    ).toThrow(ExpressionEvaluationError);
+  });
+
+  test("runtime error in block throws ExpressionEvaluationError", () => {
+    expect(() =>
+      evaluateExpression("{ return nonexistentVar(); }", createContext())
+    ).toThrow(ExpressionEvaluationError);
+  });
+
+  test("unclosed block is not detected as block", () => {
+    // "{ return 1" doesn't end with "}", so it's not a block expression
+    // It will be treated as a simple expression and fail the object literal check
+    // or fail to parse as expr-eval doesn't understand the { character
+    expect(() => evaluateExpression("{ return 1", createContext())).toThrow(
+      ExpressionEvaluationError
+    );
+  });
+
+  test("error includes original expression", () => {
+    const expr = "{ var x = ; return x; }";
+    try {
+      evaluateExpression(expr, createContext());
+      expect.unreachable("Should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ExpressionEvaluationError);
+      if (error instanceof ExpressionEvaluationError) {
+        expect(error.expression).toBe(expr);
+      }
+    }
+  });
+});
+
+describe("validateExpression - block expressions", () => {
+  test("valid block expression returns valid: true", () => {
+    const result = validateExpression("{ return 1 + 2; }");
+    expect(result).toEqual({ valid: true });
+  });
+
+  test("block with syntax error returns valid: false", () => {
+    const result = validateExpression("{ var x = ; }");
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Parse error");
+  });
+
+  test("block with security violation returns valid: false", () => {
+    const result = validateExpression("{ return require('fs'); }");
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("blocked keyword");
+  });
+
+  test("complex valid block expression", () => {
+    const result = validateExpression(`{
+      var nums = splitNums(this.dimensions, 'x');
+      if (nums === null) return null;
+      return product(nums);
+    }`);
+    expect(result).toEqual({ valid: true });
+  });
+});
+
+describe("getExpressionVariables - block expressions", () => {
+  test("returns null for block expressions", () => {
+    const vars = getExpressionVariables("{ return this.a + this.b; }");
+    expect(vars).toBeNull();
+  });
+});
+
+describe("evaluateBatch - block expressions", () => {
+  test("evaluates block expression for each item", () => {
+    const items = [{ values: "1,2,3" }, { values: "4,5,6" }, { values: "7,8,9" }];
+    const results = evaluateBatch(
+      `{
+        var nums = splitNums(this.values, ',');
+        return sum(nums);
+      }`,
+      items,
+      {}
+    );
+
+    expect(results).toHaveLength(3);
+    expect(results[0]).toEqual({ value: 6, success: true });
+    expect(results[1]).toEqual({ value: 15, success: true });
+    expect(results[2]).toEqual({ value: 24, success: true });
+  });
+
+  test("handles errors in block batch evaluation", () => {
+    const items = [{ values: "1,2,3" }, { values: "invalid" }];
+    const results = evaluateBatch(
+      `{
+        var nums = splitNums(this.values, ',');
+        if (nums.length !== 3) throw new Error('Need 3 values');
+        return sum(nums);
+      }`,
+      items,
+      {}
+    );
+
+    expect(results[0]).toEqual({ value: 6, success: true });
+    expect(results[1].success).toBe(false);
+    expect(results[1].error).toContain("Need 3 values");
+  });
+
+  test("block batch with security error throws", () => {
+    const items = [{ a: 1 }];
+    expect(() =>
+      evaluateBatch("{ return require('fs'); }", items, {})
+    ).toThrow(ExpressionSecurityError);
   });
 });

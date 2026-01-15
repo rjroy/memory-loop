@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.4",
+    "@anthropic-ai/sdk": "^0.39.0",
     "@memory-loop/shared": "workspace:*",
     "chokidar": "^5.0.0",
     "expr-eval": "^2.0.2",

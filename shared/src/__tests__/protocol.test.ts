@@ -88,6 +88,11 @@ describe("VaultInfoSchema", () => {
       metadataPath: "06_Metadata/memory-loop",
       attachmentPath: "05_Attachments",
       setupComplete: false,
+      promptsPerGeneration: 5,
+      maxPoolSize: 50,
+      quotesPerWeek: 3,
+      badges: [],
+      order: 0,
     };
 
     const result = VaultInfoSchema.parse(validVault);
@@ -1135,8 +1140,13 @@ describe("Server -> Client Messages", () => {
             contentRoot: "/vaults/vault-1",
             inboxPath: "00_Inbox",
             metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+            attachmentPath: "05_Attachments",
             setupComplete: true,
+            promptsPerGeneration: 5,
+            maxPoolSize: 50,
+            quotesPerWeek: 3,
+            badges: [],
+            order: 0,
           },
           {
             id: "vault-2",
@@ -1146,8 +1156,13 @@ describe("Server -> Client Messages", () => {
             contentRoot: "/vaults/vault-2",
             inboxPath: "Inbox",
             metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+            attachmentPath: "05_Attachments",
             setupComplete: false,
+            promptsPerGeneration: 5,
+            maxPoolSize: 50,
+            quotesPerWeek: 3,
+            badges: [],
+            order: 1,
           },
         ],
       };
@@ -2543,8 +2558,13 @@ describe("Server -> Client Messages", () => {
               contentRoot: "/v1",
               inboxPath: "Inbox",
               metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+              attachmentPath: "05_Attachments",
               setupComplete: false,
+              promptsPerGeneration: 5,
+              maxPoolSize: 50,
+              quotesPerWeek: 3,
+              badges: [],
+              order: 0,
             },
           ],
         },
@@ -2760,5 +2780,299 @@ describe("Edge Cases", () => {
     expect(result.type).toBe("ping");
     // extra field should be stripped
     expect((result as Record<string, unknown>).extraField).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// Sync Message Schema Tests (External Data Sync Feature)
+// =============================================================================
+
+import {
+  TriggerSyncMessageSchema,
+  SyncStatusValueSchema,
+  SyncProgressSchema,
+  SyncFileErrorSchema,
+  SyncStatusMessageSchema,
+} from "../protocol.js";
+
+describe("Sync Messages", () => {
+  describe("TriggerSyncMessageSchema", () => {
+    test("accepts valid trigger_sync with full mode", () => {
+      const msg = {
+        type: "trigger_sync" as const,
+        mode: "full" as const,
+      };
+      const result = TriggerSyncMessageSchema.parse(msg);
+      expect(result.type).toBe("trigger_sync");
+      expect(result.mode).toBe("full");
+      expect(result.pipeline).toBeUndefined();
+    });
+
+    test("accepts valid trigger_sync with incremental mode", () => {
+      const msg = {
+        type: "trigger_sync" as const,
+        mode: "incremental" as const,
+      };
+      const result = TriggerSyncMessageSchema.parse(msg);
+      expect(result.mode).toBe("incremental");
+    });
+
+    test("accepts trigger_sync with specific pipeline", () => {
+      const msg = {
+        type: "trigger_sync" as const,
+        mode: "full" as const,
+        pipeline: "boardgames",
+      };
+      const result = TriggerSyncMessageSchema.parse(msg);
+      expect(result.pipeline).toBe("boardgames");
+    });
+
+    test("accepts trigger_sync with empty pipeline string", () => {
+      // Empty string is technically valid (will be treated as no filter)
+      const msg = {
+        type: "trigger_sync" as const,
+        mode: "full" as const,
+        pipeline: "",
+      };
+      const result = TriggerSyncMessageSchema.parse(msg);
+      expect(result.pipeline).toBe("");
+    });
+
+    test("rejects trigger_sync with invalid mode", () => {
+      const msg = {
+        type: "trigger_sync",
+        mode: "partial", // Invalid mode
+      };
+      expect(() => TriggerSyncMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects trigger_sync without mode", () => {
+      const msg = { type: "trigger_sync" };
+      expect(() => TriggerSyncMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("trigger_sync is included in ClientMessageSchema", () => {
+      const msg = {
+        type: "trigger_sync" as const,
+        mode: "incremental" as const,
+        pipeline: "bgg-games",
+      };
+      const result = ClientMessageSchema.parse(msg);
+      expect(result.type).toBe("trigger_sync");
+    });
+  });
+
+  describe("SyncStatusValueSchema", () => {
+    test("accepts all valid status values", () => {
+      const validStatuses = ["idle", "syncing", "success", "error"] as const;
+      for (const status of validStatuses) {
+        expect(SyncStatusValueSchema.parse(status)).toBe(status);
+      }
+    });
+
+    test("rejects invalid status value", () => {
+      expect(() => SyncStatusValueSchema.parse("pending")).toThrow(ZodError);
+      expect(() => SyncStatusValueSchema.parse("running")).toThrow(ZodError);
+    });
+  });
+
+  describe("SyncProgressSchema", () => {
+    test("accepts valid progress with all fields", () => {
+      const progress = {
+        current: 5,
+        total: 10,
+        currentFile: "Games/Gloomhaven.md",
+      };
+      const result = SyncProgressSchema.parse(progress);
+      expect(result.current).toBe(5);
+      expect(result.total).toBe(10);
+      expect(result.currentFile).toBe("Games/Gloomhaven.md");
+    });
+
+    test("accepts progress without currentFile", () => {
+      const progress = { current: 0, total: 100 };
+      const result = SyncProgressSchema.parse(progress);
+      expect(result.currentFile).toBeUndefined();
+    });
+
+    test("accepts zero values", () => {
+      const progress = { current: 0, total: 0 };
+      const result = SyncProgressSchema.parse(progress);
+      expect(result.current).toBe(0);
+      expect(result.total).toBe(0);
+    });
+
+    test("rejects negative current", () => {
+      const progress = { current: -1, total: 10 };
+      expect(() => SyncProgressSchema.parse(progress)).toThrow(ZodError);
+    });
+
+    test("rejects negative total", () => {
+      const progress = { current: 5, total: -1 };
+      expect(() => SyncProgressSchema.parse(progress)).toThrow(ZodError);
+    });
+
+    test("rejects non-integer current", () => {
+      const progress = { current: 5.5, total: 10 };
+      expect(() => SyncProgressSchema.parse(progress)).toThrow(ZodError);
+    });
+
+    test("rejects non-integer total", () => {
+      const progress = { current: 5, total: 10.5 };
+      expect(() => SyncProgressSchema.parse(progress)).toThrow(ZodError);
+    });
+  });
+
+  describe("SyncFileErrorSchema", () => {
+    test("accepts valid file error", () => {
+      const err = {
+        file: "Games/Gloomhaven.md",
+        error: "Invalid BGG ID: xyz",
+      };
+      const result = SyncFileErrorSchema.parse(err);
+      expect(result.file).toBe("Games/Gloomhaven.md");
+      expect(result.error).toBe("Invalid BGG ID: xyz");
+    });
+
+    test("rejects empty file path", () => {
+      const err = { file: "", error: "Some error" };
+      expect(() => SyncFileErrorSchema.parse(err)).toThrow(ZodError);
+    });
+
+    test("rejects empty error message", () => {
+      const err = { file: "test.md", error: "" };
+      expect(() => SyncFileErrorSchema.parse(err)).toThrow(ZodError);
+    });
+
+    test("rejects missing file", () => {
+      const err = { error: "Some error" };
+      expect(() => SyncFileErrorSchema.parse(err)).toThrow(ZodError);
+    });
+
+    test("rejects missing error", () => {
+      const err = { file: "test.md" };
+      expect(() => SyncFileErrorSchema.parse(err)).toThrow(ZodError);
+    });
+  });
+
+  describe("SyncStatusMessageSchema", () => {
+    test("accepts idle status", () => {
+      const msg = {
+        type: "sync_status" as const,
+        status: "idle" as const,
+      };
+      const result = SyncStatusMessageSchema.parse(msg);
+      expect(result.type).toBe("sync_status");
+      expect(result.status).toBe("idle");
+    });
+
+    test("accepts syncing status with progress", () => {
+      const msg = {
+        type: "sync_status" as const,
+        status: "syncing" as const,
+        progress: {
+          current: 3,
+          total: 10,
+          currentFile: "Games/Terraforming Mars.md",
+        },
+      };
+      const result = SyncStatusMessageSchema.parse(msg);
+      expect(result.status).toBe("syncing");
+      expect(result.progress?.current).toBe(3);
+      expect(result.progress?.total).toBe(10);
+      expect(result.progress?.currentFile).toBe("Games/Terraforming Mars.md");
+    });
+
+    test("accepts success status with message", () => {
+      const msg = {
+        type: "sync_status" as const,
+        status: "success" as const,
+        message: "Synced 10/10 files",
+      };
+      const result = SyncStatusMessageSchema.parse(msg);
+      expect(result.status).toBe("success");
+      expect(result.message).toBe("Synced 10/10 files");
+    });
+
+    test("accepts error status with message and errors array", () => {
+      const msg = {
+        type: "sync_status" as const,
+        status: "error" as const,
+        message: "3 files failed to sync",
+        errors: [
+          { file: "Games/Unknown1.md", error: "BGG ID not found" },
+          { file: "Games/Unknown2.md", error: "Network timeout" },
+          { file: "Games/Unknown3.md", error: "Rate limited" },
+        ],
+      };
+      const result = SyncStatusMessageSchema.parse(msg);
+      expect(result.status).toBe("error");
+      expect(result.message).toBe("3 files failed to sync");
+      expect(result.errors).toHaveLength(3);
+      expect(result.errors?.[0].file).toBe("Games/Unknown1.md");
+      expect(result.errors?.[1].error).toBe("Network timeout");
+    });
+
+    test("accepts sync_status without optional fields", () => {
+      const msg = {
+        type: "sync_status" as const,
+        status: "idle" as const,
+      };
+      const result = SyncStatusMessageSchema.parse(msg);
+      expect(result.progress).toBeUndefined();
+      expect(result.message).toBeUndefined();
+      expect(result.errors).toBeUndefined();
+    });
+
+    test("accepts empty errors array", () => {
+      const msg = {
+        type: "sync_status" as const,
+        status: "success" as const,
+        errors: [],
+      };
+      const result = SyncStatusMessageSchema.parse(msg);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test("rejects invalid status value", () => {
+      const msg = {
+        type: "sync_status",
+        status: "running", // Invalid
+      };
+      expect(() => SyncStatusMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing status field", () => {
+      const msg = { type: "sync_status" };
+      expect(() => SyncStatusMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects invalid error in errors array", () => {
+      const msg = {
+        type: "sync_status",
+        status: "error",
+        errors: [{ file: "", error: "test" }], // Empty file is invalid
+      };
+      expect(() => SyncStatusMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects invalid progress object", () => {
+      const msg = {
+        type: "sync_status",
+        status: "syncing",
+        progress: { current: -1, total: 10 }, // Negative current is invalid
+      };
+      expect(() => SyncStatusMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("sync_status is included in ServerMessageSchema", () => {
+      const msg = {
+        type: "sync_status" as const,
+        status: "success" as const,
+        message: "Sync complete",
+      };
+      const result = ServerMessageSchema.parse(msg);
+      expect(result.type).toBe("sync_status");
+    });
   });
 });

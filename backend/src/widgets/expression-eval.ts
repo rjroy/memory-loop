@@ -453,6 +453,37 @@ export const customFunctions = {
     return x === null || x === undefined ? defaultVal : x;
   },
 
+
+  /**
+   * Split a string by a delimiter and convert parts to numbers.
+   * Returns an array of numbers, skipping invalid parts.
+   * @see https://en.wikipedia.org/wiki/Split_(computer_science)    
+   * @param x String to split
+   * @param delimiter Delimiter string (default: ",")
+   * @returns Array of numbers, or null if input is invalid
+   */
+  splitNums(x: unknown, delimiter: unknown = ","): number[] | null {
+    if (typeof x !== "string") return null;
+    if (typeof delimiter !== "string" || delimiter.length === 0) return null;
+
+    const parts = x.split(delimiter);
+    const nums: number[] = [];
+
+    for (const part of parts) {
+      const trimmed = part.trim();
+      try {
+        const num = Number(trimmed);
+        if (typeof num === "number" && Number.isFinite(num)) {
+          nums.push(num);
+        }
+      } catch {
+        // Ignore invalid numbers 
+      }
+    }
+
+    return nums;
+  },
+
   /**
    * Return the arithmetic mean of an arbitrary number of values.
    * Skips non-numeric values.

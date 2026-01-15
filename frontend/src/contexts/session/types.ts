@@ -90,6 +90,29 @@ export interface HealthState {
 }
 
 /**
+ * Sync status values matching protocol.
+ */
+export type SyncStatusValue = "idle" | "syncing" | "success" | "error";
+
+/**
+ * Sync state for external data sync operations.
+ */
+export interface SyncState {
+  /** Current sync status */
+  status: SyncStatusValue;
+  /** Progress info when syncing */
+  progress: {
+    current: number;
+    total: number;
+    currentFile?: string;
+  } | null;
+  /** Error or summary message */
+  message: string | null;
+  /** Number of files that failed (for error display) */
+  errorCount: number;
+}
+
+/**
  * Browser state for vault file browsing.
  */
 export interface BrowserState {
@@ -178,6 +201,8 @@ export interface SessionState {
   widgets: WidgetState;
   /** Health state for backend health reporting */
   health: HealthState;
+  /** Sync state for external data sync */
+  sync: SyncState;
   /** Recent captured notes for note mode */
   recentNotes: RecentNoteEntry[];
   /** Recent discussion sessions for note mode */
@@ -335,6 +360,16 @@ export interface SessionActions {
   toggleHealthExpanded: () => void;
   /** Dismiss a health issue (also sends to server) */
   dismissHealthIssue: (issueId: string) => void;
+  // Sync actions
+  /** Update sync state from server sync_status message */
+  updateSyncStatus: (
+    status: SyncStatusValue,
+    progress?: { current: number; total: number; currentFile?: string },
+    message?: string,
+    errorCount?: number
+  ) => void;
+  /** Reset sync state to idle (for when vault changes) */
+  resetSyncState: () => void;
 }
 
 /**

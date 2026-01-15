@@ -53,6 +53,7 @@ export interface EditableVaultConfig {
   recentCaptures?: number; // 1-20
   recentDiscussions?: number; // 1-20
   badges?: Badge[]; // max 5
+  order?: number; // display order on vault selection screen
 }
 
 export interface ConfigEditorDialogProps {
@@ -83,6 +84,7 @@ function hasConfigChanged(
   if (initial.quotesPerWeek !== current.quotesPerWeek) return true;
   if (initial.recentCaptures !== current.recentCaptures) return true;
   if (initial.recentDiscussions !== current.recentDiscussions) return true;
+  if (initial.order !== current.order) return true;
 
   // Compare badges array
   const initialBadges = initial.badges ?? [];
@@ -328,6 +330,7 @@ export function ConfigEditorDialog({
   const dialogTitleId = useId();
   const titleInputId = useId();
   const subtitleInputId = useId();
+  const orderInputId = useId();
   const discussionModelId = useId();
 
   // Slider field IDs for accessibility
@@ -492,6 +495,31 @@ export function ConfigEditorDialog({
                   }
                   placeholder="A brief description"
                 />
+              </div>
+              <div className="config-editor__field">
+                <label
+                  htmlFor={orderInputId}
+                  className="config-editor__label"
+                >
+                  Display Order
+                </label>
+                <input
+                  id={orderInputId}
+                  type="number"
+                  className="config-editor__input config-editor__input--narrow"
+                  value={formState.order ?? ""}
+                  onChange={(e) =>
+                    setFormState((prev) => ({
+                      ...prev,
+                      order: e.target.value ? parseInt(e.target.value, 10) : undefined,
+                    }))
+                  }
+                  placeholder="Auto"
+                  min={1}
+                />
+                <p className="config-editor__field-hint">
+                  Lower numbers appear first. Leave empty to sort last.
+                </p>
               </div>
               <div className="config-editor__field">
                 <label className="config-editor__label">Badges</label>

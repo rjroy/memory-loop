@@ -66,6 +66,7 @@ export const EditableVaultConfigSchema = z.object({
   recentCaptures: z.number().int().min(1).max(20).optional(),
   recentDiscussions: z.number().int().min(1).max(20).optional(),
   badges: z.array(EditableBadgeSchema).max(5).optional(),
+  order: z.number().int().min(1).optional(),
 });
 
 // =============================================================================

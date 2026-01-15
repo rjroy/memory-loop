@@ -425,13 +425,14 @@ function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     contentRoot,
     inboxPath: "00_Inbox",
     metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+    attachmentPath: "05_Attachments",
     setupComplete: false,
     promptsPerGeneration: 5,
     maxPoolSize: 50,
     quotesPerWeek: 1,
     badges: [],
     ...overrides,
+    order: overrides.order ?? 999999,
   };
 }
 
@@ -1253,7 +1254,8 @@ describe("WebSocket Handler", () => {
         "first-session",
         "Second message",
         undefined, // no extra options
-        expect.any(Function) // tool permission callback
+        expect.any(Function), // tool permission callback
+        expect.any(Function) // askUserQuestion callback
       );
     });
 

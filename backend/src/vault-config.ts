@@ -135,6 +135,14 @@ export interface VaultConfig {
    * Default: "opus"
    */
   discussionModel?: string;
+
+  /**
+   * Display order for vault selection screen.
+   * Vaults are grouped by order value, then sorted alphabetically within each group.
+   * Lower values appear first. Vaults without order are placed last.
+   * Default: Infinity (sorted last)
+   */
+  order?: number;
 }
 
 /**
@@ -196,6 +204,13 @@ export type DiscussionModel = (typeof VALID_DISCUSSION_MODELS)[number];
  * Default model for Discussion mode.
  */
 export const DEFAULT_DISCUSSION_MODEL: DiscussionModel = "opus";
+
+/**
+ * Default order for vaults without explicit order.
+ * Uses a large number so unordered vaults sort last.
+ * Note: Cannot use Infinity as it's not JSON-serializable.
+ */
+export const DEFAULT_ORDER = 999999;
 
 /**
  * Valid badge color names.
@@ -297,6 +312,11 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
       VALID_DISCUSSION_MODELS.includes(obj.discussionModel as typeof VALID_DISCUSSION_MODELS[number])
     ) {
       config.discussionModel = obj.discussionModel;
+    }
+
+    // Validate order (must be a finite number)
+    if (typeof obj.order === "number" && Number.isFinite(obj.order)) {
+      config.order = obj.order;
     }
 
     // Validate badges array
@@ -509,6 +529,16 @@ export function resolveRecentDiscussions(config: VaultConfig): number {
  */
 export function resolveDiscussionModel(config: VaultConfig): DiscussionModel {
   return (config.discussionModel as DiscussionModel | undefined) ?? DEFAULT_DISCUSSION_MODEL;
+}
+
+/**
+ * Resolves the display order for vault selection.
+ *
+ * @param config - Vault configuration
+ * @returns Order value (default: Infinity, sorts last)
+ */
+export function resolveOrder(config: VaultConfig): number {
+  return config.order ?? DEFAULT_ORDER;
 }
 
 /**

@@ -77,6 +77,7 @@ const testVaults: VaultInfo[] = [
     maxPoolSize: 50,
     quotesPerWeek: 1,
     badges: [],
+    order: 999999,
   },
   {
     id: "vault-2",
@@ -92,6 +93,7 @@ const testVaults: VaultInfo[] = [
     maxPoolSize: 50,
     quotesPerWeek: 1,
     badges: [],
+    order: 999999,
   },
 ];
 
@@ -178,7 +180,7 @@ describe("VaultSelect", () => {
           contentRoot: "/home/user/vault",
           inboxPath: "inbox",
           metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+          attachmentPath: "05_Attachments",
           setupComplete: false,
           promptsPerGeneration: 5,
           maxPoolSize: 50,
@@ -187,6 +189,7 @@ describe("VaultSelect", () => {
             { text: "Work", color: "blue" },
             { text: "Personal", color: "green" },
           ],
+          order: 999999,
         },
       ];
       mockFetchResponse = {
@@ -219,12 +222,13 @@ describe("VaultSelect", () => {
           contentRoot: "/home/user/vault",
           inboxPath: "inbox",
           metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+          attachmentPath: "05_Attachments",
           setupComplete: true,
           promptsPerGeneration: 5,
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [{ text: "Custom", color: "purple" }],
+          order: 999999,
         },
       ];
       mockFetchResponse = {
@@ -270,6 +274,7 @@ describe("VaultSelect", () => {
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [],
+          order: 999999,
         },
       ];
       mockFetchResponse = {
@@ -306,6 +311,7 @@ describe("VaultSelect", () => {
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [],
+          order: 999999,
         },
       ];
       mockFetchResponse = {
@@ -592,6 +598,7 @@ describe("VaultSelect", () => {
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [],
+          order: 999999,
         },
       ];
 
@@ -626,6 +633,7 @@ describe("VaultSelect", () => {
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [],
+          order: 999999,
         },
       ];
 
@@ -675,6 +683,7 @@ describe("VaultSelect", () => {
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [],
+          order: 999999,
         },
       ];
 
@@ -717,6 +726,7 @@ describe("VaultSelect", () => {
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [],
+          order: 999999,
         },
       ];
 
@@ -769,6 +779,7 @@ describe("VaultSelect", () => {
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [],
+          order: 999999,
         },
       ];
 
@@ -823,6 +834,7 @@ describe("VaultSelect", () => {
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [],
+          order: 999999,
         },
       ];
 
@@ -897,6 +909,7 @@ describe("VaultSelect", () => {
           maxPoolSize: 50,
           quotesPerWeek: 1,
           badges: [],
+          order: 999999,
         },
       ];
 

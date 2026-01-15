@@ -3,9 +3,35 @@
  *
  * Provides structured logging with prefixes for different modules.
  * All logs include timestamps for debugging timing issues.
+ *
+ * Log level can be controlled via LOG_LEVEL environment variable:
+ * - "debug" - All logs including debug
+ * - "info" - Info, warn, error (default)
+ * - "warn" - Warn and error only
+ * - "error" - Error only
+ * - "silent" - No logs (useful for tests)
  */
 
-type LogLevel = "debug" | "info" | "warn" | "error";
+type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
+
+const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+  silent: 4,
+};
+
+// Initialize from environment, default to "info"
+let currentLogLevel: LogLevel =
+  (process.env.LOG_LEVEL as LogLevel) || "info";
+
+/**
+ * Set the minimum log level. Logs below this level are suppressed.
+ */
+export function setLogLevel(level: LogLevel): void {
+  currentLogLevel = level;
+}
 
 interface LogEntry {
   timestamp: string;
@@ -29,6 +55,11 @@ function formatLog(entry: LogEntry): string {
  */
 export function createLogger(module: string) {
   const log = (level: LogLevel, message: string, data?: unknown) => {
+    // Check if this log level should be suppressed
+    if (LOG_LEVEL_PRIORITY[level] < LOG_LEVEL_PRIORITY[currentLogLevel]) {
+      return;
+    }
+
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
@@ -41,9 +72,7 @@ export function createLogger(module: string) {
 
     switch (level) {
       case "debug":
-        if (process.env.DEBUG) {
-          console.log(formatted, data !== undefined ? data : "");
-        }
+        console.log(formatted, data !== undefined ? data : "");
         break;
       case "info":
         console.log(formatted, data !== undefined ? data : "");

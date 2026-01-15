@@ -579,6 +579,7 @@ describe("captureToDaily Integration", () => {
       maxPoolSize: 50,
       quotesPerWeek: 1,
       badges: [],
+      order: 999999,
     };
   });
 
@@ -808,6 +809,7 @@ describe("Edge Cases", () => {
       maxPoolSize: 50,
       quotesPerWeek: 1,
       badges: [],
+      order: 999999,
     };
   });
 

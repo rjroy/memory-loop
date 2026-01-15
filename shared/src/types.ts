@@ -48,6 +48,7 @@ export interface Badge {
  * @property maxPoolSize - Maximum items to keep in inspiration pools (default: 50)
  * @property quotesPerWeek - Number of quotes to generate per week (default: 1)
  * @property badges - Custom badges configured in .memory-loop.json
+ * @property order - Display order for vault selection (lower values first, Infinity for unset)
  */
 export interface VaultInfo {
   id: string;
@@ -68,6 +69,7 @@ export interface VaultInfo {
   recentCaptures?: number;
   recentDiscussions?: number;
   badges: Badge[];
+  order: number;
 }
 
 /**

@@ -29,5 +29,7 @@ export function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     quotesPerWeek: 1,
     badges: [],
     ...overrides,
+    // Ensure order is always a number (Partial<VaultInfo> allows undefined)
+    order: overrides.order ?? 999999,
   };
 }

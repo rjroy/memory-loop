@@ -94,6 +94,7 @@ export const VaultInfoSchema = z.object({
   recentCaptures: z.number().int().positive().optional(),
   recentDiscussions: z.number().int().positive().optional(),
   badges: z.array(BadgeSchema),
+  order: z.number(), // Can be Infinity for unset vaults
 });
 
 // =============================================================================

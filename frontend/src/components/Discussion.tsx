@@ -12,6 +12,7 @@ import { useSession, useServerMessageHandler } from "../contexts/SessionContext"
 import { MessageBubble } from "./MessageBubble";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ToolPermissionDialog, type ToolPermissionRequest } from "./ToolPermissionDialog";
+import { AskUserQuestionDialog, type AskUserQuestionRequest } from "./AskUserQuestionDialog";
 import { SlashCommandAutocomplete, useSlashCommandNavigation } from "./SlashCommandAutocomplete";
 import { FileAttachButton } from "./FileAttachButton";
 import "./Discussion.css";
@@ -34,6 +35,7 @@ export function Discussion(): React.ReactNode {
   const [isFocused, setIsFocused] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [pendingPermission, setPendingPermission] = useState<ToolPermissionRequest | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<AskUserQuestionRequest | null>(null);
   const [autocompleteSelectedIndex, setAutocompleteSelectedIndex] = useState(0);
   const [argumentHintPlaceholder, setArgumentHintPlaceholder] = useState<string | null>(null);
 
@@ -116,6 +118,14 @@ export function Discussion(): React.ReactNode {
           toolUseId: message.toolUseId,
           toolName: message.toolName,
           input: message.input,
+        });
+      }
+
+      // Handle AskUserQuestion requests
+      if (message.type === "ask_user_question_request") {
+        setPendingQuestion({
+          toolUseId: message.toolUseId,
+          questions: message.questions,
         });
       }
 
@@ -445,6 +455,29 @@ export function Discussion(): React.ReactNode {
     }
   }
 
+  function handleQuestionSubmit(answers: Record<string, string>) {
+    if (pendingQuestion) {
+      sendMessage({
+        type: "ask_user_question_response",
+        toolUseId: pendingQuestion.toolUseId,
+        answers,
+      });
+      setPendingQuestion(null);
+    }
+  }
+
+  function handleQuestionCancel() {
+    // Canceling sends an empty answers object, which the backend will reject
+    if (pendingQuestion) {
+      sendMessage({
+        type: "ask_user_question_response",
+        toolUseId: pendingQuestion.toolUseId,
+        answers: {},
+      });
+      setPendingQuestion(null);
+    }
+  }
+
   return (
     <div className="discussion">
       <button
@@ -544,6 +577,12 @@ export function Discussion(): React.ReactNode {
         request={pendingPermission}
         onAllow={handleAllowTool}
         onDeny={handleDenyTool}
+      />
+
+      <AskUserQuestionDialog
+        request={pendingQuestion}
+        onSubmit={handleQuestionSubmit}
+        onCancel={handleQuestionCancel}
       />
     </div>
   );

@@ -134,6 +134,11 @@ export type {
   HealthIssue,
   HealthReportMessage,
   DismissHealthIssueMessage,
+  // AskUserQuestion types
+  AskUserQuestionOption,
+  AskUserQuestionItem,
+  AskUserQuestionResponseMessage,
+  AskUserQuestionRequestMessage,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

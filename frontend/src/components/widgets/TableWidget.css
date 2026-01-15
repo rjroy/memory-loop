@@ -19,7 +19,7 @@
   padding: 0;
   text-align: left;
   font-weight: var(--font-weight-bold);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   border-bottom: 2px solid var(--glass-border);
   white-space: nowrap;
 }
@@ -35,7 +35,7 @@
   cursor: pointer;
   font: inherit;
   font-weight: var(--font-weight-bold);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   text-align: left;
   transition: color var(--transition-fast);
 }
@@ -87,7 +87,7 @@
 
 .table-widget__empty {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   font-style: italic;
   text-align: center;
   margin: 0;

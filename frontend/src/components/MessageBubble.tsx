@@ -52,7 +52,7 @@ function formatTime(date: Date): string {
  * Uses negative lookbehind to avoid matching paths inside markdown or URLs.
  */
 const IMAGE_PATH_PATTERN =
-  /(?<![a-zA-Z0-9_\-\/\[])(?:05_Attachments|Attachments|attachments|assets|images)\/[\w.-]+\.(png|jpg|jpeg|gif|webp)/gi;
+  /(?<![a-zA-Z0-9_\-/[])(?:05_Attachments|Attachments|attachments|assets|images)\/[\w.-]+\.(png|jpg|jpeg|gif|webp)/gi;
 
 /**
  * Pattern to detect Obsidian wiki-link image syntax.

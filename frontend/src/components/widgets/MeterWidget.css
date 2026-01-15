@@ -26,7 +26,7 @@
 
 .meter-widget__label {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
 }
 
 .meter-widget__track {
@@ -67,6 +67,6 @@
 .meter-widget__min,
 .meter-widget__max {
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   font-variant-numeric: tabular-nums;
 }

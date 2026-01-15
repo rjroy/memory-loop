@@ -453,6 +453,81 @@ export const customFunctions = {
     return x === null || x === undefined ? defaultVal : x;
   },
 
+
+  /**
+   * Split a string by a delimiter and convert parts to numbers.
+   * Returns an array of numbers, skipping invalid parts.
+   * @see https://en.wikipedia.org/wiki/Split_(computer_science)    
+   * @param x String to split
+   * @param delimiter Delimiter string (default: ",")
+   * @returns Array of numbers, or null if input is invalid
+   */
+  splitNums(x: unknown, delimiter: unknown = ","): number[] | null {
+    if (typeof x !== "string") return null;
+    if (typeof delimiter !== "string" || delimiter.length === 0) return null;
+
+    const parts = x.split(delimiter);
+    const nums: number[] = [];
+
+    for (const part of parts) {
+      const trimmed = part.trim();
+      try {
+        const num = Number(trimmed);
+        if (typeof num === "number" && Number.isFinite(num)) {
+          nums.push(num);
+        }
+      } catch {
+        // Ignore invalid numbers 
+      }
+    }
+
+    return nums;
+  },
+
+  /**
+   * Return the sum of an arbitrary number of values.
+   * Skips non-numeric values.
+   * @see https://en.wikipedia.org/wiki/Summation 
+   * @param values - Values to sum
+   * @returns Arithmetic sum
+   */
+  sum(...values: unknown[]): number {
+    let total = 0;
+
+    for (const val of values) {
+      if (typeof val !== "number" || !Number.isFinite(val)) {
+        continue;
+      }
+      total += val;
+    }
+
+    return total;
+  },
+
+  /**
+   * Return the product of an arbitrary number of values.
+   * Skips non-numeric values.
+   * If no valid numeric values are provided, returns 0.
+   * @see https://en.wikipedia.org/wiki/Product_(mathematics)
+    
+   * @param values - Values to compute product for
+   * @returns Arithmetic product
+   */
+  product(...values: unknown[]): number {
+    let result = 1;
+    let hasValid = false;
+
+    for (const val of values) {
+      if (typeof val !== "number" || !Number.isFinite(val)) {
+        continue;
+      }
+      result *= val;
+      hasValid = true;
+    }
+
+    return hasValid ? result : 0;
+  },
+
   /**
    * Return the arithmetic mean of an arbitrary number of values.
    * Skips non-numeric values.

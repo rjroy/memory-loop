@@ -24,7 +24,7 @@
 
 .summary-card__label {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   font-weight: var(--font-weight-normal);
   margin: 0;
 }
@@ -39,7 +39,7 @@
 
 .summary-card__empty {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   font-style: italic;
   text-align: center;
   margin: 0;

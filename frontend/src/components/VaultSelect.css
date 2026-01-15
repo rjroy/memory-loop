@@ -34,7 +34,7 @@
   font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
 }
 
 .vault-select__status {
@@ -309,7 +309,7 @@
 .vault-select__vault-path {
   font-size: var(--font-size-xs);
   font-family: var(--font-family-mono);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   margin: 0;
   word-break: break-all;
 }
@@ -459,7 +459,7 @@
   min-width: 44px;
   min-height: 44px;
   padding: 0;
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-md);

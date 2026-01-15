@@ -1228,14 +1228,14 @@ export class WebSocketHandler {
   /**
    * Creates a summary of an SDK event for logging.
    */
-  /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
   private summarizeEvent(event: SDKMessage): Record<string, unknown> {
     const summary: Record<string, unknown> = { type: event.type };
 
     if (event.type === "stream_event") {
       const rawStreamEvent = event.event;
 
-      if (rawStreamEvent.type === "error") {
+      // Defensive check: SDK may send error events not in ContentStreamEvent type
+      if ((rawStreamEvent.type as string) === "error") {
         summary.streamType = "error";
         return summary;
       }
@@ -1263,12 +1263,10 @@ export class WebSocketHandler {
 
     return summary;
   }
-  /* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 
   /**
    * Handles streaming events containing deltas and content block lifecycle.
    */
-  /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
   private handleStreamEvent(
     ws: WebSocketLike,
     messageId: string,
@@ -1278,12 +1276,13 @@ export class WebSocketHandler {
   ): string {
     const rawStreamEvent = event.event;
 
-    if (rawStreamEvent.type === "error") {
+    // Defensive check: SDK may send error events not in ContentStreamEvent type
+    if ((rawStreamEvent.type as string) === "error") {
       // Extract error details from SDK stream event
-      const errorEvent = rawStreamEvent as { type: "error"; error: { type?: string; message?: string } };
+      const errorEvent = rawStreamEvent as unknown as { type: "error"; error: { type?: string; message?: string } };
       const errorMessage = errorEvent.error?.message ?? errorEvent.error?.type ?? "Unknown SDK error during streaming";
 
-      log.warn("Stream error event received", { error: rawStreamEvent.error });
+      log.warn("Stream error event received", { error: errorEvent.error });
 
       // Send error to frontend so user sees what went wrong
       this.send(ws, {
@@ -1386,12 +1385,10 @@ export class WebSocketHandler {
 
     return "";
   }
-  /* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
 
   /**
    * Handles result events containing tool usage and context statistics.
    */
-  /* eslint-disable @typescript-eslint/no-unsafe-assignment */
   private handleResultEvent(
     ws: WebSocketLike,
     event: SDKResultMessage,
@@ -1516,12 +1513,10 @@ export class WebSocketHandler {
 
     return contextUsage;
   }
-  /* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
   /**
    * Handles user events containing tool results.
    */
-  /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
   private handleUserEvent(
     ws: WebSocketLike,
     event: SDKUserMessage,
@@ -1535,7 +1530,7 @@ export class WebSocketHandler {
       if (typeof block !== "object" || block === null || !("type" in block)) continue;
 
       if (block.type === "tool_result" && "tool_use_id" in block) {
-        const toolUseId = block.tool_use_id as string;
+        const toolUseId = block.tool_use_id;
         const output = "content" in block ? block.content : null;
 
         log.info(`Tool completed (from user event): ${toolUseId}`);
@@ -1553,7 +1548,6 @@ export class WebSocketHandler {
       }
     }
   }
-  /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 }
 
 /**

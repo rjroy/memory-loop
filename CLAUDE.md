@@ -105,3 +105,39 @@ bun run --cwd frontend test src/components/__tests__/Home.test.tsx
 - Run `bun run test` (combined command causes resource conflicts)
 - Run `bun run --cwd <module> test` without a specific file (runs all tests in module)
 - Pipe test output through `head` or `tail` (truncates output, hides results)
+
+## Documentation
+
+Documentation lives in `docs/` and must be kept current with code changes.
+
+### Structure
+
+```
+docs/
+├── usage/           # User-facing "how to" guides for each tab
+│   ├── README.md    # Overview and navigation
+│   ├── ground.md    # Ground tab (home dashboard)
+│   ├── capture.md   # Capture tab (quick notes)
+│   ├── think.md     # Think tab (AI conversation)
+│   └── recall.md    # Recall tab (file browser)
+├── widgets/         # Widget configuration and examples
+├── deployment/      # Self-hosting setup guides
+└── adr/             # Architecture decision records
+```
+
+### Documentation Maintenance (MANDATORY)
+
+When making changes that affect user-facing behavior:
+
+1. **Update the relevant usage doc** in `docs/usage/` if the change affects how a tab works
+2. **Update widget docs** if changing widget behavior or configuration
+3. **Add an ADR** for significant architectural decisions
+
+Documentation is part of the definition of done. A feature is not complete until its documentation is updated.
+
+### Image Placeholders
+
+Usage docs contain image placeholders in the format `[ img: description ]`. These mark where screenshots should be added. When adding screenshots:
+- Save images to an `images/` subdirectory
+- Replace placeholder with standard markdown image syntax
+- Use descriptive alt text

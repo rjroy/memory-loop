@@ -115,9 +115,12 @@ hostname -I | awk '{print $1}'
 http://YOUR_IP:5173
 ```
 
-## Deployment
+## Documentation
 
-For production deployments, see:
+- [Usage Guide](docs/usage/README.md) — How to use each tab (Ground, Capture, Think, Recall)
+- [Widgets](docs/widgets/README.md) — Configure computed widgets for dashboards and file views
+
+### Deployment
 
 - [HTTPS/TLS Setup](docs/deployment/https-setup.md) — Certificate configuration for secure access
 - [systemd Service](docs/deployment/systemd.md) — Run Memory Loop automatically on boot

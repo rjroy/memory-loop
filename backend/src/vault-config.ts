@@ -594,7 +594,8 @@ function isAllDefaults(config: EditableVaultConfig): boolean {
     config.quotesPerWeek === undefined &&
     config.recentCaptures === undefined &&
     config.recentDiscussions === undefined &&
-    (config.badges === undefined || config.badges.length === 0)
+    (config.badges === undefined || config.badges.length === 0) &&
+    config.order === undefined
   );
 }
 
@@ -670,6 +671,9 @@ export async function saveVaultConfig(
     }
     if (editableConfig.badges !== undefined) {
       mergedConfig.badges = editableConfig.badges;
+    }
+    if (editableConfig.order !== undefined) {
+      mergedConfig.order = editableConfig.order;
     }
 
     // Write merged config back to file

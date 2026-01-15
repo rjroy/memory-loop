@@ -277,6 +277,17 @@
   color: var(--color-text-accent-secondary);
 }
 
+.config-editor__input--narrow {
+  width: 120px;
+}
+
+.config-editor__field-hint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-accent-secondary);
+  line-height: var(--line-height-normal);
+}
+
 .config-editor__select {
   width: 100%;
   min-height: 44px;

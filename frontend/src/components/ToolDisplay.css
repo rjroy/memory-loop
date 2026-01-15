@@ -96,7 +96,7 @@
 
 .tool-display__summary {
   font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

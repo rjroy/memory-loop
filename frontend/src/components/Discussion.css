@@ -86,7 +86,7 @@
 .discussion__hint {
   font-size: var(--font-size-sm);
   margin-top: var(--spacing-sm) !important;
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   font-style: italic;
 }
 

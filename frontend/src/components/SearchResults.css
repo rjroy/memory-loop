@@ -225,7 +225,7 @@ div.search-results__item {
 .search-results__path {
   flex-shrink: 0;
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -297,7 +297,7 @@ div.search-results__item {
   width: 36px;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
   text-align: right;
   padding-top: 2px;
 }
@@ -314,7 +314,7 @@ div.search-results__item {
 }
 
 .search-results__context-line {
-  color: var(--color-text-muted);
+  color: var(--color-text-accent-secondary);
 }
 
 .search-results__match-line {

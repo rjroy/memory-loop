@@ -1502,6 +1502,290 @@ describe("Performance benchmarks", () => {
 });
 
 // =============================================================================
+// Similarity Aggregator Tests
+// =============================================================================
+
+describe("Similarity aggregator", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  const similarityWidgetForIncludeYaml = `
+name: Game Similarity
+type: similarity
+location: recall
+source:
+  pattern: "Games/**/*.md"
+dimensions:
+  - field: tags
+    weight: 1.0
+    method: jaccard
+display:
+  type: list
+  limit: 10
+`;
+
+  const aggregateWithSimilarityYaml = `
+name: Weighted Rating
+type: aggregate
+location: recall
+source:
+  pattern: "Games/**/*.md"
+includes:
+  - "Game Similarity"
+fields:
+  weighted_rating:
+    similarity:
+      ref: "Game Similarity"
+      field: "rating"
+display:
+  type: meter
+  min: 0
+  max: 10
+`;
+
+  test("computes weighted average using similarity scores", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetForIncludeYaml);
+    await writeWidgetConfig(widgetsDir, "weighted.yaml", aggregateWithSimilarityYaml);
+
+    // Create games where we know the similarity and ratings
+    // Game A (source): tags = [strategy, trading]
+    // Game B: tags = [strategy, trading] -> jaccard = 1.0, rating = 8
+    // Game C: tags = [strategy] -> jaccard = 0.5, rating = 10
+    // Game D: tags = [trading] -> jaccard = 0.5, rating = 6
+    // Expected: (1.0*8 + 0.5*10 + 0.5*6) / (1.0 + 0.5 + 0.5) = (8 + 5 + 3) / 2 = 8
+
+    await writeMarkdownFile(gamesDir, "game-a.md", {
+      title: "Game A",
+      tags: ["strategy", "trading"],
+      rating: 7, // Source file rating (not used in aggregation)
+    });
+    await writeMarkdownFile(gamesDir, "game-b.md", {
+      title: "Game B",
+      tags: ["strategy", "trading"],
+      rating: 8,
+    });
+    await writeMarkdownFile(gamesDir, "game-c.md", {
+      title: "Game C",
+      tags: ["strategy"],
+      rating: 10,
+    });
+    await writeMarkdownFile(gamesDir, "game-d.md", {
+      title: "Game D",
+      tags: ["trading"],
+      rating: 6,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    const results = await engine.computeRecallWidgets("Games/game-a.md");
+
+    // Should have both similarity and aggregate widget results
+    expect(results).toHaveLength(2);
+
+    const weightedResult = results.find((r) => r.name === "Weighted Rating");
+    expect(weightedResult).toBeDefined();
+    expect(weightedResult!.isEmpty).toBe(false);
+
+    const data = weightedResult!.data as Record<string, unknown>;
+    // Expected: (1.0*8 + 0.5*10 + 0.5*6) / (1.0 + 0.5 + 0.5) = 16/2 = 8
+    expect(data.weighted_rating).toBe(8);
+
+    engine.shutdown();
+  });
+
+  test("returns null when referenced widget not in includes", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    // Aggregate widget without including the similarity widget
+    const badAggregateYaml = `
+name: Bad Weighted
+type: aggregate
+location: recall
+source:
+  pattern: "Games/**/*.md"
+fields:
+  weighted_rating:
+    similarity:
+      ref: "Game Similarity"
+      field: "rating"
+display:
+  type: summary-card
+`;
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetForIncludeYaml);
+    await writeWidgetConfig(widgetsDir, "bad-weighted.yaml", badAggregateYaml);
+    await writeMarkdownFile(gamesDir, "game-a.md", {
+      title: "Game A",
+      tags: ["strategy"],
+      rating: 8,
+    });
+    await writeMarkdownFile(gamesDir, "game-b.md", {
+      title: "Game B",
+      tags: ["strategy"],
+      rating: 9,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    const results = await engine.computeRecallWidgets("Games/game-a.md");
+
+    const badResult = results.find((r) => r.name === "Bad Weighted");
+    expect(badResult).toBeDefined();
+
+    const data = badResult!.data as Record<string, unknown>;
+    // Should be null because Game Similarity is not in includes
+    expect(data.weighted_rating).toBeNull();
+
+    engine.shutdown();
+  });
+
+  test("returns null when all similar items have null scores", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetForIncludeYaml);
+    await writeWidgetConfig(widgetsDir, "weighted.yaml", aggregateWithSimilarityYaml);
+
+    // Create games where similar games have no rating
+    await writeMarkdownFile(gamesDir, "game-a.md", {
+      title: "Game A",
+      tags: ["strategy"],
+      rating: 8, // Source has rating
+    });
+    await writeMarkdownFile(gamesDir, "game-b.md", {
+      title: "Game B",
+      tags: ["strategy"],
+      // No rating field
+    });
+    await writeMarkdownFile(gamesDir, "game-c.md", {
+      title: "Game C",
+      tags: ["strategy"],
+      // No rating field
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    const results = await engine.computeRecallWidgets("Games/game-a.md");
+
+    const weightedResult = results.find((r) => r.name === "Weighted Rating");
+    const data = weightedResult!.data as Record<string, unknown>;
+
+    // Should be null because no similar items have valid ratings
+    expect(data.weighted_rating).toBeNull();
+
+    engine.shutdown();
+  });
+
+  test("filters out items with zero similarity", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetForIncludeYaml);
+    await writeWidgetConfig(widgetsDir, "weighted.yaml", aggregateWithSimilarityYaml);
+
+    // Game A has no tags in common with others
+    await writeMarkdownFile(gamesDir, "game-a.md", {
+      title: "Game A",
+      tags: ["unique"],
+      rating: 5,
+    });
+    await writeMarkdownFile(gamesDir, "game-b.md", {
+      title: "Game B",
+      tags: ["different"],
+      rating: 10,
+    });
+    await writeMarkdownFile(gamesDir, "game-c.md", {
+      title: "Game C",
+      tags: ["other"],
+      rating: 10,
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    const results = await engine.computeRecallWidgets("Games/game-a.md");
+
+    const weightedResult = results.find((r) => r.name === "Weighted Rating");
+    const data = weightedResult!.data as Record<string, unknown>;
+
+    // Should be null because no items have positive similarity
+    expect(data.weighted_rating).toBeNull();
+
+    engine.shutdown();
+  });
+
+  test("handles nested field paths", async () => {
+    const widgetsDir = await createWidgetsDir(testDir);
+    const gamesDir = await createVaultDir(testDir, "Games");
+
+    const aggregateWithNestedFieldYaml = `
+name: Weighted BGG Rating
+type: aggregate
+location: recall
+source:
+  pattern: "Games/**/*.md"
+includes:
+  - "Game Similarity"
+fields:
+  weighted_bgg_rating:
+    similarity:
+      ref: "Game Similarity"
+      field: "bgg.rating"
+display:
+  type: meter
+  min: 0
+  max: 10
+`;
+
+    await writeWidgetConfig(widgetsDir, "similarity.yaml", similarityWidgetForIncludeYaml);
+    await writeWidgetConfig(widgetsDir, "weighted-nested.yaml", aggregateWithNestedFieldYaml);
+
+    await writeMarkdownFile(gamesDir, "game-a.md", {
+      title: "Game A",
+      tags: ["strategy", "trading"],
+      bgg: { rating: 7.0 },
+    });
+    await writeMarkdownFile(gamesDir, "game-b.md", {
+      title: "Game B",
+      tags: ["strategy", "trading"], // 100% similar
+      bgg: { rating: 8.5 },
+    });
+
+    const engine = new WidgetEngine(testDir);
+    await engine.initialize();
+
+    const results = await engine.computeRecallWidgets("Games/game-a.md");
+
+    const weightedResult = results.find((r) => r.name === "Weighted BGG Rating");
+    expect(weightedResult).toBeDefined();
+
+    const data = weightedResult!.data as Record<string, unknown>;
+    // Only game-b is similar, with 100% similarity and rating 8.5
+    expect(data.weighted_bgg_rating).toBe(8.5);
+
+    engine.shutdown();
+  });
+});
+
+// =============================================================================
 // Edge Cases
 // =============================================================================
 

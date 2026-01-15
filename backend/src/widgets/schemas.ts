@@ -69,13 +69,34 @@ export const DisplayTypeSchema = z.enum(["summary-card", "table", "list", "meter
 export const EditableTypeSchema = z.enum(["slider", "number", "text", "date", "select"]);
 
 // =============================================================================
+// Similarity Aggregator Configuration Schema
+// =============================================================================
+
+/**
+ * Configuration for a similarity-weighted aggregation.
+ *
+ * Computes a weighted average using similarity scores from a referenced widget
+ * as weights and frontmatter field values as scores:
+ *   result = sum(weight * score) / sum(weight)
+ *
+ * The referenced widget must be a similarity-type widget included via `includes`.
+ */
+export const SimilarityAggregatorConfigSchema = z.object({
+  /** Name of a similarity widget to use for weights (must be in `includes`) */
+  ref: z.string().min(1, "Similarity ref is required"),
+
+  /** Frontmatter field path to extract score values from (e.g., "rating" or "bgg.rating") */
+  field: z.string().min(1, "Similarity field is required"),
+});
+
+// =============================================================================
 // Field Configuration Schema
 // =============================================================================
 
 /**
  * Configuration for a computed field (REQ-F-7, REQ-F-8, REQ-F-10).
- * Supports simple aggregations (count, sum, avg, min, max, stddev)
- * and expression-based computations.
+ * Supports simple aggregations (count, sum, avg, min, max, stddev),
+ * similarity-weighted aggregations, and expression-based computations.
  */
 export const FieldConfigSchema = z
   .object({
@@ -86,6 +107,9 @@ export const FieldConfigSchema = z
     min: z.string().optional(),
     max: z.string().optional(),
     stddev: z.string().optional(),
+
+    // Similarity-weighted aggregation - uses similarity scores as weights
+    similarity: SimilarityAggregatorConfigSchema.optional(),
 
     // Expression-based computation (REQ-F-8, REQ-F-11)
     expr: z.string().optional(),
@@ -104,12 +128,13 @@ export const FieldConfigSchema = z
         data.min !== undefined ||
         data.max !== undefined ||
         data.stddev !== undefined;
+      const hasSimilarity = data.similarity !== undefined;
       const hasExpression = data.expr !== undefined;
-      return hasAggregation || hasExpression;
+      return hasAggregation || hasSimilarity || hasExpression;
     },
     {
       message:
-        "Field config must specify at least one operation: count, sum, avg, min, max, stddev, or expr",
+        "Field config must specify at least one operation: count, sum, avg, min, max, stddev, similarity, or expr",
     }
   );
 
@@ -331,6 +356,7 @@ export const WidgetConfigSchema = z
 // =============================================================================
 
 export type SimilarityMethod = z.infer<typeof SimilarityMethodSchema>;
+export type SimilarityAggregatorConfig = z.infer<typeof SimilarityAggregatorConfigSchema>;
 export type WidgetType = z.infer<typeof WidgetTypeSchema>;
 export type WidgetLocation = z.infer<typeof WidgetLocationSchema>;
 export type DisplayType = z.infer<typeof DisplayTypeSchema>;

@@ -178,7 +178,7 @@ function extractExpressionDependencies(expression: string): string[] {
 /**
  * Determine the scope of a field based on its configuration.
  *
- * - Fields with any aggregator (count, sum, avg, min, max, stddev) are collection-scope
+ * - Fields with any aggregator (count, sum, avg, min, max, stddev, similarity) are collection-scope
  * - Fields with only an expression are item-scope
  *
  * @param config - The field configuration
@@ -194,7 +194,8 @@ function determineFieldScope(config: FieldConfig): FieldScope {
     config.avg !== undefined ||
     config.min !== undefined ||
     config.max !== undefined ||
-    config.stddev !== undefined;
+    config.stddev !== undefined ||
+    config.similarity !== undefined;
 
   return hasAggregator ? "collection" : "item";
 }

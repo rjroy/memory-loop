@@ -49,16 +49,17 @@ function formatTime(date: Date): string {
 /**
  * Pattern to detect image paths in user messages.
  * Matches paths in common attachment directories.
- * Uses negative lookbehind to avoid matching paths inside markdown or URLs.
+ * Uses negative lookbehind to avoid matching paths inside markdown, URLs, or inline code.
  */
 const IMAGE_PATH_PATTERN =
-  /(?<![a-zA-Z0-9_\-/[])(?:05_Attachments|Attachments|attachments|assets|images)\/[\w.-]+\.(png|jpg|jpeg|gif|webp)/gi;
+  /(?<![a-zA-Z0-9_\-/[`])(?:05_Attachments|Attachments|attachments|assets|images)\/[\w.-]+\.(png|jpg|jpeg|gif|webp)/gi;
 
 /**
  * Pattern to detect Obsidian wiki-link image syntax.
  * Matches ![[path/to/image.ext]] format for images in any directory.
+ * Uses negative lookbehind to avoid matching syntax inside inline code.
  */
-const OBSIDIAN_IMAGE_PATTERN = /!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp))\]\]/gi;
+const OBSIDIAN_IMAGE_PATTERN = /(?<!`)!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp))\]\]/gi;
 
 /**
  * Transforms image references in content to markdown image syntax.

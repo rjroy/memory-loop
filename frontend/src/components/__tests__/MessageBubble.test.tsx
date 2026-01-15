@@ -295,5 +295,37 @@ describe("MessageBubble", () => {
         expect(container.textContent).toContain("![[some/image.png]]");
       });
     });
+
+    describe("paths inside inline code", () => {
+      it("does not transform attachment paths inside backticks", () => {
+        const message = createMessage({
+          role: "assistant",
+          content: "The file is at `05_Attachments/screenshot.png`",
+        });
+
+        const { container } = render(<MessageBubble message={message} vaultId="test-vault" />);
+
+        const img = container.querySelector("img:not(.message-bubble__hr)");
+        expect(img).toBeNull();
+        const code = container.querySelector("code");
+        expect(code).not.toBeNull();
+        expect(code?.textContent).toBe("05_Attachments/screenshot.png");
+      });
+
+      it("does not transform wiki-link syntax inside backticks", () => {
+        const message = createMessage({
+          role: "assistant",
+          content: "Use `![[path/to/image.png]]` syntax",
+        });
+
+        const { container } = render(<MessageBubble message={message} vaultId="test-vault" />);
+
+        const img = container.querySelector("img:not(.message-bubble__hr)");
+        expect(img).toBeNull();
+        const code = container.querySelector("code");
+        expect(code).not.toBeNull();
+        expect(code?.textContent).toBe("![[path/to/image.png]]");
+      });
+    });
   });
 });

@@ -587,6 +587,14 @@ export class WidgetEngine {
         startTime
       );
 
+      // Store similarity results for widgets that include this one
+      // The data is SimilarItem[], keyed by widget name
+      if (result.data && Array.isArray(result.data)) {
+        this.computedWidgetResults.set(widget.config.name, {
+          similarItems: result.data as SimilarItem[],
+        });
+      }
+
       // Cache similarity result
       if (this.cache) {
         this.cache.setSimilarityResult(
@@ -674,8 +682,8 @@ export class WidgetEngine {
 
         if (phase.scope === "collection") {
           // Aggregator field: operates across all items, produces single value
-          // Pass field configs and current results to enable result.X references
-          result[fieldName] = this.computeAggregatorField(fieldConfig, files, fieldConfigs, result);
+          // Pass field configs, current results, and included context
+          result[fieldName] = this.computeAggregatorField(fieldConfig, files, fieldConfigs, result, included);
         } else {
           // Expression field: evaluated with context
           // For ground widgets, `this` is empty (no current item)
@@ -752,7 +760,7 @@ export class WidgetEngine {
   /**
    * Compute a single aggregator field value from files.
    *
-   * Handles count, sum, avg, min, max, stddev aggregators.
+   * Handles count, sum, avg, min, max, stddev, and similarity aggregators.
    * Returns null if no valid values found.
    *
    * Field paths support three contexts:
@@ -768,16 +776,23 @@ export class WidgetEngine {
    * @param files - Array of file data to aggregate over
    * @param allFieldConfigs - All field configs (needed to resolve result.X references)
    * @param currentResults - Current result accumulator (for expression context)
+   * @param included - Included widget results (for similarity aggregator)
    */
   private computeAggregatorField(
     fieldConfig: FieldConfig,
     files: FileData[],
     allFieldConfigs?: Record<string, FieldConfig>,
-    currentResults?: Record<string, unknown>
+    currentResults?: Record<string, unknown>,
+    included?: Record<string, Record<string, unknown>>
   ): number | null {
     // Count is special - just return file count
     if (fieldConfig.count) {
       return files.length;
+    }
+
+    // Similarity aggregator: weighted average using similarity scores as weights
+    if (fieldConfig.similarity) {
+      return this.computeSimilarityAggregator(fieldConfig.similarity, files, included);
     }
 
     // Determine which frontmatter field path to aggregate
@@ -827,6 +842,84 @@ export class WidgetEngine {
     }
 
     return null;
+  }
+
+  /**
+   * Compute a similarity-weighted aggregation.
+   *
+   * Uses similarity scores from a referenced widget as weights and
+   * frontmatter field values as scores to compute a weighted average:
+   *   result = sum(weight * score) / sum(weight)
+   *
+   * Filters out entries where:
+   * - score is null (missing or non-numeric field value)
+   * - weight is null or <= 0 (no similarity or negative similarity)
+   *
+   * @param config - Similarity aggregator configuration with ref and field
+   * @param files - Array of file data (used to look up frontmatter by path)
+   * @param included - Included widget results containing similarity data
+   * @returns Weighted average or null if no valid data
+   */
+  private computeSimilarityAggregator(
+    config: { ref: string; field: string },
+    files: FileData[],
+    included?: Record<string, Record<string, unknown>>
+  ): number | null {
+    // Get the referenced widget's results from included context
+    const refWidgetData = included?.[config.ref];
+    if (!refWidgetData) {
+      log.warn(`Similarity aggregator: referenced widget "${config.ref}" not found in includes`);
+      return null;
+    }
+
+    // Extract similar items from the widget data
+    const similarItems = refWidgetData.similarItems as SimilarItem[] | undefined;
+    if (!similarItems || !Array.isArray(similarItems)) {
+      log.warn(`Similarity aggregator: referenced widget "${config.ref}" has no similarItems`);
+      return null;
+    }
+
+    // Build a map of file path -> frontmatter for quick lookup
+    const filesByPath = new Map<string, FileData>();
+    for (const file of files) {
+      filesByPath.set(file.path, file);
+    }
+
+    // Build data map: { weight: similarity score, score: field value }
+    let totalWeight = 0;
+    let totalScore = 0;
+
+    for (const item of similarItems) {
+      const weight = item.score;
+
+      // Filter out entries where weight is null or <= 0
+      if (weight == null || weight <= 0) {
+        continue;
+      }
+
+      // Look up the file to get frontmatter
+      const file = filesByPath.get(item.path);
+      if (!file) {
+        continue;
+      }
+
+      // Extract the score from frontmatter
+      const scoreValue = this.getFieldValue(file.frontmatter, config.field);
+      if (typeof scoreValue !== "number") {
+        continue;
+      }
+
+      // Accumulate weighted values
+      totalWeight += weight;
+      totalScore += weight * scoreValue;
+    }
+
+    // Return weighted average or null if no valid data
+    if (totalWeight === 0) {
+      return null;
+    }
+
+    return totalScore / totalWeight;
   }
 
   /**
@@ -946,14 +1039,15 @@ export class WidgetEngine {
     // Copy only collection-scope (aggregator) values from currentResults
     for (const [fieldName, value] of Object.entries(currentResults)) {
       const fieldConfig = allFieldConfigs[fieldName];
-      // A field is collection-scope if it has an aggregator (count, sum, avg, etc.)
+      // A field is collection-scope if it has an aggregator (count, sum, avg, similarity, etc.)
       const isAggregator =
         fieldConfig?.count ||
         fieldConfig?.sum ||
         fieldConfig?.avg ||
         fieldConfig?.min ||
         fieldConfig?.max ||
-        fieldConfig?.stddev;
+        fieldConfig?.stddev ||
+        fieldConfig?.similarity;
 
       if (isAggregator) {
         perItemResult[fieldName] = value;

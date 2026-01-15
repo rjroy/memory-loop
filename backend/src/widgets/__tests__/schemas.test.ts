@@ -82,6 +82,48 @@ describe("FieldConfigSchema", () => {
     const result = FieldConfigSchema.safeParse({ count: false });
     expect(result.success).toBe(false);
   });
+
+  test("accepts similarity aggregator with ref and field", () => {
+    const result = FieldConfigSchema.safeParse({
+      similarity: { ref: "Similar Games", field: "rating" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts similarity aggregator with nested field path", () => {
+    const result = FieldConfigSchema.safeParse({
+      similarity: { ref: "Similar Games", field: "bgg.rating" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects similarity aggregator without ref", () => {
+    const result = FieldConfigSchema.safeParse({
+      similarity: { field: "rating" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects similarity aggregator without field", () => {
+    const result = FieldConfigSchema.safeParse({
+      similarity: { ref: "Similar Games" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects similarity aggregator with empty ref", () => {
+    const result = FieldConfigSchema.safeParse({
+      similarity: { ref: "", field: "rating" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects similarity aggregator with empty field", () => {
+    const result = FieldConfigSchema.safeParse({
+      similarity: { ref: "Similar Games", field: "" },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 // =============================================================================

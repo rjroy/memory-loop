@@ -146,6 +146,18 @@ describe("buildDependencyGraph", () => {
     expect(graph.scope.get("avg_val")).toBe("collection");
   });
 
+  test("identifies collection scope for similarity aggregator fields", () => {
+    const fields: Record<string, FieldConfig> = {
+      weighted_rating: {
+        similarity: { ref: "Similar Items", field: "rating" },
+      },
+    };
+
+    const graph = buildDependencyGraph(fields);
+
+    expect(graph.scope.get("weighted_rating")).toBe("collection");
+  });
+
   test("identifies item scope for expression-only fields", () => {
     const fields: Record<string, FieldConfig> = {
       normalized: { expr: "this.value / 100" },

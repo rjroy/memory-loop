@@ -54,6 +54,8 @@ export type {
   SearchState,
   WidgetState,
   HealthState,
+  SyncState,
+  SyncStatusValue,
   BrowserState,
   ConversationMessage,
   PendingToolUpdate,
@@ -461,6 +463,23 @@ export function SessionProvider({
     dispatch({ type: "DISMISS_HEALTH_ISSUE", issueId });
   }, []);
 
+  // Sync actions
+  const updateSyncStatus = useCallback(
+    (
+      status: "idle" | "syncing" | "success" | "error",
+      progress?: { current: number; total: number; currentFile?: string },
+      message?: string,
+      errorCount?: number
+    ) => {
+      dispatch({ type: "UPDATE_SYNC_STATUS", status, progress, message, errorCount });
+    },
+    []
+  );
+
+  const resetSyncState = useCallback(() => {
+    dispatch({ type: "RESET_SYNC_STATE" });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -527,6 +546,8 @@ export function SessionProvider({
     setHealthIssues,
     toggleHealthExpanded,
     dismissHealthIssue,
+    updateSyncStatus,
+    resetSyncState,
   };
 
   return (
@@ -570,6 +591,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     setRecallWidgetsError,
     setHealthIssues,
     setPinnedAssets,
+    updateSyncStatus,
   } = useSession();
 
   const messagesRef = useRef(messages);
@@ -692,6 +714,15 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           setPinnedAssets(message.paths);
           break;
 
+        case "sync_status":
+          updateSyncStatus(
+            message.status,
+            message.progress ?? undefined,
+            message.message ?? undefined,
+            message.errors?.length ?? 0
+          );
+          break;
+
         default:
           break;
       }
@@ -714,6 +745,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
       setRecallWidgetsError,
       setHealthIssues,
       setPinnedAssets,
+      updateSyncStatus,
     ]
   );
 }

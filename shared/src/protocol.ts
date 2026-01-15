@@ -687,6 +687,18 @@ export const UpdateVaultConfigMessageSchema = z.object({
 });
 
 /**
+ * Client triggers sync of external data pipelines (REQ-F-16, REQ-F-17).
+ * Manual trigger only - no automatic/scheduled sync.
+ */
+export const TriggerSyncMessageSchema = z.object({
+  type: z.literal("trigger_sync"),
+  /** Sync mode: full re-syncs all files, incremental skips recently synced */
+  mode: z.enum(["full", "incremental"]),
+  /** Optional specific pipeline name; if omitted, all pipelines run */
+  pipeline: z.string().optional(),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -721,6 +733,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   GetPinnedAssetsMessageSchema,
   SetPinnedAssetsMessageSchema,
   UpdateVaultConfigMessageSchema,
+  TriggerSyncMessageSchema,
 ]);
 
 // =============================================================================
@@ -1089,6 +1102,7 @@ export const HealthCategorySchema = z.enum([
   "vault_config",    // .memory-loop.json issues
   "file_watcher",    // File watcher issues
   "cache",           // Cache failures
+  "sync",            // External data sync failures
   "general",         // Other issues
 ]);
 
@@ -1144,6 +1158,53 @@ export const ConfigUpdatedMessageSchema = z.object({
   error: z.string().optional(),
 });
 
+// =============================================================================
+// Sync Status Schemas
+// =============================================================================
+
+/**
+ * Schema for sync status enum values (REQ-F-30, REQ-F-31)
+ */
+export const SyncStatusValueSchema = z.enum(["idle", "syncing", "success", "error"]);
+
+/**
+ * Schema for sync progress information during active sync
+ */
+export const SyncProgressSchema = z.object({
+  /** Number of files processed so far */
+  current: z.number().int().min(0),
+  /** Total number of files to process */
+  total: z.number().int().min(0),
+  /** Path of file currently being processed */
+  currentFile: z.string().optional(),
+});
+
+/**
+ * Schema for per-file sync error (REQ-F-32)
+ */
+export const SyncFileErrorSchema = z.object({
+  /** Path of file that failed */
+  file: z.string().min(1, "File path is required"),
+  /** Error description */
+  error: z.string().min(1, "Error message is required"),
+});
+
+/**
+ * Server sends sync status updates (REQ-F-30, REQ-F-31, REQ-F-32).
+ * Sent in response to trigger_sync and during sync progress.
+ */
+export const SyncStatusMessageSchema = z.object({
+  type: z.literal("sync_status"),
+  /** Current sync status */
+  status: SyncStatusValueSchema,
+  /** Progress information when status is "syncing" */
+  progress: SyncProgressSchema.optional(),
+  /** Summary message (e.g., "Synced 8/10 files") or error description */
+  message: z.string().optional(),
+  /** Per-file errors when some files failed (REQ-F-32) */
+  errors: z.array(SyncFileErrorSchema).optional(),
+});
+
 /**
  * Discriminated union of all server message types
  */
@@ -1183,6 +1244,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   HealthReportMessageSchema,
   PinnedAssetsMessageSchema,
   ConfigUpdatedMessageSchema,
+  SyncStatusMessageSchema,
 ]);
 
 // =============================================================================
@@ -1274,6 +1336,7 @@ export type DismissHealthIssueMessage = z.infer<typeof DismissHealthIssueMessage
 export type GetPinnedAssetsMessage = z.infer<typeof GetPinnedAssetsMessageSchema>;
 export type SetPinnedAssetsMessage = z.infer<typeof SetPinnedAssetsMessageSchema>;
 export type UpdateVaultConfigMessage = z.infer<typeof UpdateVaultConfigMessageSchema>;
+export type TriggerSyncMessage = z.infer<typeof TriggerSyncMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -1312,6 +1375,10 @@ export type WidgetUpdateMessage = z.infer<typeof WidgetUpdateMessageSchema>;
 export type WidgetErrorMessage = z.infer<typeof WidgetErrorMessageSchema>;
 export type PinnedAssetsMessage = z.infer<typeof PinnedAssetsMessageSchema>;
 export type ConfigUpdatedMessage = z.infer<typeof ConfigUpdatedMessageSchema>;
+export type SyncStatusValue = z.infer<typeof SyncStatusValueSchema>;
+export type SyncProgress = z.infer<typeof SyncProgressSchema>;
+export type SyncFileError = z.infer<typeof SyncFileErrorSchema>;
+export type SyncStatusMessage = z.infer<typeof SyncStatusMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

@@ -88,6 +88,16 @@
   transform: scale(0.98);
 }
 
+/* Actions Section (Sync button, etc.) */
+.home-view__actions {
+  display: flex;
+  flex-direction: row;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--glass-border);
+}
+
 /* Tablet and up - buttons in column to the right */
 @media (min-width: 768px) {
   .home-view {

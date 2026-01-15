@@ -33,6 +33,7 @@ import {
   createInitialBrowserState,
   createInitialWidgetState,
   createInitialHealthState,
+  createInitialSyncState,
   createInitialSearchState,
   generateMessageId,
 } from "./initial-state.js";
@@ -105,7 +106,10 @@ export type SessionAction =
   // Health actions
   | { type: "SET_HEALTH_ISSUES"; issues: HealthIssue[] }
   | { type: "TOGGLE_HEALTH_EXPANDED" }
-  | { type: "DISMISS_HEALTH_ISSUE"; issueId: string };
+  | { type: "DISMISS_HEALTH_ISSUE"; issueId: string }
+  // Sync actions
+  | { type: "UPDATE_SYNC_STATUS"; status: "idle" | "syncing" | "success" | "error"; progress?: { current: number; total: number; currentFile?: string }; message?: string; errorCount?: number }
+  | { type: "RESET_SYNC_STATE" };
 
 // ----------------------------------------------------------------------------
 // Helper functions for reducer
@@ -175,6 +179,7 @@ function handleSelectVault(state: SessionState, vault: VaultInfo): SessionState 
     browser: createInitialBrowserState(),
     widgets: createInitialWidgetState(),
     health: createInitialHealthState(),
+    sync: createInitialSyncState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,
@@ -194,6 +199,7 @@ function handleClearVault(state: SessionState): SessionState {
     browser: createInitialBrowserState(),
     widgets: createInitialWidgetState(),
     health: createInitialHealthState(),
+    sync: createInitialSyncState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,
@@ -771,6 +777,24 @@ export function sessionReducer(
           ...state.health,
           issues: state.health.issues.filter((i) => i.id !== action.issueId),
         },
+      };
+
+    // Sync actions
+    case "UPDATE_SYNC_STATUS":
+      return {
+        ...state,
+        sync: {
+          status: action.status,
+          progress: action.progress ?? null,
+          message: action.message ?? null,
+          errorCount: action.errorCount ?? 0,
+        },
+      };
+
+    case "RESET_SYNC_STATE":
+      return {
+        ...state,
+        sync: createInitialSyncState(),
       };
 
     default:

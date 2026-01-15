@@ -12,6 +12,7 @@ import { RecentActivity } from "./RecentActivity";
 import { GoalsCard } from "./GoalsCard";
 import { InspirationCard } from "./InspirationCard";
 import { HealthPanel } from "./HealthPanel";
+import { SyncButton } from "./SyncButton";
 import type {
   ClientMessage,
   InspirationItem,
@@ -294,6 +295,9 @@ export function HomeView(): React.ReactNode {
             ))}
           </div>
         )}
+        <div className="home-view__actions">
+          <SyncButton />
+        </div>
       </section>
 
       {/* Inspiration */}

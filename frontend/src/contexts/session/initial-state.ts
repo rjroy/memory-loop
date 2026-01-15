@@ -9,6 +9,7 @@ import type {
   SearchState,
   WidgetState,
   HealthState,
+  SyncState,
   SessionState,
 } from "./types.js";
 import { loadPersistedViewMode } from "./storage.js";
@@ -56,6 +57,18 @@ export function createInitialHealthState(): HealthState {
 }
 
 /**
+ * Creates initial sync state.
+ */
+export function createInitialSyncState(): SyncState {
+  return {
+    status: "idle",
+    progress: null,
+    message: null,
+    errorCount: 0,
+  };
+}
+
+/**
  * Creates initial browser state.
  */
 export function createInitialBrowserState(): BrowserState {
@@ -93,6 +106,7 @@ export function createInitialSessionState(): SessionState {
     browser: createInitialBrowserState(),
     widgets: createInitialWidgetState(),
     health: createInitialHealthState(),
+    sync: createInitialSyncState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,

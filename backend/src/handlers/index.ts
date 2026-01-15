@@ -47,3 +47,6 @@ export {
   handleGetTasks,
   handleToggleTask,
 } from "./home-handlers.js";
+
+// Sync handlers
+export { handleTriggerSync } from "./sync-handlers.js";

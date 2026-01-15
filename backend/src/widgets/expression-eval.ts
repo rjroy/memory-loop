@@ -485,6 +485,50 @@ export const customFunctions = {
   },
 
   /**
+   * Return the sum of an arbitrary number of values.
+   * Skips non-numeric values.
+   * @see https://en.wikipedia.org/wiki/Summation 
+   * @param values - Values to sum
+   * @returns Arithmetic sum
+   */
+  sum(...values: unknown[]): number {
+    let total = 0;
+
+    for (const val of values) {
+      if (typeof val !== "number" || !Number.isFinite(val)) {
+        continue;
+      }
+      total += val;
+    }
+
+    return total;
+  },
+
+  /**
+   * Return the product of an arbitrary number of values.
+   * Skips non-numeric values.
+   * If no valid numeric values are provided, returns 0.
+   * @see https://en.wikipedia.org/wiki/Product_(mathematics)
+    
+   * @param values - Values to compute product for
+   * @returns Arithmetic product
+   */
+  product(...values: unknown[]): number {
+    let result = 1;
+    let hasValid = false;
+
+    for (const val of values) {
+      if (typeof val !== "number" || !Number.isFinite(val)) {
+        continue;
+      }
+      result *= val;
+      hasValid = true;
+    }
+
+    return hasValid ? result : 0;
+  },
+
+  /**
    * Return the arithmetic mean of an arbitrary number of values.
    * Skips non-numeric values.
    * @see https://en.wikipedia.org/wiki/Arithmetic_mean

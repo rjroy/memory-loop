@@ -197,4 +197,103 @@ describe("MessageBubble", () => {
       expect(contextUsage?.textContent).toBe("100%");
     });
   });
+
+  describe("image display", () => {
+    describe("Obsidian wiki-link syntax", () => {
+      it("transforms ![[path/image.png]] to img in user messages", () => {
+        const message = createMessage({
+          role: "user",
+          content: "Check this image: ![[some/path/photo.png]]",
+        });
+
+        const { container } = render(<MessageBubble message={message} vaultId="test-vault" />);
+
+        const img = container.querySelector("img:not(.message-bubble__hr)");
+        expect(img).not.toBeNull();
+        expect(img?.getAttribute("src")).toBe("/vault/test-vault/assets/some/path/photo.png");
+        expect(img?.getAttribute("alt")).toBe("some/path/photo.png");
+      });
+
+      it("transforms ![[path/image.png]] to img in assistant messages", () => {
+        const message = createMessage({
+          role: "assistant",
+          content: "Here is the image you requested: ![[vault/images/result.jpg]]",
+        });
+
+        const { container } = render(<MessageBubble message={message} vaultId="test-vault" />);
+
+        const img = container.querySelector("img:not(.message-bubble__hr)");
+        expect(img).not.toBeNull();
+        expect(img?.getAttribute("src")).toBe("/vault/test-vault/assets/vault/images/result.jpg");
+        expect(img?.getAttribute("alt")).toBe("vault/images/result.jpg");
+      });
+
+      it("handles multiple Obsidian images in one message", () => {
+        const message = createMessage({
+          role: "assistant",
+          content: "![[first.png]] and ![[second.webp]]",
+        });
+
+        const { container } = render(<MessageBubble message={message} vaultId="test-vault" />);
+
+        const imgs = container.querySelectorAll("img:not(.message-bubble__hr)");
+        expect(imgs.length).toBe(2);
+      });
+
+      it("supports various image extensions", () => {
+        const message = createMessage({
+          role: "assistant",
+          content: "![[a.png]] ![[b.jpg]] ![[c.jpeg]] ![[d.gif]] ![[e.webp]]",
+        });
+
+        const { container } = render(<MessageBubble message={message} vaultId="test-vault" />);
+
+        const imgs = container.querySelectorAll("img:not(.message-bubble__hr)");
+        expect(imgs.length).toBe(5);
+      });
+    });
+
+    describe("attachment folder paths", () => {
+      it("transforms attachment folder paths to img in user messages", () => {
+        const message = createMessage({
+          role: "user",
+          content: "Look at 05_Attachments/screenshot.png",
+        });
+
+        const { container } = render(<MessageBubble message={message} vaultId="test-vault" />);
+
+        const img = container.querySelector("img:not(.message-bubble__hr)");
+        expect(img).not.toBeNull();
+        expect(img?.getAttribute("src")).toBe("/vault/test-vault/assets/05_Attachments/screenshot.png");
+      });
+
+      it("transforms attachment folder paths in assistant messages", () => {
+        const message = createMessage({
+          role: "assistant",
+          content: "The file is at Attachments/diagram.webp",
+        });
+
+        const { container } = render(<MessageBubble message={message} vaultId="test-vault" />);
+
+        const img = container.querySelector("img:not(.message-bubble__hr)");
+        expect(img).not.toBeNull();
+        expect(img?.getAttribute("src")).toBe("/vault/test-vault/assets/Attachments/diagram.webp");
+      });
+    });
+
+    describe("without vaultId", () => {
+      it("does not transform images when vaultId is not provided", () => {
+        const message = createMessage({
+          role: "assistant",
+          content: "![[some/image.png]]",
+        });
+
+        const { container } = render(<MessageBubble message={message} />);
+
+        const img = container.querySelector("img:not(.message-bubble__hr)");
+        expect(img).toBeNull();
+        expect(container.textContent).toContain("![[some/image.png]]");
+      });
+    });
+  });
 });

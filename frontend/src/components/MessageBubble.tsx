@@ -49,36 +49,53 @@ function formatTime(date: Date): string {
 /**
  * Pattern to detect image paths in user messages.
  * Matches paths in common attachment directories.
+ * Uses negative lookbehind to avoid matching paths inside markdown or URLs.
  */
 const IMAGE_PATH_PATTERN =
-  /(?:05_Attachments|Attachments|attachments|assets|images)\/[\w.-]+\.(png|jpg|jpeg|gif|webp)/gi;
+  /(?<![a-zA-Z0-9_\-\/\[])(?:05_Attachments|Attachments|attachments|assets|images)\/[\w.-]+\.(png|jpg|jpeg|gif|webp)/gi;
 
 /**
- * Transforms user message content by converting detected image paths to markdown syntax.
- * This allows react-markdown to render both the markdown and inline images.
+ * Pattern to detect Obsidian wiki-link image syntax.
+ * Matches ![[path/to/image.ext]] format for images in any directory.
  */
-function transformImagePaths(content: string, vaultId: string): string {
+const OBSIDIAN_IMAGE_PATTERN = /!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp))\]\]/gi;
+
+/**
+ * Transforms image references in content to markdown image syntax.
+ * Handles both Obsidian wiki-link syntax (![[path]]) and attachment folder paths.
+ */
+function transformImageReferences(content: string, vaultId: string): string {
   // Reset regex lastIndex for each call
+  OBSIDIAN_IMAGE_PATTERN.lastIndex = 0;
   IMAGE_PATH_PATTERN.lastIndex = 0;
 
-  return content.replace(IMAGE_PATH_PATTERN, (match) => {
+  // First transform Obsidian wiki-link syntax: ![[path/to/image.png]]
+  let result = content.replace(OBSIDIAN_IMAGE_PATTERN, (_match, path: string) => {
+    const imageUrl = `/vault/${vaultId}/assets/${encodeAssetPath(path)}`;
+    return `![${path}](${imageUrl})`;
+  });
+
+  // Then transform attachment folder paths (for backward compatibility)
+  result = result.replace(IMAGE_PATH_PATTERN, (match) => {
     const imageUrl = `/vault/${vaultId}/assets/${encodeAssetPath(match)}`;
     return `![Attached: ${match}](${imageUrl})`;
   });
+
+  return result;
 }
 
 /**
- * Renders user message content with markdown support.
- * Detects image paths and converts them to markdown image syntax before rendering.
+ * Renders message content with markdown support.
+ * Transforms Obsidian image syntax and attachment paths to displayable images.
  */
-function UserMessageContent({
+function MessageContent({
   content,
   vaultId,
 }: {
   content: string;
   vaultId?: string;
 }): React.ReactNode {
-  const processedContent = vaultId ? transformImagePaths(content, vaultId) : content;
+  const processedContent = vaultId ? transformImageReferences(content, vaultId) : content;
 
   return (
     <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
@@ -119,11 +136,7 @@ export function MessageBubble({ message, vaultId }: MessageBubbleProps): React.R
           </div>
         )}
         <div className="message-bubble__text">
-          {message.role === "user" ? (
-            <UserMessageContent content={message.content} vaultId={vaultId} />
-          ) : (
-            <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.content}</Markdown>
-          )}
+          <MessageContent content={message.content} vaultId={vaultId} />
           {message.isStreaming && (
             <img
               src="/images/empty-state.webp"

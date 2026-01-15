@@ -329,7 +329,7 @@ export class WidgetEngine {
   }
 
   // ===========================================================================
-  // Ground Widgets (Home View)
+  // Ground and Recall Widget Computation
   // ===========================================================================
 
   /**
@@ -342,9 +342,7 @@ export class WidgetEngine {
    * @returns Array of widget results
    */
   async computeGroundWidgets(options: ComputeOptions = {}): Promise<WidgetResult[]> {
-    if (!this.initialized) {
-      throw new Error("Engine not initialized. Call initialize() first.");
-    }
+    this.ensureInitialized();
 
     const groundWidgets = this.widgets.filter((w) => w.config.location === "ground");
 
@@ -355,57 +353,12 @@ export class WidgetEngine {
 
     log.info(`Computing ${groundWidgets.length} ground widget(s)`);
 
-    // Always clear cached results at the start of computation to ensure
-    // a consistent state for this computation run. Results are rebuilt
-    // as each widget is computed (either fresh or from cache).
+    // Clear cached results to ensure consistent state for this computation run.
+    // Results are rebuilt as each widget is computed (either fresh or from cache).
     this.computedWidgetResults.clear();
 
-    // Compute widgets in dependency order using the resolved computation order
-    const results: WidgetResult[] = [];
-    const computationOrder = this.includesResolution?.computationOrder ?? [];
-
-    // First, compute widgets in dependency order
-    for (const widgetName of computationOrder) {
-      const widget = this.widgetsByName.get(widgetName);
-      if (!widget || widget.config.location !== "ground") {
-        continue;
-      }
-
-      const result = await this.computeWidget(widget, options);
-      results.push(result);
-    }
-
-    // Then, handle widgets in cycles (they get error results)
-    for (const widget of groundWidgets) {
-      if (this.isWidgetInCycle(widget.config.name)) {
-        results.push(this.createCycleErrorResult(widget, performance.now()));
-      }
-    }
-
-    return results;
+    return this.computeWidgetsInOrder(groundWidgets, options);
   }
-
-  /**
-   * Create an error result for a widget in a circular dependency.
-   */
-  private createCycleErrorResult(widget: LoadedWidget, startTime: number): WidgetResult {
-    return {
-      widgetId: widget.id,
-      name: widget.config.name,
-      type: widget.config.type,
-      location: widget.config.location,
-      display: widget.config.display,
-      data: null,
-      editable: widget.config.editable,
-      isEmpty: true,
-      emptyReason: "Widget is part of a circular dependency and cannot be computed",
-      computeTimeMs: performance.now() - startTime,
-    };
-  }
-
-  // ===========================================================================
-  // Recall Widgets (Browse View)
-  // ===========================================================================
 
   /**
    * Compute recall widgets for a specific file.
@@ -420,9 +373,7 @@ export class WidgetEngine {
     filePath: string,
     options: ComputeOptions = {}
   ): Promise<WidgetResult[]> {
-    if (!this.initialized) {
-      throw new Error("Engine not initialized. Call initialize() first.");
-    }
+    this.ensureInitialized();
 
     const recallWidgets = this.widgets.filter((w) => w.config.location === "recall");
 
@@ -431,43 +382,99 @@ export class WidgetEngine {
       return [];
     }
 
-    // Compute widgets in dependency order using the resolved computation order
+    // Filter to widgets whose pattern matches the file
+    const matchingWidgets = recallWidgets.filter((w) => {
+      const matcher = picomatch(w.config.source.pattern);
+      return matcher(filePath);
+    });
+
+    if (matchingWidgets.length === 0) {
+      log.debug(`No recall widgets match file: ${filePath}`);
+      return [];
+    }
+
+    log.info(`Computing ${matchingWidgets.length} recall widget(s) for ${filePath}`);
+
+    return this.computeWidgetsInOrder(matchingWidgets, options, filePath);
+  }
+
+  /**
+   * Compute widgets in dependency order, handling cycles.
+   *
+   * This is the unified computation path for both ground and recall widgets.
+   * It ensures all widgets are processed through the same code path, preventing
+   * bugs where one path gets updated but not the other.
+   *
+   * @param widgets - The widgets to compute (already filtered by location/pattern)
+   * @param options - Computation options
+   * @param filePath - For recall widgets, the file path being viewed
+   * @returns Array of widget results
+   */
+  private async computeWidgetsInOrder(
+    widgets: LoadedWidget[],
+    options: ComputeOptions,
+    filePath?: string
+  ): Promise<WidgetResult[]> {
     const results: WidgetResult[] = [];
     const computationOrder = this.includesResolution?.computationOrder ?? [];
 
-    log.info(`Possibly computing ${recallWidgets.length} recall widget(s) for ${filePath}`);
+    // Build a set of widget names we need to compute for quick lookup
+    const widgetNamesToCompute = new Set(widgets.map((w) => w.config.name));
 
-    // First, compute widgets in dependency order
+    // Process widgets in dependency order
     for (const widgetName of computationOrder) {
-      const widget = this.widgetsByName.get(widgetName);
-      if (!widget || widget.config.location !== "recall") {
-        continue;
-      }
-      const matcher = picomatch(widget.config.source.pattern);
-      if (!matcher(filePath)) {
+      if (!widgetNamesToCompute.has(widgetName)) {
         continue;
       }
 
-      const result = await this.computeWidgetForItem(widget, filePath, options);
+      const widget = this.widgetsByName.get(widgetName);
+      if (!widget) {
+        continue;
+      }
+
+      // Compute via the appropriate path based on whether we have a file context
+      const result = filePath
+        ? await this.computeWidgetForItem(widget, filePath, options)
+        : await this.computeWidget(widget, options);
       results.push(result);
     }
 
-    // Then, handle widgets in cycles (they get error results)
-    for (const widget of recallWidgets) {
+    // Handle widgets in cycles (they get error results)
+    // These are NOT in computationOrder, so we must process them separately
+    for (const widget of widgets) {
       if (this.isWidgetInCycle(widget.config.name)) {
-        const matcher = picomatch(widget.config.source.pattern);
-        if (!matcher(filePath)) {
-          continue;
-        }
-        results.push(this.createCycleErrorResult(widget, performance.now()));
+        results.push(this.createCycleErrorResult(widget));
       }
     }
 
-
-    if (results.length === 0) { 
-      log.debug(`No recall widgets match file: ${filePath}`);
-    }
     return results;
+  }
+
+  /**
+   * Throw if the engine is not initialized.
+   */
+  private ensureInitialized(): void {
+    if (!this.initialized) {
+      throw new Error("Engine not initialized. Call initialize() first.");
+    }
+  }
+
+  /**
+   * Create an error result for a widget in a circular dependency.
+   */
+  private createCycleErrorResult(widget: LoadedWidget): WidgetResult {
+    return {
+      widgetId: widget.id,
+      name: widget.config.name,
+      type: widget.config.type,
+      location: widget.config.location,
+      display: widget.config.display,
+      data: null,
+      editable: widget.config.editable,
+      isEmpty: true,
+      emptyReason: "Widget is part of a circular dependency and cannot be computed",
+      computeTimeMs: 0,
+    };
   }
 
   // ===========================================================================
@@ -594,7 +601,7 @@ export class WidgetEngine {
       return result;
     } else {
       // Aggregate widget for specific item - compute per-item values
-      return this.computeAggregateWidgetForItem(widget, currentFile, files, startTime);
+      return this.computeAggregateWidget(widget, files, startTime, currentFile);
     }
   }
 
@@ -617,12 +624,24 @@ export class WidgetEngine {
    * When the widget has `includes`, results from included widgets are available
    * via `included.WidgetName.fieldName` in expressions.
    *
-   * Plan Reference: TD-5 (Cycle Handling), TD-6 (Result Context Integration)
+   * For recall widgets (per-item context), expressions also have access to
+   * `this.*` for the current file's frontmatter. This enables per-item
+   * expressions like z-scores that reference both the item's values and
+   * collection-level statistics.
+   *
+   * Plan Reference: TD-5 (Cycle Handling), TD-6 (Result Context Integration),
+   *                 TD-7 (Per-Item vs Collection Context)
+   *
+   * @param widget - The widget configuration
+   * @param files - All files matching the widget's source pattern
+   * @param startTime - Start time for computing elapsed time
+   * @param currentFile - Optional current file for per-item context (recall widgets)
    */
   private computeAggregateWidget(
     widget: LoadedWidget,
     files: FileData[],
-    startTime: number
+    startTime: number,
+    currentFile?: FileData
   ): WidgetResult {
     const config = widget.config;
     const fieldConfigs = config.fields ?? {};
@@ -645,6 +664,9 @@ export class WidgetEngine {
       result[cycleField] = null;
     }
 
+    // Build the `this` context: empty for ground widgets, frontmatter for recall
+    const thisContext = currentFile?.frontmatter ?? {};
+
     // Compute fields in DAG order
     for (const phase of plan.phases) {
       for (const fieldName of phase.fields) {
@@ -655,15 +677,16 @@ export class WidgetEngine {
           // Pass field configs and current results to enable result.X references
           result[fieldName] = this.computeAggregatorField(fieldConfig, files, fieldConfigs, result);
         } else {
-          // Expression field: evaluated once with collection context
+          // Expression field: evaluated with context
           // For ground widgets, `this` is empty (no current item)
+          // For recall widgets, `this` contains the current file's frontmatter
           // `included` provides access to included widgets' results
           result[fieldName] = this.evaluateExpressionWithHealth(
             widget.id,
             config.name,
             fieldName,
             fieldConfig.expr!,
-            { this: {}, stats: result, result: result, included }
+            { this: thisContext, stats: result, result: result, included }
           );
         }
       }
@@ -724,98 +747,6 @@ export class WidgetEngine {
     }
 
     return included;
-  }
-
-  /**
-   * Compute an aggregate widget for a specific item (recall widgets).
-   * Uses DAG-ordered computation with per-item context.
-   *
-   * Same DAG-based approach as computeAggregateWidget, but expressions
-   * also have access to `this.*` for the current file's frontmatter.
-   * This enables per-item expressions like z-scores that reference both
-   * the item's values and collection-level statistics.
-   *
-   * When the widget has `includes`, results from included widgets are available
-   * via `included.WidgetName.fieldName` in expressions.
-   *
-   * Plan Reference: TD-6 (Result Context), TD-7 (Per-Item vs Collection Context)
-   */
-  private computeAggregateWidgetForItem(
-    widget: LoadedWidget,
-    currentFile: FileData,
-    files: FileData[],
-    startTime: number
-  ): WidgetResult {
-    const config = widget.config;
-    const fieldConfigs = config.fields ?? {};
-
-    // Get computation plan with DAG ordering (TD-1)
-    const plan = createComputationPlan(fieldConfigs);
-
-    // Log and report warnings for cycles (REQ-F-12: warn but don't throw)
-    this.reportCycleWarnings(widget.id, config.name, plan);
-
-    // Build included context from cached results of included widgets
-    const included = this.buildIncludedContext(config.name);
-
-    // Initialize result accumulator with built-in count (REQ-F-14)
-    const result: Record<string, unknown> = { count: files.length };
-
-    // Set cycle fields to null before computation (REQ-F-10)
-    // Cycle fields are excluded from phases, so we must handle them separately
-    for (const cycleField of plan.cycleFields) {
-      result[cycleField] = null;
-    }
-
-    // Compute fields in DAG order
-    for (const phase of plan.phases) {
-      for (const fieldName of phase.fields) {
-        const fieldConfig = fieldConfigs[fieldName];
-
-        if (phase.scope === "collection") {
-          // Aggregator field: operates across all items, produces single value
-          // Pass field configs and current results to enable result.X references
-          result[fieldName] = this.computeAggregatorField(fieldConfig, files, fieldConfigs, result);
-        } else {
-          // Expression field: evaluated with item context (TD-7)
-          // `this` contains the current file's frontmatter for per-item access
-          // `included` provides access to included widgets' results
-          result[fieldName] = this.evaluateExpressionWithHealth(
-            widget.id,
-            config.name,
-            fieldName,
-            fieldConfig.expr!,
-            { this: currentFile.frontmatter, stats: result, result: result, included }
-          );
-        }
-      }
-    }
-
-    // Cache this widget's results for use by widgets that include it
-    this.computedWidgetResults.set(config.name, { ...result });
-
-    // Filter to only user-defined visible fields
-    // (stats.count is for expressions, not output unless user defines a count field)
-    const visibleData: Record<string, unknown> = {};
-    for (const [fieldName, value] of Object.entries(result)) {
-      const fieldConfig = fieldConfigs[fieldName];
-      // Only include fields that are defined in config AND not explicitly hidden
-      if (fieldConfig && fieldConfig.visible !== false) {
-        visibleData[fieldName] = value;
-      }
-    }
-
-    return {
-      widgetId: widget.id,
-      name: config.name,
-      type: "aggregate",
-      location: config.location,
-      display: config.display,
-      data: visibleData,
-      editable: config.editable,
-      isEmpty: false,
-      computeTimeMs: performance.now() - startTime,
-    };
   }
 
   /**
@@ -1422,9 +1353,7 @@ export class WidgetEngine {
     widgetId: string,
     sourcePath: string
   ): Promise<{ result: SimilarItem[]; computeTimeMs: number; cacheHit: boolean }> {
-    if (!this.initialized) {
-      throw new Error("Engine not initialized. Call initialize() first.");
-    }
+    this.ensureInitialized();
 
     const startTime = performance.now();
 

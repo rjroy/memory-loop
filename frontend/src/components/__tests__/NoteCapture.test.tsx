@@ -72,12 +72,13 @@ const testVault: VaultInfo = {
   contentRoot: "/test/vault",
   inboxPath: "inbox",
   metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+  attachmentPath: "05_Attachments",
   setupComplete: false,
   promptsPerGeneration: 5,
   maxPoolSize: 50,
   quotesPerWeek: 1,
   badges: [],
+  order: 999999,
 };
 
 // Wrapper with providers - vault is pre-selected via localStorage

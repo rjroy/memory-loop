@@ -42,12 +42,13 @@ const testVault: VaultInfo = {
   contentRoot: "/path/to/vault",
   inboxPath: "inbox",
   metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+  attachmentPath: "05_Attachments",
   setupComplete: false,
   promptsPerGeneration: 5,
   maxPoolSize: 50,
   quotesPerWeek: 1,
   badges: [],
+  order: 999999,
 };
 
 const testVault2: VaultInfo = {
@@ -58,12 +59,13 @@ const testVault2: VaultInfo = {
   contentRoot: "/path/to/vault2",
   inboxPath: "inbox",
   metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+  attachmentPath: "05_Attachments",
   setupComplete: false,
   promptsPerGeneration: 5,
   maxPoolSize: 50,
   quotesPerWeek: 1,
   badges: [],
+  order: 999999,
 };
 
 describe("SessionContext", () => {

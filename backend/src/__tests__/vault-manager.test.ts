@@ -623,12 +623,13 @@ describe("Filesystem Integration", () => {
         contentRoot: "/vaults/test-vault",
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+        attachmentPath: "05_Attachments",
         setupComplete: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
         badges: [],
+        order: 999999,
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/00_Inbox");
@@ -643,12 +644,13 @@ describe("Filesystem Integration", () => {
         contentRoot: "/vaults/test-vault",
         inboxPath: "Custom/Inbox",
         metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+        attachmentPath: "05_Attachments",
         setupComplete: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
         badges: [],
+        order: 999999,
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/Custom/Inbox");
@@ -663,12 +665,13 @@ describe("Filesystem Integration", () => {
         contentRoot: "/vaults/test-vault/content",
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+        attachmentPath: "05_Attachments",
         setupComplete: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
         badges: [],
+        order: 999999,
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/content/00_Inbox");
@@ -852,13 +855,14 @@ describe("Goals Feature", () => {
         contentRoot: testDir,
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+        attachmentPath: "05_Attachments",
         goalsPath: undefined,
         setupComplete: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
         badges: [],
+        order: 999999,
       };
 
       const goals = await getVaultGoals(vault);
@@ -892,6 +896,7 @@ describe("Goals Feature", () => {
         maxPoolSize: 50,
         quotesPerWeek: 1,
         badges: [],
+        order: 999999,
       };
 
       const content = await getVaultGoals(vault);
@@ -907,13 +912,14 @@ describe("Goals Feature", () => {
         contentRoot: testDir,
         inboxPath: "00_Inbox",
         metadataPath: "06_Metadata/memory-loop",
-      attachmentPath: "05_Attachments",
+        attachmentPath: "05_Attachments",
         goalsPath: GOALS_FILE_PATH,
         setupComplete: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
         badges: [],
+        order: 999999,
       };
 
       const goals = await getVaultGoals(vault);

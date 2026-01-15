@@ -7,8 +7,8 @@
     "dev": "bun run --watch src/index.ts",
     "build": "tsc --noEmit",
     "start": "bun run src/index.ts",
-    "test": "for f in src/__tests__/*.test.ts; do bun test \"$f\" || exit 1; done",
-    "test:unit": "for f in src/__tests__/*.test.ts; do bun test \"$f\" || exit 1; done",
+    "test": "export LOG_LEVEL=silent && for f in src/__tests__/*.test.ts; do bun test \"$f\" || exit 1; done",
+    "test:unit": "export LOG_LEVEL=silent && for f in src/__tests__/*.test.ts; do bun test \"$f\" || exit 1; done",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },

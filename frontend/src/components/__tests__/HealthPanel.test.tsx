@@ -64,6 +64,7 @@ const testVault: VaultInfo = {
   maxPoolSize: 50,
   quotesPerWeek: 1,
   badges: [],
+  order: 999999,
 };
 
 beforeEach(() => {

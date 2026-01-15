@@ -6,7 +6,7 @@
  * Uses API to check for existing sessions before connecting.
  */
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import type { VaultInfo } from "@memory-loop/shared";
 import { useSession, STORAGE_KEY_VAULT } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -64,6 +64,17 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const hasAttemptedAutoResumeRef = useRef(false);
   // Track the last processed setup_complete vaultId to prevent re-processing
   const lastProcessedSetupVaultIdRef = useRef<string | null>(null);
+
+  // Sort vaults by order (lower first), then alphabetically by name
+  // This ensures consistent display even if backend doesn't pre-sort
+  const sortedVaults = useMemo(() => {
+    return [...vaults].sort((a, b) => {
+      if (a.order !== b.order) {
+        return a.order - b.order;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [vaults]);
 
   // Fetch vaults on mount
   useEffect(() => {
@@ -451,7 +462,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       )}
 
       <ul className="vault-select__list" role="listbox" aria-label="Available vaults">
-        {vaults.map((vault) => (
+        {sortedVaults.map((vault) => (
           <li key={vault.id}>
             <div
               className={`vault-select__card ${

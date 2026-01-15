@@ -22,6 +22,7 @@ import {
   resolveRecentDiscussions,
   resolveDiscussionModel,
   resolveBadges,
+  resolveOrder,
   type VaultConfig,
 } from "./vault-config";
 
@@ -320,6 +321,7 @@ export async function parseVault(
     recentCaptures: resolveRecentCaptures(config),
     recentDiscussions: resolveRecentDiscussions(config),
     badges: resolveBadges(config),
+    order: resolveOrder(config),
   };
 }
 
@@ -388,8 +390,13 @@ export async function discoverVaults(): Promise<VaultInfo[]> {
     }
   }
 
-  // Sort vaults by name for consistent ordering
-  vaults.sort((a, b) => a.name.localeCompare(b.name));
+  // Sort vaults by order first (lower values first), then alphabetically by name
+  vaults.sort((a, b) => {
+    if (a.order !== b.order) {
+      return a.order - b.order;
+    }
+    return a.name.localeCompare(b.name);
+  });
 
   log.info(`Discovery complete: ${vaults.length} vault(s) found`);
   return vaults;

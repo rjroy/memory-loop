@@ -47,6 +47,8 @@ import {
   SessionError,
   type SessionQueryResult,
   type ToolPermissionCallback,
+  type AskUserQuestionCallback,
+  type AskUserQuestionItem,
 } from "./session-manager.js";
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk.js";
 import { wsLog as log } from "./logger.js";
@@ -310,6 +312,66 @@ export class WebSocketHandler {
   }
 
   /**
+   * Creates an AskUserQuestion callback that sends requests to the frontend
+   * and waits for user answers.
+   */
+  private createAskUserQuestionCallback(ws: WebSocketLike): AskUserQuestionCallback {
+    return async (toolUseId: string, questions: AskUserQuestionItem[]): Promise<Record<string, string>> => {
+      log.info(`Requesting user input via AskUserQuestion: ${toolUseId}`);
+
+      if (ws.readyState !== 1) {
+        log.warn("Connection closed, rejecting AskUserQuestion");
+        throw new Error("Connection closed");
+      }
+
+      return new Promise((resolve, reject) => {
+        this.state.pendingAskUserQuestions.set(toolUseId, { resolve, reject });
+
+        this.send(ws, {
+          type: "ask_user_question_request",
+          toolUseId,
+          questions,
+        });
+
+        const timeout = setTimeout(() => {
+          if (this.state.pendingAskUserQuestions.has(toolUseId)) {
+            this.state.pendingAskUserQuestions.delete(toolUseId);
+            log.warn(`AskUserQuestion request timed out: ${toolUseId}`);
+            reject(new Error("Request timed out"));
+          }
+        }, 300000); // 5 minute timeout for user questions
+
+        const originalResolve = resolve;
+        const originalReject = reject;
+        this.state.pendingAskUserQuestions.set(toolUseId, {
+          resolve: (answers: Record<string, string>) => {
+            clearTimeout(timeout);
+            originalResolve(answers);
+          },
+          reject: (error: Error) => {
+            clearTimeout(timeout);
+            originalReject(error);
+          },
+        });
+      });
+    };
+  }
+
+  /**
+   * Handles an AskUserQuestion response from the frontend.
+   */
+  private handleAskUserQuestionResponse(toolUseId: string, answers: Record<string, string>): void {
+    const pending = this.state.pendingAskUserQuestions.get(toolUseId);
+    if (pending) {
+      log.info(`AskUserQuestion response received: ${toolUseId}`);
+      this.state.pendingAskUserQuestions.delete(toolUseId);
+      pending.resolve(answers);
+    } else {
+      log.warn(`Received AskUserQuestion response for unknown request: ${toolUseId}`);
+    }
+  }
+
+  /**
    * Handles the connection open event.
    * Sends the vault list to the client.
    */
@@ -428,6 +490,9 @@ export class WebSocketHandler {
         break;
       case "tool_permission_response":
         this.handleToolPermissionResponse(message.toolUseId, message.allowed);
+        break;
+      case "ask_user_question_response":
+        this.handleAskUserQuestionResponse(message.toolUseId, message.answers);
         break;
       case "setup_vault":
         await this.handleSetupVault(ws, message.vaultId);
@@ -692,6 +757,7 @@ export class WebSocketHandler {
       let queryResult: SessionQueryResult;
       let isNewSession = false;
       const requestToolPermission = this.createToolPermissionCallback(ws);
+      const askUserQuestion = this.createAskUserQuestionCallback(ws);
 
       if (this.state.currentSessionId) {
         log.info(`Resuming session: ${this.state.currentSessionId}`);
@@ -700,7 +766,8 @@ export class WebSocketHandler {
           this.state.currentSessionId,
           text,
           undefined,
-          requestToolPermission
+          requestToolPermission,
+          askUserQuestion
         );
       } else {
         log.info("Creating new session");
@@ -708,7 +775,8 @@ export class WebSocketHandler {
           this.state.currentVault,
           text,
           undefined,
-          requestToolPermission
+          requestToolPermission,
+          askUserQuestion
         );
         isNewSession = true;
       }

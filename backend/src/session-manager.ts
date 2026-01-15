@@ -575,6 +575,26 @@ export type ToolPermissionCallback = (
 ) => Promise<boolean>;
 
 /**
+ * Schema for a single question in an AskUserQuestion request.
+ * Matches the AskUserQuestionItemSchema from the shared protocol.
+ */
+export interface AskUserQuestionItem {
+  question: string;
+  header: string;
+  options: Array<{ label: string; description: string }>;
+  multiSelect: boolean;
+}
+
+/**
+ * Callback to handle AskUserQuestion tool.
+ * Receives questions and returns a map of question text to selected answer(s).
+ */
+export type AskUserQuestionCallback = (
+  toolUseId: string,
+  questions: AskUserQuestionItem[]
+) => Promise<Record<string, string>>;
+
+/**
  * Extracts the session ID from the first event.
  * The session ID is available in every SDKMessage.
  *
@@ -620,14 +640,20 @@ async function* wrapGenerator(
 }
 
 /**
- * Creates the canUseTool callback for the SDK based on a permission callback.
- * This wraps the simpler ToolPermissionCallback into the SDK's expected format.
+ * Creates the canUseTool callback for the SDK based on permission and question callbacks.
+ * This wraps the simpler callbacks into the SDK's expected format.
+ *
+ * Special handling for AskUserQuestion tool:
+ * - Uses askUserQuestion callback to get user answers
+ * - Populates the answers field in updatedInput before allowing
  *
  * @param requestPermission - Callback to request permission from the user
+ * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
  * @returns A canUseTool function for the SDK options
  */
 function createCanUseTool(
-  requestPermission: ToolPermissionCallback
+  requestPermission: ToolPermissionCallback,
+  askUserQuestion?: AskUserQuestionCallback
 ): (toolName: string, input: Record<string, unknown>) => Promise<{ behavior: "allow"; updatedInput: Record<string, unknown> } | { behavior: "deny"; message: string }> {
   return async (toolName: string, input: Record<string, unknown>) => {
     // Generate a unique ID for this tool use request
@@ -635,6 +661,41 @@ function createCanUseTool(
 
     log.info(`Tool permission requested: ${toolName} (${toolUseId})`);
 
+    // Special handling for AskUserQuestion tool
+    if (toolName === "AskUserQuestion" && askUserQuestion) {
+      log.info(`AskUserQuestion tool detected, routing to question handler`);
+
+      // Extract questions from input
+      const questions = input.questions as AskUserQuestionItem[] | undefined;
+      if (!questions || !Array.isArray(questions)) {
+        log.warn(`AskUserQuestion called without valid questions array`);
+        return {
+          behavior: "deny" as const,
+          message: "AskUserQuestion requires a valid questions array",
+        };
+      }
+
+      try {
+        // Get answers from user via callback
+        const answers = await askUserQuestion(toolUseId, questions);
+
+        log.info(`AskUserQuestion answers received for ${toolUseId}`);
+
+        // Return with answers populated in input
+        return {
+          behavior: "allow" as const,
+          updatedInput: { ...input, answers },
+        };
+      } catch (err) {
+        log.warn(`AskUserQuestion failed for ${toolUseId}:`, err);
+        return {
+          behavior: "deny" as const,
+          message: "User cancelled or failed to answer questions",
+        };
+      }
+    }
+
+    // Standard permission flow for other tools
     const allowed = await requestPermission(toolUseId, toolName, input);
 
     if (allowed) {
@@ -657,13 +718,15 @@ function createCanUseTool(
  * @param prompt - The initial prompt to send
  * @param options - Additional SDK options
  * @param requestToolPermission - Optional callback to request tool permission from user
+ * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
  * @returns SessionQueryResult with session ID and event stream
  */
 export async function createSession(
   vault: VaultInfo,
   prompt: string,
   options?: Partial<Options>,
-  requestToolPermission?: ToolPermissionCallback
+  requestToolPermission?: ToolPermissionCallback,
+  askUserQuestion?: AskUserQuestionCallback
 ): Promise<SessionQueryResult> {
   log.info(`Creating session for vault: ${vault.id}`);
   log.info(`Vault path: ${vault.path}`);
@@ -695,8 +758,11 @@ export async function createSession(
 
     // Add canUseTool callback if permission callback is provided
     if (requestToolPermission) {
-      mergedOptions.canUseTool = createCanUseTool(requestToolPermission);
+      mergedOptions.canUseTool = createCanUseTool(requestToolPermission, askUserQuestion);
       log.info("Tool permission callback configured");
+      if (askUserQuestion) {
+        log.info("AskUserQuestion callback configured");
+      }
     }
 
     log.debug("SDK options:", {
@@ -760,6 +826,7 @@ export async function createSession(
  * @param prompt - The prompt to send
  * @param options - Additional SDK options
  * @param requestToolPermission - Optional callback to request tool permission from user
+ * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
  * @returns SessionQueryResult with session ID and event stream
  */
 export async function resumeSession(
@@ -767,7 +834,8 @@ export async function resumeSession(
   sessionId: string,
   prompt: string,
   options?: Partial<Options>,
-  requestToolPermission?: ToolPermissionCallback
+  requestToolPermission?: ToolPermissionCallback,
+  askUserQuestion?: AskUserQuestionCallback
 ): Promise<SessionQueryResult> {
   log.info(`Resuming session: ${sessionId}`);
 
@@ -811,8 +879,11 @@ export async function resumeSession(
 
     // Add canUseTool callback if permission callback is provided
     if (requestToolPermission) {
-      mergedOptions.canUseTool = createCanUseTool(requestToolPermission);
+      mergedOptions.canUseTool = createCanUseTool(requestToolPermission, askUserQuestion);
       log.info("Tool permission callback configured");
+      if (askUserQuestion) {
+        log.info("AskUserQuestion callback configured");
+      }
     }
 
     log.debug("SDK options:", {

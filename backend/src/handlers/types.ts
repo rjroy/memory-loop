@@ -28,6 +28,14 @@ export interface PendingPermissionRequest {
 }
 
 /**
+ * Pending AskUserQuestion request, waiting for user answers.
+ */
+export interface PendingAskUserQuestionRequest {
+  resolve: (answers: Record<string, string>) => void;
+  reject: (error: Error) => void;
+}
+
+/**
  * Connection state for a WebSocket client.
  * Each connection tracks its selected vault and active session.
  */
@@ -40,6 +48,8 @@ export interface ConnectionState {
   activeQuery: SessionQueryResult | null;
   /** Pending tool permission requests, keyed by toolUseId */
   pendingPermissions: Map<string, PendingPermissionRequest>;
+  /** Pending AskUserQuestion requests, keyed by toolUseId */
+  pendingAskUserQuestions: Map<string, PendingAskUserQuestionRequest>;
   /** Search index manager for the current vault (null if no vault selected) */
   searchIndex: SearchIndexManager | null;
   /** Active model captured from SDK system/init event (null if not yet received) */
@@ -74,6 +84,7 @@ export function createConnectionState(): ConnectionState {
     currentSessionId: null,
     activeQuery: null,
     pendingPermissions: new Map(),
+    pendingAskUserQuestions: new Map(),
     searchIndex: null,
     activeModel: null,
     widgetEngine: null,

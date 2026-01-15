@@ -24,6 +24,7 @@ import {
   GetTasksMessageSchema,
   ToggleTaskMessageSchema,
   ToolPermissionResponseMessageSchema,
+  AskUserQuestionResponseMessageSchema,
   SetupVaultMessageSchema,
   // Server message schemas
   ServerMessageSchema,
@@ -46,6 +47,7 @@ import {
   TasksMessageSchema,
   TaskToggledMessageSchema,
   ToolPermissionRequestMessageSchema,
+  AskUserQuestionRequestMessageSchema,
   SetupCompleteMessageSchema,
   // Health schemas
   HealthSeveritySchema,
@@ -53,6 +55,9 @@ import {
   HealthIssueSchema,
   HealthReportMessageSchema,
   DismissHealthIssueMessageSchema,
+  // AskUserQuestion schemas
+  AskUserQuestionOptionSchema,
+  AskUserQuestionItemSchema,
   // Supporting schemas
   VaultInfoSchema,
   ErrorCodeSchema,
@@ -779,6 +784,266 @@ describe("Client -> Server Messages", () => {
     });
   });
 
+  describe("AskUserQuestionOptionSchema", () => {
+    test("accepts valid option with label and description", () => {
+      const option = { label: "Option A", description: "Description for option A" };
+      const result = AskUserQuestionOptionSchema.parse(option);
+      expect(result.label).toBe("Option A");
+      expect(result.description).toBe("Description for option A");
+    });
+
+    test("accepts option with empty description", () => {
+      const option = { label: "Option B", description: "" };
+      const result = AskUserQuestionOptionSchema.parse(option);
+      expect(result.description).toBe("");
+    });
+
+    test("rejects empty label", () => {
+      const option = { label: "", description: "Some description" };
+      expect(() => AskUserQuestionOptionSchema.parse(option)).toThrow(ZodError);
+    });
+
+    test("rejects missing label", () => {
+      const option = { description: "Some description" };
+      expect(() => AskUserQuestionOptionSchema.parse(option)).toThrow(ZodError);
+    });
+
+    test("rejects missing description", () => {
+      const option = { label: "Option" };
+      expect(() => AskUserQuestionOptionSchema.parse(option)).toThrow(ZodError);
+    });
+
+    test("rejects non-string label", () => {
+      const option = { label: 123, description: "Description" };
+      expect(() => AskUserQuestionOptionSchema.parse(option)).toThrow(ZodError);
+    });
+
+    test("rejects non-string description", () => {
+      const option = { label: "Option", description: 123 };
+      expect(() => AskUserQuestionOptionSchema.parse(option)).toThrow(ZodError);
+    });
+  });
+
+  describe("AskUserQuestionItemSchema", () => {
+    const validQuestion = {
+      question: "Which library should we use?",
+      header: "Library",
+      options: [
+        { label: "Option A", description: "Use library A" },
+        { label: "Option B", description: "Use library B" },
+      ],
+      multiSelect: false,
+    };
+
+    test("accepts valid question with 2 options", () => {
+      const result = AskUserQuestionItemSchema.parse(validQuestion);
+      expect(result.question).toBe("Which library should we use?");
+      expect(result.header).toBe("Library");
+      expect(result.options).toHaveLength(2);
+      expect(result.multiSelect).toBe(false);
+    });
+
+    test("accepts valid question with 4 options (max)", () => {
+      const question = {
+        ...validQuestion,
+        options: [
+          { label: "A", description: "Option A" },
+          { label: "B", description: "Option B" },
+          { label: "C", description: "Option C" },
+          { label: "D", description: "Option D" },
+        ],
+      };
+      const result = AskUserQuestionItemSchema.parse(question);
+      expect(result.options).toHaveLength(4);
+    });
+
+    test("accepts multiSelect true", () => {
+      const question = { ...validQuestion, multiSelect: true };
+      const result = AskUserQuestionItemSchema.parse(question);
+      expect(result.multiSelect).toBe(true);
+    });
+
+    test("accepts header at max length (12 chars)", () => {
+      const question = { ...validQuestion, header: "123456789012" };
+      const result = AskUserQuestionItemSchema.parse(question);
+      expect(result.header).toBe("123456789012");
+    });
+
+    test("accepts empty header", () => {
+      const question = { ...validQuestion, header: "" };
+      const result = AskUserQuestionItemSchema.parse(question);
+      expect(result.header).toBe("");
+    });
+
+    test("rejects header exceeding 12 characters", () => {
+      const question = { ...validQuestion, header: "1234567890123" };
+      expect(() => AskUserQuestionItemSchema.parse(question)).toThrow(ZodError);
+    });
+
+    test("rejects empty question text", () => {
+      const question = { ...validQuestion, question: "" };
+      expect(() => AskUserQuestionItemSchema.parse(question)).toThrow(ZodError);
+    });
+
+    test("rejects missing question text", () => {
+      const { header, options, multiSelect } = validQuestion;
+      expect(() => AskUserQuestionItemSchema.parse({ header, options, multiSelect })).toThrow(ZodError);
+    });
+
+    test("rejects fewer than 2 options", () => {
+      const question = {
+        ...validQuestion,
+        options: [{ label: "Only one", description: "Just one option" }],
+      };
+      expect(() => AskUserQuestionItemSchema.parse(question)).toThrow(ZodError);
+    });
+
+    test("rejects more than 4 options", () => {
+      const question = {
+        ...validQuestion,
+        options: [
+          { label: "A", description: "1" },
+          { label: "B", description: "2" },
+          { label: "C", description: "3" },
+          { label: "D", description: "4" },
+          { label: "E", description: "5" },
+        ],
+      };
+      expect(() => AskUserQuestionItemSchema.parse(question)).toThrow(ZodError);
+    });
+
+    test("rejects empty options array", () => {
+      const question = { ...validQuestion, options: [] };
+      expect(() => AskUserQuestionItemSchema.parse(question)).toThrow(ZodError);
+    });
+
+    test("rejects missing options", () => {
+      const { question, header, multiSelect } = validQuestion;
+      expect(() => AskUserQuestionItemSchema.parse({ question, header, multiSelect })).toThrow(ZodError);
+    });
+
+    test("rejects missing multiSelect", () => {
+      const { question, header, options } = validQuestion;
+      expect(() => AskUserQuestionItemSchema.parse({ question, header, options })).toThrow(ZodError);
+    });
+
+    test("rejects non-boolean multiSelect", () => {
+      const question = { ...validQuestion, multiSelect: "false" };
+      expect(() => AskUserQuestionItemSchema.parse(question)).toThrow(ZodError);
+    });
+
+    test("rejects invalid option in options array", () => {
+      const question = {
+        ...validQuestion,
+        options: [
+          { label: "Valid", description: "Valid option" },
+          { label: "", description: "Invalid - empty label" },
+        ],
+      };
+      expect(() => AskUserQuestionItemSchema.parse(question)).toThrow(ZodError);
+    });
+  });
+
+  describe("AskUserQuestionResponseMessageSchema", () => {
+    test("accepts valid response with single answer", () => {
+      const msg = {
+        type: "ask_user_question_response" as const,
+        toolUseId: "tool_123_abc",
+        answers: { "Which library?": "Option A" },
+      };
+      const result = AskUserQuestionResponseMessageSchema.parse(msg);
+      expect(result.type).toBe("ask_user_question_response");
+      expect(result.toolUseId).toBe("tool_123_abc");
+      expect(result.answers["Which library?"]).toBe("Option A");
+    });
+
+    test("accepts response with multiple answers", () => {
+      const msg = {
+        type: "ask_user_question_response" as const,
+        toolUseId: "tool_456",
+        answers: {
+          "First question?": "Answer 1",
+          "Second question?": "Answer 2",
+          "Third question?": "Answer 3, Answer 4",
+        },
+      };
+      const result = AskUserQuestionResponseMessageSchema.parse(msg);
+      expect(Object.keys(result.answers)).toHaveLength(3);
+    });
+
+    test("accepts response with empty answers object", () => {
+      const msg = {
+        type: "ask_user_question_response" as const,
+        toolUseId: "tool_789",
+        answers: {},
+      };
+      const result = AskUserQuestionResponseMessageSchema.parse(msg);
+      expect(Object.keys(result.answers)).toHaveLength(0);
+    });
+
+    test("accepts response with custom 'Other' text", () => {
+      const msg = {
+        type: "ask_user_question_response" as const,
+        toolUseId: "tool_other",
+        answers: { "Which framework?": "Custom framework I wrote" },
+      };
+      const result = AskUserQuestionResponseMessageSchema.parse(msg);
+      expect(result.answers["Which framework?"]).toBe("Custom framework I wrote");
+    });
+
+    test("rejects empty toolUseId", () => {
+      const msg = {
+        type: "ask_user_question_response",
+        toolUseId: "",
+        answers: { "Question?": "Answer" },
+      };
+      expect(() => AskUserQuestionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing toolUseId", () => {
+      const msg = {
+        type: "ask_user_question_response",
+        answers: { "Question?": "Answer" },
+      };
+      expect(() => AskUserQuestionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing answers", () => {
+      const msg = {
+        type: "ask_user_question_response",
+        toolUseId: "tool_123",
+      };
+      expect(() => AskUserQuestionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-object answers", () => {
+      const msg = {
+        type: "ask_user_question_response",
+        toolUseId: "tool_123",
+        answers: "not an object",
+      };
+      expect(() => AskUserQuestionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string answer values", () => {
+      const msg = {
+        type: "ask_user_question_response",
+        toolUseId: "tool_123",
+        answers: { "Question?": 123 },
+      };
+      expect(() => AskUserQuestionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string toolUseId", () => {
+      const msg = {
+        type: "ask_user_question_response",
+        toolUseId: 123,
+        answers: {},
+      };
+      expect(() => AskUserQuestionResponseMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("SetupVaultMessageSchema", () => {
     test("accepts valid setup_vault message", () => {
       const msg = {
@@ -823,6 +1088,7 @@ describe("Client -> Server Messages", () => {
         { type: "get_tasks" },
         { type: "toggle_task", filePath: "test.md", lineNumber: 1 },
         { type: "tool_permission_response", toolUseId: "tool_123", allowed: true },
+        { type: "ask_user_question_response", toolUseId: "tool_456", answers: { "Question?": "Answer" } },
         { type: "setup_vault", vaultId: "my-vault" },
       ];
 
@@ -1728,6 +1994,149 @@ describe("Server -> Client Messages", () => {
     });
   });
 
+  describe("AskUserQuestionRequestMessageSchema", () => {
+    const validQuestion = {
+      question: "Which library should we use?",
+      header: "Library",
+      options: [
+        { label: "Option A", description: "Use library A" },
+        { label: "Option B", description: "Use library B" },
+      ],
+      multiSelect: false,
+    };
+
+    test("accepts valid request with single question", () => {
+      const msg = {
+        type: "ask_user_question_request" as const,
+        toolUseId: "tool_123_abc",
+        questions: [validQuestion],
+      };
+      const result = AskUserQuestionRequestMessageSchema.parse(msg);
+      expect(result.type).toBe("ask_user_question_request");
+      expect(result.toolUseId).toBe("tool_123_abc");
+      expect(result.questions).toHaveLength(1);
+      expect(result.questions[0].question).toBe("Which library should we use?");
+    });
+
+    test("accepts request with 4 questions (max)", () => {
+      const msg = {
+        type: "ask_user_question_request" as const,
+        toolUseId: "tool_456",
+        questions: [
+          { ...validQuestion, question: "Question 1?" },
+          { ...validQuestion, question: "Question 2?" },
+          { ...validQuestion, question: "Question 3?" },
+          { ...validQuestion, question: "Question 4?" },
+        ],
+      };
+      const result = AskUserQuestionRequestMessageSchema.parse(msg);
+      expect(result.questions).toHaveLength(4);
+    });
+
+    test("accepts request with multiSelect questions", () => {
+      const msg = {
+        type: "ask_user_question_request" as const,
+        toolUseId: "tool_789",
+        questions: [{ ...validQuestion, multiSelect: true }],
+      };
+      const result = AskUserQuestionRequestMessageSchema.parse(msg);
+      expect(result.questions[0].multiSelect).toBe(true);
+    });
+
+    test("accepts request with mixed single and multiSelect questions", () => {
+      const msg = {
+        type: "ask_user_question_request" as const,
+        toolUseId: "tool_mixed",
+        questions: [
+          { ...validQuestion, multiSelect: false },
+          { ...validQuestion, question: "Select all that apply?", multiSelect: true },
+        ],
+      };
+      const result = AskUserQuestionRequestMessageSchema.parse(msg);
+      expect(result.questions[0].multiSelect).toBe(false);
+      expect(result.questions[1].multiSelect).toBe(true);
+    });
+
+    test("rejects empty toolUseId", () => {
+      const msg = {
+        type: "ask_user_question_request",
+        toolUseId: "",
+        questions: [validQuestion],
+      };
+      expect(() => AskUserQuestionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing toolUseId", () => {
+      const msg = {
+        type: "ask_user_question_request",
+        questions: [validQuestion],
+      };
+      expect(() => AskUserQuestionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects empty questions array", () => {
+      const msg = {
+        type: "ask_user_question_request",
+        toolUseId: "tool_123",
+        questions: [],
+      };
+      expect(() => AskUserQuestionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects more than 4 questions", () => {
+      const msg = {
+        type: "ask_user_question_request",
+        toolUseId: "tool_123",
+        questions: [
+          { ...validQuestion, question: "Q1?" },
+          { ...validQuestion, question: "Q2?" },
+          { ...validQuestion, question: "Q3?" },
+          { ...validQuestion, question: "Q4?" },
+          { ...validQuestion, question: "Q5?" },
+        ],
+      };
+      expect(() => AskUserQuestionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing questions", () => {
+      const msg = {
+        type: "ask_user_question_request",
+        toolUseId: "tool_123",
+      };
+      expect(() => AskUserQuestionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects invalid question in questions array", () => {
+      const msg = {
+        type: "ask_user_question_request",
+        toolUseId: "tool_123",
+        questions: [
+          validQuestion,
+          { ...validQuestion, options: [] }, // Invalid - no options
+        ],
+      };
+      expect(() => AskUserQuestionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-string toolUseId", () => {
+      const msg = {
+        type: "ask_user_question_request",
+        toolUseId: 123,
+        questions: [validQuestion],
+      };
+      expect(() => AskUserQuestionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects non-array questions", () => {
+      const msg = {
+        type: "ask_user_question_request",
+        toolUseId: "tool_123",
+        questions: validQuestion,
+      };
+      expect(() => AskUserQuestionRequestMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+  });
+
   describe("SetupCompleteMessageSchema", () => {
     test("accepts valid setup_complete with success", () => {
       const msg = {
@@ -2169,6 +2578,21 @@ describe("Server -> Client Messages", () => {
         },
         { type: "task_toggled", filePath: "test.md", lineNumber: 5, newState: "x" },
         { type: "tool_permission_request", toolUseId: "tool_123", toolName: "Read", input: {} },
+        {
+          type: "ask_user_question_request",
+          toolUseId: "tool_456",
+          questions: [
+            {
+              question: "Which library?",
+              header: "Library",
+              options: [
+                { label: "A", description: "Option A" },
+                { label: "B", description: "Option B" },
+              ],
+              multiSelect: false,
+            },
+          ],
+        },
         { type: "setup_complete", vaultId: "v1", success: true, summary: ["Installed 6 commands"] },
       ];
 

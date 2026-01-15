@@ -521,6 +521,46 @@ export const ToolPermissionResponseMessageSchema = z.object({
   allowed: z.boolean(),
 });
 
+// =============================================================================
+// AskUserQuestion Schemas
+// =============================================================================
+
+/**
+ * Schema for a single option in an AskUserQuestion question
+ */
+export const AskUserQuestionOptionSchema = z.object({
+  /** Display text for this option */
+  label: z.string().min(1, "Option label is required"),
+  /** Description explaining what this option means */
+  description: z.string(),
+});
+
+/**
+ * Schema for a single question in an AskUserQuestion request
+ */
+export const AskUserQuestionItemSchema = z.object({
+  /** The full question text to display */
+  question: z.string().min(1, "Question text is required"),
+  /** Short label for the question (max 12 chars) */
+  header: z.string().max(12, "Header must be 12 characters or less"),
+  /** Available choices (2-4 options) */
+  options: z.array(AskUserQuestionOptionSchema).min(2).max(4),
+  /** If true, users can select multiple options */
+  multiSelect: z.boolean(),
+});
+
+/**
+ * Client responds to an AskUserQuestion request
+ * Sent in response to ask_user_question_request from server
+ */
+export const AskUserQuestionResponseMessageSchema = z.object({
+  type: z.literal("ask_user_question_response"),
+  /** The tool use ID from the request */
+  toolUseId: z.string().min(1, "Tool use ID is required"),
+  /** Map of question text to selected answer(s) */
+  answers: z.record(z.string(), z.string()),
+});
+
 /**
  * Client requests to run vault setup (install commands, create PARA dirs, update CLAUDE.md)
  */
@@ -666,6 +706,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ToggleTaskMessageSchema,
   DeleteSessionMessageSchema,
   ToolPermissionResponseMessageSchema,
+  AskUserQuestionResponseMessageSchema,
   SetupVaultMessageSchema,
   SearchFilesMessageSchema,
   SearchContentMessageSchema,
@@ -901,6 +942,18 @@ export const ToolPermissionRequestMessageSchema = z.object({
 });
 
 /**
+ * Server requests user input via AskUserQuestion tool
+ * The client should display a multi-question dialog and respond with ask_user_question_response
+ */
+export const AskUserQuestionRequestMessageSchema = z.object({
+  type: z.literal("ask_user_question_request"),
+  /** Unique identifier for this tool invocation */
+  toolUseId: z.string().min(1, "Tool use ID is required"),
+  /** Array of questions to present to the user (1-4 questions) */
+  questions: z.array(AskUserQuestionItemSchema).min(1).max(4),
+});
+
+/**
  * Server reports vault setup completion (commands installed, PARA created, CLAUDE.md updated)
  */
 export const SetupCompleteMessageSchema = z.object({
@@ -1115,6 +1168,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   TaskToggledMessageSchema,
   SessionDeletedMessageSchema,
   ToolPermissionRequestMessageSchema,
+  AskUserQuestionRequestMessageSchema,
   SetupCompleteMessageSchema,
   SearchResultsMessageSchema,
   SnippetsMessageSchema,
@@ -1203,6 +1257,9 @@ export type GetTasksMessage = z.infer<typeof GetTasksMessageSchema>;
 export type ToggleTaskMessage = z.infer<typeof ToggleTaskMessageSchema>;
 export type DeleteSessionMessage = z.infer<typeof DeleteSessionMessageSchema>;
 export type ToolPermissionResponseMessage = z.infer<typeof ToolPermissionResponseMessageSchema>;
+export type AskUserQuestionOption = z.infer<typeof AskUserQuestionOptionSchema>;
+export type AskUserQuestionItem = z.infer<typeof AskUserQuestionItemSchema>;
+export type AskUserQuestionResponseMessage = z.infer<typeof AskUserQuestionResponseMessageSchema>;
 export type SetupVaultMessage = z.infer<typeof SetupVaultMessageSchema>;
 export type SearchFilesMessage = z.infer<typeof SearchFilesMessageSchema>;
 export type SearchContentMessage = z.infer<typeof SearchContentMessageSchema>;
@@ -1241,6 +1298,7 @@ export type TasksMessage = z.infer<typeof TasksMessageSchema>;
 export type TaskToggledMessage = z.infer<typeof TaskToggledMessageSchema>;
 export type SessionDeletedMessage = z.infer<typeof SessionDeletedMessageSchema>;
 export type ToolPermissionRequestMessage = z.infer<typeof ToolPermissionRequestMessageSchema>;
+export type AskUserQuestionRequestMessage = z.infer<typeof AskUserQuestionRequestMessageSchema>;
 export type SetupCompleteMessage = z.infer<typeof SetupCompleteMessageSchema>;
 export type SearchResultsMessage = z.infer<typeof SearchResultsMessageSchema>;
 export type SnippetsMessage = z.infer<typeof SnippetsMessageSchema>;

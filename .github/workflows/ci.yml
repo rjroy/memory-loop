@@ -36,4 +36,4 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: rjroy/memory-loop
           files: ./backend/coverage/lcov.info,./frontend/coverage/lcov.info,./shared/coverage/lcov.info
-          fail_ci_if_error: false
+          fail_ci_if_error: true

@@ -63,7 +63,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const hasRequestedMeetingStateRef = useRef(false);
 
-  const { vault, meeting } = useSession();
+  const { vault, meeting, setMeetingState, clearMeeting } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -102,6 +102,13 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       hasRequestedMeetingStateRef.current = true;
     }
   }, [connectionStatus, vault, sendMessage]);
+
+  // Handle meeting_state response (for restoring state after reconnect)
+  useEffect(() => {
+    if (lastMessage?.type === "meeting_state") {
+      setMeetingState(lastMessage.state);
+    }
+  }, [lastMessage, setMeetingState]);
 
   // Detect touch-only devices (no hover capability)
   // On touch devices, Enter adds newlines; send button is the only way to submit
@@ -162,22 +169,31 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       setIsStartingMeeting(false);
       setShowMeetingPrompt(false);
       setMeetingTitle("");
+      // Update session context with meeting state
+      setMeetingState({
+        isActive: true,
+        title: lastMessage.title,
+        filePath: lastMessage.filePath,
+        startedAt: lastMessage.startedAt,
+      });
       showToast("success", `Meeting started: ${lastMessage.title}`);
       textareaRef.current?.focus();
     }
-  }, [lastMessage, isStartingMeeting]);
+  }, [lastMessage, isStartingMeeting, setMeetingState]);
 
   // Handle meeting_stopped response
   useEffect(() => {
     if (lastMessage?.type === "meeting_stopped" && isStoppingMeeting) {
       setIsStoppingMeeting(false);
+      // Clear meeting state in session context
+      clearMeeting();
       showToast(
         "success",
         `Meeting ended: ${lastMessage.entryCount} notes captured`
       );
       textareaRef.current?.focus();
     }
-  }, [lastMessage, isStoppingMeeting]);
+  }, [lastMessage, isStoppingMeeting, clearMeeting]);
 
   // Handle meeting start error
   useEffect(() => {

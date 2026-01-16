@@ -18,7 +18,13 @@ import {
 // Re-export the SDK's SlashCommand type for use by other modules
 export type { SDKSlashCommand };
 import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@memory-loop/shared";
-import { directoryExists, fileExists } from "./vault-manager";
+import { directoryExists, fileExists, getVaultById } from "./vault-manager";
+import {
+  initializeTranscript,
+  appendToTranscript,
+  formatUserMessage,
+  formatAssistantMessage,
+} from "./transcript-manager";
 import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 import { sessionLog as log } from "./logger";
 import { createVaultTransferServer } from "./vault-transfer";
@@ -528,6 +534,7 @@ export async function getSessionForVault(
 
 /**
  * Appends a message to a session's conversation history.
+ * Also writes to the transcript file for Obsidian searchability.
  *
  * @param vaultPath - Absolute path to the vault root directory
  * @param sessionId - The session ID
@@ -549,7 +556,44 @@ export async function appendMessage(
 
   metadata.messages.push(message);
   metadata.lastActiveAt = new Date().toISOString();
+
+  // Initialize transcript on first user message
+  if (message.role === "user" && !metadata.transcriptPath) {
+    try {
+      const vault = await getVaultById(metadata.vaultId);
+      if (vault) {
+        const timestamp = new Date(message.timestamp);
+        metadata.transcriptPath = await initializeTranscript(
+          vault,
+          sessionId,
+          message.content,
+          timestamp
+        );
+        log.info(`[Session] Created transcript: ${metadata.transcriptPath}`);
+      }
+    } catch (error) {
+      // Log error but don't fail the message append
+      log.warn(`[Session] Failed to initialize transcript:`, error);
+    }
+  }
+
   await saveSession(metadata);
+
+  // Append to transcript if path exists
+  if (metadata.transcriptPath) {
+    try {
+      const timestamp = new Date(message.timestamp);
+      const formatted =
+        message.role === "user"
+          ? formatUserMessage(message.content, timestamp)
+          : formatAssistantMessage(message.content, message.toolInvocations, timestamp);
+      await appendToTranscript(metadata.transcriptPath, formatted);
+    } catch (error) {
+      // Log error but don't fail the message append
+      log.warn(`[Session] Failed to append to transcript:`, error);
+    }
+  }
+
   log.info(`[Session] Appended ${message.role} message to session ${sessionId.slice(0, 8)}...`);
 }
 

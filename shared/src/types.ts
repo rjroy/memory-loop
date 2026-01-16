@@ -125,6 +125,7 @@ export interface ConversationMessage {
  * @property lastActiveAt - ISO 8601 timestamp of last activity
  * @property messages - Conversation history for this session
  * @property activeModel - Model identifier captured from SDK (optional)
+ * @property transcriptPath - Path to transcript markdown file in vault (optional)
  */
 export interface SessionMetadata {
   id: string;
@@ -134,6 +135,7 @@ export interface SessionMetadata {
   lastActiveAt: string;
   messages: ConversationMessage[];
   activeModel?: string;
+  transcriptPath?: string;
 }
 
 /**

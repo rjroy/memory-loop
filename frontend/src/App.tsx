@@ -189,6 +189,7 @@ function MainContent(): React.ReactNode {
             recentCaptures: vault.recentCaptures,
             recentDiscussions: vault.recentDiscussions,
             badges: vault.badges,
+            order: vault.order === Infinity ? undefined : vault.order,
           }}
           onSave={handleConfigSave}
           onCancel={handleConfigCancel}

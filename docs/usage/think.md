@@ -66,6 +66,7 @@ Your vault's `CLAUDE.md` file defines available commands. Common examples:
 | `/weekly-debrief` | Review the past week's activity |
 | `/monthly-summary YYYY MM` | Generate a monthly overview |
 | `/review-goals` | Analyze goals against recent progress |
+| `/expand-note <path>` | Transform raw meeting notes into coherent documentation |
 
 ### Command Arguments
 
@@ -175,6 +176,18 @@ This ensures you don't lose partially composed messages.
 2. Claude searches your vault for relevant notes
 3. Get synthesis of your existing knowledge
 4. Identify gaps and areas for further exploration
+
+### Expanding Meeting Notes
+
+After a meeting capture session ends, you're automatically brought here with `/expand-note` pre-filled:
+
+1. Run the command (it already has the meeting file path)
+2. Claude reads your raw timestamped captures
+3. Answer 2-4 clarifying questions about unclear references
+4. Claude transforms raw notes into coherent meeting documentation
+5. Review and approve before saving
+
+This workflow bridges the gap between quick captures and polished meeting notes. See [Capture Tab](./capture.md#meeting-capture-mode) for how to start a meeting session.
 
 ## Tips
 

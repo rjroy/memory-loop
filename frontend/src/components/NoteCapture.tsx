@@ -195,8 +195,8 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
         "success",
         `Meeting ended: ${lastMessage.entryCount} notes captured`
       );
-      // Transition to Discussion tab with expand-notes command
-      setDiscussionPrefill(`/expand-notes ${lastMessage.filePath}`);
+      // Transition to Discussion tab with expand-note command
+      setDiscussionPrefill(`/expand-note ${lastMessage.filePath}`);
       setMode("discussion");
     }
   }, [lastMessage, isStoppingMeeting, clearMeeting, setDiscussionPrefill, setMode]);

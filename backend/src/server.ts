@@ -298,7 +298,7 @@ export const createApp = () => {
       const content = await readFile(fullPath);
       const contentType = ASSET_CONTENT_TYPES[ext] || "application/octet-stream";
 
-      return new Response(content, {
+      return new Response(new Uint8Array(content), {
         status: 200,
         headers: {
           "Content-Type": contentType,

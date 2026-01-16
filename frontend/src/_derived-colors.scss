@@ -107,6 +107,7 @@
 
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, var(--color-accent-primary) 0%, var(--color-accent-secondary) 100%);
+  --gradient-primary-hover: linear-gradient(135deg, oklch(from var(--color-accent-primary) calc(l + 0.08) c h) 0%,oklch(from var(--color-accent-secondary) calc(l + 0.08) c h) 100%);
   --gradient-secondary: linear-gradient(135deg, var(--color-accent-tertiary) 0%, var(--color-accent-primary) 100%);
   --gradient-tertiary: linear-gradient(135deg, oklch(from var(--color-accent-quartary) calc(l - 0.2) c h) 0%, oklch(from var(--color-accent-secondary) calc(l - 0.15) c h) 100%);
   --gradient-text-primary: linear-gradient(135deg, var(--color-text-accent-primary) 0%, var(--color-text-accent-secondary) 100%);

@@ -124,7 +124,8 @@
 .note-capture__start-meeting:hover:not(:disabled) {
   border-color: var(--glass-border-hover);
   color: var(--color-text);
-  background: var(--glass-bg);
+  background: var(--gradient-primary-hover);
+  box-shadow: var(--glow-primary);
 }
 
 .note-capture__start-meeting:disabled {

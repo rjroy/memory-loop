@@ -8,6 +8,8 @@
 
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { EventEmitter } from "node:events";
+// Import real fs BEFORE mocking to capture real implementations
+import * as realFs from "node:fs/promises";
 import { FileWatcher, createFileWatcher } from "../file-watcher";
 
 // =============================================================================
@@ -48,7 +50,8 @@ void mock.module("chokidar", () => ({
 }));
 
 void mock.module("node:fs/promises", () => ({
-  readFile: mockReadFile,
+  ...realFs, // Keep all real functions (access, readdir, etc.)
+  readFile: mockReadFile, // Override only what we need for testing
   stat: mock(() => Promise.resolve({ isFile: () => true })),
 }));
 

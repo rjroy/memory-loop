@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.4"
+
+      - run: bun install
+
+      - run: bun run typecheck
+
+      - run: bun run lint
+
+      - name: Run backend tests with coverage
+        run: bun run --cwd backend test:coverage
+
+      - name: Run frontend tests with coverage
+        run: bun run --cwd frontend test:coverage
+
+      - name: Run shared tests with coverage
+        run: bun run --cwd shared test:coverage
+
+      - uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./backend/coverage/lcov.info,./frontend/coverage/lcov.info,./shared/coverage/lcov.info
+          fail_ci_if_error: false

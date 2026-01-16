@@ -9,7 +9,7 @@ Memory Loop is organized around four tabs, each designed for a specific mode of 
 | Tab | Icon | Purpose | Use when... |
 |-----|------|---------|-------------|
 | [Ground](./ground.md) | 🪨 | Home dashboard | Starting your session, checking goals, accessing recent activity |
-| [Capture](./capture.md) | 🪶 | Quick note entry | Capturing a thought quickly without friction |
+| [Capture](./capture.md) | 🪶 | Quick note entry | Capturing thoughts, running meeting sessions |
 | [Think](./think.md) | ✨ | AI conversation | Exploring ideas, running commands, analyzing notes |
 | [Recall](./recall.md) | 🪞 | File browsing | Reading notes, searching, editing, reviewing tasks |
 
@@ -38,6 +38,13 @@ Each tab maintains its state when you switch away. Your draft messages, scroll p
 1. Throughout the day, use **Capture** for quick thoughts
 2. End the day on **Ground** and tap **Daily Debrief**
 3. **Think** summarizes your captures and surfaces themes
+
+### Meeting Notes Flow
+
+1. Start a meeting in **Capture** with a title
+2. Capture notes throughout the meeting
+3. Stop the meeting to auto-transition to **Think**
+4. Run `/expand-note` to transform raw notes into coherent documentation
 
 ### Read Then Discuss
 

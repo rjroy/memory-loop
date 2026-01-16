@@ -2,13 +2,11 @@
 
 The Capture tab is your quick-entry point for thoughts, observations, and fleeting ideas. Notes go straight to your daily note file with a timestamp.
 
-[ img: Capture tab full view ]
+<img src="../screenshots/capture.webp"/>
 
 ## The Capture Interface
 
 The interface is intentionally minimal: a text area and a submit button. This design optimizes for speed, capturing the thought before it escapes.
-
-[ img: Capture text area with button ]
 
 ### Text Area
 
@@ -127,8 +125,6 @@ The whole interaction takes seconds.
 
 For focused sessions like meetings, 1-on-1s, or brainstorming, you can start a **Meeting** that routes all captures to a dedicated file instead of your daily note.
 
-[ img: Start Meeting button next to Capture Note button ]
-
 ### Starting a Meeting
 
 1. Tap **Start Meeting** on the Capture tab
@@ -137,7 +133,7 @@ For focused sessions like meetings, 1-on-1s, or brainstorming, you can start a *
 
 The title becomes part of the filename and appears in the file's frontmatter.
 
-[ img: Meeting title prompt dialog ]
+<img src="images/start-meeting.webp"/>
 
 ### Capturing During a Meeting
 
@@ -148,7 +144,7 @@ Once a meeting starts:
 - The submit button changes to **Add Note**
 - All captures go to the meeting file with `[HH:MM]` timestamps
 
-[ img: Capture tab during active meeting with status bar ]
+<img src="images/active-meeting.webp"/>
 
 Capture entries appear as timestamped bullets in the meeting file:
 
@@ -180,8 +176,6 @@ Tap **Stop Meeting** in the status bar. This:
 4. Pre-fills `/expand-note [path]` ready to run
 
 The `/expand-note` command helps transform your raw captures into coherent meeting notes. See [Think Tab](./think.md) for details on this command.
-
-[ img: Think tab with expand-note command pre-filled ]
 
 ### Meeting File Format
 

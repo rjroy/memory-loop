@@ -2,7 +2,7 @@
 
 The Ground tab is your home base. It provides an at-a-glance view of your vault's current state, surfaces timely prompts for reflection, and gives quick access to recent activity.
 
-[ img: Ground tab full view ]
+<img src="../screenshots/ground.webp"/>
 
 ## Vault Card
 

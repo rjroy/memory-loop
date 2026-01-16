@@ -2,7 +2,7 @@
 
 The Think tab is your conversation space with Claude AI, grounded in the context of your Obsidian vault. Ask questions, explore ideas, run commands, and let the AI read and analyze your notes.
 
-[ img: Think tab with conversation ]
+<img src="../screenshots/think.webp"/>
 
 ## The Chat Interface
 

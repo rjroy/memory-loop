@@ -2,7 +2,7 @@
 
 The Recall tab is your file browser and content viewer. Navigate your vault structure, read files, search across notes, manage tasks, and make quick edits.
 
-[ img: Recall tab split view with file tree and markdown viewer ]
+<img src="../screenshots/recall.webp"/>
 
 ## Layout
 

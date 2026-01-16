@@ -7,9 +7,17 @@ coverage:
       default:
         target: 50%
         threshold: 5%
+        flags:
+          - backend
+          - frontend
+          - shared
     patch:
       default:
         target: 80%
+        flags:
+          - backend
+          - frontend
+          - shared
 
 flags:
   backend:

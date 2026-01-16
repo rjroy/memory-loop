@@ -21,13 +21,16 @@ coverage:
 
 flags:
   backend:
-    paths: [backend/src/]
+    paths:
+      - backend/src/**
     carryforward: true
   frontend:
-    paths: [frontend/src/]
+    paths:
+      - frontend/src/**
     carryforward: true
   shared:
-    paths: [shared/src/]
+    paths:
+      - shared/src/**
     carryforward: true
 
 comment:

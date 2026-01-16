@@ -34,5 +34,6 @@ jobs:
       - uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          slug: rjroy/memory-loop
           files: ./backend/coverage/lcov.info,./frontend/coverage/lcov.info,./shared/coverage/lcov.info
           fail_ci_if_error: false

@@ -1356,6 +1356,12 @@ export class WebSocketHandler {
         });
       } else if (contentBlock.type === "text") {
         contentBlocks.set(blockIndex, { type: "text" });
+
+        // If tools have been used, add a paragraph break before continuing text
+        // to prevent "...got saved.Looks solid!" running together
+        if (toolsMap.size > 0) {
+          return "\n\n";
+        }
       }
 
       return "";

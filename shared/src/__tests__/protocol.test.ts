@@ -88,6 +88,7 @@ describe("VaultInfoSchema", () => {
       metadataPath: "06_Metadata/memory-loop",
       attachmentPath: "05_Attachments",
       setupComplete: false,
+      hasSyncConfig: false,
       promptsPerGeneration: 5,
       maxPoolSize: 50,
       quotesPerWeek: 3,
@@ -114,6 +115,7 @@ describe("VaultInfoSchema", () => {
       metadataPath: "06_Metadata/memory-loop",
       attachmentPath: "05_Attachments",
       setupComplete: false,
+      hasSyncConfig: false,
     };
 
     expect(() => VaultInfoSchema.parse(invalidVault)).toThrow(ZodError);
@@ -1142,6 +1144,7 @@ describe("Server -> Client Messages", () => {
             metadataPath: "06_Metadata/memory-loop",
             attachmentPath: "05_Attachments",
             setupComplete: true,
+            hasSyncConfig: false,
             promptsPerGeneration: 5,
             maxPoolSize: 50,
             quotesPerWeek: 3,

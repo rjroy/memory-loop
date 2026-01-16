@@ -7,8 +7,9 @@
     "dev": "bun run --watch src/index.ts",
     "build": "tsc --noEmit",
     "start": "bun run src/index.ts",
-    "test": "export LOG_LEVEL=silent && for f in src/__tests__/*.test.ts; do bun test \"$f\" || exit 1; done",
-    "test:unit": "export LOG_LEVEL=silent && for f in src/__tests__/*.test.ts; do bun test \"$f\" || exit 1; done",
+    "test": "LOG_LEVEL=silent bun test src/",
+    "test:unit": "LOG_LEVEL=silent bun test src/",
+    "test:coverage": "LOG_LEVEL=silent bun test src/ --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },

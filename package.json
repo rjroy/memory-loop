@@ -8,7 +8,8 @@
     "dev": "bun run --filter '*' dev",
     "build": "bun run --filter '*' build",
     "lint": "bun run --filter '*' lint",
-    "test": "bun run --cwd backend test && bun run --cwd frontend test",
+    "test": "bun run --cwd backend test && bun run --cwd frontend test && bun run --cwd shared test",
+    "test:coverage": "bun run --cwd backend test:coverage && bun run --cwd frontend test:coverage && bun run --cwd shared test:coverage",
     "typecheck": "bun run --filter '*' typecheck"
   },
   "devDependencies": {

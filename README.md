@@ -2,6 +2,8 @@
 
 # Memory Loop
 
+[![codecov](https://codecov.io/gh/rjroy/memory-loop/graph/badge.svg?token=qD1xMP4hrR)](https://codecov.io/gh/rjroy/memory-loop)
+
 A mobile-friendly web interface for interacting with Obsidian vaults via Claude AI. Capture thoughts, have AI-powered conversations, and browse your notes from any device.
 
 ## Features

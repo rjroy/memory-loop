@@ -40,4 +40,3 @@ logs/
 backend/logs/
 
 # Bun
-bun.lock

@@ -109,23 +109,37 @@
 .note-capture__start-meeting {
   min-height: 48px;
   padding: var(--spacing-md) var(--spacing-lg);
-  background: var(--gradient-primary);
+  background: transparent;
   color: var(--color-text-secondary);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   text-wrap-mode: nowrap;
-  min-width: fit-content
+  min-width: fit-content;
   font-size: var(--text-base);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, box-shadow 0.3s ease;
 }
 
 .note-capture__start-meeting:hover:not(:disabled) {
   border-color: var(--glass-border-hover);
   color: var(--color-text);
-  background: var(--gradient-primary-hover);
-  box-shadow: var(--glow-primary);
+  background: var(--glass-bg-secondary);
+  box-shadow: var(--glass-shadow-hover);
+}
+
+/* Disable hover effects on touch devices */
+@media (hover: none) {
+  .note-capture__start-meeting:hover:not(:disabled) {
+    border-color: var(--glass-border);
+    color: var(--color-text-secondary);
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+.note-capture__start-meeting:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .note-capture__start-meeting:disabled {

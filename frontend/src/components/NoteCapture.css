@@ -109,7 +109,7 @@
 .note-capture__start-meeting {
   min-height: 48px;
   padding: var(--spacing-md) var(--spacing-lg);
-  background: transparent;
+  background: var(--gradient-primary);
   color: var(--color-text-secondary);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);

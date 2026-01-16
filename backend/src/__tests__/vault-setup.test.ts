@@ -177,10 +177,12 @@ describe("installCommands", () => {
 
     // Check for expected command files
     expect(files).toContain("daily-debrief.md");
-    expect(files).toContain("weekly-debrief.md");
-    expect(files).toContain("monthly-summary.md");
     expect(files).toContain("daily-review.md");
+    expect(files).toContain("expand-note.md");
     expect(files).toContain("inbox-processor.md");
+    expect(files).toContain("monthly-summary.md");
+    expect(files).toContain("review-goals.md");
+    expect(files).toContain("weekly-debrief.md");
     expect(files).toContain("weekly-synthesis.md");
   });
 
@@ -1032,7 +1034,7 @@ describe("Edge Cases", () => {
   });
 
   test("setup version is correct", () => {
-    expect(SETUP_VERSION).toBe("1.1.0");
+    expect(SETUP_VERSION).toBe("1.2.0");
   });
 
   test("marker path is correct", () => {

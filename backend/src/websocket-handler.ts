@@ -104,6 +104,13 @@ import {
   handleToggleTask,
 } from "./handlers/home-handlers.js";
 
+import {
+  handleStartMeeting,
+  handleStopMeeting,
+  handleGetMeetingState,
+  handleMeetingCapture,
+} from "./handlers/meeting-handlers.js";
+
 import { handleTriggerSync } from "./handlers/sync-handlers.js";
 
 // Re-export types for external consumers
@@ -558,9 +565,14 @@ export class WebSocketHandler {
         break;
 
       // Home/dashboard handlers (extracted)
-      case "capture_note":
-        await handleCaptureNote(ctx, message.text);
+      case "capture_note": {
+        // Route to meeting if one is active, otherwise to daily note
+        const handledByMeeting = await handleMeetingCapture(ctx, message.text);
+        if (!handledByMeeting) {
+          await handleCaptureNote(ctx, message.text);
+        }
         break;
+      }
       case "get_recent_notes":
         await handleGetRecentNotes(ctx);
         break;
@@ -578,6 +590,17 @@ export class WebSocketHandler {
         break;
       case "toggle_task":
         await handleToggleTask(ctx, message.filePath, message.lineNumber, message.newState);
+        break;
+
+      // Meeting handlers (extracted)
+      case "start_meeting":
+        await handleStartMeeting(ctx, message.title);
+        break;
+      case "stop_meeting":
+        await handleStopMeeting(ctx);
+        break;
+      case "get_meeting_state":
+        handleGetMeetingState(ctx);
         break;
 
       // Sync handlers (extracted)
@@ -625,6 +648,8 @@ export class WebSocketHandler {
         this.state.healthCollector.clear();
         this.state.healthCollector = null;
       }
+      // Clear active meeting (vault switch ends any in-progress meeting)
+      this.state.activeMeeting = null;
 
       // Update state
       this.state.currentVault = vault;

@@ -56,6 +56,14 @@ export {
   HealthIssueSchema,
   HealthReportMessageSchema,
   DismissHealthIssueMessageSchema,
+  // Meeting schemas
+  MeetingStateSchema,
+  StartMeetingMessageSchema,
+  StopMeetingMessageSchema,
+  GetMeetingStateMessageSchema,
+  MeetingStartedMessageSchema,
+  MeetingStoppedMessageSchema,
+  MeetingStateMessageSchema,
   // Client -> Server schemas
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
@@ -134,6 +142,14 @@ export type {
   HealthIssue,
   HealthReportMessage,
   DismissHealthIssueMessage,
+  // Meeting types
+  MeetingState,
+  StartMeetingMessage,
+  StopMeetingMessage,
+  GetMeetingStateMessage,
+  MeetingStartedMessage,
+  MeetingStoppedMessage,
+  MeetingStateMessage,
   // AskUserQuestion types
   AskUserQuestionOption,
   AskUserQuestionItem,

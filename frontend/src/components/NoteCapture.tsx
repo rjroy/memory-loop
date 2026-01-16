@@ -3,6 +3,10 @@
  *
  * Multiline textarea for capturing notes with auto-save to localStorage.
  * Submits via WebSocket and shows toast feedback.
+ *
+ * Supports two modes:
+ * - Normal: Captures go to daily note
+ * - Meeting: Captures go to meeting-specific file
  */
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
@@ -38,6 +42,7 @@ interface ToastState {
  * - Sends capture_note message via WebSocket
  * - Shows toast notification on success/error
  * - Retries up to 3x on network failure
+ * - Supports meeting mode for dedicated meeting notes
  */
 export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const [content, setContent] = useState("");
@@ -45,16 +50,25 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const [toast, setToast] = useState<ToastState>({ visible: false, type: "success", message: "" });
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
+  // Meeting mode state
+  const [showMeetingPrompt, setShowMeetingPrompt] = useState(false);
+  const [meetingTitle, setMeetingTitle] = useState("");
+  const [isStartingMeeting, setIsStartingMeeting] = useState(false);
+  const [isStoppingMeeting, setIsStoppingMeeting] = useState(false);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const meetingTitleRef = useRef<HTMLInputElement>(null);
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasSentVaultSelectionRef = useRef(false);
+  const hasRequestedMeetingStateRef = useRef(false);
 
-  const { vault } = useSession();
+  const { vault, meeting, setMeetingState, clearMeeting, setDiscussionPrefill, setMode } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
+    hasRequestedMeetingStateRef.current = false;
   }, []);
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
@@ -75,6 +89,26 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       hasSentVaultSelectionRef.current = true;
     }
   }, [connectionStatus, vault, sendMessage]);
+
+  // Request meeting state after vault selection (to restore state after reconnect)
+  useEffect(() => {
+    if (
+      connectionStatus === "connected" &&
+      vault &&
+      hasSentVaultSelectionRef.current &&
+      !hasRequestedMeetingStateRef.current
+    ) {
+      sendMessage({ type: "get_meeting_state" });
+      hasRequestedMeetingStateRef.current = true;
+    }
+  }, [connectionStatus, vault, sendMessage]);
+
+  // Handle meeting_state response (for restoring state after reconnect)
+  useEffect(() => {
+    if (lastMessage?.type === "meeting_state") {
+      setMeetingState(lastMessage.state);
+    }
+  }, [lastMessage, setMeetingState]);
 
   // Detect touch-only devices (no hover capability)
   // On touch devices, Enter adds newlines; send button is the only way to submit
@@ -113,14 +147,21 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       setIsSubmitting(false);
       retryCountRef.current = 0;
 
-      showToast("success", `Note saved at ${lastMessage.timestamp}`);
+      // Context-aware success message
+      const message = meeting.isActive
+        ? "Note added to meeting"
+        : `Note saved at ${lastMessage.timestamp}`;
+      showToast("success", message);
       onCaptured?.();
-      textareaRef.current?.focus();
+      // Delay focus to ensure it happens after toast renders (toast can steal focus)
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+      });
 
       // Refresh recent activity for HomeView
       sendMessage({ type: "get_recent_activity" });
     }
-  }, [lastMessage, isSubmitting, onCaptured, sendMessage]);
+  }, [lastMessage, isSubmitting, onCaptured, sendMessage, meeting.isActive]);
 
   // Handle error response
   useEffect(() => {
@@ -128,6 +169,65 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       handleError(lastMessage.message);
     }
   }, [lastMessage, isSubmitting]);
+
+  // Handle meeting_started response
+  useEffect(() => {
+    if (lastMessage?.type === "meeting_started" && isStartingMeeting) {
+      setIsStartingMeeting(false);
+      setShowMeetingPrompt(false);
+      setMeetingTitle("");
+      // Update session context with meeting state
+      setMeetingState({
+        isActive: true,
+        title: lastMessage.title,
+        filePath: lastMessage.filePath,
+        startedAt: lastMessage.startedAt,
+      });
+      showToast("success", `Meeting started: ${lastMessage.title}`);
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+      });
+    }
+  }, [lastMessage, isStartingMeeting, setMeetingState]);
+
+  // Handle meeting_stopped response
+  useEffect(() => {
+    if (lastMessage?.type === "meeting_stopped" && isStoppingMeeting) {
+      setIsStoppingMeeting(false);
+      // Clear meeting state in session context
+      clearMeeting();
+      showToast(
+        "success",
+        `Meeting ended: ${lastMessage.entryCount} notes captured`
+      );
+      // Transition to Discussion tab with expand-note command
+      setDiscussionPrefill(`/expand-note ${lastMessage.filePath}`);
+      setMode("discussion");
+    }
+  }, [lastMessage, isStoppingMeeting, clearMeeting, setDiscussionPrefill, setMode]);
+
+  // Handle meeting start error
+  useEffect(() => {
+    if (lastMessage?.type === "error" && isStartingMeeting) {
+      setIsStartingMeeting(false);
+      showToast("error", lastMessage.message);
+    }
+  }, [lastMessage, isStartingMeeting]);
+
+  // Handle meeting stop error
+  useEffect(() => {
+    if (lastMessage?.type === "error" && isStoppingMeeting) {
+      setIsStoppingMeeting(false);
+      showToast("error", lastMessage.message);
+    }
+  }, [lastMessage, isStoppingMeeting]);
+
+  // Focus meeting title input when prompt opens
+  useEffect(() => {
+    if (showMeetingPrompt) {
+      meetingTitleRef.current?.focus();
+    }
+  }, [showMeetingPrompt]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -215,25 +315,151 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
     }
   }
 
+  // Meeting handlers
+  function handleStartMeetingClick() {
+    setShowMeetingPrompt(true);
+  }
+
+  function handleCancelMeetingPrompt() {
+    setShowMeetingPrompt(false);
+    setMeetingTitle("");
+  }
+
+  function handleMeetingTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setMeetingTitle(e.target.value);
+  }
+
+  function handleMeetingTitleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleConfirmStartMeeting();
+    } else if (e.key === "Escape") {
+      handleCancelMeetingPrompt();
+    }
+  }
+
+  function handleConfirmStartMeeting() {
+    if (!meetingTitle.trim()) {
+      showToast("error", "Please enter a meeting title");
+      return;
+    }
+
+    if (connectionStatus !== "connected") {
+      showToast("error", "Not connected. Please wait...");
+      return;
+    }
+
+    setIsStartingMeeting(true);
+    sendMessage({
+      type: "start_meeting",
+      title: meetingTitle.trim(),
+    });
+  }
+
+  function handleStopMeeting() {
+    if (connectionStatus !== "connected") {
+      showToast("error", "Not connected. Please wait...");
+      return;
+    }
+
+    setIsStoppingMeeting(true);
+    sendMessage({ type: "stop_meeting" });
+  }
+
   const isDisabled = isSubmitting || connectionStatus !== "connected" || !vault;
+
+  // Determine placeholder text based on meeting state
+  const placeholderText = meeting.isActive
+    ? `Capturing to: ${meeting.title}`
+    : "What's on your mind? Goes to your daily note.";
+
+  // Determine button text based on meeting state
+  const submitButtonText = isSubmitting
+    ? "Saving..."
+    : meeting.isActive
+      ? "Add Note"
+      : "Capture Note";
 
   return (
     <div className="note-capture">
+      {/* Meeting status bar */}
+      {meeting.isActive && (
+        <div className="note-capture__meeting-status">
+          <span className="note-capture__meeting-indicator" />
+          <span className="note-capture__meeting-title">{meeting.title}</span>
+          <button
+            type="button"
+            className="note-capture__stop-meeting"
+            onClick={handleStopMeeting}
+            disabled={isStoppingMeeting}
+          >
+            {isStoppingMeeting ? "Stopping..." : "Stop Meeting"}
+          </button>
+        </div>
+      )}
+
+      {/* Meeting title prompt modal */}
+      {showMeetingPrompt && (
+        <div className="note-capture__meeting-prompt">
+          <div className="note-capture__meeting-prompt-content">
+            <label htmlFor="meeting-title">Meeting Title</label>
+            <input
+              ref={meetingTitleRef}
+              id="meeting-title"
+              type="text"
+              value={meetingTitle}
+              onChange={handleMeetingTitleChange}
+              onKeyDown={handleMeetingTitleKeyDown}
+              placeholder="e.g., Q3 Planning with Sarah"
+              disabled={isStartingMeeting}
+            />
+            <div className="note-capture__meeting-prompt-buttons">
+              <button
+                type="button"
+                onClick={handleCancelMeetingPrompt}
+                disabled={isStartingMeeting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmStartMeeting}
+                disabled={isStartingMeeting || !meetingTitle.trim()}
+              >
+                {isStartingMeeting ? "Starting..." : "Start Meeting"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <form className="note-capture__form" onSubmit={handleSubmit}>
-        <button
-          type="submit"
-          className="note-capture__submit"
-          disabled={isDisabled || !content.trim()}
-        >
-          {isSubmitting ? "Saving..." : "Capture Note"}
-        </button>
+        <div className="note-capture__actions">
+          <button
+            type="submit"
+            className="note-capture__submit"
+            disabled={isDisabled || !content.trim()}
+          >
+            {submitButtonText}
+          </button>
+          {!meeting.isActive && (
+            <button
+              type="button"
+              className="note-capture__start-meeting"
+              onClick={handleStartMeetingClick}
+              disabled={isDisabled}
+            >
+              Start Meeting
+            </button>
+          )}
+        </div>
         <textarea
           ref={textareaRef}
           className="note-capture__input"
           value={content}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="What's on your mind? Goes to your daily note."
+          placeholder={placeholderText}
           disabled={isSubmitting}
           rows={3}
           aria-label="Note content"

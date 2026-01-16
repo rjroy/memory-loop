@@ -66,6 +66,7 @@
 
 .note-capture__submit {
   min-height: 48px;
+  width: 100%;
   padding: var(--spacing-md) var(--spacing-lg);
   background: var(--gradient-primary);
   color: white;
@@ -95,6 +96,189 @@
 }
 
 .note-capture__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Actions row with capture and meeting buttons */
+.note-capture__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.note-capture__start-meeting {
+  min-height: 48px;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--gradient-primary);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  text-wrap-mode: nowrap;
+  min-width: fit-content
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.note-capture__start-meeting:hover:not(:disabled) {
+  border-color: var(--glass-border-hover);
+  color: var(--color-text);
+  background: var(--gradient-primary-hover);
+  box-shadow: var(--glow-primary);
+}
+
+.note-capture__start-meeting:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Meeting status bar */
+.note-capture__meeting-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--glow-success);
+}
+
+.note-capture__meeting-indicator {
+  width: 8px;
+  height: 8px;
+  background: var(--color-success);
+  border-radius: 50%;
+  animation: meeting-pulse 2s ease-in-out infinite;
+}
+
+@keyframes meeting-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.note-capture__meeting-title {
+  flex: 1;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-capture__stop-meeting {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.note-capture__stop-meeting:hover:not(:disabled) {
+  background: var(--color-error-a10);
+}
+
+.note-capture__stop-meeting:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Meeting prompt modal */
+.note-capture__meeting-prompt {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: var(--spacing-md);
+}
+
+.note-capture__meeting-prompt-content {
+  background: var(--color-surface);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-lg);
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.note-capture__meeting-prompt-content label {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.note-capture__meeting-prompt-content input {
+  padding: var(--spacing-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  color: var(--color-text);
+  font-size: var(--text-base);
+}
+
+.note-capture__meeting-prompt-content input:focus {
+  outline: none;
+  border-color: var(--glass-border-hover);
+}
+
+.note-capture__meeting-prompt-content input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.note-capture__meeting-prompt-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+}
+
+.note-capture__meeting-prompt-buttons button {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.note-capture__meeting-prompt-buttons button:first-child {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--glass-border);
+}
+
+.note-capture__meeting-prompt-buttons button:first-child:hover:not(:disabled) {
+  background: var(--glass-bg);
+}
+
+.note-capture__meeting-prompt-buttons button:last-child {
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+}
+
+.note-capture__meeting-prompt-buttons button:last-child:hover:not(:disabled) {
+  box-shadow: var(--glow-primary);
+}
+
+.note-capture__meeting-prompt-buttons button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

@@ -18,6 +18,7 @@ import type {
   ConversationMessageProtocol,
   ToolInvocation,
   HealthIssue,
+  MeetingState,
 } from "@memory-loop/shared";
 
 import type {
@@ -109,7 +110,10 @@ export type SessionAction =
   | { type: "DISMISS_HEALTH_ISSUE"; issueId: string }
   // Sync actions
   | { type: "UPDATE_SYNC_STATUS"; status: "idle" | "syncing" | "success" | "error"; progress?: { current: number; total: number; currentFile?: string }; message?: string; errorCount?: number }
-  | { type: "RESET_SYNC_STATE" };
+  | { type: "RESET_SYNC_STATE" }
+  // Meeting actions
+  | { type: "SET_MEETING_STATE"; state: MeetingState }
+  | { type: "CLEAR_MEETING" };
 
 // ----------------------------------------------------------------------------
 // Helper functions for reducer
@@ -795,6 +799,19 @@ export function sessionReducer(
       return {
         ...state,
         sync: createInitialSyncState(),
+      };
+
+    // Meeting actions
+    case "SET_MEETING_STATE":
+      return {
+        ...state,
+        meeting: action.state,
+      };
+
+    case "CLEAR_MEETING":
+      return {
+        ...state,
+        meeting: { isActive: false },
       };
 
     default:

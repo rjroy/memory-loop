@@ -390,6 +390,51 @@ export const CaptureNoteMessageSchema = z.object({
   text: z.string().min(1, "Note text is required"),
 });
 
+// =============================================================================
+// Meeting Capture Schemas
+// =============================================================================
+
+/**
+ * Schema for active meeting state sent from server to client.
+ * Tracks the current meeting session if one is active.
+ */
+export const MeetingStateSchema = z.object({
+  /** Whether a meeting is currently active */
+  isActive: z.boolean(),
+  /** Meeting title (set when meeting started) */
+  title: z.string().optional(),
+  /** Path to the meeting file (relative to content root) */
+  filePath: z.string().optional(),
+  /** ISO 8601 timestamp when meeting started */
+  startedAt: z.string().optional(),
+});
+
+/**
+ * Client requests to start a meeting capture session.
+ * Creates a new meeting file and routes subsequent captures there.
+ */
+export const StartMeetingMessageSchema = z.object({
+  type: z.literal("start_meeting"),
+  /** Meeting title (used in filename and frontmatter) */
+  title: z.string().min(1, "Meeting title is required"),
+});
+
+/**
+ * Client requests to stop the current meeting capture session.
+ * Returns to normal daily note capture mode.
+ */
+export const StopMeetingMessageSchema = z.object({
+  type: z.literal("stop_meeting"),
+});
+
+/**
+ * Client requests current meeting state.
+ * Used to sync state after reconnection.
+ */
+export const GetMeetingStateMessageSchema = z.object({
+  type: z.literal("get_meeting_state"),
+});
+
 /**
  * Client sends a discussion message for the AI to respond to
  */
@@ -704,6 +749,9 @@ export const TriggerSyncMessageSchema = z.object({
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   SelectVaultMessageSchema,
   CaptureNoteMessageSchema,
+  StartMeetingMessageSchema,
+  StopMeetingMessageSchema,
+  GetMeetingStateMessageSchema,
   DiscussionMessageSchema,
   ResumeSessionMessageSchema,
   NewSessionMessageSchema,
@@ -768,6 +816,48 @@ export const SessionReadyMessageSchema = z.object({
 export const NoteCapturedMessageSchema = z.object({
   type: z.literal("note_captured"),
   timestamp: z.string().min(1, "Timestamp is required"),
+});
+
+// =============================================================================
+// Meeting Server Messages
+// =============================================================================
+
+/**
+ * Server confirms meeting has started.
+ * Client should switch to meeting capture mode.
+ */
+export const MeetingStartedMessageSchema = z.object({
+  type: z.literal("meeting_started"),
+  /** Meeting title */
+  title: z.string().min(1, "Meeting title is required"),
+  /** Path to the meeting file (relative to content root) */
+  filePath: z.string().min(1, "File path is required"),
+  /** ISO 8601 timestamp when meeting started */
+  startedAt: z.string().min(1, "Start time is required"),
+});
+
+/**
+ * Server confirms meeting has stopped.
+ * Includes the file content for Claude Code integration.
+ */
+export const MeetingStoppedMessageSchema = z.object({
+  type: z.literal("meeting_stopped"),
+  /** Path to the meeting file (relative to content root) */
+  filePath: z.string().min(1, "File path is required"),
+  /** Full content of the meeting file for Claude Code */
+  content: z.string(),
+  /** Number of entries captured during the meeting */
+  entryCount: z.number().int().min(0),
+});
+
+/**
+ * Server sends current meeting state.
+ * Response to get_meeting_state request or sent on vault selection.
+ */
+export const MeetingStateMessageSchema = z.object({
+  type: z.literal("meeting_state"),
+  /** Current meeting state */
+  state: MeetingStateSchema,
 });
 
 /**
@@ -1212,6 +1302,9 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   VaultListMessageSchema,
   SessionReadyMessageSchema,
   NoteCapturedMessageSchema,
+  MeetingStartedMessageSchema,
+  MeetingStoppedMessageSchema,
+  MeetingStateMessageSchema,
   ResponseStartMessageSchema,
   ResponseChunkMessageSchema,
   ResponseEndMessageSchema,
@@ -1302,9 +1395,15 @@ export type EditableBadge = z.infer<typeof EditableBadgeSchema>;
 export type DiscussionModel = z.infer<typeof DiscussionModelSchema>;
 export type EditableVaultConfig = z.infer<typeof EditableVaultConfigSchema>;
 
+// Meeting types
+export type MeetingState = z.infer<typeof MeetingStateSchema>;
+
 // Client message types
 export type SelectVaultMessage = z.infer<typeof SelectVaultMessageSchema>;
 export type CaptureNoteMessage = z.infer<typeof CaptureNoteMessageSchema>;
+export type StartMeetingMessage = z.infer<typeof StartMeetingMessageSchema>;
+export type StopMeetingMessage = z.infer<typeof StopMeetingMessageSchema>;
+export type GetMeetingStateMessage = z.infer<typeof GetMeetingStateMessageSchema>;
 export type DiscussionMessage = z.infer<typeof DiscussionMessageSchema>;
 export type ResumeSessionMessage = z.infer<typeof ResumeSessionMessageSchema>;
 export type NewSessionMessage = z.infer<typeof NewSessionMessageSchema>;
@@ -1343,6 +1442,9 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export type VaultListMessage = z.infer<typeof VaultListMessageSchema>;
 export type SessionReadyMessage = z.infer<typeof SessionReadyMessageSchema>;
 export type NoteCapturedMessage = z.infer<typeof NoteCapturedMessageSchema>;
+export type MeetingStartedMessage = z.infer<typeof MeetingStartedMessageSchema>;
+export type MeetingStoppedMessage = z.infer<typeof MeetingStoppedMessageSchema>;
+export type MeetingStateMessage = z.infer<typeof MeetingStateMessageSchema>;
 export type ResponseStartMessage = z.infer<typeof ResponseStartMessageSchema>;
 export type ResponseChunkMessage = z.infer<typeof ResponseChunkMessageSchema>;
 export type ResponseEndMessage = z.infer<typeof ResponseEndMessageSchema>;

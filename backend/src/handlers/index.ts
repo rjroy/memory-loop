@@ -48,5 +48,13 @@ export {
   handleToggleTask,
 } from "./home-handlers.js";
 
+// Meeting handlers
+export {
+  handleStartMeeting,
+  handleStopMeeting,
+  handleGetMeetingState,
+  handleMeetingCapture,
+} from "./meeting-handlers.js";
+
 // Sync handlers
 export { handleTriggerSync } from "./sync-handlers.js";

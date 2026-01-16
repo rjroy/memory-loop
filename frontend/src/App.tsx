@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { SessionProvider, useSession } from "./contexts/SessionContext";
+import { SessionProvider, useSession, useServerMessageHandler } from "./contexts/SessionContext";
 import { VaultSelect } from "./components/VaultSelect";
 import { ModeToggle } from "./components/ModeToggle";
 import { HomeView } from "./components/HomeView";
@@ -36,6 +36,7 @@ type DialogType = "changeVault" | null;
 function MainContent(): React.ReactNode {
   const { mode, vault, clearVault } = useSession();
   const { sendMessage, lastMessage } = useWebSocket();
+  const handleServerMessage = useServerMessageHandler();
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
   // Config save state (TASK-010)
@@ -47,6 +48,13 @@ function MainContent(): React.ReactNode {
   const [toastVariant, setToastVariant] = useState<ToastVariant>("success");
   const [toastMessage, setToastMessage] = useState("");
   const holiday = useHoliday();
+
+  // Process server messages through the session handler
+  useEffect(() => {
+    if (lastMessage) {
+      handleServerMessage(lastMessage);
+    }
+  }, [lastMessage, handleServerMessage]);
 
   // Use holiday-specific logo if available
   const logoSrc = holiday ? `/images/holiday/${holiday}-logo.webp` : "/images/logo.webp";

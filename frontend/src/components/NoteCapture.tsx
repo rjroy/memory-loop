@@ -147,14 +147,18 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       setIsSubmitting(false);
       retryCountRef.current = 0;
 
-      showToast("success", `Note saved at ${lastMessage.timestamp}`);
+      // Context-aware success message
+      const message = meeting.isActive
+        ? "Note added to meeting"
+        : `Note saved at ${lastMessage.timestamp}`;
+      showToast("success", message);
       onCaptured?.();
       textareaRef.current?.focus();
 
       // Refresh recent activity for HomeView
       sendMessage({ type: "get_recent_activity" });
     }
-  }, [lastMessage, isSubmitting, onCaptured, sendMessage]);
+  }, [lastMessage, isSubmitting, onCaptured, sendMessage, meeting.isActive]);
 
   // Handle error response
   useEffect(() => {

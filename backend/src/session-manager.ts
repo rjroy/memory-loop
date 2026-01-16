@@ -570,6 +570,8 @@ export async function appendMessage(
           timestamp
         );
         log.info(`[Session] Created transcript: ${metadata.transcriptPath}`);
+      } else {
+        log.warn(`[Session] Vault "${metadata.vaultId}" not found, skipping transcript`);
       }
     } catch (error) {
       // Log error but don't fail the message append

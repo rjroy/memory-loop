@@ -7,6 +7,33 @@ coverage:
       default:
         target: 50%
         threshold: 5%
+      frontend:
+        target: 70%
+        flags:
+          - frontend
+      backend:
+        target: 30%
+        flags:
+          - backend
+      shared:
+        target: 80%
+        flags:
+          - shared
     patch:
       default:
         target: 80%
+
+
+flags:
+  backend:
+    paths:
+      - backend/src/**
+    carryforward: true
+  frontend:
+    paths:
+      - frontend/src/**
+    carryforward: true
+  shared:
+    paths:
+      - shared/src/**
+    carryforward: true

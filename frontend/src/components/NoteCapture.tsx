@@ -153,7 +153,10 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
         : `Note saved at ${lastMessage.timestamp}`;
       showToast("success", message);
       onCaptured?.();
-      textareaRef.current?.focus();
+      // Delay focus to ensure it happens after toast renders (toast can steal focus)
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+      });
 
       // Refresh recent activity for HomeView
       sendMessage({ type: "get_recent_activity" });
@@ -181,7 +184,9 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
         startedAt: lastMessage.startedAt,
       });
       showToast("success", `Meeting started: ${lastMessage.title}`);
-      textareaRef.current?.focus();
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+      });
     }
   }, [lastMessage, isStartingMeeting, setMeetingState]);
 

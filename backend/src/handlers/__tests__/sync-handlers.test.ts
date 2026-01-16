@@ -81,6 +81,7 @@ beforeEach(async () => {
     metadataPath: "06_Metadata/memory-loop",
     attachmentPath: "attachments",
     setupComplete: true,
+    hasSyncConfig: true,
     promptsPerGeneration: 5,
     maxPoolSize: 50,
     quotesPerWeek: 1,

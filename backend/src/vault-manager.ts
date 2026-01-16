@@ -231,6 +231,25 @@ export async function detectGoalsPath(
 }
 
 /**
+ * Checks if a vault has sync configuration files.
+ * Sync config files are YAML files in `.memory-loop/sync/` directory.
+ *
+ * @param vaultPath - Absolute path to the vault root
+ * @returns true if at least one sync config file exists
+ */
+export async function hasSyncConfig(vaultPath: string): Promise<boolean> {
+  const syncDir = join(vaultPath, ".memory-loop", "sync");
+  try {
+    const entries = await readdir(syncDir, { withFileTypes: true });
+    return entries.some(
+      (e) => e.isFile() && (e.name.endsWith(".yaml") || e.name.endsWith(".yml"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Reads and parses a single vault directory.
  * Returns null if the directory is not a valid vault (no CLAUDE.md).
  *
@@ -302,6 +321,9 @@ export async function parseVault(
   const setupMarkerPath = join(vaultPath, ".memory-loop/setup-complete");
   const setupComplete = await fileExists(setupMarkerPath);
 
+  // Check for sync configuration
+  const hasSyncCfg = await hasSyncConfig(vaultPath);
+
   return {
     id: dirName,
     name,
@@ -314,6 +336,7 @@ export async function parseVault(
     goalsPath,
     attachmentPath,
     setupComplete,
+    hasSyncConfig: hasSyncCfg,
     discussionModel: resolveDiscussionModel(config),
     promptsPerGeneration: resolvePromptsPerGeneration(config),
     maxPoolSize: resolveMaxPoolSize(config),

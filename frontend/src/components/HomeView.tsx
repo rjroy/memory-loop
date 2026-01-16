@@ -295,9 +295,11 @@ export function HomeView(): React.ReactNode {
             ))}
           </div>
         )}
-        <div className="home-view__actions">
-          <SyncButton />
-        </div>
+        {vault?.hasSyncConfig && (
+          <div className="home-view__actions">
+            <SyncButton />
+          </div>
+        )}
       </section>
 
       {/* Inspiration */}

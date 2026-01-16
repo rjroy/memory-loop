@@ -99,6 +99,7 @@ beforeEach(async () => {
     widgetEngine: null,
     widgetWatcher: null,
     healthCollector: null,
+    activeMeeting: null,
   };
   mockFetchById.mockClear();
 });

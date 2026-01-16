@@ -4,6 +4,7 @@
  * Creates default state objects for browser, search, widgets, and session.
  */
 
+import type { MeetingState } from "@memory-loop/shared";
 import type {
   BrowserState,
   SearchState,
@@ -69,6 +70,15 @@ export function createInitialSyncState(): SyncState {
 }
 
 /**
+ * Creates initial meeting state.
+ */
+export function createInitialMeetingState(): MeetingState {
+  return {
+    isActive: false,
+  };
+}
+
+/**
  * Creates initial browser state.
  */
 export function createInitialBrowserState(): BrowserState {
@@ -117,6 +127,7 @@ export function createInitialSessionState(): SessionState {
     pendingToolUpdates: new Map(),
     needsLineBreakBeforeText: false,
     slashCommands: [],
+    meeting: createInitialMeetingState(),
   };
 }
 

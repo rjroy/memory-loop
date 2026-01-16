@@ -28,6 +28,7 @@ import type {
   ContextSnippet,
   WidgetResult,
   HealthIssue,
+  MeetingState,
 } from "@memory-loop/shared";
 
 import {
@@ -480,6 +481,15 @@ export function SessionProvider({
     dispatch({ type: "RESET_SYNC_STATE" });
   }, []);
 
+  // Meeting actions
+  const setMeetingState = useCallback((meetingState: MeetingState) => {
+    dispatch({ type: "SET_MEETING_STATE", state: meetingState });
+  }, []);
+
+  const clearMeeting = useCallback(() => {
+    dispatch({ type: "CLEAR_MEETING" });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -548,6 +558,8 @@ export function SessionProvider({
     dismissHealthIssue,
     updateSyncStatus,
     resetSyncState,
+    setMeetingState,
+    clearMeeting,
   };
 
   return (
@@ -592,6 +604,8 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     setHealthIssues,
     setPinnedAssets,
     updateSyncStatus,
+    setMeetingState,
+    clearMeeting,
   } = useSession();
 
   const messagesRef = useRef(messages);
@@ -723,6 +737,24 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           );
           break;
 
+        // Meeting messages
+        case "meeting_started":
+          setMeetingState({
+            isActive: true,
+            title: message.title,
+            filePath: message.filePath,
+            startedAt: message.startedAt,
+          });
+          break;
+
+        case "meeting_stopped":
+          clearMeeting();
+          break;
+
+        case "meeting_state":
+          setMeetingState(message.state);
+          break;
+
         default:
           break;
       }
@@ -746,6 +778,8 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
       setHealthIssues,
       setPinnedAssets,
       updateSyncStatus,
+      setMeetingState,
+      clearMeeting,
     ]
   );
 }

@@ -18,6 +18,7 @@ import type {
   VaultInfo,
   ConversationMessageProtocol,
   HealthIssue,
+  MeetingState,
 } from "@memory-loop/shared";
 
 /**
@@ -223,6 +224,8 @@ export interface SessionState {
   needsLineBreakBeforeText: boolean;
   /** Available slash commands from the SDK (empty if not yet loaded or unsupported) */
   slashCommands: SlashCommand[];
+  /** Meeting capture state (active meeting session info) */
+  meeting: MeetingState;
 }
 
 /**
@@ -370,6 +373,11 @@ export interface SessionActions {
   ) => void;
   /** Reset sync state to idle (for when vault changes) */
   resetSyncState: () => void;
+  // Meeting actions
+  /** Set meeting state from server meeting_state/meeting_started messages */
+  setMeetingState: (state: MeetingState) => void;
+  /** Clear meeting state (meeting stopped or vault changed) */
+  clearMeeting: () => void;
 }
 
 /**

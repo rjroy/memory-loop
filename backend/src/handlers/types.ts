@@ -9,6 +9,7 @@ import type { SessionQueryResult } from "../session-manager.js";
 import type { SearchIndexManager } from "../search/search-index.js";
 import type { WidgetEngine, FileWatcher } from "../widgets/index.js";
 import type { HealthCollector } from "../health-collector.js";
+import type { ActiveMeeting } from "../meeting-capture.js";
 
 /**
  * WebSocket interface for sending messages.
@@ -60,6 +61,8 @@ export interface ConnectionState {
   widgetWatcher: FileWatcher | null;
   /** Health collector for tracking backend issues (null if no vault selected) */
   healthCollector: HealthCollector | null;
+  /** Active meeting session (null if no meeting in progress) */
+  activeMeeting: ActiveMeeting | null;
 }
 
 /**
@@ -90,6 +93,7 @@ export function createConnectionState(): ConnectionState {
     widgetEngine: null,
     widgetWatcher: null,
     healthCollector: null,
+    activeMeeting: null,
   };
 }
 

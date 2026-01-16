@@ -63,7 +63,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const hasRequestedMeetingStateRef = useRef(false);
 
-  const { vault, meeting, setMeetingState, clearMeeting } = useSession();
+  const { vault, meeting, setMeetingState, clearMeeting, setDiscussionPrefill, setMode } = useSession();
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
@@ -195,9 +195,11 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
         "success",
         `Meeting ended: ${lastMessage.entryCount} notes captured`
       );
-      textareaRef.current?.focus();
+      // Transition to Discussion tab with expand-notes command
+      setDiscussionPrefill(`/expand-notes ${lastMessage.filePath}`);
+      setMode("discussion");
     }
-  }, [lastMessage, isStoppingMeeting, clearMeeting]);
+  }, [lastMessage, isStoppingMeeting, clearMeeting, setDiscussionPrefill, setMode]);
 
   // Handle meeting start error
   useEffect(() => {

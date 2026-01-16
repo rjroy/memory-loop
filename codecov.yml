@@ -26,14 +26,8 @@ coverage:
 
 flags:
   backend:
-    paths:
-      - backend/src/**
     carryforward: true
   frontend:
-    paths:
-      - frontend/src/**
     carryforward: true
   shared:
-    paths:
-      - shared/src/**
     carryforward: true

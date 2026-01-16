@@ -31,9 +31,29 @@ jobs:
       - name: Run shared tests with coverage
         run: bun run --cwd shared test:coverage
 
-      - uses: codecov/codecov-action@v4
+      - name: Upload backend coverage
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: rjroy/memory-loop
-          files: ./backend/coverage/lcov.info,./frontend/coverage/lcov.info,./shared/coverage/lcov.info
+          files: ./backend/coverage/lcov.info
+          flags: backend
+          fail_ci_if_error: true
+
+      - name: Upload frontend coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: rjroy/memory-loop
+          files: ./frontend/coverage/lcov.info
+          flags: frontend
+          fail_ci_if_error: true
+
+      - name: Upload shared coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: rjroy/memory-loop
+          files: ./shared/coverage/lcov.info
+          flags: shared
           fail_ci_if_error: true

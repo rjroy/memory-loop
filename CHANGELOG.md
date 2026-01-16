@@ -5,6 +5,97 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-15
+
+### Added
+
+**Meeting Capture Mode**
+- Dedicated meeting notes with start/stop controls (#306)
+- Meeting files stored in `00_Inbox/meetings/` with YAML frontmatter (date, title, attendees)
+- Timestamped entries with `[HH:MM]` format during active meetings
+- Meeting status bar in Note Capture UI (#307)
+
+**Vault Widgets**
+- Computed frontmatter aggregation and similarity widgets (#241)
+- DAG-based dependency resolution for widget fields (#249)
+- Similarity aggregator for weighted average computation (#292)
+- Cross-widget references via `includes` field (#261)
+- Expression language: `normalize` and `lerp` functions (#257)
+- Block expression support for multi-line JavaScript-like syntax (#296)
+- Context prefix support for widget aggregators (#254)
+- Enhanced widget layout in BrowseMode for responsiveness (#263)
+
+**External Data Sync**
+- BoardGameGeek integration for syncing collection data (#302)
+
+**AI Conversation Enhancements**
+- AskUserQuestion tool for clarifying questions with multiple-choice prompts (#299)
+- Turn limit removed in favor of cancel and permission dialogs (#290)
+- Context window usage percentage displayed in assistant messages (#229)
+- 'Think about' file context menu option for quick file-based prompts (#226)
+- Markdown rendering in user message bubbles (#224)
+- Configurable discussion model via `.memory-loop.json` (#284)
+- Local source option in discussion mode settings (#305)
+
+**Vault Configuration**
+- Visual configuration editor for vault settings (#287)
+- Custom vault display ordering (#300, #301)
+- Pinned assets persisted in vault config instead of localStorage (#259)
+- Configurable recent activity limits and per-vault session storage (#265)
+
+**Task List**
+- Grouping by Inbox, Projects, and Areas categories (#272)
+- Collapsible category headers (#273)
+
+**Theming & Display**
+- Holiday tint applied to bubble images (#228)
+- Wiki-link image syntax support in messages (`![[image.png]]`) (#294)
+- Clickable goals card with `/review-goals` command (#240)
+
+**Infrastructure**
+- Health panel for backend error display (#248)
+- `.gitignore` for SQLite cache files during vault setup (#244)
+
+### Changed
+
+- Slash command cache moved to `.memory-loop/slash-commands.json` (#271)
+- Widget computation logic simplified and unified for Ground and Recall widgets (#291)
+- GoalsCard now renders raw markdown directly (#252)
+- Large modules refactored into modular structure (#247)
+- Model configuration uses generic names to spread API costs (#253)
+- SDK types replace `Record<string, unknown>` in WebSocket handler (#233)
+
+### Fixed
+
+- Image transformation skipped for paths inside inline code (#298)
+- Muted color values corrected (#295)
+- Badge order in VaultSelect adjusted for visibility (#289)
+- VaultId included when saving config from within vault (#288)
+- Widget computation order with cycle detection in WidgetEngine (#281)
+- `recentDiscussions` config honored when pruning old sessions (#275)
+- Background color transparency in MarkdownViewer (#274)
+- Session resume after vault selection for per-vault storage (#269)
+- Image width constrained in message bubbles (#268)
+- SDK errors surfaced to frontend instead of blank responses (#256)
+- Date comparison logic for contextual generation checks (#255)
+- Vault Widgets edge cases and initialization bugs (#243)
+- Zod upgraded to v4 and claude-agent-sdk to 0.2.4 (#235)
+- SDK system/init event used for reliable context usage calculation (#234)
+- Context usage sent to frontend during streaming response (#232)
+- Cursor filter applied correctly (#231)
+- Holiday background selectors updated for root-level attribute (#230)
+- Holiday theming applied to portaled dialogs (#225)
+- Order field passed to config editor initialConfig (#304)
+
+### Documentation
+
+- Usage documentation added for all four tabs (Ground, Capture, Think, Recall) (#293)
+- Meeting capture mode guide (#308)
+- Widget `includes` field documentation (#262)
+- Expression language included context documentation (#285)
+- README improved with visuals and streamlined content (#222)
+- Images added for documentation (#309)
+
 ## [1.2.0] - 2026-01-09
 
 ### Added

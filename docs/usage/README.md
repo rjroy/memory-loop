@@ -2,7 +2,6 @@
 
 Memory Loop is organized around four tabs, each designed for a specific mode of interaction with your Obsidian vault.
 
-[ img: Mode toggle showing all four tabs ]
 
 ## The Four Tabs
 
@@ -25,9 +24,9 @@ Memory Loop is organized around four tabs, each designed for a specific mode of 
 
 ## Navigation
 
-The tab bar appears at the bottom of the screen (mobile) or top (desktop). Tap any tab to switch views.
+The tab bar appears at the top of the screen. Tap any tab to switch views.
 
-[ img: Tab bar at bottom of screen ]
+<img src="images/navbar.webp"/>
 
 Each tab maintains its state when you switch away. Your draft messages, scroll positions, and selected files persist as you move between tabs.
 

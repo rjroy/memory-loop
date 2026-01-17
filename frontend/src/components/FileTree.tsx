@@ -21,6 +21,8 @@ export interface FileTreeProps {
   onLoadDirectory?: (path: string) => void;
   /** Callback when a file deletion is requested */
   onDeleteFile?: (path: string) => void;
+  /** Callback when a directory archive is requested */
+  onArchiveFile?: (path: string) => void;
   /** Callback when "Think about" is selected for a file */
   onThinkAbout?: (path: string) => void;
   /** Callback when pinned assets change (for server sync) */
@@ -299,6 +301,27 @@ function TrashIcon(): React.ReactNode {
 }
 
 /**
+ * Archive icon for archive action.
+ */
+function ArchiveIcon(): React.ReactNode {
+  return (
+    <svg
+      className="file-tree__icon-svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="3" width="20" height="5" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <line x1="10" y1="12" x2="14" y2="12" />
+    </svg>
+  );
+}
+
+/**
  * Think/sparkle icon for "Think about" action.
  */
 function ThinkIcon(): React.ReactNode {
@@ -339,7 +362,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkAbout, onPinnedAssetsChange }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -351,6 +374,7 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkA
   });
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null);
+  const [pendingArchivePath, setPendingArchivePath] = useState<string | null>(null);
 
   // Track which directories are currently loading
   // For now we just use isLoading for the overall state
@@ -497,6 +521,22 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkA
     setPendingDeletePath(null);
   }, []);
 
+  const handleArchiveClick = useCallback(() => {
+    setPendingArchivePath(contextMenu.path);
+    closeContextMenu();
+  }, [contextMenu.path, closeContextMenu]);
+
+  const handleConfirmArchive = useCallback(() => {
+    if (pendingArchivePath && onArchiveFile) {
+      onArchiveFile(pendingArchivePath);
+    }
+    setPendingArchivePath(null);
+  }, [pendingArchivePath, onArchiveFile]);
+
+  const handleCancelArchive = useCallback(() => {
+    setPendingArchivePath(null);
+  }, []);
+
   // Close context menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -529,6 +569,42 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkA
   }, [contextMenu.isOpen, closeContextMenu]);
 
   const isPinned = pinnedFolders.includes(contextMenu.path);
+
+  // Check if the selected directory is archivable
+  // Archivable directories are:
+  // 1. The "chats" directory under inbox (e.g., "00_Inbox/chats")
+  // 2. Direct children of projects folder (e.g., "01_Projects/MyProject")
+  // 3. Direct children of areas folder (e.g., "02_Areas/MyArea")
+  const isArchivable = (() => {
+    if (!contextMenu.isDirectory) return false;
+
+    const path = contextMenu.path;
+    const parts = path.split("/");
+
+    // Check for chats folder (e.g., "00_Inbox/chats" or "Inbox/chats")
+    if (parts.length >= 2) {
+      const dirName = parts[parts.length - 1].toLowerCase();
+      const parentName = parts[parts.length - 2].toLowerCase();
+      if (dirName === "chats" && (parentName.includes("inbox") || parentName === "00_inbox")) {
+        return true;
+      }
+    }
+
+    // Check for project or area directory (direct child of Projects/Areas folder)
+    if (parts.length === 2) {
+      const parentDir = parts[0].toLowerCase();
+      // Common project folder patterns
+      if (parentDir === "01_projects" || parentDir === "projects" || parentDir === "01-projects") {
+        return true;
+      }
+      // Common area folder patterns
+      if (parentDir === "02_areas" || parentDir === "areas" || parentDir === "02-areas") {
+        return true;
+      }
+    }
+
+    return false;
+  })();
 
   // Show loading state for root
   if (isLoading && rootEntries.length === 0) {
@@ -640,6 +716,17 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkA
               <span>Think about</span>
             </button>
           )}
+          {isArchivable && onArchiveFile && (
+            <button
+              type="button"
+              className="file-tree__context-menu-item"
+              onClick={handleArchiveClick}
+              role="menuitem"
+            >
+              <ArchiveIcon />
+              <span>Archive</span>
+            </button>
+          )}
           {!contextMenu.isDirectory && onDeleteFile && (
             <button
               type="button"
@@ -662,6 +749,16 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkA
         confirmLabel="Delete"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
+      />
+
+      {/* Archive confirmation dialog */}
+      <ConfirmDialog
+        isOpen={pendingArchivePath !== null}
+        title="Archive Directory?"
+        message={`Move "${pendingArchivePath?.split("/").pop() ?? ""}" to the archive folder? The directory will be organized by date in the archive.`}
+        confirmLabel="Archive"
+        onConfirm={handleConfirmArchive}
+        onCancel={handleCancelArchive}
       />
     </nav>
   );

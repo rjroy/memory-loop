@@ -79,6 +79,7 @@ import {
   handleReadFile,
   handleWriteFile,
   handleDeleteFile,
+  handleArchiveFile,
 } from "./handlers/browser-handlers.js";
 
 import {
@@ -524,6 +525,9 @@ export class WebSocketHandler {
         break;
       case "delete_file":
         await handleDeleteFile(ctx, message.path);
+        break;
+      case "archive_file":
+        await handleArchiveFile(ctx, message.path);
         break;
 
       // Search handlers (extracted)

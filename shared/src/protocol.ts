@@ -661,6 +661,16 @@ export const DeleteFileMessageSchema = z.object({
 });
 
 /**
+ * Client requests to archive a directory from the vault
+ * Path is relative to vault content root
+ * Only valid for: chats directory, project directories, area directories
+ */
+export const ArchiveFileMessageSchema = z.object({
+  type: z.literal("archive_file"),
+  path: z.string().min(1, "File path is required"),
+});
+
+/**
  * Client requests ground widgets for current vault (REQ-F-16).
  * Ground widgets appear on the Home/Ground view.
  */
@@ -775,6 +785,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SearchContentMessageSchema,
   GetSnippetsMessageSchema,
   DeleteFileMessageSchema,
+  ArchiveFileMessageSchema,
   GetGroundWidgetsMessageSchema,
   GetRecallWidgetsMessageSchema,
   WidgetEditMessageSchema,
@@ -1128,6 +1139,17 @@ export const FileDeletedMessageSchema = z.object({
 });
 
 /**
+ * Server confirms directory was archived successfully
+ */
+export const FileArchivedMessageSchema = z.object({
+  type: z.literal("file_archived"),
+  /** Original path that was archived */
+  path: z.string().min(1, "File path is required"),
+  /** Destination path in archive */
+  archivePath: z.string().min(1, "Archive path is required"),
+});
+
+/**
  * Server sends ground widgets for the current vault (REQ-F-16).
  * Response to get_ground_widgets request.
  */
@@ -1331,6 +1353,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   SnippetsMessageSchema,
   IndexProgressMessageSchema,
   FileDeletedMessageSchema,
+  FileArchivedMessageSchema,
   GroundWidgetsMessageSchema,
   RecallWidgetsMessageSchema,
   WidgetUpdateMessageSchema,
@@ -1429,6 +1452,7 @@ export type SearchFilesMessage = z.infer<typeof SearchFilesMessageSchema>;
 export type SearchContentMessage = z.infer<typeof SearchContentMessageSchema>;
 export type GetSnippetsMessage = z.infer<typeof GetSnippetsMessageSchema>;
 export type DeleteFileMessage = z.infer<typeof DeleteFileMessageSchema>;
+export type ArchiveFileMessage = z.infer<typeof ArchiveFileMessageSchema>;
 export type GetGroundWidgetsMessage = z.infer<typeof GetGroundWidgetsMessageSchema>;
 export type GetRecallWidgetsMessage = z.infer<typeof GetRecallWidgetsMessageSchema>;
 export type WidgetEditMessage = z.infer<typeof WidgetEditMessageSchema>;
@@ -1472,6 +1496,7 @@ export type SearchResultsMessage = z.infer<typeof SearchResultsMessageSchema>;
 export type SnippetsMessage = z.infer<typeof SnippetsMessageSchema>;
 export type IndexProgressMessage = z.infer<typeof IndexProgressMessageSchema>;
 export type FileDeletedMessage = z.infer<typeof FileDeletedMessageSchema>;
+export type FileArchivedMessage = z.infer<typeof FileArchivedMessageSchema>;
 export type GroundWidgetsMessage = z.infer<typeof GroundWidgetsMessageSchema>;
 export type RecallWidgetsMessage = z.infer<typeof RecallWidgetsMessageSchema>;
 export type WidgetUpdateMessage = z.infer<typeof WidgetUpdateMessageSchema>;

@@ -5,8 +5,8 @@
  * All operations are restricted to the vault boundary to prevent path traversal attacks.
  */
 
-import { readdir, readFile, writeFile, lstat, realpath, unlink } from "node:fs/promises";
-import { join, resolve, extname } from "node:path";
+import { readdir, readFile, writeFile, lstat, realpath, unlink, rename, mkdir, stat } from "node:fs/promises";
+import { join, resolve, extname, basename } from "node:path";
 import type { FileEntry } from "@memory-loop/shared";
 import type { ErrorCode } from "@memory-loop/shared";
 import { createLogger } from "./logger";
@@ -463,4 +463,171 @@ export async function deleteFile(
   // Delete the file
   await unlink(targetPath);
   log.info(`Successfully deleted file: ${relativePath}`);
+}
+
+// =============================================================================
+// Directory Archiving
+// =============================================================================
+
+/**
+ * Result of archiving a directory.
+ */
+export interface ArchiveResult {
+  /** The original path that was archived */
+  originalPath: string;
+  /** The destination path in the archive */
+  archivePath: string;
+}
+
+/**
+ * Gets the newest modification time of any file within a directory (recursive).
+ * Used to determine the YYYY-MM archive folder.
+ *
+ * @param dirPath - Absolute path to the directory
+ * @returns Date of the newest file modification, or current date if empty
+ */
+async function getNewestFileDate(dirPath: string): Promise<Date> {
+  let newestTime = 0;
+
+  async function scanDir(currentPath: string): Promise<void> {
+    const entries = await readdir(currentPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const entryPath = join(currentPath, entry.name);
+
+      try {
+        const stats = await lstat(entryPath);
+
+        if (stats.isSymbolicLink()) {
+          continue; // Skip symlinks
+        }
+
+        if (stats.isFile()) {
+          if (stats.mtimeMs > newestTime) {
+            newestTime = stats.mtimeMs;
+          }
+        } else if (stats.isDirectory()) {
+          await scanDir(entryPath);
+        }
+      } catch {
+        // Skip entries we can't stat
+      }
+    }
+  }
+
+  await scanDir(dirPath);
+
+  // If no files found, use current date
+  return newestTime > 0 ? new Date(newestTime) : new Date();
+}
+
+/**
+ * Formats a date as YYYY-MM for archive folder naming.
+ */
+function formatArchiveMonth(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+/**
+ * Archives a directory by moving it to the archive folder.
+ * The archive folder is organized by YYYY-MM based on the newest file modification date.
+ *
+ * For "chats" directories (detected by name), they are archived to archive/YYYY-MM/chats/
+ * For other directories (projects, areas), they are archived to archive/YYYY-MM/
+ *
+ * @param vaultPath - Absolute path to the vault root (content root)
+ * @param relativePath - Path relative to vault root
+ * @param archiveRoot - Relative path to archive directory (default: "07_Archive")
+ * @returns ArchiveResult with original and destination paths
+ * @throws PathTraversalError if path escapes vault boundary or is a symlink
+ * @throws DirectoryNotFoundError if directory does not exist
+ * @throws InvalidFileTypeError if target is a file (not a directory)
+ */
+export async function archiveFile(
+  vaultPath: string,
+  relativePath: string,
+  archiveRoot: string = "07_Archive"
+): Promise<ArchiveResult> {
+  log.info(`Archiving directory: ${relativePath} in ${vaultPath}`);
+
+  // Validate path is within vault
+  const targetPath = await validatePath(vaultPath, relativePath);
+
+  // Check if target exists and is a directory (not symlink or file)
+  try {
+    const stats = await lstat(targetPath);
+
+    if (stats.isSymbolicLink()) {
+      log.warn(`Symlink rejected for archive: ${relativePath}`);
+      throw new PathTraversalError(
+        `Path "${relativePath}" is a symbolic link and cannot be archived`
+      );
+    }
+
+    if (!stats.isDirectory()) {
+      throw new InvalidFileTypeError(
+        `Can only archive directories, not files. Path "${relativePath}" is a file`
+      );
+    }
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    throw new DirectoryNotFoundError(`Directory "${relativePath}" does not exist`);
+  }
+
+  // Get the newest file date for YYYY-MM determination
+  const newestDate = await getNewestFileDate(targetPath);
+  const archiveMonth = formatArchiveMonth(newestDate);
+
+  // Determine if this is a "chats" directory
+  const dirName = basename(relativePath);
+  const isChatsDir = dirName.toLowerCase() === "chats";
+
+  // Build the archive destination path
+  let archiveDestDir: string;
+  let archiveDestRelative: string;
+
+  if (isChatsDir) {
+    // Chats go to archive/YYYY-MM/chats/
+    archiveDestDir = join(vaultPath, archiveRoot, archiveMonth, "chats");
+    archiveDestRelative = `${archiveRoot}/${archiveMonth}/chats`;
+  } else {
+    // Projects/areas go to archive/YYYY-MM/
+    archiveDestDir = join(vaultPath, archiveRoot, archiveMonth);
+    archiveDestRelative = `${archiveRoot}/${archiveMonth}`;
+  }
+
+  // Create the archive destination directory if it doesn't exist
+  await mkdir(archiveDestDir, { recursive: true });
+
+  // Final destination for the directory itself
+  const finalDestPath = join(archiveDestDir, dirName);
+  const finalDestRelative = `${archiveDestRelative}/${dirName}`;
+
+  // Check if destination already exists
+  try {
+    await stat(finalDestPath);
+    // If we get here, destination exists
+    throw new FileBrowserError(
+      `Archive destination already exists: ${finalDestRelative}`,
+      "INTERNAL_ERROR"
+    );
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    // Good - destination doesn't exist, we can proceed
+  }
+
+  // Move the directory to the archive
+  await rename(targetPath, finalDestPath);
+  log.info(`Successfully archived ${relativePath} to ${finalDestRelative}`);
+
+  return {
+    originalPath: relativePath,
+    archivePath: finalDestRelative,
+  };
 }

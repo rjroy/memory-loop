@@ -15,6 +15,7 @@ import {
   readMarkdownFile,
   writeMarkdownFile,
   deleteFile,
+  archiveFile,
   FileBrowserError,
 } from "../file-browser.js";
 import { wsLog as log } from "../logger.js";
@@ -155,6 +156,41 @@ export async function handleDeleteFile(
     } else {
       const message =
         error instanceof Error ? error.message : "Failed to delete file";
+      ctx.sendError("INTERNAL_ERROR", message);
+    }
+  }
+}
+
+/**
+ * Handles archive_file message.
+ * Archives a directory from the selected vault to the archive folder.
+ */
+export async function handleArchiveFile(
+  ctx: HandlerContext,
+  path: string
+): Promise<void> {
+  log.info(`Archiving directory: ${path}`);
+
+  if (!requireVault(ctx)) {
+    log.warn("No vault selected for archive");
+    return;
+  }
+
+  try {
+    const result = await archiveFile(ctx.state.currentVault.contentRoot, path);
+    log.info(`Directory archived: ${path} -> ${result.archivePath}`);
+    ctx.send({
+      type: "file_archived",
+      path,
+      archivePath: result.archivePath,
+    });
+  } catch (error) {
+    log.error("Archive failed", error);
+    if (error instanceof FileBrowserError) {
+      ctx.sendError(error.code, error.message);
+    } else {
+      const message =
+        error instanceof Error ? error.message : "Failed to archive directory";
       ctx.sendError("INTERNAL_ERROR", message);
     }
   }

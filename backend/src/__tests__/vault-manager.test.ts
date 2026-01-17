@@ -8,12 +8,15 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import {
   getVaultsDir,
+  getDefaultVaultsDir,
+  ensureVaultsDir,
   extractVaultName,
   discoverVaults,
   getVaultById,
   getVaultInboxPath,
   VaultsDirError,
   DEFAULT_INBOX_PATH,
+  DEFAULT_VAULTS_DIR_NAME,
   INBOX_PATTERNS,
   GOALS_FILE_PATH,
   directoryExists,
@@ -46,14 +49,24 @@ describe("getVaultsDir", () => {
     expect(getVaultsDir()).toBe("/path/to/vaults");
   });
 
-  test("throws VaultsDirError when VAULTS_DIR is not set", () => {
+  test("returns default path when VAULTS_DIR is not set", () => {
     delete process.env.VAULTS_DIR;
-    expect(() => getVaultsDir()).toThrow(VaultsDirError);
+    const result = getVaultsDir();
+    expect(result).toBe(getDefaultVaultsDir());
+    expect(result).toMatch(/vaults$/);
+  });
+});
+
+describe("getDefaultVaultsDir", () => {
+  test("returns path ending with vaults directory name", () => {
+    const result = getDefaultVaultsDir();
+    expect(result).toMatch(new RegExp(`${DEFAULT_VAULTS_DIR_NAME}$`));
   });
 
-  test("error message includes setup instructions", () => {
-    delete process.env.VAULTS_DIR;
-    expect(() => getVaultsDir()).toThrow(/VAULTS_DIR environment variable is not set/);
+  test("returns path at project root level (not inside backend)", () => {
+    const result = getDefaultVaultsDir();
+    expect(result).not.toMatch(/backend\/vaults$/);
+    expect(result).not.toMatch(/src\/vaults$/);
   });
 });
 
@@ -287,6 +300,27 @@ describe("Filesystem Integration", () => {
 
     test("returns false for directory (not file)", async () => {
       expect(await fileExists(testDir)).toBe(false);
+    });
+  });
+
+  describe("ensureVaultsDir", () => {
+    test("returns false when directory already exists", async () => {
+      const existingDir = join(testDir, "existing");
+      await mkdir(existingDir);
+      expect(await ensureVaultsDir(existingDir)).toBe(false);
+    });
+
+    test("creates directory and returns true when it does not exist", async () => {
+      const newDir = join(testDir, "new-vaults");
+      expect(await directoryExists(newDir)).toBe(false);
+      expect(await ensureVaultsDir(newDir)).toBe(true);
+      expect(await directoryExists(newDir)).toBe(true);
+    });
+
+    test("creates nested directories with recursive mkdir", async () => {
+      const nestedDir = join(testDir, "deeply", "nested", "vaults");
+      expect(await ensureVaultsDir(nestedDir)).toBe(true);
+      expect(await directoryExists(nestedDir)).toBe(true);
     });
   });
 
@@ -534,25 +568,21 @@ describe("Filesystem Integration", () => {
       expect(vaults).toHaveLength(1);
     });
 
-    test("throws VaultsDirError when VAULTS_DIR is unset", async () => {
+    test("uses default vaults dir when VAULTS_DIR is unset", async () => {
       delete process.env.VAULTS_DIR;
-      try {
-        await discoverVaults();
-        expect.unreachable("Should have thrown VaultsDirError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(VaultsDirError);
-      }
+      // Should not throw, should use default and create directory if needed
+      const vaults = await discoverVaults();
+      expect(Array.isArray(vaults)).toBe(true);
     });
 
-    test("throws VaultsDirError when VAULTS_DIR does not exist", async () => {
-      process.env.VAULTS_DIR = join(testDir, "nonexistent");
-      try {
-        await discoverVaults();
-        expect.unreachable("Should have thrown VaultsDirError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(VaultsDirError);
-        expect((error as Error).message).toMatch(/does not exist/);
-      }
+    test("creates vaults directory when it does not exist", async () => {
+      const newDir = join(testDir, "new-vaults-dir");
+      process.env.VAULTS_DIR = newDir;
+      expect(await directoryExists(newDir)).toBe(false);
+
+      const vaults = await discoverVaults();
+      expect(Array.isArray(vaults)).toBe(true);
+      expect(await directoryExists(newDir)).toBe(true);
     });
 
     test("sorts vaults alphabetically by name", async () => {
@@ -593,24 +623,21 @@ describe("Filesystem Integration", () => {
       expect(vault).toBeNull();
     });
 
-    test("throws VaultsDirError when VAULTS_DIR is unset", async () => {
+    test("uses default vaults dir when VAULTS_DIR is unset", async () => {
       delete process.env.VAULTS_DIR;
-      try {
-        await getVaultById("any");
-        expect.unreachable("Should have thrown VaultsDirError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(VaultsDirError);
-      }
+      // Should not throw, should use default and create directory if needed
+      const vault = await getVaultById("any");
+      expect(vault).toBeNull(); // Vault not found, but no error
     });
 
-    test("throws VaultsDirError when VAULTS_DIR does not exist", async () => {
-      process.env.VAULTS_DIR = join(testDir, "nonexistent");
-      try {
-        await getVaultById("any");
-        expect.unreachable("Should have thrown VaultsDirError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(VaultsDirError);
-      }
+    test("creates vaults directory when it does not exist", async () => {
+      const newDir = join(testDir, "new-vaults-dir-2");
+      process.env.VAULTS_DIR = newDir;
+      expect(await directoryExists(newDir)).toBe(false);
+
+      const vault = await getVaultById("any");
+      expect(vault).toBeNull(); // Vault not found, but directory created
+      expect(await directoryExists(newDir)).toBe(true);
     });
   });
 

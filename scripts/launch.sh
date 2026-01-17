@@ -32,17 +32,16 @@ log_error() {
     echo "$msg" >&2
 }
 
-# Check required environment variables
+# Set VAULTS_DIR to default if not provided
 if [[ -z "${VAULTS_DIR:-}" ]]; then
-    log_error "VAULTS_DIR environment variable is not set"
-    log_error "Set it to the directory containing your Obsidian vaults"
-    log_error "Example: export VAULTS_DIR=~/Documents/Vaults"
-    exit 1
+    export VAULTS_DIR="$PROJECT_ROOT/vaults"
+    log "VAULTS_DIR not set, using default: $VAULTS_DIR"
 fi
 
+# Create vaults directory if it doesn't exist
 if [[ ! -d "$VAULTS_DIR" ]]; then
-    log_error "VAULTS_DIR does not exist: $VAULTS_DIR"
-    exit 1
+    log "Creating vaults directory: $VAULTS_DIR"
+    mkdir -p "$VAULTS_DIR"
 fi
 
 log "Starting Memory Loop..."

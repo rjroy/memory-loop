@@ -188,6 +188,10 @@ export interface ConnectionState {
   searchIndex: SearchIndexManager | null;
   /** Active model captured from SDK system/init event (null if not yet received) */
   activeModel: string | null;
+  /** Cumulative token count across all turns in the session (input + output) */
+  cumulativeTokens: number;
+  /** Context window size for the active model (null if not yet known) */
+  contextWindow: number | null;
   /** Widget engine for computing vault widgets (null if no vault selected) */
   widgetEngine: WidgetEngine | null;
   /** File watcher for widget source files (null if no vault selected) */
@@ -291,6 +295,8 @@ export function createConnectionState(): ConnectionState {
     pendingAskUserQuestions: new Map(),
     searchIndex: null,
     activeModel: null,
+    cumulativeTokens: 0,
+    contextWindow: null,
     widgetEngine: null,
     widgetWatcher: null,
     healthCollector: null,

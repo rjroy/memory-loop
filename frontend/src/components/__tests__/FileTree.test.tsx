@@ -755,4 +755,245 @@ describe("FileTree", () => {
       expect(screen.queryByRole("menu")).toBeNull();
     });
   });
+
+  describe("archive functionality", () => {
+    // Test data for archivable directories
+    const archivableTestFiles: FileEntry[] = [
+      { name: "00_Inbox", type: "directory", path: "00_Inbox" },
+      { name: "01_Projects", type: "directory", path: "01_Projects" },
+      { name: "02_Areas", type: "directory", path: "02_Areas" },
+      { name: "README.md", type: "file", path: "README.md" },
+    ];
+
+    const inboxContents: FileEntry[] = [
+      { name: "chats", type: "directory", path: "00_Inbox/chats" },
+      { name: "daily.md", type: "file", path: "00_Inbox/daily.md" },
+    ];
+
+    const projectsContents: FileEntry[] = [
+      { name: "MyProject", type: "directory", path: "01_Projects/MyProject" },
+    ];
+
+    const areasContents: FileEntry[] = [
+      { name: "Health", type: "directory", path: "02_Areas/Health" },
+    ];
+
+    it("shows archive option for chats directory under inbox", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", archivableTestFiles],
+        ["00_Inbox", inboxContents],
+      ]);
+      const expandedDirs = new Set<string>(["00_Inbox"]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on chats directory
+      const chatsButton = screen.getByText("chats").closest("button");
+      fireEvent.contextMenu(chatsButton!);
+
+      // Should show archive option
+      expect(screen.getByText("Archive")).toBeDefined();
+    });
+
+    it("shows archive option for project directories", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", archivableTestFiles],
+        ["01_Projects", projectsContents],
+      ]);
+      const expandedDirs = new Set<string>(["01_Projects"]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on project directory
+      const projectButton = screen.getByText("MyProject").closest("button");
+      fireEvent.contextMenu(projectButton!);
+
+      // Should show archive option
+      expect(screen.getByText("Archive")).toBeDefined();
+    });
+
+    it("shows archive option for area directories", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", archivableTestFiles],
+        ["02_Areas", areasContents],
+      ]);
+      const expandedDirs = new Set<string>(["02_Areas"]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on area directory
+      const areaButton = screen.getByText("Health").closest("button");
+      fireEvent.contextMenu(areaButton!);
+
+      // Should show archive option
+      expect(screen.getByText("Archive")).toBeDefined();
+    });
+
+    it("does not show archive option for non-archivable directories", () => {
+      const cache = new Map<string, FileEntry[]>([["", archivableTestFiles]]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on top-level directory (not archivable - needs to be a child)
+      const inboxButton = screen.getByText("00_Inbox").closest("button");
+      fireEvent.contextMenu(inboxButton!);
+
+      // Should not show archive option (top-level inbox itself is not archivable)
+      expect(screen.queryByText("Archive")).toBeNull();
+    });
+
+    it("does not show archive option for files", () => {
+      const cache = new Map<string, FileEntry[]>([["", archivableTestFiles]]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on a file
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+
+      // Should not show archive option
+      expect(screen.queryByText("Archive")).toBeNull();
+    });
+
+    it("shows confirmation dialog when archive is clicked", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", archivableTestFiles],
+        ["01_Projects", projectsContents],
+      ]);
+      const expandedDirs = new Set<string>(["01_Projects"]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on project directory and click archive
+      const projectButton = screen.getByText("MyProject").closest("button");
+      fireEvent.contextMenu(projectButton!);
+      fireEvent.click(screen.getByText("Archive"));
+
+      // Should show confirmation dialog
+      expect(screen.getByText("Archive Directory?")).toBeDefined();
+      expect(screen.getByText(/Move "MyProject" to the archive folder/)).toBeDefined();
+    });
+
+    it("calls onArchiveFile when archive is confirmed", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", archivableTestFiles],
+        ["01_Projects", projectsContents],
+      ]);
+      const expandedDirs = new Set<string>(["01_Projects"]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on project directory and click archive
+      const projectButton = screen.getByText("MyProject").closest("button");
+      fireEvent.contextMenu(projectButton!);
+      fireEvent.click(screen.getByText("Archive"));
+
+      // Confirm archive
+      fireEvent.click(screen.getByText("Archive"));
+
+      // Should call onArchiveFile with the directory path
+      expect(onArchiveFile).toHaveBeenCalledWith("01_Projects/MyProject");
+    });
+
+    it("does not call onArchiveFile when archive is cancelled", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", archivableTestFiles],
+        ["01_Projects", projectsContents],
+      ]);
+      const expandedDirs = new Set<string>(["01_Projects"]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on project directory and click archive
+      const projectButton = screen.getByText("MyProject").closest("button");
+      fireEvent.contextMenu(projectButton!);
+      fireEvent.click(screen.getByText("Archive"));
+
+      // Cancel archive
+      fireEvent.click(screen.getByText("Cancel"));
+
+      // Should not call onArchiveFile
+      expect(onArchiveFile).not.toHaveBeenCalled();
+    });
+
+    it("does not show archive option when onArchiveFile is not provided", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", archivableTestFiles],
+        ["01_Projects", projectsContents],
+      ]);
+      const expandedDirs = new Set<string>(["01_Projects"]);
+      render(<FileTree />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on project directory
+      const projectButton = screen.getByText("MyProject").closest("button");
+      fireEvent.contextMenu(projectButton!);
+
+      // Should not show archive option
+      expect(screen.queryByText("Archive")).toBeNull();
+    });
+
+    it("closes context menu after clicking archive", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", archivableTestFiles],
+        ["01_Projects", projectsContents],
+      ]);
+      const expandedDirs = new Set<string>(["01_Projects"]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on project directory
+      const projectButton = screen.getByText("MyProject").closest("button");
+      fireEvent.contextMenu(projectButton!);
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      // Click archive
+      fireEvent.click(screen.getByText("Archive"));
+
+      // Context menu should be closed (confirmation dialog is open instead)
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("calls onArchiveFile for chats directory with full path", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", archivableTestFiles],
+        ["00_Inbox", inboxContents],
+      ]);
+      const expandedDirs = new Set<string>(["00_Inbox"]);
+      const onArchiveFile = mock(() => {});
+      render(<FileTree onArchiveFile={onArchiveFile} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Right-click on chats directory and click archive
+      const chatsButton = screen.getByText("chats").closest("button");
+      fireEvent.contextMenu(chatsButton!);
+      fireEvent.click(screen.getByText("Archive"));
+
+      // Confirm archive
+      fireEvent.click(screen.getByText("Archive"));
+
+      // Should call onArchiveFile with the full path
+      expect(onArchiveFile).toHaveBeenCalledWith("00_Inbox/chats");
+    });
+  });
 });

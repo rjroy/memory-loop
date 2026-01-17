@@ -1,8 +1,16 @@
-<img src="docs/logo.webp" alt="Memory Loop logo" width="150" align="right">
 
 # Memory Loop
 
+<img src="docs/logo.webp" alt="Memory Loop logo" width="150" align="right">
+
+![Version](https://img.shields.io/badge/version-1.3.13-blue.svg)
 [![codecov](https://codecov.io/gh/rjroy/memory-loop/graph/badge.svg?token=qD1xMP4hrR)](https://codecov.io/gh/rjroy/memory-loop)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+<br>
+![Claude](https://img.shields.io/badge/Powered_by-Claude-cc785c?logo=anthropic&logoColor=white)
+![Bun](https://img.shields.io/badge/Bun-1.3-fbf0df?logo=bun&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 
 A mobile-friendly web interface for interacting with Obsidian vaults via Claude AI. Capture thoughts, have AI-powered conversations, and browse your notes from any device.
 

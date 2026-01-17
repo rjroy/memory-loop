@@ -674,7 +674,7 @@ describe("FileTree", () => {
       expect(screen.getByText("Think about")).toBeDefined();
     });
 
-    it("does not show think about option for directories", () => {
+    it("shows think about option for directories", () => {
       const cache = new Map<string, FileEntry[]>([["", testFiles]]);
       const onThinkAbout = mock(() => {});
       render(<FileTree onThinkAbout={onThinkAbout} />, { wrapper: createTestWrapper(cache) });
@@ -683,8 +683,22 @@ describe("FileTree", () => {
       const dirButton = screen.getByText("docs").closest("button");
       fireEvent.contextMenu(dirButton!);
 
-      // Should not show think about option
-      expect(screen.queryByText("Think about")).toBeNull();
+      // Should show think about option
+      expect(screen.getByText("Think about")).toBeDefined();
+    });
+
+    it("calls onThinkAbout when think about is clicked on a directory", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onThinkAbout = mock(() => {});
+      render(<FileTree onThinkAbout={onThinkAbout} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a directory and click think about
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Think about"));
+
+      // Should call onThinkAbout with the directory path
+      expect(onThinkAbout).toHaveBeenCalledWith("docs");
     });
 
     it("calls onThinkAbout when think about is clicked", () => {

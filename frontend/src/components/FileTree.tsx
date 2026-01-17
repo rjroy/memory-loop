@@ -629,7 +629,7 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onThinkA
             <PinIcon />
             <span>{isPinned ? "Unpin folder" : "Pin to top"}</span>
           </button>
-          {!contextMenu.isDirectory && onThinkAbout && (
+          {onThinkAbout && (
             <button
               type="button"
               className="file-tree__context-menu-item"

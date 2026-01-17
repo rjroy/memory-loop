@@ -11,8 +11,8 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import type { VaultInfo, ServerMessage } from "@memory-loop/shared";
 import type { HandlerContext, ConnectionState, RequiredHandlerDependencies } from "../types.js";
-import { handleCreateDirectory, handleRenameFile, handleMoveFile } from "../browser-handlers.js";
-import type { RenameResult, MoveResult } from "../../file-browser.js";
+import { handleCreateDirectory, handleRenameFile, handleMoveFile, handleGetDirectoryContents, handleDeleteDirectory } from "../browser-handlers.js";
+import type { RenameResult, MoveResult, DirectoryContentsResult, DeleteDirectoryResult } from "../../file-browser.js";
 import type { ReferenceUpdateResult } from "../../reference-updater.js";
 
 // =============================================================================
@@ -711,6 +711,394 @@ describe("handleMoveFile", () => {
     expect(sentMessages[0].type).toBe("file_moved");
     if (sentMessages[0].type === "file_moved") {
       expect(sentMessages[0].referencesUpdated).toBe(47);
+    }
+  });
+});
+
+// =============================================================================
+// handleGetDirectoryContents Tests
+// =============================================================================
+
+function createMockDepsWithGetDirContents(
+  getDirContentsFn: (vaultPath: string, relativePath: string) => Promise<DirectoryContentsResult>
+): RequiredHandlerDependencies {
+  return {
+    captureToDaily: () => Promise.resolve({ success: true, timestamp: "", notePath: "" }),
+    getRecentNotes: () => Promise.resolve([]),
+    listDirectory: () => Promise.resolve([]),
+    readMarkdownFile: () => Promise.resolve({ content: "", truncated: false }),
+    writeMarkdownFile: () => Promise.resolve(),
+    deleteFile: () => Promise.resolve(),
+    getDirectoryContents: getDirContentsFn,
+    deleteDirectory: () => Promise.resolve({ path: "", filesDeleted: 0, directoriesDeleted: 0 }),
+    archiveFile: () => Promise.resolve({ originalPath: "", archivePath: "" }),
+    createDirectory: () => Promise.resolve(""),
+    createFile: () => Promise.resolve(""),
+    renameFile: () => Promise.resolve({ oldPath: "", newPath: "" }),
+    moveFile: () => Promise.resolve({ oldPath: "", newPath: "", isDirectory: false }),
+    updateReferences: () => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }),
+    getInspiration: () => Promise.resolve({ contextual: null, quote: { text: "", attribution: "" } }),
+    getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
+    toggleTask: () => Promise.resolve({ success: true }),
+    getRecentSessions: () => Promise.resolve([]),
+    loadVaultConfig: () => Promise.resolve({}),
+    parseFrontmatter: () => ({ data: {}, content: "" }),
+  };
+}
+
+describe("handleGetDirectoryContents", () => {
+  it("should send directory_contents message on success", async () => {
+    const mockGetDirContents = mock(() => Promise.resolve({
+      files: ["file1.md", "file2.md"],
+      directories: ["subdir"],
+      totalFiles: 2,
+      totalDirectories: 1,
+      truncated: false,
+    }));
+    const ctx = createMockContext(createMockDepsWithGetDirContents(mockGetDirContents));
+
+    await handleGetDirectoryContents(ctx, "my-folder");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("directory_contents");
+    if (sentMessages[0].type === "directory_contents") {
+      expect(sentMessages[0].path).toBe("my-folder");
+      expect(sentMessages[0].files).toEqual(["file1.md", "file2.md"]);
+      expect(sentMessages[0].directories).toEqual(["subdir"]);
+      expect(sentMessages[0].totalFiles).toBe(2);
+      expect(sentMessages[0].totalDirectories).toBe(1);
+      expect(sentMessages[0].truncated).toBe(false);
+    }
+  });
+
+  it("should call getDirectoryContents with correct parameters", async () => {
+    const mockGetDirContents = mock(() => Promise.resolve({
+      files: [],
+      directories: [],
+      totalFiles: 0,
+      totalDirectories: 0,
+      truncated: false,
+    }));
+    const ctx = createMockContext(createMockDepsWithGetDirContents(mockGetDirContents));
+
+    await handleGetDirectoryContents(ctx, "docs/notes");
+
+    expect(mockGetDirContents).toHaveBeenCalledTimes(1);
+    expect(mockGetDirContents).toHaveBeenCalledWith("/test/vault", "docs/notes");
+  });
+
+  it("should handle truncated results", async () => {
+    const mockGetDirContents = mock(() => Promise.resolve({
+      files: ["f1.md", "f2.md", "f3.md", "f4.md", "f5.md"],
+      directories: ["d1", "d2", "d3", "d4", "d5"],
+      totalFiles: 100,
+      totalDirectories: 20,
+      truncated: true,
+    }));
+    const ctx = createMockContext(createMockDepsWithGetDirContents(mockGetDirContents));
+
+    await handleGetDirectoryContents(ctx, "large-folder");
+
+    expect(sentMessages.length).toBe(1);
+    if (sentMessages[0].type === "directory_contents") {
+      expect(sentMessages[0].truncated).toBe(true);
+      expect(sentMessages[0].totalFiles).toBe(100);
+      expect(sentMessages[0].totalDirectories).toBe(20);
+    }
+  });
+
+  it("should send error when no vault is selected", async () => {
+    const mockGetDirContents = mock(() => Promise.resolve({
+      files: [],
+      directories: [],
+      totalFiles: 0,
+      totalDirectories: 0,
+      truncated: false,
+    }));
+    const noVaultState: ConnectionState = {
+      ...mockState,
+      currentVault: null,
+    };
+    const ctx = createMockContext(createMockDepsWithGetDirContents(mockGetDirContents), noVaultState);
+
+    await handleGetDirectoryContents(ctx, "some-folder");
+
+    expect(mockGetDirContents).not.toHaveBeenCalled();
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+  });
+
+  it("should handle DirectoryNotFoundError", async () => {
+    const error = new Error("Directory not found");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "DIRECTORY_NOT_FOUND" });
+    const mockGetDirContents = mock(() => Promise.reject(error));
+    const ctx = createMockContext(createMockDepsWithGetDirContents(mockGetDirContents));
+
+    await handleGetDirectoryContents(ctx, "nonexistent");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("DIRECTORY_NOT_FOUND");
+    }
+  });
+
+  it("should handle InvalidFileTypeError (path is a file)", async () => {
+    const error = new Error("Path is a file, not a directory");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "INVALID_FILE_TYPE" });
+    const mockGetDirContents = mock(() => Promise.reject(error));
+    const ctx = createMockContext(createMockDepsWithGetDirContents(mockGetDirContents));
+
+    await handleGetDirectoryContents(ctx, "file.md");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("INVALID_FILE_TYPE");
+    }
+  });
+
+  it("should handle PathTraversalError", async () => {
+    const error = new Error("Path traversal detected");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "PATH_TRAVERSAL" });
+    const mockGetDirContents = mock(() => Promise.reject(error));
+    const ctx = createMockContext(createMockDepsWithGetDirContents(mockGetDirContents));
+
+    await handleGetDirectoryContents(ctx, "../outside");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("PATH_TRAVERSAL");
+    }
+  });
+
+  it("should handle generic errors with INTERNAL_ERROR code", async () => {
+    const mockGetDirContents = mock(() => Promise.reject(new Error("Unexpected error")));
+    const ctx = createMockContext(createMockDepsWithGetDirContents(mockGetDirContents));
+
+    await handleGetDirectoryContents(ctx, "folder");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("INTERNAL_ERROR");
+      expect(sentMessages[0].message).toBe("Unexpected error");
+    }
+  });
+
+  it("should handle non-Error objects in catch", async () => {
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+    const mockGetDirContents = mock(() => Promise.reject("string error"));
+    const ctx = createMockContext(createMockDepsWithGetDirContents(mockGetDirContents));
+
+    await handleGetDirectoryContents(ctx, "folder");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("INTERNAL_ERROR");
+      expect(sentMessages[0].message).toBe("Failed to get directory contents");
+    }
+  });
+});
+
+// =============================================================================
+// handleDeleteDirectory Tests
+// =============================================================================
+
+function createMockDepsWithDeleteDir(
+  deleteDirFn: (vaultPath: string, relativePath: string) => Promise<DeleteDirectoryResult>
+): RequiredHandlerDependencies {
+  return {
+    captureToDaily: () => Promise.resolve({ success: true, timestamp: "", notePath: "" }),
+    getRecentNotes: () => Promise.resolve([]),
+    listDirectory: () => Promise.resolve([]),
+    readMarkdownFile: () => Promise.resolve({ content: "", truncated: false }),
+    writeMarkdownFile: () => Promise.resolve(),
+    deleteFile: () => Promise.resolve(),
+    getDirectoryContents: () => Promise.resolve({ files: [], directories: [], totalFiles: 0, totalDirectories: 0, truncated: false }),
+    deleteDirectory: deleteDirFn,
+    archiveFile: () => Promise.resolve({ originalPath: "", archivePath: "" }),
+    createDirectory: () => Promise.resolve(""),
+    createFile: () => Promise.resolve(""),
+    renameFile: () => Promise.resolve({ oldPath: "", newPath: "" }),
+    moveFile: () => Promise.resolve({ oldPath: "", newPath: "", isDirectory: false }),
+    updateReferences: () => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }),
+    getInspiration: () => Promise.resolve({ contextual: null, quote: { text: "", attribution: "" } }),
+    getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
+    toggleTask: () => Promise.resolve({ success: true }),
+    getRecentSessions: () => Promise.resolve([]),
+    loadVaultConfig: () => Promise.resolve({}),
+    parseFrontmatter: () => ({ data: {}, content: "" }),
+  };
+}
+
+describe("handleDeleteDirectory", () => {
+  it("should send directory_deleted message on success", async () => {
+    const mockDeleteDir = mock(() => Promise.resolve({
+      path: "my-folder",
+      filesDeleted: 5,
+      directoriesDeleted: 2,
+    }));
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir));
+
+    await handleDeleteDirectory(ctx, "my-folder");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("directory_deleted");
+    if (sentMessages[0].type === "directory_deleted") {
+      expect(sentMessages[0].path).toBe("my-folder");
+      expect(sentMessages[0].filesDeleted).toBe(5);
+      expect(sentMessages[0].directoriesDeleted).toBe(2);
+    }
+  });
+
+  it("should call deleteDirectory with correct parameters", async () => {
+    const mockDeleteDir = mock(() => Promise.resolve({
+      path: "docs/old-notes",
+      filesDeleted: 0,
+      directoriesDeleted: 0,
+    }));
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir));
+
+    await handleDeleteDirectory(ctx, "docs/old-notes");
+
+    expect(mockDeleteDir).toHaveBeenCalledTimes(1);
+    expect(mockDeleteDir).toHaveBeenCalledWith("/test/vault", "docs/old-notes");
+  });
+
+  it("should handle empty directory deletion", async () => {
+    const mockDeleteDir = mock(() => Promise.resolve({
+      path: "empty-folder",
+      filesDeleted: 0,
+      directoriesDeleted: 0,
+    }));
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir));
+
+    await handleDeleteDirectory(ctx, "empty-folder");
+
+    expect(sentMessages.length).toBe(1);
+    if (sentMessages[0].type === "directory_deleted") {
+      expect(sentMessages[0].filesDeleted).toBe(0);
+      expect(sentMessages[0].directoriesDeleted).toBe(0);
+    }
+  });
+
+  it("should send error when no vault is selected", async () => {
+    const mockDeleteDir = mock(() => Promise.resolve({
+      path: "",
+      filesDeleted: 0,
+      directoriesDeleted: 0,
+    }));
+    const noVaultState: ConnectionState = {
+      ...mockState,
+      currentVault: null,
+    };
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir), noVaultState);
+
+    await handleDeleteDirectory(ctx, "some-folder");
+
+    expect(mockDeleteDir).not.toHaveBeenCalled();
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+  });
+
+  it("should handle DirectoryNotFoundError", async () => {
+    const error = new Error("Directory not found");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "DIRECTORY_NOT_FOUND" });
+    const mockDeleteDir = mock(() => Promise.reject(error));
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir));
+
+    await handleDeleteDirectory(ctx, "nonexistent");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("DIRECTORY_NOT_FOUND");
+    }
+  });
+
+  it("should handle InvalidFileTypeError (path is a file)", async () => {
+    const error = new Error("Path is a file, not a directory");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "INVALID_FILE_TYPE" });
+    const mockDeleteDir = mock(() => Promise.reject(error));
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir));
+
+    await handleDeleteDirectory(ctx, "file.md");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("INVALID_FILE_TYPE");
+    }
+  });
+
+  it("should handle PathTraversalError", async () => {
+    const error = new Error("Path traversal detected");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "PATH_TRAVERSAL" });
+    const mockDeleteDir = mock(() => Promise.reject(error));
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir));
+
+    await handleDeleteDirectory(ctx, "../outside");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("PATH_TRAVERSAL");
+    }
+  });
+
+  it("should handle generic errors with INTERNAL_ERROR code", async () => {
+    const mockDeleteDir = mock(() => Promise.reject(new Error("Unexpected error")));
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir));
+
+    await handleDeleteDirectory(ctx, "folder");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("INTERNAL_ERROR");
+      expect(sentMessages[0].message).toBe("Unexpected error");
+    }
+  });
+
+  it("should handle non-Error objects in catch", async () => {
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+    const mockDeleteDir = mock(() => Promise.reject("string error"));
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir));
+
+    await handleDeleteDirectory(ctx, "folder");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("INTERNAL_ERROR");
+      expect(sentMessages[0].message).toBe("Failed to delete directory");
+    }
+  });
+
+  it("should delete nested directory with many files", async () => {
+    const mockDeleteDir = mock(() => Promise.resolve({
+      path: "docs/archive/old-project",
+      filesDeleted: 150,
+      directoriesDeleted: 25,
+    }));
+    const ctx = createMockContext(createMockDepsWithDeleteDir(mockDeleteDir));
+
+    await handleDeleteDirectory(ctx, "docs/archive/old-project");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("directory_deleted");
+    if (sentMessages[0].type === "directory_deleted") {
+      expect(sentMessages[0].filesDeleted).toBe(150);
+      expect(sentMessages[0].directoriesDeleted).toBe(25);
     }
   });
 });

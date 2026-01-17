@@ -10,6 +10,7 @@ import type { FileEntry } from "@memory-loop/shared";
 import { useSession } from "../contexts/SessionContext";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { InputDialog } from "./InputDialog";
+import { MoveDialog } from "./MoveDialog";
 import "./FileTree.css";
 
 /**
@@ -34,6 +35,8 @@ export interface FileTreeProps {
   onCreateFile?: (parentPath: string, name: string) => void;
   /** Callback when a file or directory is renamed */
   onRenameFile?: (path: string, newName: string) => void;
+  /** Callback when a file or directory is moved */
+  onMoveFile?: (path: string, newPath: string) => void;
 }
 
 /**
@@ -411,6 +414,27 @@ function RenameIcon(): React.ReactNode {
 }
 
 /**
+ * Move icon (folder with arrow).
+ */
+function MoveIcon(): React.ReactNode {
+  return (
+    <svg
+      className="file-tree__icon-svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      <path d="M12 11v6" />
+      <path d="M9 14l3-3 3 3" />
+    </svg>
+  );
+}
+
+/**
  * Context menu state for pin/unpin actions.
  */
 interface ContextMenuState {
@@ -431,7 +455,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory, onCreateFile, onRenameFile }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory, onCreateFile, onRenameFile, onMoveFile }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -447,6 +471,8 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
   const [pendingCreateDirPath, setPendingCreateDirPath] = useState<string | null>(null);
   const [pendingCreateFilePath, setPendingCreateFilePath] = useState<string | null>(null);
   const [pendingRenamePath, setPendingRenamePath] = useState<string | null>(null);
+  const [pendingMovePath, setPendingMovePath] = useState<string | null>(null);
+  const [pendingMoveIsDirectory, setPendingMoveIsDirectory] = useState<boolean>(false);
 
   // Track which directories are currently loading
   // For now we just use isLoading for the overall state
@@ -666,6 +692,28 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
     setPendingRenamePath(null);
   }, []);
 
+  const handleMoveRequest = useCallback(() => {
+    setPendingMovePath(contextMenu.path);
+    setPendingMoveIsDirectory(contextMenu.isDirectory);
+    closeContextMenu();
+  }, [contextMenu.path, contextMenu.isDirectory, closeContextMenu]);
+
+  const handleConfirmMove = useCallback(
+    (newPath: string) => {
+      if (pendingMovePath !== null && onMoveFile) {
+        onMoveFile(pendingMovePath, newPath);
+      }
+      setPendingMovePath(null);
+      setPendingMoveIsDirectory(false);
+    },
+    [pendingMovePath, onMoveFile]
+  );
+
+  const handleCancelMove = useCallback(() => {
+    setPendingMovePath(null);
+    setPendingMoveIsDirectory(false);
+  }, []);
+
   // Close context menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -856,6 +904,17 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
               <span>Rename</span>
             </button>
           )}
+          {onMoveFile && (
+            <button
+              type="button"
+              className="file-tree__context-menu-item"
+              onClick={handleMoveRequest}
+              role="menuitem"
+            >
+              <MoveIcon />
+              <span>Move</span>
+            </button>
+          )}
           {contextMenu.isDirectory && onCreateDirectory && (
             <button
               type="button"
@@ -963,6 +1022,15 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
         confirmLabel="Rename"
         onConfirm={handleConfirmRename}
         onCancel={handleCancelRename}
+      />
+
+      {/* Move dialog */}
+      <MoveDialog
+        isOpen={pendingMovePath !== null}
+        sourcePath={pendingMovePath ?? ""}
+        isDirectory={pendingMoveIsDirectory}
+        onConfirm={handleConfirmMove}
+        onCancel={handleCancelMove}
       />
     </nav>
   );

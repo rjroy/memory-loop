@@ -1010,4 +1010,196 @@ describe("FileTree", () => {
       expect(onArchiveFile).toHaveBeenCalledWith("00_Inbox/chats");
     });
   });
+
+  describe("create directory functionality", () => {
+    it("shows add directory option in context menu for directories", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onCreateDirectory = mock(() => {});
+      render(<FileTree onCreateDirectory={onCreateDirectory} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on a directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+
+      // Should show add directory option
+      expect(screen.getByText("Add Directory")).toBeDefined();
+    });
+
+    it("does not show add directory option for files", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onCreateDirectory = mock(() => {});
+      render(<FileTree onCreateDirectory={onCreateDirectory} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on a file
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+
+      // Should not show add directory option
+      expect(screen.queryByText("Add Directory")).toBeNull();
+    });
+
+    it("opens input dialog when add directory is clicked", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onCreateDirectory = mock(() => {});
+      render(<FileTree onCreateDirectory={onCreateDirectory} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on a directory and click add directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Add Directory"));
+
+      // Should show input dialog
+      expect(screen.getByRole("dialog")).toBeDefined();
+      expect(screen.getByText("Add Directory", { selector: "h2" })).toBeDefined();
+      expect(screen.getByLabelText("Directory name")).toBeDefined();
+    });
+
+    it("calls onCreateDirectory when dialog is confirmed with valid name", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onCreateDirectory = mock(() => {});
+      render(<FileTree onCreateDirectory={onCreateDirectory} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on a directory and click add directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Add Directory"));
+
+      // Enter a directory name
+      const input = screen.getByLabelText("Directory name");
+      fireEvent.change(input, { target: { value: "new-folder" } });
+
+      // Click create
+      fireEvent.click(screen.getByText("Create"));
+
+      // Should call onCreateDirectory with path and name
+      expect(onCreateDirectory).toHaveBeenCalledWith("docs", "new-folder");
+    });
+
+    it("does not call onCreateDirectory when dialog is cancelled", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onCreateDirectory = mock(() => {});
+      render(<FileTree onCreateDirectory={onCreateDirectory} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on a directory and click add directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Add Directory"));
+
+      // Enter a directory name
+      const input = screen.getByLabelText("Directory name");
+      fireEvent.change(input, { target: { value: "new-folder" } });
+
+      // Click cancel
+      fireEvent.click(screen.getByText("Cancel"));
+
+      // Should not call onCreateDirectory
+      expect(onCreateDirectory).not.toHaveBeenCalled();
+    });
+
+    it("does not show add directory option when onCreateDirectory is not provided", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+
+      // Should not show add directory option
+      expect(screen.queryByText("Add Directory")).toBeNull();
+    });
+
+    it("shows add directory option for nested directories", () => {
+      const cache = new Map<string, FileEntry[]>([
+        ["", testFiles],
+        ["docs", docsFiles],
+      ]);
+      const expandedDirs = new Set<string>(["docs"]);
+      const onCreateDirectory = mock(() => {});
+      render(<FileTree onCreateDirectory={onCreateDirectory} />, {
+        wrapper: createTestWrapper(cache, expandedDirs),
+      });
+
+      // Need to expand docs first to see nested content
+      // docs only has files in docsFiles (guide.md, api.md), let's use docs itself
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+
+      expect(screen.getByText("Add Directory")).toBeDefined();
+    });
+
+    it("closes context menu after clicking add directory", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onCreateDirectory = mock(() => {});
+      render(<FileTree onCreateDirectory={onCreateDirectory} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on a directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      // Click add directory
+      fireEvent.click(screen.getByText("Add Directory"));
+
+      // Context menu should be closed (dialog is open instead)
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("shows add directory for root directory path", () => {
+      // Test with root-level directory
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onCreateDirectory = mock(() => {});
+      render(<FileTree onCreateDirectory={onCreateDirectory} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on notes directory and create
+      const notesButton = screen.getByText("notes").closest("button");
+      fireEvent.contextMenu(notesButton!);
+      fireEvent.click(screen.getByText("Add Directory"));
+
+      // Enter name and confirm
+      const input = screen.getByLabelText("Directory name");
+      fireEvent.change(input, { target: { value: "sub-folder" } });
+      fireEvent.click(screen.getByText("Create"));
+
+      // Should call with notes path
+      expect(onCreateDirectory).toHaveBeenCalledWith("notes", "sub-folder");
+    });
+
+    it("validates directory name against pattern in dialog", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onCreateDirectory = mock(() => {});
+      render(<FileTree onCreateDirectory={onCreateDirectory} />, {
+        wrapper: createTestWrapper(cache),
+      });
+
+      // Right-click on a directory and click add directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Add Directory"));
+
+      // Enter an invalid directory name (with spaces)
+      const input = screen.getByLabelText("Directory name");
+      fireEvent.change(input, { target: { value: "invalid name" } });
+
+      // Should show validation error
+      expect(screen.getByRole("alert")).toBeDefined();
+
+      // Create button should be disabled
+      const createBtn = screen.getByText("Create");
+      expect(createBtn.hasAttribute("disabled")).toBe(true);
+    });
+  });
 });

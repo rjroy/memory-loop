@@ -5,8 +5,9 @@
  * Parses CLAUDE.md for vault metadata and detects inbox locations.
  */
 
-import { readdir, readFile, stat, access } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile, stat, access, mkdir } from "node:fs/promises";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { VaultInfo } from "@memory-loop/shared";
 import { vaultLog as log } from "./logger";
 import {
@@ -35,6 +36,11 @@ export class VaultsDirError extends Error {
     this.name = "VaultsDirError";
   }
 }
+
+/**
+ * Default vaults directory name (relative to project root).
+ */
+export const DEFAULT_VAULTS_DIR_NAME = "vaults";
 
 /**
  * Default inbox path used when no custom inbox is detected.
@@ -73,20 +79,33 @@ export const ATTACHMENT_PATTERNS = [
 ];
 
 /**
- * Gets the VAULTS_DIR environment variable.
+ * Gets the project root directory (parent of backend/).
+ */
+function getProjectRoot(): string {
+  const currentFile = fileURLToPath(import.meta.url);
+  const backendSrc = dirname(currentFile);
+  const backend = dirname(backendSrc);
+  return dirname(backend);
+}
+
+/**
+ * Gets the default vaults directory path (project root / vaults).
+ */
+export function getDefaultVaultsDir(): string {
+  return join(getProjectRoot(), DEFAULT_VAULTS_DIR_NAME);
+}
+
+/**
+ * Gets the vaults directory path.
+ *
+ * If VAULTS_DIR environment variable is set, uses that path.
+ * Otherwise, defaults to the "vaults" directory at the project root
+ * (same level as backend/).
  *
  * @returns The path to the vaults directory
- * @throws VaultsDirError if VAULTS_DIR is not set
  */
 export function getVaultsDir(): string {
-  const vaultsDir = process.env.VAULTS_DIR;
-  if (!vaultsDir) {
-    log.error("VAULTS_DIR environment variable is not set");
-    throw new VaultsDirError(
-      "VAULTS_DIR environment variable is not set. " +
-        "Set it to the parent directory containing your Obsidian vaults."
-    );
-  }
+  const vaultsDir = process.env.VAULTS_DIR || getDefaultVaultsDir();
   log.debug(`VAULTS_DIR: ${vaultsDir}`);
   return vaultsDir;
 }
@@ -349,25 +368,53 @@ export async function parseVault(
 }
 
 /**
+ * Ensures the vaults directory exists, creating it if necessary.
+ *
+ * @param vaultsDir - Path to the vaults directory
+ * @returns true if directory was created, false if it already existed
+ * @throws VaultsDirError if directory cannot be created
+ */
+export async function ensureVaultsDir(vaultsDir: string): Promise<boolean> {
+  const existedBefore = await directoryExists(vaultsDir);
+  if (existedBefore) {
+    return false;
+  }
+
+  log.info(`Creating vaults directory: ${vaultsDir}`);
+  try {
+    await mkdir(vaultsDir, { recursive: true });
+    return true;
+  } catch (error) {
+    // Handle race condition: another process may have created it
+    if (await directoryExists(vaultsDir)) {
+      return false;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    log.error(`Failed to create vaults directory: ${message}`);
+    throw new VaultsDirError(
+      `Failed to create vaults directory "${vaultsDir}": ${message}`
+    );
+  }
+}
+
+/**
  * Discovers all valid vaults in the VAULTS_DIR directory.
  *
  * A valid vault is a directory containing a CLAUDE.md file.
  * Individual vault errors are logged but do not stop discovery.
+ * If the vaults directory doesn't exist, it will be created.
  *
  * @returns Array of VaultInfo for all valid vaults
- * @throws VaultsDirError if VAULTS_DIR is not set or inaccessible
+ * @throws VaultsDirError if VAULTS_DIR cannot be accessed or created
  */
 export async function discoverVaults(): Promise<VaultInfo[]> {
   log.info("Discovering vaults...");
   const vaultsDir = getVaultsDir();
 
-  // Verify VAULTS_DIR exists and is accessible
-  if (!(await directoryExists(vaultsDir))) {
-    log.error(`VAULTS_DIR does not exist: ${vaultsDir}`);
-    throw new VaultsDirError(
-      `VAULTS_DIR "${vaultsDir}" does not exist or is not accessible. ` +
-        "Ensure the directory exists and you have read permissions."
-    );
+  // Ensure vaults directory exists (create if needed)
+  const created = await ensureVaultsDir(vaultsDir);
+  if (created) {
+    log.info(`Created vaults directory: ${vaultsDir}`);
   }
 
   log.info(`Scanning: ${vaultsDir}`);
@@ -430,19 +477,14 @@ export async function discoverVaults(): Promise<VaultInfo[]> {
  *
  * @param vaultId - The vault directory name
  * @returns VaultInfo or null if not found
- * @throws VaultsDirError if VAULTS_DIR is not set or inaccessible
+ * @throws VaultsDirError if VAULTS_DIR cannot be accessed or created
  */
 export async function getVaultById(vaultId: string): Promise<VaultInfo | null> {
   log.info(`Looking up vault: ${vaultId}`);
   const vaultsDir = getVaultsDir();
 
-  // Verify VAULTS_DIR exists
-  if (!(await directoryExists(vaultsDir))) {
-    log.error(`VAULTS_DIR does not exist: ${vaultsDir}`);
-    throw new VaultsDirError(
-      `VAULTS_DIR "${vaultsDir}" does not exist or is not accessible.`
-    );
-  }
+  // Ensure vaults directory exists (create if needed)
+  await ensureVaultsDir(vaultsDir);
 
   const vault = await parseVault(vaultsDir, vaultId);
   if (vault) {

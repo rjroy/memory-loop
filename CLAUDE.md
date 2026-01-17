@@ -79,7 +79,7 @@ Each vault needs a `CLAUDE.md` at root. Optional structure:
 ## Environment Variables
 
 ```bash
-VAULTS_DIR=/path/to/vaults  # Required: directory containing vaults
+VAULTS_DIR=/path/to/vaults  # Optional: defaults to ./vaults at project root
 PORT=3000                   # Backend port
 HOST=0.0.0.0               # Bind address
 MOCK_SDK=true              # Test without API calls

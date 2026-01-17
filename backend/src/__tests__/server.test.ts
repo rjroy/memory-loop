@@ -509,30 +509,31 @@ describe("Vaults endpoint", () => {
     expect(json).toEqual({ vaults: [] });
   });
 
-  it("GET /api/vaults returns 500 when VAULTS_DIR is not set", async () => {
+  it("GET /api/vaults uses default vaults dir when VAULTS_DIR is not set", async () => {
     delete process.env.VAULTS_DIR;
 
     const app = createApp();
     const req = new Request("http://localhost/api/vaults");
     const res = await app.fetch(req);
 
-    expect(res.status).toBe(500);
-    const json = (await res.json()) as ErrorResponse;
-    expect(json).toHaveProperty("error");
-    expect(json.error).toMatch(/VAULTS_DIR environment variable is not set/);
+    // Should use default vaults directory and return 200
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as VaultsResponse;
+    expect(Array.isArray(json.vaults)).toBe(true);
   });
 
-  it("GET /api/vaults returns 500 when VAULTS_DIR does not exist", async () => {
-    process.env.VAULTS_DIR = join(testDir, "nonexistent");
+  it("GET /api/vaults creates directory when VAULTS_DIR does not exist", async () => {
+    const nonexistentDir = join(testDir, "nonexistent-vaults");
+    process.env.VAULTS_DIR = nonexistentDir;
 
     const app = createApp();
     const req = new Request("http://localhost/api/vaults");
     const res = await app.fetch(req);
 
-    expect(res.status).toBe(500);
-    const json = (await res.json()) as ErrorResponse;
-    expect(json).toHaveProperty("error");
-    expect(json.error).toMatch(/does not exist/);
+    // Should create the directory and return 200 with empty vaults
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as VaultsResponse;
+    expect(json).toEqual({ vaults: [] });
   });
 
   it("GET /api/vaults includes CORS headers for allowed origin", async () => {

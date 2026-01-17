@@ -48,7 +48,7 @@ cd memory-loop
 bun install
 
 cp .env.example .env
-# Edit .env with your VAULTS_DIR path
+# Optionally edit .env to set VAULTS_DIR (defaults to ./vaults)
 
 bun run dev
 ```
@@ -60,7 +60,7 @@ Open http://localhost:5173 in your browser.
 ### Environment Variables
 
 ```bash
-VAULTS_DIR=/path/to/vaults  # Required: directory containing your vaults
+VAULTS_DIR=/path/to/vaults  # Optional: defaults to ./vaults at project root
 PORT=3000                   # Backend port (default: 3000)
 HOST=0.0.0.0                # Bind address (default: 0.0.0.0)
 MOCK_SDK=true               # Test without API calls

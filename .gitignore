@@ -12,6 +12,7 @@ dist/
 
 # Application data
 .memory-loop/
+vaults/
 # Exception for test fixtures (keep widget configs, not cache)
 !backend/__fixtures__/**/.memory-loop/
 backend/__fixtures__/**/.memory-loop/cache.db

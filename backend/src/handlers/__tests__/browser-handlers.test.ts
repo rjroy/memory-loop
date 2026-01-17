@@ -72,6 +72,8 @@ function createMockDeps(
     archiveFile: () => Promise.resolve({ originalPath: "", archivePath: "" }),
     createDirectory: createDirectoryFn,
     createFile: () => Promise.resolve(""),
+    renameFile: () => Promise.resolve({ oldPath: "", newPath: "" }),
+    updateReferences: () => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }),
     getInspiration: () => Promise.resolve({ contextual: null, quote: { text: "", attribution: "" } }),
     getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
     toggleTask: () => Promise.resolve({ success: true }),

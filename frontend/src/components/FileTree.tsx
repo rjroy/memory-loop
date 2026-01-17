@@ -32,6 +32,8 @@ export interface FileTreeProps {
   onCreateDirectory?: (parentPath: string, name: string) => void;
   /** Callback when a new file is created */
   onCreateFile?: (parentPath: string, name: string) => void;
+  /** Callback when a file or directory is renamed */
+  onRenameFile?: (path: string, newName: string) => void;
 }
 
 /**
@@ -390,6 +392,25 @@ function ThinkIcon(): React.ReactNode {
 }
 
 /**
+ * Rename/Edit icon (pencil).
+ */
+function RenameIcon(): React.ReactNode {
+  return (
+    <svg
+      className="file-tree__icon-svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  );
+}
+
+/**
  * Context menu state for pin/unpin actions.
  */
 interface ContextMenuState {
@@ -410,7 +431,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory, onCreateFile }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory, onCreateFile, onRenameFile }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -425,6 +446,7 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
   const [pendingArchivePath, setPendingArchivePath] = useState<string | null>(null);
   const [pendingCreateDirPath, setPendingCreateDirPath] = useState<string | null>(null);
   const [pendingCreateFilePath, setPendingCreateFilePath] = useState<string | null>(null);
+  const [pendingRenamePath, setPendingRenamePath] = useState<string | null>(null);
 
   // Track which directories are currently loading
   // For now we just use isLoading for the overall state
@@ -625,6 +647,25 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
     setPendingCreateFilePath(null);
   }, []);
 
+  const handleRenameClick = useCallback(() => {
+    setPendingRenamePath(contextMenu.path);
+    closeContextMenu();
+  }, [contextMenu.path, closeContextMenu]);
+
+  const handleConfirmRename = useCallback(
+    (newName: string) => {
+      if (pendingRenamePath !== null && onRenameFile) {
+        onRenameFile(pendingRenamePath, newName);
+      }
+      setPendingRenamePath(null);
+    },
+    [pendingRenamePath, onRenameFile]
+  );
+
+  const handleCancelRename = useCallback(() => {
+    setPendingRenamePath(null);
+  }, []);
+
   // Close context menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -804,6 +845,17 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
               <span>Think about</span>
             </button>
           )}
+          {onRenameFile && (
+            <button
+              type="button"
+              className="file-tree__context-menu-item"
+              onClick={handleRenameClick}
+              role="menuitem"
+            >
+              <RenameIcon />
+              <span>Rename</span>
+            </button>
+          )}
           {contextMenu.isDirectory && onCreateDirectory && (
             <button
               type="button"
@@ -897,6 +949,20 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
         confirmLabel="Create"
         onConfirm={handleConfirmCreateFile}
         onCancel={handleCancelCreateFile}
+      />
+
+      {/* Rename dialog */}
+      <InputDialog
+        isOpen={pendingRenamePath !== null}
+        title="Rename"
+        message={`Enter a new name for "${pendingRenamePath?.split("/").pop() ?? ""}". The file extension will be preserved.`}
+        inputLabel="New name"
+        inputPlaceholder="new-name"
+        pattern={/^[a-zA-Z0-9_-]+$/}
+        patternError="Only letters, numbers, hyphens, and underscores allowed"
+        confirmLabel="Rename"
+        onConfirm={handleConfirmRename}
+        onCancel={handleCancelRename}
       />
     </nav>
   );

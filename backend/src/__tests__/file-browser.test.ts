@@ -21,6 +21,7 @@ import {
   archiveFile,
   createDirectory,
   createFile,
+  renameFile,
   MAX_FILE_SIZE,
   PathTraversalError,
   DirectoryNotFoundError,
@@ -2102,6 +2103,188 @@ describe("createFile", () => {
 
     expect(result).toBe("a/b/c/deep-note.md");
     const fileStat = await stat(join(testDir, "a", "b", "c", "deep-note.md"));
+    expect(fileStat.isFile()).toBe(true);
+  });
+});
+
+// =============================================================================
+// renameFile Tests
+// =============================================================================
+
+describe("renameFile", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+    // Create a nested directory structure for testing
+    await mkdir(join(testDir, "Projects"), { recursive: true });
+    await mkdir(join(testDir, "Notes"), { recursive: true });
+    await writeFile(join(testDir, "test-file.md"), "# Test Content");
+    await writeFile(join(testDir, "Projects", "my-note.md"), "# My Note");
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("renames file at vault root", async () => {
+    const result = await renameFile(testDir, "test-file.md", "renamed-file");
+
+    expect(result.oldPath).toBe("test-file.md");
+    expect(result.newPath).toBe("renamed-file.md");
+
+    // Verify old file no longer exists
+    try {
+      await stat(join(testDir, "test-file.md"));
+      expect.unreachable("Old file should not exist");
+    } catch {
+      // Expected
+    }
+
+    // Verify new file exists
+    const fileStat = await stat(join(testDir, "renamed-file.md"));
+    expect(fileStat.isFile()).toBe(true);
+
+    // Verify content is preserved
+    const content = await readFile(join(testDir, "renamed-file.md"), "utf-8");
+    expect(content).toBe("# Test Content");
+  });
+
+  test("renames file in nested path", async () => {
+    const result = await renameFile(testDir, "Projects/my-note.md", "new-name");
+
+    expect(result.oldPath).toBe("Projects/my-note.md");
+    expect(result.newPath).toBe("Projects/new-name.md");
+
+    // Verify new file exists
+    const fileStat = await stat(join(testDir, "Projects", "new-name.md"));
+    expect(fileStat.isFile()).toBe(true);
+  });
+
+  test("preserves file extension", async () => {
+    const result = await renameFile(testDir, "test-file.md", "new-name");
+
+    expect(result.newPath).toBe("new-name.md");
+    expect(result.newPath).toMatch(/\.md$/);
+  });
+
+  test("renames directory at vault root", async () => {
+    const result = await renameFile(testDir, "Projects", "MyProjects");
+
+    expect(result.oldPath).toBe("Projects");
+    expect(result.newPath).toBe("MyProjects");
+
+    // Verify old directory no longer exists
+    try {
+      await stat(join(testDir, "Projects"));
+      expect.unreachable("Old directory should not exist");
+    } catch {
+      // Expected
+    }
+
+    // Verify new directory exists
+    const dirStat = await stat(join(testDir, "MyProjects"));
+    expect(dirStat.isDirectory()).toBe(true);
+
+    // Verify contents are preserved
+    const fileStat = await stat(join(testDir, "MyProjects", "my-note.md"));
+    expect(fileStat.isFile()).toBe(true);
+  });
+
+  test("allows alphanumeric names", async () => {
+    const result = await renameFile(testDir, "test-file.md", "Test123");
+
+    expect(result.newPath).toBe("Test123.md");
+  });
+
+  test("allows hyphens and underscores", async () => {
+    const result = await renameFile(testDir, "test-file.md", "my_new-file");
+
+    expect(result.newPath).toBe("my_new-file.md");
+  });
+
+  test("rejects names with spaces", async () => {
+    try {
+      await renameFile(testDir, "test-file.md", "my file");
+      expect.unreachable("Should have thrown InvalidFileNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileNameError);
+    }
+  });
+
+  test("rejects names with special characters", async () => {
+    try {
+      await renameFile(testDir, "test-file.md", "my@file");
+      expect.unreachable("Should have thrown InvalidFileNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileNameError);
+    }
+
+    try {
+      await renameFile(testDir, "test-file.md", "my/file");
+      expect.unreachable("Should have thrown InvalidFileNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileNameError);
+    }
+  });
+
+  test("rejects empty name", async () => {
+    try {
+      await renameFile(testDir, "test-file.md", "");
+      expect.unreachable("Should have thrown InvalidFileNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileNameError);
+    }
+  });
+
+  test("throws error if source file does not exist", async () => {
+    try {
+      await renameFile(testDir, "non-existent.md", "new-name");
+      expect.unreachable("Should have thrown FileNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileNotFoundError);
+    }
+  });
+
+  test("throws error if destination already exists", async () => {
+    await writeFile(join(testDir, "existing.md"), "content");
+
+    try {
+      await renameFile(testDir, "test-file.md", "existing");
+      expect.unreachable("Should have thrown FileExistsError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileExistsError);
+    }
+  });
+
+  test("rejects path traversal in source path", async () => {
+    try {
+      await renameFile(testDir, "../test-file.md", "new-name");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("rejects symlink as source", async () => {
+    await symlink(join(testDir, "test-file.md"), join(testDir, "symlink-file.md"));
+
+    try {
+      await renameFile(testDir, "symlink-file.md", "new-name");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("handles deeply nested paths", async () => {
+    await mkdir(join(testDir, "a", "b", "c"), { recursive: true });
+    await writeFile(join(testDir, "a", "b", "c", "deep-file.md"), "# Deep");
+
+    const result = await renameFile(testDir, "a/b/c/deep-file.md", "renamed-deep");
+
+    expect(result.newPath).toBe("a/b/c/renamed-deep.md");
+    const fileStat = await stat(join(testDir, "a", "b", "c", "renamed-deep.md"));
     expect(fileStat.isFile()).toBe(true);
   });
 });

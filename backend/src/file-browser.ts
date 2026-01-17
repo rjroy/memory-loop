@@ -868,3 +868,118 @@ export async function createFile(
 
   return newFileRelative;
 }
+
+// =============================================================================
+// File/Directory Renaming
+// =============================================================================
+
+/**
+ * Result of renaming a file or directory.
+ */
+export interface RenameResult {
+  /** The original path */
+  oldPath: string;
+  /** The new path after rename */
+  newPath: string;
+}
+
+/**
+ * Renames a file or directory within the vault.
+ * For files, the extension is preserved automatically.
+ *
+ * @param vaultPath - Absolute path to the vault root (content root)
+ * @param relativePath - Current path relative to vault root
+ * @param newName - New name (alphanumeric with - and _ only, without extension for files)
+ * @returns RenameResult with old and new paths
+ * @throws InvalidFileNameError if name contains invalid characters
+ * @throws FileNotFoundError if file/directory does not exist
+ * @throws FileExistsError if destination already exists
+ * @throws PathTraversalError if path escapes vault boundary
+ */
+export async function renameFile(
+  vaultPath: string,
+  relativePath: string,
+  newName: string
+): Promise<RenameResult> {
+  log.info(`Renaming: ${relativePath} to ${newName}`);
+
+  // Validate new name (without extension)
+  if (!FILE_NAME_PATTERN.test(newName)) {
+    throw new InvalidFileNameError(
+      `Name "${newName}" contains invalid characters. Only alphanumeric, hyphen, and underscore are allowed.`
+    );
+  }
+
+  // Validate path is within vault
+  const targetPath = await validatePath(vaultPath, relativePath);
+
+  // Check if target exists and get its type
+  let isDirectory: boolean;
+  try {
+    const stats = await lstat(targetPath);
+
+    if (stats.isSymbolicLink()) {
+      log.warn(`Symlink rejected for rename: ${relativePath}`);
+      throw new PathTraversalError(
+        `Path "${relativePath}" is a symbolic link and cannot be renamed`
+      );
+    }
+
+    isDirectory = stats.isDirectory();
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    throw new FileNotFoundError(`Path "${relativePath}" does not exist`);
+  }
+
+  // Build the new path
+  // For files, preserve the extension
+  const parentPath = relativePath.includes("/")
+    ? relativePath.substring(0, relativePath.lastIndexOf("/"))
+    : "";
+  const oldName = basename(relativePath);
+  const extension = isDirectory ? "" : extname(oldName);
+  const newFileName = isDirectory ? newName : `${newName}${extension}`;
+
+  const newRelativePath = parentPath === ""
+    ? newFileName
+    : `${parentPath}/${newFileName}`;
+
+  const newAbsolutePath = parentPath === ""
+    ? join(vaultPath, newFileName)
+    : join(vaultPath, parentPath, newFileName);
+
+  // Validate the new path is within vault (defense in depth)
+  if (!(await isPathWithinVault(vaultPath, newAbsolutePath))) {
+    throw new PathTraversalError(
+      `Path "${newRelativePath}" would escape the vault boundary`
+    );
+  }
+
+  // Check if destination already exists (and it's not the same file with different case)
+  try {
+    await stat(newAbsolutePath);
+    // If we get here, something exists at this path
+    // Allow rename if it's the same path (case change on case-insensitive FS)
+    if (newRelativePath.toLowerCase() !== relativePath.toLowerCase()) {
+      throw new FileExistsError(
+        `Destination "${newRelativePath}" already exists`
+      );
+    }
+  } catch (error) {
+    if (error instanceof FileExistsError) {
+      throw error;
+    }
+    // Good - destination doesn't exist, we can rename
+  }
+
+  // Perform the rename
+  await rename(targetPath, newAbsolutePath);
+  log.info(`Successfully renamed ${relativePath} to ${newRelativePath}`);
+
+  return {
+    oldPath: relativePath,
+    newPath: newRelativePath,
+  };
+}

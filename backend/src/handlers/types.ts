@@ -19,7 +19,8 @@ import type { WidgetEngine, FileWatcher } from "../widgets/index.js";
 import type { HealthCollector } from "../health-collector.js";
 import type { ActiveMeeting } from "../meeting-capture.js";
 import type { VaultConfig } from "../vault-config.js";
-import type { ArchiveResult } from "../file-browser.js";
+import type { ArchiveResult, RenameResult } from "../file-browser.js";
+import type { ReferenceUpdateResult } from "../reference-updater.js";
 
 // =============================================================================
 // Handler Dependencies (Injectable for Testing)
@@ -111,6 +112,8 @@ export interface HandlerDependencies {
   archiveFile?: (vaultPath: string, relativePath: string, archiveRoot: string) => Promise<ArchiveResult>;
   createDirectory?: (vaultPath: string, parentPath: string, name: string) => Promise<string>;
   createFile?: (vaultPath: string, parentPath: string, name: string) => Promise<string>;
+  renameFile?: (vaultPath: string, relativePath: string, newName: string) => Promise<RenameResult>;
+  updateReferences?: (vaultPath: string, oldPath: string, newPath: string, isDirectory: boolean) => Promise<ReferenceUpdateResult>;
 
   // Inspiration manager
   getInspiration?: (vault: VaultInfo) => Promise<InspirationResult>;
@@ -224,6 +227,8 @@ export interface RequiredHandlerDependencies {
   archiveFile: (vaultPath: string, relativePath: string, archiveRoot: string) => Promise<ArchiveResult>;
   createDirectory: (vaultPath: string, parentPath: string, name: string) => Promise<string>;
   createFile: (vaultPath: string, parentPath: string, name: string) => Promise<string>;
+  renameFile: (vaultPath: string, relativePath: string, newName: string) => Promise<RenameResult>;
+  updateReferences: (vaultPath: string, oldPath: string, newPath: string, isDirectory: boolean) => Promise<ReferenceUpdateResult>;
   getInspiration: (vault: VaultInfo) => Promise<InspirationResult>;
   getAllTasks: (
     vaultPath: string,

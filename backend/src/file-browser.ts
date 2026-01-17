@@ -748,3 +748,123 @@ export async function createDirectory(
 
   return newDirRelative;
 }
+
+// =============================================================================
+// File Creation
+// =============================================================================
+
+/**
+ * Allowed characters for file names: alphanumeric, hyphen, underscore.
+ * (Same as directory names - extension is added automatically)
+ */
+const FILE_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * Error thrown when a file name contains invalid characters.
+ */
+export class InvalidFileNameError extends FileBrowserError {
+  constructor(message: string) {
+    super(message, "VALIDATION_ERROR");
+    this.name = "InvalidFileNameError";
+  }
+}
+
+/**
+ * Error thrown when attempting to create a file that already exists.
+ */
+export class FileExistsError extends FileBrowserError {
+  constructor(message: string) {
+    super(message, "VALIDATION_ERROR");
+    this.name = "FileExistsError";
+  }
+}
+
+/**
+ * Creates a new empty markdown file within the vault.
+ * The .md extension is added automatically.
+ *
+ * @param vaultPath - Absolute path to the vault root (content root)
+ * @param parentPath - Parent directory path relative to vault root (empty string for root)
+ * @param name - Name of the new file without extension (alphanumeric with - and _ only)
+ * @returns The full relative path of the created file (including .md extension)
+ * @throws InvalidFileNameError if name contains invalid characters
+ * @throws FileExistsError if file already exists
+ * @throws PathTraversalError if path escapes vault boundary
+ * @throws DirectoryNotFoundError if parent directory does not exist
+ */
+export async function createFile(
+  vaultPath: string,
+  parentPath: string,
+  name: string
+): Promise<string> {
+  log.info(`Creating file: ${name}.md in ${parentPath || "/"}`);
+
+  // Validate file name (without extension)
+  if (!FILE_NAME_PATTERN.test(name)) {
+    throw new InvalidFileNameError(
+      `File name "${name}" contains invalid characters. Only alphanumeric, hyphen, and underscore are allowed.`
+    );
+  }
+
+  // Validate parent path is within vault
+  const parentAbsolute = parentPath === ""
+    ? vaultPath
+    : await validatePath(vaultPath, parentPath);
+
+  // Check parent exists and is a directory
+  try {
+    const parentStats = await lstat(parentAbsolute);
+
+    if (parentStats.isSymbolicLink()) {
+      log.warn(`Symlink rejected for parent: ${parentPath}`);
+      throw new PathTraversalError(
+        `Parent path "${parentPath}" is a symbolic link and cannot be used`
+      );
+    }
+
+    if (!parentStats.isDirectory()) {
+      throw new DirectoryNotFoundError(
+        `Parent path "${parentPath}" is not a directory`
+      );
+    }
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    throw new DirectoryNotFoundError(
+      `Parent directory "${parentPath}" does not exist`
+    );
+  }
+
+  // Build the new file path (with .md extension)
+  const fileName = `${name}.md`;
+  const newFileAbsolute = join(parentAbsolute, fileName);
+  const newFileRelative = parentPath === "" ? fileName : `${parentPath}/${fileName}`;
+
+  // Validate the new path is within vault (defense in depth)
+  if (!(await isPathWithinVault(vaultPath, newFileAbsolute))) {
+    throw new PathTraversalError(
+      `Path "${newFileRelative}" would escape the vault boundary`
+    );
+  }
+
+  // Check if file already exists
+  try {
+    await stat(newFileAbsolute);
+    // If we get here, something exists at this path
+    throw new FileExistsError(
+      `File "${newFileRelative}" already exists`
+    );
+  } catch (error) {
+    if (error instanceof FileExistsError) {
+      throw error;
+    }
+    // Good - file doesn't exist, we can create it
+  }
+
+  // Create the empty file
+  await writeFile(newFileAbsolute, "", "utf-8");
+  log.info(`Successfully created file: ${newFileRelative}`);
+
+  return newFileRelative;
+}

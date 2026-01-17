@@ -20,6 +20,7 @@ import {
   deleteFile,
   archiveFile,
   createDirectory,
+  createFile,
   MAX_FILE_SIZE,
   PathTraversalError,
   DirectoryNotFoundError,
@@ -27,6 +28,8 @@ import {
   InvalidFileTypeError,
   InvalidDirectoryNameError,
   DirectoryExistsError,
+  InvalidFileNameError,
+  FileExistsError,
   FileBrowserError,
 } from "../file-browser";
 
@@ -1923,5 +1926,182 @@ describe("createDirectory", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(DirectoryNotFoundError);
     }
+  });
+});
+
+// =============================================================================
+// createFile Tests
+// =============================================================================
+
+describe("createFile", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+    // Create a nested directory structure for testing
+    await mkdir(join(testDir, "Projects"), { recursive: true });
+    await mkdir(join(testDir, "Notes"), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("creates file at vault root", async () => {
+    const result = await createFile(testDir, "", "new-note");
+
+    expect(result).toBe("new-note.md");
+
+    // Verify file was created
+    const fileStat = await stat(join(testDir, "new-note.md"));
+    expect(fileStat.isFile()).toBe(true);
+
+    // Verify file is empty
+    const content = await readFile(join(testDir, "new-note.md"), "utf-8");
+    expect(content).toBe("");
+  });
+
+  test("creates file in nested path", async () => {
+    const result = await createFile(testDir, "Projects", "my-note");
+
+    expect(result).toBe("Projects/my-note.md");
+
+    // Verify file was created
+    const fileStat = await stat(join(testDir, "Projects", "my-note.md"));
+    expect(fileStat.isFile()).toBe(true);
+  });
+
+  test("automatically adds .md extension", async () => {
+    const result = await createFile(testDir, "", "test-file");
+
+    expect(result).toBe("test-file.md");
+    expect(result).toMatch(/\.md$/);
+  });
+
+  test("allows alphanumeric names", async () => {
+    const result = await createFile(testDir, "", "Test123");
+
+    expect(result).toBe("Test123.md");
+    const fileStat = await stat(join(testDir, "Test123.md"));
+    expect(fileStat.isFile()).toBe(true);
+  });
+
+  test("allows hyphens in names", async () => {
+    const result = await createFile(testDir, "", "my-new-note");
+
+    expect(result).toBe("my-new-note.md");
+    const fileStat = await stat(join(testDir, "my-new-note.md"));
+    expect(fileStat.isFile()).toBe(true);
+  });
+
+  test("allows underscores in names", async () => {
+    const result = await createFile(testDir, "", "my_new_note");
+
+    expect(result).toBe("my_new_note.md");
+    const fileStat = await stat(join(testDir, "my_new_note.md"));
+    expect(fileStat.isFile()).toBe(true);
+  });
+
+  test("rejects names with spaces", async () => {
+    try {
+      await createFile(testDir, "", "my note");
+      expect.unreachable("Should have thrown InvalidFileNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileNameError);
+    }
+  });
+
+  test("rejects names with special characters", async () => {
+    try {
+      await createFile(testDir, "", "my@note");
+      expect.unreachable("Should have thrown InvalidFileNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileNameError);
+    }
+
+    try {
+      await createFile(testDir, "", "my/note");
+      expect.unreachable("Should have thrown InvalidFileNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileNameError);
+    }
+
+    try {
+      await createFile(testDir, "", "my.note");
+      expect.unreachable("Should have thrown InvalidFileNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileNameError);
+    }
+  });
+
+  test("rejects empty name", async () => {
+    try {
+      await createFile(testDir, "", "");
+      expect.unreachable("Should have thrown InvalidFileNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileNameError);
+    }
+  });
+
+  test("throws error if file already exists", async () => {
+    await writeFile(join(testDir, "existing-note.md"), "content");
+
+    try {
+      await createFile(testDir, "", "existing-note");
+      expect.unreachable("Should have thrown FileExistsError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileExistsError);
+    }
+  });
+
+  test("throws error if parent directory does not exist", async () => {
+    try {
+      await createFile(testDir, "non-existent", "new-note");
+      expect.unreachable("Should have thrown DirectoryNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectoryNotFoundError);
+    }
+  });
+
+  test("rejects path traversal in parent path", async () => {
+    try {
+      await createFile(testDir, "..", "new-note");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("rejects symlink as parent directory", async () => {
+    await mkdir(join(testDir, "real-dir"));
+    await symlink(join(testDir, "real-dir"), join(testDir, "symlink-dir"));
+
+    try {
+      await createFile(testDir, "symlink-dir", "new-note");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("rejects file as parent path", async () => {
+    await writeFile(join(testDir, "file.txt"), "content");
+
+    try {
+      await createFile(testDir, "file.txt", "new-note");
+      expect.unreachable("Should have thrown DirectoryNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectoryNotFoundError);
+    }
+  });
+
+  test("handles deeply nested parent paths", async () => {
+    await mkdir(join(testDir, "a", "b", "c"), { recursive: true });
+
+    const result = await createFile(testDir, "a/b/c", "deep-note");
+
+    expect(result).toBe("a/b/c/deep-note.md");
+    const fileStat = await stat(join(testDir, "a", "b", "c", "deep-note.md"));
+    expect(fileStat.isFile()).toBe(true);
   });
 });

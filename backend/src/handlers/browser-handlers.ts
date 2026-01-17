@@ -223,3 +223,38 @@ export async function handleCreateDirectory(
     }
   }
 }
+
+/**
+ * Handles create_file message.
+ * Creates a new empty markdown file in the selected vault.
+ */
+export async function handleCreateFile(
+  ctx: HandlerContext,
+  parentPath: string,
+  name: string
+): Promise<void> {
+  log.info(`Creating file: ${name}.md in ${parentPath || "/"}`);
+
+  if (!requireVault(ctx)) {
+    log.warn("No vault selected for file creation");
+    return;
+  }
+
+  try {
+    const createdPath = await ctx.deps.createFile(ctx.state.currentVault.contentRoot, parentPath, name);
+    log.info(`File created: ${createdPath}`);
+    ctx.send({
+      type: "file_created",
+      path: createdPath,
+    });
+  } catch (error) {
+    log.error("File creation failed", error);
+    if (isFileBrowserError(error)) {
+      ctx.sendError(error.code, error.message);
+    } else {
+      const message =
+        error instanceof Error ? error.message : "Failed to create file";
+      ctx.sendError("INTERNAL_ERROR", message);
+    }
+  }
+}

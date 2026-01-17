@@ -6,6 +6,8 @@
  * - read_file: Read markdown file content
  * - write_file: Write content to a markdown file
  * - delete_file: Delete a file
+ * - get_directory_contents: Get directory contents for deletion preview
+ * - delete_directory: Delete a directory and its contents
  * - archive_file: Archive a directory
  */
 
@@ -149,6 +151,81 @@ export async function handleDeleteFile(
     } else {
       const message =
         error instanceof Error ? error.message : "Failed to delete file";
+      ctx.sendError("INTERNAL_ERROR", message);
+    }
+  }
+}
+
+/**
+ * Handles get_directory_contents message.
+ * Gets the contents of a directory for deletion preview.
+ */
+export async function handleGetDirectoryContents(
+  ctx: HandlerContext,
+  path: string
+): Promise<void> {
+  log.info(`Getting directory contents: ${path}`);
+
+  if (!requireVault(ctx)) {
+    log.warn("No vault selected for directory contents");
+    return;
+  }
+
+  try {
+    const result = await ctx.deps.getDirectoryContents(ctx.state.currentVault.contentRoot, path);
+    log.info(`Directory contents: ${result.totalFiles} files, ${result.totalDirectories} directories`);
+    ctx.send({
+      type: "directory_contents",
+      path,
+      files: result.files,
+      directories: result.directories,
+      totalFiles: result.totalFiles,
+      totalDirectories: result.totalDirectories,
+      truncated: result.truncated,
+    });
+  } catch (error) {
+    log.error("Getting directory contents failed", error);
+    if (isFileBrowserError(error)) {
+      ctx.sendError(error.code, error.message);
+    } else {
+      const message =
+        error instanceof Error ? error.message : "Failed to get directory contents";
+      ctx.sendError("INTERNAL_ERROR", message);
+    }
+  }
+}
+
+/**
+ * Handles delete_directory message.
+ * Deletes a directory and all its contents from the selected vault.
+ */
+export async function handleDeleteDirectory(
+  ctx: HandlerContext,
+  path: string
+): Promise<void> {
+  log.info(`Deleting directory: ${path}`);
+
+  if (!requireVault(ctx)) {
+    log.warn("No vault selected for directory deletion");
+    return;
+  }
+
+  try {
+    const result = await ctx.deps.deleteDirectory(ctx.state.currentVault.contentRoot, path);
+    log.info(`Directory deleted: ${path} (${result.filesDeleted} files, ${result.directoriesDeleted} directories)`);
+    ctx.send({
+      type: "directory_deleted",
+      path,
+      filesDeleted: result.filesDeleted,
+      directoriesDeleted: result.directoriesDeleted,
+    });
+  } catch (error) {
+    log.error("Directory deletion failed", error);
+    if (isFileBrowserError(error)) {
+      ctx.sendError(error.code, error.message);
+    } else {
+      const message =
+        error instanceof Error ? error.message : "Failed to delete directory";
       ctx.sendError("INTERNAL_ERROR", message);
     }
   }

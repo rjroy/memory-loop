@@ -559,7 +559,7 @@ describe("FileTree", () => {
       expect(screen.getByText("Delete file")).toBeDefined();
     });
 
-    it("does not show delete option for directories", () => {
+    it("shows delete file option only for files not directories", () => {
       const cache = new Map<string, FileEntry[]>([["", testFiles]]);
       const onDeleteFile = mock(() => {});
       render(<FileTree onDeleteFile={onDeleteFile} />, { wrapper: createTestWrapper(cache) });
@@ -568,7 +568,7 @@ describe("FileTree", () => {
       const dirButton = screen.getByText("docs").closest("button");
       fireEvent.contextMenu(dirButton!);
 
-      // Should not show delete option (only pin/unpin)
+      // Should not show "Delete file" option for directories
       expect(screen.queryByText("Delete file")).toBeNull();
     });
 
@@ -657,6 +657,203 @@ describe("FileTree", () => {
 
       // Should call with the full path
       expect(onDeleteFile).toHaveBeenCalledWith("docs/guide.md");
+    });
+  });
+
+  describe("delete directory functionality", () => {
+    it("shows delete folder option in context menu for directories", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteDirectory = mock(() => {});
+      render(<FileTree onDeleteDirectory={onDeleteDirectory} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+
+      // Should show delete folder option
+      expect(screen.getByText("Delete folder")).toBeDefined();
+    });
+
+    it("does not show delete folder option for files", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteDirectory = mock(() => {});
+      render(<FileTree onDeleteDirectory={onDeleteDirectory} />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a file
+      const fileButton = screen.getByText("README.md").closest("button");
+      fireEvent.contextMenu(fileButton!);
+
+      // Should not show delete folder option for files
+      expect(screen.queryByText("Delete folder")).toBeNull();
+    });
+
+    it("shows confirmation dialog when delete folder is clicked", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteDirectory = mock(() => {});
+      const onGetDirectoryContents = mock(() => {});
+      render(
+        <FileTree
+          onDeleteDirectory={onDeleteDirectory}
+          onGetDirectoryContents={onGetDirectoryContents}
+        />,
+        { wrapper: createTestWrapper(cache) }
+      );
+
+      // Right-click on a directory and click delete
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Delete folder"));
+
+      // Should show confirmation dialog
+      expect(screen.getByText("Delete Folder?")).toBeDefined();
+    });
+
+    it("calls onGetDirectoryContents when delete folder is clicked", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteDirectory = mock(() => {});
+      const onGetDirectoryContents = mock(() => {});
+      render(
+        <FileTree
+          onDeleteDirectory={onDeleteDirectory}
+          onGetDirectoryContents={onGetDirectoryContents}
+        />,
+        { wrapper: createTestWrapper(cache) }
+      );
+
+      // Right-click on a directory and click delete
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Delete folder"));
+
+      // Should call onGetDirectoryContents with the directory path
+      expect(onGetDirectoryContents).toHaveBeenCalledWith("docs");
+    });
+
+    it("calls onDeleteDirectory when deletion is confirmed", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteDirectory = mock(() => {});
+      const onGetDirectoryContents = mock(() => {});
+      render(
+        <FileTree
+          onDeleteDirectory={onDeleteDirectory}
+          onGetDirectoryContents={onGetDirectoryContents}
+          pendingDirectoryContents={{
+            files: [],
+            directories: [],
+            totalFiles: 0,
+            totalDirectories: 0,
+            truncated: false,
+          }}
+        />,
+        { wrapper: createTestWrapper(cache) }
+      );
+
+      // Right-click on a directory and click delete
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Delete folder"));
+
+      // Confirm deletion
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+      // Should call onDeleteDirectory with the directory path
+      expect(onDeleteDirectory).toHaveBeenCalledWith("docs");
+    });
+
+    it("does not call onDeleteDirectory when deletion is cancelled", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteDirectory = mock(() => {});
+      const onGetDirectoryContents = mock(() => {});
+      render(
+        <FileTree
+          onDeleteDirectory={onDeleteDirectory}
+          onGetDirectoryContents={onGetDirectoryContents}
+        />,
+        { wrapper: createTestWrapper(cache) }
+      );
+
+      // Right-click on a directory and click delete
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Delete folder"));
+
+      // Cancel deletion
+      fireEvent.click(screen.getByText("Cancel"));
+
+      // Should not call onDeleteDirectory
+      expect(onDeleteDirectory).not.toHaveBeenCalled();
+    });
+
+    it("shows directory contents in confirmation dialog", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteDirectory = mock(() => {});
+      const onGetDirectoryContents = mock(() => {});
+      render(
+        <FileTree
+          onDeleteDirectory={onDeleteDirectory}
+          onGetDirectoryContents={onGetDirectoryContents}
+          pendingDirectoryContents={{
+            files: ["file1.md", "file2.md"],
+            directories: ["subdir"],
+            totalFiles: 3,
+            totalDirectories: 1,
+            truncated: false,
+          }}
+        />,
+        { wrapper: createTestWrapper(cache) }
+      );
+
+      // Right-click on a directory and click delete
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Delete folder"));
+
+      // Should show contents summary
+      expect(screen.getByText("3 files")).toBeDefined();
+      expect(screen.getByText("1 subfolder")).toBeDefined();
+      expect(screen.getByText("file1.md")).toBeDefined();
+      expect(screen.getByText("file2.md")).toBeDefined();
+      expect(screen.getByText("subdir/")).toBeDefined();
+    });
+
+    it("shows truncated indicator when contents are truncated", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      const onDeleteDirectory = mock(() => {});
+      const onGetDirectoryContents = mock(() => {});
+      render(
+        <FileTree
+          onDeleteDirectory={onDeleteDirectory}
+          onGetDirectoryContents={onGetDirectoryContents}
+          pendingDirectoryContents={{
+            files: ["file1.md"],
+            directories: [],
+            totalFiles: 100,
+            totalDirectories: 0,
+            truncated: true,
+          }}
+        />,
+        { wrapper: createTestWrapper(cache) }
+      );
+
+      // Right-click on a directory and click delete
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+      fireEvent.click(screen.getByText("Delete folder"));
+
+      // Should show truncated indicator
+      expect(screen.getByText("...and more items not shown")).toBeDefined();
+    });
+
+    it("does not show delete folder option when onDeleteDirectory is not provided", () => {
+      const cache = new Map<string, FileEntry[]>([["", testFiles]]);
+      render(<FileTree />, { wrapper: createTestWrapper(cache) });
+
+      // Right-click on a directory
+      const dirButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(dirButton!);
+
+      // Should not show delete folder option
+      expect(screen.queryByText("Delete folder")).toBeNull();
     });
   });
 

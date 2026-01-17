@@ -12,7 +12,7 @@ import "./ConfirmDialog.css";
 export interface ConfirmDialogProps {
   isOpen: boolean;
   title: string;
-  message: string;
+  message: string | React.ReactNode;
   confirmLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
@@ -57,7 +57,7 @@ export function ConfirmDialog({
         <h2 id={titleId} className="confirm-dialog__title">
           {title}
         </h2>
-        <p className="confirm-dialog__message">{message}</p>
+        <div className="confirm-dialog__message">{message}</div>
         <div className="confirm-dialog__actions">
           <button
             type="button"

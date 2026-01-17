@@ -171,6 +171,8 @@ export interface ConversationMessage {
   toolInvocations?: ToolInvocation[];
   /** Percentage of context window used (0-100, assistant messages only) */
   contextUsage?: number;
+  /** Turn duration in milliseconds (assistant messages only) */
+  durationMs?: number;
 }
 
 /**

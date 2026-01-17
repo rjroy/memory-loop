@@ -198,6 +198,132 @@ describe("MessageBubble", () => {
     });
   });
 
+  describe("duration display", () => {
+    it("displays formatted duration for assistant messages", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        durationMs: 65000, // 1m 5s
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const duration = container.querySelector(".message-bubble__duration");
+      expect(duration).not.toBeNull();
+      expect(duration?.textContent).toBe("1m 5s");
+    });
+
+    it("displays hours, minutes, and seconds when applicable", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        durationMs: 3665000, // 1h 1m 5s
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const duration = container.querySelector(".message-bubble__duration");
+      expect(duration).not.toBeNull();
+      expect(duration?.textContent).toBe("1h 1m 5s");
+    });
+
+    it("omits zero components", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        durationMs: 3600000, // 1h 0m 0s -> should display "1h"
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const duration = container.querySelector(".message-bubble__duration");
+      expect(duration).not.toBeNull();
+      expect(duration?.textContent).toBe("1h");
+    });
+
+    it("displays <1s for very short durations", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        durationMs: 500, // 0.5s
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const duration = container.querySelector(".message-bubble__duration");
+      expect(duration).not.toBeNull();
+      expect(duration?.textContent).toBe("<1s");
+    });
+
+    it("displays <1s for zero duration", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        durationMs: 0,
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const duration = container.querySelector(".message-bubble__duration");
+      expect(duration).not.toBeNull();
+      expect(duration?.textContent).toBe("<1s");
+    });
+
+    it("does not display duration when undefined", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        durationMs: undefined,
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const duration = container.querySelector(".message-bubble__duration");
+      expect(duration).toBeNull();
+    });
+
+    it("does not display duration for user messages", () => {
+      const message = createMessage({
+        role: "user",
+        content: "User message",
+        durationMs: 5000,
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const duration = container.querySelector(".message-bubble__duration");
+      expect(duration).toBeNull();
+    });
+
+    it("displays only seconds when under a minute", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        durationMs: 45000, // 45s
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const duration = container.querySelector(".message-bubble__duration");
+      expect(duration).not.toBeNull();
+      expect(duration?.textContent).toBe("45s");
+    });
+
+    it("displays only minutes when exact minutes", () => {
+      const message = createMessage({
+        role: "assistant",
+        content: "Response content",
+        durationMs: 120000, // 2m 0s -> should display "2m"
+      });
+
+      const { container } = render(<MessageBubble message={message} />);
+
+      const duration = container.querySelector(".message-bubble__duration");
+      expect(duration).not.toBeNull();
+      expect(duration?.textContent).toBe("2m");
+    });
+  });
+
   describe("image display", () => {
     describe("Obsidian wiki-link syntax", () => {
       it("transforms ![[path/image.png]] to img in user messages", () => {

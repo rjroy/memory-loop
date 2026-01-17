@@ -47,6 +47,27 @@ function formatTime(date: Date): string {
 }
 
 /**
+ * Formats a duration in milliseconds for display.
+ * Returns a string like "1h 23m 45s", omitting zero components.
+ * For durations under 1 second, returns "<1s".
+ */
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  if (totalSeconds < 1) return "<1s";
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (seconds > 0) parts.push(`${seconds}s`);
+
+  return parts.join(" ");
+}
+
+/**
  * Pattern to detect image paths in user messages.
  * Matches paths in common attachment directories.
  * Uses negative lookbehind to avoid matching paths inside markdown, URLs, or inline code.
@@ -150,6 +171,11 @@ export function MessageBubble({ message, vaultId }: MessageBubbleProps): React.R
           <span className="message-bubble__time">
             {formatTime(message.timestamp)}
           </span>
+          {message.role === "assistant" && message.durationMs !== undefined && (
+            <span className="message-bubble__duration">
+              {formatDuration(message.durationMs)}
+            </span>
+          )}
           {message.role === "assistant" && message.contextUsage !== undefined && (
             <span className="message-bubble__context-usage">
               {message.contextUsage}%

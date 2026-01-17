@@ -919,6 +919,9 @@ export class WebSocketHandler {
     }
 
     const messageId = generateMessageId();
+    // Track total turn duration (includes session setup, streaming, and tool execution).
+    // This measures the user's wait time from sending a message to receiving the full response.
+    const queryStartTime = Date.now();
     log.info(`Starting query with messageId: ${messageId}`);
 
     try {
@@ -979,6 +982,9 @@ export class WebSocketHandler {
       log.info("Streaming SDK events...");
       const streamResult = await this.streamEvents(ws, messageId, queryResult);
 
+      const durationMs = Date.now() - queryStartTime;
+      log.info(`Query completed in ${durationMs}ms`);
+
       this.send(ws, {
         type: "response_end",
         messageId,
@@ -993,6 +999,7 @@ export class WebSocketHandler {
           timestamp: new Date().toISOString(),
           toolInvocations: streamResult.toolInvocations.length > 0 ? streamResult.toolInvocations : undefined,
           contextUsage: streamResult.contextUsage,
+          durationMs,
         });
       }
 

@@ -235,7 +235,13 @@
   text-transform: lowercase;
 }
 
+.message-bubble__duration {
+  margin-left: var(--spacing-sm);
+  opacity: 0.8;
+}
+
 .message-bubble__context-usage {
+  margin-left: var(--spacing-sm);
   opacity: 0.8;
   font-weight: 500;
 }

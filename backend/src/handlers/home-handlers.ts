@@ -12,18 +12,12 @@
  */
 
 import type { HandlerContext } from "./types.js";
-import { requireVault } from "./types.js";
-import { captureToDaily, getRecentNotes } from "../note-capture.js";
+import { requireVault, isFileBrowserError } from "./types.js";
 import { getVaultGoals } from "../vault-manager.js";
-import { getInspiration } from "../inspiration-manager.js";
-import { getAllTasks, toggleTask } from "../task-manager.js";
-import { getRecentSessions } from "../session-manager.js";
 import {
-  loadVaultConfig,
   resolveRecentCaptures,
   resolveRecentDiscussions,
 } from "../vault-config.js";
-import { FileBrowserError } from "../file-browser.js";
 import { wsLog as log } from "../logger.js";
 
 /**
@@ -42,7 +36,7 @@ export async function handleCaptureNote(
   }
 
   try {
-    const result = await captureToDaily(ctx.state.currentVault, text);
+    const result = await ctx.deps.captureToDaily(ctx.state.currentVault, text);
 
     if (!result.success) {
       log.error("Note capture failed", result.error);
@@ -75,7 +69,7 @@ export async function handleGetRecentNotes(ctx: HandlerContext): Promise<void> {
   }
 
   try {
-    const notes = await getRecentNotes(ctx.state.currentVault, 5);
+    const notes = await ctx.deps.getRecentNotes(ctx.state.currentVault, 5);
     log.info(`Found ${notes.length} recent notes`);
     ctx.send({
       type: "recent_notes",
@@ -101,13 +95,13 @@ export async function handleGetRecentActivity(ctx: HandlerContext): Promise<void
   }
 
   try {
-    const config = await loadVaultConfig(ctx.state.currentVault.path);
+    const config = await ctx.deps.loadVaultConfig(ctx.state.currentVault.path);
     const capturesLimit = resolveRecentCaptures(config);
     const discussionsLimit = resolveRecentDiscussions(config);
 
     const [captures, discussions] = await Promise.all([
-      getRecentNotes(ctx.state.currentVault, capturesLimit),
-      getRecentSessions(ctx.state.currentVault.path, discussionsLimit),
+      ctx.deps.getRecentNotes(ctx.state.currentVault, capturesLimit),
+      ctx.deps.getRecentSessions(ctx.state.currentVault.path, discussionsLimit),
     ]);
     log.info(`Found ${captures.length} captures and ${discussions.length} discussions`);
     ctx.send({
@@ -162,7 +156,7 @@ export async function handleGetInspiration(ctx: HandlerContext): Promise<void> {
   }
 
   try {
-    const result = await getInspiration(ctx.state.currentVault);
+    const result = await ctx.deps.getInspiration(ctx.state.currentVault);
     log.info(
       `Inspiration fetched: contextual=${result.contextual !== null}, quote="${result.quote.text.slice(0, 30)}..."`
     );
@@ -191,8 +185,8 @@ export async function handleGetTasks(ctx: HandlerContext): Promise<void> {
   }
 
   try {
-    const config = await loadVaultConfig(ctx.state.currentVault.path);
-    const result = await getAllTasks(ctx.state.currentVault.contentRoot, config);
+    const config = await ctx.deps.loadVaultConfig(ctx.state.currentVault.path);
+    const result = await ctx.deps.getAllTasks(ctx.state.currentVault.contentRoot, config);
     log.info(`Found ${result.total} tasks (${result.incomplete} incomplete)`);
     ctx.send({
       type: "tasks",
@@ -225,7 +219,7 @@ export async function handleToggleTask(
   }
 
   try {
-    const result = await toggleTask(
+    const result = await ctx.deps.toggleTask(
       ctx.state.currentVault.contentRoot,
       filePath,
       lineNumber,
@@ -253,7 +247,7 @@ export async function handleToggleTask(
     });
   } catch (error) {
     log.error("Failed to toggle task", error);
-    if (error instanceof FileBrowserError) {
+    if (isFileBrowserError(error)) {
       ctx.sendError(error.code, error.message);
     } else {
       const message = error instanceof Error ? error.message : "Failed to toggle task";

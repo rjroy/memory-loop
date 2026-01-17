@@ -11,14 +11,38 @@
  * - TD-3: File Watcher Implementation using chokidar
  */
 
-import { watch, type FSWatcher } from "chokidar";
+import { watch as chokidarWatch, type FSWatcher, type ChokidarOptions } from "chokidar";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile as fsReadFile } from "node:fs/promises";
 import { relative, join, extname } from "node:path";
 import picomatch from "picomatch";
 import { createLogger } from "../logger";
 
 const log = createLogger("FileWatcher");
+
+// =============================================================================
+// Dependency Injection Types
+// =============================================================================
+
+/**
+ * Type for the chokidar watch function, to enable dependency injection for testing.
+ */
+export type WatchFunction = (path: string, options?: ChokidarOptions) => FSWatcher;
+
+/**
+ * Type for the fs readFile function, to enable dependency injection for testing.
+ */
+export type ReadFileFunction = (path: string) => Promise<Buffer>;
+
+/**
+ * Dependencies for FileWatcher (injectable for testing).
+ */
+export interface FileWatcherDependencies {
+  /** Chokidar watch function (default: chokidar.watch) */
+  watch?: WatchFunction;
+  /** File read function (default: fs.readFile) */
+  readFile?: ReadFileFunction;
+}
 
 // =============================================================================
 // Types
@@ -64,9 +88,12 @@ interface PendingChange {
  * Compute SHA-256 hash of file content.
  * Returns null if file cannot be read (deleted, permission denied, etc.).
  */
-async function computeContentHash(filePath: string): Promise<string | null> {
+async function computeContentHash(
+  filePath: string,
+  readFileFn: ReadFileFunction
+): Promise<string | null> {
   try {
-    const content = await readFile(filePath);
+    const content = await readFileFn(filePath);
     return createHash("sha256").update(content).digest("hex");
   } catch {
     // File may have been deleted or is inaccessible
@@ -107,6 +134,8 @@ export class FileWatcher {
   private readonly debounceMs: number;
   private readonly onFilesChanged: (paths: string[]) => void;
   private readonly onError: (error: Error) => void;
+  private readonly watchFn: WatchFunction;
+  private readonly readFileFn: ReadFileFunction;
 
   private watcher: FSWatcher | null = null;
   private contentHashes: Map<string, string> = new Map();
@@ -116,11 +145,17 @@ export class FileWatcher {
   private isInitialScan = true;
   private patternMatcher: ((path: string) => boolean) | null = null;
 
-  constructor(vaultPath: string, options: FileWatcherOptions) {
+  constructor(
+    vaultPath: string,
+    options: FileWatcherOptions,
+    deps: FileWatcherDependencies = {}
+  ) {
     this.vaultPath = vaultPath;
     this.debounceMs = options.debounceMs ?? 500;
     this.onFilesChanged = options.onFilesChanged;
     this.onError = options.onError ?? ((error) => log.error(`Watcher error: ${error.message}`));
+    this.watchFn = deps.watch ?? chokidarWatch;
+    this.readFileFn = deps.readFile ?? fsReadFile;
 
     if (this.debounceMs < 0) {
       throw new Error("debounceMs must be non-negative");
@@ -180,7 +215,7 @@ export class FileWatcher {
 
     // Watch the vault directory, filtering with the ignored option
     // This approach works better than glob patterns with chokidar
-    this.watcher = watch(this.vaultPath, {
+    this.watcher = this.watchFn(this.vaultPath, {
       persistent: true,
       ignoreInitial: false, // We want initial 'add' events to populate hashes
       awaitWriteFinish: {
@@ -271,7 +306,7 @@ export class FileWatcher {
     // Hash all files without triggering callbacks
     for (const change of changes) {
       if (change.eventType === "add") {
-        const hash = await computeContentHash(change.absolutePath);
+        const hash = await computeContentHash(change.absolutePath, this.readFileFn);
         if (hash !== null) {
           this.contentHashes.set(change.absolutePath, hash);
         }
@@ -415,7 +450,7 @@ export class FileWatcher {
     }
 
     // For add/change, compute new hash
-    const newHash = await computeContentHash(absolutePath);
+    const newHash = await computeContentHash(absolutePath, this.readFileFn);
 
     if (newHash === null) {
       // File became unreadable; treat as deleted
@@ -463,15 +498,21 @@ export class FileWatcher {
  * @param vaultPath - Absolute path to vault root
  * @param onFilesChanged - Callback for changed file paths
  * @param options - Optional configuration overrides
+ * @param deps - Optional dependencies for testing
  * @returns FileWatcher instance (not started)
  */
 export function createFileWatcher(
   vaultPath: string,
   onFilesChanged: (paths: string[]) => void,
-  options?: Partial<Omit<FileWatcherOptions, "onFilesChanged">>
+  options?: Partial<Omit<FileWatcherOptions, "onFilesChanged">>,
+  deps?: FileWatcherDependencies
 ): FileWatcher {
-  return new FileWatcher(vaultPath, {
-    ...options,
-    onFilesChanged,
-  });
+  return new FileWatcher(
+    vaultPath,
+    {
+      ...options,
+      onFilesChanged,
+    },
+    deps
+  );
 }

@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
+    "test:lcov": "lcov --list coverage/lcov.info",
     "lint": "eslint ."
   },
   "dependencies": {

@@ -8,9 +8,7 @@
  */
 
 import type { HandlerContext, WebSocketLike } from "./types.js";
-import { requireVault } from "./types.js";
-import { readMarkdownFile, writeMarkdownFile, FileBrowserError } from "../file-browser.js";
-import { parseFrontmatter } from "../widgets/index.js";
+import { requireVault, isFileBrowserError } from "./types.js";
 import { wsLog as log } from "../logger.js";
 import matter from "gray-matter";
 
@@ -152,19 +150,19 @@ export async function handleWidgetEdit(
   }
 
   try {
-    const { content } = await readMarkdownFile(
+    const { content } = await ctx.deps.readMarkdownFile(
       ctx.state.currentVault.contentRoot,
       filePath
     );
 
-    const parsed = parseFrontmatter(content);
+    const parsed = ctx.deps.parseFrontmatter(content);
     const frontmatter = parsed.data;
 
     setNestedValue(frontmatter, fieldPath, value);
 
     const newContent = matter.stringify(parsed.content, frontmatter);
 
-    await writeMarkdownFile(
+    await ctx.deps.writeMarkdownFile(
       ctx.state.currentVault.contentRoot,
       filePath,
       newContent
@@ -194,7 +192,7 @@ export async function handleWidgetEdit(
   } catch (error) {
     log.error(`Widget edit failed: ${filePath}`, error);
 
-    if (error instanceof FileBrowserError) {
+    if (isFileBrowserError(error)) {
       ctx.sendError(error.code, error.message);
     } else {
       ctx.send({

@@ -12,6 +12,7 @@ import type {
   StoredToolInvocation,
   SlashCommand,
   EditableVaultConfig,
+  VaultInfo,
 } from "@memory-loop/shared";
 import { EditableVaultConfigSchema } from "@memory-loop/shared";
 import type {
@@ -36,40 +37,120 @@ type RawStreamEvent = SDKPartialAssistantMessage["event"];
 type ContentStreamEvent = Exclude<RawStreamEvent, { type: "error" }>;
 
 import { safeParseClientMessage } from "@memory-loop/shared";
-import { discoverVaults, getVaultById } from "./vault-manager.js";
-import { SearchIndexManager } from "./search/search-index.js";
 import {
-  createSession,
-  resumeSession,
-  loadSession,
-  appendMessage,
-  deleteSession,
+  discoverVaults as defaultDiscoverVaults,
+  getVaultById as defaultGetVaultById,
+} from "./vault-manager.js";
+import { SearchIndexManager, type SearchIndexManager as ISearchIndexManager } from "./search/search-index.js";
+
+/**
+ * Factory type for creating SearchIndexManager instances.
+ */
+export type CreateSearchIndexFn = (contentRoot: string) => ISearchIndexManager;
+import {
+  createSession as defaultCreateSession,
+  resumeSession as defaultResumeSession,
+  loadSession as defaultLoadSession,
+  appendMessage as defaultAppendMessage,
+  deleteSession as defaultDeleteSession,
   SessionError,
   type SessionQueryResult,
   type ToolPermissionCallback,
   type AskUserQuestionCallback,
   type AskUserQuestionItem,
+  type SessionMetadata,
+  type ConversationMessage,
 } from "./session-manager.js";
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk.js";
 import { wsLog as log } from "./logger.js";
 import {
-  loadVaultConfig,
-  loadSlashCommands,
-  saveSlashCommands,
+  loadVaultConfig as defaultLoadVaultConfig,
+  loadSlashCommands as defaultLoadSlashCommands,
+  saveSlashCommands as defaultSaveSlashCommands,
   slashCommandsEqual,
-  savePinnedAssets,
+  savePinnedAssets as defaultSavePinnedAssets,
   resolvePinnedAssets,
-  saveVaultConfig,
+  saveVaultConfig as defaultSaveVaultConfig,
+  type VaultConfig,
 } from "./vault-config.js";
-import { runVaultSetup } from "./vault-setup.js";
-import { createWidgetEngine, createFileWatcher } from "./widgets/index.js";
+import { runVaultSetup as defaultRunVaultSetup, type SetupResult } from "./vault-setup.js";
+import {
+  createWidgetEngine as defaultCreateWidgetEngine,
+  createFileWatcher as defaultCreateFileWatcher,
+  type WidgetEngine,
+  type WidgetLoaderResult,
+  parseFrontmatter as defaultParseFrontmatter,
+} from "./widgets/index.js";
 import { createHealthCollector } from "./health-collector.js";
+import {
+  captureToDaily as defaultCaptureToDaily,
+  getRecentNotes as defaultGetRecentNotes,
+} from "./note-capture.js";
+import {
+  listDirectory as defaultListDirectory,
+  readMarkdownFile as defaultReadMarkdownFile,
+  writeMarkdownFile as defaultWriteMarkdownFile,
+  deleteFile as defaultDeleteFile,
+  archiveFile as defaultArchiveFile,
+} from "./file-browser.js";
+import { getInspiration as defaultGetInspiration } from "./inspiration-manager.js";
+import {
+  getAllTasks as defaultGetAllTasks,
+  toggleTask as defaultToggleTask,
+} from "./task-manager.js";
+import { getRecentSessions as defaultGetRecentSessions } from "./session-manager.js";
+
+// =============================================================================
+// Dependency Injection Types
+// =============================================================================
+
+/**
+ * Dependencies for WebSocketHandler (injectable for testing).
+ * All functions default to their real implementations.
+ */
+export interface WebSocketHandlerDependencies {
+  // Vault manager
+  discoverVaults?: () => Promise<VaultInfo[]>;
+  getVaultById?: (id: string) => Promise<VaultInfo | null>;
+
+  // Session manager
+  createSession?: typeof defaultCreateSession;
+  resumeSession?: typeof defaultResumeSession;
+  loadSession?: (vaultPath: string, sessionId: string) => Promise<SessionMetadata | null>;
+  appendMessage?: (vaultPath: string, sessionId: string, message: ConversationMessage) => Promise<void>;
+  deleteSession?: (vaultPath: string, sessionId: string) => Promise<boolean>;
+
+  // Vault config
+  loadVaultConfig?: (vaultPath: string) => Promise<VaultConfig>;
+  loadSlashCommands?: (vaultPath: string) => Promise<SlashCommand[] | undefined>;
+  saveSlashCommands?: (vaultPath: string, commands: SlashCommand[]) => Promise<void>;
+  savePinnedAssets?: (vaultPath: string, paths: string[]) => Promise<void>;
+  saveVaultConfig?: (vaultPath: string, config: EditableVaultConfig) => Promise<{ success: true } | { success: false; error: string }>;
+
+  // Vault setup
+  runVaultSetup?: (vaultId: string) => Promise<SetupResult>;
+
+  // Widgets
+  createWidgetEngine?: (contentRoot: string, vaultId: string) => Promise<{
+    engine: WidgetEngine;
+    loaderResult: WidgetLoaderResult;
+  }>;
+  createFileWatcher?: typeof defaultCreateFileWatcher;
+
+  // Search index
+  createSearchIndex?: CreateSearchIndexFn;
+
+  // Handler dependencies (passed through to extracted handlers)
+  handlerDeps?: HandlerDependencies;
+}
 
 // Import extracted handlers
 import {
   type WebSocketLike,
   type ConnectionState,
   type HandlerContext,
+  type HandlerDependencies,
+  type RequiredHandlerDependencies,
   createConnectionState,
   generateMessageId,
 } from "./handlers/types.js";
@@ -174,9 +255,47 @@ function sanitizeSlashCommands(commands: SlashCommand[] | undefined): SlashComma
  */
 export class WebSocketHandler {
   private state: ConnectionState;
+  private readonly deps: Required<Omit<WebSocketHandlerDependencies, "handlerDeps">>;
+  private readonly handlerDeps: RequiredHandlerDependencies;
 
-  constructor() {
+  constructor(deps: WebSocketHandlerDependencies = {}) {
     this.state = createConnectionState();
+    this.deps = {
+      discoverVaults: deps.discoverVaults ?? defaultDiscoverVaults,
+      getVaultById: deps.getVaultById ?? defaultGetVaultById,
+      createSession: deps.createSession ?? defaultCreateSession,
+      resumeSession: deps.resumeSession ?? defaultResumeSession,
+      loadSession: deps.loadSession ?? defaultLoadSession,
+      appendMessage: deps.appendMessage ?? defaultAppendMessage,
+      deleteSession: deps.deleteSession ?? defaultDeleteSession,
+      loadVaultConfig: deps.loadVaultConfig ?? defaultLoadVaultConfig,
+      loadSlashCommands: deps.loadSlashCommands ?? defaultLoadSlashCommands,
+      saveSlashCommands: deps.saveSlashCommands ?? defaultSaveSlashCommands,
+      savePinnedAssets: deps.savePinnedAssets ?? defaultSavePinnedAssets,
+      saveVaultConfig: deps.saveVaultConfig ?? defaultSaveVaultConfig,
+      runVaultSetup: deps.runVaultSetup ?? defaultRunVaultSetup,
+      createWidgetEngine: deps.createWidgetEngine ?? defaultCreateWidgetEngine,
+      createFileWatcher: deps.createFileWatcher ?? defaultCreateFileWatcher,
+      createSearchIndex: deps.createSearchIndex ?? ((contentRoot) => new SearchIndexManager(contentRoot)),
+    };
+
+    // Handler dependencies (injectable for testing)
+    const hd = deps.handlerDeps ?? {};
+    this.handlerDeps = {
+      captureToDaily: hd.captureToDaily ?? defaultCaptureToDaily,
+      getRecentNotes: hd.getRecentNotes ?? defaultGetRecentNotes,
+      listDirectory: hd.listDirectory ?? defaultListDirectory,
+      readMarkdownFile: hd.readMarkdownFile ?? defaultReadMarkdownFile,
+      writeMarkdownFile: hd.writeMarkdownFile ?? defaultWriteMarkdownFile,
+      deleteFile: hd.deleteFile ?? defaultDeleteFile,
+      archiveFile: hd.archiveFile ?? defaultArchiveFile,
+      getInspiration: hd.getInspiration ?? defaultGetInspiration,
+      getAllTasks: hd.getAllTasks ?? defaultGetAllTasks,
+      toggleTask: hd.toggleTask ?? defaultToggleTask,
+      getRecentSessions: hd.getRecentSessions ?? defaultGetRecentSessions,
+      loadVaultConfig: hd.loadVaultConfig ?? defaultLoadVaultConfig,
+      parseFrontmatter: hd.parseFrontmatter ?? defaultParseFrontmatter,
+    };
   }
 
   /**
@@ -214,6 +333,7 @@ export class WebSocketHandler {
       state: this.state,
       send: (message: ServerMessage) => this.send(ws, message),
       sendError: (code: ErrorCode, message: string) => this.sendError(ws, code, message),
+      deps: this.handlerDeps,
     };
   }
 
@@ -244,10 +364,10 @@ export class WebSocketHandler {
       // Update cache if commands changed
       if (this.state.currentVault) {
         try {
-          const cachedCommands = await loadSlashCommands(this.state.currentVault.path);
+          const cachedCommands = await this.deps.loadSlashCommands(this.state.currentVault.path);
           if (!slashCommandsEqual(cachedCommands, commands)) {
             log.info("Slash commands changed, updating cache");
-            await saveSlashCommands(this.state.currentVault.path, commands);
+            await this.deps.saveSlashCommands(this.state.currentVault.path, commands);
           }
         } catch (cacheError) {
           log.warn("Failed to update slash commands cache, continuing", cacheError);
@@ -388,7 +508,7 @@ export class WebSocketHandler {
   async onOpen(ws: WebSocketLike): Promise<void> {
     log.info("Connection opened, discovering vaults...");
     try {
-      const vaults = await discoverVaults();
+      const vaults = await this.deps.discoverVaults();
       log.info(`Found ${vaults.length} vault(s)`, vaults.map((v) => v.id));
       this.send(ws, { type: "vault_list", vaults });
     } catch (error) {
@@ -628,7 +748,7 @@ export class WebSocketHandler {
   ): Promise<void> {
     log.info(`Selecting vault: ${vaultId}`);
     try {
-      const vault = await getVaultById(vaultId);
+      const vault = await this.deps.getVaultById(vaultId);
 
       if (!vault) {
         log.warn(`Vault not found: ${vaultId}`);
@@ -659,7 +779,7 @@ export class WebSocketHandler {
       this.state.currentVault = vault;
       this.state.currentSessionId = null;
       this.state.activeQuery = null;
-      this.state.searchIndex = new SearchIndexManager(vault.contentRoot);
+      this.state.searchIndex = this.deps.createSearchIndex(vault.contentRoot);
 
       // Create health collector and subscribe to changes
       this.state.healthCollector = createHealthCollector();
@@ -669,7 +789,7 @@ export class WebSocketHandler {
 
       // Initialize widget engine
       try {
-        const { engine, loaderResult } = await createWidgetEngine(vault.contentRoot, vault.id);
+        const { engine, loaderResult } = await this.deps.createWidgetEngine(vault.contentRoot, vault.id);
         this.state.widgetEngine = engine;
 
         // Connect health callback for widget computation issues (cycles, expression errors)
@@ -708,7 +828,7 @@ export class WebSocketHandler {
         const widgets = engine.getWidgets();
         if (widgets.length > 0) {
           const patterns = [...new Set(widgets.map((w) => w.config.source.pattern))];
-          this.state.widgetWatcher = createFileWatcher(
+          this.state.widgetWatcher = this.deps.createFileWatcher(
             vault.contentRoot,
             (changedPaths) => {
               handleWidgetFileChanges(this.createContext(ws), ws, changedPaths);
@@ -733,7 +853,7 @@ export class WebSocketHandler {
         });
       }
 
-      const cachedCommands = await loadSlashCommands(vault.path);
+      const cachedCommands = await this.deps.loadSlashCommands(vault.path);
 
       log.info("Sending session_ready");
       this.send(ws, {
@@ -797,7 +917,7 @@ export class WebSocketHandler {
 
       if (this.state.currentSessionId) {
         log.info(`Resuming session: ${this.state.currentSessionId}`);
-        queryResult = await resumeSession(
+        queryResult = await this.deps.resumeSession(
           this.state.currentVault.path,
           this.state.currentSessionId,
           text,
@@ -807,7 +927,7 @@ export class WebSocketHandler {
         );
       } else {
         log.info("Creating new session");
-        queryResult = await createSession(
+        queryResult = await this.deps.createSession(
           this.state.currentVault,
           text,
           undefined,
@@ -835,7 +955,7 @@ export class WebSocketHandler {
       }
 
       const userMessageId = generateMessageId();
-      await appendMessage(this.state.currentVault.path, queryResult.sessionId, {
+      await this.deps.appendMessage(this.state.currentVault.path, queryResult.sessionId, {
         id: userMessageId,
         role: "user",
         content: text,
@@ -854,7 +974,7 @@ export class WebSocketHandler {
       });
 
       if (streamResult.content.length > 0 || streamResult.toolInvocations.length > 0) {
-        await appendMessage(this.state.currentVault.path, queryResult.sessionId, {
+        await this.deps.appendMessage(this.state.currentVault.path, queryResult.sessionId, {
           id: messageId,
           role: "assistant",
           content: streamResult.content,
@@ -920,7 +1040,7 @@ export class WebSocketHandler {
         return;
       }
 
-      const metadata = await loadSession(this.state.currentVault.path, sessionId);
+      const metadata = await this.deps.loadSession(this.state.currentVault.path, sessionId);
 
       if (!metadata) {
         log.warn(`Session not found: ${sessionId}`);
@@ -939,7 +1059,7 @@ export class WebSocketHandler {
       this.state.currentSessionId = sessionId;
       log.info(`Resuming session ${sessionId} with ${metadata.messages.length} messages`);
 
-      const cachedCommands = await loadSlashCommands(this.state.currentVault.path);
+      const cachedCommands = await this.deps.loadSlashCommands(this.state.currentVault.path);
 
       this.send(ws, {
         type: "session_ready",
@@ -979,7 +1099,7 @@ export class WebSocketHandler {
 
     this.state.currentSessionId = null;
 
-    const cachedCommands = await loadSlashCommands(this.state.currentVault.path);
+    const cachedCommands = await this.deps.loadSlashCommands(this.state.currentVault.path);
 
     this.send(ws, {
       type: "session_ready",
@@ -1011,7 +1131,7 @@ export class WebSocketHandler {
     }
 
     try {
-      const deleted = await deleteSession(this.state.currentVault.path, sessionId);
+      const deleted = await this.deps.deleteSession(this.state.currentVault.path, sessionId);
       if (deleted) {
         log.info(`Session deleted: ${sessionId.slice(0, 8)}...`);
         this.send(ws, { type: "session_deleted", sessionId });
@@ -1039,7 +1159,7 @@ export class WebSocketHandler {
   ): Promise<void> {
     log.info(`Setting up vault: ${vaultId}`);
 
-    const vault = await getVaultById(vaultId);
+    const vault = await this.deps.getVaultById(vaultId);
     if (!vault) {
       log.warn(`Vault not found for setup: ${vaultId}`);
       this.sendError(ws, "VAULT_NOT_FOUND", `Vault "${vaultId}" not found`);
@@ -1057,7 +1177,7 @@ export class WebSocketHandler {
     }
 
     try {
-      const result = await runVaultSetup(vaultId);
+      const result = await this.deps.runVaultSetup(vaultId);
 
       log.info(
         `Setup complete for ${vaultId}: success=${result.success}, ` +
@@ -1105,7 +1225,7 @@ export class WebSocketHandler {
     }
 
     try {
-      const config = await loadVaultConfig(this.state.currentVault.path);
+      const config = await this.deps.loadVaultConfig(this.state.currentVault.path);
       const paths = resolvePinnedAssets(config);
       this.send(ws, { type: "pinned_assets", paths });
     } catch (error) {
@@ -1129,7 +1249,7 @@ export class WebSocketHandler {
     }
 
     try {
-      await savePinnedAssets(this.state.currentVault.path, paths);
+      await this.deps.savePinnedAssets(this.state.currentVault.path, paths);
       this.send(ws, { type: "pinned_assets", paths });
     } catch (error) {
       log.error("Failed to save pinned assets", error);
@@ -1151,7 +1271,7 @@ export class WebSocketHandler {
     // Determine which vault to update: explicit vaultId takes priority, then currentVault
     let targetVault = this.state.currentVault;
     if (vaultId) {
-      targetVault = await getVaultById(vaultId);
+      targetVault = await this.deps.getVaultById(vaultId);
     }
 
     if (!targetVault) {
@@ -1177,7 +1297,7 @@ export class WebSocketHandler {
     }
 
     // Save validated config
-    const result = await saveVaultConfig(targetVault.path, validation.data);
+    const result = await this.deps.saveVaultConfig(targetVault.path, validation.data);
 
     if (result.success) {
       log.info(`Vault config updated for ${targetVault.id}`);
@@ -1595,7 +1715,11 @@ export class WebSocketHandler {
 /**
  * Creates a new WebSocketHandler instance.
  * Factory function for creating handlers per connection.
+ *
+ * @param deps - Optional dependencies for testing
  */
-export function createWebSocketHandler(): WebSocketHandler {
-  return new WebSocketHandler();
+export function createWebSocketHandler(
+  deps?: WebSocketHandlerDependencies
+): WebSocketHandler {
+  return new WebSocketHandler(deps);
 }

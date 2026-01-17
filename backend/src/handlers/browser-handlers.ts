@@ -6,18 +6,11 @@
  * - read_file: Read markdown file content
  * - write_file: Write content to a markdown file
  * - delete_file: Delete a file
+ * - archive_file: Archive a directory
  */
 
 import type { HandlerContext } from "./types.js";
-import { requireVault } from "./types.js";
-import {
-  listDirectory,
-  readMarkdownFile,
-  writeMarkdownFile,
-  deleteFile,
-  archiveFile,
-  FileBrowserError,
-} from "../file-browser.js";
+import { requireVault, isFileBrowserError } from "./types.js";
 import { wsLog as log } from "../logger.js";
 
 /**
@@ -36,7 +29,7 @@ export async function handleListDirectory(
   }
 
   try {
-    const entries = await listDirectory(ctx.state.currentVault.contentRoot, path);
+    const entries = await ctx.deps.listDirectory(ctx.state.currentVault.contentRoot, path);
     log.info(`Found ${entries.length} entries in ${path || "/"}`);
     ctx.send({
       type: "directory_listing",
@@ -45,7 +38,7 @@ export async function handleListDirectory(
     });
   } catch (error) {
     log.error("Directory listing failed", error);
-    if (error instanceof FileBrowserError) {
+    if (isFileBrowserError(error)) {
       ctx.sendError(error.code, error.message);
     } else {
       const message =
@@ -71,7 +64,7 @@ export async function handleReadFile(
   }
 
   try {
-    const result = await readMarkdownFile(ctx.state.currentVault.contentRoot, path);
+    const result = await ctx.deps.readMarkdownFile(ctx.state.currentVault.contentRoot, path);
     log.info(`File read: ${path} (truncated: ${result.truncated})`);
     ctx.send({
       type: "file_content",
@@ -81,7 +74,7 @@ export async function handleReadFile(
     });
   } catch (error) {
     log.error("File reading failed", error);
-    if (error instanceof FileBrowserError) {
+    if (isFileBrowserError(error)) {
       ctx.sendError(error.code, error.message);
     } else {
       const message =
@@ -108,7 +101,7 @@ export async function handleWriteFile(
   }
 
   try {
-    await writeMarkdownFile(ctx.state.currentVault.contentRoot, path, content);
+    await ctx.deps.writeMarkdownFile(ctx.state.currentVault.contentRoot, path, content);
     log.info(`File written: ${path} (${content.length} bytes)`);
     ctx.send({
       type: "file_written",
@@ -117,7 +110,7 @@ export async function handleWriteFile(
     });
   } catch (error) {
     log.error("File writing failed", error);
-    if (error instanceof FileBrowserError) {
+    if (isFileBrowserError(error)) {
       ctx.sendError(error.code, error.message);
     } else {
       const message =
@@ -143,7 +136,7 @@ export async function handleDeleteFile(
   }
 
   try {
-    await deleteFile(ctx.state.currentVault.contentRoot, path);
+    await ctx.deps.deleteFile(ctx.state.currentVault.contentRoot, path);
     log.info(`File deleted: ${path}`);
     ctx.send({
       type: "file_deleted",
@@ -151,7 +144,7 @@ export async function handleDeleteFile(
     });
   } catch (error) {
     log.error("File deletion failed", error);
-    if (error instanceof FileBrowserError) {
+    if (isFileBrowserError(error)) {
       ctx.sendError(error.code, error.message);
     } else {
       const message =
@@ -177,7 +170,7 @@ export async function handleArchiveFile(
   }
 
   try {
-    const result = await archiveFile(ctx.state.currentVault.contentRoot, path);
+    const result = await ctx.deps.archiveFile(ctx.state.currentVault.contentRoot, path, "04_Archive");
     log.info(`Directory archived: ${path} -> ${result.archivePath}`);
     ctx.send({
       type: "file_archived",
@@ -186,7 +179,7 @@ export async function handleArchiveFile(
     });
   } catch (error) {
     log.error("Archive failed", error);
-    if (error instanceof FileBrowserError) {
+    if (isFileBrowserError(error)) {
       ctx.sendError(error.code, error.message);
     } else {
       const message =

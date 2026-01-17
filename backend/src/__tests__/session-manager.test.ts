@@ -2,7 +2,7 @@
  * Session Manager Tests
  *
  * Unit tests for session lifecycle management.
- * Uses mocking for the SDK to avoid real API calls.
+ * Uses dependency injection for the SDK to avoid real API calls.
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
@@ -11,16 +11,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { SessionMetadata, VaultInfo } from "@memory-loop/shared";
 
-// Mock the SDK before importing session-manager
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mockQuery = mock<(...args: any[]) => any>(() => undefined);
-const mockInterrupt = mock(() => Promise.resolve());
-
-void mock.module("@anthropic-ai/claude-agent-sdk", () => ({
-  query: mockQuery,
-}));
-
-// Now import session-manager (it will use the mocked SDK)
 import {
   getSessionsDir,
   getSessionFilePath,
@@ -36,7 +26,25 @@ import {
   resumeSession,
   querySession,
   SESSIONS_DIR,
+  type QueryFunction,
 } from "../session-manager";
+
+// =============================================================================
+// Mock SDK Query Function (injected via DI)
+// =============================================================================
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockQuery = mock<(...args: any[]) => any>(() => undefined);
+const mockInterrupt = mock(() => Promise.resolve());
+const mockSupportedCommands = mock(() => Promise.resolve([]));
+
+/**
+ * Creates the mock query function that can be injected.
+ */
+function createMockQueryFn(): QueryFunction {
+  // Return the mock's current implementation
+  return mockQuery as unknown as QueryFunction;
+}
 
 // =============================================================================
 // Test Fixtures
@@ -110,6 +118,7 @@ function createMockQueryGenerator(
       return this;
     },
     interrupt: mockInterrupt,
+    supportedCommands: mockSupportedCommands,
   };
 
   return generator;
@@ -698,7 +707,8 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("new-session-id");
       mockQuery.mockReturnValue(mockGenerator);
 
-      await createSession(vault, "Hello");
+      // Pass mock query function via DI (last parameter)
+      await createSession(vault, "Hello", undefined, undefined, undefined, createMockQueryFn());
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
       const calls = mockQuery.mock.calls;
@@ -716,7 +726,7 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("saved-session-id");
       mockQuery.mockReturnValue(mockGenerator);
 
-      const result = await createSession(vault, "Hello");
+      const result = await createSession(vault, "Hello", undefined, undefined, undefined, createMockQueryFn());
 
       expect(result.sessionId).toBe("saved-session-id");
 
@@ -733,7 +743,7 @@ describe("Session Manager", () => {
       ]);
       mockQuery.mockReturnValue(mockGenerator);
 
-      const result = await createSession(vault, "Hello");
+      const result = await createSession(vault, "Hello", undefined, undefined, undefined, createMockQueryFn());
 
       // Consume events
       const events: unknown[] = [];
@@ -752,7 +762,7 @@ describe("Session Manager", () => {
       });
 
       try {
-        await createSession(vault, "Hello");
+        await createSession(vault, "Hello", undefined, undefined, undefined, createMockQueryFn());
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -765,7 +775,7 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("interruptible-session");
       mockQuery.mockReturnValue(mockGenerator);
 
-      const result = await createSession(vault, "Hello");
+      const result = await createSession(vault, "Hello", undefined, undefined, undefined, createMockQueryFn());
 
       expect(typeof result.interrupt).toBe("function");
       await result.interrupt();
@@ -777,7 +787,7 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("custom-options-session");
       mockQuery.mockReturnValue(mockGenerator);
 
-      await createSession(vault, "Hello", { maxTurns: 5 });
+      await createSession(vault, "Hello", { maxTurns: 5 }, undefined, undefined, createMockQueryFn());
 
       const calls = mockQuery.mock.calls;
       expect(calls.length).toBeGreaterThan(0);
@@ -790,7 +800,8 @@ describe("Session Manager", () => {
   describe("resumeSession", () => {
     test("throws for non-existent session", async () => {
       try {
-        await resumeSession(vaultPath, "non-existent", "Continue");
+        // No queryFn needed since it throws before calling the SDK
+        await resumeSession(vaultPath, "non-existent", "Continue", undefined, undefined, undefined, createMockQueryFn());
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(SessionError);
@@ -805,7 +816,7 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("existing-session");
       mockQuery.mockReturnValue(mockGenerator);
 
-      await resumeSession(vaultPath, "existing-session", "Continue");
+      await resumeSession(vaultPath, "existing-session", "Continue", undefined, undefined, undefined, createMockQueryFn());
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
       const calls = mockQuery.mock.calls;
@@ -828,7 +839,7 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("resume-session");
       mockQuery.mockReturnValue(mockGenerator);
 
-      await resumeSession(vaultPath, "resume-session", "Continue");
+      await resumeSession(vaultPath, "resume-session", "Continue", undefined, undefined, undefined, createMockQueryFn());
 
       const updated = await loadSession(vaultPath, "resume-session");
       expect(updated!.lastActiveAt).not.toBe("2025-01-01T00:00:00.000Z");
@@ -841,7 +852,7 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("auto-created-session");
       mockQuery.mockReturnValue(mockGenerator);
 
-      const result = await querySession(vault, "Hello");
+      const result = await querySession(vault, "Hello", undefined, undefined, undefined, createMockQueryFn());
 
       expect(result.sessionId).toBe("auto-created-session");
 
@@ -864,7 +875,7 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("existing-for-query");
       mockQuery.mockReturnValue(mockGenerator);
 
-      const result = await querySession(vault, "Continue", "existing-for-query");
+      const result = await querySession(vault, "Continue", "existing-for-query", undefined, undefined, createMockQueryFn());
 
       expect(result.sessionId).toBe("existing-for-query");
 
@@ -906,7 +917,7 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("empty-prompt-session");
       mockQuery.mockReturnValue(mockGenerator);
 
-      const result = await createSession(vault, "");
+      const result = await createSession(vault, "", undefined, undefined, undefined, createMockQueryFn());
 
       expect(result.sessionId).toBe("empty-prompt-session");
       const calls = mockQuery.mock.calls;
@@ -925,7 +936,7 @@ describe("Session Manager", () => {
       const mockGenerator = createMockQueryGenerator("spaces-session");
       mockQuery.mockReturnValue(mockGenerator);
 
-      await createSession(vault, "Hello");
+      await createSession(vault, "Hello", undefined, undefined, undefined, createMockQueryFn());
 
       const calls = mockQuery.mock.calls;
       expect(calls.length).toBeGreaterThan(0);

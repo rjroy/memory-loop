@@ -1,22 +1,31 @@
 /**
  * File Watcher Tests
  *
- * Unit tests with mocked chokidar and fake timers.
+ * Unit tests with dependency injection for chokidar and fs.
  * Tests the FileWatcher's debouncing, hash comparison, and callback logic
  * without depending on actual filesystem event timing.
  */
 
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { EventEmitter } from "node:events";
-// Import real fs BEFORE mocking to capture real implementations
-import * as realFs from "node:fs/promises";
-import { FileWatcher, createFileWatcher } from "../file-watcher";
+import type { FSWatcher, ChokidarOptions } from "chokidar";
+import {
+  FileWatcher,
+  createFileWatcher,
+  type FileWatcherDependencies,
+  type WatchFunction,
+  type ReadFileFunction,
+} from "../file-watcher";
 
 // =============================================================================
-// Mock Setup
+// Mock Setup (injected via DI)
 // =============================================================================
 
-// Mock FSWatcher that we can control
+/**
+ * Mock FSWatcher that we can control.
+ * We use type assertion rather than implementing the full FSWatcher interface
+ * since chokidar 5.x has many internal properties we don't need to mock.
+ */
 class MockFSWatcher extends EventEmitter {
   closed = false;
 
@@ -25,35 +34,45 @@ class MockFSWatcher extends EventEmitter {
     this.removeAllListeners();
     return Promise.resolve();
   }
+
+  add(): this {
+    return this;
+  }
+  unwatch(): this {
+    return this;
+  }
+  getWatched(): Record<string, string[]> {
+    return {};
+  }
 }
 
 // Track mock instances for assertions
 let mockWatcher: MockFSWatcher;
 
-// Mock chokidar.watch
-const mockWatch = mock(() => {
+// Mock chokidar.watch (injected via DI)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const mockWatch = mock((_path: string, _options?: ChokidarOptions): FSWatcher => {
   mockWatcher = new MockFSWatcher();
   // Auto-emit 'ready' after a microtask to simulate async initialization
   queueMicrotask(() => mockWatcher.emit("ready"));
-  return mockWatcher;
+  return mockWatcher as unknown as FSWatcher;
 });
 
-// Mock fs readFile for content hashing
-const mockReadFile = mock((path: string) => {
+// Mock fs readFile for content hashing (injected via DI)
+const mockReadFile = mock((path: string): Promise<Buffer> => {
   // Default: return path as content (deterministic hash)
   return Promise.resolve(Buffer.from(`content-of-${path}`));
 });
 
-// Apply mocks before importing the module
-void mock.module("chokidar", () => ({
-  watch: mockWatch,
-}));
-
-void mock.module("node:fs/promises", () => ({
-  ...realFs, // Keep all real functions (access, readdir, etc.)
-  readFile: mockReadFile, // Override only what we need for testing
-  stat: mock(() => Promise.resolve({ isFile: () => true })),
-}));
+/**
+ * Create the mock dependencies for injection.
+ */
+function createMockDeps(): FileWatcherDependencies {
+  return {
+    watch: mockWatch as WatchFunction,
+    readFile: mockReadFile as ReadFileFunction,
+  };
+}
 
 // =============================================================================
 // Test Helpers
@@ -66,11 +85,15 @@ function createTestWatcher(
     onError?: (error: Error) => void;
   } = {}
 ): FileWatcher {
-  return new FileWatcher("/test/vault", {
-    debounceMs: options.debounceMs ?? 100,
-    onFilesChanged: options.onFilesChanged ?? (() => {}),
-    onError: options.onError,
-  });
+  return new FileWatcher(
+    "/test/vault",
+    {
+      debounceMs: options.debounceMs ?? 100,
+      onFilesChanged: options.onFilesChanged ?? (() => {}),
+      onError: options.onError,
+    },
+    createMockDeps()
+  );
 }
 
 // Simulate file events from chokidar
@@ -578,22 +601,28 @@ describe("FileWatcher Error Handling", () => {
 
 describe("createFileWatcher", () => {
   test("creates watcher with callback", () => {
-    const watcher = createFileWatcher("/test/vault", () => {});
+    const watcher = createFileWatcher("/test/vault", () => {}, undefined, createMockDeps());
     expect(watcher).toBeInstanceOf(FileWatcher);
     expect(watcher.getVaultPath()).toBe("/test/vault");
   });
 
   test("creates watcher with custom options", () => {
-    const watcher = createFileWatcher("/test/vault", () => {}, {
-      debounceMs: 750,
-    });
+    const watcher = createFileWatcher(
+      "/test/vault",
+      () => {},
+      { debounceMs: 750 },
+      createMockDeps()
+    );
     expect(watcher.getDebounceMs()).toBe(750);
   });
 
   test("creates watcher with error handler", () => {
-    const watcher = createFileWatcher("/test/vault", () => {}, {
-      onError: () => {},
-    });
+    const watcher = createFileWatcher(
+      "/test/vault",
+      () => {},
+      { onError: () => {} },
+      createMockDeps()
+    );
     expect(watcher).toBeInstanceOf(FileWatcher);
   });
 });

@@ -2,7 +2,7 @@
  * WebSocket Handler Tests
  *
  * Unit tests for WebSocket message routing and handling.
- * Uses mocking for external dependencies (vault manager, session manager, note capture).
+ * Uses dependency injection for external dependencies.
  */
 
 /* eslint-disable @typescript-eslint/require-await, require-yield */
@@ -11,10 +11,20 @@ import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { VaultInfo, ServerMessage } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, SlashCommand, EditableVaultConfig } from "@memory-loop/shared";
+import type { SessionMetadata, ConversationMessage } from "../session-manager";
+import type { VaultConfig } from "../vault-config";
+import type { SetupResult } from "../vault-setup";
+import {
+  WebSocketHandler,
+  createWebSocketHandler,
+  createConnectionState,
+  generateMessageId,
+  type WebSocketHandlerDependencies,
+} from "../websocket-handler";
 
 // =============================================================================
-// Mock Setup
+// Mock Setup (injected via DI)
 // =============================================================================
 
 // Mock vault manager functions
@@ -46,20 +56,127 @@ const mockResumeSession = mock<(...args: any[]) => Promise<any>>(() =>
     supportedCommands: mockSupportedCommands,
   })
 );
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mockLoadSession = mock<(sessionId: string) => Promise<any>>(() =>
+const mockLoadSession = mock<(vaultPath: string, sessionId: string) => Promise<SessionMetadata | null>>(() =>
   Promise.resolve(null)
 );
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mockAppendMessage = mock<(...args: any[]) => Promise<void>>(() =>
+const mockAppendMessage = mock<(vaultPath: string, sessionId: string, message: ConversationMessage) => Promise<void>>(() =>
   Promise.resolve()
 );
 
-const mockDeleteSession = mock<(sessionId: string) => Promise<boolean>>(() =>
+const mockDeleteSession = mock<(vaultPath: string, sessionId: string) => Promise<boolean>>(() =>
   Promise.resolve(true)
 );
 
-// Mock note capture
+// Mock vault config functions
+const mockLoadVaultConfig = mock<(vaultPath: string) => Promise<VaultConfig>>(() =>
+  Promise.resolve({})
+);
+
+const mockLoadSlashCommands = mock<(vaultPath: string) => Promise<SlashCommand[] | undefined>>(() =>
+  Promise.resolve(undefined)
+);
+
+const mockSaveSlashCommands = mock<(vaultPath: string, commands: SlashCommand[]) => Promise<void>>(() =>
+  Promise.resolve()
+);
+
+const mockSavePinnedAssets = mock<(vaultPath: string, paths: string[]) => Promise<void>>(() =>
+  Promise.resolve()
+);
+
+const mockSaveVaultConfig = mock<
+  (vaultPath: string, config: EditableVaultConfig) => Promise<{ success: true } | { success: false; error: string }>
+>(() => Promise.resolve({ success: true }));
+
+// Mock vault setup
+const mockRunVaultSetup = mock<(vaultId: string) => Promise<SetupResult>>(() =>
+  Promise.resolve({
+    success: true,
+    summary: ["Installed 6 commands", "Created 4 directories", "CLAUDE.md updated"],
+  })
+);
+
+// Mock widget engine
+const mockComputeGroundWidgets = mock<() => Promise<Array<{
+  widgetId: string;
+  name: string;
+  type: string;
+  location: string;
+  display: Record<string, unknown>;
+  data: unknown;
+  isEmpty: boolean;
+}>>>(() => Promise.resolve([]));
+
+const mockComputeRecallWidgets = mock<(filePath: string) => Promise<Array<{
+  widgetId: string;
+  name: string;
+  type: string;
+  location: string;
+  display: Record<string, unknown>;
+  data: unknown;
+  isEmpty: boolean;
+}>>>(() => Promise.resolve([]));
+
+const mockHandleFilesChanged = mock<(paths: string[]) => { invalidatedWidgets: string[]; totalEntriesInvalidated: number }>(() =>
+  ({ invalidatedWidgets: [], totalEntriesInvalidated: 0 })
+);
+
+const mockWidgetEngineShutdown = mock(() => {});
+
+const mockGetWidgets = mock<() => Array<{
+  id: string;
+  filePath: string;
+  config: { location: string; source: { pattern: string }; name: string; type: string; display: Record<string, unknown> };
+}>>(() => []);
+
+// Mock WidgetEngine class
+class MockWidgetEngine {
+  computeGroundWidgets = mockComputeGroundWidgets;
+  computeRecallWidgets = mockComputeRecallWidgets;
+  handleFilesChanged = mockHandleFilesChanged;
+  shutdown = mockWidgetEngineShutdown;
+  getWidgets = mockGetWidgets;
+  isInitialized = () => true;
+  getVaultPath = () => "/tmp/test-vault";
+  getVaultId = () => "test-vault";
+  setHealthCallback = () => {};
+}
+
+const mockCreateWidgetEngine = mock<(contentRoot: string, vaultId: string) => Promise<{
+  engine: MockWidgetEngine;
+  loaderResult: { widgets: Array<{ id: string; config: { source: { pattern: string } } }>; errors: Array<{ id?: string; filePath: string; error: string }> };
+}>>(() =>
+  Promise.resolve({
+    engine: new MockWidgetEngine(),
+    loaderResult: { widgets: [], errors: [] },
+  })
+);
+
+// Mock FileWatcher class
+const mockFileWatcherStart = mock<(patterns: string[]) => Promise<void>>(() => Promise.resolve());
+const mockFileWatcherStop = mock<() => Promise<void>>(() => Promise.resolve());
+
+class MockFileWatcher {
+  start = mockFileWatcherStart;
+  stop = mockFileWatcherStop;
+  isActive = () => true;
+  getVaultPath = () => "/tmp/test-vault";
+}
+
+const mockCreateFileWatcher = mock<(vaultPath: string, onFilesChanged: (paths: string[]) => void) => MockFileWatcher>(() =>
+  new MockFileWatcher()
+);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGetRecentSessions = mock<(...args: any[]) => Promise<any[]>>(() =>
+  Promise.resolve([])
+);
+
+// =============================================================================
+// Handler Dependencies Mocks (injected via DI, no mock.module needed)
+// =============================================================================
+
+// Note capture mocks
 const mockCaptureToDaily = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (...args: any[]) => Promise<{
@@ -81,47 +198,7 @@ const mockGetRecentNotes = mock<(...args: any[]) => Promise<any[]>>(() =>
   Promise.resolve([])
 );
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mockGetRecentSessions = mock<(...args: any[]) => Promise<any[]>>(() =>
-  Promise.resolve([])
-);
-
-// Apply mocks
-void mock.module("../vault-manager", () => ({
-  discoverVaults: mockDiscoverVaults,
-  getVaultById: mockGetVaultById,
-  VaultsDirError: class VaultsDirError extends Error {
-    constructor(message: string) {
-      super(message);
-      this.name = "VaultsDirError";
-    }
-  },
-}));
-
-void mock.module("../session-manager", () => ({
-  createSession: mockCreateSession,
-  resumeSession: mockResumeSession,
-  loadSession: mockLoadSession,
-  appendMessage: mockAppendMessage,
-  getRecentSessions: mockGetRecentSessions,
-  deleteSession: mockDeleteSession,
-  SessionError: class SessionError extends Error {
-    constructor(
-      message: string,
-      public readonly code: string
-    ) {
-      super(message);
-      this.name = "SessionError";
-    }
-  },
-}));
-
-void mock.module("../note-capture", () => ({
-  captureToDaily: mockCaptureToDaily,
-  getRecentNotes: mockGetRecentNotes,
-}));
-
-// Mock file browser functions
+// File browser mocks
 const mockListDirectory = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (...args: any[]) => Promise<Array<{ name: string; type: string; path: string }>>
@@ -142,7 +219,15 @@ const mockDeleteFile = mock<
   (...args: any[]) => Promise<void>
 >(() => Promise.resolve());
 
-// FileBrowserError mock class
+const mockArchiveFile = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<{ originalPath: string; archivePath: string }>
+>(() => Promise.resolve({ originalPath: "", archivePath: "04_Archive/archived-dir" }));
+
+/**
+ * Mock FileBrowserError for tests.
+ * Uses name="FileBrowserError" so isFileBrowserError() works correctly.
+ */
 class MockFileBrowserError extends Error {
   constructor(
     message: string,
@@ -153,17 +238,10 @@ class MockFileBrowserError extends Error {
   }
 }
 
-void mock.module("../file-browser", () => ({
-  listDirectory: mockListDirectory,
-  readMarkdownFile: mockReadMarkdownFile,
-  writeMarkdownFile: mockWriteMarkdownFile,
-  deleteFile: mockDeleteFile,
-  FileBrowserError: MockFileBrowserError,
-}));
-
-// Mock inspiration manager
+// Inspiration manager mock
 const mockGetInspiration = mock<
-  (vaultPath: string) => Promise<{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<{
     contextual: { text: string; attribution?: string } | null;
     quote: { text: string; attribution?: string };
   }>
@@ -174,11 +252,7 @@ const mockGetInspiration = mock<
   })
 );
 
-void mock.module("../inspiration-manager", () => ({
-  getInspiration: mockGetInspiration,
-}));
-
-// Mock task manager
+// Task manager mocks
 const mockGetAllTasks = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (...args: any[]) => Promise<{
@@ -213,49 +287,78 @@ const mockToggleTask = mock<
   })
 );
 
-void mock.module("../task-manager", () => ({
-  getAllTasks: mockGetAllTasks,
-  toggleTask: mockToggleTask,
-}));
+// Frontmatter parsing mock
+const mockParseFrontmatter = mock<
+  (content: string) => { data: Record<string, unknown>; content: string }
+>(() => ({ data: {}, content: "" }));
 
-// Mock vault config
-const mockLoadVaultConfig = mock<
-  (vaultPath: string) => Promise<Record<string, unknown>>
->(() => Promise.resolve({}));
+/**
+ * Creates the mock dependencies for WebSocketHandler.
+ */
+function createMockDeps(): WebSocketHandlerDependencies {
+  return {
+    discoverVaults: mockDiscoverVaults,
+    getVaultById: mockGetVaultById,
+    createSession: mockCreateSession,
+    resumeSession: mockResumeSession,
+    loadSession: mockLoadSession,
+    appendMessage: mockAppendMessage,
+    deleteSession: mockDeleteSession,
+    loadVaultConfig: mockLoadVaultConfig,
+    loadSlashCommands: mockLoadSlashCommands,
+    saveSlashCommands: mockSaveSlashCommands,
+    savePinnedAssets: mockSavePinnedAssets,
+    saveVaultConfig: mockSaveVaultConfig,
+    runVaultSetup: mockRunVaultSetup,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+    createWidgetEngine: mockCreateWidgetEngine as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+    createFileWatcher: mockCreateFileWatcher as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+    createSearchIndex: ((contentRoot: string) => new MockSearchIndexManager(contentRoot)) as any,
+    // Handler dependencies (injected to extracted handlers)
+    handlerDeps: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      captureToDaily: mockCaptureToDaily as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      getRecentNotes: mockGetRecentNotes as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      listDirectory: mockListDirectory as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      readMarkdownFile: mockReadMarkdownFile as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      writeMarkdownFile: mockWriteMarkdownFile as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      deleteFile: mockDeleteFile as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      archiveFile: mockArchiveFile as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      getInspiration: mockGetInspiration as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      getAllTasks: mockGetAllTasks as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      toggleTask: mockToggleTask as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      getRecentSessions: mockGetRecentSessions as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      loadVaultConfig: mockLoadVaultConfig as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      parseFrontmatter: mockParseFrontmatter as any,
+    },
+  };
+}
 
-const mockLoadSlashCommands = mock<
-  (vaultPath: string) => Promise<Array<{ name: string; description: string; argumentHint?: string }> | undefined>
->(() => Promise.resolve(undefined));
+/**
+ * Test helper: creates a WebSocketHandler with mock dependencies.
+ */
+function createTestHandler(): WebSocketHandler {
+  return createWebSocketHandler(createMockDeps());
+}
 
-const mockSaveVaultConfig = mock<
-  (vaultPath: string, config: Record<string, unknown>) => Promise<{ success: true } | { success: false; error: string }>
->(() => Promise.resolve({ success: true }));
+// =============================================================================
+// Search Index Mocks (set directly on connection state)
+// =============================================================================
 
-void mock.module("../vault-config", () => ({
-  loadVaultConfig: mockLoadVaultConfig,
-  loadSlashCommands: mockLoadSlashCommands,
-  saveVaultConfig: mockSaveVaultConfig,
-}));
-
-// Mock vault setup
-const mockRunVaultSetup = mock<
-  (vaultId: string) => Promise<{
-    success: boolean;
-    summary: string[];
-    errors?: string[];
-  }>
->(() =>
-  Promise.resolve({
-    success: true,
-    summary: ["Installed 6 commands", "Created 4 directories", "CLAUDE.md updated"],
-  })
-);
-
-void mock.module("../vault-setup", () => ({
-  runVaultSetup: mockRunVaultSetup,
-}));
-
-// Mock search index manager
 const mockSearchFiles = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (...args: any[]) => Promise<Array<{
@@ -285,7 +388,10 @@ const mockGetSnippets = mock<
   }>>
 >(() => Promise.resolve([]));
 
-// Create a mock class for SearchIndexManager
+/**
+ * Mock SearchIndexManager for tests.
+ * Instances are set directly on connection state.
+ */
 class MockSearchIndexManager {
   private contentRoot: string;
 
@@ -301,111 +407,6 @@ class MockSearchIndexManager {
   searchContent = mockSearchContent;
   getSnippets = mockGetSnippets;
 }
-
-void mock.module("../search/search-index", () => ({
-  SearchIndexManager: MockSearchIndexManager,
-}));
-
-// Mock widgets module
-const mockComputeGroundWidgets = mock<
-  () => Promise<Array<{
-    widgetId: string;
-    name: string;
-    type: string;
-    location: string;
-    display: Record<string, unknown>;
-    data: unknown;
-    isEmpty: boolean;
-  }>>
->(() => Promise.resolve([]));
-
-const mockComputeRecallWidgets = mock<
-  (filePath: string) => Promise<Array<{
-    widgetId: string;
-    name: string;
-    type: string;
-    location: string;
-    display: Record<string, unknown>;
-    data: unknown;
-    isEmpty: boolean;
-  }>>
->(() => Promise.resolve([]));
-
-const mockHandleFilesChanged = mock<
-  (paths: string[]) => { invalidatedWidgets: string[]; totalEntriesInvalidated: number }
->(() => ({ invalidatedWidgets: [], totalEntriesInvalidated: 0 }));
-
-const mockWidgetEngineShutdown = mock(() => {});
-const mockWidgetEngineInitialize = mock<
-  () => Promise<{ widgets: Array<{ id: string; config: { source: { pattern: string } } }>; errors: string[] }>
->(() => Promise.resolve({ widgets: [], errors: [] }));
-
-const mockGetWidgets = mock<
-  () => Array<{ id: string; filePath: string; config: { location: string; source: { pattern: string }; name: string; type: string; display: Record<string, unknown> } }>
->(() => []);
-
-// Mock WidgetEngine class
-class MockWidgetEngine {
-  computeGroundWidgets = mockComputeGroundWidgets;
-  computeRecallWidgets = mockComputeRecallWidgets;
-  handleFilesChanged = mockHandleFilesChanged;
-  shutdown = mockWidgetEngineShutdown;
-  initialize = mockWidgetEngineInitialize;
-  getWidgets = mockGetWidgets;
-  isInitialized = () => true;
-  getVaultPath = () => "/tmp/test-vault";
-  getVaultId = () => "test-vault";
-  setHealthCallback = () => {}; // No-op for tests
-}
-
-const mockCreateWidgetEngine = mock<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (...args: any[]) => Promise<{
-    engine: MockWidgetEngine;
-    loaderResult: { widgets: Array<{ id: string; config: { source: { pattern: string } } }>; errors: string[] };
-  }>
->(() =>
-  Promise.resolve({
-    engine: new MockWidgetEngine(),
-    loaderResult: { widgets: [], errors: [] },
-  })
-);
-
-// Mock FileWatcher class
-const mockFileWatcherStart = mock<(patterns: string[]) => Promise<void>>(() => Promise.resolve());
-const mockFileWatcherStop = mock<() => Promise<void>>(() => Promise.resolve());
-
-class MockFileWatcher {
-  start = mockFileWatcherStart;
-  stop = mockFileWatcherStop;
-  isActive = () => true;
-  getVaultPath = () => "/tmp/test-vault";
-}
-
-const mockCreateFileWatcher = mock<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (...args: any[]) => MockFileWatcher
->(() => new MockFileWatcher());
-
-const mockParseFrontmatter = mock<
-  (content: string) => { data: Record<string, unknown>; content: string }
->(() => ({ data: {}, content: "" }));
-
-void mock.module("../widgets", () => ({
-  WidgetEngine: MockWidgetEngine,
-  createWidgetEngine: mockCreateWidgetEngine,
-  FileWatcher: MockFileWatcher,
-  createFileWatcher: mockCreateFileWatcher,
-  parseFrontmatter: mockParseFrontmatter,
-}));
-
-// Import handler after mocks are set up
-import {
-  WebSocketHandler,
-  createWebSocketHandler,
-  createConnectionState,
-  generateMessageId,
-} from "../websocket-handler";
 
 // =============================================================================
 // Test Fixtures
@@ -483,10 +484,15 @@ describe("WebSocket Handler", () => {
     mockResumeSession.mockReset();
     mockLoadSession.mockReset();
     mockAppendMessage.mockReset();
+    mockDeleteSession.mockReset();
+    mockLoadSlashCommands.mockReset();
+    mockSaveSlashCommands.mockReset();
+    mockSavePinnedAssets.mockReset();
+    mockRunVaultSetup.mockReset();
+    mockSupportedCommands.mockReset();
     mockCaptureToDaily.mockReset();
     mockGetRecentNotes.mockReset();
     mockGetRecentSessions.mockReset();
-    mockInterrupt.mockReset();
     mockListDirectory.mockReset();
     mockReadMarkdownFile.mockReset();
     mockWriteMarkdownFile.mockReset();
@@ -503,7 +509,6 @@ describe("WebSocket Handler", () => {
     mockComputeRecallWidgets.mockReset();
     mockHandleFilesChanged.mockReset();
     mockWidgetEngineShutdown.mockReset();
-    mockWidgetEngineInitialize.mockReset();
     mockGetWidgets.mockReset();
     mockCreateWidgetEngine.mockReset();
     mockFileWatcherStart.mockReset();
@@ -581,7 +586,7 @@ describe("WebSocket Handler", () => {
 
   describe("createWebSocketHandler", () => {
     test("creates a new WebSocketHandler instance", () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       expect(handler).toBeInstanceOf(WebSocketHandler);
     });
   });
@@ -608,7 +613,7 @@ describe("WebSocket Handler", () => {
       const vaults = [createMockVault({ id: "vault-1", name: "Vault 1" })];
       mockDiscoverVaults.mockResolvedValue(vaults);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onOpen(ws as unknown as Parameters<typeof handler.onOpen>[0]);
@@ -624,7 +629,7 @@ describe("WebSocket Handler", () => {
     test("sends error if vault discovery fails", async () => {
       mockDiscoverVaults.mockRejectedValue(new Error("Discovery failed"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onOpen(ws as unknown as Parameters<typeof handler.onOpen>[0]);
@@ -640,7 +645,7 @@ describe("WebSocket Handler", () => {
 
   describe("onClose", () => {
     test("clears connection state", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
 
       // Set up some state
       const vault = createMockVault();
@@ -679,7 +684,7 @@ describe("WebSocket Handler", () => {
         interrupt: localInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -743,7 +748,7 @@ describe("WebSocket Handler", () => {
     test("handles string data", async () => {
       mockDiscoverVaults.mockResolvedValue([]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -756,7 +761,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("handles ArrayBuffer data", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       const data = new TextEncoder().encode(JSON.stringify({ type: "ping" }));
@@ -770,7 +775,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("sends error for invalid JSON", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -787,7 +792,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("sends error for invalid message structure", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -803,7 +808,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("sends error for missing required fields", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // select_vault requires vaultId
@@ -829,7 +834,7 @@ describe("WebSocket Handler", () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -852,7 +857,7 @@ describe("WebSocket Handler", () => {
     test("sends error for non-existent vault", async () => {
       mockGetVaultById.mockResolvedValue(null);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -871,7 +876,7 @@ describe("WebSocket Handler", () => {
       const vault1 = createMockVault({ id: "vault-1" });
       const vault2 = createMockVault({ id: "vault-2" });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select first vault
@@ -922,7 +927,7 @@ describe("WebSocket Handler", () => {
         notePath: "/tmp/test-vault/00_Inbox/2025-01-15.md",
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -948,7 +953,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("sends error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -974,7 +979,7 @@ describe("WebSocket Handler", () => {
         error: "Failed to write file",
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -1004,7 +1009,7 @@ describe("WebSocket Handler", () => {
 
   describe("get_recent_activity", () => {
     test("returns error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1031,7 +1036,7 @@ describe("WebSocket Handler", () => {
         { sessionId: "session-1", preview: "Hello", time: "09:00", date: "2025-01-15", messageCount: 5 },
       ]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1060,7 +1065,7 @@ describe("WebSocket Handler", () => {
       mockGetRecentNotes.mockResolvedValue([]);
       mockGetRecentSessions.mockResolvedValue([]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1087,7 +1092,7 @@ describe("WebSocket Handler", () => {
       mockGetRecentNotes.mockResolvedValue([]);
       mockGetRecentSessions.mockResolvedValue([]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1109,7 +1114,7 @@ describe("WebSocket Handler", () => {
       mockGetRecentNotes.mockResolvedValue([]);
       mockGetRecentSessions.mockResolvedValue([]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1130,7 +1135,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockGetRecentNotes.mockRejectedValue(new Error("Filesystem error"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1183,7 +1188,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -1228,7 +1233,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault
@@ -1261,7 +1266,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("sends error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1322,7 +1327,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1416,7 +1421,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1488,7 +1493,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
 
       await handler.onMessage(
         ws as unknown as Parameters<typeof handler.onMessage>[0],
@@ -1545,7 +1550,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1612,7 +1617,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -1667,7 +1672,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1718,7 +1723,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1767,7 +1772,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1814,7 +1819,7 @@ describe("WebSocket Handler", () => {
         supportedCommands: mockSupportedCommands,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -1863,7 +1868,7 @@ describe("WebSocket Handler", () => {
         supportedCommands: mockSupportedCommands,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1905,7 +1910,7 @@ describe("WebSocket Handler", () => {
         supportedCommands: mockSupportedCommands,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -1960,7 +1965,7 @@ describe("WebSocket Handler", () => {
         supportedCommands: mockSupportedCommands,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Resume an existing session
@@ -1999,7 +2004,7 @@ describe("WebSocket Handler", () => {
         messages: [],
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -2030,7 +2035,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockLoadSession.mockResolvedValue(null);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -2065,7 +2070,7 @@ describe("WebSocket Handler", () => {
         messages: [],
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -2089,7 +2094,7 @@ describe("WebSocket Handler", () => {
 
     test("sends error when no vault pre-selected", async () => {
       // With per-vault session storage, vault must be selected first
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Resume without selecting vault first
@@ -2118,7 +2123,7 @@ describe("WebSocket Handler", () => {
       });
       mockGetVaultById.mockResolvedValue(null);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2139,7 +2144,7 @@ describe("WebSocket Handler", () => {
       // Simulate storage failure or corruption
       mockLoadSession.mockRejectedValue(new Error("Storage read failed"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -2177,7 +2182,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault and create session
@@ -2208,7 +2213,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("sends error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2236,7 +2241,7 @@ describe("WebSocket Handler", () => {
         interrupt: activeInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2279,7 +2284,7 @@ describe("WebSocket Handler", () => {
         interrupt: mockInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault and create session
@@ -2326,7 +2331,7 @@ describe("WebSocket Handler", () => {
         interrupt: activeInterrupt,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2354,7 +2359,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("does nothing if no active query", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Should not throw
@@ -2374,7 +2379,7 @@ describe("WebSocket Handler", () => {
 
   describe("ping", () => {
     test("responds with pong", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2396,8 +2401,8 @@ describe("WebSocket Handler", () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
 
-      const handler1 = createWebSocketHandler();
-      const handler2 = createWebSocketHandler();
+      const handler1 = createTestHandler();
+      const handler2 = createTestHandler();
       const ws1 = createMockWebSocket();
 
       // Select vault on handler1
@@ -2422,7 +2427,7 @@ describe("WebSocket Handler", () => {
         timestamp: "2025-01-01T00:00:00.000Z",
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault
@@ -2463,7 +2468,7 @@ describe("WebSocket Handler", () => {
         new SessionError("SDK unavailable", "SDK_ERROR")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2488,7 +2493,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockCreateSession.mockRejectedValue(new Error("Unexpected failure"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2516,7 +2521,7 @@ describe("WebSocket Handler", () => {
 
   describe("list_directory handler", () => {
     test("returns error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2540,7 +2545,7 @@ describe("WebSocket Handler", () => {
         { name: "note.md", type: "file", path: "note.md" },
       ]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2572,7 +2577,7 @@ describe("WebSocket Handler", () => {
         { name: "nested.md", type: "file", path: "folder1/nested.md" },
       ]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2602,7 +2607,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("Path outside vault", "PATH_TRAVERSAL")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2629,7 +2634,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("Directory not found", "DIRECTORY_NOT_FOUND")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2654,7 +2659,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockListDirectory.mockRejectedValue(new Error("Unexpected failure"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2678,7 +2683,7 @@ describe("WebSocket Handler", () => {
 
   describe("read_file handler", () => {
     test("returns error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2702,7 +2707,7 @@ describe("WebSocket Handler", () => {
         truncated: false,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2734,7 +2739,7 @@ describe("WebSocket Handler", () => {
         truncated: true,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2761,7 +2766,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("Only .md files allowed", "INVALID_FILE_TYPE")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2788,7 +2793,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("File not found", "FILE_NOT_FOUND")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2815,7 +2820,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("Path outside vault", "PATH_TRAVERSAL")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2840,7 +2845,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockReadMarkdownFile.mockRejectedValue(new Error("Disk read error"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2868,7 +2873,7 @@ describe("WebSocket Handler", () => {
 
   describe("write_file handler", () => {
     test("returns error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2889,7 +2894,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockWriteMarkdownFile.mockResolvedValue(undefined);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2925,7 +2930,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockWriteMarkdownFile.mockResolvedValue(undefined);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2953,7 +2958,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockWriteMarkdownFile.mockResolvedValue(undefined);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -2990,7 +2995,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("Path outside vault", "PATH_TRAVERSAL")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3021,7 +3026,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("Only .md files allowed", "INVALID_FILE_TYPE")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3052,7 +3057,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("File does not exist", "FILE_NOT_FOUND")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3081,7 +3086,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockWriteMarkdownFile.mockRejectedValue(new Error("Disk write error"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3107,7 +3112,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockWriteMarkdownFile.mockRejectedValue(new Error("EACCES: permission denied"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3135,7 +3140,7 @@ describe("WebSocket Handler", () => {
 
   describe("delete_file handler", () => {
     test("returns error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3156,7 +3161,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockDeleteFile.mockResolvedValue(undefined);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3183,7 +3188,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockDeleteFile.mockResolvedValue(undefined);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3212,7 +3217,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError('File "missing.md" does not exist', "FILE_NOT_FOUND")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3239,7 +3244,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("Path is outside the vault boundary", "PATH_TRAVERSAL")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3266,7 +3271,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("Can only delete files, not directories", "INVALID_FILE_TYPE")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3291,7 +3296,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockDeleteFile.mockRejectedValue(new Error("Disk failure"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3319,7 +3324,7 @@ describe("WebSocket Handler", () => {
 
   describe("get_inspiration", () => {
     test("returns error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3338,7 +3343,7 @@ describe("WebSocket Handler", () => {
       const vault = createMockVault({ path: "/test/vault/path" });
       mockGetVaultById.mockResolvedValue(vault);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3362,7 +3367,7 @@ describe("WebSocket Handler", () => {
         quote: { text: "Carpe diem", attribution: "Horace" },
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3397,7 +3402,7 @@ describe("WebSocket Handler", () => {
         quote: { text: "Stay curious", attribution: "Einstein" },
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3423,7 +3428,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockGetInspiration.mockRejectedValue(new Error("Generation failed"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3452,7 +3457,7 @@ describe("WebSocket Handler", () => {
 
   describe("get_tasks handler", () => {
     test("returns error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3480,7 +3485,7 @@ describe("WebSocket Handler", () => {
         total: 2,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3513,7 +3518,7 @@ describe("WebSocket Handler", () => {
         total: 0,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3548,7 +3553,7 @@ describe("WebSocket Handler", () => {
         total: 0,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3573,7 +3578,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockGetAllTasks.mockRejectedValue(new Error("Filesystem error"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3601,7 +3606,7 @@ describe("WebSocket Handler", () => {
 
   describe("toggle_task handler", () => {
     test("returns error if no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3625,7 +3630,7 @@ describe("WebSocket Handler", () => {
         newState: "x",
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3662,7 +3667,7 @@ describe("WebSocket Handler", () => {
         error: "Path outside vault",
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3690,7 +3695,7 @@ describe("WebSocket Handler", () => {
         error: "File not found: missing.md",
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3718,7 +3723,7 @@ describe("WebSocket Handler", () => {
         error: "Line 3 is not a task",
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3746,7 +3751,7 @@ describe("WebSocket Handler", () => {
         new MockFileBrowserError("Path outside vault", "PATH_TRAVERSAL")
       );
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3771,7 +3776,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockToggleTask.mockRejectedValue(new Error("Disk write error"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3809,7 +3814,7 @@ describe("WebSocket Handler", () => {
         });
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3839,7 +3844,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockDeleteSession.mockImplementation(() => Promise.resolve(true));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -3866,7 +3871,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockDeleteSession.mockImplementation(() => Promise.resolve(false));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -3902,7 +3907,7 @@ describe("WebSocket Handler", () => {
         supportedCommands: mockSupportedCommands,
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault
@@ -3934,7 +3939,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("validates sessionId is required", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3959,7 +3964,7 @@ describe("WebSocket Handler", () => {
         summary: ["Installed 6 commands", "Created 4 directories"],
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -3986,7 +3991,7 @@ describe("WebSocket Handler", () => {
         errors: ["CLAUDE.md: SDK error"],
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4005,7 +4010,7 @@ describe("WebSocket Handler", () => {
     test("returns VAULT_NOT_FOUND when vault doesn't exist", async () => {
       mockGetVaultById.mockResolvedValue(null);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4025,7 +4030,7 @@ describe("WebSocket Handler", () => {
       vault.hasClaudeMd = false;
       mockGetVaultById.mockResolvedValue(vault);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4046,7 +4051,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockRunVaultSetup.mockRejectedValue(new Error("Unexpected error"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4062,7 +4067,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("validates vaultId is required", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4084,7 +4089,7 @@ describe("WebSocket Handler", () => {
 
   describe("search_files handler", () => {
     test("returns VAULT_NOT_FOUND when no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4108,7 +4113,7 @@ describe("WebSocket Handler", () => {
         { path: "another-test.md", name: "another-test.md", score: 80, matchPositions: [8, 9, 10, 11] },
       ]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -4139,7 +4144,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockSearchFiles.mockResolvedValue([]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -4162,7 +4167,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockSearchFiles.mockRejectedValue(new Error("Search failed"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -4186,7 +4191,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("validates query is required", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4204,7 +4209,7 @@ describe("WebSocket Handler", () => {
 
   describe("search_content handler", () => {
     test("returns VAULT_NOT_FOUND when no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4228,7 +4233,7 @@ describe("WebSocket Handler", () => {
         { path: "projects/tasks.md", name: "tasks.md", matchCount: 3 },
       ]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -4259,7 +4264,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockSearchContent.mockResolvedValue([]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -4282,7 +4287,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockSearchContent.mockRejectedValue(new Error("Index not ready"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -4308,7 +4313,7 @@ describe("WebSocket Handler", () => {
 
   describe("get_snippets handler", () => {
     test("returns VAULT_NOT_FOUND when no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4342,7 +4347,7 @@ describe("WebSocket Handler", () => {
         },
       ]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -4374,7 +4379,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockGetSnippets.mockResolvedValue([]);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -4397,7 +4402,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockGetSnippets.mockRejectedValue(new Error("File read error"));
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select vault first
@@ -4421,7 +4426,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("validates path is required", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4437,7 +4442,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("validates query is required", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       await handler.onMessage(
@@ -4458,7 +4463,7 @@ describe("WebSocket Handler", () => {
       const vault = createMockVault({ contentRoot: "/test/vault/content" });
       mockGetVaultById.mockResolvedValue(vault);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Verify searchIndex is null before vault selection
@@ -4479,7 +4484,7 @@ describe("WebSocket Handler", () => {
       const vault1 = createMockVault({ id: "vault-1", contentRoot: "/vault1/content" });
       const vault2 = createMockVault({ id: "vault-2", contentRoot: "/vault2/content" });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Select first vault
@@ -4513,7 +4518,7 @@ describe("WebSocket Handler", () => {
   describe("Widget Handlers", () => {
     describe("get_ground_widgets", () => {
       test("returns error when no vault selected", async () => {
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         await handler.onMessage(
@@ -4534,7 +4539,7 @@ describe("WebSocket Handler", () => {
         // Make createWidgetEngine throw to simulate no engine
         mockCreateWidgetEngine.mockRejectedValue(new Error("No widgets dir"));
 
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         // Select vault (widget engine will fail)
@@ -4576,7 +4581,7 @@ describe("WebSocket Handler", () => {
         ];
         mockComputeGroundWidgets.mockResolvedValue(mockWidgets);
 
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         // Select vault
@@ -4604,7 +4609,7 @@ describe("WebSocket Handler", () => {
 
     describe("get_recall_widgets", () => {
       test("returns error when no vault selected", async () => {
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         await handler.onMessage(
@@ -4636,7 +4641,7 @@ describe("WebSocket Handler", () => {
         ];
         mockComputeRecallWidgets.mockResolvedValue(mockWidgets);
 
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         // Select vault
@@ -4665,7 +4670,7 @@ describe("WebSocket Handler", () => {
 
     describe("widget_edit", () => {
       test("returns error when no vault selected", async () => {
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         await handler.onMessage(
@@ -4699,7 +4704,7 @@ describe("WebSocket Handler", () => {
           content: "# Content",
         });
 
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         // Select vault
@@ -4735,7 +4740,7 @@ describe("WebSocket Handler", () => {
         const vault = createMockVault();
         mockGetVaultById.mockResolvedValue(vault);
 
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         await handler.onMessage(
@@ -4776,7 +4781,7 @@ describe("WebSocket Handler", () => {
           loaderResult: { widgets: [{ id: "test", config: { source: { pattern: "Games/**/*.md" } } }], errors: [] },
         });
 
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         await handler.onMessage(
@@ -4796,7 +4801,7 @@ describe("WebSocket Handler", () => {
         const vault = createMockVault();
         mockGetVaultById.mockResolvedValue(vault);
 
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         // Select vault to initialize widgets
@@ -4838,7 +4843,7 @@ describe("WebSocket Handler", () => {
           loaderResult: { widgets: [{ id: "test", config: { source: { pattern: "Games/**/*.md" } } }], errors: [] },
         });
 
-        const handler = createWebSocketHandler();
+        const handler = createTestHandler();
         const ws = createMockWebSocket();
 
         // Select vault to initialize widgets
@@ -4862,7 +4867,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockSaveVaultConfig.mockResolvedValue({ success: true });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // First select the vault
@@ -4893,7 +4898,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockSaveVaultConfig.mockResolvedValue({ success: true });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // First select the vault
@@ -4925,7 +4930,7 @@ describe("WebSocket Handler", () => {
     });
 
     test("returns config_updated with error when no vault selected", async () => {
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // Try to update config without selecting vault
@@ -4953,7 +4958,7 @@ describe("WebSocket Handler", () => {
         error: "Permission denied: cannot write to config file",
       });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // First select the vault
@@ -4984,7 +4989,7 @@ describe("WebSocket Handler", () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // First select the vault
@@ -5016,7 +5021,7 @@ describe("WebSocket Handler", () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // First select the vault
@@ -5046,7 +5051,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockSaveVaultConfig.mockResolvedValue({ success: true });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // First select the vault
@@ -5087,7 +5092,7 @@ describe("WebSocket Handler", () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // First select the vault
@@ -5119,7 +5124,7 @@ describe("WebSocket Handler", () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // First select the vault
@@ -5158,7 +5163,7 @@ describe("WebSocket Handler", () => {
       mockGetVaultById.mockResolvedValue(vault);
       mockSaveVaultConfig.mockResolvedValue({ success: true });
 
-      const handler = createWebSocketHandler();
+      const handler = createTestHandler();
       const ws = createMockWebSocket();
 
       // First select the vault

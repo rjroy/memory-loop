@@ -10,6 +10,7 @@
     "lint": "bun run --filter '*' lint",
     "test": "bun run --cwd backend test && bun run --cwd frontend test && bun run --cwd shared test",
     "test:coverage": "bun run --cwd backend test:coverage && bun run --cwd frontend test:coverage && bun run --cwd shared test:coverage",
+    "test:lcov": "bun run --cwd backend test:lcov && bun run --cwd frontend test:lcov && bun run --cwd shared test:lcov",
     "typecheck": "bun run --filter '*' typecheck"
   },
   "devDependencies": {

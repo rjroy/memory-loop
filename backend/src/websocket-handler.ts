@@ -41,6 +41,8 @@ import { safeParseClientMessage } from "@memory-loop/shared";
 import {
   discoverVaults as defaultDiscoverVaults,
   getVaultById as defaultGetVaultById,
+  createVault as defaultCreateVault,
+  VaultCreationError,
 } from "./vault-manager.js";
 import { SearchIndexManager, type SearchIndexManager as ISearchIndexManager } from "./search/search-index.js";
 
@@ -118,6 +120,7 @@ export interface WebSocketHandlerDependencies {
   // Vault manager
   discoverVaults?: () => Promise<VaultInfo[]>;
   getVaultById?: (id: string) => Promise<VaultInfo | null>;
+  createVault?: (title: string) => Promise<VaultInfo>;
 
   // Session manager
   createSession?: typeof defaultCreateSession;
@@ -273,6 +276,7 @@ export class WebSocketHandler {
     this.deps = {
       discoverVaults: deps.discoverVaults ?? defaultDiscoverVaults,
       getVaultById: deps.getVaultById ?? defaultGetVaultById,
+      createVault: deps.createVault ?? defaultCreateVault,
       createSession: deps.createSession ?? defaultCreateSession,
       resumeSession: deps.resumeSession ?? defaultResumeSession,
       loadSession: deps.loadSession ?? defaultLoadSession,
@@ -641,6 +645,9 @@ export class WebSocketHandler {
         break;
       case "setup_vault":
         await this.handleSetupVault(ws, message.vaultId);
+        break;
+      case "create_vault":
+        await this.handleCreateVault(ws, message.title);
         break;
 
       // Simple handlers
@@ -1236,6 +1243,52 @@ export class WebSocketHandler {
       const message =
         error instanceof Error ? error.message : "Setup failed unexpectedly";
       this.sendError(ws, "INTERNAL_ERROR", message);
+    }
+  }
+
+  /**
+   * Handles create_vault message.
+   * Creates a new vault directory with CLAUDE.md and runs setup.
+   */
+  private async handleCreateVault(
+    ws: WebSocketLike,
+    title: string
+  ): Promise<void> {
+    log.info(`Creating vault with title: "${title}"`);
+
+    try {
+      // Create the vault directory and CLAUDE.md
+      const vault = await this.deps.createVault(title);
+
+      // Run vault setup to configure the new vault
+      try {
+        await this.deps.runVaultSetup(vault.id);
+        log.info(`Vault setup completed for: ${vault.id}`);
+      } catch (setupError) {
+        // Log setup error but don't fail - vault was created successfully
+        log.warn(`Vault setup had issues for ${vault.id}:`, setupError);
+      }
+
+      // Re-fetch vault info to get updated setupComplete status
+      const updatedVault = await this.deps.getVaultById(vault.id);
+
+      // Send success response with the new vault
+      this.send(ws, {
+        type: "vault_created",
+        vault: updatedVault ?? vault,
+      });
+
+      log.info(`Vault created successfully: ${vault.id} (${vault.name})`);
+    } catch (error) {
+      log.error("Failed to create vault:", error);
+
+      if (error instanceof VaultCreationError) {
+        this.sendError(ws, "VALIDATION_ERROR", error.message);
+      } else {
+        const message =
+          error instanceof Error ? error.message : "Failed to create vault";
+        this.sendError(ws, "INTERNAL_ERROR", message);
+      }
     }
   }
 

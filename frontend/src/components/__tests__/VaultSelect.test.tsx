@@ -332,9 +332,10 @@ describe("VaultSelect", () => {
         expect(screen.getByText("Simple Vault")).toBeDefined();
       });
 
-      // Verify no subtitle element exists
+      // Verify only the Add Vault card has a subtitle (vault itself has no subtitle)
       const subtitleElements = document.querySelectorAll(".vault-select__vault-subtitle");
-      expect(subtitleElements.length).toBe(0);
+      expect(subtitleElements.length).toBe(1); // Only Add Vault card subtitle
+      expect(subtitleElements[0].textContent).toBe("Create a new vault directory");
     });
   });
 

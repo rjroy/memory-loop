@@ -802,6 +802,16 @@ export const TriggerSyncMessageSchema = z.object({
 });
 
 /**
+ * Client requests to create a new vault.
+ * The title will be converted to a safe directory name.
+ */
+export const CreateVaultMessageSchema = z.object({
+  type: z.literal("create_vault"),
+  /** User-provided vault title (will become CLAUDE.md heading) */
+  title: z.string().min(1, "Vault title is required"),
+});
+
+/**
  * Discriminated union of all client message types
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -845,6 +855,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SetPinnedAssetsMessageSchema,
   UpdateVaultConfigMessageSchema,
   TriggerSyncMessageSchema,
+  CreateVaultMessageSchema,
 ]);
 
 // =============================================================================
@@ -1414,6 +1425,16 @@ export const SyncStatusMessageSchema = z.object({
 });
 
 /**
+ * Server confirms vault was created successfully.
+ * Response to create_vault request.
+ */
+export const VaultCreatedMessageSchema = z.object({
+  type: z.literal("vault_created"),
+  /** The newly created vault info */
+  vault: VaultInfoSchema,
+});
+
+/**
  * Discriminated union of all server message types
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -1461,6 +1482,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   PinnedAssetsMessageSchema,
   ConfigUpdatedMessageSchema,
   SyncStatusMessageSchema,
+  VaultCreatedMessageSchema,
 ]);
 
 // =============================================================================
@@ -1564,6 +1586,7 @@ export type GetPinnedAssetsMessage = z.infer<typeof GetPinnedAssetsMessageSchema
 export type SetPinnedAssetsMessage = z.infer<typeof SetPinnedAssetsMessageSchema>;
 export type UpdateVaultConfigMessage = z.infer<typeof UpdateVaultConfigMessageSchema>;
 export type TriggerSyncMessage = z.infer<typeof TriggerSyncMessageSchema>;
+export type CreateVaultMessage = z.infer<typeof CreateVaultMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -1614,6 +1637,7 @@ export type SyncStatusValue = z.infer<typeof SyncStatusValueSchema>;
 export type SyncProgress = z.infer<typeof SyncProgressSchema>;
 export type SyncFileError = z.infer<typeof SyncFileErrorSchema>;
 export type SyncStatusMessage = z.infer<typeof SyncStatusMessageSchema>;
+export type VaultCreatedMessage = z.infer<typeof VaultCreatedMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

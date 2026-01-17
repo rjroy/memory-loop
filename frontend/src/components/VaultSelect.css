@@ -301,6 +301,19 @@
   margin: 0;
 }
 
+/* Add Vault card styling */
+.vault-select__card--add {
+  border-style: dashed;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.vault-select__vault-name--add {
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
 .vault-select__vault-subtitle {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);

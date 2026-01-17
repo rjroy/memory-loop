@@ -12,6 +12,7 @@ import { useSession, STORAGE_KEY_VAULT } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { Toast, type ToastVariant } from "./Toast";
 import { ConfigEditorDialog, type EditableVaultConfig } from "./ConfigEditorDialog";
+import { AddVaultDialog } from "./AddVaultDialog";
 import "./VaultSelect.css";
 
 /**
@@ -56,6 +57,11 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [configSaveError, setConfigSaveError] = useState<string | null>(null);
   // Track the config being saved so we can update local state on success (TASK-010)
   const pendingConfigRef = useRef<EditableVaultConfig | null>(null);
+
+  // Add Vault dialog state
+  const [addVaultDialogOpen, setAddVaultDialogOpen] = useState(false);
+  const [addVaultCreating, setAddVaultCreating] = useState(false);
+  const [addVaultError, setAddVaultError] = useState<string | null>(null);
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
@@ -241,6 +247,35 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     }
   }, [lastMessage, vaults]);
 
+  // Handle vault_created response
+  useEffect(() => {
+    if (lastMessage?.type === "vault_created" && addVaultCreating) {
+      setAddVaultCreating(false);
+      setAddVaultDialogOpen(false);
+      setAddVaultError(null);
+
+      // Add the new vault to the list
+      const newVault = lastMessage.vault;
+      setVaults((prev) => [...prev, newVault]);
+
+      // Show success toast
+      setToastVariant("success");
+      setToastMessage(`Vault "${newVault.name}" created`);
+      setToastVisible(true);
+
+      console.log(`[VaultSelect] Vault created: ${newVault.id}`);
+    }
+  }, [lastMessage, addVaultCreating]);
+
+  // Handle error during vault creation
+  useEffect(() => {
+    if (lastMessage?.type === "error" && addVaultCreating) {
+      setAddVaultCreating(false);
+      setAddVaultError(lastMessage.message);
+      console.warn("[VaultSelect] Vault creation failed:", lastMessage.message);
+    }
+  }, [lastMessage, addVaultCreating]);
+
   // Handle config_updated response (TASK-010)
   useEffect(() => {
     if (lastMessage?.type === "config_updated" && configSaving) {
@@ -333,6 +368,32 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   function handleConfigCancel() {
     setConfigEditorOpen(false);
     setConfigEditorVault(null);
+  }
+
+  // Handle Add Vault button click - open dialog
+  function handleAddVaultClick() {
+    if (connectionStatus !== "connected") {
+      setError("Not connected to server. Please wait...");
+      return;
+    }
+    setAddVaultError(null);
+    setAddVaultDialogOpen(true);
+  }
+
+  // Handle Add Vault dialog confirm - send create_vault message
+  function handleAddVaultConfirm(title: string) {
+    setAddVaultCreating(true);
+    setAddVaultError(null);
+    console.log(`[VaultSelect] Creating vault: ${title}`);
+    sendMessage({ type: "create_vault", title });
+  }
+
+  // Handle Add Vault dialog cancel
+  function handleAddVaultCancel() {
+    if (!addVaultCreating) {
+      setAddVaultDialogOpen(false);
+      setAddVaultError(null);
+    }
   }
 
   // Handle vault card click - check for existing session via API
@@ -556,6 +617,36 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
             </div>
           </li>
         ))}
+        {/* Add Vault card */}
+        <li>
+          <div
+            className={`vault-select__card vault-select__card--add ${
+              selectedVaultId !== null || addVaultCreating ? "vault-select__card--disabled" : ""
+            }`}
+            onClick={() => {
+              if (selectedVaultId === null && !addVaultCreating) {
+                handleAddVaultClick();
+              }
+            }}
+            onKeyDown={(e) => {
+              if ((e.key === "Enter" || e.key === " ") && selectedVaultId === null && !addVaultCreating) {
+                e.preventDefault();
+                handleAddVaultClick();
+              }
+            }}
+            role="option"
+            tabIndex={selectedVaultId !== null || addVaultCreating ? -1 : 0}
+            aria-selected={false}
+            aria-disabled={selectedVaultId !== null || addVaultCreating}
+          >
+            <h2 className="vault-select__vault-name vault-select__vault-name--add">
+              Add Vault
+            </h2>
+            <p className="vault-select__vault-subtitle">
+              Create a new vault directory
+            </p>
+          </div>
+        </li>
       </ul>
 
       {/* Config Editor Dialog (TASK-008, TASK-010) */}
@@ -586,6 +677,15 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         variant={toastVariant}
         message={toastMessage}
         onDismiss={handleToastDismiss}
+      />
+
+      {/* Add Vault Dialog */}
+      <AddVaultDialog
+        isOpen={addVaultDialogOpen}
+        onConfirm={handleAddVaultConfirm}
+        onCancel={handleAddVaultCancel}
+        isCreating={addVaultCreating}
+        createError={addVaultError}
       />
     </div>
   );

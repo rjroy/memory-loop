@@ -303,6 +303,26 @@ export function BrowseMode(): React.ReactNode {
         break;
       }
 
+      case "file_renamed": {
+        // File/directory renamed - refresh the parent directory
+        const newPath = lastMessage.newPath;
+        const parentPath = newPath.includes("/")
+          ? newPath.substring(0, newPath.lastIndexOf("/"))
+          : "";
+        // Refresh the parent directory listing
+        sendMessage({ type: "list_directory", path: parentPath });
+        // If the renamed file was currently being viewed, update the path
+        if (browser.currentPath === lastMessage.oldPath) {
+          setCurrentPath(newPath);
+        }
+        // If a file inside a renamed directory was being viewed, update the path
+        else if (browser.currentPath.startsWith(lastMessage.oldPath + "/")) {
+          const relativePath = browser.currentPath.substring(lastMessage.oldPath.length);
+          setCurrentPath(newPath + relativePath);
+        }
+        break;
+      }
+
       case "tasks":
         // Task list received from server
         setTasks(lastMessage.tasks);
@@ -371,6 +391,14 @@ export function BrowseMode(): React.ReactNode {
   const handleCreateFile = useCallback(
     (parentPath: string, name: string) => {
       sendMessage({ type: "create_file", path: parentPath, name });
+    },
+    [sendMessage]
+  );
+
+  // Handle file/directory rename from FileTree context menu
+  const handleRenameFile = useCallback(
+    (path: string, newName: string) => {
+      sendMessage({ type: "rename_file", path, newName });
     },
     [sendMessage]
   );
@@ -667,7 +695,7 @@ export function BrowseMode(): React.ReactNode {
                 onRequestSnippets={handleRequestSnippets}
               />
             ) : viewMode === "files" ? (
-              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} />
+              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} />
             ) : (
               <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
             )}
@@ -830,7 +858,7 @@ export function BrowseMode(): React.ReactNode {
                   onRequestSnippets={handleRequestSnippets}
                 />
               ) : viewMode === "files" ? (
-                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} />
+                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} />
               ) : (
                 <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
               )}

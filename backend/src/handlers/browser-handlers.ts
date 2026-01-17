@@ -258,3 +258,57 @@ export async function handleCreateFile(
     }
   }
 }
+
+/**
+ * Handles rename_file message.
+ * Renames a file or directory in the selected vault and updates references.
+ */
+export async function handleRenameFile(
+  ctx: HandlerContext,
+  path: string,
+  newName: string
+): Promise<void> {
+  log.info(`Renaming: ${path} to ${newName}`);
+
+  if (!requireVault(ctx)) {
+    log.warn("No vault selected for rename");
+    return;
+  }
+
+  try {
+    // First, rename the file/directory
+    const renameResult = await ctx.deps.renameFile(ctx.state.currentVault.contentRoot, path, newName);
+
+    // Determine if it was a directory (check if old path had no extension or was a known directory)
+    // We can infer this from the result - if newPath has an extension, it was a file
+    const hasExtension = renameResult.newPath.includes(".") &&
+      !renameResult.newPath.endsWith("/") &&
+      renameResult.newPath.lastIndexOf(".") > renameResult.newPath.lastIndexOf("/");
+    const isDirectory = !hasExtension;
+
+    // Then, update references in all markdown files
+    const refResult = await ctx.deps.updateReferences(
+      ctx.state.currentVault.contentRoot,
+      renameResult.oldPath,
+      renameResult.newPath,
+      isDirectory
+    );
+
+    log.info(`Renamed ${path} to ${renameResult.newPath}, updated ${refResult.referencesUpdated} references`);
+    ctx.send({
+      type: "file_renamed",
+      oldPath: renameResult.oldPath,
+      newPath: renameResult.newPath,
+      referencesUpdated: refResult.referencesUpdated,
+    });
+  } catch (error) {
+    log.error("Rename failed", error);
+    if (isFileBrowserError(error)) {
+      ctx.sendError(error.code, error.message);
+    } else {
+      const message =
+        error instanceof Error ? error.message : "Failed to rename";
+      ctx.sendError("INTERNAL_ERROR", message);
+    }
+  }
+}

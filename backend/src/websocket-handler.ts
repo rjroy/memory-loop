@@ -94,7 +94,9 @@ import {
   archiveFile as defaultArchiveFile,
   createDirectory as defaultCreateDirectory,
   createFile as defaultCreateFile,
+  renameFile as defaultRenameFile,
 } from "./file-browser.js";
+import { updateReferences as defaultUpdateReferences } from "./reference-updater.js";
 import { getInspiration as defaultGetInspiration } from "./inspiration-manager.js";
 import {
   getAllTasks as defaultGetAllTasks,
@@ -165,6 +167,7 @@ import {
   handleArchiveFile,
   handleCreateDirectory,
   handleCreateFile,
+  handleRenameFile,
 } from "./handlers/browser-handlers.js";
 
 import {
@@ -295,6 +298,8 @@ export class WebSocketHandler {
       archiveFile: hd.archiveFile ?? defaultArchiveFile,
       createDirectory: hd.createDirectory ?? defaultCreateDirectory,
       createFile: hd.createFile ?? defaultCreateFile,
+      renameFile: hd.renameFile ?? defaultRenameFile,
+      updateReferences: hd.updateReferences ?? defaultUpdateReferences,
       getInspiration: hd.getInspiration ?? defaultGetInspiration,
       getAllTasks: hd.getAllTasks ?? defaultGetAllTasks,
       toggleTask: hd.toggleTask ?? defaultToggleTask,
@@ -660,6 +665,9 @@ export class WebSocketHandler {
         break;
       case "create_file":
         await handleCreateFile(ctx, message.path, message.name);
+        break;
+      case "rename_file":
+        await handleRenameFile(ctx, message.path, message.newName);
         break;
 
       // Search handlers (extracted)

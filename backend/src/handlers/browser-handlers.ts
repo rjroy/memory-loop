@@ -188,3 +188,38 @@ export async function handleArchiveFile(
     }
   }
 }
+
+/**
+ * Handles create_directory message.
+ * Creates a new directory in the selected vault.
+ */
+export async function handleCreateDirectory(
+  ctx: HandlerContext,
+  parentPath: string,
+  name: string
+): Promise<void> {
+  log.info(`Creating directory: ${name} in ${parentPath || "/"}`);
+
+  if (!requireVault(ctx)) {
+    log.warn("No vault selected for directory creation");
+    return;
+  }
+
+  try {
+    const createdPath = await ctx.deps.createDirectory(ctx.state.currentVault.contentRoot, parentPath, name);
+    log.info(`Directory created: ${createdPath}`);
+    ctx.send({
+      type: "directory_created",
+      path: createdPath,
+    });
+  } catch (error) {
+    log.error("Directory creation failed", error);
+    if (isFileBrowserError(error)) {
+      ctx.sendError(error.code, error.message);
+    } else {
+      const message =
+        error instanceof Error ? error.message : "Failed to create directory";
+      ctx.sendError("INTERNAL_ERROR", message);
+    }
+  }
+}

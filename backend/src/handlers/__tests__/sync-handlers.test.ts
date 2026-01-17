@@ -144,6 +144,7 @@ const stubHandlerDeps: RequiredHandlerDependencies = {
   writeMarkdownFile: () => Promise.resolve(),
   deleteFile: () => Promise.resolve(),
   archiveFile: () => Promise.resolve({ originalPath: "", archivePath: "" }),
+  createDirectory: () => Promise.resolve(""),
   getInspiration: () => Promise.resolve({ contextual: null, quote: { text: "", attribution: "" } }),
   getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
   toggleTask: () => Promise.resolve({ success: true }),

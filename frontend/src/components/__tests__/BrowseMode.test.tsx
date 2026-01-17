@@ -392,4 +392,118 @@ describe("BrowseMode", () => {
       expect(listDirMsg).toBeDefined();
     });
   });
+
+  describe("create directory functionality", () => {
+    it("refreshes parent directory when directory_created message is received", async () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Wait for WebSocket to connect
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const ws = wsInstances[0];
+
+      // Simulate session ready
+      ws.simulateMessage({ type: "session_ready", sessionId: "test-session", vaultId: "vault-1" });
+
+      // Wait for session
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Clear messages to track only new ones
+      sentMessages.length = 0;
+
+      // Simulate directory_created message from server
+      ws.simulateMessage({
+        type: "directory_created",
+        path: "docs/new-folder",
+      });
+
+      // Wait for message processing
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Verify list_directory message was sent for parent path
+      const listDirMsg = sentMessages.find((m) => m.type === "list_directory" && (m as { path: string }).path === "docs");
+      expect(listDirMsg).toBeDefined();
+    });
+
+    it("refreshes root directory when directory_created at root", async () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Wait for WebSocket to connect
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const ws = wsInstances[0];
+
+      // Simulate session ready
+      ws.simulateMessage({ type: "session_ready", sessionId: "test-session", vaultId: "vault-1" });
+
+      // Wait for session
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Clear messages to track only new ones
+      sentMessages.length = 0;
+
+      // Simulate directory_created message from server for root-level directory
+      ws.simulateMessage({
+        type: "directory_created",
+        path: "new-folder",
+      });
+
+      // Wait for message processing
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Verify list_directory message was sent for root path
+      const listDirMsg = sentMessages.find((m) => m.type === "list_directory" && (m as { path: string }).path === "");
+      expect(listDirMsg).toBeDefined();
+    });
+
+    it("sends create_directory message when handleCreateDirectory is called", async () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Wait for WebSocket to connect
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const ws = wsInstances[0];
+
+      // Simulate session ready
+      ws.simulateMessage({ type: "session_ready", sessionId: "test-session", vaultId: "vault-1" });
+
+      // Simulate directory listing so FileTree renders
+      ws.simulateMessage({
+        type: "directory_listing",
+        path: "",
+        entries: [
+          { name: "docs", type: "directory", path: "docs" },
+        ],
+      });
+
+      // Wait for session and entries
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Clear messages to track only new ones
+      sentMessages.length = 0;
+
+      // Open context menu on docs directory
+      const docsButton = screen.getByText("docs").closest("button");
+      fireEvent.contextMenu(docsButton!);
+
+      // Click "Add Directory"
+      fireEvent.click(screen.getByText("Add Directory"));
+
+      // Enter directory name in dialog
+      const input = screen.getByLabelText("Directory name");
+      fireEvent.change(input, { target: { value: "new-folder" } });
+
+      // Click Create
+      fireEvent.click(screen.getByText("Create"));
+
+      // Wait for message
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Verify create_directory message was sent
+      const createDirMsg = sentMessages.find((m) => m.type === "create_directory");
+      expect(createDirMsg).toBeDefined();
+      expect(createDirMsg).toEqual({
+        type: "create_directory",
+        path: "docs",
+        name: "new-folder",
+      });
+    });
+  });
 });

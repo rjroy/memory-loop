@@ -87,6 +87,7 @@ export type SessionAction =
   | { type: "COMPLETE_TOOL_INVOCATION"; toolUseId: string; output: unknown }
   | { type: "SET_SLASH_COMMANDS"; commands: SlashCommand[] }
   | { type: "SET_LAST_MESSAGE_CONTEXT_USAGE"; contextUsage: number }
+  | { type: "SET_LAST_MESSAGE_DURATION"; durationMs: number }
   | { type: "SET_SEARCH_ACTIVE"; isActive: boolean }
   | { type: "SET_SEARCH_MODE"; mode: SearchMode }
   | { type: "SET_SEARCH_QUERY"; query: string }
@@ -387,6 +388,18 @@ function handleSetLastMessageContextUsage(
   return { ...state, messages };
 }
 
+function handleSetLastMessageDuration(
+  state: SessionState,
+  durationMs: number
+): SessionState {
+  if (state.messages.length === 0) return state;
+  const messages = [...state.messages];
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage.role !== "assistant") return state;
+  messages[messages.length - 1] = { ...lastMessage, durationMs };
+  return { ...state, messages };
+}
+
 // ----------------------------------------------------------------------------
 // Main reducer
 // ----------------------------------------------------------------------------
@@ -617,6 +630,9 @@ export function sessionReducer(
 
     case "SET_LAST_MESSAGE_CONTEXT_USAGE":
       return handleSetLastMessageContextUsage(state, action.contextUsage);
+
+    case "SET_LAST_MESSAGE_DURATION":
+      return handleSetLastMessageDuration(state, action.durationMs);
 
     // Search actions
     case "SET_SEARCH_ACTIVE":

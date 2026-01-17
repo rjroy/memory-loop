@@ -362,6 +362,10 @@ export function SessionProvider({
     dispatch({ type: "SET_LAST_MESSAGE_CONTEXT_USAGE", contextUsage });
   }, []);
 
+  const setLastMessageDuration = useCallback((durationMs: number) => {
+    dispatch({ type: "SET_LAST_MESSAGE_DURATION", durationMs });
+  }, []);
+
   // Search actions
   const setSearchActive = useCallback((isActive: boolean) => {
     dispatch({ type: "SET_SEARCH_ACTIVE", isActive });
@@ -536,6 +540,7 @@ export function SessionProvider({
     completeToolInvocation,
     setSlashCommands,
     setLastMessageContextUsage,
+    setLastMessageDuration,
     setSearchActive,
     setSearchMode,
     setSearchQuery,
@@ -594,6 +599,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     setPendingSessionId,
     setSlashCommands,
     setLastMessageContextUsage,
+    setLastMessageDuration,
     setSearchResults,
     setSnippets,
     setSearchLoading,
@@ -673,6 +679,9 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           updateLastMessage("", false);
           if (message.contextUsage !== undefined) {
             setLastMessageContextUsage(message.contextUsage);
+          }
+          if (message.durationMs !== undefined) {
+            setLastMessageDuration(message.durationMs);
           }
           break;
 
@@ -768,6 +777,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
       setPendingSessionId,
       setSlashCommands,
       setLastMessageContextUsage,
+      setLastMessageDuration,
       setSearchResults,
       setSnippets,
       setSearchLoading,

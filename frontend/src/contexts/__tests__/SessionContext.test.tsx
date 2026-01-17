@@ -695,6 +695,44 @@ describe("SessionContext", () => {
       expect(result.current.session.messages[0].isStreaming).toBe(false);
     });
 
+    it("handles response_end with durationMs", () => {
+      const { result } = renderHook(
+        () => ({
+          session: useSession(),
+          handler: useServerMessageHandler(),
+        }),
+        { wrapper: createWrapper() }
+      );
+
+      act(() => {
+        result.current.handler({
+          type: "response_start",
+          messageId: "msg-1",
+        });
+      });
+
+      act(() => {
+        result.current.handler({
+          type: "response_chunk",
+          messageId: "msg-1",
+          content: "Done!",
+        });
+      });
+
+      act(() => {
+        result.current.handler({
+          type: "response_end",
+          messageId: "msg-1",
+          contextUsage: 42,
+          durationMs: 1500,
+        });
+      });
+
+      expect(result.current.session.messages[0].isStreaming).toBe(false);
+      expect(result.current.session.messages[0].contextUsage).toBe(42);
+      expect(result.current.session.messages[0].durationMs).toBe(1500);
+    });
+
     it("updateLastMessage does not corrupt user message (race condition fix)", () => {
       const { result } = renderHook(() => useSession(), {
         wrapper: createWrapper(),

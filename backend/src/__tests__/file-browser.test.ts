@@ -18,6 +18,7 @@ import {
   readMarkdownFile,
   writeMarkdownFile,
   deleteFile,
+  archiveFile,
   MAX_FILE_SIZE,
   PathTraversalError,
   DirectoryNotFoundError,
@@ -1503,5 +1504,265 @@ describe("deleteFile", () => {
     } catch (error) {
       expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
     }
+  });
+});
+
+// =============================================================================
+// archiveFile Tests
+// =============================================================================
+
+describe("archiveFile", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("archives a directory to the archive folder with YYYY-MM format", async () => {
+    // Create a project directory with a file
+    await mkdir(join(testDir, "01_Projects", "MyProject"), { recursive: true });
+    await writeFile(join(testDir, "01_Projects", "MyProject", "notes.md"), "content");
+
+    const result = await archiveFile(testDir, "01_Projects/MyProject");
+
+    // Verify the directory was moved
+    try {
+      await stat(join(testDir, "01_Projects", "MyProject"));
+      expect.unreachable("Original directory should have been moved");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+
+    // Verify the result contains correct paths
+    expect(result.originalPath).toBe("01_Projects/MyProject");
+    expect(result.archivePath).toMatch(/^07_Archive\/\d{4}-\d{2}\/MyProject$/);
+
+    // Verify the file exists in the new location
+    const archiveDestination = join(testDir, result.archivePath);
+    const archivedFileStats = await stat(join(archiveDestination, "notes.md"));
+    expect(archivedFileStats.isFile()).toBe(true);
+  });
+
+  test("archives chats directory to archive/YYYY-MM/chats/", async () => {
+    // Create an inbox/chats directory with files
+    await mkdir(join(testDir, "00_Inbox", "chats"), { recursive: true });
+    await writeFile(join(testDir, "00_Inbox", "chats", "chat-2025-01-15.md"), "chat content");
+
+    const result = await archiveFile(testDir, "00_Inbox/chats");
+
+    // Verify the directory was moved
+    try {
+      await stat(join(testDir, "00_Inbox", "chats"));
+      expect.unreachable("Original directory should have been moved");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+
+    // Verify chats go into a special chats subdirectory
+    expect(result.archivePath).toMatch(/^07_Archive\/\d{4}-\d{2}\/chats\/chats$/);
+  });
+
+  test("uses last modified date for YYYY-MM calculation", async () => {
+    // Create a directory with a file
+    await mkdir(join(testDir, "01_Projects", "OldProject"), { recursive: true });
+    const filePath = join(testDir, "01_Projects", "OldProject", "old-notes.md");
+    await writeFile(filePath, "old content");
+
+    // The file's mtime will be "now", so the archive should use current month
+    const now = new Date();
+    const expectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    const result = await archiveFile(testDir, "01_Projects/OldProject");
+
+    expect(result.archivePath).toBe(`07_Archive/${expectedMonth}/OldProject`);
+  });
+
+  test("uses custom archive root when provided", async () => {
+    await mkdir(join(testDir, "Projects", "MyProject"), { recursive: true });
+    await writeFile(join(testDir, "Projects", "MyProject", "notes.md"), "content");
+
+    const result = await archiveFile(testDir, "Projects/MyProject", "Archive");
+
+    expect(result.archivePath).toMatch(/^Archive\/\d{4}-\d{2}\/MyProject$/);
+  });
+
+  test("creates archive directory if it does not exist", async () => {
+    await mkdir(join(testDir, "Projects", "NewProject"), { recursive: true });
+    await writeFile(join(testDir, "Projects", "NewProject", "notes.md"), "content");
+
+    // Archive directory should not exist yet
+    try {
+      await stat(join(testDir, "07_Archive"));
+      expect.unreachable("Archive should not exist yet");
+    } catch {
+      // Expected
+    }
+
+    const result = await archiveFile(testDir, "Projects/NewProject");
+
+    // Verify archive directory was created
+    const archiveStats = await stat(join(testDir, "07_Archive"));
+    expect(archiveStats.isDirectory()).toBe(true);
+
+    // Verify file was moved
+    const archivedFile = await stat(join(testDir, result.archivePath, "notes.md"));
+    expect(archivedFile.isFile()).toBe(true);
+  });
+
+  test("throws DirectoryNotFoundError for non-existent directory", async () => {
+    try {
+      await archiveFile(testDir, "does-not-exist");
+      expect.unreachable("Should have thrown DirectoryNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectoryNotFoundError);
+    }
+  });
+
+  test("throws InvalidFileTypeError for files (not directories)", async () => {
+    await writeFile(join(testDir, "not-a-dir.txt"), "content");
+
+    try {
+      await archiveFile(testDir, "not-a-dir.txt");
+      expect.unreachable("Should have thrown InvalidFileTypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileTypeError);
+      expect((error as InvalidFileTypeError).message).toContain("directories");
+    }
+  });
+
+  test("throws PathTraversalError for path traversal attempts", async () => {
+    const outsideDir = await createTestDir();
+    try {
+      await mkdir(join(outsideDir, "secret-project"));
+
+      try {
+        await archiveFile(testDir, `../${outsideDir.split("/").pop()}/secret-project`);
+        expect.unreachable("Should have thrown PathTraversalError");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PathTraversalError);
+      }
+    } finally {
+      await cleanupTestDir(outsideDir);
+    }
+  });
+
+  test("throws PathTraversalError for absolute path", async () => {
+    try {
+      await archiveFile(testDir, "/etc");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("throws PathTraversalError for symlink directory", async () => {
+    const realDir = join(testDir, "real-project");
+    await mkdir(realDir);
+    await writeFile(join(realDir, "notes.md"), "content");
+    const linkPath = join(testDir, "link-project");
+
+    try {
+      await symlink(realDir, linkPath);
+
+      try {
+        await archiveFile(testDir, "link-project");
+        expect.unreachable("Should have thrown PathTraversalError");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PathTraversalError);
+        expect((error as PathTraversalError).message).toContain("symbolic link");
+      }
+
+      // Verify original directory was NOT moved
+      const dirStats = await stat(realDir);
+      expect(dirStats.isDirectory()).toBe(true);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.includes("EPERM") ||
+          error.message.includes("operation not permitted"))
+      ) {
+        console.log("Skipping symlink test - not supported on this platform");
+        return;
+      }
+      throw error;
+    }
+  });
+
+  test("handles directory with spaces in name", async () => {
+    await mkdir(join(testDir, "Projects", "My Cool Project"), { recursive: true });
+    await writeFile(join(testDir, "Projects", "My Cool Project", "notes.md"), "content");
+
+    const result = await archiveFile(testDir, "Projects/My Cool Project");
+
+    expect(result.archivePath).toMatch(/My Cool Project$/);
+
+    // Verify file was moved
+    const archivedFile = await stat(join(testDir, result.archivePath, "notes.md"));
+    expect(archivedFile.isFile()).toBe(true);
+  });
+
+  test("handles nested directory structure", async () => {
+    await mkdir(join(testDir, "Projects", "Deep", "Nested", "Content"), { recursive: true });
+    await writeFile(join(testDir, "Projects", "Deep", "Nested", "Content", "file.md"), "content");
+
+    // Archive the "Deep" directory (not the deepest level)
+    const result = await archiveFile(testDir, "Projects/Deep");
+
+    // Verify nested structure was preserved
+    const nestedFile = await stat(join(testDir, result.archivePath, "Nested", "Content", "file.md"));
+    expect(nestedFile.isFile()).toBe(true);
+  });
+
+  test("throws error when destination already exists", async () => {
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    // Create source directory
+    await mkdir(join(testDir, "Projects", "MyProject"), { recursive: true });
+    await writeFile(join(testDir, "Projects", "MyProject", "notes.md"), "source content");
+
+    // Pre-create the archive destination
+    await mkdir(join(testDir, "07_Archive", currentMonth, "MyProject"), { recursive: true });
+    await writeFile(join(testDir, "07_Archive", currentMonth, "MyProject", "existing.md"), "existing content");
+
+    try {
+      await archiveFile(testDir, "Projects/MyProject");
+      expect.unreachable("Should have thrown error for existing destination");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileBrowserError);
+      expect((error as FileBrowserError).message).toContain("already exists");
+    }
+
+    // Verify original directory is unchanged
+    const sourceFile = await stat(join(testDir, "Projects", "MyProject", "notes.md"));
+    expect(sourceFile.isFile()).toBe(true);
+  });
+
+  test("handles empty directory", async () => {
+    await mkdir(join(testDir, "Projects", "EmptyProject"), { recursive: true });
+
+    const result = await archiveFile(testDir, "Projects/EmptyProject");
+
+    // Verify the directory was moved (uses current date for empty dirs)
+    const archivedDir = await stat(join(testDir, result.archivePath));
+    expect(archivedDir.isDirectory()).toBe(true);
+  });
+
+  test("handles directory with unicode name", async () => {
+    const unicodeName = "プロジェクト日本語";
+    await mkdir(join(testDir, "Projects", unicodeName), { recursive: true });
+    await writeFile(join(testDir, "Projects", unicodeName, "notes.md"), "content");
+
+    const result = await archiveFile(testDir, `Projects/${unicodeName}`);
+
+    expect(result.archivePath).toContain(unicodeName);
+
+    // Verify file was moved
+    const archivedFile = await stat(join(testDir, result.archivePath, "notes.md"));
+    expect(archivedFile.isFile()).toBe(true);
   });
 });

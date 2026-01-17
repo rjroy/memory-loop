@@ -359,4 +359,37 @@ describe("BrowseMode", () => {
       expect(toggleMessages.length).toBe(0);
     });
   });
+
+  describe("archive functionality", () => {
+    it("refreshes parent directory when file_archived message is received", async () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Wait for WebSocket to connect
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const ws = wsInstances[0];
+
+      // Simulate session ready
+      ws.simulateMessage({ type: "session_ready", sessionId: "test-session", vaultId: "vault-1" });
+
+      // Wait for session
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Clear messages to track only new ones
+      sentMessages.length = 0;
+
+      // Simulate file_archived message from server
+      ws.simulateMessage({
+        type: "file_archived",
+        path: "00_Inbox/chats",
+        archivePath: "07_Archive/2025-01/chats",
+      });
+
+      // Wait for message processing
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Verify list_directory message was sent for parent path
+      const listDirMsg = sentMessages.find((m) => m.type === "list_directory" && (m as { path: string }).path === "00_Inbox");
+      expect(listDirMsg).toBeDefined();
+    });
+  });
 });

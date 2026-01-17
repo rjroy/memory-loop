@@ -265,6 +265,22 @@ export function BrowseMode(): React.ReactNode {
         break;
       }
 
+      case "file_archived": {
+        // Directory archived - refresh parent directory and clear view if needed
+        const archivedPath = lastMessage.path;
+        const parentPath = archivedPath.includes("/")
+          ? archivedPath.substring(0, archivedPath.lastIndexOf("/"))
+          : "";
+        // Refresh the parent directory listing
+        sendMessage({ type: "list_directory", path: parentPath });
+        // If the archived directory or its contents were being viewed, clear the view
+        if (browser.currentPath === archivedPath || browser.currentPath.startsWith(archivedPath + "/")) {
+          setCurrentPath("");
+          setFileContent("", false);
+        }
+        break;
+      }
+
       case "tasks":
         // Task list received from server
         setTasks(lastMessage.tasks);
@@ -309,6 +325,14 @@ export function BrowseMode(): React.ReactNode {
   const handleDeleteFile = useCallback(
     (path: string) => {
       sendMessage({ type: "delete_file", path });
+    },
+    [sendMessage]
+  );
+
+  // Handle directory archive from FileTree context menu
+  const handleArchiveFile = useCallback(
+    (path: string) => {
+      sendMessage({ type: "archive_file", path });
     },
     [sendMessage]
   );
@@ -605,7 +629,7 @@ export function BrowseMode(): React.ReactNode {
                 onRequestSnippets={handleRequestSnippets}
               />
             ) : viewMode === "files" ? (
-              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} />
+              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} />
             ) : (
               <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
             )}
@@ -768,7 +792,7 @@ export function BrowseMode(): React.ReactNode {
                   onRequestSnippets={handleRequestSnippets}
                 />
               ) : viewMode === "files" ? (
-                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} />
+                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} />
               ) : (
                 <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
               )}

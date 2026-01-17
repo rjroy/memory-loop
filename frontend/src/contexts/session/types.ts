@@ -322,6 +322,8 @@ export interface SessionActions {
   setSlashCommands: (commands: SlashCommand[]) => void;
   /** Set context usage percentage on the last assistant message */
   setLastMessageContextUsage: (contextUsage: number) => void;
+  /** Set turn duration on the last assistant message */
+  setLastMessageDuration: (durationMs: number) => void;
   // Search actions
   /** Activate or deactivate search mode */
   setSearchActive: (isActive: boolean) => void;

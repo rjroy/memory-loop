@@ -1014,6 +1014,7 @@ export class WebSocketHandler {
         type: "response_end",
         messageId,
         contextUsage: streamResult.contextUsage,
+        durationMs,
       });
 
       if (streamResult.content.length > 0 || streamResult.toolInvocations.length > 0) {

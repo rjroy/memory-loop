@@ -221,6 +221,7 @@ export const ConversationMessageSchema = z.object({
   timestamp: z.string().min(1, "Timestamp is required"),
   toolInvocations: z.array(ToolInvocationSchema).optional(),
   contextUsage: z.number().min(0).max(100).optional(),
+  durationMs: z.number().int().min(0).optional(),
 });
 
 // =============================================================================

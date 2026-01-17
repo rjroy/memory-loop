@@ -172,42 +172,11 @@ const mockGetRecentSessions = mock<(...args: any[]) => Promise<any[]>>(() =>
   Promise.resolve([])
 );
 
-/**
- * Creates the mock dependencies for WebSocketHandler.
- */
-function createMockDeps(): WebSocketHandlerDependencies {
-  return {
-    discoverVaults: mockDiscoverVaults,
-    getVaultById: mockGetVaultById,
-    createSession: mockCreateSession,
-    resumeSession: mockResumeSession,
-    loadSession: mockLoadSession,
-    appendMessage: mockAppendMessage,
-    deleteSession: mockDeleteSession,
-    loadVaultConfig: mockLoadVaultConfig,
-    loadSlashCommands: mockLoadSlashCommands,
-    saveSlashCommands: mockSaveSlashCommands,
-    savePinnedAssets: mockSavePinnedAssets,
-    saveVaultConfig: mockSaveVaultConfig,
-    runVaultSetup: mockRunVaultSetup,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-    createWidgetEngine: mockCreateWidgetEngine as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-    createFileWatcher: mockCreateFileWatcher as any,
-  };
-}
-
-/**
- * Test helper: creates a WebSocketHandler with mock dependencies.
- */
-function createTestHandler(): WebSocketHandler {
-  return createWebSocketHandler(createMockDeps());
-}
-
 // =============================================================================
-// Mock note capture (still uses mock.module as it's in extracted handlers)
+// Handler Dependencies Mocks (injected via DI, no mock.module needed)
 // =============================================================================
 
+// Note capture mocks
 const mockCaptureToDaily = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (...args: any[]) => Promise<{
@@ -229,12 +198,7 @@ const mockGetRecentNotes = mock<(...args: any[]) => Promise<any[]>>(() =>
   Promise.resolve([])
 );
 
-void mock.module("../note-capture", () => ({
-  captureToDaily: mockCaptureToDaily,
-  getRecentNotes: mockGetRecentNotes,
-}));
-
-// Mock file browser functions (still uses mock.module as it's in extracted handlers)
+// File browser mocks
 const mockListDirectory = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (...args: any[]) => Promise<Array<{ name: string; type: string; path: string }>>
@@ -255,6 +219,10 @@ const mockDeleteFile = mock<
   (...args: any[]) => Promise<void>
 >(() => Promise.resolve());
 
+/**
+ * Mock FileBrowserError for tests.
+ * Uses name="FileBrowserError" so isFileBrowserError() works correctly.
+ */
 class MockFileBrowserError extends Error {
   constructor(
     message: string,
@@ -265,17 +233,10 @@ class MockFileBrowserError extends Error {
   }
 }
 
-void mock.module("../file-browser", () => ({
-  listDirectory: mockListDirectory,
-  readMarkdownFile: mockReadMarkdownFile,
-  writeMarkdownFile: mockWriteMarkdownFile,
-  deleteFile: mockDeleteFile,
-  FileBrowserError: MockFileBrowserError,
-}));
-
-// Mock inspiration manager (still uses mock.module as it's in extracted handlers)
+// Inspiration manager mock
 const mockGetInspiration = mock<
-  (vaultPath: string) => Promise<{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<{
     contextual: { text: string; attribution?: string } | null;
     quote: { text: string; attribution?: string };
   }>
@@ -286,11 +247,7 @@ const mockGetInspiration = mock<
   })
 );
 
-void mock.module("../inspiration-manager", () => ({
-  getInspiration: mockGetInspiration,
-}));
-
-// Mock task manager (still uses mock.module as it's in extracted handlers)
+// Task manager mocks
 const mockGetAllTasks = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (...args: any[]) => Promise<{
@@ -325,40 +282,76 @@ const mockToggleTask = mock<
   })
 );
 
-void mock.module("../task-manager", () => ({
-  getAllTasks: mockGetAllTasks,
-  toggleTask: mockToggleTask,
-}));
+// Frontmatter parsing mock
+const mockParseFrontmatter = mock<
+  (content: string) => { data: Record<string, unknown>; content: string }
+>(() => ({ data: {}, content: "" }));
 
-// Mock session-manager (uses DI mocks from above, but mock.module needed for home-handlers)
-void mock.module("../session-manager", () => ({
-  createSession: mockCreateSession,
-  resumeSession: mockResumeSession,
-  loadSession: mockLoadSession,
-  appendMessage: mockAppendMessage,
-  deleteSession: mockDeleteSession,
-  getRecentSessions: mockGetRecentSessions,
-  SessionError: class SessionError extends Error {
-    constructor(
-      message: string,
-      public readonly code: string
-    ) {
-      super(message);
-      this.name = "SessionError";
-    }
-  },
-}));
+/**
+ * Creates the mock dependencies for WebSocketHandler.
+ */
+function createMockDeps(): WebSocketHandlerDependencies {
+  return {
+    discoverVaults: mockDiscoverVaults,
+    getVaultById: mockGetVaultById,
+    createSession: mockCreateSession,
+    resumeSession: mockResumeSession,
+    loadSession: mockLoadSession,
+    appendMessage: mockAppendMessage,
+    deleteSession: mockDeleteSession,
+    loadVaultConfig: mockLoadVaultConfig,
+    loadSlashCommands: mockLoadSlashCommands,
+    saveSlashCommands: mockSaveSlashCommands,
+    savePinnedAssets: mockSavePinnedAssets,
+    saveVaultConfig: mockSaveVaultConfig,
+    runVaultSetup: mockRunVaultSetup,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+    createWidgetEngine: mockCreateWidgetEngine as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+    createFileWatcher: mockCreateFileWatcher as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+    createSearchIndex: ((contentRoot: string) => new MockSearchIndexManager(contentRoot)) as any,
+    // Handler dependencies (injected to extracted handlers)
+    handlerDeps: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      captureToDaily: mockCaptureToDaily as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      getRecentNotes: mockGetRecentNotes as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      listDirectory: mockListDirectory as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      readMarkdownFile: mockReadMarkdownFile as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      writeMarkdownFile: mockWriteMarkdownFile as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      deleteFile: mockDeleteFile as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      getInspiration: mockGetInspiration as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      getAllTasks: mockGetAllTasks as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      toggleTask: mockToggleTask as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      getRecentSessions: mockGetRecentSessions as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      loadVaultConfig: mockLoadVaultConfig as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      parseFrontmatter: mockParseFrontmatter as any,
+    },
+  };
+}
 
-// Mock vault config (uses DI mocks from above, but mock.module needed for home-handlers)
-void mock.module("../vault-config", () => ({
-  loadVaultConfig: mockLoadVaultConfig,
-  loadSlashCommands: mockLoadSlashCommands,
-  saveSlashCommands: mockSaveSlashCommands,
-  savePinnedAssets: mockSavePinnedAssets,
-  saveVaultConfig: mockSaveVaultConfig,
-}));
+/**
+ * Test helper: creates a WebSocketHandler with mock dependencies.
+ */
+function createTestHandler(): WebSocketHandler {
+  return createWebSocketHandler(createMockDeps());
+}
 
-// Mock search index manager
+// =============================================================================
+// Search Index Mocks (set directly on connection state)
+// =============================================================================
+
 const mockSearchFiles = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (...args: any[]) => Promise<Array<{
@@ -388,7 +381,10 @@ const mockGetSnippets = mock<
   }>>
 >(() => Promise.resolve([]));
 
-// Create a mock class for SearchIndexManager
+/**
+ * Mock SearchIndexManager for tests.
+ * Instances are set directly on connection state.
+ */
 class MockSearchIndexManager {
   private contentRoot: string;
 
@@ -404,24 +400,6 @@ class MockSearchIndexManager {
   searchContent = mockSearchContent;
   getSnippets = mockGetSnippets;
 }
-
-void mock.module("../search/search-index", () => ({
-  SearchIndexManager: MockSearchIndexManager,
-}));
-
-// Mock parseFrontmatter (widget-handlers imports this directly)
-const mockParseFrontmatter = mock<
-  (content: string) => { data: Record<string, unknown>; content: string }
->(() => ({ data: {}, content: "" }));
-
-// Mock widgets module (uses DI mocks from above, but mock.module needed for widget-handlers)
-void mock.module("../widgets", () => ({
-  WidgetEngine: MockWidgetEngine,
-  createWidgetEngine: mockCreateWidgetEngine,
-  FileWatcher: MockFileWatcher,
-  createFileWatcher: mockCreateFileWatcher,
-  parseFrontmatter: mockParseFrontmatter,
-}));
 
 // =============================================================================
 // Test Fixtures

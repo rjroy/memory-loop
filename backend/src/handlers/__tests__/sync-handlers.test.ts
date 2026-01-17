@@ -15,7 +15,7 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 import matter from "gray-matter";
 import type { VaultInfo, ServerMessage } from "@memory-loop/shared";
-import type { HandlerContext, ConnectionState } from "../types.js";
+import type { HandlerContext, ConnectionState, RequiredHandlerDependencies } from "../types.js";
 import type { ApiConnector, ApiResponse } from "../../sync/connector-interface.js";
 import type { GetConnectorFn, SyncPipelineManagerDependencies } from "../../sync/sync-pipeline.js";
 import { handleTriggerSync } from "../sync-handlers.js";
@@ -135,6 +135,22 @@ async function createGameFile(
   await writeFile(fullPath, fileContent, "utf-8");
 }
 
+// Stub handler dependencies (not used by sync handlers, but required by HandlerContext)
+const stubHandlerDeps: RequiredHandlerDependencies = {
+  captureToDaily: () => Promise.resolve({ success: true, timestamp: "", notePath: "" }),
+  getRecentNotes: () => Promise.resolve([]),
+  listDirectory: () => Promise.resolve([]),
+  readMarkdownFile: () => Promise.resolve({ content: "", truncated: false }),
+  writeMarkdownFile: () => Promise.resolve(),
+  deleteFile: () => Promise.resolve(),
+  getInspiration: () => Promise.resolve({ contextual: null, quote: { text: "", attribution: "" } }),
+  getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
+  toggleTask: () => Promise.resolve({ success: true }),
+  getRecentSessions: () => Promise.resolve([]),
+  loadVaultConfig: () => Promise.resolve({}),
+  parseFrontmatter: () => ({ data: {}, content: "" }),
+};
+
 function createMockContext(): HandlerContext {
   return {
     state: mockState,
@@ -144,6 +160,7 @@ function createMockContext(): HandlerContext {
     sendError: (code, message) => {
       sentMessages.push({ type: "error", code, message } as ServerMessage);
     },
+    deps: stubHandlerDeps,
   };
 }
 

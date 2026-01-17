@@ -41,7 +41,12 @@ import {
   discoverVaults as defaultDiscoverVaults,
   getVaultById as defaultGetVaultById,
 } from "./vault-manager.js";
-import { SearchIndexManager } from "./search/search-index.js";
+import { SearchIndexManager, type SearchIndexManager as ISearchIndexManager } from "./search/search-index.js";
+
+/**
+ * Factory type for creating SearchIndexManager instances.
+ */
+export type CreateSearchIndexFn = (contentRoot: string) => ISearchIndexManager;
 import {
   createSession as defaultCreateSession,
   resumeSession as defaultResumeSession,
@@ -74,8 +79,25 @@ import {
   createFileWatcher as defaultCreateFileWatcher,
   type WidgetEngine,
   type WidgetLoaderResult,
+  parseFrontmatter as defaultParseFrontmatter,
 } from "./widgets/index.js";
 import { createHealthCollector } from "./health-collector.js";
+import {
+  captureToDaily as defaultCaptureToDaily,
+  getRecentNotes as defaultGetRecentNotes,
+} from "./note-capture.js";
+import {
+  listDirectory as defaultListDirectory,
+  readMarkdownFile as defaultReadMarkdownFile,
+  writeMarkdownFile as defaultWriteMarkdownFile,
+  deleteFile as defaultDeleteFile,
+} from "./file-browser.js";
+import { getInspiration as defaultGetInspiration } from "./inspiration-manager.js";
+import {
+  getAllTasks as defaultGetAllTasks,
+  toggleTask as defaultToggleTask,
+} from "./task-manager.js";
+import { getRecentSessions as defaultGetRecentSessions } from "./session-manager.js";
 
 // =============================================================================
 // Dependency Injection Types
@@ -113,6 +135,12 @@ export interface WebSocketHandlerDependencies {
     loaderResult: WidgetLoaderResult;
   }>;
   createFileWatcher?: typeof defaultCreateFileWatcher;
+
+  // Search index
+  createSearchIndex?: CreateSearchIndexFn;
+
+  // Handler dependencies (passed through to extracted handlers)
+  handlerDeps?: HandlerDependencies;
 }
 
 // Import extracted handlers
@@ -120,6 +148,8 @@ import {
   type WebSocketLike,
   type ConnectionState,
   type HandlerContext,
+  type HandlerDependencies,
+  type RequiredHandlerDependencies,
   createConnectionState,
   generateMessageId,
 } from "./handlers/types.js";
@@ -224,7 +254,8 @@ function sanitizeSlashCommands(commands: SlashCommand[] | undefined): SlashComma
  */
 export class WebSocketHandler {
   private state: ConnectionState;
-  private readonly deps: Required<WebSocketHandlerDependencies>;
+  private readonly deps: Required<Omit<WebSocketHandlerDependencies, "handlerDeps">>;
+  private readonly handlerDeps: RequiredHandlerDependencies;
 
   constructor(deps: WebSocketHandlerDependencies = {}) {
     this.state = createConnectionState();
@@ -244,6 +275,24 @@ export class WebSocketHandler {
       runVaultSetup: deps.runVaultSetup ?? defaultRunVaultSetup,
       createWidgetEngine: deps.createWidgetEngine ?? defaultCreateWidgetEngine,
       createFileWatcher: deps.createFileWatcher ?? defaultCreateFileWatcher,
+      createSearchIndex: deps.createSearchIndex ?? ((contentRoot) => new SearchIndexManager(contentRoot)),
+    };
+
+    // Handler dependencies (injectable for testing)
+    const hd = deps.handlerDeps ?? {};
+    this.handlerDeps = {
+      captureToDaily: hd.captureToDaily ?? defaultCaptureToDaily,
+      getRecentNotes: hd.getRecentNotes ?? defaultGetRecentNotes,
+      listDirectory: hd.listDirectory ?? defaultListDirectory,
+      readMarkdownFile: hd.readMarkdownFile ?? defaultReadMarkdownFile,
+      writeMarkdownFile: hd.writeMarkdownFile ?? defaultWriteMarkdownFile,
+      deleteFile: hd.deleteFile ?? defaultDeleteFile,
+      getInspiration: hd.getInspiration ?? defaultGetInspiration,
+      getAllTasks: hd.getAllTasks ?? defaultGetAllTasks,
+      toggleTask: hd.toggleTask ?? defaultToggleTask,
+      getRecentSessions: hd.getRecentSessions ?? defaultGetRecentSessions,
+      loadVaultConfig: hd.loadVaultConfig ?? defaultLoadVaultConfig,
+      parseFrontmatter: hd.parseFrontmatter ?? defaultParseFrontmatter,
     };
   }
 
@@ -282,6 +331,7 @@ export class WebSocketHandler {
       state: this.state,
       send: (message: ServerMessage) => this.send(ws, message),
       sendError: (code: ErrorCode, message: string) => this.sendError(ws, code, message),
+      deps: this.handlerDeps,
     };
   }
 
@@ -727,7 +777,7 @@ export class WebSocketHandler {
       this.state.currentVault = vault;
       this.state.currentSessionId = null;
       this.state.activeQuery = null;
-      this.state.searchIndex = new SearchIndexManager(vault.contentRoot);
+      this.state.searchIndex = this.deps.createSearchIndex(vault.contentRoot);
 
       // Create health collector and subscribe to changes
       this.state.healthCollector = createHealthCollector();

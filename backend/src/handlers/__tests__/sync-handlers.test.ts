@@ -147,6 +147,7 @@ const stubHandlerDeps: RequiredHandlerDependencies = {
   createDirectory: () => Promise.resolve(""),
   createFile: () => Promise.resolve(""),
   renameFile: () => Promise.resolve({ oldPath: "", newPath: "" }),
+  moveFile: () => Promise.resolve({ oldPath: "", newPath: "", isDirectory: false }),
   updateReferences: () => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }),
   getInspiration: () => Promise.resolve({ contextual: null, quote: { text: "", attribution: "" } }),
   getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),

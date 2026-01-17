@@ -1,0 +1,228 @@
+/**
+ * MoveDialog Component Styles
+ *
+ * Glassmorphism dialog with mini file tree for destination selection.
+ */
+
+.move-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md);
+  background-color: var(--color-black-a50);
+  animation: move-dialog-fade-in 0.2s ease;
+}
+
+@keyframes move-dialog-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.move-dialog {
+  width: 100%;
+  max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-lg);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border-hover);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 8px 40px var(--color-black-a50),
+    0 0 30px var(--color-accent-primary-a15),
+    inset 0 1px 0 var(--color-white-a10);
+  animation: move-dialog-slide-up 0.2s ease;
+}
+
+@keyframes move-dialog-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.move-dialog__title {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.move-dialog__subtitle {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
+}
+
+.move-dialog__subtitle strong {
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.move-dialog__path-display {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.move-dialog__path-label {
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.move-dialog__path-value {
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.move-dialog__tree-container {
+  flex: 1;
+  min-height: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.move-dialog__tree-item {
+  user-select: none;
+}
+
+.move-dialog__tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  text-align: left;
+}
+
+.move-dialog__tree-row:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.move-dialog__tree-row--selected {
+  background: var(--color-accent-primary-a15);
+}
+
+.move-dialog__tree-row--selected:hover {
+  background: var(--color-accent-primary-a25);
+}
+
+.move-dialog__tree-row--root {
+  font-weight: var(--font-weight-medium);
+}
+
+.move-dialog__tree-toggle {
+  width: 16px;
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.move-dialog__tree-toggle--empty {
+  visibility: hidden;
+}
+
+.move-dialog__tree-icon {
+  flex-shrink: 0;
+  font-size: var(--font-size-base);
+}
+
+.move-dialog__tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.move-dialog__tree-children {
+  margin-left: var(--spacing-xs);
+}
+
+.move-dialog__error {
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-error, #ef4444);
+}
+
+.move-dialog__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+}
+
+.move-dialog__btn {
+  min-height: 44px;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.move-dialog__btn--cancel {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text);
+}
+
+.move-dialog__btn--cancel:hover {
+  background-color: var(--color-border);
+}
+
+.move-dialog__btn--confirm {
+  background: var(--gradient-primary);
+  color: white;
+  transition: box-shadow 0.3s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+
+.move-dialog__btn--confirm:hover:not(:disabled) {
+  box-shadow: var(--glow-primary);
+}
+
+.move-dialog__btn--confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.move-dialog__btn:active:not(:disabled) {
+  transform: scale(0.98);
+}

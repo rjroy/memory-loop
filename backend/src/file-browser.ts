@@ -983,3 +983,165 @@ export async function renameFile(
     newPath: newRelativePath,
   };
 }
+
+// =============================================================================
+// File/Directory Moving
+// =============================================================================
+
+/**
+ * Result of moving a file or directory.
+ */
+export interface MoveResult {
+  /** The original path */
+  oldPath: string;
+  /** The new path after move */
+  newPath: string;
+  /** Whether the moved item is a directory */
+  isDirectory: boolean;
+}
+
+/**
+ * Moves a file or directory to a new location within the vault.
+ * Unlike rename, this supports cross-directory moves.
+ *
+ * @param vaultPath - Absolute path to the vault root (content root)
+ * @param sourcePath - Current path relative to vault root
+ * @param destPath - Destination path relative to vault root (can be directory or full path)
+ * @returns MoveResult with old and new paths
+ * @throws FileNotFoundError if source does not exist
+ * @throws FileExistsError if destination already exists
+ * @throws DirectoryNotFoundError if destination parent directory does not exist
+ * @throws PathTraversalError if path escapes vault boundary
+ */
+export async function moveFile(
+  vaultPath: string,
+  sourcePath: string,
+  destPath: string
+): Promise<MoveResult> {
+  log.info(`Moving: ${sourcePath} to ${destPath}`);
+
+  // Validate source path is within vault
+  const sourceAbsolute = await validatePath(vaultPath, sourcePath);
+
+  // Check if source exists and get its type
+  let isDirectory: boolean;
+  try {
+    const stats = await lstat(sourceAbsolute);
+
+    if (stats.isSymbolicLink()) {
+      log.warn(`Symlink rejected for move: ${sourcePath}`);
+      throw new PathTraversalError(
+        `Path "${sourcePath}" is a symbolic link and cannot be moved`
+      );
+    }
+
+    isDirectory = stats.isDirectory();
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    throw new FileNotFoundError(`Path "${sourcePath}" does not exist`);
+  }
+
+  // Validate destination path is within vault
+  const destAbsolute = await validatePath(vaultPath, destPath);
+
+  // Check if destination is an existing directory (move into it)
+  let finalDestAbsolute: string;
+  let finalDestRelative: string;
+  try {
+    const destStats = await lstat(destAbsolute);
+
+    if (destStats.isSymbolicLink()) {
+      log.warn(`Symlink rejected for move destination: ${destPath}`);
+      throw new PathTraversalError(
+        `Destination path "${destPath}" is a symbolic link`
+      );
+    }
+
+    if (destStats.isDirectory()) {
+      // Moving into an existing directory - append source name
+      const sourceName = basename(sourcePath);
+      finalDestAbsolute = join(destAbsolute, sourceName);
+      finalDestRelative = destPath === "" ? sourceName : `${destPath}/${sourceName}`;
+    } else {
+      // Destination exists and is a file
+      throw new FileExistsError(
+        `Destination "${destPath}" already exists`
+      );
+    }
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    // Destination doesn't exist - use it as the target path
+    // But first check parent directory exists
+    const destParent = destPath.includes("/")
+      ? destPath.substring(0, destPath.lastIndexOf("/"))
+      : "";
+    const destParentAbsolute = destParent === ""
+      ? vaultPath
+      : join(vaultPath, destParent);
+
+    try {
+      const parentStats = await lstat(destParentAbsolute);
+      if (!parentStats.isDirectory()) {
+        throw new DirectoryNotFoundError(
+          `Parent directory "${destParent}" is not a directory`
+        );
+      }
+    } catch (parentError) {
+      if (parentError instanceof FileBrowserError) {
+        throw parentError;
+      }
+      throw new DirectoryNotFoundError(
+        `Parent directory "${destParent || "/"}" does not exist`
+      );
+    }
+
+    finalDestAbsolute = destAbsolute;
+    finalDestRelative = destPath;
+  }
+
+  // Check final destination doesn't already exist
+  try {
+    await stat(finalDestAbsolute);
+    // If we get here, something exists at this path
+    throw new FileExistsError(
+      `Destination "${finalDestRelative}" already exists`
+    );
+  } catch (error) {
+    if (error instanceof FileExistsError) {
+      throw error;
+    }
+    // Good - destination doesn't exist, we can move
+  }
+
+  // Validate final destination is within vault (defense in depth)
+  if (!(await isPathWithinVault(vaultPath, finalDestAbsolute))) {
+    throw new PathTraversalError(
+      `Destination path "${finalDestRelative}" would escape the vault boundary`
+    );
+  }
+
+  // Check we're not moving a directory into itself
+  if (isDirectory) {
+    const normalizedSource = sourceAbsolute.endsWith("/") ? sourceAbsolute : sourceAbsolute + "/";
+    if (finalDestAbsolute.startsWith(normalizedSource)) {
+      throw new FileBrowserError(
+        `Cannot move directory "${sourcePath}" into itself`,
+        "VALIDATION_ERROR"
+      );
+    }
+  }
+
+  // Perform the move
+  await rename(sourceAbsolute, finalDestAbsolute);
+  log.info(`Successfully moved ${sourcePath} to ${finalDestRelative}`);
+
+  return {
+    oldPath: sourcePath,
+    newPath: finalDestRelative,
+    isDirectory,
+  };
+}

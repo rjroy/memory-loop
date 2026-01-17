@@ -22,6 +22,7 @@ import {
   createDirectory,
   createFile,
   renameFile,
+  moveFile,
   MAX_FILE_SIZE,
   PathTraversalError,
   DirectoryNotFoundError,
@@ -2286,5 +2287,395 @@ describe("renameFile", () => {
     expect(result.newPath).toBe("a/b/c/renamed-deep.md");
     const fileStat = await stat(join(testDir, "a", "b", "c", "renamed-deep.md"));
     expect(fileStat.isFile()).toBe(true);
+  });
+});
+
+// =============================================================================
+// moveFile Tests
+// =============================================================================
+
+describe("moveFile", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+    // Create a directory structure for testing
+    await mkdir(join(testDir, "Projects"), { recursive: true });
+    await mkdir(join(testDir, "Archive"), { recursive: true });
+    await mkdir(join(testDir, "Nested", "SubFolder"), { recursive: true });
+    await writeFile(join(testDir, "root-file.md"), "# Root File");
+    await writeFile(join(testDir, "Projects", "project-note.md"), "# Project Note");
+    await writeFile(join(testDir, "Nested", "nested-file.md"), "# Nested");
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("moves file to a different directory", async () => {
+    const result = await moveFile(testDir, "root-file.md", "Projects/root-file.md");
+
+    expect(result.oldPath).toBe("root-file.md");
+    expect(result.newPath).toBe("Projects/root-file.md");
+    expect(result.isDirectory).toBe(false);
+
+    // Verify old location is empty
+    try {
+      await stat(join(testDir, "root-file.md"));
+      expect.unreachable("Old file should not exist");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+
+    // Verify new location has the file with correct content
+    const content = await readFile(join(testDir, "Projects", "root-file.md"), "utf-8");
+    expect(content).toBe("# Root File");
+  });
+
+  test("moves file into existing directory (appends filename)", async () => {
+    const result = await moveFile(testDir, "root-file.md", "Projects");
+
+    expect(result.oldPath).toBe("root-file.md");
+    expect(result.newPath).toBe("Projects/root-file.md");
+    expect(result.isDirectory).toBe(false);
+
+    // Verify file was moved
+    const content = await readFile(join(testDir, "Projects", "root-file.md"), "utf-8");
+    expect(content).toBe("# Root File");
+  });
+
+  test("moves file to vault root", async () => {
+    const result = await moveFile(testDir, "Projects/project-note.md", "project-note.md");
+
+    expect(result.oldPath).toBe("Projects/project-note.md");
+    expect(result.newPath).toBe("project-note.md");
+    expect(result.isDirectory).toBe(false);
+
+    // Verify file was moved to root
+    const content = await readFile(join(testDir, "project-note.md"), "utf-8");
+    expect(content).toBe("# Project Note");
+  });
+
+  test("moves file to vault root using empty string", async () => {
+    const result = await moveFile(testDir, "Projects/project-note.md", "");
+
+    expect(result.oldPath).toBe("Projects/project-note.md");
+    expect(result.newPath).toBe("project-note.md");
+    expect(result.isDirectory).toBe(false);
+  });
+
+  test("moves directory to another location", async () => {
+    await mkdir(join(testDir, "Projects", "MyProject"), { recursive: true });
+    await writeFile(join(testDir, "Projects", "MyProject", "readme.md"), "# Readme");
+
+    const result = await moveFile(testDir, "Projects/MyProject", "Archive/MyProject");
+
+    expect(result.oldPath).toBe("Projects/MyProject");
+    expect(result.newPath).toBe("Archive/MyProject");
+    expect(result.isDirectory).toBe(true);
+
+    // Verify directory and contents were moved
+    const dirStat = await stat(join(testDir, "Archive", "MyProject"));
+    expect(dirStat.isDirectory()).toBe(true);
+
+    const content = await readFile(join(testDir, "Archive", "MyProject", "readme.md"), "utf-8");
+    expect(content).toBe("# Readme");
+  });
+
+  test("moves directory into existing directory", async () => {
+    await mkdir(join(testDir, "Projects", "MyProject"), { recursive: true });
+    await writeFile(join(testDir, "Projects", "MyProject", "readme.md"), "# Readme");
+
+    const result = await moveFile(testDir, "Projects/MyProject", "Archive");
+
+    expect(result.oldPath).toBe("Projects/MyProject");
+    expect(result.newPath).toBe("Archive/MyProject");
+    expect(result.isDirectory).toBe(true);
+
+    // Verify directory was moved inside Archive
+    const dirStat = await stat(join(testDir, "Archive", "MyProject"));
+    expect(dirStat.isDirectory()).toBe(true);
+  });
+
+  test("moves deeply nested file", async () => {
+    await mkdir(join(testDir, "Deep", "Nested", "Path"), { recursive: true });
+    await writeFile(join(testDir, "Deep", "Nested", "Path", "file.md"), "Deep content");
+
+    const result = await moveFile(testDir, "Deep/Nested/Path/file.md", "Projects/file.md");
+
+    expect(result.newPath).toBe("Projects/file.md");
+    expect(result.isDirectory).toBe(false);
+
+    // Verify content
+    const content = await readFile(join(testDir, "Projects", "file.md"), "utf-8");
+    expect(content).toBe("Deep content");
+  });
+
+  test("throws FileNotFoundError for non-existent source", async () => {
+    try {
+      await moveFile(testDir, "does-not-exist.md", "Projects");
+      expect.unreachable("Should have thrown FileNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileNotFoundError);
+    }
+  });
+
+  test("throws FileExistsError when destination file exists", async () => {
+    await writeFile(join(testDir, "Projects", "duplicate.md"), "Existing");
+    await writeFile(join(testDir, "duplicate.md"), "New");
+
+    try {
+      await moveFile(testDir, "duplicate.md", "Projects/duplicate.md");
+      expect.unreachable("Should have thrown FileExistsError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileExistsError);
+      expect((error as FileExistsError).message).toContain("already exists");
+    }
+
+    // Verify original was not moved
+    const originalContent = await readFile(join(testDir, "duplicate.md"), "utf-8");
+    expect(originalContent).toBe("New");
+  });
+
+  test("throws FileExistsError when moving into directory and target exists", async () => {
+    await writeFile(join(testDir, "Projects", "root-file.md"), "Existing");
+
+    try {
+      await moveFile(testDir, "root-file.md", "Projects");
+      expect.unreachable("Should have thrown FileExistsError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileExistsError);
+    }
+  });
+
+  test("throws DirectoryNotFoundError when parent directory does not exist", async () => {
+    try {
+      await moveFile(testDir, "root-file.md", "NonExistent/file.md");
+      expect.unreachable("Should have thrown DirectoryNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectoryNotFoundError);
+      expect((error as DirectoryNotFoundError).message).toContain("does not exist");
+    }
+  });
+
+  test("throws PathTraversalError for source path traversal", async () => {
+    try {
+      await moveFile(testDir, "../outside.md", "Projects");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("throws PathTraversalError for destination path traversal", async () => {
+    try {
+      await moveFile(testDir, "root-file.md", "../outside.md");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("throws PathTraversalError for absolute source path", async () => {
+    try {
+      await moveFile(testDir, "/etc/passwd", "Projects");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("throws PathTraversalError for absolute destination path", async () => {
+    try {
+      await moveFile(testDir, "root-file.md", "/tmp/file.md");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("throws PathTraversalError for symlink source", async () => {
+    const realFile = join(testDir, "real.md");
+    await writeFile(realFile, "Real content");
+    const linkPath = join(testDir, "symlink.md");
+
+    try {
+      await symlink(realFile, linkPath);
+
+      try {
+        await moveFile(testDir, "symlink.md", "Projects/symlink.md");
+        expect.unreachable("Should have thrown PathTraversalError");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PathTraversalError);
+        expect((error as PathTraversalError).message).toContain("symbolic link");
+      }
+
+      // Verify original real file was NOT moved
+      const content = await readFile(realFile, "utf-8");
+      expect(content).toBe("Real content");
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.includes("EPERM") ||
+          error.message.includes("operation not permitted"))
+      ) {
+        console.log("Skipping symlink test - not supported on this platform");
+        return;
+      }
+      throw error;
+    }
+  });
+
+  test("throws PathTraversalError for symlink destination directory", async () => {
+    const realDir = join(testDir, "RealDir");
+    await mkdir(realDir);
+    const linkPath = join(testDir, "SymlinkDir");
+
+    try {
+      await symlink(realDir, linkPath);
+
+      try {
+        await moveFile(testDir, "root-file.md", "SymlinkDir");
+        expect.unreachable("Should have thrown PathTraversalError");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PathTraversalError);
+        expect((error as PathTraversalError).message).toContain("symbolic link");
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.includes("EPERM") ||
+          error.message.includes("operation not permitted"))
+      ) {
+        console.log("Skipping symlink test - not supported on this platform");
+        return;
+      }
+      throw error;
+    }
+  });
+
+  test("throws error when moving directory into itself", async () => {
+    await mkdir(join(testDir, "MyFolder", "SubFolder"), { recursive: true });
+
+    try {
+      await moveFile(testDir, "MyFolder", "MyFolder/SubFolder/MyFolder");
+      expect.unreachable("Should have thrown FileBrowserError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileBrowserError);
+      expect((error as FileBrowserError).message).toContain("into itself");
+    }
+  });
+
+  test("throws error when moving directory into its subdirectory", async () => {
+    await mkdir(join(testDir, "Parent", "Child", "GrandChild"), { recursive: true });
+
+    try {
+      await moveFile(testDir, "Parent", "Parent/Child/GrandChild");
+      expect.unreachable("Should have thrown FileBrowserError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FileBrowserError);
+      expect((error as FileBrowserError).message).toContain("into itself");
+    }
+  });
+
+  test("handles file with spaces in name", async () => {
+    await writeFile(join(testDir, "my file.md"), "Spaced content");
+
+    const result = await moveFile(testDir, "my file.md", "Projects/my file.md");
+
+    expect(result.newPath).toBe("Projects/my file.md");
+
+    // Verify content
+    const content = await readFile(join(testDir, "Projects", "my file.md"), "utf-8");
+    expect(content).toBe("Spaced content");
+  });
+
+  test("handles directory with spaces in name", async () => {
+    await mkdir(join(testDir, "My Project"));
+    await writeFile(join(testDir, "My Project", "note.md"), "Project note");
+
+    const result = await moveFile(testDir, "My Project", "Archive/My Project");
+
+    expect(result.newPath).toBe("Archive/My Project");
+    expect(result.isDirectory).toBe(true);
+
+    // Verify content was preserved
+    const content = await readFile(join(testDir, "Archive", "My Project", "note.md"), "utf-8");
+    expect(content).toBe("Project note");
+  });
+
+  test("handles file with unicode name", async () => {
+    await writeFile(join(testDir, "日本語ファイル.md"), "Unicode content");
+
+    const result = await moveFile(testDir, "日本語ファイル.md", "Projects/日本語ファイル.md");
+
+    expect(result.newPath).toBe("Projects/日本語ファイル.md");
+
+    const content = await readFile(join(testDir, "Projects", "日本語ファイル.md"), "utf-8");
+    expect(content).toBe("Unicode content");
+  });
+
+  test("handles special characters in names", async () => {
+    const fileName = "note-with_special.chars(2025).md";
+    await writeFile(join(testDir, fileName), "Special content");
+
+    const result = await moveFile(testDir, fileName, `Projects/${fileName}`);
+
+    expect(result.newPath).toBe(`Projects/${fileName}`);
+
+    const content = await readFile(join(testDir, "Projects", fileName), "utf-8");
+    expect(content).toBe("Special content");
+  });
+
+  test("preserves file content after move", async () => {
+    const largeContent = "x".repeat(10000);
+    await writeFile(join(testDir, "large.md"), largeContent);
+
+    const result = await moveFile(testDir, "large.md", "Projects/large.md");
+
+    expect(result.isDirectory).toBe(false);
+    const content = await readFile(join(testDir, "Projects", "large.md"), "utf-8");
+    expect(content).toBe(largeContent);
+  });
+
+  test("preserves directory contents recursively", async () => {
+    await mkdir(join(testDir, "Source", "A", "B", "C"), { recursive: true });
+    await writeFile(join(testDir, "Source", "root.md"), "Root");
+    await writeFile(join(testDir, "Source", "A", "a.md"), "A content");
+    await writeFile(join(testDir, "Source", "A", "B", "b.md"), "B content");
+    await writeFile(join(testDir, "Source", "A", "B", "C", "c.md"), "C content");
+
+    const result = await moveFile(testDir, "Source", "Archive/Source");
+
+    expect(result.isDirectory).toBe(true);
+
+    // Verify all nested content
+    expect(await readFile(join(testDir, "Archive", "Source", "root.md"), "utf-8")).toBe("Root");
+    expect(await readFile(join(testDir, "Archive", "Source", "A", "a.md"), "utf-8")).toBe("A content");
+    expect(await readFile(join(testDir, "Archive", "Source", "A", "B", "b.md"), "utf-8")).toBe("B content");
+    expect(await readFile(join(testDir, "Archive", "Source", "A", "B", "C", "c.md"), "utf-8")).toBe("C content");
+  });
+
+  test("handles paths with multiple slashes", async () => {
+    // Multiple slashes in path are preserved as-is
+    const result = await moveFile(testDir, "root-file.md", "Projects//root-file.md");
+
+    // The path is preserved as given (filesystem normalizes internally)
+    expect(result.newPath).toBe("Projects//root-file.md");
+
+    // But the file still ends up at the correct location
+    const content = await readFile(join(testDir, "Projects", "root-file.md"), "utf-8");
+    expect(content).toBe("# Root File");
+  });
+
+  test("allows moving file within same directory with different name", async () => {
+    const result = await moveFile(testDir, "root-file.md", "renamed-file.md");
+
+    expect(result.oldPath).toBe("root-file.md");
+    expect(result.newPath).toBe("renamed-file.md");
+    expect(result.isDirectory).toBe(false);
+
+    const content = await readFile(join(testDir, "renamed-file.md"), "utf-8");
+    expect(content).toBe("# Root File");
   });
 });

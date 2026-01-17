@@ -403,6 +403,14 @@ export function BrowseMode(): React.ReactNode {
     [sendMessage]
   );
 
+  // Handle file/directory move from FileTree context menu
+  const handleMoveFile = useCallback(
+    (path: string, newPath: string) => {
+      sendMessage({ type: "move_file", path, newPath });
+    },
+    [sendMessage]
+  );
+
   // Handle "Think about" from FileTree context menu
   // Appends file path to discussion draft and navigates to Think tab
   const handleThinkAbout = useCallback(
@@ -695,7 +703,7 @@ export function BrowseMode(): React.ReactNode {
                 onRequestSnippets={handleRequestSnippets}
               />
             ) : viewMode === "files" ? (
-              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} />
+              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
             ) : (
               <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
             )}
@@ -858,7 +866,7 @@ export function BrowseMode(): React.ReactNode {
                   onRequestSnippets={handleRequestSnippets}
                 />
               ) : viewMode === "files" ? (
-                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} />
+                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
               ) : (
                 <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
               )}

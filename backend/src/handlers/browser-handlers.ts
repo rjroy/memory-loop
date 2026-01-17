@@ -312,3 +312,50 @@ export async function handleRenameFile(
     }
   }
 }
+
+/**
+ * Handles move_file message.
+ * Moves a file or directory to a new location in the selected vault and updates references.
+ */
+export async function handleMoveFile(
+  ctx: HandlerContext,
+  path: string,
+  newPath: string
+): Promise<void> {
+  log.info(`Moving: ${path} to ${newPath}`);
+
+  if (!requireVault(ctx)) {
+    log.warn("No vault selected for move");
+    return;
+  }
+
+  try {
+    // First, move the file/directory
+    const moveResult = await ctx.deps.moveFile(ctx.state.currentVault.contentRoot, path, newPath);
+
+    // Then, update references in all markdown files
+    const refResult = await ctx.deps.updateReferences(
+      ctx.state.currentVault.contentRoot,
+      moveResult.oldPath,
+      moveResult.newPath,
+      moveResult.isDirectory
+    );
+
+    log.info(`Moved ${path} to ${moveResult.newPath}, updated ${refResult.referencesUpdated} references`);
+    ctx.send({
+      type: "file_moved",
+      oldPath: moveResult.oldPath,
+      newPath: moveResult.newPath,
+      referencesUpdated: refResult.referencesUpdated,
+    });
+  } catch (error) {
+    log.error("Move failed", error);
+    if (isFileBrowserError(error)) {
+      ctx.sendError(error.code, error.message);
+    } else {
+      const message =
+        error instanceof Error ? error.message : "Failed to move";
+      ctx.sendError("INTERNAL_ERROR", message);
+    }
+  }
+}

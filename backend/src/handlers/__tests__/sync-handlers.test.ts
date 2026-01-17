@@ -17,6 +17,8 @@ import matter from "gray-matter";
 import type { VaultInfo, ServerMessage } from "@memory-loop/shared";
 import type { HandlerContext, ConnectionState } from "../types.js";
 import type { ApiConnector, ApiResponse } from "../../sync/connector-interface.js";
+import type { GetConnectorFn, SyncPipelineManagerDependencies } from "../../sync/sync-pipeline.js";
+import { handleTriggerSync } from "../sync-handlers.js";
 
 // =============================================================================
 // Test Fixtures
@@ -41,7 +43,7 @@ const API_RESPONSE: ApiResponse = {
 };
 
 // =============================================================================
-// Mock Connector Module
+// Mock Connector (injected via DI)
 // =============================================================================
 
 const mockFetchById = mock(() => Promise.resolve(API_RESPONSE));
@@ -52,13 +54,14 @@ const mockConnector: ApiConnector = {
   extractFields: (response: ApiResponse) => response as Record<string, unknown>,
 };
 
-// Mock the connector-interface module
-void mock.module("../../sync/connector-interface.js", () => ({
-  getConnector: (name: string) => {
-    if (name === "test") return mockConnector;
-    throw new Error(`Unknown connector "${name}".`);
-  },
-}));
+const mockGetConnector: GetConnectorFn = (name: string) => {
+  if (name === "test") return mockConnector;
+  throw new Error(`Unknown connector "${name}".`);
+};
+
+const mockDeps: SyncPipelineManagerDependencies = {
+  getConnector: mockGetConnector,
+};
 
 // =============================================================================
 // Temp Directory Management
@@ -145,12 +148,6 @@ function createMockContext(): HandlerContext {
 }
 
 // =============================================================================
-// Import Handler After Mocks
-// =============================================================================
-
-const { handleTriggerSync } = await import("../sync-handlers.js");
-
-// =============================================================================
 // Tests
 // =============================================================================
 
@@ -159,7 +156,7 @@ describe("handleTriggerSync", () => {
     await createPipelineConfig(PIPELINE_CONFIG);
     const ctx = createMockContext();
 
-    await handleTriggerSync(ctx, "full");
+    await handleTriggerSync(ctx, "full", undefined, mockDeps);
 
     // First message should be syncing status
     expect(sentMessages.length).toBeGreaterThan(0);
@@ -175,7 +172,7 @@ describe("handleTriggerSync", () => {
     await createGameFile("Games/test.md", { game_id: "123" });
     const ctx = createMockContext();
 
-    await handleTriggerSync(ctx, "full");
+    await handleTriggerSync(ctx, "full", undefined, mockDeps);
 
     // Last message should be success
     const lastMessage = sentMessages[sentMessages.length - 1];
@@ -189,7 +186,7 @@ describe("handleTriggerSync", () => {
     mockState.currentVault = null;
     const ctx = createMockContext();
 
-    await handleTriggerSync(ctx, "full");
+    await handleTriggerSync(ctx, "full", undefined, mockDeps);
 
     // Should send error
     expect(sentMessages.length).toBeGreaterThan(0);
@@ -203,7 +200,7 @@ describe("handleTriggerSync", () => {
     await createGameFile("Games/game2.md", { game_id: "456" });
     const ctx = createMockContext();
 
-    await handleTriggerSync(ctx, "full");
+    await handleTriggerSync(ctx, "full", undefined, mockDeps);
 
     // Should have progress updates with current/total
     const progressMessages = sentMessages.filter(
@@ -217,7 +214,7 @@ describe("handleTriggerSync", () => {
     await createGameFile("Games/test.md", { game_id: "123" });
     const ctx = createMockContext();
 
-    await handleTriggerSync(ctx, "full", "test-sync");
+    await handleTriggerSync(ctx, "full", "test-sync", mockDeps);
 
     // Should complete successfully
     const lastMessage = sentMessages[sentMessages.length - 1];
@@ -230,7 +227,7 @@ describe("handleTriggerSync", () => {
   it("should handle sync with no pipelines configured", async () => {
     const ctx = createMockContext();
 
-    await handleTriggerSync(ctx, "full");
+    await handleTriggerSync(ctx, "full", undefined, mockDeps);
 
     // Should complete (no error, success with 0 files)
     const lastMessage = sentMessages[sentMessages.length - 1];
@@ -249,7 +246,7 @@ describe("handleTriggerSync", () => {
     await createGameFile("Games/test.md", { game_id: "123" });
     const ctx = createMockContext();
 
-    await handleTriggerSync(ctx, "full");
+    await handleTriggerSync(ctx, "full", undefined, mockDeps);
 
     // Should have error status with errors array
     const lastMessage = sentMessages[sentMessages.length - 1];
@@ -266,7 +263,7 @@ describe("handleTriggerSync", () => {
     await createGameFile("Games/test.md", { game_id: "123" });
     const ctx = createMockContext();
 
-    await handleTriggerSync(ctx, "incremental");
+    await handleTriggerSync(ctx, "incremental", undefined, mockDeps);
 
     // Should complete successfully
     const lastMessage = sentMessages[sentMessages.length - 1];

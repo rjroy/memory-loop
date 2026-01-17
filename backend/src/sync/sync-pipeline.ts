@@ -29,7 +29,7 @@ import { get } from "lodash-es";
 import { createLogger } from "../logger.js";
 import { loadPipelineConfigs, loadSecrets, type ProtectedSecrets } from "./config-loader.js";
 import { createApiResponseCache, type ApiResponseCache } from "./api-response-cache.js";
-import { getConnector, type ApiConnector } from "./connector-interface.js";
+import { getConnector as getConnectorFromRegistry, type ApiConnector } from "./connector-interface.js";
 import { createVocabularyNormalizer, type VocabularyNormalizer } from "./vocabulary-normalizer.js";
 import { createFrontmatterUpdater, type FrontmatterUpdater } from "./frontmatter-updater.js";
 import type { PipelineConfig, SyncMeta, FieldMapping } from "./schemas.js";
@@ -86,6 +86,21 @@ export interface SyncResult {
  * Callback for progress updates.
  */
 export type ProgressCallback = (progress: SyncProgress) => void;
+
+/**
+ * Function type for retrieving API connectors by name.
+ */
+export type GetConnectorFn = (name: string) => ApiConnector;
+
+/**
+ * Dependencies for SyncPipelineManager (injectable for testing).
+ */
+export interface SyncPipelineManagerDependencies {
+  /** Function to retrieve connectors by name (default: registry lookup) */
+  getConnector?: GetConnectorFn;
+  /** Vocabulary normalizer instance (default: creates new one) */
+  normalizer?: VocabularyNormalizer;
+}
 
 /**
  * Options for sync execution.
@@ -211,11 +226,13 @@ export class SyncPipelineManager {
   private cache: ApiResponseCache;
   private normalizer: VocabularyNormalizer;
   private updater: FrontmatterUpdater;
+  private getConnector: GetConnectorFn;
 
-  constructor() {
+  constructor(deps: SyncPipelineManagerDependencies = {}) {
     this.cache = createApiResponseCache();
-    this.normalizer = createVocabularyNormalizer();
+    this.normalizer = deps.normalizer ?? createVocabularyNormalizer();
     this.updater = createFrontmatterUpdater();
+    this.getConnector = deps.getConnector ?? getConnectorFromRegistry;
   }
 
   /**
@@ -346,7 +363,7 @@ export class SyncPipelineManager {
     // Get connector
     let connector: ApiConnector;
     try {
-      connector = getConnector(config.connector);
+      connector = this.getConnector(config.connector);
     } catch {
       log.error(`Unknown connector: ${config.connector}`);
       errors.push({
@@ -531,6 +548,8 @@ export class SyncPipelineManager {
 /**
  * Create a new sync pipeline manager.
  */
-export function createSyncPipelineManager(): SyncPipelineManager {
-  return new SyncPipelineManager();
+export function createSyncPipelineManager(
+  deps?: SyncPipelineManagerDependencies
+): SyncPipelineManager {
+  return new SyncPipelineManager(deps);
 }

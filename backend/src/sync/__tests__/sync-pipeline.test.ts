@@ -16,7 +16,11 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 import matter from "gray-matter";
 import type { ApiConnector, ApiResponse } from "../connector-interface.js";
-import type { SyncProgress } from "../sync-pipeline.js";
+import type { SyncProgress, GetConnectorFn } from "../sync-pipeline.js";
+import {
+  SyncPipelineManager,
+  createSyncPipelineManager,
+} from "../sync-pipeline.js";
 
 // =============================================================================
 // Test Fixtures
@@ -42,7 +46,7 @@ const API_RESPONSE: ApiResponse = {
 };
 
 // =============================================================================
-// Mock Connector Module
+// Mock Connector (injected via DI)
 // =============================================================================
 
 const mockFetchById = mock(() => Promise.resolve(API_RESPONSE));
@@ -53,13 +57,10 @@ const mockConnector: ApiConnector = {
   extractFields: (response: ApiResponse) => response as Record<string, unknown>,
 };
 
-// Mock the connector-interface module
-void mock.module("../connector-interface.js", () => ({
-  getConnector: (name: string) => {
-    if (name === "test") return mockConnector;
-    throw new Error(`Unknown connector "${name}".`);
-  },
-}));
+const mockGetConnector: GetConnectorFn = (name: string) => {
+  if (name === "test") return mockConnector;
+  throw new Error(`Unknown connector "${name}".`);
+};
 
 // =============================================================================
 // Temp Directory Management
@@ -112,16 +113,12 @@ async function readGameFile(
 // Basic Sync Tests
 // =============================================================================
 
-// Import after mock is set up
-const { SyncPipelineManager, createSyncPipelineManager } = await import(
-  "../sync-pipeline.js"
-);
-
 describe("SyncPipelineManager", () => {
-  let manager: InstanceType<typeof SyncPipelineManager>;
+  let manager: SyncPipelineManager;
 
   beforeEach(() => {
-    manager = new SyncPipelineManager();
+    // Inject mock connector via DI
+    manager = new SyncPipelineManager({ getConnector: mockGetConnector });
     // Reset mock call counts between tests
     mockFetchById.mockClear();
   });

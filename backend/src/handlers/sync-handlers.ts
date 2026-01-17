@@ -14,7 +14,12 @@
 
 import type { HandlerContext } from "./types.js";
 import { requireVault } from "./types.js";
-import { createSyncPipelineManager, type SyncMode, type SyncProgress } from "../sync/sync-pipeline.js";
+import {
+  createSyncPipelineManager,
+  type SyncMode,
+  type SyncProgress,
+  type SyncPipelineManagerDependencies,
+} from "../sync/sync-pipeline.js";
 import { wsLog as log } from "../logger.js";
 
 /** Health issue ID for sync errors */
@@ -27,11 +32,13 @@ const SYNC_ERROR_ID = "sync_error";
  * @param ctx - Handler context with connection state and send utilities
  * @param mode - Sync mode: "full" re-syncs all, "incremental" skips recent
  * @param pipeline - Optional specific pipeline to sync (omit for all)
+ * @param deps - Optional dependencies for testing (default: uses real implementations)
  */
 export async function handleTriggerSync(
   ctx: HandlerContext,
   mode: SyncMode,
-  pipeline?: string
+  pipeline?: string,
+  deps?: SyncPipelineManagerDependencies
 ): Promise<void> {
   log.info(`Triggering ${mode} sync${pipeline ? ` for pipeline: ${pipeline}` : ""}`);
 
@@ -49,7 +56,7 @@ export async function handleTriggerSync(
   });
 
   try {
-    const manager = createSyncPipelineManager();
+    const manager = createSyncPipelineManager(deps);
 
     // Progress callback sends updates to client
     const onProgress = (progress: SyncProgress): void => {

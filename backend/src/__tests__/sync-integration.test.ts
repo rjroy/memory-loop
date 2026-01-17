@@ -24,8 +24,10 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 import matter from "gray-matter";
 import type { ApiConnector, ApiResponse } from "../sync/connector-interface.js";
-import type { SyncProgress } from "../sync/sync-pipeline.js";
+import type { SyncProgress, GetConnectorFn } from "../sync/sync-pipeline.js";
+import { createSyncPipelineManager } from "../sync/sync-pipeline.js";
 import type { MergeStrategy } from "../sync/schemas.js";
+import type { VocabularyNormalizer, NormalizationResult } from "../sync/vocabulary-normalizer.js";
 
 // =============================================================================
 // Mock Fixtures
@@ -46,11 +48,12 @@ const BGG_GLOOMHAVEN_RESPONSE: ApiResponse = {
 };
 
 // =============================================================================
-// Mock Connector
+// Mock Connector (injected via DI)
 // =============================================================================
 
 let mockFetchById: ReturnType<typeof mock<(id: string) => Promise<ApiResponse>>>;
 let mockConnector: ApiConnector;
+let mockGetConnector: GetConnectorFn;
 
 function setupMockConnector(response: ApiResponse | Error = BGG_GLOOMHAVEN_RESPONSE) {
   mockFetchById = mock((id: string) => {
@@ -74,57 +77,70 @@ function setupMockConnector(response: ApiResponse | Error = BGG_GLOOMHAVEN_RESPO
       return result;
     },
   };
-}
 
-// Mock the connector-interface module
-void mock.module("../sync/connector-interface.js", () => ({
-  getConnector: (name: string) => {
+  mockGetConnector = (name: string) => {
     if (name === "bgg") return mockConnector;
     throw new Error(`Unknown connector "${name}".`);
-  },
-}));
+  };
+}
 
-// Mock the vocabulary normalizer to avoid real API calls
-void mock.module("../sync/vocabulary-normalizer.js", () => ({
-  VocabularyNormalizer: class MockVocabularyNormalizer {
-    normalizeBatch(
-      terms: string[],
-      vocabulary: Record<string, string[]>
-    ): Promise<Array<{ original: string; normalized: string; matched: boolean }>> {
-      const results = terms.map((term) => {
-        for (const [canonical, variations] of Object.entries(vocabulary)) {
-          if (
-            variations.some((v) => v.toLowerCase() === term.toLowerCase()) ||
-            canonical.toLowerCase() === term.toLowerCase()
-          ) {
-            return { original: term, normalized: canonical, matched: true };
-          }
+// =============================================================================
+// Mock Vocabulary Normalizer (injected via DI)
+// =============================================================================
+
+/**
+ * Create a mock normalizer that matches terms against vocabulary.
+ * This avoids real LLM API calls during tests.
+ */
+function createMockNormalizer(): VocabularyNormalizer {
+  return {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    normalize: async (term: string, vocabulary: Record<string, string[]>): Promise<string> => {
+      for (const [canonical, variations] of Object.entries(vocabulary)) {
+        if (
+          variations.some((v) => v.toLowerCase() === term.toLowerCase()) ||
+          canonical.toLowerCase() === term.toLowerCase()
+        ) {
+          return canonical;
         }
-        return { original: term, normalized: term, matched: false };
-      });
-      return Promise.resolve(results);
-    }
-  },
-  createVocabularyNormalizer: () => ({
-    normalizeBatch: (
-      terms: string[],
-      vocabulary: Record<string, string[]>
-    ): Promise<Array<{ original: string; normalized: string; matched: boolean }>> => {
-      const results = terms.map((term) => {
-        for (const [canonical, variations] of Object.entries(vocabulary)) {
-          if (
-            variations.some((v) => v.toLowerCase() === term.toLowerCase()) ||
-            canonical.toLowerCase() === term.toLowerCase()
-          ) {
-            return { original: term, normalized: canonical, matched: true };
-          }
-        }
-        return { original: term, normalized: term, matched: false };
-      });
-      return Promise.resolve(results);
+      }
+      return term;
     },
-  }),
-}));
+    // eslint-disable-next-line @typescript-eslint/require-await
+    normalizeWithDetails: async (
+      term: string,
+      vocabulary: Record<string, string[]>
+    ): Promise<NormalizationResult> => {
+      for (const [canonical, variations] of Object.entries(vocabulary)) {
+        if (
+          variations.some((v) => v.toLowerCase() === term.toLowerCase()) ||
+          canonical.toLowerCase() === term.toLowerCase()
+        ) {
+          return { original: term, normalized: canonical, matched: true };
+        }
+      }
+      return { original: term, normalized: term, matched: false };
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    normalizeBatch: async (
+      terms: string[],
+      vocabulary: Record<string, string[]>
+    ): Promise<NormalizationResult[]> => {
+      const results = terms.map((term) => {
+        for (const [canonical, variations] of Object.entries(vocabulary)) {
+          if (
+            variations.some((v) => v.toLowerCase() === term.toLowerCase()) ||
+            canonical.toLowerCase() === term.toLowerCase()
+          ) {
+            return { original: term, normalized: canonical, matched: true };
+          }
+        }
+        return { original: term, normalized: term, matched: false };
+      });
+      return results;
+    },
+  } as VocabularyNormalizer;
+}
 
 // =============================================================================
 // Temp Directory Management
@@ -217,8 +233,15 @@ async function readGameFile(
   return { data: parsed.data as Record<string, unknown>, content: parsed.content };
 }
 
-// Import after mocks are set up
-const { createSyncPipelineManager } = await import("../sync/sync-pipeline.js");
+/**
+ * Create a pipeline manager with mock dependencies injected.
+ */
+function createTestPipelineManager() {
+  return createSyncPipelineManager({
+    getConnector: mockGetConnector,
+    normalizer: createMockNormalizer(),
+  });
+}
 
 // =============================================================================
 // Acceptance Test 1: Basic BGG Sync
@@ -236,7 +259,7 @@ describe("Acceptance Test 1: Basic BGG Sync", () => {
     });
     await createGameFile("Games/Gloomhaven.md", { bgg_id: "174430" });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     const result = await manager.sync({ vaultRoot, mode: "full" });
 
     expect(result.status).toBe("success");
@@ -275,7 +298,7 @@ describe("Acceptance Test 2: Vocabulary Normalization", () => {
     });
     await createGameFile("Games/Test.md", { bgg_id: "12345" });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     const result = await manager.sync({ vaultRoot, mode: "full" });
 
     expect(result.status).toBe("success");
@@ -304,7 +327,7 @@ describe("Acceptance Test 3: Preserve User Edits", () => {
       my_rating: 9.5, // User's custom rating
     });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     await manager.sync({ vaultRoot, mode: "full" });
 
     const { data } = await readGameFile("Games/Test.md");
@@ -345,7 +368,7 @@ describe("Acceptance Test 4: Incremental Sync", () => {
       await createGameFile(`Games/new-${i}.md`, { bgg_id: `new-${i}` });
     }
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     const result = await manager.sync({
       vaultRoot,
       mode: "incremental",
@@ -379,7 +402,7 @@ describe("Acceptance Test 5: Rate Limit Handling", () => {
     await createPipelineConfig("bgg.yaml");
     await createGameFile("Games/Test.md", { bgg_id: "174430" });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     const result = await manager.sync({ vaultRoot, mode: "full" });
 
     // The sync should eventually succeed after retries
@@ -399,7 +422,7 @@ describe("Acceptance Test 6: Sync Status UI", () => {
     await createGameFile("Games/Test.md", { bgg_id: "174430" });
 
     const progressUpdates: SyncProgress[] = [];
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
 
     await manager.sync({
       vaultRoot,
@@ -440,7 +463,7 @@ describe("Acceptance Test 7: Error Reporting", () => {
       await createGameFile(`Games/game-${i}.md`, { bgg_id: `id-${i}` });
     }
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     const result = await manager.sync({ vaultRoot, mode: "full" });
 
     expect(result.status).toBe("error");
@@ -478,7 +501,7 @@ describe("Acceptance Test 8: Secrets Not Logged", () => {
       await createPipelineConfig("bgg.yaml");
       await createGameFile("Games/Test.md", { bgg_id: "174430" });
 
-      const manager = createSyncPipelineManager();
+      const manager = createTestPipelineManager();
       await manager.sync({ vaultRoot, mode: "full" });
 
       // Check that the secret never appears in any log output
@@ -512,7 +535,7 @@ describe("Acceptance Test 9: LLM Normalization Fallback", () => {
     });
     await createGameFile("Games/Test.md", { bgg_id: "12345" });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     const result = await manager.sync({ vaultRoot, mode: "full" });
 
     expect(result.status).toBe("success");
@@ -542,7 +565,7 @@ describe("Acceptance Test 10: Invalid Config Handling", () => {
     await createPipelineConfig("valid.yaml");
     await createGameFile("Games/Test.md", { bgg_id: "174430" });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     const result = await manager.sync({ vaultRoot, mode: "full" });
 
     // The valid pipeline should still execute
@@ -564,7 +587,7 @@ describe("Acceptance Test 10: Invalid Config Handling", () => {
     await createPipelineConfig("valid.yaml");
     await createGameFile("Games/Test.md", { bgg_id: "174430" });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     const result = await manager.sync({ vaultRoot, mode: "full" });
 
     // Valid pipeline should still execute
@@ -593,7 +616,7 @@ describe("Merge Strategy Integration", () => {
       mechanics: ["Hand Management", "User Added Mechanic"],
     });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     await manager.sync({ vaultRoot, mode: "full" });
 
     const { data } = await readGameFile("Games/Test.md");
@@ -621,7 +644,7 @@ describe("Namespace Support", () => {
     });
     await createGameFile("Games/Test.md", { bgg_id: "174430" });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     await manager.sync({ vaultRoot, mode: "full" });
 
     const { data } = await readGameFile("Games/Test.md");
@@ -641,7 +664,7 @@ describe("Namespace Support", () => {
     });
     await createGameFile("Games/Test.md", { bgg_id: "174430" });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     await manager.sync({ vaultRoot, mode: "full" });
 
     const { data } = await readGameFile("Games/Test.md");
@@ -654,7 +677,7 @@ describe("Sync Metadata", () => {
     await createPipelineConfig("bgg.yaml");
     await createGameFile("Games/Test.md", { bgg_id: "174430" });
 
-    const manager = createSyncPipelineManager();
+    const manager = createTestPipelineManager();
     await manager.sync({ vaultRoot, mode: "full" });
 
     const { data } = await readGameFile("Games/Test.md");

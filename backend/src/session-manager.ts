@@ -17,6 +17,14 @@ import {
 
 // Re-export the SDK's SlashCommand type for use by other modules
 export type { SDKSlashCommand };
+
+// Re-export types from shared for convenience
+export type { SessionMetadata, ConversationMessage } from "@memory-loop/shared";
+
+/**
+ * Type for the SDK query function, to enable dependency injection for testing.
+ */
+export type QueryFunction = typeof query;
 import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@memory-loop/shared";
 import { directoryExists, fileExists, getVaultById } from "./vault-manager";
 import {
@@ -768,6 +776,7 @@ function createCanUseTool(
  * @param options - Additional SDK options
  * @param requestToolPermission - Optional callback to request tool permission from user
  * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
+ * @param queryFn - Optional query function for testing (default: SDK query)
  * @returns SessionQueryResult with session ID and event stream
  */
 export async function createSession(
@@ -775,7 +784,8 @@ export async function createSession(
   prompt: string,
   options?: Partial<Options>,
   requestToolPermission?: ToolPermissionCallback,
-  askUserQuestion?: AskUserQuestionCallback
+  askUserQuestion?: AskUserQuestionCallback,
+  queryFn: QueryFunction = query
 ): Promise<SessionQueryResult> {
   log.info(`Creating session for vault: ${vault.id}`);
   log.info(`Vault path: ${vault.path}`);
@@ -820,7 +830,7 @@ export async function createSession(
       permissionMode: mergedOptions.permissionMode,
       hasCanUseTool: !!mergedOptions.canUseTool,
     });
-    const queryResult = query({
+    const queryResult = queryFn({
       prompt,
       options: mergedOptions,
     });
@@ -876,6 +886,7 @@ export async function createSession(
  * @param options - Additional SDK options
  * @param requestToolPermission - Optional callback to request tool permission from user
  * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
+ * @param queryFn - Optional query function for testing (default: SDK query)
  * @returns SessionQueryResult with session ID and event stream
  */
 export async function resumeSession(
@@ -884,7 +895,8 @@ export async function resumeSession(
   prompt: string,
   options?: Partial<Options>,
   requestToolPermission?: ToolPermissionCallback,
-  askUserQuestion?: AskUserQuestionCallback
+  askUserQuestion?: AskUserQuestionCallback,
+  queryFn: QueryFunction = query
 ): Promise<SessionQueryResult> {
   log.info(`Resuming session: ${sessionId}`);
 
@@ -941,7 +953,7 @@ export async function resumeSession(
       permissionMode: mergedOptions.permissionMode,
       hasCanUseTool: !!mergedOptions.canUseTool,
     });
-    const queryResult = query({
+    const queryResult = queryFn({
       prompt,
       options: mergedOptions,
     });
@@ -980,6 +992,7 @@ export async function resumeSession(
  * @param sessionId - Optional session ID to resume
  * @param options - Additional SDK options
  * @param requestToolPermission - Optional callback to request tool permission from user
+ * @param queryFn - Optional query function for testing (default: SDK query)
  * @returns SessionQueryResult
  */
 export async function querySession(
@@ -987,10 +1000,11 @@ export async function querySession(
   prompt: string,
   sessionId?: string,
   options?: Partial<Options>,
-  requestToolPermission?: ToolPermissionCallback
+  requestToolPermission?: ToolPermissionCallback,
+  queryFn: QueryFunction = query
 ): Promise<SessionQueryResult> {
   if (sessionId) {
-    return resumeSession(vault.path, sessionId, prompt, options, requestToolPermission);
+    return resumeSession(vault.path, sessionId, prompt, options, requestToolPermission, undefined, queryFn);
   }
-  return createSession(vault, prompt, options, requestToolPermission);
+  return createSession(vault, prompt, options, requestToolPermission, undefined, queryFn);
 }

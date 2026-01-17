@@ -19,6 +19,7 @@ import type { WidgetEngine, FileWatcher } from "../widgets/index.js";
 import type { HealthCollector } from "../health-collector.js";
 import type { ActiveMeeting } from "../meeting-capture.js";
 import type { VaultConfig } from "../vault-config.js";
+import type { ArchiveResult } from "../file-browser.js";
 
 // =============================================================================
 // Handler Dependencies (Injectable for Testing)
@@ -107,6 +108,7 @@ export interface HandlerDependencies {
     content: string
   ) => Promise<void>;
   deleteFile?: (vaultPath: string, relativePath: string) => Promise<void>;
+  archiveFile?: (vaultPath: string, relativePath: string, archiveRoot: string) => Promise<ArchiveResult>;
 
   // Inspiration manager
   getInspiration?: (vault: VaultInfo) => Promise<InspirationResult>;
@@ -217,6 +219,7 @@ export interface RequiredHandlerDependencies {
     content: string
   ) => Promise<void>;
   deleteFile: (vaultPath: string, relativePath: string) => Promise<void>;
+  archiveFile: (vaultPath: string, relativePath: string, archiveRoot: string) => Promise<ArchiveResult>;
   getInspiration: (vault: VaultInfo) => Promise<InspirationResult>;
   getAllTasks: (
     vaultPath: string,

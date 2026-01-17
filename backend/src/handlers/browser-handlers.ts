@@ -6,6 +6,7 @@
  * - read_file: Read markdown file content
  * - write_file: Write content to a markdown file
  * - delete_file: Delete a file
+ * - archive_file: Archive a directory
  */
 
 import type { HandlerContext } from "./types.js";
@@ -169,7 +170,7 @@ export async function handleArchiveFile(
   }
 
   try {
-    const result = await archiveFile(ctx.state.currentVault.contentRoot, path);
+    const result = await ctx.deps.archiveFile(ctx.state.currentVault.contentRoot, path, "04_Archive");
     log.info(`Directory archived: ${path} -> ${result.archivePath}`);
     ctx.send({
       type: "file_archived",
@@ -178,7 +179,7 @@ export async function handleArchiveFile(
     });
   } catch (error) {
     log.error("Archive failed", error);
-    if (error instanceof FileBrowserError) {
+    if (isFileBrowserError(error)) {
       ctx.sendError(error.code, error.message);
     } else {
       const message =

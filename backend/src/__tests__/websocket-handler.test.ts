@@ -219,6 +219,11 @@ const mockDeleteFile = mock<
   (...args: any[]) => Promise<void>
 >(() => Promise.resolve());
 
+const mockArchiveFile = mock<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (...args: any[]) => Promise<{ originalPath: string; archivePath: string }>
+>(() => Promise.resolve({ originalPath: "", archivePath: "04_Archive/archived-dir" }));
+
 /**
  * Mock FileBrowserError for tests.
  * Uses name="FileBrowserError" so isFileBrowserError() works correctly.
@@ -325,6 +330,8 @@ function createMockDeps(): WebSocketHandlerDependencies {
       writeMarkdownFile: mockWriteMarkdownFile as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
       deleteFile: mockDeleteFile as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      archiveFile: mockArchiveFile as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
       getInspiration: mockGetInspiration as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment

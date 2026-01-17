@@ -91,6 +91,7 @@ import {
   readMarkdownFile as defaultReadMarkdownFile,
   writeMarkdownFile as defaultWriteMarkdownFile,
   deleteFile as defaultDeleteFile,
+  archiveFile as defaultArchiveFile,
 } from "./file-browser.js";
 import { getInspiration as defaultGetInspiration } from "./inspiration-manager.js";
 import {
@@ -287,6 +288,7 @@ export class WebSocketHandler {
       readMarkdownFile: hd.readMarkdownFile ?? defaultReadMarkdownFile,
       writeMarkdownFile: hd.writeMarkdownFile ?? defaultWriteMarkdownFile,
       deleteFile: hd.deleteFile ?? defaultDeleteFile,
+      archiveFile: hd.archiveFile ?? defaultArchiveFile,
       getInspiration: hd.getInspiration ?? defaultGetInspiration,
       getAllTasks: hd.getAllTasks ?? defaultGetAllTasks,
       toggleTask: hd.toggleTask ?? defaultToggleTask,

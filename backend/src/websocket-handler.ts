@@ -21,6 +21,7 @@ import type {
   SDKResultMessage,
   SDKUserMessage,
   SDKSystemMessage,
+  SDKCompactBoundaryMessage,
   ModelUsage,
 } from "@anthropic-ai/claude-agent-sdk";
 
@@ -972,6 +973,9 @@ export class WebSocketHandler {
       this.state.currentSessionId = queryResult.sessionId;
 
       if (isNewSession) {
+        // Reset cumulative tokens for new session
+        this.state.cumulativeTokens = 0;
+        this.state.contextWindow = null;
         log.info(`Sending session_ready with new sessionId: ${queryResult.sessionId}`);
         const slashCommands = await this.fetchSlashCommands(queryResult);
         this.send(ws, {
@@ -1131,6 +1135,9 @@ export class WebSocketHandler {
     }
 
     this.state.currentSessionId = null;
+    // Reset cumulative tokens when session is cleared
+    this.state.cumulativeTokens = 0;
+    this.state.contextWindow = null;
 
     const cachedCommands = await this.deps.loadSlashCommands(this.state.currentVault.path);
 
@@ -1397,6 +1404,27 @@ export class WebSocketHandler {
           break;
         }
         case "system": {
+          // SDKCompactBoundaryMessage also has type: 'system', check for it first
+          const maybeCompact = event as SDKCompactBoundaryMessage;
+          if (maybeCompact.subtype === "compact_boundary" && maybeCompact.compact_metadata) {
+            // Handle compact_boundary events (adjusts cumulative token count)
+            // Compact reduces context by summarizing conversation history
+            const preTokens = maybeCompact.compact_metadata.pre_tokens;
+            // After compact, context is reduced. We estimate post-compact size
+            // as roughly 30% of pre-compact (summaries are typically much shorter).
+            // The next result event will provide accurate usage, but this gives
+            // a reasonable estimate for intermediate display.
+            const estimatedPostCompact = Math.round(preTokens * 0.3);
+            log.info(
+              `Compact boundary: pre_tokens=${preTokens}, ` +
+              `trigger=${maybeCompact.compact_metadata.trigger}, ` +
+              `resetting cumulative from ${this.state.cumulativeTokens} to ~${estimatedPostCompact}`
+            );
+            this.state.cumulativeTokens = estimatedPostCompact;
+            break;
+          }
+
+          // Handle init events (sets active model)
           const systemEvent = event as SDKSystemMessage;
           if (systemEvent.subtype === "init" && systemEvent.model) {
             this.state.activeModel = systemEvent.model;
@@ -1632,11 +1660,13 @@ export class WebSocketHandler {
 
     let contextUsage: number | undefined;
     if (usage && modelUsage) {
+      // Note: cache tokens are subsets of input_tokens, don't double-count them
       const inputTokens = usage.input_tokens ?? 0;
       const outputTokens = usage.output_tokens ?? 0;
-      const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
-      const cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
-      const totalTokens = inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens;
+      const turnTokens = inputTokens + outputTokens;
+
+      // Accumulate tokens across all turns in the session
+      this.state.cumulativeTokens += turnTokens;
 
       const modelNames = Object.keys(modelUsage);
       const modelName = this.state.activeModel ?? modelNames[0];
@@ -1644,9 +1674,16 @@ export class WebSocketHandler {
         const modelStats: ModelUsage = modelUsage[modelName];
         const contextWindow = modelStats.contextWindow;
         if (contextWindow && contextWindow > 0) {
-          contextUsage = Math.round((100 * totalTokens) / contextWindow);
+          // Store context window for use after compacts
+          this.state.contextWindow = contextWindow;
+
+          // Calculate percentage from cumulative tokens
+          contextUsage = Math.round((100 * this.state.cumulativeTokens) / contextWindow);
           contextUsage = Math.max(0, Math.min(100, contextUsage));
-          log.debug(`Context usage: ${totalTokens}/${contextWindow} = ${contextUsage}% (model: ${modelName})`);
+          log.debug(
+            `Context usage: ${this.state.cumulativeTokens}/${contextWindow} = ${contextUsage}% ` +
+            `(turn: +${turnTokens}, model: ${modelName})`
+          );
         }
       }
     }

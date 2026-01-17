@@ -100,6 +100,8 @@ beforeEach(async () => {
     pendingAskUserQuestions: new Map(),
     searchIndex: null,
     activeModel: null,
+    cumulativeTokens: 0,
+    contextWindow: null,
     widgetEngine: null,
     widgetWatcher: null,
     healthCollector: null,

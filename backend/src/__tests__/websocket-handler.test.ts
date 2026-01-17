@@ -5189,4 +5189,23 @@ describe("WebSocket Handler", () => {
       expect(mockSaveVaultConfig).toHaveBeenCalledWith(vault.path, {});
     });
   });
+
+  // ===========================================================================
+  // Cumulative Context Usage Tests
+  // ===========================================================================
+
+  describe("cumulative context usage tracking", () => {
+    test("createConnectionState initializes cumulative tokens to 0", () => {
+      const state = createConnectionState();
+      expect(state.cumulativeTokens).toBe(0);
+      expect(state.contextWindow).toBeNull();
+    });
+
+    test("getState returns cumulative token values", () => {
+      const handler = createTestHandler();
+      const state = handler.getState();
+      expect(state.cumulativeTokens).toBe(0);
+      expect(state.contextWindow).toBeNull();
+    });
+  });
 });

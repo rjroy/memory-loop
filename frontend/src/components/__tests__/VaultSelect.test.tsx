@@ -12,7 +12,7 @@ import {
   afterEach,
   mock,
 } from "bun:test";
-import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, cleanup, act } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { VaultSelect } from "../VaultSelect";
 import { SessionProvider } from "../../contexts/SessionContext";
@@ -1058,8 +1058,14 @@ describe("VaultSelect", () => {
       const createButton = screen.getByText("Create");
       fireEvent.click(createButton);
 
-      // Simulate vault_created response
+      // Wait for Creating... state to confirm the state update has committed
+      // This is critical: vault_created handler checks addVaultCreating flag
       await waitFor(() => {
+        expect(screen.getByText("Creating...")).toBeDefined();
+      });
+
+      // Now simulate vault_created response - wrap in act() to flush React updates
+      act(() => {
         const ws = wsInstances[0];
         ws.simulateMessage({
           type: "vault_created",
@@ -1117,8 +1123,14 @@ describe("VaultSelect", () => {
       const createButton = screen.getByText("Create");
       fireEvent.click(createButton);
 
-      // Simulate error response
+      // Wait for Creating... state to confirm the state update has committed
+      // This is critical: error handler checks addVaultCreating flag
       await waitFor(() => {
+        expect(screen.getByText("Creating...")).toBeDefined();
+      });
+
+      // Now simulate error response - wrap in act() to flush React updates
+      act(() => {
         const ws = wsInstances[0];
         ws.simulateMessage({
           type: "error",

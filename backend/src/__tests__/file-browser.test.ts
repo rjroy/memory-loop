@@ -19,11 +19,14 @@ import {
   writeMarkdownFile,
   deleteFile,
   archiveFile,
+  createDirectory,
   MAX_FILE_SIZE,
   PathTraversalError,
   DirectoryNotFoundError,
   FileNotFoundError,
   InvalidFileTypeError,
+  InvalidDirectoryNameError,
+  DirectoryExistsError,
   FileBrowserError,
 } from "../file-browser";
 
@@ -1764,5 +1767,161 @@ describe("archiveFile", () => {
     // Verify file was moved
     const archivedFile = await stat(join(testDir, result.archivePath, "notes.md"));
     expect(archivedFile.isFile()).toBe(true);
+  });
+});
+
+// =============================================================================
+// createDirectory Tests
+// =============================================================================
+
+describe("createDirectory", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+    // Create a nested directory structure for testing
+    await mkdir(join(testDir, "Projects"), { recursive: true });
+    await mkdir(join(testDir, "Notes"), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("creates directory at vault root", async () => {
+    const result = await createDirectory(testDir, "", "new-folder");
+
+    expect(result).toBe("new-folder");
+
+    // Verify directory was created
+    const dirStat = await stat(join(testDir, "new-folder"));
+    expect(dirStat.isDirectory()).toBe(true);
+  });
+
+  test("creates directory in nested path", async () => {
+    const result = await createDirectory(testDir, "Projects", "my-project");
+
+    expect(result).toBe("Projects/my-project");
+
+    // Verify directory was created
+    const dirStat = await stat(join(testDir, "Projects", "my-project"));
+    expect(dirStat.isDirectory()).toBe(true);
+  });
+
+  test("allows alphanumeric names", async () => {
+    const result = await createDirectory(testDir, "", "Test123");
+
+    expect(result).toBe("Test123");
+    const dirStat = await stat(join(testDir, "Test123"));
+    expect(dirStat.isDirectory()).toBe(true);
+  });
+
+  test("allows hyphens in names", async () => {
+    const result = await createDirectory(testDir, "", "my-new-folder");
+
+    expect(result).toBe("my-new-folder");
+    const dirStat = await stat(join(testDir, "my-new-folder"));
+    expect(dirStat.isDirectory()).toBe(true);
+  });
+
+  test("allows underscores in names", async () => {
+    const result = await createDirectory(testDir, "", "my_new_folder");
+
+    expect(result).toBe("my_new_folder");
+    const dirStat = await stat(join(testDir, "my_new_folder"));
+    expect(dirStat.isDirectory()).toBe(true);
+  });
+
+  test("rejects names with spaces", async () => {
+    try {
+      await createDirectory(testDir, "", "my folder");
+      expect.unreachable("Should have thrown InvalidDirectoryNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
+    }
+  });
+
+  test("rejects names with special characters", async () => {
+    try {
+      await createDirectory(testDir, "", "my@folder");
+      expect.unreachable("Should have thrown InvalidDirectoryNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
+    }
+
+    try {
+      await createDirectory(testDir, "", "my/folder");
+      expect.unreachable("Should have thrown InvalidDirectoryNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
+    }
+
+    try {
+      await createDirectory(testDir, "", "my.folder");
+      expect.unreachable("Should have thrown InvalidDirectoryNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
+    }
+  });
+
+  test("rejects empty name", async () => {
+    try {
+      await createDirectory(testDir, "", "");
+      expect.unreachable("Should have thrown InvalidDirectoryNameError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
+    }
+  });
+
+  test("throws error if directory already exists", async () => {
+    await mkdir(join(testDir, "existing-folder"));
+
+    try {
+      await createDirectory(testDir, "", "existing-folder");
+      expect.unreachable("Should have thrown DirectoryExistsError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectoryExistsError);
+    }
+  });
+
+  test("throws error if parent directory does not exist", async () => {
+    try {
+      await createDirectory(testDir, "non-existent", "new-folder");
+      expect.unreachable("Should have thrown DirectoryNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectoryNotFoundError);
+    }
+  });
+
+  test("rejects path traversal in parent path", async () => {
+    try {
+      await createDirectory(testDir, "..", "new-folder");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("rejects symlink as parent directory", async () => {
+    await mkdir(join(testDir, "real-dir"));
+    await symlink(join(testDir, "real-dir"), join(testDir, "symlink-dir"));
+
+    try {
+      await createDirectory(testDir, "symlink-dir", "new-folder");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("rejects file as parent path", async () => {
+    await writeFile(join(testDir, "file.txt"), "content");
+
+    try {
+      await createDirectory(testDir, "file.txt", "new-folder");
+      expect.unreachable("Should have thrown DirectoryNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectoryNotFoundError);
+    }
   });
 });

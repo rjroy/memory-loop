@@ -9,6 +9,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import type { FileEntry } from "@memory-loop/shared";
 import { useSession } from "../contexts/SessionContext";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { InputDialog } from "./InputDialog";
 import "./FileTree.css";
 
 /**
@@ -27,6 +28,8 @@ export interface FileTreeProps {
   onThinkAbout?: (path: string) => void;
   /** Callback when pinned assets change (for server sync) */
   onPinnedAssetsChange?: (paths: string[]) => void;
+  /** Callback when a new directory is created */
+  onCreateDirectory?: (parentPath: string, name: string) => void;
 }
 
 /**
@@ -322,6 +325,27 @@ function ArchiveIcon(): React.ReactNode {
 }
 
 /**
+ * Folder plus icon for "Add Directory" action.
+ */
+function FolderPlusIcon(): React.ReactNode {
+  return (
+    <svg
+      className="file-tree__icon-svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      <line x1="12" y1="11" x2="12" y2="17" />
+      <line x1="9" y1="14" x2="15" y2="14" />
+    </svg>
+  );
+}
+
+/**
  * Think/sparkle icon for "Think about" action.
  */
 function ThinkIcon(): React.ReactNode {
@@ -362,7 +386,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -375,6 +399,7 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null);
   const [pendingArchivePath, setPendingArchivePath] = useState<string | null>(null);
+  const [pendingCreateDirPath, setPendingCreateDirPath] = useState<string | null>(null);
 
   // Track which directories are currently loading
   // For now we just use isLoading for the overall state
@@ -535,6 +560,25 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
 
   const handleCancelArchive = useCallback(() => {
     setPendingArchivePath(null);
+  }, []);
+
+  const handleCreateDirClick = useCallback(() => {
+    setPendingCreateDirPath(contextMenu.path);
+    closeContextMenu();
+  }, [contextMenu.path, closeContextMenu]);
+
+  const handleConfirmCreateDir = useCallback(
+    (name: string) => {
+      if (pendingCreateDirPath !== null && onCreateDirectory) {
+        onCreateDirectory(pendingCreateDirPath, name);
+      }
+      setPendingCreateDirPath(null);
+    },
+    [pendingCreateDirPath, onCreateDirectory]
+  );
+
+  const handleCancelCreateDir = useCallback(() => {
+    setPendingCreateDirPath(null);
   }, []);
 
   // Close context menu when clicking outside
@@ -716,6 +760,17 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
               <span>Think about</span>
             </button>
           )}
+          {contextMenu.isDirectory && onCreateDirectory && (
+            <button
+              type="button"
+              className="file-tree__context-menu-item"
+              onClick={handleCreateDirClick}
+              role="menuitem"
+            >
+              <FolderPlusIcon />
+              <span>Add Directory</span>
+            </button>
+          )}
           {isArchivable && onArchiveFile && (
             <button
               type="button"
@@ -759,6 +814,20 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
         confirmLabel="Archive"
         onConfirm={handleConfirmArchive}
         onCancel={handleCancelArchive}
+      />
+
+      {/* Create directory dialog */}
+      <InputDialog
+        isOpen={pendingCreateDirPath !== null}
+        title="Add Directory"
+        message={`Create a new directory${pendingCreateDirPath ? ` in "${pendingCreateDirPath}"` : " at the root"}.`}
+        inputLabel="Directory name"
+        inputPlaceholder="my-new-folder"
+        pattern={/^[a-zA-Z0-9_-]+$/}
+        patternError="Only letters, numbers, hyphens, and underscores allowed"
+        confirmLabel="Create"
+        onConfirm={handleConfirmCreateDir}
+        onCancel={handleCancelCreateDir}
       />
     </nav>
   );

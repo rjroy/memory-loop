@@ -109,6 +109,7 @@ export interface HandlerDependencies {
   ) => Promise<void>;
   deleteFile?: (vaultPath: string, relativePath: string) => Promise<void>;
   archiveFile?: (vaultPath: string, relativePath: string, archiveRoot: string) => Promise<ArchiveResult>;
+  createDirectory?: (vaultPath: string, parentPath: string, name: string) => Promise<string>;
 
   // Inspiration manager
   getInspiration?: (vault: VaultInfo) => Promise<InspirationResult>;
@@ -220,6 +221,7 @@ export interface RequiredHandlerDependencies {
   ) => Promise<void>;
   deleteFile: (vaultPath: string, relativePath: string) => Promise<void>;
   archiveFile: (vaultPath: string, relativePath: string, archiveRoot: string) => Promise<ArchiveResult>;
+  createDirectory: (vaultPath: string, parentPath: string, name: string) => Promise<string>;
   getInspiration: (vault: VaultInfo) => Promise<InspirationResult>;
   getAllTasks: (
     vaultPath: string,

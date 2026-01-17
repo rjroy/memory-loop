@@ -44,6 +44,8 @@ import {
   InspirationItemSchema,
   InspirationMessageSchema,
   FileWrittenMessageSchema,
+  CreateDirectoryMessageSchema,
+  DirectoryCreatedMessageSchema,
   TasksMessageSchema,
   TaskToggledMessageSchema,
   ToolPermissionRequestMessageSchema,
@@ -3079,6 +3081,116 @@ describe("Sync Messages", () => {
       };
       const result = ServerMessageSchema.parse(msg);
       expect(result.type).toBe("sync_status");
+    });
+  });
+
+  describe("CreateDirectoryMessageSchema", () => {
+    test("accepts valid create_directory message at root", () => {
+      const msg = {
+        type: "create_directory" as const,
+        path: "",
+        name: "new-folder",
+      };
+      const result = CreateDirectoryMessageSchema.parse(msg);
+      expect(result.type).toBe("create_directory");
+      expect(result.path).toBe("");
+      expect(result.name).toBe("new-folder");
+    });
+
+    test("accepts valid create_directory message with parent path", () => {
+      const msg = {
+        type: "create_directory" as const,
+        path: "Projects",
+        name: "my_project",
+      };
+      const result = CreateDirectoryMessageSchema.parse(msg);
+      expect(result.path).toBe("Projects");
+      expect(result.name).toBe("my_project");
+    });
+
+    test("accepts alphanumeric names with hyphens and underscores", () => {
+      const msg = {
+        type: "create_directory" as const,
+        path: "",
+        name: "Test-123_folder",
+      };
+      const result = CreateDirectoryMessageSchema.parse(msg);
+      expect(result.name).toBe("Test-123_folder");
+    });
+
+    test("rejects empty name", () => {
+      const msg = { type: "create_directory", path: "", name: "" };
+      expect(() => CreateDirectoryMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects name with spaces", () => {
+      const msg = { type: "create_directory", path: "", name: "my folder" };
+      expect(() => CreateDirectoryMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects name with special characters", () => {
+      const msg = { type: "create_directory", path: "", name: "my@folder" };
+      expect(() => CreateDirectoryMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects name with dots", () => {
+      const msg = { type: "create_directory", path: "", name: "my.folder" };
+      expect(() => CreateDirectoryMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing name", () => {
+      const msg = { type: "create_directory", path: "" };
+      expect(() => CreateDirectoryMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("create_directory is included in ClientMessageSchema", () => {
+      const msg = {
+        type: "create_directory" as const,
+        path: "Notes",
+        name: "new-note-folder",
+      };
+      const result = ClientMessageSchema.parse(msg);
+      expect(result.type).toBe("create_directory");
+    });
+  });
+
+  describe("DirectoryCreatedMessageSchema", () => {
+    test("accepts valid directory_created message", () => {
+      const msg = {
+        type: "directory_created" as const,
+        path: "Projects/new-folder",
+      };
+      const result = DirectoryCreatedMessageSchema.parse(msg);
+      expect(result.type).toBe("directory_created");
+      expect(result.path).toBe("Projects/new-folder");
+    });
+
+    test("accepts root-level path", () => {
+      const msg = {
+        type: "directory_created" as const,
+        path: "new-folder",
+      };
+      const result = DirectoryCreatedMessageSchema.parse(msg);
+      expect(result.path).toBe("new-folder");
+    });
+
+    test("rejects empty path", () => {
+      const msg = { type: "directory_created", path: "" };
+      expect(() => DirectoryCreatedMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing path", () => {
+      const msg = { type: "directory_created" };
+      expect(() => DirectoryCreatedMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("directory_created is included in ServerMessageSchema", () => {
+      const msg = {
+        type: "directory_created" as const,
+        path: "new-folder",
+      };
+      const result = ServerMessageSchema.parse(msg);
+      expect(result.type).toBe("directory_created");
     });
   });
 });

@@ -16,6 +16,17 @@ import "./FileTree.css";
 /**
  * Props for FileTree component.
  */
+/**
+ * Directory contents for deletion preview.
+ */
+export interface DirectoryContents {
+  files: string[];
+  directories: string[];
+  totalFiles: number;
+  totalDirectories: number;
+  truncated: boolean;
+}
+
 export interface FileTreeProps {
   /** Callback when a file is selected for viewing */
   onFileSelect?: (path: string) => void;
@@ -23,6 +34,12 @@ export interface FileTreeProps {
   onLoadDirectory?: (path: string) => void;
   /** Callback when a file deletion is requested */
   onDeleteFile?: (path: string) => void;
+  /** Callback when a directory deletion is requested */
+  onDeleteDirectory?: (path: string) => void;
+  /** Callback to get directory contents for deletion preview */
+  onGetDirectoryContents?: (path: string) => void;
+  /** Directory contents for deletion preview (from parent state) */
+  pendingDirectoryContents?: DirectoryContents | null;
   /** Callback when a directory archive is requested */
   onArchiveFile?: (path: string) => void;
   /** Callback when "Think about" is selected for a file */
@@ -455,7 +472,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory, onCreateFile, onRenameFile, onMoveFile }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDeleteDirectory, onGetDirectoryContents, pendingDirectoryContents, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory, onCreateFile, onRenameFile, onMoveFile }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -467,6 +484,7 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
   });
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null);
+  const [pendingDeleteDirPath, setPendingDeleteDirPath] = useState<string | null>(null);
   const [pendingArchivePath, setPendingArchivePath] = useState<string | null>(null);
   const [pendingCreateDirPath, setPendingCreateDirPath] = useState<string | null>(null);
   const [pendingCreateFilePath, setPendingCreateFilePath] = useState<string | null>(null);
@@ -617,6 +635,23 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
 
   const handleCancelDelete = useCallback(() => {
     setPendingDeletePath(null);
+  }, []);
+
+  const handleDeleteDirClick = useCallback(() => {
+    setPendingDeleteDirPath(contextMenu.path);
+    onGetDirectoryContents?.(contextMenu.path);
+    closeContextMenu();
+  }, [contextMenu.path, closeContextMenu, onGetDirectoryContents]);
+
+  const handleConfirmDeleteDir = useCallback(() => {
+    if (pendingDeleteDirPath && onDeleteDirectory) {
+      onDeleteDirectory(pendingDeleteDirPath);
+    }
+    setPendingDeleteDirPath(null);
+  }, [pendingDeleteDirPath, onDeleteDirectory]);
+
+  const handleCancelDeleteDir = useCallback(() => {
+    setPendingDeleteDirPath(null);
   }, []);
 
   const handleArchiveClick = useCallback(() => {
@@ -959,6 +994,17 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
               <span>Delete file</span>
             </button>
           )}
+          {contextMenu.isDirectory && onDeleteDirectory && (
+            <button
+              type="button"
+              className="file-tree__context-menu-item file-tree__context-menu-item--danger"
+              onClick={handleDeleteDirClick}
+              role="menuitem"
+            >
+              <TrashIcon />
+              <span>Delete folder</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -980,6 +1026,59 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
         confirmLabel="Archive"
         onConfirm={handleConfirmArchive}
         onCancel={handleCancelArchive}
+      />
+
+      {/* Delete directory confirmation dialog */}
+      <ConfirmDialog
+        isOpen={pendingDeleteDirPath !== null}
+        title="Delete Folder?"
+        message={
+          <div className="file-tree__delete-dir-message">
+            <p className="file-tree__delete-dir-warning">
+              This cannot be undone! The folder "{pendingDeleteDirPath?.split("/").pop() ?? ""}" and all its contents will be permanently deleted.
+            </p>
+            {pendingDirectoryContents && (pendingDirectoryContents.totalFiles > 0 || pendingDirectoryContents.totalDirectories > 0) && (
+              <div className="file-tree__delete-dir-contents">
+                <p className="file-tree__delete-dir-summary">
+                  This will delete{" "}
+                  <strong>{pendingDirectoryContents.totalFiles} file{pendingDirectoryContents.totalFiles !== 1 ? "s" : ""}</strong>
+                  {pendingDirectoryContents.totalDirectories > 0 && (
+                    <>
+                      {" "}and{" "}
+                      <strong>{pendingDirectoryContents.totalDirectories} subfolder{pendingDirectoryContents.totalDirectories !== 1 ? "s" : ""}</strong>
+                    </>
+                  )}:
+                </p>
+                <ul className="file-tree__delete-dir-list">
+                  {pendingDirectoryContents.directories.map((dir) => (
+                    <li key={dir} className="file-tree__delete-dir-item file-tree__delete-dir-item--dir">
+                      {dir}/
+                    </li>
+                  ))}
+                  {pendingDirectoryContents.files.map((file) => (
+                    <li key={file} className="file-tree__delete-dir-item">
+                      {file}
+                    </li>
+                  ))}
+                </ul>
+                {pendingDirectoryContents.truncated && (
+                  <p className="file-tree__delete-dir-truncated">
+                    ...and more items not shown
+                  </p>
+                )}
+              </div>
+            )}
+            {pendingDirectoryContents && pendingDirectoryContents.totalFiles === 0 && pendingDirectoryContents.totalDirectories === 0 && (
+              <p className="file-tree__delete-dir-empty">This folder is empty.</p>
+            )}
+            {!pendingDirectoryContents && (
+              <p className="file-tree__delete-dir-loading">Loading folder contents...</p>
+            )}
+          </div>
+        }
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDeleteDir}
+        onCancel={handleCancelDeleteDir}
       />
 
       {/* Create directory dialog */}

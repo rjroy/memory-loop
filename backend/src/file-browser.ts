@@ -5,7 +5,7 @@
  * All operations are restricted to the vault boundary to prevent path traversal attacks.
  */
 
-import { readdir, readFile, writeFile, lstat, realpath, unlink, rename, mkdir, stat } from "node:fs/promises";
+import { readdir, readFile, writeFile, lstat, realpath, unlink, rename, mkdir, stat, rm } from "node:fs/promises";
 import { join, resolve, extname, basename } from "node:path";
 import type { FileEntry } from "@memory-loop/shared";
 import type { ErrorCode } from "@memory-loop/shared";
@@ -463,6 +463,204 @@ export async function deleteFile(
   // Delete the file
   await unlink(targetPath);
   log.info(`Successfully deleted file: ${relativePath}`);
+}
+
+// =============================================================================
+// Directory Deletion
+// =============================================================================
+
+/**
+ * Result of getting directory contents for deletion preview.
+ */
+export interface DirectoryContentsResult {
+  /** List of file paths (relative to directory) */
+  files: string[];
+  /** List of subdirectory paths (relative to directory) */
+  directories: string[];
+  /** Total count of files (including in subdirectories) */
+  totalFiles: number;
+  /** Total count of directories (including nested) */
+  totalDirectories: number;
+  /** Whether the list was truncated due to size */
+  truncated: boolean;
+}
+
+/**
+ * Maximum number of items to return in the preview list.
+ */
+const MAX_PREVIEW_ITEMS = 20;
+
+/**
+ * Gets the contents of a directory for deletion preview.
+ * Returns a list of files and subdirectories with counts.
+ *
+ * @param vaultPath - Absolute path to the vault root
+ * @param relativePath - Path relative to vault root
+ * @returns DirectoryContentsResult with files, directories, and counts
+ * @throws PathTraversalError if path escapes vault boundary or is a symlink
+ * @throws DirectoryNotFoundError if directory does not exist
+ * @throws InvalidFileTypeError if target is a file (not a directory)
+ */
+export async function getDirectoryContents(
+  vaultPath: string,
+  relativePath: string
+): Promise<DirectoryContentsResult> {
+  log.debug(`Getting directory contents: ${relativePath} in ${vaultPath}`);
+
+  // Validate path is within vault
+  const targetPath = await validatePath(vaultPath, relativePath);
+
+  // Check if target exists and is a directory (not symlink or file)
+  try {
+    const stats = await lstat(targetPath);
+
+    if (stats.isSymbolicLink()) {
+      log.warn(`Symlink rejected for contents listing: ${relativePath}`);
+      throw new PathTraversalError(
+        `Path "${relativePath}" is a symbolic link and cannot be listed`
+      );
+    }
+
+    if (!stats.isDirectory()) {
+      throw new InvalidFileTypeError(
+        `Can only list directory contents, not files. Path "${relativePath}" is a file`
+      );
+    }
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    throw new DirectoryNotFoundError(`Directory "${relativePath}" does not exist`);
+  }
+
+  // Collect files and directories
+  const files: string[] = [];
+  const directories: string[] = [];
+  let totalFiles = 0;
+  let totalDirectories = 0;
+  let truncated = false;
+
+  async function scanDir(currentPath: string, prefix: string): Promise<void> {
+    const entries = await readdir(currentPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      // Skip hidden files
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
+
+      const entryPath = join(currentPath, entry.name);
+      const relativeName = prefix ? `${prefix}/${entry.name}` : entry.name;
+
+      try {
+        const entryStats = await lstat(entryPath);
+
+        if (entryStats.isSymbolicLink()) {
+          continue; // Skip symlinks
+        }
+
+        if (entryStats.isFile()) {
+          totalFiles++;
+          if (files.length < MAX_PREVIEW_ITEMS) {
+            files.push(relativeName);
+          } else {
+            truncated = true;
+          }
+        } else if (entryStats.isDirectory()) {
+          totalDirectories++;
+          if (directories.length < MAX_PREVIEW_ITEMS) {
+            directories.push(relativeName);
+          } else {
+            truncated = true;
+          }
+          // Recurse into subdirectory
+          await scanDir(entryPath, relativeName);
+        }
+      } catch {
+        // Skip entries we can't stat
+      }
+    }
+  }
+
+  await scanDir(targetPath, "");
+
+  log.debug(`Directory contents: ${totalFiles} files, ${totalDirectories} directories`);
+  return {
+    files,
+    directories,
+    totalFiles,
+    totalDirectories,
+    truncated,
+  };
+}
+
+/**
+ * Result of deleting a directory.
+ */
+export interface DeleteDirectoryResult {
+  /** The path that was deleted */
+  path: string;
+  /** Number of files deleted */
+  filesDeleted: number;
+  /** Number of directories deleted */
+  directoriesDeleted: number;
+}
+
+/**
+ * Deletes a directory and all its contents from the vault.
+ * This is a destructive operation that cannot be undone.
+ *
+ * @param vaultPath - Absolute path to the vault root
+ * @param relativePath - Path relative to vault root
+ * @returns DeleteDirectoryResult with counts of deleted items
+ * @throws PathTraversalError if path escapes vault boundary or is a symlink
+ * @throws DirectoryNotFoundError if directory does not exist
+ * @throws InvalidFileTypeError if target is a file (not a directory)
+ */
+export async function deleteDirectory(
+  vaultPath: string,
+  relativePath: string
+): Promise<DeleteDirectoryResult> {
+  log.info(`Deleting directory: ${relativePath} in ${vaultPath}`);
+
+  // Validate path is within vault
+  const targetPath = await validatePath(vaultPath, relativePath);
+
+  // Check if target exists and is a directory (not symlink or file)
+  try {
+    const stats = await lstat(targetPath);
+
+    if (stats.isSymbolicLink()) {
+      log.warn(`Symlink rejected for delete: ${relativePath}`);
+      throw new PathTraversalError(
+        `Path "${relativePath}" is a symbolic link and cannot be deleted`
+      );
+    }
+
+    if (!stats.isDirectory()) {
+      throw new InvalidFileTypeError(
+        `Can only delete directories with this function. Path "${relativePath}" is a file`
+      );
+    }
+  } catch (error) {
+    if (error instanceof FileBrowserError) {
+      throw error;
+    }
+    throw new DirectoryNotFoundError(`Directory "${relativePath}" does not exist`);
+  }
+
+  // Get counts before deletion for the result
+  const contents = await getDirectoryContents(vaultPath, relativePath);
+
+  // Delete the directory recursively
+  await rm(targetPath, { recursive: true });
+  log.info(`Successfully deleted directory: ${relativePath} (${contents.totalFiles} files, ${contents.totalDirectories} subdirectories)`);
+
+  return {
+    path: relativePath,
+    filesDeleted: contents.totalFiles,
+    directoriesDeleted: contents.totalDirectories,
+  };
 }
 
 // =============================================================================

@@ -319,3 +319,63 @@
 .file-tree__context-menu-item--danger .file-tree__icon-svg {
   color: var(--color-error);
 }
+
+/* Delete directory confirmation dialog content */
+.file-tree__delete-dir-message {
+  font-size: var(--text-sm);
+}
+
+.file-tree__delete-dir-warning {
+  margin: 0 0 var(--spacing-md);
+  color: var(--color-text);
+}
+
+.file-tree__delete-dir-contents {
+  margin-top: var(--spacing-md);
+}
+
+.file-tree__delete-dir-summary {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--color-text-secondary);
+}
+
+.file-tree__delete-dir-list {
+  max-height: 150px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.file-tree__delete-dir-item {
+  padding: var(--spacing-xs) 0;
+  color: var(--color-text-secondary);
+  word-break: break-all;
+}
+
+.file-tree__delete-dir-item--dir {
+  color: var(--color-accent);
+}
+
+.file-tree__delete-dir-truncated {
+  margin: var(--spacing-xs) 0 0;
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.file-tree__delete-dir-empty {
+  margin: var(--spacing-sm) 0 0;
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.file-tree__delete-dir-loading {
+  margin: var(--spacing-sm) 0 0;
+  font-style: italic;
+  color: var(--color-text-secondary);
+}

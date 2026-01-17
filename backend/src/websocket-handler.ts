@@ -94,6 +94,8 @@ import {
   readMarkdownFile as defaultReadMarkdownFile,
   writeMarkdownFile as defaultWriteMarkdownFile,
   deleteFile as defaultDeleteFile,
+  getDirectoryContents as defaultGetDirectoryContents,
+  deleteDirectory as defaultDeleteDirectory,
   archiveFile as defaultArchiveFile,
   createDirectory as defaultCreateDirectory,
   createFile as defaultCreateFile,
@@ -169,6 +171,8 @@ import {
   handleReadFile,
   handleWriteFile,
   handleDeleteFile,
+  handleGetDirectoryContents,
+  handleDeleteDirectory,
   handleArchiveFile,
   handleCreateDirectory,
   handleCreateFile,
@@ -302,6 +306,8 @@ export class WebSocketHandler {
       readMarkdownFile: hd.readMarkdownFile ?? defaultReadMarkdownFile,
       writeMarkdownFile: hd.writeMarkdownFile ?? defaultWriteMarkdownFile,
       deleteFile: hd.deleteFile ?? defaultDeleteFile,
+      getDirectoryContents: hd.getDirectoryContents ?? defaultGetDirectoryContents,
+      deleteDirectory: hd.deleteDirectory ?? defaultDeleteDirectory,
       archiveFile: hd.archiveFile ?? defaultArchiveFile,
       createDirectory: hd.createDirectory ?? defaultCreateDirectory,
       createFile: hd.createFile ?? defaultCreateFile,
@@ -667,6 +673,12 @@ export class WebSocketHandler {
         break;
       case "delete_file":
         await handleDeleteFile(ctx, message.path);
+        break;
+      case "get_directory_contents":
+        await handleGetDirectoryContents(ctx, message.path);
+        break;
+      case "delete_directory":
+        await handleDeleteDirectory(ctx, message.path);
         break;
       case "archive_file":
         await handleArchiveFile(ctx, message.path);

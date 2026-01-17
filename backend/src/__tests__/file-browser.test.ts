@@ -18,6 +18,8 @@ import {
   readMarkdownFile,
   writeMarkdownFile,
   deleteFile,
+  getDirectoryContents,
+  deleteDirectory,
   archiveFile,
   createDirectory,
   createFile,
@@ -1511,6 +1513,228 @@ describe("deleteFile", () => {
       expect.unreachable("File should have been deleted");
     } catch (error) {
       expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+});
+
+// =============================================================================
+// getDirectoryContents Tests
+// =============================================================================
+
+describe("getDirectoryContents", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  test("returns empty contents for empty directory", async () => {
+    await mkdir(join(testDir, "empty-dir"));
+
+    const result = await getDirectoryContents(testDir, "empty-dir");
+
+    expect(result.files).toEqual([]);
+    expect(result.directories).toEqual([]);
+    expect(result.totalFiles).toBe(0);
+    expect(result.totalDirectories).toBe(0);
+    expect(result.truncated).toBe(false);
+  });
+
+  test("returns files in directory", async () => {
+    await mkdir(join(testDir, "my-dir"));
+    await writeFile(join(testDir, "my-dir", "file1.md"), "content");
+    await writeFile(join(testDir, "my-dir", "file2.txt"), "content");
+
+    const result = await getDirectoryContents(testDir, "my-dir");
+
+    expect(result.files).toContain("file1.md");
+    expect(result.files).toContain("file2.txt");
+    expect(result.totalFiles).toBe(2);
+    expect(result.totalDirectories).toBe(0);
+  });
+
+  test("returns subdirectories in directory", async () => {
+    await mkdir(join(testDir, "my-dir"));
+    await mkdir(join(testDir, "my-dir", "subdir1"));
+    await mkdir(join(testDir, "my-dir", "subdir2"));
+
+    const result = await getDirectoryContents(testDir, "my-dir");
+
+    expect(result.directories).toContain("subdir1");
+    expect(result.directories).toContain("subdir2");
+    expect(result.totalDirectories).toBe(2);
+    expect(result.totalFiles).toBe(0);
+  });
+
+  test("includes nested files in totalFiles count", async () => {
+    await mkdir(join(testDir, "my-dir"));
+    await mkdir(join(testDir, "my-dir", "subdir"));
+    await writeFile(join(testDir, "my-dir", "file1.md"), "content");
+    await writeFile(join(testDir, "my-dir", "subdir", "file2.md"), "content");
+
+    const result = await getDirectoryContents(testDir, "my-dir");
+
+    expect(result.totalFiles).toBe(2);
+    expect(result.totalDirectories).toBe(1);
+  });
+
+  test("skips hidden files", async () => {
+    await mkdir(join(testDir, "my-dir"));
+    await writeFile(join(testDir, "my-dir", ".hidden"), "content");
+    await writeFile(join(testDir, "my-dir", "visible.md"), "content");
+
+    const result = await getDirectoryContents(testDir, "my-dir");
+
+    expect(result.files).toEqual(["visible.md"]);
+    expect(result.totalFiles).toBe(1);
+  });
+
+  test("throws DirectoryNotFoundError for non-existent directory", async () => {
+    try {
+      await getDirectoryContents(testDir, "non-existent");
+      expect.unreachable("Should have thrown DirectoryNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectoryNotFoundError);
+    }
+  });
+
+  test("throws InvalidFileTypeError if path is a file", async () => {
+    await writeFile(join(testDir, "a-file.md"), "content");
+
+    try {
+      await getDirectoryContents(testDir, "a-file.md");
+      expect.unreachable("Should have thrown InvalidFileTypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileTypeError);
+    }
+  });
+
+  test("throws PathTraversalError for symlinks", async () => {
+    await mkdir(join(testDir, "real-dir"));
+    await symlink(join(testDir, "real-dir"), join(testDir, "symlink-dir"));
+
+    try {
+      await getDirectoryContents(testDir, "symlink-dir");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+});
+
+// =============================================================================
+// deleteDirectory Tests
+// =============================================================================
+
+describe("deleteDirectory", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+  });
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  test("deletes empty directory", async () => {
+    await mkdir(join(testDir, "empty-dir"));
+
+    const result = await deleteDirectory(testDir, "empty-dir");
+
+    expect(result.path).toBe("empty-dir");
+    expect(result.filesDeleted).toBe(0);
+    expect(result.directoriesDeleted).toBe(0);
+
+    try {
+      await stat(join(testDir, "empty-dir"));
+      expect.unreachable("Directory should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  test("deletes directory with files", async () => {
+    await mkdir(join(testDir, "my-dir"));
+    await writeFile(join(testDir, "my-dir", "file1.md"), "content");
+    await writeFile(join(testDir, "my-dir", "file2.md"), "content");
+
+    const result = await deleteDirectory(testDir, "my-dir");
+
+    expect(result.filesDeleted).toBe(2);
+    expect(result.directoriesDeleted).toBe(0);
+
+    try {
+      await stat(join(testDir, "my-dir"));
+      expect.unreachable("Directory should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  test("deletes directory with subdirectories recursively", async () => {
+    await mkdir(join(testDir, "my-dir"));
+    await mkdir(join(testDir, "my-dir", "subdir"));
+    await writeFile(join(testDir, "my-dir", "file1.md"), "content");
+    await writeFile(join(testDir, "my-dir", "subdir", "file2.md"), "content");
+
+    const result = await deleteDirectory(testDir, "my-dir");
+
+    expect(result.filesDeleted).toBe(2);
+    expect(result.directoriesDeleted).toBe(1);
+
+    try {
+      await stat(join(testDir, "my-dir"));
+      expect.unreachable("Directory should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  test("throws DirectoryNotFoundError for non-existent directory", async () => {
+    try {
+      await deleteDirectory(testDir, "non-existent");
+      expect.unreachable("Should have thrown DirectoryNotFoundError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DirectoryNotFoundError);
+    }
+  });
+
+  test("throws InvalidFileTypeError if path is a file", async () => {
+    await writeFile(join(testDir, "a-file.md"), "content");
+
+    try {
+      await deleteDirectory(testDir, "a-file.md");
+      expect.unreachable("Should have thrown InvalidFileTypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidFileTypeError);
+    }
+  });
+
+  test("throws PathTraversalError for symlinks", async () => {
+    await mkdir(join(testDir, "real-dir"));
+    await symlink(join(testDir, "real-dir"), join(testDir, "symlink-dir"));
+
+    try {
+      await deleteDirectory(testDir, "symlink-dir");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
+    }
+  });
+
+  test("prevents path traversal with ..", async () => {
+    await mkdir(join(testDir, "my-dir"));
+
+    try {
+      await deleteDirectory(testDir, "../other-dir");
+      expect.unreachable("Should have thrown PathTraversalError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PathTraversalError);
     }
   });
 });

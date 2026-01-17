@@ -662,6 +662,25 @@ export const DeleteFileMessageSchema = z.object({
 });
 
 /**
+ * Client requests to get directory contents for deletion preview
+ * Returns list of files and subdirectories with counts
+ */
+export const GetDirectoryContentsMessageSchema = z.object({
+  type: z.literal("get_directory_contents"),
+  path: z.string().min(1, "Directory path is required"),
+});
+
+/**
+ * Client requests to delete a directory and all its contents from the vault
+ * Path is relative to vault content root
+ * This is a destructive operation that cannot be undone
+ */
+export const DeleteDirectoryMessageSchema = z.object({
+  type: z.literal("delete_directory"),
+  path: z.string().min(1, "Directory path is required"),
+});
+
+/**
  * Client requests to archive a directory from the vault
  * Path is relative to vault content root
  * Only valid for: chats directory, project directories, area directories
@@ -842,6 +861,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SearchContentMessageSchema,
   GetSnippetsMessageSchema,
   DeleteFileMessageSchema,
+  GetDirectoryContentsMessageSchema,
+  DeleteDirectoryMessageSchema,
   ArchiveFileMessageSchema,
   CreateDirectoryMessageSchema,
   CreateFileMessageSchema,
@@ -1202,6 +1223,36 @@ export const FileDeletedMessageSchema = z.object({
 });
 
 /**
+ * Server sends directory contents for deletion preview
+ */
+export const DirectoryContentsMessageSchema = z.object({
+  type: z.literal("directory_contents"),
+  path: z.string().min(1, "Directory path is required"),
+  /** List of file paths (relative to the directory) */
+  files: z.array(z.string()),
+  /** List of subdirectory paths (relative to the directory) */
+  directories: z.array(z.string()),
+  /** Total count of files (including in subdirectories) */
+  totalFiles: z.number().int().min(0),
+  /** Total count of directories (including nested) */
+  totalDirectories: z.number().int().min(0),
+  /** Whether the preview list was truncated */
+  truncated: z.boolean(),
+});
+
+/**
+ * Server confirms directory was deleted successfully
+ */
+export const DirectoryDeletedMessageSchema = z.object({
+  type: z.literal("directory_deleted"),
+  path: z.string().min(1, "Directory path is required"),
+  /** Number of files that were deleted */
+  filesDeleted: z.number().int().min(0),
+  /** Number of subdirectories that were deleted */
+  directoriesDeleted: z.number().int().min(0),
+});
+
+/**
  * Server confirms directory was archived successfully
  */
 export const FileArchivedMessageSchema = z.object({
@@ -1470,6 +1521,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   SnippetsMessageSchema,
   IndexProgressMessageSchema,
   FileDeletedMessageSchema,
+  DirectoryContentsMessageSchema,
+  DirectoryDeletedMessageSchema,
   FileArchivedMessageSchema,
   DirectoryCreatedMessageSchema,
   FileCreatedMessageSchema,
@@ -1574,6 +1627,8 @@ export type SearchFilesMessage = z.infer<typeof SearchFilesMessageSchema>;
 export type SearchContentMessage = z.infer<typeof SearchContentMessageSchema>;
 export type GetSnippetsMessage = z.infer<typeof GetSnippetsMessageSchema>;
 export type DeleteFileMessage = z.infer<typeof DeleteFileMessageSchema>;
+export type GetDirectoryContentsMessage = z.infer<typeof GetDirectoryContentsMessageSchema>;
+export type DeleteDirectoryMessage = z.infer<typeof DeleteDirectoryMessageSchema>;
 export type ArchiveFileMessage = z.infer<typeof ArchiveFileMessageSchema>;
 export type CreateDirectoryMessage = z.infer<typeof CreateDirectoryMessageSchema>;
 export type CreateFileMessage = z.infer<typeof CreateFileMessageSchema>;
@@ -1623,6 +1678,8 @@ export type SearchResultsMessage = z.infer<typeof SearchResultsMessageSchema>;
 export type SnippetsMessage = z.infer<typeof SnippetsMessageSchema>;
 export type IndexProgressMessage = z.infer<typeof IndexProgressMessageSchema>;
 export type FileDeletedMessage = z.infer<typeof FileDeletedMessageSchema>;
+export type DirectoryContentsMessage = z.infer<typeof DirectoryContentsMessageSchema>;
+export type DirectoryDeletedMessage = z.infer<typeof DirectoryDeletedMessageSchema>;
 export type FileArchivedMessage = z.infer<typeof FileArchivedMessageSchema>;
 export type DirectoryCreatedMessage = z.infer<typeof DirectoryCreatedMessageSchema>;
 export type FileCreatedMessage = z.infer<typeof FileCreatedMessageSchema>;

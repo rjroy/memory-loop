@@ -19,7 +19,7 @@ import type { WidgetEngine, FileWatcher } from "../widgets/index.js";
 import type { HealthCollector } from "../health-collector.js";
 import type { ActiveMeeting } from "../meeting-capture.js";
 import type { VaultConfig } from "../vault-config.js";
-import type { ArchiveResult, RenameResult, MoveResult } from "../file-browser.js";
+import type { ArchiveResult, RenameResult, MoveResult, DirectoryContentsResult, DeleteDirectoryResult } from "../file-browser.js";
 import type { ReferenceUpdateResult } from "../reference-updater.js";
 
 // =============================================================================
@@ -109,6 +109,8 @@ export interface HandlerDependencies {
     content: string
   ) => Promise<void>;
   deleteFile?: (vaultPath: string, relativePath: string) => Promise<void>;
+  getDirectoryContents?: (vaultPath: string, relativePath: string) => Promise<DirectoryContentsResult>;
+  deleteDirectory?: (vaultPath: string, relativePath: string) => Promise<DeleteDirectoryResult>;
   archiveFile?: (vaultPath: string, relativePath: string, archiveRoot: string) => Promise<ArchiveResult>;
   createDirectory?: (vaultPath: string, parentPath: string, name: string) => Promise<string>;
   createFile?: (vaultPath: string, parentPath: string, name: string) => Promise<string>;
@@ -229,6 +231,8 @@ export interface RequiredHandlerDependencies {
     content: string
   ) => Promise<void>;
   deleteFile: (vaultPath: string, relativePath: string) => Promise<void>;
+  getDirectoryContents: (vaultPath: string, relativePath: string) => Promise<DirectoryContentsResult>;
+  deleteDirectory: (vaultPath: string, relativePath: string) => Promise<DeleteDirectoryResult>;
   archiveFile: (vaultPath: string, relativePath: string, archiveRoot: string) => Promise<ArchiveResult>;
   createDirectory: (vaultPath: string, parentPath: string, name: string) => Promise<string>;
   createFile: (vaultPath: string, parentPath: string, name: string) => Promise<string>;

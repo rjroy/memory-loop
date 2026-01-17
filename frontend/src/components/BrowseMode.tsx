@@ -10,6 +10,7 @@ import { useSession, useServerMessageHandler } from "../contexts/SessionContext"
 import type { BrowseViewMode, SearchMode } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { FileTree } from "./FileTree";
+import type { DirectoryContents } from "./FileTree";
 import { TaskList } from "./TaskList";
 import { MarkdownViewer } from "./MarkdownViewer";
 import { ImageViewer } from "./ImageViewer";
@@ -45,6 +46,7 @@ export function BrowseMode(): React.ReactNode {
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
   const [isWidgetsPanelCollapsed, setIsWidgetsPanelCollapsed] = useState(false);
+  const [pendingDirectoryContents, setPendingDirectoryContents] = useState<DirectoryContents | null>(null);
 
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
@@ -265,6 +267,33 @@ export function BrowseMode(): React.ReactNode {
         break;
       }
 
+      case "directory_contents":
+        // Directory contents received - update state for delete confirmation dialog
+        setPendingDirectoryContents({
+          files: lastMessage.files,
+          directories: lastMessage.directories,
+          totalFiles: lastMessage.totalFiles,
+          totalDirectories: lastMessage.totalDirectories,
+          truncated: lastMessage.truncated,
+        });
+        break;
+
+      case "directory_deleted": {
+        // Directory deleted - refresh parent directory and clear view if needed
+        const deletedDirPath = lastMessage.path;
+        const parentDirPath = deletedDirPath.includes("/")
+          ? deletedDirPath.substring(0, deletedDirPath.lastIndexOf("/"))
+          : "";
+        // Refresh the parent directory listing
+        sendMessage({ type: "list_directory", path: parentDirPath });
+        // If the deleted directory or its contents were being viewed, clear the view
+        if (browser.currentPath === deletedDirPath || browser.currentPath.startsWith(deletedDirPath + "/")) {
+          setCurrentPath("");
+          setFileContent("", false);
+        }
+        break;
+      }
+
       case "file_archived": {
         // Directory archived - refresh parent directory and clear view if needed
         const archivedPath = lastMessage.path;
@@ -367,6 +396,24 @@ export function BrowseMode(): React.ReactNode {
   const handleDeleteFile = useCallback(
     (path: string) => {
       sendMessage({ type: "delete_file", path });
+    },
+    [sendMessage]
+  );
+
+  // Handle directory contents request for delete preview
+  const handleGetDirectoryContents = useCallback(
+    (path: string) => {
+      setPendingDirectoryContents(null);
+      sendMessage({ type: "get_directory_contents", path });
+    },
+    [sendMessage]
+  );
+
+  // Handle directory deletion from FileTree context menu
+  const handleDeleteDirectory = useCallback(
+    (path: string) => {
+      sendMessage({ type: "delete_directory", path });
+      setPendingDirectoryContents(null);
     },
     [sendMessage]
   );
@@ -703,7 +750,7 @@ export function BrowseMode(): React.ReactNode {
                 onRequestSnippets={handleRequestSnippets}
               />
             ) : viewMode === "files" ? (
-              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
+              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onDeleteDirectory={handleDeleteDirectory} onGetDirectoryContents={handleGetDirectoryContents} pendingDirectoryContents={pendingDirectoryContents} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
             ) : (
               <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
             )}
@@ -866,7 +913,7 @@ export function BrowseMode(): React.ReactNode {
                   onRequestSnippets={handleRequestSnippets}
                 />
               ) : viewMode === "files" ? (
-                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
+                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onDeleteDirectory={handleDeleteDirectory} onGetDirectoryContents={handleGetDirectoryContents} pendingDirectoryContents={pendingDirectoryContents} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
               ) : (
                 <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
               )}

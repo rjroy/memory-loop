@@ -11,7 +11,9 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import type { VaultInfo, ServerMessage } from "@memory-loop/shared";
 import type { HandlerContext, ConnectionState, RequiredHandlerDependencies } from "../types.js";
-import { handleCreateDirectory } from "../browser-handlers.js";
+import { handleCreateDirectory, handleRenameFile } from "../browser-handlers.js";
+import type { RenameResult } from "../../file-browser.js";
+import type { ReferenceUpdateResult } from "../../reference-updater.js";
 
 // =============================================================================
 // Test Fixtures
@@ -247,6 +249,216 @@ describe("handleCreateDirectory", () => {
     expect(sentMessages[0].type).toBe("error");
     if (sentMessages[0].type === "error") {
       expect(sentMessages[0].code).toBe("PATH_TRAVERSAL");
+    }
+  });
+});
+
+// =============================================================================
+// handleRenameFile Tests
+// =============================================================================
+
+function createMockDepsWithRename(
+  renameFn: (vaultPath: string, relativePath: string, newName: string) => Promise<RenameResult>,
+  updateRefsFn: (vaultPath: string, oldPath: string, newPath: string, isDirectory: boolean) => Promise<ReferenceUpdateResult>
+): RequiredHandlerDependencies {
+  return {
+    captureToDaily: () => Promise.resolve({ success: true, timestamp: "", notePath: "" }),
+    getRecentNotes: () => Promise.resolve([]),
+    listDirectory: () => Promise.resolve([]),
+    readMarkdownFile: () => Promise.resolve({ content: "", truncated: false }),
+    writeMarkdownFile: () => Promise.resolve(),
+    deleteFile: () => Promise.resolve(),
+    archiveFile: () => Promise.resolve({ originalPath: "", archivePath: "" }),
+    createDirectory: () => Promise.resolve(""),
+    createFile: () => Promise.resolve(""),
+    renameFile: renameFn,
+    updateReferences: updateRefsFn,
+    getInspiration: () => Promise.resolve({ contextual: null, quote: { text: "", attribution: "" } }),
+    getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
+    toggleTask: () => Promise.resolve({ success: true }),
+    getRecentSessions: () => Promise.resolve([]),
+    loadVaultConfig: () => Promise.resolve({}),
+    parseFrontmatter: () => ({ data: {}, content: "" }),
+  };
+}
+
+describe("handleRenameFile", () => {
+  it("should send file_renamed message on success", async () => {
+    const mockRename = mock(() => Promise.resolve({ oldPath: "old-file.md", newPath: "new-file.md" }));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 2, referencesUpdated: 5 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "old-file.md", "new-file");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("file_renamed");
+    if (sentMessages[0].type === "file_renamed") {
+      expect(sentMessages[0].oldPath).toBe("old-file.md");
+      expect(sentMessages[0].newPath).toBe("new-file.md");
+      expect(sentMessages[0].referencesUpdated).toBe(5);
+    }
+  });
+
+  it("should call renameFile with correct parameters", async () => {
+    const mockRename = mock(() => Promise.resolve({ oldPath: "docs/file.md", newPath: "docs/renamed.md" }));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "docs/file.md", "renamed");
+
+    expect(mockRename).toHaveBeenCalledTimes(1);
+    expect(mockRename).toHaveBeenCalledWith("/test/vault", "docs/file.md", "renamed");
+  });
+
+  it("should call updateReferences after rename", async () => {
+    const mockRename = mock(() => Promise.resolve({ oldPath: "old.md", newPath: "new.md" }));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 1, referencesUpdated: 3 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "old.md", "new");
+
+    expect(mockUpdateRefs).toHaveBeenCalledTimes(1);
+    expect(mockUpdateRefs).toHaveBeenCalledWith("/test/vault", "old.md", "new.md", false);
+  });
+
+  it("should detect directory rename and pass isDirectory=true to updateReferences", async () => {
+    const mockRename = mock(() => Promise.resolve({ oldPath: "OldFolder", newPath: "NewFolder" }));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "OldFolder", "NewFolder");
+
+    expect(mockUpdateRefs).toHaveBeenCalledWith("/test/vault", "OldFolder", "NewFolder", true);
+  });
+
+  it("should send error when no vault is selected", async () => {
+    const mockRename = mock(() => Promise.resolve({ oldPath: "", newPath: "" }));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }));
+    const noVaultState: ConnectionState = {
+      ...mockState,
+      currentVault: null,
+    };
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs), noVaultState);
+
+    await handleRenameFile(ctx, "file.md", "new-name");
+
+    expect(mockRename).not.toHaveBeenCalled();
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+  });
+
+  it("should handle InvalidFileNameError (VALIDATION_ERROR)", async () => {
+    const error = new Error("Invalid name");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "VALIDATION_ERROR" });
+    const mockRename = mock(() => Promise.reject(error));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "file.md", "invalid name!");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("VALIDATION_ERROR");
+    }
+  });
+
+  it("should handle FileNotFoundError", async () => {
+    const error = new Error("File not found");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "FILE_NOT_FOUND" });
+    const mockRename = mock(() => Promise.reject(error));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "nonexistent.md", "new-name");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("FILE_NOT_FOUND");
+    }
+  });
+
+  it("should handle FileExistsError", async () => {
+    const error = new Error("Destination already exists");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "VALIDATION_ERROR" });
+    const mockRename = mock(() => Promise.reject(error));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "file.md", "existing");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("VALIDATION_ERROR");
+    }
+  });
+
+  it("should handle PathTraversalError", async () => {
+    const error = new Error("Path traversal detected");
+    error.name = "FileBrowserError";
+    Object.assign(error, { code: "PATH_TRAVERSAL" });
+    const mockRename = mock(() => Promise.reject(error));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "../outside.md", "new-name");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("PATH_TRAVERSAL");
+    }
+  });
+
+  it("should handle generic errors with INTERNAL_ERROR code", async () => {
+    const mockRename = mock(() => Promise.reject(new Error("Unexpected error")));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "file.md", "new-name");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("INTERNAL_ERROR");
+      expect(sentMessages[0].message).toBe("Unexpected error");
+    }
+  });
+
+  it("should handle non-Error objects in catch", async () => {
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+    const mockRename = mock(() => Promise.reject("string error"));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 0, referencesUpdated: 0 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "file.md", "new-name");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("error");
+    if (sentMessages[0].type === "error") {
+      expect(sentMessages[0].code).toBe("INTERNAL_ERROR");
+      expect(sentMessages[0].message).toBe("Failed to rename");
+    }
+  });
+
+  it("should rename file in nested directory", async () => {
+    const mockRename = mock(() => Promise.resolve({ oldPath: "docs/notes/file.md", newPath: "docs/notes/renamed.md" }));
+    const mockUpdateRefs = mock(() => Promise.resolve({ filesModified: 3, referencesUpdated: 7 }));
+    const ctx = createMockContext(createMockDepsWithRename(mockRename, mockUpdateRefs));
+
+    await handleRenameFile(ctx, "docs/notes/file.md", "renamed");
+
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].type).toBe("file_renamed");
+    if (sentMessages[0].type === "file_renamed") {
+      expect(sentMessages[0].oldPath).toBe("docs/notes/file.md");
+      expect(sentMessages[0].newPath).toBe("docs/notes/renamed.md");
+      expect(sentMessages[0].referencesUpdated).toBe(7);
     }
   });
 });

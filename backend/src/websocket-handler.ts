@@ -93,6 +93,7 @@ import {
   deleteFile as defaultDeleteFile,
   archiveFile as defaultArchiveFile,
   createDirectory as defaultCreateDirectory,
+  createFile as defaultCreateFile,
 } from "./file-browser.js";
 import { getInspiration as defaultGetInspiration } from "./inspiration-manager.js";
 import {
@@ -163,6 +164,7 @@ import {
   handleDeleteFile,
   handleArchiveFile,
   handleCreateDirectory,
+  handleCreateFile,
 } from "./handlers/browser-handlers.js";
 
 import {
@@ -292,6 +294,7 @@ export class WebSocketHandler {
       deleteFile: hd.deleteFile ?? defaultDeleteFile,
       archiveFile: hd.archiveFile ?? defaultArchiveFile,
       createDirectory: hd.createDirectory ?? defaultCreateDirectory,
+      createFile: hd.createFile ?? defaultCreateFile,
       getInspiration: hd.getInspiration ?? defaultGetInspiration,
       getAllTasks: hd.getAllTasks ?? defaultGetAllTasks,
       toggleTask: hd.toggleTask ?? defaultToggleTask,
@@ -654,6 +657,9 @@ export class WebSocketHandler {
         break;
       case "create_directory":
         await handleCreateDirectory(ctx, message.path, message.name);
+        break;
+      case "create_file":
+        await handleCreateFile(ctx, message.path, message.name);
         break;
 
       // Search handlers (extracted)

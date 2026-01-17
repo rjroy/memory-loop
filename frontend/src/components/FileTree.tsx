@@ -30,6 +30,8 @@ export interface FileTreeProps {
   onPinnedAssetsChange?: (paths: string[]) => void;
   /** Callback when a new directory is created */
   onCreateDirectory?: (parentPath: string, name: string) => void;
+  /** Callback when a new file is created */
+  onCreateFile?: (parentPath: string, name: string) => void;
 }
 
 /**
@@ -346,6 +348,28 @@ function FolderPlusIcon(): React.ReactNode {
 }
 
 /**
+ * File plus icon for "Create File" action.
+ */
+function FilePlusIcon(): React.ReactNode {
+  return (
+    <svg
+      className="file-tree__icon-svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="12" y1="18" x2="12" y2="12" />
+      <line x1="9" y1="15" x2="15" y2="15" />
+    </svg>
+  );
+}
+
+/**
  * Think/sparkle icon for "Think about" action.
  */
 function ThinkIcon(): React.ReactNode {
@@ -386,7 +410,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory, onCreateFile }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -400,6 +424,7 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null);
   const [pendingArchivePath, setPendingArchivePath] = useState<string | null>(null);
   const [pendingCreateDirPath, setPendingCreateDirPath] = useState<string | null>(null);
+  const [pendingCreateFilePath, setPendingCreateFilePath] = useState<string | null>(null);
 
   // Track which directories are currently loading
   // For now we just use isLoading for the overall state
@@ -579,6 +604,25 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
 
   const handleCancelCreateDir = useCallback(() => {
     setPendingCreateDirPath(null);
+  }, []);
+
+  const handleCreateFileClick = useCallback(() => {
+    setPendingCreateFilePath(contextMenu.path);
+    closeContextMenu();
+  }, [contextMenu.path, closeContextMenu]);
+
+  const handleConfirmCreateFile = useCallback(
+    (name: string) => {
+      if (pendingCreateFilePath !== null && onCreateFile) {
+        onCreateFile(pendingCreateFilePath, name);
+      }
+      setPendingCreateFilePath(null);
+    },
+    [pendingCreateFilePath, onCreateFile]
+  );
+
+  const handleCancelCreateFile = useCallback(() => {
+    setPendingCreateFilePath(null);
   }, []);
 
   // Close context menu when clicking outside
@@ -771,6 +815,17 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
               <span>Add Directory</span>
             </button>
           )}
+          {contextMenu.isDirectory && onCreateFile && (
+            <button
+              type="button"
+              className="file-tree__context-menu-item"
+              onClick={handleCreateFileClick}
+              role="menuitem"
+            >
+              <FilePlusIcon />
+              <span>Create File</span>
+            </button>
+          )}
           {isArchivable && onArchiveFile && (
             <button
               type="button"
@@ -828,6 +883,20 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onArchiv
         confirmLabel="Create"
         onConfirm={handleConfirmCreateDir}
         onCancel={handleCancelCreateDir}
+      />
+
+      {/* Create file dialog */}
+      <InputDialog
+        isOpen={pendingCreateFilePath !== null}
+        title="Create File"
+        message={`Create a new markdown file${pendingCreateFilePath ? ` in "${pendingCreateFilePath}"` : " at the root"}. The .md extension will be added automatically.`}
+        inputLabel="File name"
+        inputPlaceholder="my-new-file"
+        pattern={/^[a-zA-Z0-9_-]+$/}
+        patternError="Only letters, numbers, hyphens, and underscores allowed"
+        confirmLabel="Create"
+        onConfirm={handleConfirmCreateFile}
+        onCancel={handleCancelCreateFile}
       />
     </nav>
   );

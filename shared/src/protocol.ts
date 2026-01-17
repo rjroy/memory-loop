@@ -682,6 +682,17 @@ export const CreateDirectoryMessageSchema = z.object({
 });
 
 /**
+ * Client requests to create a new markdown file in the vault
+ * Path is relative to vault content root (parent directory)
+ * Name must be alphanumeric with - and _ only (extension added automatically)
+ */
+export const CreateFileMessageSchema = z.object({
+  type: z.literal("create_file"),
+  path: z.string(), // Parent directory path (empty string for root)
+  name: z.string().min(1, "File name is required").regex(/^[a-zA-Z0-9_-]+$/, "File name must be alphanumeric with - and _ only"),
+});
+
+/**
  * Client requests ground widgets for current vault (REQ-F-16).
  * Ground widgets appear on the Home/Ground view.
  */
@@ -798,6 +809,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   DeleteFileMessageSchema,
   ArchiveFileMessageSchema,
   CreateDirectoryMessageSchema,
+  CreateFileMessageSchema,
   GetGroundWidgetsMessageSchema,
   GetRecallWidgetsMessageSchema,
   WidgetEditMessageSchema,
@@ -1171,6 +1183,15 @@ export const DirectoryCreatedMessageSchema = z.object({
 });
 
 /**
+ * Server confirms file was created successfully
+ */
+export const FileCreatedMessageSchema = z.object({
+  type: z.literal("file_created"),
+  /** Full path of the created file (relative to content root) */
+  path: z.string().min(1, "File path is required"),
+});
+
+/**
  * Server sends ground widgets for the current vault (REQ-F-16).
  * Response to get_ground_widgets request.
  */
@@ -1376,6 +1397,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   FileDeletedMessageSchema,
   FileArchivedMessageSchema,
   DirectoryCreatedMessageSchema,
+  FileCreatedMessageSchema,
   GroundWidgetsMessageSchema,
   RecallWidgetsMessageSchema,
   WidgetUpdateMessageSchema,
@@ -1476,6 +1498,7 @@ export type GetSnippetsMessage = z.infer<typeof GetSnippetsMessageSchema>;
 export type DeleteFileMessage = z.infer<typeof DeleteFileMessageSchema>;
 export type ArchiveFileMessage = z.infer<typeof ArchiveFileMessageSchema>;
 export type CreateDirectoryMessage = z.infer<typeof CreateDirectoryMessageSchema>;
+export type CreateFileMessage = z.infer<typeof CreateFileMessageSchema>;
 export type GetGroundWidgetsMessage = z.infer<typeof GetGroundWidgetsMessageSchema>;
 export type GetRecallWidgetsMessage = z.infer<typeof GetRecallWidgetsMessageSchema>;
 export type WidgetEditMessage = z.infer<typeof WidgetEditMessageSchema>;
@@ -1521,6 +1544,7 @@ export type IndexProgressMessage = z.infer<typeof IndexProgressMessageSchema>;
 export type FileDeletedMessage = z.infer<typeof FileDeletedMessageSchema>;
 export type FileArchivedMessage = z.infer<typeof FileArchivedMessageSchema>;
 export type DirectoryCreatedMessage = z.infer<typeof DirectoryCreatedMessageSchema>;
+export type FileCreatedMessage = z.infer<typeof FileCreatedMessageSchema>;
 export type GroundWidgetsMessage = z.infer<typeof GroundWidgetsMessageSchema>;
 export type RecallWidgetsMessage = z.infer<typeof RecallWidgetsMessageSchema>;
 export type WidgetUpdateMessage = z.infer<typeof WidgetUpdateMessageSchema>;

@@ -15,6 +15,7 @@ import {
   getVaultById,
   getVaultInboxPath,
   VaultsDirError,
+  VaultCreationError,
   DEFAULT_INBOX_PATH,
   DEFAULT_VAULTS_DIR_NAME,
   INBOX_PATTERNS,
@@ -26,6 +27,9 @@ import {
   parseVault,
   getVaultGoals,
   hasSyncConfig,
+  titleToDirectoryName,
+  getUniqueDirectoryName,
+  createVault,
 } from "../vault-manager";
 import type { VaultInfo } from "@memory-loop/shared";
 
@@ -1240,6 +1244,176 @@ describe("Sync Config Detection", () => {
 
       expect(vault1!.hasSyncConfig).toBe(false);
       expect(vault2!.hasSyncConfig).toBe(true);
+    });
+  });
+});
+
+// =============================================================================
+// Vault Creation Tests
+// =============================================================================
+
+describe("VaultCreationError", () => {
+  test("has correct name property", () => {
+    const error = new VaultCreationError("Test message");
+    expect(error.name).toBe("VaultCreationError");
+  });
+
+  test("is instance of Error", () => {
+    const error = new VaultCreationError("Test message");
+    expect(error).toBeInstanceOf(Error);
+  });
+
+  test("preserves error message", () => {
+    const error = new VaultCreationError("Custom error message");
+    expect(error.message).toBe("Custom error message");
+  });
+});
+
+describe("titleToDirectoryName", () => {
+  test("converts to lowercase", () => {
+    expect(titleToDirectoryName("My Vault")).toBe("my-vault");
+  });
+
+  test("replaces spaces with hyphens", () => {
+    expect(titleToDirectoryName("my new vault")).toBe("my-new-vault");
+  });
+
+  test("removes special characters", () => {
+    expect(titleToDirectoryName("My Vault!@#$%")).toBe("my-vault");
+  });
+
+  test("collapses multiple hyphens", () => {
+    expect(titleToDirectoryName("My   Vault")).toBe("my-vault");
+    expect(titleToDirectoryName("My---Vault")).toBe("my-vault");
+  });
+
+  test("trims leading and trailing hyphens", () => {
+    expect(titleToDirectoryName("---My Vault---")).toBe("my-vault");
+    expect(titleToDirectoryName("  My Vault  ")).toBe("my-vault");
+  });
+
+  test("handles unicode characters", () => {
+    expect(titleToDirectoryName("My Vault \u{1F4DA}")).toBe("my-vault");
+  });
+
+  test("handles numbers", () => {
+    expect(titleToDirectoryName("Project 2025")).toBe("project-2025");
+  });
+
+  test("handles already valid names", () => {
+    expect(titleToDirectoryName("my-vault")).toBe("my-vault");
+  });
+
+  test("handles empty string", () => {
+    expect(titleToDirectoryName("")).toBe("");
+  });
+
+  test("handles string with only special characters", () => {
+    expect(titleToDirectoryName("!@#$%^&*()")).toBe("");
+  });
+
+  test("handles mixed case and special chars", () => {
+    expect(titleToDirectoryName("My Project: The Re-Launch (2025)")).toBe("my-project-the-re-launch-2025");
+  });
+});
+
+describe("Vault Creation Integration", () => {
+  let testDir: string;
+  const originalVaultsDir = process.env.VAULTS_DIR;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `vault-create-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(testDir, { recursive: true });
+    process.env.VAULTS_DIR = testDir;
+  });
+
+  afterEach(async () => {
+    if (originalVaultsDir === undefined) {
+      delete process.env.VAULTS_DIR;
+    } else {
+      process.env.VAULTS_DIR = originalVaultsDir;
+    }
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  describe("getUniqueDirectoryName", () => {
+    test("returns base name when directory does not exist", async () => {
+      const name = await getUniqueDirectoryName(testDir, "my-vault");
+      expect(name).toBe("my-vault");
+    });
+
+    test("adds numeric suffix when directory exists", async () => {
+      await mkdir(join(testDir, "my-vault"));
+      const name = await getUniqueDirectoryName(testDir, "my-vault");
+      expect(name).toBe("my-vault-2");
+    });
+
+    test("increments suffix until unique", async () => {
+      await mkdir(join(testDir, "my-vault"));
+      await mkdir(join(testDir, "my-vault-2"));
+      await mkdir(join(testDir, "my-vault-3"));
+      const name = await getUniqueDirectoryName(testDir, "my-vault");
+      expect(name).toBe("my-vault-4");
+    });
+  });
+
+  describe("createVault", () => {
+    test("creates vault with simple title", async () => {
+      const vault = await createVault("My New Vault");
+
+      expect(vault.id).toBe("my-new-vault");
+      expect(vault.name).toBe("My New Vault");
+      expect(vault.hasClaudeMd).toBe(true);
+      expect(await directoryExists(vault.path)).toBe(true);
+      expect(await fileExists(join(vault.path, "CLAUDE.md"))).toBe(true);
+    });
+
+    test("creates unique directory when name exists", async () => {
+      await mkdir(join(testDir, "my-vault"));
+      await writeFile(join(testDir, "my-vault", "CLAUDE.md"), "# Existing");
+
+      const vault = await createVault("My Vault");
+
+      expect(vault.id).toBe("my-vault-2");
+      expect(vault.name).toBe("My Vault");
+    });
+
+    test("throws on empty title", () => {
+      expect(createVault("")).rejects.toThrow(VaultCreationError);
+      expect(createVault("   ")).rejects.toThrow(VaultCreationError);
+    });
+
+    test("throws on title with no alphanumeric characters", () => {
+      expect(createVault("!@#$%")).rejects.toThrow(VaultCreationError);
+      expect(createVault("!@#$%")).rejects.toThrow("at least one alphanumeric character");
+    });
+
+    test("CLAUDE.md contains title as H1 heading", async () => {
+      const vault = await createVault("Test Vault");
+
+      const { readFile: fsReadFile } = await import("node:fs/promises");
+      const content = await fsReadFile(join(vault.path, "CLAUDE.md"), "utf-8");
+
+      expect(content).toContain("# Test Vault");
+    });
+
+    test("handles special characters in title", async () => {
+      const vault = await createVault("Project X: Re-Launch (2025)");
+
+      expect(vault.id).toBe("project-x-re-launch-2025");
+      expect(vault.name).toBe("Project X: Re-Launch (2025)");
+    });
+
+    test("vault is discoverable after creation", async () => {
+      await createVault("Discoverable Vault");
+
+      const vaults = await discoverVaults();
+      expect(vaults).toHaveLength(1);
+      expect(vaults[0].name).toBe("Discoverable Vault");
     });
   });
 });

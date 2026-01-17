@@ -1,9 +1,8 @@
-
 # Memory Loop
 
 <img src="docs/logo.webp" alt="Memory Loop logo" width="150" align="right">
 
-![Version](https://img.shields.io/badge/version-1.3.13-blue.svg)
+![Version](https://img.shields.io/badge/version-1.3.21-blue.svg)
 [![codecov](https://codecov.io/gh/rjroy/memory-loop/graph/badge.svg?token=qD1xMP4hrR)](https://codecov.io/gh/rjroy/memory-loop)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 <br>
@@ -53,7 +52,7 @@ cp .env.example .env
 bun run dev
 ```
 
-Open http://localhost:5173 in your browser.
+Open <http://localhost:5173> in your browser.
 
 ## Configuration
 
@@ -86,11 +85,11 @@ Create a `.memory-loop.json` file at the vault root to customize paths:
 }
 ```
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `contentRoot` | Subdirectory containing vault content (useful for Quartz sites) | `""` (vault root) |
-| `inboxPath` | Directory for daily notes, relative to contentRoot | Auto-detected or `00_Inbox` |
-| `metadataPath` | Directory for inspiration sources, relative to contentRoot | `06_Metadata/memory-loop` |
+| Option         | Description                                                     | Default                     |
+| -------------- | --------------------------------------------------------------- | --------------------------- |
+| `contentRoot`  | Subdirectory containing vault content (useful for Quartz sites) | `""` (vault root)           |
+| `inboxPath`    | Directory for daily notes, relative to contentRoot              | Auto-detected or `00_Inbox` |
+| `metadataPath` | Directory for inspiration sources, relative to contentRoot      | `06_Metadata/memory-loop`   |
 
 All paths are relative to the vault root. Path traversal outside the vault is rejected for security.
 

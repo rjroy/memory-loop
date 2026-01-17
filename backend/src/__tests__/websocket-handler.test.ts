@@ -22,6 +22,7 @@ import {
   generateMessageId,
   type WebSocketHandlerDependencies,
 } from "../websocket-handler";
+import { VaultCreationError } from "../vault-manager";
 
 // =============================================================================
 // Mock Setup (injected via DI)
@@ -33,6 +34,9 @@ const mockDiscoverVaults = mock<() => Promise<VaultInfo[]>>(() =>
 );
 const mockGetVaultById = mock<(id: string) => Promise<VaultInfo | null>>(() =>
   Promise.resolve(null)
+);
+const mockCreateVault = mock<(title: string) => Promise<VaultInfo>>(() =>
+  Promise.resolve(createMockVault())
 );
 
 // Mock session manager functions
@@ -299,6 +303,7 @@ function createMockDeps(): WebSocketHandlerDependencies {
   return {
     discoverVaults: mockDiscoverVaults,
     getVaultById: mockGetVaultById,
+    createVault: mockCreateVault,
     createSession: mockCreateSession,
     resumeSession: mockResumeSession,
     loadSession: mockLoadSession,
@@ -480,6 +485,7 @@ describe("WebSocket Handler", () => {
     // Reset all mocks
     mockDiscoverVaults.mockReset();
     mockGetVaultById.mockReset();
+    mockCreateVault.mockReset();
     mockCreateSession.mockReset();
     mockResumeSession.mockReset();
     mockLoadSession.mockReset();
@@ -519,6 +525,9 @@ describe("WebSocket Handler", () => {
     // Set default mock implementations
     mockDiscoverVaults.mockResolvedValue([]);
     mockGetVaultById.mockResolvedValue(null);
+    mockCreateVault.mockImplementation((title: string) =>
+      Promise.resolve(createMockVault({ id: title.toLowerCase().replace(/\s+/g, "-"), name: title }))
+    );
     mockLoadSession.mockResolvedValue(null);
     mockAppendMessage.mockResolvedValue();
     mockCaptureToDaily.mockResolvedValue({
@@ -4073,6 +4082,171 @@ describe("WebSocket Handler", () => {
       await handler.onMessage(
         ws as unknown as Parameters<typeof handler.onMessage>[0],
         JSON.stringify({ type: "setup_vault" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+  });
+
+  // ===========================================================================
+  // Create Vault Handler Tests
+  // ===========================================================================
+
+  describe("create_vault handler", () => {
+    test("creates vault and returns vault_created message on success", async () => {
+      const createdVault = createMockVault({
+        id: "my-new-vault",
+        name: "My New Vault",
+        hasClaudeMd: true,
+        setupComplete: true,
+      });
+      mockCreateVault.mockResolvedValue(createdVault);
+      mockRunVaultSetup.mockResolvedValue({
+        success: true,
+        summary: ["Installed commands", "Created directories"],
+      });
+      mockGetVaultById.mockResolvedValue({ ...createdVault, setupComplete: true });
+
+      const handler = createTestHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "create_vault", title: "My New Vault" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("vault_created");
+      if (message?.type === "vault_created") {
+        expect(message.vault.id).toBe("my-new-vault");
+        expect(message.vault.name).toBe("My New Vault");
+        expect(message.vault.setupComplete).toBe(true);
+      }
+
+      // Verify createVault was called with correct title
+      expect(mockCreateVault).toHaveBeenCalledWith("My New Vault");
+      // Verify setup was run
+      expect(mockRunVaultSetup).toHaveBeenCalledWith("my-new-vault");
+    });
+
+    test("returns vault_created even when setup has issues", async () => {
+      const createdVault = createMockVault({
+        id: "my-vault",
+        name: "My Vault",
+      });
+      mockCreateVault.mockResolvedValue(createdVault);
+      mockRunVaultSetup.mockRejectedValue(new Error("Setup failed"));
+      mockGetVaultById.mockResolvedValue(createdVault);
+
+      const handler = createTestHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "create_vault", title: "My Vault" })
+      );
+
+      // Should still return vault_created (setup failure is non-fatal)
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("vault_created");
+      if (message?.type === "vault_created") {
+        expect(message.vault.id).toBe("my-vault");
+      }
+    });
+
+    test("returns original vault when re-fetch fails", async () => {
+      const createdVault = createMockVault({
+        id: "my-vault",
+        name: "My Vault",
+        setupComplete: false,
+      });
+      mockCreateVault.mockResolvedValue(createdVault);
+      mockRunVaultSetup.mockResolvedValue({ success: true, summary: [] });
+      // Re-fetch returns null, so original vault should be used
+      mockGetVaultById.mockResolvedValue(null);
+
+      const handler = createTestHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "create_vault", title: "My Vault" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("vault_created");
+      if (message?.type === "vault_created") {
+        // Original vault (without updated setupComplete) should be returned
+        expect(message.vault.id).toBe("my-vault");
+        expect(message.vault.setupComplete).toBe(false);
+      }
+    });
+
+    test("returns VALIDATION_ERROR when VaultCreationError is thrown", async () => {
+      mockCreateVault.mockRejectedValue(new VaultCreationError("Vault already exists"));
+
+      const handler = createTestHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "create_vault", title: "Existing Vault" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+        expect(message.message).toBe("Vault already exists");
+      }
+    });
+
+    test("returns INTERNAL_ERROR when unexpected error is thrown", async () => {
+      mockCreateVault.mockRejectedValue(new Error("Unexpected filesystem error"));
+
+      const handler = createTestHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "create_vault", title: "My Vault" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("INTERNAL_ERROR");
+        expect(message.message).toBe("Unexpected filesystem error");
+      }
+    });
+
+    test("validates title is required", async () => {
+      const handler = createTestHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "create_vault" })
+      );
+
+      const message = ws.getLastMessage();
+      expect(message?.type).toBe("error");
+      if (message?.type === "error") {
+        expect(message.code).toBe("VALIDATION_ERROR");
+      }
+    });
+
+    test("validates title cannot be empty", async () => {
+      const handler = createTestHandler();
+      const ws = createMockWebSocket();
+
+      await handler.onMessage(
+        ws as unknown as Parameters<typeof handler.onMessage>[0],
+        JSON.stringify({ type: "create_vault", title: "" })
       );
 
       const message = ws.getLastMessage();

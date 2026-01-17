@@ -5,7 +5,7 @@
  * Parses CLAUDE.md for vault metadata and detects inbox locations.
  */
 
-import { readdir, readFile, stat, access, mkdir } from "node:fs/promises";
+import { readdir, readFile, stat, access, mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { VaultInfo } from "@memory-loop/shared";
@@ -534,4 +534,138 @@ export async function getVaultGoals(vault: VaultInfo): Promise<string | null> {
     log.warn(`Failed to read goals file: ${goalsFullPath}`);
     return null;
   }
+}
+
+/**
+ * Converts a vault title to a safe directory name.
+ * - Converts to lowercase
+ * - Replaces spaces with hyphens
+ * - Removes non-alphanumeric characters (except hyphens)
+ * - Collapses multiple hyphens
+ * - Trims leading/trailing hyphens
+ *
+ * @param title - User-provided vault title
+ * @returns Safe directory name
+ */
+export function titleToDirectoryName(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/**
+ * Generates a unique directory name by appending numeric suffix if needed.
+ *
+ * @param vaultsDir - Parent directory containing vaults
+ * @param baseName - Base directory name
+ * @returns Unique directory name
+ */
+export async function getUniqueDirectoryName(
+  vaultsDir: string,
+  baseName: string
+): Promise<string> {
+  // Try the base name first
+  if (!(await directoryExists(join(vaultsDir, baseName)))) {
+    return baseName;
+  }
+
+  // Add numeric suffix until unique
+  let counter = 2;
+  while (counter < 100) {
+    const candidate = `${baseName}-${counter}`;
+    if (!(await directoryExists(join(vaultsDir, candidate)))) {
+      return candidate;
+    }
+    counter++;
+  }
+
+  // Fallback with timestamp (very unlikely to be needed)
+  return `${baseName}-${Date.now()}`;
+}
+
+/**
+ * Error thrown when vault creation fails.
+ */
+export class VaultCreationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VaultCreationError";
+  }
+}
+
+/**
+ * Creates a new vault with the given title.
+ *
+ * Steps:
+ * 1. Convert title to safe directory name
+ * 2. Ensure uniqueness with numeric suffix
+ * 3. Create directory in VAULTS_DIR
+ * 4. Create CLAUDE.md with title as H1 heading
+ * 5. Return parsed VaultInfo
+ *
+ * @param title - User-provided vault title
+ * @returns VaultInfo for the newly created vault
+ * @throws VaultCreationError if creation fails
+ */
+export async function createVault(title: string): Promise<VaultInfo> {
+  log.info(`Creating new vault: "${title}"`);
+
+  // Validate title
+  const trimmedTitle = title.trim();
+  if (trimmedTitle.length === 0) {
+    throw new VaultCreationError("Vault title cannot be empty");
+  }
+
+  // Convert to safe directory name
+  const baseName = titleToDirectoryName(trimmedTitle);
+  if (baseName.length === 0) {
+    throw new VaultCreationError(
+      "Vault title must contain at least one alphanumeric character"
+    );
+  }
+
+  // Get vaults directory
+  const vaultsDir = getVaultsDir();
+  await ensureVaultsDir(vaultsDir);
+
+  // Generate unique directory name
+  const dirName = await getUniqueDirectoryName(vaultsDir, baseName);
+  const vaultPath = join(vaultsDir, dirName);
+
+  log.info(`Creating vault directory: ${vaultPath}`);
+
+  // Create the vault directory
+  try {
+    await mkdir(vaultPath, { recursive: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new VaultCreationError(`Failed to create vault directory: ${message}`);
+  }
+
+  // Create CLAUDE.md with title as H1 heading
+  const claudeMdPath = join(vaultPath, "CLAUDE.md");
+  const claudeMdContent = `# ${trimmedTitle}
+
+This vault was created by Memory Loop.
+`;
+
+  try {
+    await writeFile(claudeMdPath, claudeMdContent, "utf-8");
+    log.info(`Created CLAUDE.md: ${claudeMdPath}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new VaultCreationError(`Failed to create CLAUDE.md: ${message}`);
+  }
+
+  // Parse and return the vault info
+  const vault = await parseVault(vaultsDir, dirName);
+  if (!vault) {
+    throw new VaultCreationError("Failed to parse newly created vault");
+  }
+
+  log.info(`Vault created successfully: ${vault.id} (${vault.name})`);
+  return vault;
 }

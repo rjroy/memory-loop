@@ -30,6 +30,8 @@ export interface MarkdownViewerProps {
   assetBaseUrl?: string;
   /** Callback to save file content in adjust mode (wired by parent to WebSocket) */
   onSave?: (content: string) => void;
+  /** Callback to open mobile file browser (only shown on mobile) */
+  onMobileMenuClick?: () => void;
 }
 
 /**
@@ -325,6 +327,7 @@ export function MarkdownViewer({
   onNavigate,
   assetBaseUrl = "/vault/assets",
   onSave,
+  onMobileMenuClick,
 }: MarkdownViewerProps): ReactNode {
   const {
     browser,
@@ -468,7 +471,7 @@ export function MarkdownViewer({
   }
 
   // Empty state - no file selected
-  if (!currentFileContent) {
+  if (!currentPath) {
     return (
       <div className="markdown-viewer markdown-viewer--empty">
         <div className="markdown-viewer__empty-content">
@@ -536,6 +539,28 @@ export function MarkdownViewer({
     <div className="markdown-viewer">
       {/* Toolbar with breadcrumb and Adjust button on same row (REQ-F-1) */}
       <div className="markdown-viewer__toolbar">
+        {onMobileMenuClick && (
+          <button
+            type="button"
+            className="viewer-mobile-menu-btn"
+            onClick={onMobileMenuClick}
+            aria-label="Open file browser"
+          >
+            <svg
+              className="viewer-mobile-menu-btn__icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        )}
         <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
         <button
           type="button"

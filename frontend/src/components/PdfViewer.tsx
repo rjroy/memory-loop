@@ -14,6 +14,8 @@ export interface PdfViewerProps {
   path: string;
   /** Base URL for vault assets (e.g., /vault/{vaultId}/assets) */
   assetBaseUrl: string;
+  /** Callback to open mobile file browser (only shown on mobile) */
+  onMobileMenuClick?: () => void;
 }
 
 /**
@@ -22,13 +24,35 @@ export interface PdfViewerProps {
  * Uses <object> tag which allows fallback content if the browser
  * cannot render PDFs inline.
  */
-export function PdfViewer({ path, assetBaseUrl }: PdfViewerProps): ReactNode {
+export function PdfViewer({ path, assetBaseUrl, onMobileMenuClick }: PdfViewerProps): ReactNode {
   const pdfUrl = `${assetBaseUrl}/${encodeAssetPath(path)}`;
   const fileName = path.split("/").pop() ?? path;
 
   return (
     <div className="pdf-viewer">
       <div className="pdf-viewer__header">
+        {onMobileMenuClick && (
+          <button
+            type="button"
+            className="viewer-mobile-menu-btn"
+            onClick={onMobileMenuClick}
+            aria-label="Open file browser"
+          >
+            <svg
+              className="viewer-mobile-menu-btn__icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        )}
         <span className="pdf-viewer__filename">{fileName}</span>
         <a
           href={pdfUrl}

@@ -424,9 +424,9 @@ describe("BrowseMode", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Breadcrumb should update immediately (before file_content response)
-      // The header element shows the current path
-      const header = document.querySelector(".browse-mode__current-file");
-      expect(header?.textContent).toBe("notes.md");
+      // The breadcrumb is now inside the viewer (MarkdownViewer shows .markdown-viewer__breadcrumb-current)
+      const breadcrumbCurrent = document.querySelector(".markdown-viewer__breadcrumb-current");
+      expect(breadcrumbCurrent?.textContent).toBe("notes.md");
     });
 
     it("updates breadcrumb when following wiki-links", async () => {
@@ -477,8 +477,9 @@ describe("BrowseMode", () => {
       expect((readMsg as { path: string }).path).toBe("target.md");
 
       // Breadcrumb should update immediately to target.md
-      const header = screen.getByText("target.md", { selector: ".browse-mode__current-file" });
-      expect(header).toBeDefined();
+      // The breadcrumb is now inside the viewer (MarkdownViewer shows .markdown-viewer__breadcrumb-current)
+      const breadcrumbCurrent = document.querySelector(".markdown-viewer__breadcrumb-current");
+      expect(breadcrumbCurrent?.textContent).toBe("target.md");
     });
   });
 

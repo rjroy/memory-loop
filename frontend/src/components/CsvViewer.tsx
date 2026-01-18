@@ -16,6 +16,8 @@ import "./CsvViewer.css";
 export interface CsvViewerProps {
   /** Callback when a path is navigated (breadcrumb) */
   onNavigate?: (path: string) => void;
+  /** Callback to open mobile file browser (only shown on mobile) */
+  onMobileMenuClick?: () => void;
 }
 
 /**
@@ -239,7 +241,7 @@ function parseCsv(content: string, delimiter: string): ParseResult {
  * - Warning banners for data issues
  * - Fallback to raw content for malformed files
  */
-export function CsvViewer({ onNavigate }: CsvViewerProps): ReactNode {
+export function CsvViewer({ onNavigate, onMobileMenuClick }: CsvViewerProps): ReactNode {
   const { browser, setCurrentPath } = useSession();
   const {
     currentPath,
@@ -330,7 +332,31 @@ export function CsvViewer({ onNavigate }: CsvViewerProps): ReactNode {
   // Normal view mode - render table
   return (
     <div className="csv-viewer">
-      <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
+      <div className="csv-viewer__toolbar">
+        {onMobileMenuClick && (
+          <button
+            type="button"
+            className="viewer-mobile-menu-btn"
+            onClick={onMobileMenuClick}
+            aria-label="Open file browser"
+          >
+            <svg
+              className="viewer-mobile-menu-btn__icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        )}
+        <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
+      </div>
 
       {currentFileTruncated && (
         <div className="csv-viewer__warning" role="alert">

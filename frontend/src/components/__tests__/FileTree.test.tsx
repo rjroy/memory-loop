@@ -584,7 +584,7 @@ describe("FileTree", () => {
 
       // Should show confirmation dialog
       expect(screen.getByText("Delete File?")).toBeDefined();
-      expect(screen.getByText("This cannot be undone! The file will be permanently deleted from your vault.")).toBeDefined();
+      expect(screen.getByText('This cannot be undone! The file "README.md" will be permanently deleted from your vault.')).toBeDefined();
     });
 
     it("calls onDeleteFile when deletion is confirmed", () => {

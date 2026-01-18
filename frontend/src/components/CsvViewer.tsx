@@ -6,7 +6,7 @@
  * Shows graceful fallback for malformed files.
  */
 
-import { useMemo, useCallback, type ReactNode } from "react";
+import { useMemo, useCallback, useState, useEffect, type ReactNode } from "react";
 import { useSession } from "../contexts/SessionContext";
 import "./CsvViewer.css";
 
@@ -44,17 +44,28 @@ function Breadcrumb({
   path: string;
   onNavigate: (path: string) => void;
 }): ReactNode {
+  const [isExpanded, setIsExpanded] = useState(false);
   const segments = path.split("/").filter(Boolean);
+
+  // Reset expanded state when path changes
+  useEffect(() => {
+    setIsExpanded(false);
+  }, [path]);
 
   if (segments.length === 0) {
     return null;
   }
 
-  const crumbs = segments.map((segment, index) => ({
+  // Build path segments with cumulative paths
+  const allCrumbs = segments.map((segment, index) => ({
     name: segment,
     path: segments.slice(0, index + 1).join("/"),
     isLast: index === segments.length - 1,
   }));
+
+  // Collapse middle segments if more than 3 and not expanded
+  const shouldCollapse = segments.length > 3 && !isExpanded;
+  const visibleCrumbs = shouldCollapse ? allCrumbs.slice(-2) : allCrumbs;
 
   return (
     <nav className="csv-viewer__breadcrumb" aria-label="File path">
@@ -65,7 +76,20 @@ function Breadcrumb({
       >
         Root
       </button>
-      {crumbs.map((crumb) => (
+      {shouldCollapse && (
+        <span>
+          <span className="csv-viewer__breadcrumb-separator">/</span>
+          <button
+            type="button"
+            className="csv-viewer__breadcrumb-ellipsis"
+            onClick={() => setIsExpanded(true)}
+            aria-label="Show full path"
+          >
+            …
+          </button>
+        </span>
+      )}
+      {visibleCrumbs.map((crumb) => (
         <span key={crumb.path}>
           <span className="csv-viewer__breadcrumb-separator">/</span>
           {crumb.isLast ? (

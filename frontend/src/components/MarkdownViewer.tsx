@@ -8,6 +8,8 @@
 import {
   useMemo,
   useCallback,
+  useState,
+  useEffect,
   type ReactNode,
   type ComponentProps,
   type KeyboardEvent,
@@ -120,6 +122,7 @@ function processChildren(
 
 /**
  * Breadcrumb component for file path navigation.
+ * Collapses middle segments when path is long (> 3 segments).
  */
 function Breadcrumb({
   path,
@@ -128,18 +131,28 @@ function Breadcrumb({
   path: string;
   onNavigate: (path: string) => void;
 }): ReactNode {
+  const [isExpanded, setIsExpanded] = useState(false);
   const segments = path.split("/").filter(Boolean);
+
+  // Reset expanded state when path changes
+  useEffect(() => {
+    setIsExpanded(false);
+  }, [path]);
 
   if (segments.length === 0) {
     return null;
   }
 
   // Build path segments with cumulative paths
-  const crumbs = segments.map((segment, index) => ({
+  const allCrumbs = segments.map((segment, index) => ({
     name: segment,
     path: segments.slice(0, index + 1).join("/"),
     isLast: index === segments.length - 1,
   }));
+
+  // Collapse middle segments if more than 3 and not expanded
+  const shouldCollapse = segments.length > 3 && !isExpanded;
+  const visibleCrumbs = shouldCollapse ? allCrumbs.slice(-2) : allCrumbs;
 
   return (
     <nav className="markdown-viewer__breadcrumb" aria-label="File path">
@@ -150,7 +163,20 @@ function Breadcrumb({
       >
         Root
       </button>
-      {crumbs.map((crumb) => (
+      {shouldCollapse && (
+        <span>
+          <span className="markdown-viewer__breadcrumb-separator">/</span>
+          <button
+            type="button"
+            className="markdown-viewer__breadcrumb-ellipsis"
+            onClick={() => setIsExpanded(true)}
+            aria-label="Show full path"
+          >
+            …
+          </button>
+        </span>
+      )}
+      {visibleCrumbs.map((crumb) => (
         <span key={crumb.path}>
           <span className="markdown-viewer__breadcrumb-separator">/</span>
           {crumb.isLast ? (

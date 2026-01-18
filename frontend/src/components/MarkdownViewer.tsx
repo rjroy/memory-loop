@@ -625,7 +625,7 @@ export function MarkdownViewer({
         </div>
       )}
 
-      <div className="markdown-viewer__content">
+      <article className="markdown-viewer__content">
         {frontmatter && <FrontmatterTable data={frontmatter} />}
         <Markdown
           remarkPlugins={[remarkGfm, remarkFrontmatter]}
@@ -633,7 +633,7 @@ export function MarkdownViewer({
         >
           {markdownContent}
         </Markdown>
-      </div>
+      </article>
     </div>
   );
 }

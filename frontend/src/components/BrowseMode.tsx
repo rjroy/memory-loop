@@ -803,7 +803,7 @@ export function BrowseMode(): React.ReactNode {
             {browser.currentPath || "No file selected"}
           </span>
         </div>
-        <div className="browse-mode__viewer-content">
+        <article className="browse-mode__viewer-content">
           {isImageFile(browser.currentPath) ? (
             <ImageViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
           ) : isVideoFile(browser.currentPath) ? (
@@ -821,7 +821,7 @@ export function BrowseMode(): React.ReactNode {
           ) : (
             <DownloadViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
           )}
-        </div>
+        </article>
         {/* Recall Widgets - collapsible panel shown when viewing files that match widget source patterns */}
         {browser.currentPath && (widgets.isRecallLoading || widgets.recallError || (widgets.recallWidgets.length > 0 && widgets.recallFilePath === browser.currentPath)) && (
           <div className={`browse-mode__recall-widgets ${isWidgetsPanelCollapsed ? "browse-mode__recall-widgets--collapsed" : ""}`}>

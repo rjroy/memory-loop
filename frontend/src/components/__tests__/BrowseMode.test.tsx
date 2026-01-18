@@ -393,6 +393,95 @@ describe("BrowseMode", () => {
     });
   });
 
+  describe("breadcrumb updates", () => {
+    it("updates breadcrumb immediately when selecting a text file", async () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Wait for WebSocket to connect
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const ws = wsInstances[0];
+
+      // Simulate session ready
+      ws.simulateMessage({ type: "session_ready", sessionId: "test-session", vaultId: "vault-1" });
+
+      // Simulate directory listing with a markdown file
+      ws.simulateMessage({
+        type: "directory_listing",
+        path: "",
+        entries: [
+          { name: "notes.md", type: "file", path: "notes.md" },
+        ],
+      });
+
+      // Wait for entries to render
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Click the file
+      const fileButton = screen.getByText("notes.md").closest("button");
+      fireEvent.click(fileButton!);
+
+      // Wait for state update
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Breadcrumb should update immediately (before file_content response)
+      // The header element shows the current path
+      const header = document.querySelector(".browse-mode__current-file");
+      expect(header?.textContent).toBe("notes.md");
+    });
+
+    it("updates breadcrumb when following wiki-links", async () => {
+      render(<BrowseMode />, { wrapper: TestWrapper });
+
+      // Wait for WebSocket to connect
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const ws = wsInstances[0];
+
+      // Simulate session ready
+      ws.simulateMessage({ type: "session_ready", sessionId: "test-session", vaultId: "vault-1" });
+
+      // Simulate directory listing
+      ws.simulateMessage({
+        type: "directory_listing",
+        path: "",
+        entries: [
+          { name: "source.md", type: "file", path: "source.md" },
+        ],
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Select the source file first
+      const fileButton = screen.getByText("source.md").closest("button");
+      fireEvent.click(fileButton!);
+
+      // Simulate file content with a wiki-link
+      ws.simulateMessage({
+        type: "file_content",
+        path: "source.md",
+        content: "Check out [[target]]",
+        truncated: false,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Clear messages to track navigation
+      sentMessages.length = 0;
+
+      // Click the wiki-link (rendered as a link in MarkdownViewer)
+      const wikiLink = screen.getByText("target");
+      fireEvent.click(wikiLink);
+
+      // Verify read_file was sent for the target
+      const readMsg = sentMessages.find((m) => m.type === "read_file");
+      expect(readMsg).toBeDefined();
+      expect((readMsg as { path: string }).path).toBe("target.md");
+
+      // Breadcrumb should update immediately to target.md
+      const header = screen.getByText("target.md", { selector: ".browse-mode__current-file" });
+      expect(header).toBeDefined();
+    });
+  });
+
   describe("create directory functionality", () => {
     it("refreshes parent directory when directory_created message is received", async () => {
       render(<BrowseMode />, { wrapper: TestWrapper });

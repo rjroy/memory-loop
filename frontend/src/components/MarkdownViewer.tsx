@@ -534,10 +534,9 @@ export function MarkdownViewer({
   // Normal view mode with Adjust button (REQ-F-1)
   return (
     <div className="markdown-viewer">
-      <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
-
-      {/* Header with Adjust button (REQ-F-1) */}
-      <div className="markdown-viewer__view-header">
+      {/* Toolbar with breadcrumb and Adjust button on same row (REQ-F-1) */}
+      <div className="markdown-viewer__toolbar">
+        <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
         <button
           type="button"
           className="markdown-viewer__adjust-btn"

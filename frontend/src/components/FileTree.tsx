@@ -1023,7 +1023,7 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDelete
       <ConfirmDialog
         isOpen={pendingDeletePath !== null}
         title="Delete File?"
-        message="This cannot be undone! The file will be permanently deleted from your vault."
+        message={`This cannot be undone! The file "${pendingDeletePath?.split("/").pop() ?? ""}" will be permanently deleted from your vault.`}
         confirmLabel="Delete"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}

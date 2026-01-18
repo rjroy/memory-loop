@@ -94,6 +94,13 @@ export function Discussion(): React.ReactNode {
       // Process streaming messages (response_start, response_chunk, response_end)
       handleServerMessage(message);
 
+      // Handle response start - ensure stop button is visible when streaming begins
+      // This handles the race condition where user clicks stop before streaming starts:
+      // the abort may not take effect, and we need the stop button to reappear
+      if (message.type === "response_start") {
+        setIsSubmitting(true);
+      }
+
       // Handle response end - clear submitting state
       if (message.type === "response_end") {
         setIsSubmitting(false);

@@ -527,6 +527,7 @@ export function BrowseMode(): React.ReactNode {
         return;
       }
       // For text files (markdown, JSON, txt, csv), request content from backend
+      setCurrentPath(path);
       setFileLoading(true);
       sendMessage({ type: "read_file", path });
       // Request recall widgets for the file (backend filters by source pattern)
@@ -540,6 +541,7 @@ export function BrowseMode(): React.ReactNode {
   const handleNavigate = useCallback(
     (path: string) => {
       if (path) {
+        setCurrentPath(path);
         setFileLoading(true);
         sendMessage({ type: "read_file", path });
         // Request recall widgets for the navigated file
@@ -547,7 +549,7 @@ export function BrowseMode(): React.ReactNode {
         sendMessage({ type: "get_recall_widgets", path });
       }
     },
-    [sendMessage, setFileLoading, setRecallWidgetsLoading]
+    [sendMessage, setCurrentPath, setFileLoading, setRecallWidgetsLoading]
   );
 
   // Handle save from MarkdownViewer adjust mode

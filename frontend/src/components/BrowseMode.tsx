@@ -352,6 +352,34 @@ export function BrowseMode(): React.ReactNode {
         break;
       }
 
+      case "file_moved": {
+        // File/directory moved - refresh both source and destination directories
+        const oldPath = lastMessage.oldPath;
+        const newPath = lastMessage.newPath;
+        const sourceParent = oldPath.includes("/")
+          ? oldPath.substring(0, oldPath.lastIndexOf("/"))
+          : "";
+        const destParent = newPath.includes("/")
+          ? newPath.substring(0, newPath.lastIndexOf("/"))
+          : "";
+        // Refresh the source parent directory listing
+        sendMessage({ type: "list_directory", path: sourceParent });
+        // Refresh the destination parent if different from source
+        if (destParent !== sourceParent) {
+          sendMessage({ type: "list_directory", path: destParent });
+        }
+        // If the moved file was currently being viewed, update the path
+        if (browser.currentPath === oldPath) {
+          setCurrentPath(newPath);
+        }
+        // If a file inside a moved directory was being viewed, update the path
+        else if (browser.currentPath.startsWith(oldPath + "/")) {
+          const relativePath = browser.currentPath.substring(oldPath.length);
+          setCurrentPath(newPath + relativePath);
+        }
+        break;
+      }
+
       case "tasks":
         // Task list received from server
         setTasks(lastMessage.tasks);

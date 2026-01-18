@@ -561,7 +561,8 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDelete
       const target = event.target as HTMLElement;
       const fileTree = target.closest(".file-tree");
       const menuWidth = 180;
-      const menuHeight = 50;
+      // Estimate max menu height: up to 8 items at ~36px each + container padding
+      const menuHeight = 300;
 
       let x = clientX;
       let y = clientY;
@@ -572,12 +573,22 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDelete
         x = clientX - rect.left;
         y = clientY - rect.top;
 
-        // Keep menu within container bounds
+        // Keep menu within container bounds horizontally
         if (x + menuWidth > rect.width) {
           x = Math.max(0, x - menuWidth);
         }
+
+        // Keep menu within container bounds vertically
+        // If menu would extend past bottom, position it above the click point
         if (y + menuHeight > rect.height) {
-          y = Math.max(0, rect.height - menuHeight - 8);
+          // Try positioning above click point
+          const aboveY = y - menuHeight;
+          if (aboveY >= 0) {
+            y = aboveY;
+          } else {
+            // Not enough room above either - clamp to top with some padding
+            y = Math.max(8, rect.height - menuHeight - 8);
+          }
         }
       }
 

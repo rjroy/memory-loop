@@ -168,7 +168,7 @@ export function MoveDialog({
             onClick={() => selectDirectory(entry.path)}
           >
             <span
-              className={`move-dialog__tree-toggle ${dirs.length > 0 ? "" : "move-dialog__tree-toggle--empty"}`}
+              className={`move-dialog__tree-toggle ${dirs.length > 0 || !directoryCache.get(entry.path) ? "" : "move-dialog__tree-toggle--empty"}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (dirs.length > 0 || !directoryCache.get(entry.path)) {

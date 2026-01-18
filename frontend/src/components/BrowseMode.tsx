@@ -790,36 +790,39 @@ export function BrowseMode(): React.ReactNode {
 
       {/* Viewer pane */}
       <main className="browse-mode__viewer-pane">
-        <div className="browse-mode__viewer-header">
-          <button
-            type="button"
-            className="browse-mode__mobile-menu-btn"
-            onClick={toggleMobileTree}
-            aria-label="Open file browser"
-          >
-            <MenuIcon />
-          </button>
-          <span className="browse-mode__current-file">
-            {browser.currentPath || "No file selected"}
-          </span>
-        </div>
+        {/* Mobile header - only shown when no file is selected */}
+        {!browser.currentPath && (
+          <div className="browse-mode__viewer-header">
+            <button
+              type="button"
+              className="browse-mode__mobile-menu-btn"
+              onClick={toggleMobileTree}
+              aria-label="Open file browser"
+            >
+              <MenuIcon />
+            </button>
+            <span className="browse-mode__current-file">
+              No file selected
+            </span>
+          </div>
+        )}
         <article className="browse-mode__viewer-content">
           {isImageFile(browser.currentPath) ? (
-            <ImageViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
+            <ImageViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
           ) : isVideoFile(browser.currentPath) ? (
-            <VideoViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
+            <VideoViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
           ) : isPdfFile(browser.currentPath) ? (
-            <PdfViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
+            <PdfViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
           ) : isJsonFile(browser.currentPath) ? (
-            <JsonViewer onNavigate={handleNavigate} onSave={handleSave} />
+            <JsonViewer onNavigate={handleNavigate} onSave={handleSave} onMobileMenuClick={toggleMobileTree} />
           ) : isTxtFile(browser.currentPath) ? (
-            <TxtViewer onNavigate={handleNavigate} onSave={handleSave} />
+            <TxtViewer onNavigate={handleNavigate} onSave={handleSave} onMobileMenuClick={toggleMobileTree} />
           ) : isCsvFile(browser.currentPath) ? (
-            <CsvViewer onNavigate={handleNavigate} />
+            <CsvViewer onNavigate={handleNavigate} onMobileMenuClick={toggleMobileTree} />
           ) : isMarkdownFile(browser.currentPath) || !browser.currentPath ? (
-            <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} onSave={handleSave} />
+            <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} onSave={handleSave} onMobileMenuClick={toggleMobileTree} />
           ) : (
-            <DownloadViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} />
+            <DownloadViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
           )}
         </article>
         {/* Recall Widgets - collapsible panel shown when viewing files that match widget source patterns */}

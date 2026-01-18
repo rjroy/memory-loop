@@ -8,6 +8,7 @@
 import {
   useCallback,
   useState,
+  useEffect,
   type ReactNode,
   type KeyboardEvent,
 } from "react";
@@ -22,6 +23,8 @@ export interface TxtViewerProps {
   onNavigate?: (path: string) => void;
   /** Callback to save file content in adjust mode */
   onSave?: (content: string) => void;
+  /** Callback to open mobile file browser (only shown on mobile) */
+  onMobileMenuClick?: () => void;
 }
 
 /**
@@ -34,17 +37,28 @@ function Breadcrumb({
   path: string;
   onNavigate: (path: string) => void;
 }): ReactNode {
+  const [isExpanded, setIsExpanded] = useState(false);
   const segments = path.split("/").filter(Boolean);
+
+  // Reset expanded state when path changes
+  useEffect(() => {
+    setIsExpanded(false);
+  }, [path]);
 
   if (segments.length === 0) {
     return null;
   }
 
-  const crumbs = segments.map((segment, index) => ({
+  // Build path segments with cumulative paths
+  const allCrumbs = segments.map((segment, index) => ({
     name: segment,
     path: segments.slice(0, index + 1).join("/"),
     isLast: index === segments.length - 1,
   }));
+
+  // Collapse middle segments if more than 3 and not expanded
+  const shouldCollapse = segments.length > 3 && !isExpanded;
+  const visibleCrumbs = shouldCollapse ? allCrumbs.slice(-2) : allCrumbs;
 
   return (
     <nav className="txt-viewer__breadcrumb" aria-label="File path">
@@ -55,7 +69,20 @@ function Breadcrumb({
       >
         Root
       </button>
-      {crumbs.map((crumb) => (
+      {shouldCollapse && (
+        <span>
+          <span className="txt-viewer__breadcrumb-separator">/</span>
+          <button
+            type="button"
+            className="txt-viewer__breadcrumb-ellipsis"
+            onClick={() => setIsExpanded(true)}
+            aria-label="Show full path"
+          >
+            …
+          </button>
+        </span>
+      )}
+      {visibleCrumbs.map((crumb) => (
         <span key={crumb.path}>
           <span className="txt-viewer__breadcrumb-separator">/</span>
           {crumb.isLast ? (
@@ -99,6 +126,7 @@ function LoadingSkeleton(): ReactNode {
 export function TxtViewer({
   onNavigate,
   onSave,
+  onMobileMenuClick,
 }: TxtViewerProps): ReactNode {
   const {
     browser,
@@ -206,9 +234,31 @@ export function TxtViewer({
   if (isAdjusting) {
     return (
       <div className="txt-viewer txt-viewer--adjusting">
-        <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
-
-        <div className="txt-viewer__adjust-header">
+        {/* Toolbar with breadcrumb and Save/Cancel buttons */}
+        <div className="txt-viewer__toolbar">
+          {onMobileMenuClick && (
+            <button
+              type="button"
+              className="viewer-mobile-menu-btn"
+              onClick={onMobileMenuClick}
+              aria-label="Open file browser"
+            >
+              <svg
+                className="viewer-mobile-menu-btn__icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+          )}
+          <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
           <div className="txt-viewer__adjust-actions">
             <button
               type="button"
@@ -257,9 +307,30 @@ export function TxtViewer({
   // Normal view mode
   return (
     <div className="txt-viewer">
-      <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
-
-      <div className="txt-viewer__view-header">
+      <div className="txt-viewer__toolbar">
+        {onMobileMenuClick && (
+          <button
+            type="button"
+            className="viewer-mobile-menu-btn"
+            onClick={onMobileMenuClick}
+            aria-label="Open file browser"
+          >
+            <svg
+              className="viewer-mobile-menu-btn__icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        )}
+        <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
         <button
           type="button"
           className="txt-viewer__adjust-btn"

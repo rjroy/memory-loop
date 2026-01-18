@@ -8,6 +8,8 @@
 import {
   useMemo,
   useCallback,
+  useState,
+  useEffect,
   type ReactNode,
   type ComponentProps,
   type KeyboardEvent,
@@ -30,6 +32,8 @@ export interface MarkdownViewerProps {
   assetBaseUrl?: string;
   /** Callback to save file content in adjust mode (wired by parent to WebSocket) */
   onSave?: (content: string) => void;
+  /** Callback to open mobile file browser (only shown on mobile) */
+  onMobileMenuClick?: () => void;
 }
 
 /**
@@ -118,6 +122,7 @@ function processChildren(
 
 /**
  * Breadcrumb component for file path navigation.
+ * Collapses middle segments when path is long (> 3 segments).
  */
 function Breadcrumb({
   path,
@@ -126,18 +131,28 @@ function Breadcrumb({
   path: string;
   onNavigate: (path: string) => void;
 }): ReactNode {
+  const [isExpanded, setIsExpanded] = useState(false);
   const segments = path.split("/").filter(Boolean);
+
+  // Reset expanded state when path changes
+  useEffect(() => {
+    setIsExpanded(false);
+  }, [path]);
 
   if (segments.length === 0) {
     return null;
   }
 
   // Build path segments with cumulative paths
-  const crumbs = segments.map((segment, index) => ({
+  const allCrumbs = segments.map((segment, index) => ({
     name: segment,
     path: segments.slice(0, index + 1).join("/"),
     isLast: index === segments.length - 1,
   }));
+
+  // Collapse middle segments if more than 3 and not expanded
+  const shouldCollapse = segments.length > 3 && !isExpanded;
+  const visibleCrumbs = shouldCollapse ? allCrumbs.slice(-2) : allCrumbs;
 
   return (
     <nav className="markdown-viewer__breadcrumb" aria-label="File path">
@@ -148,7 +163,20 @@ function Breadcrumb({
       >
         Root
       </button>
-      {crumbs.map((crumb) => (
+      {shouldCollapse && (
+        <span>
+          <span className="markdown-viewer__breadcrumb-separator">/</span>
+          <button
+            type="button"
+            className="markdown-viewer__breadcrumb-ellipsis"
+            onClick={() => setIsExpanded(true)}
+            aria-label="Show full path"
+          >
+            …
+          </button>
+        </span>
+      )}
+      {visibleCrumbs.map((crumb) => (
         <span key={crumb.path}>
           <span className="markdown-viewer__breadcrumb-separator">/</span>
           {crumb.isLast ? (
@@ -325,6 +353,7 @@ export function MarkdownViewer({
   onNavigate,
   assetBaseUrl = "/vault/assets",
   onSave,
+  onMobileMenuClick,
 }: MarkdownViewerProps): ReactNode {
   const {
     browser,
@@ -468,7 +497,7 @@ export function MarkdownViewer({
   }
 
   // Empty state - no file selected
-  if (!currentFileContent) {
+  if (!currentPath) {
     return (
       <div className="markdown-viewer markdown-viewer--empty">
         <div className="markdown-viewer__empty-content">
@@ -482,10 +511,31 @@ export function MarkdownViewer({
   if (isAdjusting) {
     return (
       <div className="markdown-viewer markdown-viewer--adjusting">
-        <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
-
-        {/* Header with Save/Cancel buttons (REQ-F-3) */}
-        <div className="markdown-viewer__adjust-header">
+        {/* Toolbar with breadcrumb and Save/Cancel buttons (REQ-F-3) */}
+        <div className="markdown-viewer__toolbar">
+          {onMobileMenuClick && (
+            <button
+              type="button"
+              className="viewer-mobile-menu-btn"
+              onClick={onMobileMenuClick}
+              aria-label="Open file browser"
+            >
+              <svg
+                className="viewer-mobile-menu-btn__icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+          )}
+          <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
           <div className="markdown-viewer__adjust-actions">
             <button
               type="button"
@@ -534,10 +584,31 @@ export function MarkdownViewer({
   // Normal view mode with Adjust button (REQ-F-1)
   return (
     <div className="markdown-viewer">
-      <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
-
-      {/* Header with Adjust button (REQ-F-1) */}
-      <div className="markdown-viewer__view-header">
+      {/* Toolbar with breadcrumb and Adjust button on same row (REQ-F-1) */}
+      <div className="markdown-viewer__toolbar">
+        {onMobileMenuClick && (
+          <button
+            type="button"
+            className="viewer-mobile-menu-btn"
+            onClick={onMobileMenuClick}
+            aria-label="Open file browser"
+          >
+            <svg
+              className="viewer-mobile-menu-btn__icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        )}
+        <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
         <button
           type="button"
           className="markdown-viewer__adjust-btn"
@@ -554,7 +625,7 @@ export function MarkdownViewer({
         </div>
       )}
 
-      <div className="markdown-viewer__content">
+      <article className="markdown-viewer__content">
         {frontmatter && <FrontmatterTable data={frontmatter} />}
         <Markdown
           remarkPlugins={[remarkGfm, remarkFrontmatter]}
@@ -562,7 +633,7 @@ export function MarkdownViewer({
         >
           {markdownContent}
         </Markdown>
-      </div>
+      </article>
     </div>
   );
 }

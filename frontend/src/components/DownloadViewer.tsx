@@ -14,6 +14,8 @@ export interface DownloadViewerProps {
   path: string;
   /** Base URL for vault assets (e.g., /vault/{vaultId}/assets) */
   assetBaseUrl: string;
+  /** Callback to open mobile file browser (only shown on mobile) */
+  onMobileMenuClick?: () => void;
 }
 
 /**
@@ -22,18 +24,42 @@ export interface DownloadViewerProps {
  * Uses the existing asset serving endpoint to provide the download,
  * with the download attribute to trigger browser download behavior.
  */
-export function DownloadViewer({ path, assetBaseUrl }: DownloadViewerProps): ReactNode {
+export function DownloadViewer({ path, assetBaseUrl, onMobileMenuClick }: DownloadViewerProps): ReactNode {
   const downloadUrl = `${assetBaseUrl}/${encodeAssetPath(path)}`;
   const fileName = path.split("/").pop() ?? path;
   const extension = fileName.includes(".") ? fileName.split(".").pop()?.toUpperCase() : "FILE";
 
   return (
     <div className="download-viewer">
+      <div className="download-viewer__header">
+        {onMobileMenuClick && (
+          <button
+            type="button"
+            className="viewer-mobile-menu-btn"
+            onClick={onMobileMenuClick}
+            aria-label="Open file browser"
+          >
+            <svg
+              className="viewer-mobile-menu-btn__icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        )}
+        <span className="download-viewer__path">{fileName}</span>
+      </div>
       <div className="download-viewer__content">
         <div className="download-viewer__icon" aria-hidden="true">
           <FileIcon />
         </div>
-        <p className="download-viewer__filename">{fileName}</p>
         <p className="download-viewer__message">
           No preview available for {extension} files
         </p>

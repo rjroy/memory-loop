@@ -48,6 +48,8 @@ function MainContent(): React.ReactNode {
   const [toastVariant, setToastVariant] = useState<ToastVariant>("success");
   const [toastMessage, setToastMessage] = useState("");
   const holiday = useHoliday();
+  // Mobile header collapse state
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(true);
 
   // Process server messages through the session handler
   useEffect(() => {
@@ -128,13 +130,39 @@ function MainContent(): React.ReactNode {
     setToastVisible(false);
   }
 
+  const headerClassName = isHeaderCollapsed
+    ? "app-header app-header--collapsed"
+    : "app-header app-header--expanded";
+
+  function handleHeaderToggle() {
+    setIsHeaderCollapsed((prev) => !prev);
+  }
+
   return (
     <>
-      <header className="app-header">
+      <header className={headerClassName}>
+        {/* Collapsed mobile view: logo button + toolbar */}
+        <button
+          type="button"
+          className="app-header__collapse-btn"
+          onClick={handleHeaderToggle}
+          aria-label={isHeaderCollapsed ? "Expand header" : "Collapse header"}
+          aria-expanded={!isHeaderCollapsed}
+        >
+          <img src={logoSrc} alt="" className="app-logo" aria-hidden="true" />
+        </button>
+
         <div className="app-header__left">
           <div className="app-title-row">
             <img src={logoSrc} alt="" className="app-logo" aria-hidden="true" />
-            <h1 className="app-title">Memory Loop</h1>
+            <button
+              type="button"
+              className="app-title-btn"
+              onClick={handleHeaderToggle}
+              aria-label="Collapse header"
+            >
+              <h1 className="app-title">Memory Loop</h1>
+            </button>
           </div>
           {vault && (
             <div className="app-vault-row">

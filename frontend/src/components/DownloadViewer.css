@@ -6,19 +6,47 @@
 
 .download-viewer {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   height: 100%;
-  padding: var(--spacing-lg);
+}
+
+.download-viewer__header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--glass-bg-quartary);
+  backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--glass-border);
+  min-height: 44px;
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .download-viewer__header {
+    background-color: var(--color-surface);
+  }
+}
+
+.download-viewer__path {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .download-viewer__content {
   display: flex;
   flex-direction: column;
+  flex: 1;
   align-items: center;
+  justify-content: center;
   text-align: center;
   gap: var(--spacing-md);
   max-width: 300px;
+  margin: 0 auto;
+  padding: var(--spacing-lg);
 }
 
 .download-viewer__icon {
@@ -28,14 +56,6 @@
 .download-viewer__file-icon {
   width: 64px;
   height: 64px;
-}
-
-.download-viewer__filename {
-  font-size: var(--font-size-lg);
-  font-weight: 500;
-  color: var(--text-primary);
-  word-break: break-word;
-  margin: 0;
 }
 
 .download-viewer__message {

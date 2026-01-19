@@ -115,17 +115,19 @@ export async function handleSaveMemory(
  * Returns the extraction prompt content and override status.
  */
 export async function handleGetExtractionPrompt(ctx: HandlerContext): Promise<void> {
-  log.info("Getting extraction prompt");
+  log.info("Getting extraction prompt - handler called");
 
   try {
+    log.info("Loading extraction prompt...");
     const promptInfo = await loadExtractionPrompt();
 
-    log.info(`Extraction prompt: isOverride=${promptInfo.isOverride}, path=${promptInfo.path}`);
+    log.info(`Extraction prompt loaded: isOverride=${promptInfo.isOverride}, path=${promptInfo.path}, contentLength=${promptInfo.content.length}`);
     ctx.send({
       type: "extraction_prompt_content",
       content: promptInfo.content,
       isOverride: promptInfo.isOverride,
     });
+    log.info("Extraction prompt content sent to client");
   } catch (error) {
     log.error("Failed to get extraction prompt", error);
     const message = error instanceof Error ? error.message : "Failed to get extraction prompt";

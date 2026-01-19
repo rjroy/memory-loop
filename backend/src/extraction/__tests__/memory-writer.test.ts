@@ -20,6 +20,13 @@ import {
   checkMemorySize,
   updateVaultInsights,
   readVaultInsights,
+  normalizeText,
+  levenshteinDistance,
+  calculateSimilarity,
+  isDuplicate,
+  filterDuplicates,
+  extractFactsFromContent,
+  mergeFactsWithDeduplication,
   MEMORY_FILE_PATH,
   SANDBOX_RELATIVE_PATH,
   MAX_MEMORY_SIZE_BYTES,
@@ -355,6 +362,239 @@ describe("checkMemorySize", () => {
 
     expect(result.isWarning).toBe(false);
     expect(result.isOverLimit).toBe(false);
+  });
+});
+
+// =============================================================================
+// Duplicate Detection Tests
+// =============================================================================
+
+describe("normalizeText", () => {
+  it("converts to lowercase", () => {
+    expect(normalizeText("Hello World")).toBe("hello world");
+  });
+
+  it("trims whitespace", () => {
+    expect(normalizeText("  hello  ")).toBe("hello");
+  });
+
+  it("removes punctuation", () => {
+    expect(normalizeText("Hello, World!")).toBe("hello world");
+  });
+
+  it("normalizes multiple whitespace", () => {
+    expect(normalizeText("hello    world")).toBe("hello world");
+  });
+
+  it("handles mixed normalization", () => {
+    expect(normalizeText("  Hello,  World!  ")).toBe("hello world");
+  });
+});
+
+describe("levenshteinDistance", () => {
+  it("returns 0 for identical strings", () => {
+    expect(levenshteinDistance("hello", "hello")).toBe(0);
+  });
+
+  it("returns correct distance for single char difference", () => {
+    expect(levenshteinDistance("hello", "hallo")).toBe(1);
+  });
+
+  it("returns correct distance for insertions", () => {
+    expect(levenshteinDistance("hello", "hellos")).toBe(1);
+  });
+
+  it("returns correct distance for deletions", () => {
+    expect(levenshteinDistance("hello", "hell")).toBe(1);
+  });
+
+  it("returns string length for empty comparison", () => {
+    expect(levenshteinDistance("hello", "")).toBe(5);
+    expect(levenshteinDistance("", "world")).toBe(5);
+  });
+
+  it("handles completely different strings", () => {
+    expect(levenshteinDistance("abc", "xyz")).toBe(3);
+  });
+});
+
+describe("calculateSimilarity", () => {
+  it("returns 1 for identical strings", () => {
+    expect(calculateSimilarity("hello", "hello")).toBe(1);
+  });
+
+  it("returns 0.8 for one char difference in 5-char string", () => {
+    // "hello" vs "hallo" = 1 edit / 5 chars = 0.2 distance = 0.8 similarity
+    expect(calculateSimilarity("hello", "hallo")).toBe(0.8);
+  });
+
+  it("returns 0 when comparing to empty string", () => {
+    expect(calculateSimilarity("hello", "")).toBe(0);
+    expect(calculateSimilarity("", "world")).toBe(0);
+  });
+
+  it("returns 1 for two empty strings", () => {
+    expect(calculateSimilarity("", "")).toBe(1);
+  });
+});
+
+describe("isDuplicate", () => {
+  it("returns true for exact matches after normalization", () => {
+    expect(isDuplicate("Hello World", "hello world")).toBe(true);
+    expect(isDuplicate("Hello, World!", "hello world")).toBe(true);
+  });
+
+  it("returns true for near-duplicates above threshold", () => {
+    // "User prefers TypeScript" vs "User prefers typescript" - only case difference
+    expect(isDuplicate("User prefers TypeScript", "User prefers typescript")).toBe(true);
+  });
+
+  it("returns false for distinct facts", () => {
+    expect(isDuplicate("User prefers TypeScript", "User prefers Python")).toBe(false);
+  });
+
+  it("respects custom threshold", () => {
+    // "hello" vs "hallo" = 0.8 similarity
+    expect(isDuplicate("hello", "hallo", 0.7)).toBe(true); // 0.8 >= 0.7
+    expect(isDuplicate("hello", "hallo", 0.85)).toBe(false); // 0.8 < 0.85
+  });
+});
+
+describe("filterDuplicates", () => {
+  it("filters exact duplicates", () => {
+    const result = filterDuplicates(
+      ["User likes TypeScript", "User likes TypeScript"],
+      []
+    );
+    expect(result.uniqueFacts).toEqual(["User likes TypeScript"]);
+    expect(result.duplicateCount).toBe(1);
+  });
+
+  it("filters duplicates against existing facts", () => {
+    const result = filterDuplicates(
+      ["User likes TypeScript"],
+      ["User likes typescript."]
+    );
+    expect(result.uniqueFacts).toEqual([]);
+    expect(result.duplicateCount).toBe(1);
+  });
+
+  it("keeps distinct facts", () => {
+    const result = filterDuplicates(
+      ["User likes TypeScript", "User prefers Vim"],
+      ["User uses Obsidian"]
+    );
+    expect(result.uniqueFacts).toEqual(["User likes TypeScript", "User prefers Vim"]);
+    expect(result.duplicateCount).toBe(0);
+  });
+
+  it("skips empty facts", () => {
+    const result = filterDuplicates(
+      ["User likes TypeScript", "", "  ", "User prefers Vim"],
+      []
+    );
+    expect(result.uniqueFacts).toEqual(["User likes TypeScript", "User prefers Vim"]);
+  });
+
+  it("performs self-deduplication", () => {
+    const result = filterDuplicates(
+      ["User likes TypeScript", "User prefers Vim", "User likes typescript!"],
+      []
+    );
+    expect(result.uniqueFacts).toEqual(["User likes TypeScript", "User prefers Vim"]);
+    expect(result.duplicateCount).toBe(1);
+  });
+});
+
+describe("extractFactsFromContent", () => {
+  it("extracts non-header lines", () => {
+    const content = `# Memory
+
+## Section1
+Fact one.
+Fact two.
+
+## Section2
+Fact three.
+`;
+    const facts = extractFactsFromContent(content);
+    expect(facts).toEqual(["Fact one.", "Fact two.", "Fact three."]);
+  });
+
+  it("skips empty lines", () => {
+    const content = `Line 1
+
+Line 2
+
+`;
+    const facts = extractFactsFromContent(content);
+    expect(facts).toEqual(["Line 1", "Line 2"]);
+  });
+});
+
+describe("mergeFactsWithDeduplication", () => {
+  it("adds unique facts to section", () => {
+    const existing = `# Memory
+
+## Facts
+Existing fact.
+`;
+    const { content, duplicateCount } = mergeFactsWithDeduplication(
+      existing,
+      ["New fact one.", "New fact two."],
+      "## Facts"
+    );
+    expect(content).toContain("New fact one.");
+    expect(content).toContain("New fact two.");
+    expect(duplicateCount).toBe(0);
+  });
+
+  it("filters duplicate facts during merge", () => {
+    const existing = `# Memory
+
+## Facts
+Existing fact.
+`;
+    const { content, duplicateCount } = mergeFactsWithDeduplication(
+      existing,
+      ["Existing fact.", "New fact."],
+      "## Facts"
+    );
+    expect(content).toContain("New fact.");
+    expect(content.match(/Existing fact\./g)?.length).toBe(1); // Not duplicated
+    expect(duplicateCount).toBe(1);
+  });
+
+  it("creates section if it doesn't exist", () => {
+    const existing = `# Memory
+
+## OtherSection
+Some content.
+`;
+    const { content, duplicateCount } = mergeFactsWithDeduplication(
+      existing,
+      ["New discovery."],
+      "## Discoveries"
+    );
+    expect(content).toContain("## Discoveries");
+    expect(content).toContain("New discovery.");
+    expect(duplicateCount).toBe(0);
+  });
+
+  it("returns original content when all facts are duplicates", () => {
+    const existing = `# Memory
+
+## Facts
+Fact one.
+Fact two.
+`;
+    const { content, duplicateCount } = mergeFactsWithDeduplication(
+      existing,
+      ["Fact one.", "Fact two."],
+      "## Facts"
+    );
+    expect(content).toBe(existing);
+    expect(duplicateCount).toBe(2);
   });
 });
 

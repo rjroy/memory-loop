@@ -539,6 +539,251 @@ function rebuildMemoryContent(sections: MemorySection[]): string {
 }
 
 // =============================================================================
+// Duplicate Detection
+// =============================================================================
+
+/**
+ * Similarity threshold for duplicate detection.
+ * Facts with similarity >= 0.9 are considered duplicates.
+ */
+export const DUPLICATE_THRESHOLD = 0.9;
+
+/**
+ * Normalize text for duplicate comparison.
+ *
+ * @param text - Text to normalize
+ * @returns Normalized text: lowercase, trimmed, punctuation removed
+ */
+export function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s]/g, "") // Remove punctuation
+    .replace(/\s+/g, " "); // Normalize whitespace
+}
+
+/**
+ * Calculate Levenshtein distance between two strings.
+ *
+ * Uses the Wagner-Fischer algorithm with O(min(m,n)) space complexity.
+ *
+ * @param a - First string
+ * @param b - Second string
+ * @returns Levenshtein distance (edit distance)
+ */
+export function levenshteinDistance(a: string, b: string): number {
+  // Ensure a is the shorter string for space optimization
+  if (a.length > b.length) {
+    [a, b] = [b, a];
+  }
+
+  const m = a.length;
+  const n = b.length;
+
+  // Early exit for empty strings
+  if (m === 0) return n;
+  if (n === 0) return m;
+
+  // Use two rows instead of full matrix (space optimization)
+  let prevRow = new Array<number>(m + 1);
+  let currRow = new Array<number>(m + 1);
+
+  // Initialize first row
+  for (let i = 0; i <= m; i++) {
+    prevRow[i] = i;
+  }
+
+  // Fill the matrix
+  for (let j = 1; j <= n; j++) {
+    currRow[0] = j;
+
+    for (let i = 1; i <= m; i++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      currRow[i] = Math.min(
+        prevRow[i] + 1, // Deletion
+        currRow[i - 1] + 1, // Insertion
+        prevRow[i - 1] + cost // Substitution
+      );
+    }
+
+    // Swap rows
+    [prevRow, currRow] = [currRow, prevRow];
+  }
+
+  return prevRow[m];
+}
+
+/**
+ * Calculate similarity ratio between two strings using Levenshtein distance.
+ *
+ * @param a - First string (normalized)
+ * @param b - Second string (normalized)
+ * @returns Similarity ratio between 0 and 1 (1 = identical)
+ */
+export function calculateSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  if (a.length === 0 && b.length === 0) return 1;
+  if (a.length === 0 || b.length === 0) return 0;
+
+  const distance = levenshteinDistance(a, b);
+  const maxLength = Math.max(a.length, b.length);
+
+  return 1 - distance / maxLength;
+}
+
+/**
+ * Check if two facts are duplicates.
+ *
+ * @param newFact - New fact to check
+ * @param existingFact - Existing fact to compare against
+ * @param threshold - Similarity threshold (default: 0.9)
+ * @returns True if facts are considered duplicates
+ */
+export function isDuplicate(
+  newFact: string,
+  existingFact: string,
+  threshold: number = DUPLICATE_THRESHOLD
+): boolean {
+  const normalizedNew = normalizeText(newFact);
+  const normalizedExisting = normalizeText(existingFact);
+
+  // Exact match after normalization
+  if (normalizedNew === normalizedExisting) {
+    return true;
+  }
+
+  // Fuzzy match
+  return calculateSimilarity(normalizedNew, normalizedExisting) >= threshold;
+}
+
+/**
+ * Result of filtering duplicates from new facts.
+ */
+export interface DuplicateFilterResult {
+  /** Facts that passed duplicate check (unique) */
+  uniqueFacts: string[];
+  /** Facts that were identified as duplicates */
+  duplicates: string[];
+  /** Number of duplicates found */
+  duplicateCount: number;
+}
+
+/**
+ * Filter duplicate facts from a list of new facts.
+ *
+ * @param newFacts - List of new facts to check
+ * @param existingFacts - List of existing facts to compare against
+ * @param threshold - Similarity threshold (default: 0.9)
+ * @returns Filtered results with unique facts and duplicate info
+ */
+export function filterDuplicates(
+  newFacts: string[],
+  existingFacts: string[],
+  threshold: number = DUPLICATE_THRESHOLD
+): DuplicateFilterResult {
+  const uniqueFacts: string[] = [];
+  const duplicates: string[] = [];
+
+  for (const newFact of newFacts) {
+    // Skip empty facts
+    if (!newFact.trim()) continue;
+
+    // Check against existing facts
+    const isDup = existingFacts.some((existing) =>
+      isDuplicate(newFact, existing, threshold)
+    );
+
+    // Also check against already-accepted new facts (self-deduplication)
+    const isSelfDup = uniqueFacts.some((accepted) =>
+      isDuplicate(newFact, accepted, threshold)
+    );
+
+    if (isDup || isSelfDup) {
+      duplicates.push(newFact);
+      log.debug(`Skipping duplicate fact: "${newFact.substring(0, 50)}..."`);
+    } else {
+      uniqueFacts.push(newFact);
+    }
+  }
+
+  if (duplicates.length > 0) {
+    log.info(`Filtered ${duplicates.length} duplicate fact(s)`);
+  }
+
+  return {
+    uniqueFacts,
+    duplicates,
+    duplicateCount: duplicates.length,
+  };
+}
+
+/**
+ * Extract facts from memory content (lines that aren't headers or empty).
+ *
+ * @param content - Memory file content
+ * @returns Array of fact lines
+ */
+export function extractFactsFromContent(content: string): string[] {
+  return content
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      // Skip empty lines and headers
+      return trimmed && !trimmed.startsWith("#");
+    });
+}
+
+/**
+ * Merge new facts into existing content, filtering duplicates.
+ *
+ * @param existingContent - Current memory file content
+ * @param newFacts - New facts to merge
+ * @param sectionHeader - Section header to merge into (e.g., "## Discoveries")
+ * @param threshold - Similarity threshold (default: 0.9)
+ * @returns Merged content and duplicate count
+ */
+export function mergeFactsWithDeduplication(
+  existingContent: string,
+  newFacts: string[],
+  sectionHeader: string,
+  threshold: number = DUPLICATE_THRESHOLD
+): { content: string; duplicateCount: number } {
+  // Extract existing facts
+  const existingFacts = extractFactsFromContent(existingContent);
+
+  // Filter duplicates
+  const { uniqueFacts, duplicateCount } = filterDuplicates(
+    newFacts,
+    existingFacts,
+    threshold
+  );
+
+  if (uniqueFacts.length === 0) {
+    return { content: existingContent, duplicateCount };
+  }
+
+  // Parse sections
+  const sections = parseMemorySections(existingContent);
+
+  // Find or create target section
+  let targetSection = sections.find((s) => s.header === sectionHeader);
+  if (!targetSection) {
+    targetSection = { header: sectionHeader, lines: [] };
+    sections.push(targetSection);
+  }
+
+  // Add unique facts to section
+  for (const fact of uniqueFacts) {
+    targetSection.lines.push(fact);
+  }
+
+  // Rebuild content
+  const content = rebuildMemoryContent(sections);
+
+  return { content, duplicateCount };
+}
+
+// =============================================================================
 // Vault CLAUDE.md Section Management
 // =============================================================================
 

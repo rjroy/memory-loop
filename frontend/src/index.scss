@@ -164,13 +164,22 @@
      ========================================== */
 
   /* Neutral base — Deep purple based on dark synthwave */
-  --color-background: oklch(0.13 0.02 285);
+  // --color-background: oklch(0.13 0.02 285);
 
   /* Accent palette — Sunset Sky */
-  --color-accent-primary:   oklch(0.55 0.05 285);  /* Twilight Violet */
-  --color-accent-secondary: oklch(0.70 0.09 20);   /* Sunset Rose */
-  --color-accent-tertiary:  oklch(0.62 0.06 255);  /* Dusk Blue */
-  --color-accent-quartary:  oklch(0.78 0.10 75);   /* Sunset Gold */
+  // --color-accent-primary:   oklch(0.55 0.05 285);  /* Twilight Violet */
+  // --color-accent-secondary: oklch(0.70 0.09 20);   /* Sunset Rose */
+  // --color-accent-tertiary:  oklch(0.62 0.06 255);  /* Dusk Blue */
+  // --color-accent-quartary:  oklch(0.78 0.10 75);   /* Sunset Gold */
+
+
+  /* Retheme based on Gruvbox Dark palette */
+  --color-background: oklch(20% 0.01 125);
+  --color-accent-primary: oklch(80% 0.06 80);
+  --color-accent-secondary: oklch(75% 0.11 115);
+  --color-accent-tertiary: oklch(71% 0.05 180);
+  --color-accent-quartary: oklch(70% 0.10 5);
+  --holiday-hue-rotate: 120deg; // Shift to orange (starts at 270deg)
 
   /* Status colors */
   --color-error:  oklch(0.67 0.18 25);    /* Red */

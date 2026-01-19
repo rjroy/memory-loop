@@ -13,6 +13,9 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { Toast, type ToastVariant } from "./Toast";
 import { ConfigEditorDialog, type EditableVaultConfig } from "./ConfigEditorDialog";
 import { AddVaultDialog } from "./AddVaultDialog";
+import { SettingsDialog } from "./SettingsDialog";
+import { MemoryEditor } from "./MemoryEditor";
+import { ExtractionPromptEditor } from "./ExtractionPromptEditor";
 import "./VaultSelect.css";
 
 /**
@@ -62,6 +65,9 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [addVaultDialogOpen, setAddVaultDialogOpen] = useState(false);
   const [addVaultCreating, setAddVaultCreating] = useState(false);
   const [addVaultError, setAddVaultError] = useState<string | null>(null);
+
+  // Settings dialog state (TASK-010)
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
@@ -498,7 +504,29 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   return (
     <div className="vault-select">
       <header className="vault-select__header">
-        <h1>Select a Vault</h1>
+        <div className="vault-select__header-top">
+          <h1>Select a Vault</h1>
+          <button
+            type="button"
+            className="vault-select__header-settings-btn"
+            onClick={() => setSettingsDialogOpen(true)}
+            aria-label="Memory settings"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        </div>
         <p className="vault-select__connection-status">
           {connectionStatus === "connected" ? (
             <span className="vault-select__status vault-select__status--connected">
@@ -686,6 +714,24 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         onCancel={handleAddVaultCancel}
         isCreating={addVaultCreating}
         createError={addVaultError}
+      />
+
+      {/* Settings Dialog (TASK-010, TASK-011, TASK-012) */}
+      <SettingsDialog
+        isOpen={settingsDialogOpen}
+        onClose={() => setSettingsDialogOpen(false)}
+        memoryEditorContent={
+          <MemoryEditor
+            sendMessage={sendMessage}
+            lastMessage={lastMessage}
+          />
+        }
+        promptEditorContent={
+          <ExtractionPromptEditor
+            sendMessage={sendMessage}
+            lastMessage={lastMessage}
+          />
+        }
       />
     </div>
   );

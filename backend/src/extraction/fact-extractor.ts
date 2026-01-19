@@ -30,24 +30,24 @@ const log = createLogger("fact-extractor");
 // =============================================================================
 
 /**
- * Default extraction prompt location (in codebase).
+ * Default durable facts prompt location (in codebase).
  */
 function getDefaultPromptPath(): string {
   const currentFile = fileURLToPath(import.meta.url);
   const extractionDir = dirname(currentFile);
   const backendSrc = dirname(extractionDir);
-  return join(backendSrc, "prompts", "extraction-prompt.md");
+  return join(backendSrc, "prompts", "durable-facts.md");
 }
 
 /**
- * User override extraction prompt location.
- * Per TD-6: ~/.config/memory-loop/extraction-prompt.md
+ * User override durable facts prompt location.
+ * Per TD-6: ~/.config/memory-loop/durable-facts.md
  */
 export const USER_PROMPT_PATH = join(
   homedir(),
   ".config",
   "memory-loop",
-  "extraction-prompt.md"
+  "durable-facts.md"
 );
 
 /**
@@ -162,9 +162,12 @@ export async function hasPromptOverride(): Promise<boolean> {
 // =============================================================================
 
 /**
- * Build the full extraction prompt including transcript content.
+ * Build the full extraction prompt including operational instructions.
  *
- * @param basePrompt - The extraction prompt template
+ * The basePrompt (durable-facts.md) defines WHAT to extract.
+ * This function adds HOW to operate (tools, paths, process).
+ *
+ * @param basePrompt - The durable facts prompt (user-customizable)
  * @param transcripts - Transcripts to process
  * @param vaultsDir - Path to VAULTS_DIR for sandboxed operations
  * @returns Complete prompt for the SDK
@@ -174,27 +177,100 @@ export function buildExtractionPrompt(
   transcripts: DiscoveredTranscript[],
   vaultsDir: string
 ): string {
-  // Build transcript listing
+  // Build transcript listing with absolute paths
   const transcriptList = transcripts
-    .map((t) => `- ${t.vaultId}: ${t.path}`)
+    .map((t) => `- \`${t.absolutePath}\``)
     .join("\n");
 
-  // The prompt instructs Claude to read files from the sandbox
-  return `${basePrompt}
+  const memoryPath = `${vaultsDir}/.memory-extraction/memory.md`;
 
-## Transcripts to Process
+  // Combine user-customizable categories with operational instructions
+  return `# Memory Extraction
 
-The following ${transcripts.length} transcript(s) are ready for extraction:
+Extract durable facts about the user from conversation transcripts. Focus on information that remains true across sessions, not transient conversation details.
+
+${basePrompt}
+
+## What to Extract vs. Ignore
+
+**Extract** (durable facts):
+- "I've been programming for 15 years"
+- "Our team uses trunk-based development"
+- "I prefer TypeScript over JavaScript for larger projects"
+- "Memory Loop is my side project for AI-augmented note-taking"
+
+**Ignore** (transient details):
+- "Can you fix this bug?"
+- "I'm working on the login page today"
+- "Thanks, that worked!"
+- Session-specific troubleshooting steps
+- Temporary workarounds
+
+The test: would this fact be useful context in a conversation six months from now?
+
+---
+
+## Task
+
+Extract durable facts from the transcripts listed below and update the memory file.
+
+### Memory File
+
+\`${memoryPath}\`
+
+### Transcripts to Process (${transcripts.length})
 
 ${transcriptList}
 
-## Working Directory
+### Process
 
-You are working in: ${vaultsDir}
+1. Read the existing memory file
+2. Read each transcript listed above
+3. Extract durable facts according to the categories above
+4. Merge new facts with existing content
+5. Write the updated memory file
 
-The memory file is at: ${vaultsDir}/.memory-extraction/memory.md
+### Output Format
 
-Read the transcripts, extract durable facts, and update the memory file.
+Use a hybrid narrative and list format. Write prose for interconnected information; use bullet lists only for truly independent items.
+
+Good example:
+\`\`\`markdown
+## Preferences
+Values concise communication over verbose explanations. Prefers seeing tradeoffs explicitly stated rather than having decisions made silently. When implementing:
+- Start simple, add complexity when needed
+- Avoid over-engineering
+- Show your reasoning
+\`\`\`
+
+Bad example (over-bulleted):
+\`\`\`markdown
+## Preferences
+- Prefers concise communication
+- Wants to see tradeoffs
+- Likes simple solutions
+- Dislikes over-engineering
+\`\`\`
+
+### Merge Behavior
+
+You are updating an existing memory file, not creating a new one.
+
+- **Add** new facts that don't exist yet
+- **Update** existing facts when new information contradicts or refines them (prefer newer information but preserve relevant context)
+- **Preserve** existing facts that aren't contradicted (don't remove information just because current transcripts don't mention it)
+- **Consolidate** redundant facts (if adding something already captured, update the existing entry instead)
+
+### Security
+
+**Never extract:**
+- Passwords, API keys, tokens, or credentials
+- Private keys or secrets
+- Personal identification numbers
+- Financial account details
+- Any information that looks like it should be kept secret
+
+If a transcript contains sensitive information, extract the context around it (what the user was working on) without the sensitive values themselves.
 `;
 }
 
@@ -214,8 +290,6 @@ async function consumeQueryEvents(
   let lastContent: string | undefined;
 
   for await (const event of events) {
-    log.debug(`SDK event: ${event.type}`);
-
     // Capture any result content
     if (event.type === "result" && "result" in event) {
       lastContent = String(event.result);

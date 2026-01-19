@@ -119,8 +119,8 @@ describe("loadExtractionPrompt", () => {
     const result = await loadExtractionPrompt();
 
     expect(result.isOverride).toBe(false);
-    expect(result.content).toContain("Memory Extraction");
-    expect(result.path).toContain("extraction-prompt.md");
+    expect(result.content).toContain("Durable Facts");
+    expect(result.path).toContain("durable-facts.md");
   });
 
   // Note: Testing user override requires writing to ~/.config which we avoid
@@ -152,7 +152,7 @@ describe("buildExtractionPrompt", () => {
     expect(result).toContain("Extract facts from transcripts.");
   });
 
-  it("lists transcripts to process", () => {
+  it("lists transcripts with absolute paths", () => {
     const transcripts = [
       createMockTranscript("vault1", "00_Inbox/chats/chat1.md", "content1"),
       createMockTranscript("vault2", "00_Inbox/chats/chat2.md", "content2"),
@@ -160,8 +160,9 @@ describe("buildExtractionPrompt", () => {
 
     const result = buildExtractionPrompt(basePrompt, transcripts, "/vaults");
 
-    expect(result).toContain("vault1: 00_Inbox/chats/chat1.md");
-    expect(result).toContain("vault2: 00_Inbox/chats/chat2.md");
+    // Uses absolutePath from DiscoveredTranscript
+    expect(result).toContain("/vaults/vault1/00_Inbox/chats/chat1.md");
+    expect(result).toContain("/vaults/vault2/00_Inbox/chats/chat2.md");
   });
 
   it("includes transcript count", () => {
@@ -173,13 +174,16 @@ describe("buildExtractionPrompt", () => {
 
     const result = buildExtractionPrompt(basePrompt, transcripts, "/vaults");
 
-    expect(result).toContain("3 transcript(s)");
+    expect(result).toContain("Transcripts to Process (3)");
   });
 
-  it("includes working directory", () => {
+  it("includes operational instructions with memory path", () => {
     const result = buildExtractionPrompt(basePrompt, [], "/my/vaults/dir");
 
-    expect(result).toContain("You are working in: /my/vaults/dir");
+    // Operational instructions are added by buildExtractionPrompt
+    expect(result).toContain("## Task");
+    expect(result).toContain("/my/vaults/dir/.memory-extraction/memory.md");
+    expect(result).toContain("### Process");
   });
 
   it("includes memory file location", () => {

@@ -290,8 +290,6 @@ async function consumeQueryEvents(
   let lastContent: string | undefined;
 
   for await (const event of events) {
-    log.debug(`SDK event: ${event.type}`);
-
     // Capture any result content
     if (event.type === "result" && "result" in event) {
       lastContent = String(event.result);

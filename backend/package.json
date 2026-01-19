@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
+    "dev": "NODE_ENV=development bun run --watch src/index.ts",
     "build": "tsc --noEmit",
     "start": "bun run src/index.ts",
     "test": "LOG_LEVEL=silent bun test",

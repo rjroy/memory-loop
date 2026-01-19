@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import type { VaultInfo } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage } from "@memory-loop/shared";
 import { useSession, STORAGE_KEY_VAULT } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { Toast, type ToastVariant } from "./Toast";
@@ -69,8 +69,38 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   // Settings dialog state (TASK-010)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
 
+  // Dedicated message state for Settings dialog editors to avoid race conditions
+  // Each editor needs its own message stream since lastMessage is overwritten on each message
+  const [memoryEditorMessage, setMemoryEditorMessage] = useState<ServerMessage | null>(null);
+  const [extractionPromptMessage, setExtractionPromptMessage] = useState<ServerMessage | null>(null);
+
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
+
+  // Route messages to appropriate handlers - onMessage fires for every message
+  const handleWebSocketMessage = useCallback((message: ServerMessage) => {
+    // Route memory-related messages to MemoryEditor
+    if (message.type === "memory_content" || message.type === "memory_saved") {
+      setMemoryEditorMessage(message);
+    }
+    // Route extraction prompt messages to ExtractionPromptEditor
+    if (
+      message.type === "extraction_prompt_content" ||
+      message.type === "extraction_prompt_saved" ||
+      message.type === "extraction_prompt_reset" ||
+      message.type === "extraction_status"
+    ) {
+      setExtractionPromptMessage(message);
+    }
+    // Error messages go to both editors
+    if (message.type === "error") {
+      setMemoryEditorMessage(message);
+      setExtractionPromptMessage(message);
+    }
+  }, []);
+
+  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
+    onMessage: handleWebSocketMessage,
+  });
 
   // Track whether we've attempted auto-resume from localStorage
   const hasAttemptedAutoResumeRef = useRef(false);
@@ -723,13 +753,13 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         memoryEditorContent={
           <MemoryEditor
             sendMessage={sendMessage}
-            lastMessage={lastMessage}
+            lastMessage={memoryEditorMessage}
           />
         }
         promptEditorContent={
           <ExtractionPromptEditor
             sendMessage={sendMessage}
-            lastMessage={lastMessage}
+            lastMessage={extractionPromptMessage}
           />
         }
       />

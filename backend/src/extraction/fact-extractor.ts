@@ -119,6 +119,8 @@ export interface PromptInfo {
  * @throws Error if neither default nor override can be read
  */
 export async function loadExtractionPrompt(): Promise<PromptInfo> {
+  log.info(`Checking for user override at: ${USER_PROMPT_PATH}`);
+
   // Check for user override first
   if (await fileExists(USER_PROMPT_PATH)) {
     try {
@@ -137,15 +139,17 @@ export async function loadExtractionPrompt(): Promise<PromptInfo> {
 
   // Load default prompt from codebase
   const defaultPath = getDefaultPromptPath();
+  log.info(`No user override, loading default from: ${defaultPath}`);
   try {
     const content = await readFile(defaultPath, "utf-8");
-    log.info(`Loaded default extraction prompt from ${defaultPath}`);
+    log.info(`Loaded default extraction prompt from ${defaultPath} (${content.length} chars)`);
     return {
       content,
       isOverride: false,
       path: defaultPath,
     };
   } catch (error) {
+    log.error(`Failed to read default prompt at ${defaultPath}: ${(error as Error).message}`);
     throw new Error(`Failed to load extraction prompt: ${(error as Error).message}`);
   }
 }

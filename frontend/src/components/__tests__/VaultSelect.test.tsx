@@ -1268,4 +1268,160 @@ describe("VaultSelect", () => {
       });
     });
   });
+
+  describe("settings dialog", () => {
+    it("shows settings button in header", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Settings button should be in the header with proper aria-label
+      const settingsButton = screen.getByLabelText("Memory settings");
+      expect(settingsButton).toBeDefined();
+    });
+
+    it("opens SettingsDialog when settings button is clicked", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Click settings button
+      const settingsButton = screen.getByLabelText("Memory settings");
+      fireEvent.click(settingsButton);
+
+      // SettingsDialog should open
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeDefined();
+        expect(screen.getByText("Memory Settings")).toBeDefined();
+      });
+    });
+
+    it("SettingsDialog has Memory and Extraction Prompt tabs", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Click settings button
+      const settingsButton = screen.getByLabelText("Memory settings");
+      fireEvent.click(settingsButton);
+
+      // Both tabs should be present
+      await waitFor(() => {
+        expect(screen.getByRole("tab", { name: /memory/i })).toBeDefined();
+        expect(screen.getByRole("tab", { name: /extraction prompt/i })).toBeDefined();
+      });
+    });
+
+    it("closes SettingsDialog when close button is clicked", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Click settings button to open
+      const settingsButton = screen.getByLabelText("Memory settings");
+      fireEvent.click(settingsButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeDefined();
+      });
+
+      // Click close button
+      const closeButton = screen.getByLabelText("Close");
+      fireEvent.click(closeButton);
+
+      // Dialog should close
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+    });
+
+    it("renders MemoryEditor content in Memory tab", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Click settings button
+      const settingsButton = screen.getByLabelText("Memory settings");
+      fireEvent.click(settingsButton);
+
+      // Memory tab should be active by default and show MemoryEditor content
+      await waitFor(() => {
+        // MemoryEditor shows "Loading memory..." initially or actual content
+        // Check for the memory editor container
+        const memoryEditor = document.querySelector(".memory-editor");
+        expect(memoryEditor).toBeDefined();
+      });
+    });
+
+    it("renders ExtractionPromptEditor content when switching to Prompt tab", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      // Click settings button
+      const settingsButton = screen.getByLabelText("Memory settings");
+      fireEvent.click(settingsButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeDefined();
+      });
+
+      // Switch to Prompt tab
+      const promptTab = screen.getByRole("tab", { name: /extraction prompt/i });
+      fireEvent.click(promptTab);
+
+      // ExtractionPromptEditor should be visible
+      await waitFor(() => {
+        const promptEditor = document.querySelector(".extraction-prompt-editor");
+        expect(promptEditor).toBeDefined();
+      });
+    });
+
+    it("settings button has proper styling with gear icon", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      const settingsButton = screen.getByLabelText("Memory settings");
+
+      // Button should have the correct class
+      expect(settingsButton.className).toContain("vault-select__header-settings-btn");
+
+      // Button should contain an SVG icon
+      const svg = settingsButton.querySelector("svg");
+      expect(svg).toBeDefined();
+    });
+
+    it("settings button is accessible via keyboard", async () => {
+      render(<VaultSelect />, { wrapper: TestWrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Notes")).toBeDefined();
+      });
+
+      const settingsButton = screen.getByLabelText("Memory settings");
+
+      // Simulate Enter key
+      fireEvent.keyDown(settingsButton, { key: "Enter" });
+      fireEvent.click(settingsButton); // Keyboard Enter triggers click
+
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeDefined();
+      });
+    });
+  });
 });

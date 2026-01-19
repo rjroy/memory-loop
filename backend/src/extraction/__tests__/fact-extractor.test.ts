@@ -55,10 +55,10 @@ function createMockQuery(events: SDKMessage[] = []): QueryFunction {
  */
 function createFailingMockQuery(errorMessage: string): QueryFunction {
   return () => {
-    const generator = (async function* () {
+    // eslint-disable-next-line require-yield
+    const generator = (async function* (): AsyncGenerator<SDKMessage, void> {
       await Promise.resolve();
       throw new Error(errorMessage);
-      yield undefined as never;
     })();
     return createMockQueryResult(generator);
   };
@@ -74,10 +74,10 @@ function createRetryMockQuery(): QueryFunction {
     callCount++;
 
     if (callCount === 1) {
-      const generator = (async function* () {
+      // eslint-disable-next-line require-yield
+      const generator = (async function* (): AsyncGenerator<SDKMessage, void> {
         await Promise.resolve();
         throw new Error("First attempt failed");
-        yield undefined as never;
       })();
       return createMockQueryResult(generator);
     }

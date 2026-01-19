@@ -1,0 +1,270 @@
+/**
+ * SettingsDialog Component Styles
+ *
+ * Glassmorphism modal dialog with tabbed navigation.
+ * Mobile-first design with proper touch targets.
+ */
+
+.settings-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md);
+  background-color: var(--color-black-a60);
+  animation: settings-dialog-fade-in 0.2s ease;
+}
+
+@keyframes settings-dialog-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.settings-dialog {
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border-hover);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 8px 40px var(--color-black-a50),
+    0 0 30px var(--color-accent-primary-a15),
+    inset 0 1px 0 var(--color-white-a10);
+  animation: settings-dialog-slide-up 0.2s ease;
+  overflow: hidden;
+}
+
+@keyframes settings-dialog-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Header */
+.settings-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.settings-dialog__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.settings-dialog__close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-dialog__close-btn:hover {
+  background-color: var(--color-bg-secondary);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.settings-dialog__close-btn:active {
+  transform: scale(0.95);
+}
+
+/* Tab navigation */
+.settings-dialog__tabs {
+  flex-shrink: 0;
+  padding: 0 var(--spacing-lg);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.settings-dialog__tablist {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: 0;
+}
+
+.settings-dialog__tab {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md) var(--spacing-lg);
+  margin-bottom: -1px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.settings-dialog__tab:hover {
+  color: var(--color-text);
+  background-color: var(--color-bg-secondary);
+}
+
+.settings-dialog__tab--active {
+  color: var(--color-accent-primary);
+  border-bottom-color: var(--color-accent-primary);
+}
+
+.settings-dialog__tab--active:hover {
+  color: var(--color-accent-primary);
+}
+
+.settings-dialog__tab-icon {
+  flex-shrink: 0;
+}
+
+/* Content area */
+.settings-dialog__content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.settings-dialog__panel {
+  padding: var(--spacing-lg);
+  height: 100%;
+}
+
+.settings-dialog__panel[hidden] {
+  display: none;
+}
+
+/* Placeholder for unimplemented tabs */
+.settings-dialog__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  min-height: 300px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.settings-dialog__placeholder p {
+  margin: 0;
+  max-width: 400px;
+}
+
+/* Footer */
+.settings-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.settings-dialog__btn {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-dialog__btn--close {
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.settings-dialog__btn--close:hover {
+  background-color: var(--color-bg-tertiary);
+  border-color: var(--color-border-hover);
+}
+
+.settings-dialog__btn--close:active {
+  transform: scale(0.98);
+}
+
+/* Mobile optimizations */
+@media (max-width: 480px) {
+  .settings-dialog__backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .settings-dialog {
+    max-width: 100%;
+    max-height: 85vh;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    animation: settings-dialog-slide-up-mobile 0.3s ease;
+  }
+
+  @keyframes settings-dialog-slide-up-mobile {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .settings-dialog__header {
+    padding: var(--spacing-md);
+  }
+
+  .settings-dialog__title {
+    font-size: var(--font-size-lg);
+  }
+
+  .settings-dialog__tabs {
+    padding: 0 var(--spacing-md);
+  }
+
+  .settings-dialog__tab {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-xs);
+  }
+
+  .settings-dialog__panel {
+    padding: var(--spacing-md);
+  }
+
+  .settings-dialog__placeholder {
+    min-height: 200px;
+  }
+
+  .settings-dialog__footer {
+    padding: var(--spacing-md);
+  }
+}

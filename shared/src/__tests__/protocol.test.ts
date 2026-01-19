@@ -60,6 +60,18 @@ import {
   // AskUserQuestion schemas
   AskUserQuestionOptionSchema,
   AskUserQuestionItemSchema,
+  // Memory Extraction schemas
+  ExtractionStatusValueSchema,
+  GetMemoryMessageSchema,
+  SaveMemoryMessageSchema,
+  GetExtractionPromptMessageSchema,
+  SaveExtractionPromptMessageSchema,
+  TriggerExtractionMessageSchema,
+  MemoryContentMessageSchema,
+  ExtractionPromptContentMessageSchema,
+  MemorySavedMessageSchema,
+  ExtractionPromptSavedMessageSchema,
+  ExtractionStatusMessageSchema,
   // Supporting schemas
   VaultInfoSchema,
   ErrorCodeSchema,
@@ -3191,6 +3203,407 @@ describe("Sync Messages", () => {
       };
       const result = ServerMessageSchema.parse(msg);
       expect(result.type).toBe("directory_created");
+    });
+  });
+});
+
+// =============================================================================
+// Memory Extraction Schema Tests
+// =============================================================================
+
+describe("Memory Extraction Schemas", () => {
+  describe("ExtractionStatusValueSchema", () => {
+    test("accepts valid status values", () => {
+      expect(ExtractionStatusValueSchema.parse("idle")).toBe("idle");
+      expect(ExtractionStatusValueSchema.parse("running")).toBe("running");
+      expect(ExtractionStatusValueSchema.parse("complete")).toBe("complete");
+      expect(ExtractionStatusValueSchema.parse("error")).toBe("error");
+    });
+
+    test("rejects invalid status value", () => {
+      expect(() => ExtractionStatusValueSchema.parse("unknown")).toThrow(ZodError);
+      expect(() => ExtractionStatusValueSchema.parse("pending")).toThrow(ZodError);
+    });
+  });
+
+  describe("GetMemoryMessageSchema", () => {
+    test("accepts valid get_memory message", () => {
+      const msg = { type: "get_memory" };
+      const result = GetMemoryMessageSchema.parse(msg);
+      expect(result.type).toBe("get_memory");
+    });
+
+    test("get_memory is included in ClientMessageSchema", () => {
+      const msg = { type: "get_memory" as const };
+      const result = ClientMessageSchema.parse(msg);
+      expect(result.type).toBe("get_memory");
+    });
+  });
+
+  describe("SaveMemoryMessageSchema", () => {
+    test("accepts valid save_memory message", () => {
+      const msg = {
+        type: "save_memory",
+        content: "# Memory\n\n## Identity\nSoftware engineer...",
+      };
+      const result = SaveMemoryMessageSchema.parse(msg);
+      expect(result.type).toBe("save_memory");
+      expect(result.content).toContain("# Memory");
+    });
+
+    test("accepts empty content (clearing memory)", () => {
+      const msg = {
+        type: "save_memory",
+        content: "",
+      };
+      const result = SaveMemoryMessageSchema.parse(msg);
+      expect(result.content).toBe("");
+    });
+
+    test("rejects missing content", () => {
+      const msg = { type: "save_memory" };
+      expect(() => SaveMemoryMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("save_memory is included in ClientMessageSchema", () => {
+      const msg = {
+        type: "save_memory" as const,
+        content: "test content",
+      };
+      const result = ClientMessageSchema.parse(msg);
+      expect(result.type).toBe("save_memory");
+    });
+  });
+
+  describe("GetExtractionPromptMessageSchema", () => {
+    test("accepts valid get_extraction_prompt message", () => {
+      const msg = { type: "get_extraction_prompt" };
+      const result = GetExtractionPromptMessageSchema.parse(msg);
+      expect(result.type).toBe("get_extraction_prompt");
+    });
+
+    test("get_extraction_prompt is included in ClientMessageSchema", () => {
+      const msg = { type: "get_extraction_prompt" as const };
+      const result = ClientMessageSchema.parse(msg);
+      expect(result.type).toBe("get_extraction_prompt");
+    });
+  });
+
+  describe("SaveExtractionPromptMessageSchema", () => {
+    test("accepts valid save_extraction_prompt message", () => {
+      const msg = {
+        type: "save_extraction_prompt",
+        content: "Extract identity, goals, and preferences from conversations.",
+      };
+      const result = SaveExtractionPromptMessageSchema.parse(msg);
+      expect(result.type).toBe("save_extraction_prompt");
+      expect(result.content).toContain("Extract");
+    });
+
+    test("accepts empty content", () => {
+      const msg = {
+        type: "save_extraction_prompt",
+        content: "",
+      };
+      const result = SaveExtractionPromptMessageSchema.parse(msg);
+      expect(result.content).toBe("");
+    });
+
+    test("rejects missing content", () => {
+      const msg = { type: "save_extraction_prompt" };
+      expect(() => SaveExtractionPromptMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("save_extraction_prompt is included in ClientMessageSchema", () => {
+      const msg = {
+        type: "save_extraction_prompt" as const,
+        content: "custom prompt",
+      };
+      const result = ClientMessageSchema.parse(msg);
+      expect(result.type).toBe("save_extraction_prompt");
+    });
+  });
+
+  describe("TriggerExtractionMessageSchema", () => {
+    test("accepts valid trigger_extraction message", () => {
+      const msg = { type: "trigger_extraction" };
+      const result = TriggerExtractionMessageSchema.parse(msg);
+      expect(result.type).toBe("trigger_extraction");
+    });
+
+    test("trigger_extraction is included in ClientMessageSchema", () => {
+      const msg = { type: "trigger_extraction" as const };
+      const result = ClientMessageSchema.parse(msg);
+      expect(result.type).toBe("trigger_extraction");
+    });
+  });
+
+  describe("MemoryContentMessageSchema", () => {
+    test("accepts valid memory_content message with existing file", () => {
+      const msg = {
+        type: "memory_content",
+        content: "# Memory\n\n## Identity\nDeveloper...",
+        sizeBytes: 1024,
+        exists: true,
+      };
+      const result = MemoryContentMessageSchema.parse(msg);
+      expect(result.type).toBe("memory_content");
+      expect(result.content).toContain("# Memory");
+      expect(result.sizeBytes).toBe(1024);
+      expect(result.exists).toBe(true);
+    });
+
+    test("accepts valid memory_content message for non-existent file", () => {
+      const msg = {
+        type: "memory_content",
+        content: "",
+        sizeBytes: 0,
+        exists: false,
+      };
+      const result = MemoryContentMessageSchema.parse(msg);
+      expect(result.content).toBe("");
+      expect(result.sizeBytes).toBe(0);
+      expect(result.exists).toBe(false);
+    });
+
+    test("rejects negative sizeBytes", () => {
+      const msg = {
+        type: "memory_content",
+        content: "",
+        sizeBytes: -1,
+        exists: true,
+      };
+      expect(() => MemoryContentMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects missing fields", () => {
+      const msg = { type: "memory_content" };
+      expect(() => MemoryContentMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("memory_content is included in ServerMessageSchema", () => {
+      const msg = {
+        type: "memory_content" as const,
+        content: "test",
+        sizeBytes: 4,
+        exists: true,
+      };
+      const result = ServerMessageSchema.parse(msg);
+      expect(result.type).toBe("memory_content");
+    });
+  });
+
+  describe("ExtractionPromptContentMessageSchema", () => {
+    test("accepts valid extraction_prompt_content with default prompt", () => {
+      const msg = {
+        type: "extraction_prompt_content",
+        content: "Default extraction prompt...",
+        isOverride: false,
+      };
+      const result = ExtractionPromptContentMessageSchema.parse(msg);
+      expect(result.type).toBe("extraction_prompt_content");
+      expect(result.isOverride).toBe(false);
+    });
+
+    test("accepts valid extraction_prompt_content with user override", () => {
+      const msg = {
+        type: "extraction_prompt_content",
+        content: "Custom user prompt...",
+        isOverride: true,
+      };
+      const result = ExtractionPromptContentMessageSchema.parse(msg);
+      expect(result.isOverride).toBe(true);
+    });
+
+    test("rejects missing isOverride", () => {
+      const msg = {
+        type: "extraction_prompt_content",
+        content: "some prompt",
+      };
+      expect(() => ExtractionPromptContentMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("extraction_prompt_content is included in ServerMessageSchema", () => {
+      const msg = {
+        type: "extraction_prompt_content" as const,
+        content: "test",
+        isOverride: false,
+      };
+      const result = ServerMessageSchema.parse(msg);
+      expect(result.type).toBe("extraction_prompt_content");
+    });
+  });
+
+  describe("MemorySavedMessageSchema", () => {
+    test("accepts valid memory_saved success message", () => {
+      const msg = {
+        type: "memory_saved",
+        success: true,
+        sizeBytes: 2048,
+      };
+      const result = MemorySavedMessageSchema.parse(msg);
+      expect(result.type).toBe("memory_saved");
+      expect(result.success).toBe(true);
+      expect(result.sizeBytes).toBe(2048);
+    });
+
+    test("accepts valid memory_saved error message", () => {
+      const msg = {
+        type: "memory_saved",
+        success: false,
+        error: "Permission denied",
+      };
+      const result = MemorySavedMessageSchema.parse(msg);
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Permission denied");
+    });
+
+    test("accepts success without optional fields", () => {
+      const msg = {
+        type: "memory_saved",
+        success: true,
+      };
+      const result = MemorySavedMessageSchema.parse(msg);
+      expect(result.success).toBe(true);
+      expect(result.sizeBytes).toBeUndefined();
+    });
+
+    test("memory_saved is included in ServerMessageSchema", () => {
+      const msg = {
+        type: "memory_saved" as const,
+        success: true,
+      };
+      const result = ServerMessageSchema.parse(msg);
+      expect(result.type).toBe("memory_saved");
+    });
+  });
+
+  describe("ExtractionPromptSavedMessageSchema", () => {
+    test("accepts valid extraction_prompt_saved success", () => {
+      const msg = {
+        type: "extraction_prompt_saved",
+        success: true,
+        isOverride: true,
+      };
+      const result = ExtractionPromptSavedMessageSchema.parse(msg);
+      expect(result.type).toBe("extraction_prompt_saved");
+      expect(result.success).toBe(true);
+      expect(result.isOverride).toBe(true);
+    });
+
+    test("accepts valid extraction_prompt_saved error", () => {
+      const msg = {
+        type: "extraction_prompt_saved",
+        success: false,
+        isOverride: false,
+        error: "Failed to create config directory",
+      };
+      const result = ExtractionPromptSavedMessageSchema.parse(msg);
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Failed to create config directory");
+    });
+
+    test("rejects missing isOverride", () => {
+      const msg = {
+        type: "extraction_prompt_saved",
+        success: true,
+      };
+      expect(() => ExtractionPromptSavedMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("extraction_prompt_saved is included in ServerMessageSchema", () => {
+      const msg = {
+        type: "extraction_prompt_saved" as const,
+        success: true,
+        isOverride: true,
+      };
+      const result = ServerMessageSchema.parse(msg);
+      expect(result.type).toBe("extraction_prompt_saved");
+    });
+  });
+
+  describe("ExtractionStatusMessageSchema", () => {
+    test("accepts idle status", () => {
+      const msg = {
+        type: "extraction_status",
+        status: "idle",
+      };
+      const result = ExtractionStatusMessageSchema.parse(msg);
+      expect(result.type).toBe("extraction_status");
+      expect(result.status).toBe("idle");
+    });
+
+    test("accepts running status with progress", () => {
+      const msg = {
+        type: "extraction_status",
+        status: "running",
+        progress: 45,
+        message: "Processing transcript 3 of 7...",
+      };
+      const result = ExtractionStatusMessageSchema.parse(msg);
+      expect(result.status).toBe("running");
+      expect(result.progress).toBe(45);
+      expect(result.message).toBe("Processing transcript 3 of 7...");
+    });
+
+    test("accepts complete status with counts", () => {
+      const msg = {
+        type: "extraction_status",
+        status: "complete",
+        message: "Extraction completed successfully",
+        transcriptsProcessed: 7,
+        factsExtracted: 12,
+      };
+      const result = ExtractionStatusMessageSchema.parse(msg);
+      expect(result.status).toBe("complete");
+      expect(result.transcriptsProcessed).toBe(7);
+      expect(result.factsExtracted).toBe(12);
+    });
+
+    test("accepts error status with error message", () => {
+      const msg = {
+        type: "extraction_status",
+        status: "error",
+        error: "LLM API rate limit exceeded",
+      };
+      const result = ExtractionStatusMessageSchema.parse(msg);
+      expect(result.status).toBe("error");
+      expect(result.error).toBe("LLM API rate limit exceeded");
+    });
+
+    test("rejects progress out of range", () => {
+      const msg = {
+        type: "extraction_status",
+        status: "running",
+        progress: 150,
+      };
+      expect(() => ExtractionStatusMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects negative progress", () => {
+      const msg = {
+        type: "extraction_status",
+        status: "running",
+        progress: -10,
+      };
+      expect(() => ExtractionStatusMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("rejects invalid status value", () => {
+      const msg = {
+        type: "extraction_status",
+        status: "pending",
+      };
+      expect(() => ExtractionStatusMessageSchema.parse(msg)).toThrow(ZodError);
+    });
+
+    test("extraction_status is included in ServerMessageSchema", () => {
+      const msg = {
+        type: "extraction_status" as const,
+        status: "idle" as const,
+      };
+      const result = ServerMessageSchema.parse(msg);
+      expect(result.type).toBe("extraction_status");
     });
   });
 });

@@ -212,6 +212,15 @@ import {
 
 import { handleTriggerSync } from "./handlers/sync-handlers.js";
 
+import {
+  handleGetMemory,
+  handleSaveMemory,
+  handleGetExtractionPrompt,
+  handleSaveExtractionPrompt,
+  handleResetExtractionPrompt,
+  handleTriggerExtraction,
+} from "./handlers/memory-handlers.js";
+
 // Re-export types for external consumers
 export type { WebSocketLike, ConnectionState };
 export { createConnectionState, generateMessageId };
@@ -776,6 +785,31 @@ export class WebSocketHandler {
       // Sync handlers (extracted)
       case "trigger_sync":
         await handleTriggerSync(ctx, message.mode, message.pipeline);
+        break;
+
+      // Memory extraction handlers
+      case "get_memory":
+        await handleGetMemory(ctx);
+        break;
+
+      case "save_memory":
+        await handleSaveMemory(ctx, message.content);
+        break;
+
+      case "get_extraction_prompt":
+        await handleGetExtractionPrompt(ctx);
+        break;
+
+      case "save_extraction_prompt":
+        await handleSaveExtractionPrompt(ctx, message.content);
+        break;
+
+      case "reset_extraction_prompt":
+        await handleResetExtractionPrompt(ctx);
+        break;
+
+      case "trigger_extraction":
+        await handleTriggerExtraction(ctx);
         break;
     }
   }

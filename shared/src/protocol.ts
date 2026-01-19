@@ -830,6 +830,55 @@ export const CreateVaultMessageSchema = z.object({
   title: z.string().min(1, "Vault title is required"),
 });
 
+// =============================================================================
+// Memory Extraction Client Messages
+// =============================================================================
+
+/**
+ * Client requests current memory.md content (REQ-F-12)
+ * Response: memory_content message
+ */
+export const GetMemoryMessageSchema = z.object({
+  type: z.literal("get_memory"),
+});
+
+/**
+ * Client requests to save updated memory content (REQ-F-13)
+ * Response: memory_saved message
+ */
+export const SaveMemoryMessageSchema = z.object({
+  type: z.literal("save_memory"),
+  /** Updated memory file content */
+  content: z.string(),
+});
+
+/**
+ * Client requests current extraction prompt with override status (REQ-F-15)
+ * Response: extraction_prompt_content message
+ */
+export const GetExtractionPromptMessageSchema = z.object({
+  type: z.literal("get_extraction_prompt"),
+});
+
+/**
+ * Client requests to save extraction prompt (REQ-F-16)
+ * Creates user override at ~/.config/memory-loop/extraction-prompt.md if needed
+ * Response: extraction_prompt_saved message
+ */
+export const SaveExtractionPromptMessageSchema = z.object({
+  type: z.literal("save_extraction_prompt"),
+  /** Updated extraction prompt content */
+  content: z.string(),
+});
+
+/**
+ * Client requests to manually trigger extraction (for testing/debug)
+ * Response: extraction_status messages with progress updates
+ */
+export const TriggerExtractionMessageSchema = z.object({
+  type: z.literal("trigger_extraction"),
+});
+
 /**
  * Discriminated union of all client message types
  */
@@ -877,6 +926,12 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   UpdateVaultConfigMessageSchema,
   TriggerSyncMessageSchema,
   CreateVaultMessageSchema,
+  // Memory Extraction
+  GetMemoryMessageSchema,
+  SaveMemoryMessageSchema,
+  GetExtractionPromptMessageSchema,
+  SaveExtractionPromptMessageSchema,
+  TriggerExtractionMessageSchema,
 ]);
 
 // =============================================================================
@@ -1430,6 +1485,19 @@ export const ConfigUpdatedMessageSchema = z.object({
 });
 
 // =============================================================================
+// Memory Extraction Schemas
+// =============================================================================
+
+/**
+ * Schema for extraction status enum values
+ * - idle: No extraction running
+ * - running: Extraction in progress
+ * - complete: Extraction finished successfully
+ * - error: Extraction failed
+ */
+export const ExtractionStatusValueSchema = z.enum(["idle", "running", "complete", "error"]);
+
+// =============================================================================
 // Sync Status Schemas
 // =============================================================================
 
@@ -1486,6 +1554,84 @@ export const VaultCreatedMessageSchema = z.object({
   vault: VaultInfoSchema,
 });
 
+// =============================================================================
+// Memory Extraction Server Messages
+// =============================================================================
+
+/**
+ * Server sends memory.md content (REQ-F-12)
+ * Response to get_memory request
+ */
+export const MemoryContentMessageSchema = z.object({
+  type: z.literal("memory_content"),
+  /** Memory file content (empty string if file doesn't exist yet) */
+  content: z.string(),
+  /** File size in bytes (REQ-NF-1: must stay under 50KB) */
+  sizeBytes: z.number().int().min(0),
+  /** Whether the memory file exists */
+  exists: z.boolean(),
+});
+
+/**
+ * Server sends extraction prompt content (REQ-F-15)
+ * Response to get_extraction_prompt request
+ */
+export const ExtractionPromptContentMessageSchema = z.object({
+  type: z.literal("extraction_prompt_content"),
+  /** Extraction prompt content */
+  content: z.string(),
+  /** True if using user override at ~/.config/memory-loop/extraction-prompt.md */
+  isOverride: z.boolean(),
+});
+
+/**
+ * Server confirms memory was saved (REQ-F-13)
+ * Response to save_memory request
+ */
+export const MemorySavedMessageSchema = z.object({
+  type: z.literal("memory_saved"),
+  /** Whether the save was successful */
+  success: z.boolean(),
+  /** New file size in bytes after save */
+  sizeBytes: z.number().int().min(0).optional(),
+  /** Error message if success is false */
+  error: z.string().optional(),
+});
+
+/**
+ * Server confirms extraction prompt was saved (REQ-F-16)
+ * Response to save_extraction_prompt request
+ */
+export const ExtractionPromptSavedMessageSchema = z.object({
+  type: z.literal("extraction_prompt_saved"),
+  /** Whether the save was successful */
+  success: z.boolean(),
+  /** True if this created/updated user override */
+  isOverride: z.boolean(),
+  /** Error message if success is false */
+  error: z.string().optional(),
+});
+
+/**
+ * Server sends extraction status updates
+ * Sent during extraction run (triggered manually or scheduled)
+ */
+export const ExtractionStatusMessageSchema = z.object({
+  type: z.literal("extraction_status"),
+  /** Current extraction status */
+  status: ExtractionStatusValueSchema,
+  /** Progress percentage (0-100) when status is "running" */
+  progress: z.number().min(0).max(100).optional(),
+  /** Human-readable status message */
+  message: z.string().optional(),
+  /** Error details when status is "error" */
+  error: z.string().optional(),
+  /** Number of transcripts processed (on completion) */
+  transcriptsProcessed: z.number().int().min(0).optional(),
+  /** Number of facts extracted (on completion) */
+  factsExtracted: z.number().int().min(0).optional(),
+});
+
 /**
  * Discriminated union of all server message types
  */
@@ -1537,6 +1683,12 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   ConfigUpdatedMessageSchema,
   SyncStatusMessageSchema,
   VaultCreatedMessageSchema,
+  // Memory Extraction
+  MemoryContentMessageSchema,
+  ExtractionPromptContentMessageSchema,
+  MemorySavedMessageSchema,
+  ExtractionPromptSavedMessageSchema,
+  ExtractionStatusMessageSchema,
 ]);
 
 // =============================================================================
@@ -1643,6 +1795,11 @@ export type SetPinnedAssetsMessage = z.infer<typeof SetPinnedAssetsMessageSchema
 export type UpdateVaultConfigMessage = z.infer<typeof UpdateVaultConfigMessageSchema>;
 export type TriggerSyncMessage = z.infer<typeof TriggerSyncMessageSchema>;
 export type CreateVaultMessage = z.infer<typeof CreateVaultMessageSchema>;
+export type GetMemoryMessage = z.infer<typeof GetMemoryMessageSchema>;
+export type SaveMemoryMessage = z.infer<typeof SaveMemoryMessageSchema>;
+export type GetExtractionPromptMessage = z.infer<typeof GetExtractionPromptMessageSchema>;
+export type SaveExtractionPromptMessage = z.infer<typeof SaveExtractionPromptMessageSchema>;
+export type TriggerExtractionMessage = z.infer<typeof TriggerExtractionMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -1696,6 +1853,12 @@ export type SyncProgress = z.infer<typeof SyncProgressSchema>;
 export type SyncFileError = z.infer<typeof SyncFileErrorSchema>;
 export type SyncStatusMessage = z.infer<typeof SyncStatusMessageSchema>;
 export type VaultCreatedMessage = z.infer<typeof VaultCreatedMessageSchema>;
+export type ExtractionStatusValue = z.infer<typeof ExtractionStatusValueSchema>;
+export type MemoryContentMessage = z.infer<typeof MemoryContentMessageSchema>;
+export type ExtractionPromptContentMessage = z.infer<typeof ExtractionPromptContentMessageSchema>;
+export type MemorySavedMessage = z.infer<typeof MemorySavedMessageSchema>;
+export type ExtractionPromptSavedMessage = z.infer<typeof ExtractionPromptSavedMessageSchema>;
+export type ExtractionStatusMessage = z.infer<typeof ExtractionStatusMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

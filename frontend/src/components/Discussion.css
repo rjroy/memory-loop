@@ -61,16 +61,22 @@
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
-  animation: float 5s linear infinite;
+  animation: disintegrate 20s ease-in-out infinite;
   margin-bottom: var(--space-6);
 }
 
-@keyframes float {
+@keyframes disintegrate {
   0% { 
-    transform: rotate(0deg) translateX(50px) translateY(-20px) rotate(0deg); 
+    transform: translateY(50px);
+    filter: blur(0px) opacity(100%);
+  }
+  50% { 
+    transform: translateY(50px) scale(1.5);
+    filter: blur(4px) opacity(25%);
   }
   100% { 
-    transform: rotate(360deg) translateX(50px) translateY(-20px) rotate(360deg); 
+    transform: translateY(50px);
+    filter: blur(0px) opacity(100%);
   }
 }
 

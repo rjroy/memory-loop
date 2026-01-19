@@ -55,6 +55,7 @@ export const DEFAULT_CATCHUP_THRESHOLD_MS = 24 * 60 * 60 * 1000;
  */
 export const ENV_EXTRACTION_SCHEDULE = "EXTRACTION_SCHEDULE";
 export const ENV_CATCHUP_THRESHOLD_HOURS = "EXTRACTION_CATCHUP_HOURS";
+export const ENV_EXTRACTION_TIMEZONE = "EXTRACTION_TIMEZONE";
 
 // =============================================================================
 // Types
@@ -131,6 +132,16 @@ export function getCatchUpThresholdMs(): number {
     }
   }
   return DEFAULT_CATCHUP_THRESHOLD_MS;
+}
+
+/**
+ * Get the configured timezone for extraction scheduling.
+ * If not set, returns null which means cron uses server local time.
+ *
+ * @returns Timezone string from environment or null for server local time
+ */
+export function getTimezone(): string | null {
+  return process.env[ENV_EXTRACTION_TIMEZONE] ?? null;
 }
 
 /**
@@ -371,7 +382,7 @@ export async function startScheduler(): Promise<boolean> {
       },
       null, // onComplete
       true, // start immediately
-      "America/New_York" // timezone
+      getTimezone() // timezone (null = server local time)
     );
 
     log.info("Extraction scheduler started");

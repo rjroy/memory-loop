@@ -99,7 +99,7 @@ describe("ExtractionPromptEditor", () => {
       };
       render(<ExtractionPromptEditor sendMessage={sendMessage} lastMessage={message} />);
 
-      expect(screen.getByText("~/.config/memory-loop/extraction-prompt.md")).not.toBeNull();
+      expect(screen.getByText("~/.config/memory-loop/durable-facts.md")).not.toBeNull();
     });
   });
 

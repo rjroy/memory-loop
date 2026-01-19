@@ -154,7 +154,7 @@ export function ExtractionPromptEditor({
           </span>
           <span className="prompt-editor__path">
             {isOverride
-              ? "~/.config/memory-loop/extraction-prompt.md"
+              ? "~/.config/memory-loop/durable-facts.md"
               : "Built-in default prompt"}
           </span>
         </div>

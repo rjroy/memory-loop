@@ -46,6 +46,12 @@ export function ExtractionPromptEditor({
   const [error, setError] = useState<string | null>(null);
   const [isOverride, setIsOverride] = useState(false);
 
+  // Extraction status state
+  const [extractionStatus, setExtractionStatus] = useState<
+    "idle" | "running" | "complete" | "error"
+  >("idle");
+  const [extractionMessage, setExtractionMessage] = useState<string | null>(null);
+
   // Track if we've requested the content
   const hasRequestedRef = useRef(false);
 
@@ -100,6 +106,19 @@ export function ExtractionPromptEditor({
       setIsSaving(false);
       setIsResetting(false);
       setError(lastMessage.message);
+    } else if (lastMessage.type === "extraction_status") {
+      setExtractionStatus(lastMessage.status);
+      setExtractionMessage(lastMessage.message ?? null);
+      if (lastMessage.status === "error" && lastMessage.error) {
+        setError(lastMessage.error);
+      }
+      // Clear success message after a delay
+      if (lastMessage.status === "complete") {
+        setTimeout(() => {
+          setExtractionStatus("idle");
+          setExtractionMessage(null);
+        }, 5000);
+      }
     }
   }, [lastMessage]);
 
@@ -133,6 +152,14 @@ export function ExtractionPromptEditor({
     setContent(originalContent);
     setError(null);
   }, [originalContent]);
+
+  // Handle run extraction
+  const handleRunExtraction = useCallback(() => {
+    if (extractionStatus === "running") return;
+    setError(null);
+    setExtractionMessage(null);
+    sendMessage({ type: "trigger_extraction" });
+  }, [sendMessage, extractionStatus]);
 
   return (
     <div className="prompt-editor">
@@ -181,6 +208,30 @@ export function ExtractionPromptEditor({
             placeholder="Enter extraction prompt..."
             spellCheck={false}
           />
+        )}
+      </div>
+
+      {/* Extraction section */}
+      <div className="prompt-editor__extraction">
+        <div className="prompt-editor__extraction-header">
+          <span className="prompt-editor__extraction-label">Manual Extraction</span>
+          <button
+            type="button"
+            className={`prompt-editor__btn prompt-editor__btn--extract${extractionStatus === "running" ? " prompt-editor__btn--loading" : ""}`}
+            onClick={handleRunExtraction}
+            disabled={extractionStatus === "running" || isLoading}
+            aria-busy={extractionStatus === "running"}
+          >
+            {extractionStatus === "running" ? "Running..." : "Run Extraction"}
+          </button>
+        </div>
+        {extractionMessage && (
+          <div
+            className={`prompt-editor__extraction-status prompt-editor__extraction-status--${extractionStatus}`}
+            role="status"
+          >
+            {extractionMessage}
+          </div>
         )}
       </div>
 

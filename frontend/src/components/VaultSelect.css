@@ -48,7 +48,7 @@
   min-width: 44px;
   min-height: 44px;
   padding: 0;
-  color: var(--color-text-accent-secondary);
+  color: var(--color-text);
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-md);

@@ -4,10 +4,39 @@
  * Tests for memory file and extraction prompt WebSocket handlers.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
+import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+
+// =============================================================================
+// Global Test Setup - Isolate from real user files
+// =============================================================================
+
+let globalTempDir: string;
+const originalMemoryPathOverride = process.env.MEMORY_FILE_PATH_OVERRIDE;
+
+beforeAll(async () => {
+  // Create a temp directory for all memory handler tests
+  globalTempDir = await mkdtemp(join(tmpdir(), "memory-handlers-global-"));
+  // Redirect memory file operations to temp directory
+  const memoryDir = join(globalTempDir, ".claude", "rules");
+  await mkdir(memoryDir, { recursive: true });
+  process.env.MEMORY_FILE_PATH_OVERRIDE = join(memoryDir, "memory.md");
+});
+
+afterAll(async () => {
+  // Restore original environment
+  if (originalMemoryPathOverride) {
+    process.env.MEMORY_FILE_PATH_OVERRIDE = originalMemoryPathOverride;
+  } else {
+    delete process.env.MEMORY_FILE_PATH_OVERRIDE;
+  }
+  // Clean up temp directory
+  if (globalTempDir) {
+    await rm(globalTempDir, { recursive: true, force: true });
+  }
+});
 import type { HandlerContext } from "../types.js";
 import type { ServerMessage, ErrorCode } from "@memory-loop/shared";
 import {

@@ -363,4 +363,112 @@ describe("ExtractionPromptEditor", () => {
       expect(screen.getByText("Failed to read extraction prompt")).not.toBeNull();
     });
   });
+
+  describe("extraction trigger", () => {
+    it("shows Run Extraction button", () => {
+      const { sendMessage } = createMockSendMessage();
+      const message: ServerMessage = {
+        type: "extraction_prompt_content",
+        content: "Prompt content",
+        isOverride: false,
+      };
+      render(<ExtractionPromptEditor sendMessage={sendMessage} lastMessage={message} />);
+
+      expect(screen.getByRole("button", { name: /run extraction/i })).not.toBeNull();
+    });
+
+    it("sends trigger_extraction message when Run Extraction is clicked", () => {
+      const { sendMessage, messages } = createMockSendMessage();
+      const loadMessage: ServerMessage = {
+        type: "extraction_prompt_content",
+        content: "Prompt content",
+        isOverride: false,
+      };
+      render(<ExtractionPromptEditor sendMessage={sendMessage} lastMessage={loadMessage} />);
+
+      // Clear initial message
+      messages.length = 0;
+
+      // Click Run Extraction
+      const runButton = screen.getByRole("button", { name: /run extraction/i });
+      fireEvent.click(runButton);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toEqual({ type: "trigger_extraction" });
+    });
+
+    it("shows 'Running...' while extraction is in progress", () => {
+      const { sendMessage } = createMockSendMessage();
+      const statusMessage: ServerMessage = {
+        type: "extraction_status",
+        status: "running",
+        message: "Starting extraction...",
+      };
+      render(<ExtractionPromptEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
+
+      expect(screen.getByText("Running...")).not.toBeNull();
+    });
+
+    it("disables Run Extraction button while running", () => {
+      const { sendMessage } = createMockSendMessage();
+      const statusMessage: ServerMessage = {
+        type: "extraction_status",
+        status: "running",
+        message: "Processing transcripts...",
+      };
+      render(<ExtractionPromptEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
+
+      const runButton = screen.getByRole("button", { name: /running/i });
+      expect(runButton.hasAttribute("disabled")).toBe(true);
+    });
+
+    it("shows extraction status message", () => {
+      const { sendMessage } = createMockSendMessage();
+      const statusMessage: ServerMessage = {
+        type: "extraction_status",
+        status: "running",
+        message: "Processing 5 transcripts...",
+      };
+      render(<ExtractionPromptEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
+
+      expect(screen.getByRole("status")).not.toBeNull();
+      expect(screen.getByText("Processing 5 transcripts...")).not.toBeNull();
+    });
+
+    it("shows completion message on success", () => {
+      const { sendMessage } = createMockSendMessage();
+      const statusMessage: ServerMessage = {
+        type: "extraction_status",
+        status: "complete",
+        message: "Processed 3 transcript(s)",
+        transcriptsProcessed: 3,
+      };
+      render(<ExtractionPromptEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
+
+      expect(screen.getByText("Processed 3 transcript(s)")).not.toBeNull();
+    });
+
+    it("shows error on extraction failure", () => {
+      const { sendMessage } = createMockSendMessage();
+      const statusMessage: ServerMessage = {
+        type: "extraction_status",
+        status: "error",
+        message: "Extraction failed",
+        error: "No transcripts found",
+      };
+      render(<ExtractionPromptEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
+
+      expect(screen.getByRole("alert")).not.toBeNull();
+      expect(screen.getByText("No transcripts found")).not.toBeNull();
+    });
+
+    it("button is disabled while loading prompt", () => {
+      const { sendMessage } = createMockSendMessage();
+      render(<ExtractionPromptEditor sendMessage={sendMessage} lastMessage={null} />);
+
+      // During loading, button should be disabled
+      const runButton = screen.getByRole("button", { name: /run extraction/i });
+      expect(runButton.hasAttribute("disabled")).toBe(true);
+    });
+  });
 });

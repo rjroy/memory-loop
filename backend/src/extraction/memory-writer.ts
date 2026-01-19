@@ -29,8 +29,22 @@ const log = createLogger("memory-writer");
 // =============================================================================
 
 /**
- * Path to the global memory file that Claude reads.
+ * Get the path to the global memory file that Claude reads.
  * This is where facts are injected into Claude's context.
+ *
+ * Uses MEMORY_FILE_PATH_OVERRIDE env var if set (for testing),
+ * otherwise defaults to ~/.claude/rules/memory.md
+ */
+export function getMemoryFilePath(): string {
+  if (process.env.MEMORY_FILE_PATH_OVERRIDE) {
+    return process.env.MEMORY_FILE_PATH_OVERRIDE;
+  }
+  return join(homedir(), ".claude", "rules", "memory.md");
+}
+
+/**
+ * Path to the global memory file that Claude reads.
+ * @deprecated Use getMemoryFilePath() instead for testability
  */
 export const MEMORY_FILE_PATH = join(homedir(), ".claude", "rules", "memory.md");
 
@@ -176,9 +190,10 @@ export async function setupSandbox(vaultsDir?: string): Promise<SandboxResult> {
     await mkdir(sandboxDir, { recursive: true });
 
     // Check if global memory file exists
-    if (await fileExists(MEMORY_FILE_PATH)) {
+    const memoryPath = getMemoryFilePath();
+    if (await fileExists(memoryPath)) {
       // Copy to sandbox
-      await copyFile(MEMORY_FILE_PATH, sandboxPath);
+      await copyFile(memoryPath, sandboxPath);
       log.info(`Copied memory file to sandbox: ${sandboxPath}`);
     } else {
       // Create empty file in sandbox
@@ -226,13 +241,14 @@ export async function commitSandbox(vaultsDir?: string): Promise<WriteResult> {
     const { content: finalContent, wasPruned } = enforceMemoryLimit(content);
 
     // Ensure target directory exists
-    await mkdir(dirname(MEMORY_FILE_PATH), { recursive: true });
+    const memoryPath = getMemoryFilePath();
+    await mkdir(dirname(memoryPath), { recursive: true });
 
     // Atomic write to global location
-    await atomicWrite(MEMORY_FILE_PATH, finalContent);
+    await atomicWrite(memoryPath, finalContent);
 
     // Get final size
-    const stats = await stat(MEMORY_FILE_PATH);
+    const stats = await stat(memoryPath);
 
     log.info(`Committed sandbox to global memory file (${stats.size} bytes, pruned: ${wasPruned})`);
 
@@ -298,8 +314,9 @@ export async function checkAndRecover(vaultsDir?: string): Promise<RecoveryResul
     const sandboxStats = await stat(sandboxPath);
 
     // Check global file
-    if (await fileExists(MEMORY_FILE_PATH)) {
-      const globalStats = await stat(MEMORY_FILE_PATH);
+    const memoryPath = getMemoryFilePath();
+    if (await fileExists(memoryPath)) {
+      const globalStats = await stat(memoryPath);
 
       // Compare modification times
       if (sandboxStats.mtime > globalStats.mtime) {
@@ -898,8 +915,9 @@ export async function readVaultInsights(claudeMdPath: string): Promise<string | 
  */
 export async function readMemoryFile(): Promise<string> {
   try {
-    if (await fileExists(MEMORY_FILE_PATH)) {
-      return await readFile(MEMORY_FILE_PATH, "utf-8");
+    const memoryPath = getMemoryFilePath();
+    if (await fileExists(memoryPath)) {
+      return await readFile(memoryPath, "utf-8");
     }
     return "";
   } catch (error) {
@@ -922,12 +940,13 @@ export async function writeMemoryFile(content: string): Promise<WriteResult> {
     const { content: finalContent, wasPruned } = enforceMemoryLimit(content);
 
     // Ensure directory exists
-    await mkdir(dirname(MEMORY_FILE_PATH), { recursive: true });
+    const memoryPath = getMemoryFilePath();
+    await mkdir(dirname(memoryPath), { recursive: true });
 
     // Atomic write
-    await atomicWrite(MEMORY_FILE_PATH, finalContent);
+    await atomicWrite(memoryPath, finalContent);
 
-    const stats = await stat(MEMORY_FILE_PATH);
+    const stats = await stat(memoryPath);
     log.info(`Wrote memory file (${stats.size} bytes, pruned: ${wasPruned})`);
 
     return {

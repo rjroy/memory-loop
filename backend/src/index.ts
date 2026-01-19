@@ -41,16 +41,20 @@ if (server.hostname === "0.0.0.0") {
 // Extraction Scheduler (REQ-F-4)
 // =============================================================================
 
-// Start the extraction scheduler
+// Start the extraction scheduler (disabled in development mode)
 // - Performs recovery check if sandbox file exists from interrupted run
 // - Triggers catch-up extraction if last run was >24h ago
 // - Schedules daily extraction at configured time (default: 3am)
-void startScheduler().then((started) => {
-  if (started) {
-    log.info(`Extraction scheduler started with schedule: ${getCronSchedule()}`);
-  } else {
-    log.warn("Extraction scheduler failed to start");
-  }
-}).catch((error: unknown) => {
-  log.error("Failed to start extraction scheduler:", error);
-});
+if (process.env.NODE_ENV === "development") {
+  log.info("Extraction scheduler disabled in development mode");
+} else {
+  void startScheduler().then((started) => {
+    if (started) {
+      log.info(`Extraction scheduler started with schedule: ${getCronSchedule()}`);
+    } else {
+      log.warn("Extraction scheduler failed to start");
+    }
+  }).catch((error: unknown) => {
+    log.error("Failed to start extraction scheduler:", error);
+  });
+}

@@ -872,6 +872,15 @@ export const SaveExtractionPromptMessageSchema = z.object({
 });
 
 /**
+ * Client requests to reset extraction prompt to default (REQ-F-16)
+ * Removes user override at ~/.config/memory-loop/extraction-prompt.md
+ * Response: extraction_prompt_reset message
+ */
+export const ResetExtractionPromptMessageSchema = z.object({
+  type: z.literal("reset_extraction_prompt"),
+});
+
+/**
  * Client requests to manually trigger extraction (for testing/debug)
  * Response: extraction_status messages with progress updates
  */
@@ -931,6 +940,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SaveMemoryMessageSchema,
   GetExtractionPromptMessageSchema,
   SaveExtractionPromptMessageSchema,
+  ResetExtractionPromptMessageSchema,
   TriggerExtractionMessageSchema,
 ]);
 
@@ -1613,6 +1623,20 @@ export const ExtractionPromptSavedMessageSchema = z.object({
 });
 
 /**
+ * Server confirms extraction prompt was reset to default (REQ-F-16)
+ * Response to reset_extraction_prompt request
+ */
+export const ExtractionPromptResetMessageSchema = z.object({
+  type: z.literal("extraction_prompt_reset"),
+  /** Whether the reset was successful */
+  success: z.boolean(),
+  /** The default prompt content (sent so UI can update without fetching again) */
+  content: z.string(),
+  /** Error message if success is false */
+  error: z.string().optional(),
+});
+
+/**
  * Server sends extraction status updates
  * Sent during extraction run (triggered manually or scheduled)
  */
@@ -1688,6 +1712,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   ExtractionPromptContentMessageSchema,
   MemorySavedMessageSchema,
   ExtractionPromptSavedMessageSchema,
+  ExtractionPromptResetMessageSchema,
   ExtractionStatusMessageSchema,
 ]);
 
@@ -1799,6 +1824,7 @@ export type GetMemoryMessage = z.infer<typeof GetMemoryMessageSchema>;
 export type SaveMemoryMessage = z.infer<typeof SaveMemoryMessageSchema>;
 export type GetExtractionPromptMessage = z.infer<typeof GetExtractionPromptMessageSchema>;
 export type SaveExtractionPromptMessage = z.infer<typeof SaveExtractionPromptMessageSchema>;
+export type ResetExtractionPromptMessage = z.infer<typeof ResetExtractionPromptMessageSchema>;
 export type TriggerExtractionMessage = z.infer<typeof TriggerExtractionMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -1858,6 +1884,7 @@ export type MemoryContentMessage = z.infer<typeof MemoryContentMessageSchema>;
 export type ExtractionPromptContentMessage = z.infer<typeof ExtractionPromptContentMessageSchema>;
 export type MemorySavedMessage = z.infer<typeof MemorySavedMessageSchema>;
 export type ExtractionPromptSavedMessage = z.infer<typeof ExtractionPromptSavedMessageSchema>;
+export type ExtractionPromptResetMessage = z.infer<typeof ExtractionPromptResetMessageSchema>;
 export type ExtractionStatusMessage = z.infer<typeof ExtractionStatusMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 

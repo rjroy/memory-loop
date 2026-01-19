@@ -4,7 +4,7 @@
  * Tests for the extraction pipeline orchestration and scheduler.
  */
 
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import {
   getCronSchedule,
   getCatchUpThresholdMs,
@@ -15,6 +15,7 @@ import {
   isExtractionRunning,
   getLastRunResult,
   getNextScheduledRun,
+  resetManagerState,
   DEFAULT_CRON_SCHEDULE,
   DEFAULT_CATCHUP_THRESHOLD_MS,
   ENV_EXTRACTION_SCHEDULE,
@@ -112,6 +113,11 @@ describe("needsCatchUp", () => {
 // =============================================================================
 
 describe("scheduler state", () => {
+  beforeEach(() => {
+    // Reset all state before each test
+    resetManagerState();
+  });
+
   afterEach(() => {
     stopScheduler();
   });

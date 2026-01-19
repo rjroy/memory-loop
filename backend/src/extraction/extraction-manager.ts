@@ -425,3 +425,14 @@ export function getNextScheduledRun(): Date | null {
   }
   return state.cronJob.nextDate().toJSDate();
 }
+
+/**
+ * Reset manager state for testing purposes only.
+ * This clears all state including lastResult.
+ * @internal
+ */
+export function resetManagerState(): void {
+  stopScheduler();
+  state.isRunning = false;
+  state.lastResult = null;
+}

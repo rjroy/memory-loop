@@ -19,6 +19,14 @@
   margin-bottom: var(--spacing-lg);
 }
 
+.vault-select__header-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  position: relative;
+}
+
 .vault-select__header h1 {
   font-family: var(--font-family-title);
   font-size: var(--font-size-4xl);
@@ -28,6 +36,43 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* Header settings button (TASK-010) */
+.vault-select__header-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--color-text-accent-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.vault-select__header-settings-btn:hover {
+  color: var(--color-text-secondary);
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+}
+
+.vault-select__header-settings-btn:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+.vault-select__header-settings-btn:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
 }
 
 .vault-select__connection-status {

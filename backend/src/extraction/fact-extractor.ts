@@ -191,26 +191,39 @@ export function buildExtractionPrompt(
   // Combine user-customizable categories with operational instructions
   return `# Memory Extraction
 
-Extract durable facts about the user from conversation transcripts. Focus on information that remains true across sessions, not transient conversation details.
+## Purpose
+
+This memory file provides context so AI assistants can give more relevant, personalized responses. It is **operational context**, not a biography or life story. Every entry should earn its space by changing how an AI would respond to the user.
+
+## Principles
+
+**Brevity over completeness.** State facts concisely. "Prefers TypeScript for larger projects" not "The user has expressed that they find TypeScript's type system valuable when working on projects of significant scale."
+
+**Actionable over interesting.** Include what changes AI behavior. Skip trivia that doesn't affect how to assist the user.
+
+**Current over historical.** Preferences and context that apply now. Past projects or outdated preferences can be dropped unless they inform current work.
+
+---
 
 ${basePrompt}
 
+---
+
 ## What to Extract vs. Ignore
 
-**Extract** (durable facts):
-- "I've been programming for 15 years"
-- "Our team uses trunk-based development"
-- "I prefer TypeScript over JavaScript for larger projects"
-- "Memory Loop is my side project for AI-augmented note-taking"
+**Extract** (changes how AI responds):
+- "Senior engineer, 20 years experience" → calibrates technical depth
+- "Prefers direct feedback over diplomatic hedging" → shapes communication style
+- "Building Memory Loop as a side project" → provides context for questions
+- "Team uses trunk-based development" → informs suggestions
 
-**Ignore** (transient details):
-- "Can you fix this bug?"
-- "I'm working on the login page today"
-- "Thanks, that worked!"
-- Session-specific troubleshooting steps
-- Temporary workarounds
+**Ignore** (doesn't change AI behavior):
+- "Can you fix this bug?" → session-specific request
+- "I'm working on the login page today" → transient task
+- "Thanks, that worked!" → conversational noise
+- Detailed troubleshooting steps → not reusable context
 
-The test: would this fact be useful context in a conversation six months from now?
+**The test:** Would knowing this fact change how an AI responds to the user? If not, skip it.
 
 ---
 
@@ -236,34 +249,33 @@ ${transcriptList}
 
 ### Output Format
 
-Use a hybrid narrative and list format. Write prose for interconnected information; use bullet lists only for truly independent items.
+Concise statements, not explanations. Each fact should be one or two sentences maximum.
 
-Good example:
+Good:
 \`\`\`markdown
 ## Preferences
-Values concise communication over verbose explanations. Prefers seeing tradeoffs explicitly stated rather than having decisions made silently. When implementing:
-- Start simple, add complexity when needed
-- Avoid over-engineering
-- Show your reasoning
+Values direct communication. Wants tradeoffs stated explicitly. Implementation approach: start simple, add complexity only when needed.
 \`\`\`
 
-Bad example (over-bulleted):
+Bad (too verbose):
 \`\`\`markdown
 ## Preferences
-- Prefers concise communication
-- Wants to see tradeoffs
-- Likes simple solutions
-- Dislikes over-engineering
+The user has consistently demonstrated a preference for concise communication styles. They have mentioned on several occasions that they appreciate when tradeoffs are explicitly stated rather than having decisions made silently. Their implementation philosophy tends toward starting with simple solutions and only adding complexity when the situation demands it.
 \`\`\`
+
+Use bullet lists only when items are truly independent and a list is shorter than prose.
 
 ### Merge Behavior
 
-You are updating an existing memory file, not creating a new one.
+You are updating an existing memory file, not creating a new one. The file has a size budget; entries must justify their space.
 
-- **Add** new facts that don't exist yet
-- **Update** existing facts when new information contradicts or refines them (prefer newer information but preserve relevant context)
-- **Preserve** existing facts that aren't contradicted (don't remove information just because current transcripts don't mention it)
-- **Consolidate** redundant facts (if adding something already captured, update the existing entry instead)
+- **Add** new facts that pass the "changes AI behavior" test
+- **Update** facts when new information refines them (prefer recent over stale)
+- **Compress** verbose entries into concise statements
+- **Consolidate** related facts rather than listing separately
+- **Remove** facts that no longer provide actionable context (outdated projects, superseded preferences, trivia that doesn't affect assistance)
+
+The goal is a lean, high-signal file. When in doubt, shorter is better. A 200-line file of dense, useful context beats a 2000-line file of comprehensive biography.
 
 ### Security
 

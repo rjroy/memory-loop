@@ -12,7 +12,7 @@ spec: .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md
 
 ## Overview
 
-This plan addresses spec v1.1.0 requirements for two complementary capabilities:
+This plan addresses spec v1.2.0 requirements for two complementary capabilities:
 
 1. **Quick Actions**: Transformative text actions (Tighten, Embellish, Correct, Polish) available in Browse mode's editor, working on both desktop and mobile via context menu
 2. **Pair Writing Mode**: Desktop-only split-screen with advisory actions (Validate, Critique), freeform chat, and snapshot comparison
@@ -382,9 +382,7 @@ PairWritingConversation.tsx
 - Exit button checks `hasUnsavedChanges` for manual edits only
 - After Quick Action completes, editor reloads file from disk (not from response)
 
-**Spec note**: REQ-F-8 states "Quick Action edits are part of unsaved changes" but this conflicts with tool-based approach. Recommend updating spec to clarify Quick Actions persist immediately.
-
-*Addresses*: REQ-F-28, REQ-F-29, REQ-F-30 (REQ-F-8 needs spec revision)
+*Addresses*: REQ-F-8, REQ-F-28, REQ-F-29, REQ-F-30
 
 ### TD-12: Keyboard Accessibility
 
@@ -625,7 +623,7 @@ No database migrations needed. Feature is additive:
 | REQ-F-5 | TD-2 (Claude Edit tool writes directly to file) |
 | REQ-F-6 | TD-2 (Toast for commentary) |
 | REQ-F-7 | TD-10 (Loading indicator) |
-| REQ-F-8 | **SPEC REVISION NEEDED**: Quick Actions persist immediately via tool use; only manual edits track unsaved state |
+| REQ-F-8 | TD-2, TD-11 (Quick Actions persist immediately via Claude Edit tool) |
 | REQ-F-9 | Modified Components: BrowseMode adds "Pair Writing" button |
 | REQ-F-10 | TD-9 (Desktop-only detection) |
 | REQ-F-11 | TD-6 (Split-screen layout) |

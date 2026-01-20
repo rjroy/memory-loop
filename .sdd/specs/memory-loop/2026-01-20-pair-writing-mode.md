@@ -1,5 +1,5 @@
 ---
-version: 1.1.0
+version: 1.2.0
 status: Approved
 created: 2026-01-20
 last_updated: 2026-01-20
@@ -50,7 +50,7 @@ As a writer using Memory Loop, I want AI to help me revise text in place for qui
 - **REQ-F-5**: Claude returns revised text; system replaces the selection with the revised text in-place
 - **REQ-F-6**: If Claude includes commentary, display as toast notification
 - **REQ-F-7**: Show loading indicator on the selection while AI is processing
-- **REQ-F-8**: Quick Action edits are part of the document's unsaved changes (user must save to persist)
+- **REQ-F-8**: Quick Action edits persist immediately to disk (Claude uses Edit tool directly); no explicit save required for Quick Actions
 
 ### Pair Writing Mode Entry and Layout (Desktop Only)
 
@@ -59,7 +59,7 @@ As a writer using Memory Loop, I want AI to help me revise text in place for qui
 - **REQ-F-11**: Pair Writing Mode displays split-screen layout: left pane (editor), right pane (conversation)
 - **REQ-F-12**: Left pane contains an editable markdown editor with the current file content
 - **REQ-F-13**: Right pane contains a conversation log and chat input
-- **REQ-F-14**: Provide "Exit" button to return to standard Browse view, with unsaved changes warning
+- **REQ-F-14**: Provide "Exit" button to return to standard Browse view, with warning if manual edits are unsaved
 
 ### Advisory Actions (Desktop Only, Pair Writing Mode)
 
@@ -91,9 +91,9 @@ As a writer using Memory Loop, I want AI to help me revise text in place for qui
 
 ### Document Persistence
 
-- **REQ-F-28**: Changes to the document (including Quick Action edits) are not auto-saved
-- **REQ-F-29**: Provide "Save" button to write changes back to the vault file (last write wins; no conflict detection in v1)
-- **REQ-F-30**: Warn user if exiting with unsaved changes
+- **REQ-F-28**: Manual edits in Pair Writing Mode are not auto-saved; Quick Actions persist immediately via Claude's Edit tool
+- **REQ-F-29**: Provide "Save" button to write manual edits back to the vault file (last write wins; no conflict detection in v1)
+- **REQ-F-30**: Warn user if exiting Pair Writing Mode with unsaved manual edits
 
 ## Non-Functional Requirements
 
@@ -110,7 +110,7 @@ As a writer using Memory Loop, I want AI to help me revise text in place for qui
 - Do NOT persist conversation history to the vault (session-only)
 - Do NOT show Pair Writing Mode entry point on mobile/touch devices
 - Do NOT allow custom user-defined actions in v1 (fixed set of 6)
-- Do NOT auto-save document changes (explicit save only)
+- Do NOT auto-save manual edits (explicit save required); Quick Actions persist immediately by design
 - Do NOT support multiple simultaneous snapshots (one snapshot at a time)
 
 ## Technical Context
@@ -141,12 +141,13 @@ As a writer using Memory Loop, I want AI to help me revise text in place for qui
 8. **Snapshot + Compare**: Click "Snapshot" → edit text → select edited region → "Compare to snapshot" → diff with analysis appears in conversation pane
 
 ### Document Persistence
-9. **Save Flow**: Edit document (via typing or Quick Action) → click "Save" → changes written to vault
-10. **Exit Warning**: Edit document without saving → click "Exit" or navigate away → confirmation dialog appears
+9. **Quick Action Persistence**: Invoke Quick Action on text → file immediately updated on disk (verify by re-opening file)
+10. **Manual Edit Save Flow**: In Pair Writing Mode → type manual edits → click "Save" → changes written to vault
+11. **Exit Warning**: In Pair Writing Mode → type manual edits without saving → click "Exit" → confirmation dialog appears
 
 ### Platform Behavior
-11. **Desktop-Only Pair Writing**: Load Memory Loop on touch device → "Pair Writing" button not visible
-12. **Mobile Quick Actions Available**: Load Memory Loop on touch device → edit markdown → select text → long-press → context menu with Quick Actions appears
+12. **Desktop-Only Pair Writing**: Load Memory Loop on touch device → "Pair Writing" button not visible
+13. **Mobile Quick Actions Available**: Load Memory Loop on touch device → edit markdown → select text → long-press → context menu with Quick Actions appears
 
 ## Open Questions
 

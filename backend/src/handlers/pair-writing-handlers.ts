@@ -2,35 +2,39 @@
  * Pair Writing Mode Handlers
  *
  * Handles:
- * - Quick Actions (Tighten, Embellish, Correct, Polish) via Claude tool use
- * - Advisory Actions (Validate, Critique, Compare) via streamed text response
- * - Pair Chat for freeform conversation with optional selection context
+ * - Quick Actions (Tighten, Embellish, Correct, Polish) via existing discussion session
+ * - Advisory Actions (Validate, Critique, Compare) via existing discussion session
  *
- * Quick Actions use Claude's Read/Edit tools to modify files directly.
- * Advisory Actions and Pair Chat stream text responses without tool use.
+ * Both action types use the existing discussion session (same as Think tab) so that:
+ * - Quick Actions appear in the conversation history with tool usage
+ * - Advisory Actions appear as regular conversation turns
+ * - Full session context is maintained for coherent assistance
+ *
+ * Note: pair_chat_request has been removed - users can type directly in Discussion.
  *
  * See: .sdd/plans/memory-loop/2026-01-20-pair-writing-mode-plan.md (TD-2)
  */
 
 import { join } from "node:path";
-import Anthropic from "@anthropic-ai/sdk";
-import { query, type Options, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import type {
   QuickActionRequestMessage,
   AdvisoryActionRequestMessage,
-  PairChatRequestMessage,
 } from "@memory-loop/shared";
 import { createLogger } from "../logger.js";
 import { validatePath } from "../file-browser.js";
 import {
+  resumeSession as defaultResumeSession,
+  appendMessage as defaultAppendMessage,
+} from "../session-manager.js";
+import {
   buildQuickActionPrompt,
   buildAdvisoryActionPrompt,
-  buildPairChatPrompt,
   isQuickActionType,
   isAdvisoryActionType,
   type QuickActionContext,
   type AdvisoryActionContext,
-  type PairChatContext,
 } from "../pair-writing-prompts.js";
 import { type HandlerContext, requireVault, generateMessageId } from "./types.js";
 
@@ -46,10 +50,12 @@ export type QueryFunction = typeof query;
  */
 export interface PairWritingDependencies {
   queryFn?: QueryFunction;
+  resumeSession?: typeof defaultResumeSession;
+  appendMessage?: typeof defaultAppendMessage;
 }
 
 /**
- * SDK options for Quick Action sessions.
+ * SDK options for Quick Action sessions (when no existing session).
  *
  * Quick Actions are task-scoped: Claude reads the file, makes an edit, confirms.
  * - Read and Edit tools available (scoped to vault via cwd)
@@ -66,14 +72,47 @@ const QUICK_ACTION_OPTIONS: Partial<Options> = {
 };
 
 /**
+ * Formats a Quick Action as a user-visible message.
+ * This appears in the Discussion conversation.
+ */
+function formatQuickActionUserMessage(
+  action: string,
+  selection: string
+): string {
+  const actionDisplay = action.charAt(0).toUpperCase() + action.slice(1);
+  const truncatedSelection = selection.length > 100
+    ? selection.slice(0, 100) + "..."
+    : selection;
+  return `[${actionDisplay}] "${truncatedSelection}"`;
+}
+
+/**
+ * Formats an Advisory Action as a user-visible message.
+ * This appears in the Discussion conversation.
+ */
+function formatAdvisoryActionUserMessage(
+  action: string,
+  selection: string
+): string {
+  const actionDisplay = action.charAt(0).toUpperCase() + action.slice(1);
+  const truncatedSelection = selection.length > 100
+    ? selection.slice(0, 100) + "..."
+    : selection;
+  return `[${actionDisplay}] "${truncatedSelection}"`;
+}
+
+/**
  * Handles a Quick Action request (Tighten, Embellish, Correct, Polish).
  *
  * Flow:
  * 1. Validates file path is within vault
  * 2. Builds the prompt using action-specific template
- * 3. Creates a Claude session with Read/Edit tools
+ * 3. If existing session: resumes it; otherwise creates task-scoped session
  * 4. Streams all events to frontend (tool_start, tool_end, response_chunk, response_end)
- * 5. Session terminates after Claude confirms completion
+ * 5. Appends user message and response to session history
+ *
+ * When an existing discussion session is available, Quick Actions use it to maintain
+ * full context. The Edit tool usage appears in the conversation history.
  *
  * @param ctx - Handler context with connection state and send functions
  * @param request - Quick action request message
@@ -90,9 +129,17 @@ export async function handleQuickAction(
   }
 
   const vault = ctx.state.currentVault;
+  const sessionId = ctx.state.currentSessionId;
   const queryFn = deps.queryFn ?? query;
+  const resumeSession = deps.resumeSession ?? defaultResumeSession;
+  const appendMessage = deps.appendMessage ?? defaultAppendMessage;
 
   log.info(`Quick action "${request.action}" on ${request.filePath}`);
+  if (sessionId) {
+    log.info(`Using existing session: ${sessionId.slice(0, 8)}...`);
+  } else {
+    log.info("No existing session, will create task-scoped session");
+  }
 
   // Validate action type (fast, no I/O)
   if (!isQuickActionType(request.action)) {
@@ -139,26 +186,76 @@ export async function handleQuickAction(
   const messageId = generateMessageId();
   const startTime = Date.now();
 
+  // Add user message to session history (so it appears in Discussion)
+  const userMessage = formatQuickActionUserMessage(request.action, request.selection);
+  if (sessionId) {
+    try {
+      await appendMessage(vault.path, sessionId, {
+        id: generateMessageId(),
+        role: "user",
+        content: userMessage,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      log.warn("Failed to append user message to session", error);
+    }
+  }
+
   // Send response_start
   ctx.send({ type: "response_start", messageId });
 
   try {
-    // Create task-scoped Claude session
-    log.info("Creating Quick Action session...");
-    const queryResult = queryFn({
-      prompt,
-      options: {
-        ...QUICK_ACTION_OPTIONS,
-        cwd: vault.contentRoot,
-        settingSources: ["local", "project", "user"],
-      },
-    });
+    let queryResult: AsyncGenerator<SDKMessage, void>;
+
+    if (sessionId) {
+      // Resume existing discussion session with Edit tool enabled
+      log.info("Resuming existing session for Quick Action...");
+      const sessionResult = await resumeSession(
+        vault.path,
+        sessionId,
+        prompt,
+        {
+          ...QUICK_ACTION_OPTIONS,
+          cwd: vault.contentRoot,
+          settingSources: ["local", "project", "user"],
+        }
+      );
+      queryResult = sessionResult.events;
+    } else {
+      // Create task-scoped Claude session (fallback if no session)
+      log.info("Creating task-scoped Quick Action session...");
+      queryResult = queryFn({
+        prompt,
+        options: {
+          ...QUICK_ACTION_OPTIONS,
+          cwd: vault.contentRoot,
+          settingSources: ["local", "project", "user"],
+        },
+      });
+    }
 
     // Stream events to frontend
     const streamResult = await streamQuickActionEvents(ctx, messageId, queryResult);
 
     const durationMs = Date.now() - startTime;
     log.info(`Quick action completed in ${durationMs}ms`);
+
+    // Append assistant message to session history
+    if (sessionId && streamResult.content.length > 0) {
+      try {
+        await appendMessage(vault.path, sessionId, {
+          id: messageId,
+          role: "assistant",
+          content: streamResult.content,
+          timestamp: new Date().toISOString(),
+          toolInvocations: streamResult.toolInvocations.length > 0 ? streamResult.toolInvocations : undefined,
+          contextUsage: streamResult.contextUsage,
+          durationMs,
+        });
+      } catch (error) {
+        log.warn("Failed to append assistant message to session", error);
+      }
+    }
 
     // Send response_end
     ctx.send({
@@ -179,6 +276,13 @@ export async function handleQuickAction(
  */
 interface StreamingResult {
   content: string;
+  toolInvocations: Array<{
+    toolUseId: string;
+    toolName: string;
+    status: "running" | "complete";
+    input?: unknown;
+    output?: unknown;
+  }>;
   contextUsage?: number;
 }
 
@@ -193,7 +297,7 @@ interface StreamingResult {
  * @param ctx - Handler context
  * @param messageId - Unique message ID for this response
  * @param queryResult - The SDK query generator
- * @returns Accumulated content and context usage
+ * @returns Accumulated content, tool invocations, and context usage
  */
 async function streamQuickActionEvents(
   ctx: HandlerContext,
@@ -201,7 +305,7 @@ async function streamQuickActionEvents(
   queryResult: AsyncGenerator<SDKMessage, void>
 ): Promise<StreamingResult> {
   const responseChunks: string[] = [];
-  const toolsMap = new Map<string, { name: string; inputChunks: string[] }>();
+  const toolsMap = new Map<string, { name: string; inputChunks: string[]; input?: unknown; output?: unknown }>();
   const contentBlocks = new Map<number, { type: string; toolUseId?: string; toolName?: string; inputChunks?: string[] }>();
   let contextUsage: number | undefined;
 
@@ -276,6 +380,11 @@ async function streamQuickActionEvents(
                 toolUseId: block.toolUseId,
                 input,
               });
+              // Store input for session history
+              const tool = toolsMap.get(block.toolUseId);
+              if (tool) {
+                tool.input = input;
+              }
             } catch {
               log.warn(`Failed to parse tool input JSON for ${block.toolUseId}`);
             }
@@ -321,6 +430,11 @@ async function streamQuickActionEvents(
                 toolUseId: typedBlock.tool_use_id,
                 output: typedBlock.content ?? null,
               });
+              // Store output for session history
+              const tool = toolsMap.get(typedBlock.tool_use_id);
+              if (tool) {
+                tool.output = typedBlock.content ?? null;
+              }
             }
           }
         }
@@ -346,6 +460,11 @@ async function streamQuickActionEvents(
               toolUseId,
               output: output ?? null,
             });
+            // Store output for session history
+            const tool = toolsMap.get(toolUseId);
+            if (tool) {
+              tool.output = output ?? null;
+            }
           }
         }
         break;
@@ -353,8 +472,18 @@ async function streamQuickActionEvents(
     }
   }
 
+  // Convert toolsMap to array for storage
+  const toolInvocations = Array.from(toolsMap.entries()).map(([toolUseId, tool]) => ({
+    toolUseId,
+    toolName: tool.name,
+    status: "complete" as const,
+    input: tool.input,
+    output: tool.output,
+  }));
+
   return {
     content: responseChunks.join(""),
+    toolInvocations,
     contextUsage,
   };
 }
@@ -364,17 +493,35 @@ async function streamQuickActionEvents(
 // =============================================================================
 
 /**
+ * SDK options for Advisory Action sessions (when no existing session).
+ *
+ * Advisory Actions are read-only: Claude analyzes text and provides feedback.
+ * - No tools needed (pure text analysis)
+ * - maxTurns: 1 (single response expected)
+ * - Budget capped at $0.25 for advisory feedback
+ */
+const ADVISORY_ACTION_OPTIONS: Partial<Options> = {
+  allowedTools: [],
+  maxTurns: 1,
+  maxBudgetUsd: 0.25,
+  includePartialMessages: true,
+};
+
+/**
  * Handles an Advisory Action request (Validate, Critique, Compare).
  *
- * Advisory actions stream text responses to the conversation pane without tool use.
+ * Advisory actions stream text responses to the Discussion conversation.
+ * When an existing session is available, uses resumeSession to maintain context.
  * The user reads the feedback and manually applies changes.
  *
  * @param ctx - Handler context with connection state and send functions
  * @param request - Advisory action request message
+ * @param deps - Optional dependencies for testing
  */
 export async function handleAdvisoryAction(
   ctx: HandlerContext,
-  request: AdvisoryActionRequestMessage
+  request: AdvisoryActionRequestMessage,
+  deps: PairWritingDependencies = {}
 ): Promise<void> {
   // Require vault to be selected
   if (!requireVault(ctx)) {
@@ -382,8 +529,17 @@ export async function handleAdvisoryAction(
   }
 
   const vault = ctx.state.currentVault;
+  const sessionId = ctx.state.currentSessionId;
+  const queryFn = deps.queryFn ?? query;
+  const resumeSession = deps.resumeSession ?? defaultResumeSession;
+  const appendMessage = deps.appendMessage ?? defaultAppendMessage;
 
   log.info(`Advisory action "${request.action}" on ${request.filePath}`);
+  if (sessionId) {
+    log.info(`Using existing session: ${sessionId.slice(0, 8)}...`);
+  } else {
+    log.info("No existing session, will create task-scoped session");
+  }
 
   // Validate action type
   if (!isAdvisoryActionType(request.action)) {
@@ -426,47 +582,80 @@ export async function handleAdvisoryAction(
   const messageId = generateMessageId();
   const startTime = Date.now();
 
+  // Add user message to session history (so it appears in Discussion)
+  const userMessage = formatAdvisoryActionUserMessage(request.action, request.selection);
+  if (sessionId) {
+    try {
+      await appendMessage(vault.path, sessionId, {
+        id: generateMessageId(),
+        role: "user",
+        content: userMessage,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      log.warn("Failed to append user message to session", error);
+    }
+  }
+
   ctx.send({ type: "response_start", messageId });
 
   try {
-    // Create Anthropic client for streaming
-    const client = new Anthropic();
-    const stream = client.messages.stream({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }],
-    });
+    let queryResult: AsyncGenerator<SDKMessage, void>;
 
-    let contextUsage: number | undefined;
-
-    // Stream response chunks
-    for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        ctx.send({
-          type: "response_chunk",
-          messageId,
-          content: event.delta.text,
-        });
-      }
-
-      if (event.type === "message_delta" && event.usage) {
-        const inputTokens = stream.currentMessage?.usage?.input_tokens ?? 0;
-        const outputTokens = event.usage.output_tokens ?? 0;
-        const totalTokens = inputTokens + outputTokens;
-        // Estimate context usage (Claude sonnet has ~200k context)
-        contextUsage = Math.round((100 * totalTokens) / 200000);
-        contextUsage = Math.max(0, Math.min(100, contextUsage));
-      }
+    if (sessionId) {
+      // Resume existing discussion session
+      log.info("Resuming existing session for Advisory Action...");
+      const sessionResult = await resumeSession(
+        vault.path,
+        sessionId,
+        prompt,
+        {
+          ...ADVISORY_ACTION_OPTIONS,
+          cwd: vault.contentRoot,
+          settingSources: ["local", "project", "user"],
+        }
+      );
+      queryResult = sessionResult.events;
+    } else {
+      // Create task-scoped Claude session (fallback if no session)
+      log.info("Creating task-scoped Advisory Action session...");
+      queryResult = queryFn({
+        prompt,
+        options: {
+          ...ADVISORY_ACTION_OPTIONS,
+          cwd: vault.contentRoot,
+          settingSources: ["local", "project", "user"],
+        },
+      });
     }
+
+    // Stream events (advisory actions are text-only, no tools)
+    const streamResult = await streamAdvisoryActionEvents(ctx, messageId, queryResult);
 
     const durationMs = Date.now() - startTime;
     log.info(`Advisory action completed in ${durationMs}ms`);
+
+    // Append assistant message to session history
+    if (sessionId && streamResult.content.length > 0) {
+      try {
+        await appendMessage(vault.path, sessionId, {
+          id: messageId,
+          role: "assistant",
+          content: streamResult.content,
+          timestamp: new Date().toISOString(),
+          contextUsage: streamResult.contextUsage,
+          durationMs,
+        });
+      } catch (error) {
+        log.warn("Failed to append assistant message to session", error);
+      }
+    }
 
     ctx.send({
       type: "response_end",
       messageId,
       durationMs,
-      contextUsage,
+      contextUsage: streamResult.contextUsage,
     });
   } catch (error) {
     log.error("Advisory action failed", error);
@@ -475,111 +664,82 @@ export async function handleAdvisoryAction(
   }
 }
 
-// =============================================================================
-// Pair Chat Handler (Freeform Conversation)
-// =============================================================================
+/**
+ * Result from streaming Advisory Action events.
+ */
+interface AdvisoryStreamingResult {
+  content: string;
+  contextUsage?: number;
+}
 
 /**
- * Handles a freeform chat message in Pair Writing Mode.
+ * Streams SDK events for an Advisory Action to the frontend.
  *
- * Pair chat allows the user to ask questions about the document or selection.
- * Selection context is optional.
+ * Advisory actions are text-only (no tools), so this is simpler than Quick Actions.
  *
- * @param ctx - Handler context with connection state and send functions
- * @param request - Pair chat request message
+ * @param ctx - Handler context
+ * @param messageId - Unique message ID for this response
+ * @param queryResult - The SDK query generator
+ * @returns Accumulated content and context usage
  */
-export async function handlePairChat(
+async function streamAdvisoryActionEvents(
   ctx: HandlerContext,
-  request: PairChatRequestMessage
-): Promise<void> {
-  // Require vault to be selected
-  if (!requireVault(ctx)) {
-    return;
-  }
+  messageId: string,
+  queryResult: AsyncGenerator<SDKMessage, void>
+): Promise<AdvisoryStreamingResult> {
+  const responseChunks: string[] = [];
+  let contextUsage: number | undefined;
 
-  const vault = ctx.state.currentVault;
+  for await (const event of queryResult) {
+    log.debug(`SDK event: ${event.type}`);
 
-  log.info(`Pair chat for ${request.filePath}`);
+    switch (event.type) {
+      case "stream_event": {
+        const streamEvent = event.event;
 
-  // Validate message text
-  if (!request.text || request.text.length === 0) {
-    ctx.sendError("VALIDATION_ERROR", "Message text is required");
-    return;
-  }
+        // Handle text deltas
+        if (streamEvent.type === "content_block_delta") {
+          const { delta } = streamEvent;
 
-  // Validate file path is within vault
-  try {
-    await validatePath(vault.contentRoot, request.filePath);
-  } catch (error) {
-    log.warn(`Path validation failed: ${request.filePath}`, error);
-    ctx.sendError("PATH_TRAVERSAL", `File path "${request.filePath}" is not within vault`);
-    return;
-  }
-
-  // Build the prompt context
-  const promptContext: PairChatContext = {
-    userMessage: request.text,
-    filePath: request.filePath,
-    selectedText: request.selection,
-    contextBefore: request.contextBefore,
-    contextAfter: request.contextAfter,
-    startLine: request.selectionStartLine,
-    endLine: request.selectionEndLine,
-    totalLines: request.totalLines,
-  };
-
-  // Build the chat prompt
-  const prompt = buildPairChatPrompt(promptContext);
-  log.debug(`Built pair chat prompt (${prompt.length} chars)`);
-
-  // Generate message ID and stream response
-  const messageId = generateMessageId();
-  const startTime = Date.now();
-
-  ctx.send({ type: "response_start", messageId });
-
-  try {
-    // Create Anthropic client for streaming
-    const client = new Anthropic();
-    const stream = client.messages.stream({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    let contextUsage: number | undefined;
-
-    // Stream response chunks
-    for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        ctx.send({
-          type: "response_chunk",
-          messageId,
-          content: event.delta.text,
-        });
+          if (delta.type === "text_delta") {
+            const { text } = delta;
+            ctx.send({
+              type: "response_chunk",
+              messageId,
+              content: text,
+            });
+            responseChunks.push(text);
+          }
+        }
+        break;
       }
 
-      if (event.type === "message_delta" && event.usage) {
-        const inputTokens = stream.currentMessage?.usage?.input_tokens ?? 0;
-        const outputTokens = event.usage.output_tokens ?? 0;
-        const totalTokens = inputTokens + outputTokens;
-        contextUsage = Math.round((100 * totalTokens) / 200000);
-        contextUsage = Math.max(0, Math.min(100, contextUsage));
+      case "result": {
+        // Extract context usage
+        const { usage, modelUsage } = event;
+
+        if (usage && modelUsage) {
+          const inputTokens = usage.input_tokens ?? 0;
+          const outputTokens = usage.output_tokens ?? 0;
+          const totalTokens = inputTokens + outputTokens;
+
+          const modelNames = Object.keys(modelUsage);
+          const modelName = modelNames[0];
+          if (modelName && modelUsage[modelName]) {
+            const contextWindow = modelUsage[modelName].contextWindow;
+            if (contextWindow && contextWindow > 0) {
+              contextUsage = Math.round((100 * totalTokens) / contextWindow);
+              contextUsage = Math.max(0, Math.min(100, contextUsage));
+            }
+          }
+        }
+        break;
       }
     }
-
-    const durationMs = Date.now() - startTime;
-    log.info(`Pair chat completed in ${durationMs}ms`);
-
-    ctx.send({
-      type: "response_end",
-      messageId,
-      durationMs,
-      contextUsage,
-    });
-  } catch (error) {
-    log.error("Pair chat failed", error);
-    const message = error instanceof Error ? error.message : "Pair chat failed";
-    ctx.sendError("SDK_ERROR", message);
   }
+
+  return {
+    content: responseChunks.join(""),
+    contextUsage,
+  };
 }

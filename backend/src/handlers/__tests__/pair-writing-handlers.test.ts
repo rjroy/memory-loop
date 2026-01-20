@@ -99,6 +99,8 @@ function createMockDeps(): RequiredHandlerDependencies {
     getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
+    resumeSession: () => Promise.resolve({ sessionId: "", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    appendMessage: () => Promise.resolve(),
     loadVaultConfig: () => Promise.resolve({}),
   };
 }

@@ -144,7 +144,6 @@ export type {
   QuickActionRequestMessage,
   AdvisoryActionType,
   AdvisoryActionRequestMessage,
-  PairChatRequestMessage,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

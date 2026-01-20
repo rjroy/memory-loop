@@ -201,7 +201,6 @@ import {
 import {
   handleQuickAction,
   handleAdvisoryAction,
-  handlePairChat,
 } from "./handlers/pair-writing-handlers.js";
 
 // Re-export types for external consumers
@@ -308,6 +307,8 @@ export class WebSocketHandler {
       getAllTasks: hd.getAllTasks ?? defaultGetAllTasks,
       toggleTask: hd.toggleTask ?? defaultToggleTask,
       getRecentSessions: hd.getRecentSessions ?? defaultGetRecentSessions,
+      resumeSession: hd.resumeSession ?? defaultResumeSession,
+      appendMessage: hd.appendMessage ?? defaultAppendMessage,
       loadVaultConfig: hd.loadVaultConfig ?? defaultLoadVaultConfig,
     };
   }
@@ -768,10 +769,6 @@ export class WebSocketHandler {
 
       case "advisory_action_request":
         await handleAdvisoryAction(ctx, message);
-        break;
-
-      case "pair_chat_request":
-        await handlePairChat(ctx, message);
         break;
     }
   }

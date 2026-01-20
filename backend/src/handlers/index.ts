@@ -52,5 +52,4 @@ export {
 export {
   handleQuickAction,
   handleAdvisoryAction,
-  handlePairChat,
 } from "./pair-writing-handlers.js";

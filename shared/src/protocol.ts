@@ -757,30 +757,6 @@ export const AdvisoryActionRequestMessageSchema = z.object({
   snapshotSelection: z.string().optional(),
 });
 
-/**
- * Client sends freeform chat in Pair Writing Mode (desktop only)
- * Selection context is optional (user may chat without a selection)
- */
-export const PairChatRequestMessageSchema = z.object({
-  type: z.literal("pair_chat_request"),
-  /** The user's message text */
-  text: z.string().min(1, "Message text is required"),
-  /** Path to the file being edited (relative to content root) */
-  filePath: z.string().min(1, "File path is required"),
-  /** The selected text (optional) */
-  selection: z.string().optional(),
-  /** Paragraph before the selection (for context) */
-  contextBefore: z.string().optional(),
-  /** Paragraph after the selection (for context) */
-  contextAfter: z.string().optional(),
-  /** 1-indexed line number where selection starts */
-  selectionStartLine: z.number().int().min(1).optional(),
-  /** 1-indexed line number where selection ends */
-  selectionEndLine: z.number().int().min(1).optional(),
-  /** Total lines in the document */
-  totalLines: z.number().int().min(1).optional(),
-});
-
 // =============================================================================
 // Memory Extraction Client Messages
 // =============================================================================
@@ -885,7 +861,6 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   // Pair Writing Mode
   QuickActionRequestMessageSchema,
   AdvisoryActionRequestMessageSchema,
-  PairChatRequestMessageSchema,
   // Memory Extraction
   GetMemoryMessageSchema,
   SaveMemoryMessageSchema,
@@ -1662,7 +1637,6 @@ export type QuickActionType = z.infer<typeof QuickActionTypeSchema>;
 export type AdvisoryActionType = z.infer<typeof AdvisoryActionTypeSchema>;
 export type QuickActionRequestMessage = z.infer<typeof QuickActionRequestMessageSchema>;
 export type AdvisoryActionRequestMessage = z.infer<typeof AdvisoryActionRequestMessageSchema>;
-export type PairChatRequestMessage = z.infer<typeof PairChatRequestMessageSchema>;
 export type GetMemoryMessage = z.infer<typeof GetMemoryMessageSchema>;
 export type SaveMemoryMessage = z.infer<typeof SaveMemoryMessageSchema>;
 export type GetExtractionPromptMessage = z.infer<typeof GetExtractionPromptMessageSchema>;

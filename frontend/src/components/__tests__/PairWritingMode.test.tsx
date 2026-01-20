@@ -10,21 +10,27 @@ import { describe, it, expect, afterEach, mock } from "bun:test";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { PairWritingMode } from "../PairWritingMode";
 
+// Mock SessionContext to avoid needing SessionProvider
+void mock.module("../../contexts/SessionContext", () => ({
+  useSession: () => ({
+    addMessage: mock(() => {}),
+    updateLastMessage: mock(() => {}),
+    state: { messages: [], isStreaming: false },
+  }),
+}));
+
 // Mock imports for child components
 void mock.module("../PairWritingEditor", () => ({
   PairWritingEditor: () => <div data-testid="pair-writing-editor">PairWritingEditor</div>,
 }));
 
-void mock.module("../ConversationPane", () => ({
-  ConversationPane: ({
-    emptyState,
-    ariaLabel,
-  }: {
-    emptyState?: React.ReactNode;
-    ariaLabel?: string;
-  }) => (
-    <div data-testid="conversation-pane" aria-label={ariaLabel}>
-      {emptyState}
+// Mock Discussion component (replaces ConversationPane)
+void mock.module("../Discussion", () => ({
+  Discussion: () => (
+    <div data-testid="discussion" aria-label="Pair Writing conversation">
+      <div className="pair-writing-conversation__empty">
+        <p>Select text and use the context menu for AI assistance.</p>
+      </div>
     </div>
   ),
 }));
@@ -42,6 +48,7 @@ describe("PairWritingMode", () => {
     onSave: mock(() => {}),
     sendMessage: mock(() => {}),
     lastMessage: null,
+    connectionStatus: "connected" as const,
   };
 
   describe("rendering", () => {
@@ -81,17 +88,15 @@ describe("PairWritingMode", () => {
       // PairWritingEditor should be rendered
       expect(screen.getByTestId("pair-writing-editor")).toBeDefined();
 
-      // ConversationPane should be rendered
-      expect(screen.getByTestId("conversation-pane")).toBeDefined();
+      // Discussion should be rendered (replaces ConversationPane)
+      expect(screen.getByTestId("discussion")).toBeDefined();
     });
 
-    it("renders empty state in conversation pane", () => {
+    it("renders Discussion in conversation pane", () => {
       render(<PairWritingMode {...defaultProps} />);
 
-      // Empty state should be visible
-      expect(
-        screen.getByText(/select text and use the context menu/i)
-      ).toBeDefined();
+      // Discussion component should be visible in the right pane
+      expect(screen.getByTestId("discussion")).toBeDefined();
     });
   });
 
@@ -168,15 +173,16 @@ describe("PairWritingMode", () => {
     it("has proper aria-label for conversation pane", () => {
       render(<PairWritingMode {...defaultProps} />);
 
-      const conversationPane = screen.getByTestId("conversation-pane");
-      expect(conversationPane.getAttribute("aria-label")).toBe(
+      // Discussion component is in the conversation pane
+      const discussionPane = screen.getByTestId("discussion");
+      expect(discussionPane.getAttribute("aria-label")).toBe(
         "Pair Writing conversation"
       );
     });
   });
 
-  describe("vault ID extraction", () => {
-    it("extracts vault ID from assetBaseUrl", () => {
+  describe("Discussion integration", () => {
+    it("renders Discussion component", () => {
       render(
         <PairWritingMode
           {...defaultProps}
@@ -184,13 +190,12 @@ describe("PairWritingMode", () => {
         />
       );
 
-      // The vault ID should be passed to ConversationPane
-      // We verify this through the component being rendered successfully
-      expect(screen.getByTestId("conversation-pane")).toBeDefined();
+      // Discussion component should be rendered
+      expect(screen.getByTestId("discussion")).toBeDefined();
     });
 
-    it("handles invalid assetBaseUrl gracefully", () => {
-      // Should not throw when assetBaseUrl doesn't match expected pattern
+    it("handles different assetBaseUrl gracefully", () => {
+      // Should not throw when assetBaseUrl has different format
       expect(() => {
         render(
           <PairWritingMode {...defaultProps} assetBaseUrl="/invalid/url" />

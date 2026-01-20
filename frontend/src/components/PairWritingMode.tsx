@@ -3,9 +3,13 @@
  *
  * Split-screen container for desktop pair writing with AI assistance.
  * Left pane: PairWritingEditor for document editing with Quick Actions
- * Right pane: ConversationPane for AI feedback and chat
+ * Right pane: Discussion component (same session as Think tab)
  *
  * Desktop-only: hidden via CSS media query on touch devices (REQ-F-10).
+ *
+ * The right pane IS the Discussion tab: same conversation history, same session,
+ * same WebSocket connection. Quick Actions and Advisory Actions appear in the
+ * Discussion conversation, and responses stream through the same channel.
  *
  * @see .sdd/plans/memory-loop/2026-01-20-pair-writing-mode-plan.md TD-5, TD-6, TD-9
  * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-10, REQ-F-11, REQ-F-14, REQ-F-30
@@ -13,17 +17,15 @@
 
 import { useState, useCallback, useEffect } from "react";
 import type { ClientMessage, ServerMessage } from "@memory-loop/shared";
-import type { ConversationMessage } from "../contexts/SessionContext";
-import {
-  usePairWritingState,
-  type PairWritingMessage,
-} from "../hooks/usePairWritingState";
+import { useSession } from "../contexts/SessionContext";
+import { usePairWritingState } from "../hooks/usePairWritingState";
 import { PairWritingToolbar } from "./PairWritingToolbar";
 import { PairWritingEditor } from "./PairWritingEditor";
-import { ConversationPane } from "./ConversationPane";
+import { Discussion } from "./Discussion";
 import { ConfirmDialog } from "./ConfirmDialog";
 import type { AdvisoryActionType } from "./EditorContextMenu";
 import type { SelectionContext } from "../hooks/useTextSelection";
+import type { ConnectionStatus } from "../hooks/useWebSocket";
 import "./PairWritingMode.css";
 
 /**
@@ -40,70 +42,46 @@ export interface PairWritingModeProps {
   onExit: () => void;
   /** Called to save content to disk */
   onSave: (content: string) => void;
-  /** Function to send WebSocket messages */
+  /** Function to send WebSocket messages (shared with Discussion) */
   sendMessage: (message: ClientMessage) => void;
-  /** Last received server message */
+  /** Last received server message (shared with Discussion) */
   lastMessage: ServerMessage | null;
+  /** Current WebSocket connection status (shared with Discussion) */
+  connectionStatus: ConnectionStatus;
   /** Called when Quick Action completes and file should be reloaded */
   onQuickActionComplete?: (path: string) => void;
-}
-
-/**
- * Convert PairWritingMessage to ConversationMessage for ConversationPane.
- * ConversationPane expects the Discussion mode message format.
- */
-function toConversationMessage(msg: PairWritingMessage): ConversationMessage {
-  return {
-    id: msg.id,
-    role: msg.role,
-    content: msg.content,
-    timestamp: msg.timestamp,
-    toolInvocations: [], // Advisory actions don't use tools
-  };
-}
-
-/**
- * Empty state for Pair Writing conversation pane.
- */
-function PairWritingEmptyState(): React.ReactNode {
-  return (
-    <div className="pair-writing-conversation__empty">
-      <p>Select text and use the context menu for AI assistance.</p>
-      <p className="pair-writing-conversation__hint">
-        Try Validate, Critique, or ask freeform questions.
-      </p>
-    </div>
-  );
 }
 
 /**
  * Split-screen Pair Writing Mode for desktop.
  *
  * Features:
- * - 50/50 split layout with editor and conversation (REQ-F-11)
+ * - 50/50 split layout with editor and Discussion (REQ-F-11)
  * - Toolbar with Snapshot, Save, Exit buttons (REQ-F-14, REQ-F-23, REQ-F-29)
  * - Exit confirmation when unsaved manual edits exist (REQ-F-30)
  * - Hidden on touch devices via CSS media query (REQ-F-10)
+ * - Discussion in right pane is the same session as Think tab
  *
- * State management is handled by usePairWritingState hook (TD-5).
+ * State management for editor (content, snapshot, unsaved changes) is handled
+ * by usePairWritingState hook. Conversation state is managed by SessionContext
+ * and displayed by the embedded Discussion component.
  */
 export function PairWritingMode({
   filePath,
   content: initialContent,
-  assetBaseUrl,
+  assetBaseUrl: _assetBaseUrl,
   onExit,
   onSave,
   sendMessage,
   lastMessage,
+  connectionStatus,
   onQuickActionComplete,
 }: PairWritingModeProps): React.ReactNode {
+  void _assetBaseUrl; // Preserved for interface stability; Discussion handles its own asset resolution
   const { state, actions } = usePairWritingState();
+  const { addMessage } = useSession();
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-
-  // Extract vault ID from assetBaseUrl for ConversationPane
-  // assetBaseUrl format: /vault/{vaultId}/assets
-  const vaultId = assetBaseUrl.match(/\/vault\/([^/]+)\/assets/)?.[1];
 
   // Activate pair writing mode on mount (if not already active)
   useEffect(() => {
@@ -177,13 +155,15 @@ export function PairWritingMode({
   );
 
   // Handle Advisory Action from editor (REQ-F-15)
+  // Adds user message to SessionContext so it appears in the Discussion
   const handleAdvisoryAction = useCallback(
     (action: AdvisoryActionType, selection: SelectionContext) => {
-      // Add user message showing what they selected
+      // Add user message showing what they selected to the shared conversation
       const userMessage = `[${action.charAt(0).toUpperCase() + action.slice(1)}] "${selection.text}"`;
-      actions.addMessage({ role: "user", content: userMessage });
+      addMessage({ role: "user", content: userMessage });
 
       // Send advisory action request to backend
+      // Backend routes through existing session, response appears in Discussion
       sendMessage({
         type: "advisory_action_request",
         action,
@@ -197,28 +177,8 @@ export function PairWritingMode({
         snapshotSelection: action === "compare" ? state.snapshot ?? undefined : undefined,
       });
     },
-    [actions, sendMessage, filePath, state.snapshot]
+    [addMessage, sendMessage, filePath, state.snapshot]
   );
-
-  // Handle streaming response for advisory actions
-  useEffect(() => {
-    if (!lastMessage) return;
-
-    // Handle advisory action streaming (response without tool use)
-    if (lastMessage.type === "response_start") {
-      // Start a new assistant message
-      actions.addMessage({ role: "assistant", content: "", isStreaming: true });
-    } else if (lastMessage.type === "response_chunk") {
-      // Append chunk to current assistant message
-      actions.updateLastMessage(lastMessage.content, true);
-    } else if (lastMessage.type === "response_end") {
-      // Mark message as done streaming
-      actions.updateLastMessage("", false);
-    }
-  }, [lastMessage, actions]);
-
-  // Convert conversation messages for ConversationPane
-  const conversationMessages = state.conversation.map(toConversationMessage);
 
   return (
     <div className="pair-writing-mode">
@@ -250,14 +210,12 @@ export function PairWritingMode({
           />
         </div>
 
-        {/* Right pane: Conversation (REQ-F-13) */}
+        {/* Right pane: Discussion (same session as Think tab) */}
         <div className="pair-writing-mode__conversation-pane">
-          <ConversationPane
-            messages={conversationMessages}
-            vaultId={vaultId}
-            emptyState={<PairWritingEmptyState />}
-            className="pair-writing-conversation"
-            ariaLabel="Pair Writing conversation"
+          <Discussion
+            sendMessage={sendMessage}
+            connectionStatus={connectionStatus}
+            lastMessage={lastMessage}
           />
         </div>
       </div>

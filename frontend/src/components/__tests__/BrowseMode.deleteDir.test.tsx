@@ -77,7 +77,6 @@ function SetupVault({ vaultId }: { vaultId: string }) {
       metadataPath: "06_Metadata/memory-loop",
       attachmentPath: "attachments",
       setupComplete: true,
-      hasSyncConfig: false,
       promptsPerGeneration: 5,
       maxPoolSize: 50,
       quotesPerWeek: 1,

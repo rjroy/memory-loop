@@ -12,13 +12,11 @@ import { RecentActivity } from "./RecentActivity";
 import { GoalsCard } from "./GoalsCard";
 import { InspirationCard } from "./InspirationCard";
 import { HealthPanel } from "./HealthPanel";
-import { SyncButton } from "./SyncButton";
 import type {
   ClientMessage,
   InspirationItem,
   ServerMessage,
 } from "@memory-loop/shared";
-import { WidgetRenderer } from "./widgets";
 import "./HomeView.css";
 
 /**
@@ -116,17 +114,12 @@ export function HomeView(): React.ReactNode {
     setMode,
     setDiscussionPrefill,
     removeDiscussion,
-    widgets,
-    setGroundWidgets,
-    setGroundWidgetsLoading,
-    setGroundWidgetsError,
   } = useSession();
 
   const hasSentVaultSelectionRef = useRef(false);
   const hasRequestedRecentActivityRef = useRef(false);
   const hasRequestedGoalsRef = useRef(false);
   const hasRequestedInspirationRef = useRef(false);
-  const hasRequestedGroundWidgetsRef = useRef(false);
 
   // Keep vault ref in sync for use in callbacks
   const vaultRef = useRef(vault);
@@ -149,7 +142,7 @@ export function HomeView(): React.ReactNode {
     (message: ServerMessage) => {
       switch (message.type) {
         case "session_ready":
-          // Request recent activity, goals, inspiration, and ground widgets after server confirms vault selection
+          // Request recent activity, goals, and inspiration after server confirms vault selection
           // Note: Goals are only requested if vault has goalsPath set during discovery.
           // If user creates goals.md after vault selection, they must reselect the vault.
           if (!hasRequestedRecentActivityRef.current) {
@@ -163,11 +156,6 @@ export function HomeView(): React.ReactNode {
           if (!hasRequestedInspirationRef.current) {
             sendMessageRef.current?.({ type: "get_inspiration" });
             hasRequestedInspirationRef.current = true;
-          }
-          // Request ground widgets (vault-level aggregations) for Home view
-          if (!hasRequestedGroundWidgetsRef.current) {
-            sendMessageRef.current?.({ type: "get_ground_widgets" });
-            hasRequestedGroundWidgetsRef.current = true;
           }
           break;
 
@@ -189,22 +177,9 @@ export function HomeView(): React.ReactNode {
         case "session_deleted":
           removeDiscussion(message.sessionId);
           break;
-
-        case "ground_widgets":
-          setGroundWidgets(message.widgets);
-          setGroundWidgetsLoading(false);
-          break;
-
-        case "widget_error":
-          // Only handle ground-level errors (no filePath means it's a ground widget error)
-          if (!message.filePath) {
-            setGroundWidgetsError(message.error);
-            setGroundWidgetsLoading(false);
-          }
-          break;
       }
     },
-    [setRecentNotes, setRecentDiscussions, setGoals, removeDiscussion, setGroundWidgets, setGroundWidgetsLoading, setGroundWidgetsError]
+    [setRecentNotes, setRecentDiscussions, setGoals, removeDiscussion]
   );
 
   // Callback to re-send vault selection on WebSocket reconnect
@@ -213,10 +188,8 @@ export function HomeView(): React.ReactNode {
     hasRequestedRecentActivityRef.current = false;
     hasRequestedGoalsRef.current = false;
     hasRequestedInspirationRef.current = false;
-    hasRequestedGroundWidgetsRef.current = false;
     setInspirationLoading(true);
-    setGroundWidgetsLoading(true);
-  }, [setGroundWidgetsLoading]);
+  }, []);
 
   const { sendMessage, connectionStatus } = useWebSocket({
     onReconnect: handleReconnect,
@@ -295,11 +268,6 @@ export function HomeView(): React.ReactNode {
             ))}
           </div>
         )}
-        {vault?.hasSyncConfig && (
-          <div className="home-view__actions">
-            <SyncButton />
-          </div>
-        )}
       </section>
 
       {/* Inspiration */}
@@ -313,24 +281,6 @@ export function HomeView(): React.ReactNode {
 
       {/* Goals */}
       <GoalsCard />
-
-      {/* Ground Widgets */}
-      {widgets.isGroundLoading ? (
-        <section className="home-view__widgets home-view__widgets--loading" aria-label="Loading widgets">
-          <div className="home-view__widget-skeleton" aria-hidden="true" />
-          <div className="home-view__widget-skeleton" aria-hidden="true" />
-        </section>
-      ) : widgets.groundError ? (
-        <section className="home-view__widgets home-view__widgets--error" aria-label="Widget error">
-          <p className="home-view__error">{widgets.groundError}</p>
-        </section>
-      ) : widgets.groundWidgets.length > 0 ? (
-        <section className="home-view__widgets" aria-label="Vault widgets">
-          {widgets.groundWidgets.map((widget) => (
-            <WidgetRenderer key={widget.name} widget={widget} />
-          ))}
-        </section>
-      ) : null}
 
       {/* Recent Activity */}
       <RecentActivity onDeleteSession={handleDeleteSession} />

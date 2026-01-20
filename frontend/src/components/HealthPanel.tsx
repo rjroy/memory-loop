@@ -33,10 +33,6 @@ function formatIssueCounts(issues: HealthIssue[]): string {
  */
 function getCategoryLabel(category: HealthIssue["category"]): string {
   switch (category) {
-    case "widget_config":
-      return "Widget Config";
-    case "widget_compute":
-      return "Widget Compute";
     case "vault_config":
       return "Vault Config";
     case "file_watcher":

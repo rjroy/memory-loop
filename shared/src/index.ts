@@ -42,14 +42,6 @@ export {
   FileSearchResultSchema,
   ContentSearchResultSchema,
   ContextSnippetSchema,
-  // Widget schemas
-  WidgetDisplayTypeSchema,
-  WidgetTypeSchema,
-  WidgetLocationSchema,
-  WidgetDisplayConfigSchema,
-  WidgetEditableTypeSchema,
-  WidgetEditableFieldSchema,
-  WidgetResultSchema,
   // Health schemas
   HealthSeveritySchema,
   HealthCategorySchema,
@@ -128,14 +120,6 @@ export type {
   FileSearchResult,
   ContentSearchResult,
   ContextSnippet,
-  // Widget types
-  WidgetDisplayType,
-  WidgetType,
-  WidgetLocation,
-  WidgetDisplayConfig,
-  WidgetEditableType,
-  WidgetEditableField,
-  WidgetResult,
   // Health types
   HealthSeverity,
   HealthCategory,

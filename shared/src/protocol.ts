@@ -88,7 +88,6 @@ export const VaultInfoSchema = z.object({
   goalsPath: z.string().optional(),
   attachmentPath: z.string().min(1, "Attachment path is required"),
   setupComplete: z.boolean(),
-  hasSyncConfig: z.boolean(),
   discussionModel: DiscussionModelSchema.optional(),
   promptsPerGeneration: z.number().int().positive(),
   maxPoolSize: z.number().int().positive(),
@@ -222,105 +221,6 @@ export const ConversationMessageSchema = z.object({
   toolInvocations: z.array(ToolInvocationSchema).optional(),
   contextUsage: z.number().min(0).max(100).optional(),
   durationMs: z.number().int().min(0).optional(),
-});
-
-// =============================================================================
-// Widget Display Schemas
-// =============================================================================
-
-/**
- * Display types for widgets (REQ-F-18).
- * - summary-card: Key-value pairs for collection stats
- * - table: Rows/columns for ranked lists
- * - list: Ordered items for similar items
- * - meter: Single value with scale (e.g., HEPCAT score)
- */
-export const WidgetDisplayTypeSchema = z.enum(["summary-card", "table", "list", "meter"]);
-
-/**
- * Widget type schema for computation type (REQ-F-4).
- * - aggregate: Collection-level statistics (sum, avg, count, etc.)
- * - similarity: Per-item similarity ranking against other items
- */
-export const WidgetTypeSchema = z.enum(["aggregate", "similarity"]);
-
-/**
- * Widget location schema (REQ-F-16, REQ-F-17).
- * - ground: Appears on Home/Ground view (global dashboard)
- * - recall: Appears on Browse/Recall view when viewing a matching file
- */
-export const WidgetLocationSchema = z.enum(["ground", "recall"]);
-
-/**
- * Display configuration for widget rendering.
- * Type-specific fields are validated at runtime.
- */
-export const WidgetDisplayConfigSchema = z.object({
-  /** Display component type */
-  type: WidgetDisplayTypeSchema,
-  /** Optional custom title (defaults to widget name) */
-  title: z.string().optional(),
-  /** Column names for table display */
-  columns: z.array(z.string()).optional(),
-  /** Maximum items for list display */
-  limit: z.number().int().positive().optional(),
-  /** Minimum value for meter display */
-  min: z.number().optional(),
-  /** Maximum value for meter display */
-  max: z.number().optional(),
-});
-
-/**
- * Input types for editable frontmatter fields (REQ-F-20).
- */
-export const WidgetEditableTypeSchema = z.enum(["slider", "number", "text", "date", "select"]);
-
-/**
- * Configuration for an editable frontmatter field (REQ-F-20, REQ-F-21).
- * Widgets can declare editable fields that users can modify.
- */
-export const WidgetEditableFieldSchema = z.object({
-  /** Frontmatter field path to edit (e.g., "rating" or "status") */
-  field: z.string().min(1, "Editable field path is required"),
-  /** Input type for editing */
-  type: WidgetEditableTypeSchema,
-  /** User-facing label for the input */
-  label: z.string().min(1, "Editable field label is required"),
-  /** Options for select type */
-  options: z.array(z.string()).optional(),
-  /** Minimum value for slider/number types */
-  min: z.number().optional(),
-  /** Maximum value for slider/number types */
-  max: z.number().optional(),
-  /** Step increment for slider/number types */
-  step: z.number().positive().optional(),
-  /** Current value of the field (populated at runtime) */
-  currentValue: z.unknown().optional(),
-});
-
-/**
- * Widget computation result (TD-13, REQ-F-27).
- * Represents the computed output of a widget for display.
- */
-export const WidgetResultSchema = z.object({
-  /** Unique identifier for the widget */
-  widgetId: z.string().min(1, "Widget ID is required"),
-  /** Human-readable widget name */
-  name: z.string().min(1, "Widget name is required"),
-  /** Computation type */
-  type: WidgetTypeSchema,
-  /** Display location */
-  location: WidgetLocationSchema,
-  /** Display configuration */
-  display: WidgetDisplayConfigSchema,
-  /** Computed data (structure depends on widget type) */
-  data: z.unknown(),
-  /** True when glob matches zero files (REQ-F-27) */
-  isEmpty: z.boolean(),
-  /** Reason for empty state (e.g., "No files match pattern") */
-  emptyReason: z.string().optional(),
-  /** Optional editable fields (REQ-F-20) */
-  editable: z.array(WidgetEditableFieldSchema).optional(),
 });
 
 // =============================================================================
@@ -737,38 +637,6 @@ export const MoveFileMessageSchema = z.object({
 });
 
 /**
- * Client requests ground widgets for current vault (REQ-F-16).
- * Ground widgets appear on the Home/Ground view.
- */
-export const GetGroundWidgetsMessageSchema = z.object({
-  type: z.literal("get_ground_widgets"),
-});
-
-/**
- * Client requests recall widgets for a specific file (REQ-F-17).
- * Recall widgets appear on the Browse/Recall view when viewing a matching file.
- */
-export const GetRecallWidgetsMessageSchema = z.object({
-  type: z.literal("get_recall_widgets"),
-  /** Path to the file being viewed (relative to content root) */
-  path: z.string().min(1, "File path is required"),
-});
-
-/**
- * Client requests to edit a frontmatter field via widget (REQ-F-20, REQ-F-21, REQ-F-22).
- * The edit modifies a single frontmatter field in the source file.
- */
-export const WidgetEditMessageSchema = z.object({
-  type: z.literal("widget_edit"),
-  /** File path (relative to content root) */
-  path: z.string().min(1, "File path is required"),
-  /** Frontmatter field path (dot-notation, e.g., "rating" or "bgg.play_count") */
-  field: z.string().min(1, "Field path is required"),
-  /** New value for the field */
-  value: z.unknown(),
-});
-
-/**
  * Client requests to dismiss a health issue.
  * Dismissed issues won't reappear until vault is reselected.
  */
@@ -806,18 +674,6 @@ export const UpdateVaultConfigMessageSchema = z.object({
   config: EditableVaultConfigSchema,
   /** Optional vault ID for editing before vault selection (VaultSelect use case) */
   vaultId: z.string().optional(),
-});
-
-/**
- * Client triggers sync of external data pipelines (REQ-F-16, REQ-F-17).
- * Manual trigger only - no automatic/scheduled sync.
- */
-export const TriggerSyncMessageSchema = z.object({
-  type: z.literal("trigger_sync"),
-  /** Sync mode: full re-syncs all files, incremental skips recently synced */
-  mode: z.enum(["full", "incremental"]),
-  /** Optional specific pipeline name; if omitted, all pipelines run */
-  pipeline: z.string().optional(),
 });
 
 /**
@@ -926,14 +782,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   CreateFileMessageSchema,
   RenameFileMessageSchema,
   MoveFileMessageSchema,
-  GetGroundWidgetsMessageSchema,
-  GetRecallWidgetsMessageSchema,
-  WidgetEditMessageSchema,
   DismissHealthIssueMessageSchema,
   GetPinnedAssetsMessageSchema,
   SetPinnedAssetsMessageSchema,
   UpdateVaultConfigMessageSchema,
-  TriggerSyncMessageSchema,
   CreateVaultMessageSchema,
   // Memory Extraction
   GetMemoryMessageSchema,
@@ -1372,52 +1224,6 @@ export const FileMovedMessageSchema = z.object({
   referencesUpdated: z.number().int().min(0),
 });
 
-/**
- * Server sends ground widgets for the current vault (REQ-F-16).
- * Response to get_ground_widgets request.
- */
-export const GroundWidgetsMessageSchema = z.object({
-  type: z.literal("ground_widgets"),
-  /** Array of computed widget results for Home/Ground view */
-  widgets: z.array(WidgetResultSchema),
-});
-
-/**
- * Server sends recall widgets for a specific file (REQ-F-17).
- * Response to get_recall_widgets request.
- */
-export const RecallWidgetsMessageSchema = z.object({
-  type: z.literal("recall_widgets"),
-  /** Path to the file these widgets are for */
-  path: z.string().min(1, "File path is required"),
-  /** Array of computed widget results for Browse/Recall view */
-  widgets: z.array(WidgetResultSchema),
-});
-
-/**
- * Server sends updated widgets after edit or file change (REQ-F-22).
- * Pushed to client when widget recomputation completes.
- */
-export const WidgetUpdateMessageSchema = z.object({
-  type: z.literal("widget_update"),
-  /** Updated widget results */
-  widgets: z.array(WidgetResultSchema),
-});
-
-/**
- * Server reports a widget configuration or computation error (REQ-F-3).
- * Sent when widget config is invalid or computation fails.
- */
-export const WidgetErrorMessageSchema = z.object({
-  type: z.literal("widget_error"),
-  /** Optional widget ID if error is specific to one widget */
-  widgetId: z.string().optional(),
-  /** Human-readable error message */
-  error: z.string().min(1, "Error message is required"),
-  /** Optional file path if error is specific to a file */
-  filePath: z.string().optional(),
-});
-
 // =============================================================================
 // Health Reporting Schemas
 // =============================================================================
@@ -1433,12 +1239,9 @@ export const HealthSeveritySchema = z.enum(["error", "warning"]);
  * Category for health issues, used for grouping and filtering.
  */
 export const HealthCategorySchema = z.enum([
-  "widget_config",   // Widget YAML parse/validation errors
-  "widget_compute",  // Widget computation failures
   "vault_config",    // .memory-loop.json issues
   "file_watcher",    // File watcher issues
   "cache",           // Cache failures
-  "sync",            // External data sync failures
   "general",         // Other issues
 ]);
 
@@ -1506,53 +1309,6 @@ export const ConfigUpdatedMessageSchema = z.object({
  * - error: Extraction failed
  */
 export const ExtractionStatusValueSchema = z.enum(["idle", "running", "complete", "error"]);
-
-// =============================================================================
-// Sync Status Schemas
-// =============================================================================
-
-/**
- * Schema for sync status enum values (REQ-F-30, REQ-F-31)
- */
-export const SyncStatusValueSchema = z.enum(["idle", "syncing", "success", "error"]);
-
-/**
- * Schema for sync progress information during active sync
- */
-export const SyncProgressSchema = z.object({
-  /** Number of files processed so far */
-  current: z.number().int().min(0),
-  /** Total number of files to process */
-  total: z.number().int().min(0),
-  /** Path of file currently being processed */
-  currentFile: z.string().optional(),
-});
-
-/**
- * Schema for per-file sync error (REQ-F-32)
- */
-export const SyncFileErrorSchema = z.object({
-  /** Path of file that failed */
-  file: z.string().min(1, "File path is required"),
-  /** Error description */
-  error: z.string().min(1, "Error message is required"),
-});
-
-/**
- * Server sends sync status updates (REQ-F-30, REQ-F-31, REQ-F-32).
- * Sent in response to trigger_sync and during sync progress.
- */
-export const SyncStatusMessageSchema = z.object({
-  type: z.literal("sync_status"),
-  /** Current sync status */
-  status: SyncStatusValueSchema,
-  /** Progress information when status is "syncing" */
-  progress: SyncProgressSchema.optional(),
-  /** Summary message (e.g., "Synced 8/10 files") or error description */
-  message: z.string().optional(),
-  /** Per-file errors when some files failed (REQ-F-32) */
-  errors: z.array(SyncFileErrorSchema).optional(),
-});
 
 /**
  * Server confirms vault was created successfully.
@@ -1698,14 +1454,9 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   FileCreatedMessageSchema,
   FileRenamedMessageSchema,
   FileMovedMessageSchema,
-  GroundWidgetsMessageSchema,
-  RecallWidgetsMessageSchema,
-  WidgetUpdateMessageSchema,
-  WidgetErrorMessageSchema,
   HealthReportMessageSchema,
   PinnedAssetsMessageSchema,
   ConfigUpdatedMessageSchema,
-  SyncStatusMessageSchema,
   VaultCreatedMessageSchema,
   // Memory Extraction
   MemoryContentMessageSchema,
@@ -1746,15 +1497,6 @@ export type ConversationMessageProtocol = z.infer<typeof ConversationMessageSche
 export type FileSearchResult = z.infer<typeof FileSearchResultSchema>;
 export type ContentSearchResult = z.infer<typeof ContentSearchResultSchema>;
 export type ContextSnippet = z.infer<typeof ContextSnippetSchema>;
-
-// Widget types
-export type WidgetDisplayType = z.infer<typeof WidgetDisplayTypeSchema>;
-export type WidgetType = z.infer<typeof WidgetTypeSchema>;
-export type WidgetLocation = z.infer<typeof WidgetLocationSchema>;
-export type WidgetDisplayConfig = z.infer<typeof WidgetDisplayConfigSchema>;
-export type WidgetEditableType = z.infer<typeof WidgetEditableTypeSchema>;
-export type WidgetEditableField = z.infer<typeof WidgetEditableFieldSchema>;
-export type WidgetResult = z.infer<typeof WidgetResultSchema>;
 
 // Health types
 export type HealthSeverity = z.infer<typeof HealthSeveritySchema>;
@@ -1811,14 +1553,10 @@ export type CreateDirectoryMessage = z.infer<typeof CreateDirectoryMessageSchema
 export type CreateFileMessage = z.infer<typeof CreateFileMessageSchema>;
 export type RenameFileMessage = z.infer<typeof RenameFileMessageSchema>;
 export type MoveFileMessage = z.infer<typeof MoveFileMessageSchema>;
-export type GetGroundWidgetsMessage = z.infer<typeof GetGroundWidgetsMessageSchema>;
-export type GetRecallWidgetsMessage = z.infer<typeof GetRecallWidgetsMessageSchema>;
-export type WidgetEditMessage = z.infer<typeof WidgetEditMessageSchema>;
 export type DismissHealthIssueMessage = z.infer<typeof DismissHealthIssueMessageSchema>;
 export type GetPinnedAssetsMessage = z.infer<typeof GetPinnedAssetsMessageSchema>;
 export type SetPinnedAssetsMessage = z.infer<typeof SetPinnedAssetsMessageSchema>;
 export type UpdateVaultConfigMessage = z.infer<typeof UpdateVaultConfigMessageSchema>;
-export type TriggerSyncMessage = z.infer<typeof TriggerSyncMessageSchema>;
 export type CreateVaultMessage = z.infer<typeof CreateVaultMessageSchema>;
 export type GetMemoryMessage = z.infer<typeof GetMemoryMessageSchema>;
 export type SaveMemoryMessage = z.infer<typeof SaveMemoryMessageSchema>;
@@ -1868,16 +1606,8 @@ export type DirectoryCreatedMessage = z.infer<typeof DirectoryCreatedMessageSche
 export type FileCreatedMessage = z.infer<typeof FileCreatedMessageSchema>;
 export type FileRenamedMessage = z.infer<typeof FileRenamedMessageSchema>;
 export type FileMovedMessage = z.infer<typeof FileMovedMessageSchema>;
-export type GroundWidgetsMessage = z.infer<typeof GroundWidgetsMessageSchema>;
-export type RecallWidgetsMessage = z.infer<typeof RecallWidgetsMessageSchema>;
-export type WidgetUpdateMessage = z.infer<typeof WidgetUpdateMessageSchema>;
-export type WidgetErrorMessage = z.infer<typeof WidgetErrorMessageSchema>;
 export type PinnedAssetsMessage = z.infer<typeof PinnedAssetsMessageSchema>;
 export type ConfigUpdatedMessage = z.infer<typeof ConfigUpdatedMessageSchema>;
-export type SyncStatusValue = z.infer<typeof SyncStatusValueSchema>;
-export type SyncProgress = z.infer<typeof SyncProgressSchema>;
-export type SyncFileError = z.infer<typeof SyncFileErrorSchema>;
-export type SyncStatusMessage = z.infer<typeof SyncStatusMessageSchema>;
 export type VaultCreatedMessage = z.infer<typeof VaultCreatedMessageSchema>;
 export type ExtractionStatusValue = z.infer<typeof ExtractionStatusValueSchema>;
 export type MemoryContentMessage = z.infer<typeof MemoryContentMessageSchema>;

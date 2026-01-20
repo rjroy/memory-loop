@@ -22,7 +22,6 @@ import { CsvViewer } from "./CsvViewer";
 import { DownloadViewer } from "./DownloadViewer";
 import { SearchHeader } from "./SearchHeader";
 import { SearchResults } from "./SearchResults";
-import { WidgetRenderer } from "./widgets";
 import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isTxtFile, isCsvFile, hasSupportedViewer } from "../utils/file-types";
 import type { FileSearchResult, ContentSearchResult } from "@memory-loop/shared";
 import "./BrowseMode.css";
@@ -45,13 +44,12 @@ const DISCUSSION_DRAFT_STORAGE_KEY = "memory-loop-discussion-draft";
 export function BrowseMode(): React.ReactNode {
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
-  const [isWidgetsPanelCollapsed, setIsWidgetsPanelCollapsed] = useState(false);
   const [pendingDirectoryContents, setPendingDirectoryContents] = useState<DirectoryContents | null>(null);
 
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  const { browser, vault, widgets, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch, setMode, setRecallWidgetsLoading, addPendingEdit } = useSession();
+  const { browser, vault, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch, setMode } = useSession();
 
   // Construct asset base URL with vaultId for image serving
   const assetBaseUrl = vault ? `/vault/${vault.id}/assets` : "/vault/assets";
@@ -246,9 +244,6 @@ export function BrowseMode(): React.ReactNode {
         // Re-request file content to refresh the view with saved content
         setFileLoading(true);
         sendMessage({ type: "read_file", path: lastMessage.path });
-        // Re-request recall widgets in case file frontmatter changed
-        setRecallWidgetsLoading(true);
-        sendMessage({ type: "get_recall_widgets", path: lastMessage.path });
         break;
 
       case "file_deleted": {
@@ -513,28 +508,19 @@ export function BrowseMode(): React.ReactNode {
       // For media files (images, videos, PDFs), just set the path - we render directly via asset URL
       if (isImageFile(path) || isVideoFile(path) || isPdfFile(path)) {
         setCurrentPath(path);
-        // Request recall widgets for the file (backend filters by source pattern)
-        setRecallWidgetsLoading(true);
-        sendMessage({ type: "get_recall_widgets", path });
         return;
       }
       // For unsupported files, just set the path - DownloadViewer uses asset URL directly
       if (!hasSupportedViewer(path)) {
         setCurrentPath(path);
-        // Request recall widgets for the file (backend filters by source pattern)
-        setRecallWidgetsLoading(true);
-        sendMessage({ type: "get_recall_widgets", path });
         return;
       }
       // For text files (markdown, JSON, txt, csv), request content from backend
       setCurrentPath(path);
       setFileLoading(true);
       sendMessage({ type: "read_file", path });
-      // Request recall widgets for the file (backend filters by source pattern)
-      setRecallWidgetsLoading(true);
-      sendMessage({ type: "get_recall_widgets", path });
     },
-    [sendMessage, setFileLoading, setCurrentPath, setRecallWidgetsLoading]
+    [sendMessage, setFileLoading, setCurrentPath]
   );
 
   // Handle navigation from MarkdownViewer (wiki-links)
@@ -544,12 +530,9 @@ export function BrowseMode(): React.ReactNode {
         setCurrentPath(path);
         setFileLoading(true);
         sendMessage({ type: "read_file", path });
-        // Request recall widgets for the navigated file
-        setRecallWidgetsLoading(true);
-        sendMessage({ type: "get_recall_widgets", path });
       }
     },
-    [sendMessage, setCurrentPath, setFileLoading, setRecallWidgetsLoading]
+    [sendMessage, setCurrentPath, setFileLoading]
   );
 
   // Handle save from MarkdownViewer adjust mode
@@ -568,22 +551,6 @@ export function BrowseMode(): React.ReactNode {
       });
     },
     [browser.currentPath, sendMessage, startSave]
-  );
-
-  // Handle widget edit from recall widgets
-  const handleWidgetEdit = useCallback(
-    (filePath: string, fieldPath: string, value: unknown) => {
-      // Optimistic update - track pending edit
-      addPendingEdit(filePath, fieldPath, value);
-      // Send edit to server
-      sendMessage({
-        type: "widget_edit",
-        path: filePath,
-        field: fieldPath,
-        value,
-      });
-    },
-    [sendMessage, addPendingEdit]
   );
 
   // Handle pinned assets change from FileTree - sync to server
@@ -825,54 +792,6 @@ export function BrowseMode(): React.ReactNode {
             <DownloadViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
           )}
         </article>
-        {/* Recall Widgets - collapsible panel shown when viewing files that match widget source patterns */}
-        {browser.currentPath && (widgets.isRecallLoading || widgets.recallError || (widgets.recallWidgets.length > 0 && widgets.recallFilePath === browser.currentPath)) && (
-          <div className={`browse-mode__recall-widgets ${isWidgetsPanelCollapsed ? "browse-mode__recall-widgets--collapsed" : ""}`}>
-            <button
-              type="button"
-              className="browse-mode__recall-widgets-header"
-              onClick={() => setIsWidgetsPanelCollapsed(!isWidgetsPanelCollapsed)}
-              aria-expanded={!isWidgetsPanelCollapsed}
-              aria-controls="recall-widgets-content"
-            >
-              <span className="browse-mode__recall-widgets-title">
-                Widgets
-                {!widgets.isRecallLoading && widgets.recallWidgets.length > 0 && (
-                  <span className="browse-mode__recall-widgets-count">({widgets.recallWidgets.length})</span>
-                )}
-              </span>
-              <span className={`browse-mode__recall-widgets-chevron ${isWidgetsPanelCollapsed ? "browse-mode__recall-widgets-chevron--collapsed" : ""}`}>
-                ▼
-              </span>
-            </button>
-            {!isWidgetsPanelCollapsed && (
-              <div id="recall-widgets-content" className="browse-mode__recall-widgets-content">
-                {widgets.isRecallLoading ? (
-                  <div className="browse-mode__recall-widgets-loading" aria-label="Loading widgets">
-                    <div className="browse-mode__widget-skeleton" aria-hidden="true" />
-                  </div>
-                ) : widgets.recallError ? (
-                  <div className="browse-mode__recall-widgets-error" aria-label="Widget error">
-                    <p className="browse-mode__error">{widgets.recallError}</p>
-                  </div>
-                ) : (
-                  <section className="browse-mode__widgets" aria-label="File widgets">
-                    {widgets.recallWidgets.map((widget) => (
-                      <WidgetRenderer
-                        key={widget.name}
-                        widget={widget}
-                        filePath={browser.currentPath}
-                        onEdit={handleWidgetEdit}
-                        pendingEdits={widgets.pendingEdits}
-                        editError={widgets.recallError}
-                      />
-                    ))}
-                  </section>
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </main>
 
       {/* Mobile tree overlay */}

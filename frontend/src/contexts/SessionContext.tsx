@@ -26,7 +26,6 @@ import type {
   FileSearchResult,
   ContentSearchResult,
   ContextSnippet,
-  WidgetResult,
   HealthIssue,
   MeetingState,
 } from "@memory-loop/shared";
@@ -53,10 +52,7 @@ export type {
   BrowseViewMode,
   SearchMode,
   SearchState,
-  WidgetState,
   HealthState,
-  SyncState,
-  SyncStatusValue,
   BrowserState,
   ConversationMessage,
   PendingToolUpdate,
@@ -409,52 +405,6 @@ export function SessionProvider({
     dispatch({ type: "CLEAR_SEARCH" });
   }, []);
 
-  // Widget actions
-  const setGroundWidgets = useCallback((widgets: WidgetResult[]) => {
-    dispatch({ type: "SET_GROUND_WIDGETS", widgets });
-  }, []);
-
-  const setRecallWidgets = useCallback(
-    (widgets: WidgetResult[], filePath: string) => {
-      dispatch({ type: "SET_RECALL_WIDGETS", widgets, filePath });
-    },
-    []
-  );
-
-  const setGroundWidgetsLoading = useCallback((isLoading: boolean) => {
-    dispatch({ type: "SET_GROUND_WIDGETS_LOADING", isLoading });
-  }, []);
-
-  const setRecallWidgetsLoading = useCallback((isLoading: boolean) => {
-    dispatch({ type: "SET_RECALL_WIDGETS_LOADING", isLoading });
-  }, []);
-
-  const setGroundWidgetsError = useCallback((error: string | null) => {
-    dispatch({ type: "SET_GROUND_WIDGETS_ERROR", error });
-  }, []);
-
-  const setRecallWidgetsError = useCallback((error: string | null) => {
-    dispatch({ type: "SET_RECALL_WIDGETS_ERROR", error });
-  }, []);
-
-  const addPendingEdit = useCallback(
-    (filePath: string, fieldPath: string, value: unknown) => {
-      dispatch({ type: "ADD_PENDING_EDIT", filePath, fieldPath, value });
-    },
-    []
-  );
-
-  const removePendingEdit = useCallback(
-    (filePath: string, fieldPath: string) => {
-      dispatch({ type: "REMOVE_PENDING_EDIT", filePath, fieldPath });
-    },
-    []
-  );
-
-  const clearWidgetState = useCallback(() => {
-    dispatch({ type: "CLEAR_WIDGET_STATE" });
-  }, []);
-
   // Health actions
   const setHealthIssues = useCallback((issues: HealthIssue[]) => {
     dispatch({ type: "SET_HEALTH_ISSUES", issues });
@@ -466,23 +416,6 @@ export function SessionProvider({
 
   const dismissHealthIssue = useCallback((issueId: string) => {
     dispatch({ type: "DISMISS_HEALTH_ISSUE", issueId });
-  }, []);
-
-  // Sync actions
-  const updateSyncStatus = useCallback(
-    (
-      status: "idle" | "syncing" | "success" | "error",
-      progress?: { current: number; total: number; currentFile?: string },
-      message?: string,
-      errorCount?: number
-    ) => {
-      dispatch({ type: "UPDATE_SYNC_STATUS", status, progress, message, errorCount });
-    },
-    []
-  );
-
-  const resetSyncState = useCallback(() => {
-    dispatch({ type: "RESET_SYNC_STATE" });
   }, []);
 
   // Meeting actions
@@ -549,20 +482,9 @@ export function SessionProvider({
     toggleResultExpanded,
     setSnippets,
     clearSearch,
-    setGroundWidgets,
-    setRecallWidgets,
-    setGroundWidgetsLoading,
-    setRecallWidgetsLoading,
-    setGroundWidgetsError,
-    setRecallWidgetsError,
-    addPendingEdit,
-    removePendingEdit,
-    clearWidgetState,
     setHealthIssues,
     toggleHealthExpanded,
     dismissHealthIssue,
-    updateSyncStatus,
-    resetSyncState,
     setMeetingState,
     clearMeeting,
   };
@@ -603,13 +525,8 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     setSearchResults,
     setSnippets,
     setSearchLoading,
-    setGroundWidgets,
-    setRecallWidgets,
-    setGroundWidgetsError,
-    setRecallWidgetsError,
     setHealthIssues,
     setPinnedAssets,
-    updateSyncStatus,
     setMeetingState,
     clearMeeting,
   } = useSession();
@@ -709,41 +626,12 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           setSearchLoading(message.stage !== "complete");
           break;
 
-        case "ground_widgets":
-          setGroundWidgets(message.widgets);
-          break;
-
-        case "recall_widgets":
-          setRecallWidgets(message.widgets, message.path);
-          break;
-
-        case "widget_update":
-          setGroundWidgets(message.widgets);
-          break;
-
-        case "widget_error":
-          if (message.filePath) {
-            setRecallWidgetsError(message.error);
-          } else {
-            setGroundWidgetsError(message.error);
-          }
-          break;
-
         case "health_report":
           setHealthIssues(message.issues);
           break;
 
         case "pinned_assets":
           setPinnedAssets(message.paths);
-          break;
-
-        case "sync_status":
-          updateSyncStatus(
-            message.status,
-            message.progress ?? undefined,
-            message.message ?? undefined,
-            message.errors?.length ?? 0
-          );
           break;
 
         // Meeting messages
@@ -781,13 +669,8 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
       setSearchResults,
       setSnippets,
       setSearchLoading,
-      setGroundWidgets,
-      setRecallWidgets,
-      setGroundWidgetsError,
-      setRecallWidgetsError,
       setHealthIssues,
       setPinnedAssets,
-      updateSyncStatus,
       setMeetingState,
       clearMeeting,
     ]

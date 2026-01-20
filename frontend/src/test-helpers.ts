@@ -24,7 +24,6 @@ export function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     metadataPath: "06_Metadata/memory-loop",
     attachmentPath: "05_Attachments",
     setupComplete: false,
-    hasSyncConfig: false,
     promptsPerGeneration: 5,
     maxPoolSize: 50,
     quotesPerWeek: 1,

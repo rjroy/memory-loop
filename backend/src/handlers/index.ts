@@ -29,14 +29,6 @@ export {
   handleGetSnippets,
 } from "./search-handlers.js";
 
-// Widget handlers
-export {
-  handleGetGroundWidgets,
-  handleGetRecallWidgets,
-  handleWidgetEdit,
-  handleWidgetFileChanges,
-} from "./widget-handlers.js";
-
 // Home/dashboard handlers
 export {
   handleCaptureNote,
@@ -55,6 +47,3 @@ export {
   handleGetMeetingState,
   handleMeetingCapture,
 } from "./meeting-handlers.js";
-
-// Sync handlers
-export { handleTriggerSync } from "./sync-handlers.js";

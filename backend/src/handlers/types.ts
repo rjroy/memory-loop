@@ -15,7 +15,6 @@ import type {
 } from "@memory-loop/shared";
 import type { SessionQueryResult } from "../session-manager.js";
 import type { SearchIndexManager } from "../search/search-index.js";
-import type { WidgetEngine, FileWatcher } from "../widgets/index.js";
 import type { HealthCollector } from "../health-collector.js";
 import type { ActiveMeeting } from "../meeting-capture.js";
 import type { VaultConfig } from "../vault-config.js";
@@ -68,14 +67,6 @@ export interface ToggleResult {
 export interface InspirationResult {
   contextual: { text: string; attribution?: string } | null;
   quote: { text: string; attribution?: string };
-}
-
-/**
- * Result of parsing frontmatter.
- */
-export interface FrontmatterResult {
-  data: Record<string, unknown>;
-  content: string;
 }
 
 /**
@@ -141,9 +132,6 @@ export interface HandlerDependencies {
 
   // Vault config
   loadVaultConfig?: (vaultPath: string) => Promise<VaultConfig>;
-
-  // Widgets
-  parseFrontmatter?: (content: string) => FrontmatterResult;
 }
 
 /**
@@ -194,10 +182,6 @@ export interface ConnectionState {
   cumulativeTokens: number;
   /** Context window size for the active model (null if not yet known) */
   contextWindow: number | null;
-  /** Widget engine for computing vault widgets (null if no vault selected) */
-  widgetEngine: WidgetEngine | null;
-  /** File watcher for widget source files (null if no vault selected) */
-  widgetWatcher: FileWatcher | null;
   /** Health collector for tracking backend issues (null if no vault selected) */
   healthCollector: HealthCollector | null;
   /** Active meeting session (null if no meeting in progress) */
@@ -255,7 +239,6 @@ export interface RequiredHandlerDependencies {
     limit?: number
   ) => Promise<RecentDiscussionEntry[]>;
   loadVaultConfig: (vaultPath: string) => Promise<VaultConfig>;
-  parseFrontmatter: (content: string) => FrontmatterResult;
 }
 
 /**
@@ -301,8 +284,6 @@ export function createConnectionState(): ConnectionState {
     activeModel: null,
     cumulativeTokens: 0,
     contextWindow: null,
-    widgetEngine: null,
-    widgetWatcher: null,
     healthCollector: null,
     activeMeeting: null,
   };

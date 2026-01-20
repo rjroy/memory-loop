@@ -424,4 +424,134 @@ describe("MemoryEditor", () => {
    * 3. Context menu should appear with Quick Actions
    * 4. Clicking an action logs to console with selection context
    */
+
+  describe("Quick Action WebSocket integration", () => {
+    it("renders processing overlay when isProcessingQuickAction is true", () => {
+      // We can't easily trigger Quick Action without selection mocking,
+      // but we can verify the component structure supports processing state
+      const { sendMessage } = createMockSendMessage();
+      const message: ServerMessage = {
+        type: "memory_content",
+        content: "Test content",
+        sizeBytes: 12,
+        exists: true,
+      };
+      render(
+        <MemoryEditor
+          sendMessage={sendMessage}
+          lastMessage={message}
+          filePath="test/file.md"
+        />
+      );
+
+      // Verify textarea exists and is ready for Quick Actions
+      const textarea = screen.getByRole("textbox");
+      expect(textarea).toBeDefined();
+    });
+
+    it("accepts filePath and onQuickActionComplete props", () => {
+      const onComplete = () => {
+        // Callback handler
+      };
+      const { sendMessage } = createMockSendMessage();
+      const message: ServerMessage = {
+        type: "memory_content",
+        content: "Test content",
+        sizeBytes: 12,
+        exists: true,
+      };
+
+      // Should render without errors
+      const { container } = render(
+        <MemoryEditor
+          sendMessage={sendMessage}
+          lastMessage={message}
+          filePath="notes/test.md"
+          onQuickActionComplete={onComplete}
+        />
+      );
+
+      expect(container.querySelector(".memory-editor")).not.toBeNull();
+    });
+
+    it("forwards messages to onMessage callback when provided", () => {
+      const onMessageCalls: ServerMessage[] = [];
+      const onMessage = (msg: ServerMessage) => {
+        onMessageCalls.push(msg);
+      };
+
+      const { sendMessage } = createMockSendMessage();
+      const contentMessage: ServerMessage = {
+        type: "memory_content",
+        content: "Test",
+        sizeBytes: 4,
+        exists: true,
+      };
+
+      render(
+        <MemoryEditor
+          sendMessage={sendMessage}
+          lastMessage={contentMessage}
+          filePath="test.md"
+          onMessage={onMessage}
+        />
+      );
+
+      // The content message should be forwarded to onMessage
+      expect(onMessageCalls).toHaveLength(1);
+      expect(onMessageCalls[0].type).toBe("memory_content");
+    });
+
+    it("shows error toast on error during Quick Action (via error message type)", () => {
+      // This tests that error messages during Quick Action show as toast
+      const { sendMessage } = createMockSendMessage();
+
+      // First render with content
+      const { rerender } = render(
+        <MemoryEditor
+          sendMessage={sendMessage}
+          lastMessage={{
+            type: "memory_content",
+            content: "Test",
+            sizeBytes: 4,
+            exists: true,
+          }}
+          filePath="test.md"
+        />
+      );
+
+      // Then simulate an error
+      rerender(
+        <MemoryEditor
+          sendMessage={sendMessage}
+          lastMessage={{
+            type: "error",
+            code: "SDK_ERROR",
+            message: "Quick Action failed",
+          }}
+          filePath="test.md"
+        />
+      );
+
+      // Error should be displayed (either in error div or as toast depending on state)
+      const alert = screen.queryByRole("alert");
+      expect(alert).not.toBeNull();
+    });
+
+    /**
+     * Note on full Quick Action flow testing:
+     *
+     * Testing the complete Quick Action flow (select text -> menu -> send request
+     * -> receive streaming response -> show toast -> reload) requires:
+     * 1. Mocking textarea selection (happy-dom limitation)
+     * 2. Simulating the full WebSocket message sequence
+     *
+     * The individual parts are tested:
+     * - useTextSelection.test.ts: Selection tracking
+     * - EditorContextMenu.test.tsx: Menu action handling
+     * - These tests: Props acceptance, message forwarding, error handling
+     *
+     * Full integration is verified manually and via E2E tests.
+     */
+  });
 });

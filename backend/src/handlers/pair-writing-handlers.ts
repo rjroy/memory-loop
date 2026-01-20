@@ -17,7 +17,6 @@
 
 import { join } from "node:path";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import type {
   QuickActionRequestMessage,
   AdvisoryActionRequestMessage,
@@ -41,15 +40,9 @@ import { type HandlerContext, requireVault, generateMessageId } from "./types.js
 const log = createLogger("PairWriting");
 
 /**
- * Type for the SDK query function, to enable dependency injection for testing.
- */
-export type QueryFunction = typeof query;
-
-/**
  * Dependencies for pair writing handlers (injectable for testing).
  */
 export interface PairWritingDependencies {
-  queryFn?: QueryFunction;
   resumeSession?: typeof defaultResumeSession;
   appendMessage?: typeof defaultAppendMessage;
 }
@@ -129,8 +122,7 @@ export async function handleQuickAction(
   }
 
   const vault = ctx.state.currentVault;
-  const sessionId = ctx.state.currentSessionId;
-  const queryFn = deps.queryFn ?? query;
+  let sessionId = ctx.state.currentSessionId;
   const resumeSession = deps.resumeSession ?? defaultResumeSession;
   const appendMessage = deps.appendMessage ?? defaultAppendMessage;
 
@@ -138,7 +130,7 @@ export async function handleQuickAction(
   if (sessionId) {
     log.info(`Using existing session: ${sessionId.slice(0, 8)}...`);
   } else {
-    log.info("No existing session, will create task-scoped session");
+    log.info("No existing session, will create persistent session");
   }
 
   // Validate action type (fast, no I/O)
@@ -185,21 +177,7 @@ export async function handleQuickAction(
   // Generate message ID for streaming
   const messageId = generateMessageId();
   const startTime = Date.now();
-
-  // Add user message to session history (so it appears in Discussion)
   const userMessage = formatQuickActionUserMessage(request.action, request.selection);
-  if (sessionId) {
-    try {
-      await appendMessage(vault.path, sessionId, {
-        id: generateMessageId(),
-        role: "user",
-        content: userMessage,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      log.warn("Failed to append user message to session", error);
-    }
-  }
 
   // Send response_start
   ctx.send({ type: "response_start", messageId });
@@ -222,16 +200,33 @@ export async function handleQuickAction(
       );
       queryResult = sessionResult.events;
     } else {
-      // Create task-scoped Claude session (fallback if no session)
-      log.info("Creating task-scoped Quick Action session...");
-      queryResult = queryFn({
-        prompt,
-        options: {
-          ...QUICK_ACTION_OPTIONS,
-          cwd: vault.contentRoot,
-          settingSources: ["local", "project", "user"],
-        },
+      // Create persistent session (will show in Recent Sessions)
+      log.info("Creating persistent Quick Action session...");
+      const sessionResult = await ctx.deps.createSession(vault, prompt);
+      sessionId = sessionResult.sessionId;
+      ctx.state.currentSessionId = sessionId;
+      queryResult = sessionResult.events;
+
+      // Notify frontend of new session
+      ctx.send({
+        type: "session_ready",
+        sessionId,
+        vaultId: vault.id,
+        createdAt: new Date().toISOString(),
       });
+      log.info(`Created new session: ${sessionId.slice(0, 8)}...`);
+    }
+
+    // Add user message to session history (so it appears in Discussion)
+    try {
+      await appendMessage(vault.path, sessionId, {
+        id: generateMessageId(),
+        role: "user",
+        content: userMessage,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      log.warn("Failed to append user message to session", error);
     }
 
     // Stream events to frontend
@@ -241,7 +236,7 @@ export async function handleQuickAction(
     log.info(`Quick action completed in ${durationMs}ms`);
 
     // Append assistant message to session history
-    if (sessionId && streamResult.content.length > 0) {
+    if (streamResult.content.length > 0) {
       try {
         await appendMessage(vault.path, sessionId, {
           id: messageId,
@@ -529,8 +524,7 @@ export async function handleAdvisoryAction(
   }
 
   const vault = ctx.state.currentVault;
-  const sessionId = ctx.state.currentSessionId;
-  const queryFn = deps.queryFn ?? query;
+  let sessionId = ctx.state.currentSessionId;
   const resumeSession = deps.resumeSession ?? defaultResumeSession;
   const appendMessage = deps.appendMessage ?? defaultAppendMessage;
 
@@ -538,7 +532,7 @@ export async function handleAdvisoryAction(
   if (sessionId) {
     log.info(`Using existing session: ${sessionId.slice(0, 8)}...`);
   } else {
-    log.info("No existing session, will create task-scoped session");
+    log.info("No existing session, will create persistent session");
   }
 
   // Validate action type
@@ -581,21 +575,7 @@ export async function handleAdvisoryAction(
   // Generate message ID and stream response
   const messageId = generateMessageId();
   const startTime = Date.now();
-
-  // Add user message to session history (so it appears in Discussion)
   const userMessage = formatAdvisoryActionUserMessage(request.action, request.selection);
-  if (sessionId) {
-    try {
-      await appendMessage(vault.path, sessionId, {
-        id: generateMessageId(),
-        role: "user",
-        content: userMessage,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      log.warn("Failed to append user message to session", error);
-    }
-  }
 
   ctx.send({ type: "response_start", messageId });
 
@@ -617,16 +597,33 @@ export async function handleAdvisoryAction(
       );
       queryResult = sessionResult.events;
     } else {
-      // Create task-scoped Claude session (fallback if no session)
-      log.info("Creating task-scoped Advisory Action session...");
-      queryResult = queryFn({
-        prompt,
-        options: {
-          ...ADVISORY_ACTION_OPTIONS,
-          cwd: vault.contentRoot,
-          settingSources: ["local", "project", "user"],
-        },
+      // Create persistent session (will show in Recent Sessions)
+      log.info("Creating persistent Advisory Action session...");
+      const sessionResult = await ctx.deps.createSession(vault, prompt);
+      sessionId = sessionResult.sessionId;
+      ctx.state.currentSessionId = sessionId;
+      queryResult = sessionResult.events;
+
+      // Notify frontend of new session
+      ctx.send({
+        type: "session_ready",
+        sessionId,
+        vaultId: vault.id,
+        createdAt: new Date().toISOString(),
       });
+      log.info(`Created new session: ${sessionId.slice(0, 8)}...`);
+    }
+
+    // Add user message to session history (so it appears in Discussion)
+    try {
+      await appendMessage(vault.path, sessionId, {
+        id: generateMessageId(),
+        role: "user",
+        content: userMessage,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      log.warn("Failed to append user message to session", error);
     }
 
     // Stream events (advisory actions are text-only, no tools)
@@ -636,7 +633,7 @@ export async function handleAdvisoryAction(
     log.info(`Advisory action completed in ${durationMs}ms`);
 
     // Append assistant message to session history
-    if (sessionId && streamResult.content.length > 0) {
+    if (streamResult.content.length > 0) {
       try {
         await appendMessage(vault.path, sessionId, {
           id: messageId,

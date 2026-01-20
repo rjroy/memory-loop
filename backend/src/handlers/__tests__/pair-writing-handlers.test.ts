@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { VaultInfo, ServerMessage, QuickActionRequestMessage } from "@memory-loop/shared";
 import type { HandlerContext, ConnectionState, RequiredHandlerDependencies } from "../types.js";
-import { handleQuickAction, type QueryFunction } from "../pair-writing-handlers.js";
+import { handleQuickAction } from "../pair-writing-handlers.js";
 
 // =============================================================================
 // Test Fixtures
@@ -99,13 +99,45 @@ function createMockDeps(): RequiredHandlerDependencies {
     getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
+    createSession: () => Promise.resolve({ sessionId: "mock-session", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
     resumeSession: () => Promise.resolve({ sessionId: "", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
     appendMessage: () => Promise.resolve(),
     loadVaultConfig: () => Promise.resolve({}),
   };
 }
 
-function createMockContext(state: ConnectionState = mockState): HandlerContext {
+/**
+ * Creates a mock createSession function that simulates SDK events.
+ */
+function createMockCreateSession(events: Array<{
+  type: string;
+  [key: string]: unknown;
+}>) {
+  return () => {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async function* generator() {
+      for (const event of events) {
+        yield event;
+      }
+    }
+    // Cast to satisfy SessionQueryResult type - test events don't need full SDK message structure
+    return Promise.resolve({
+      sessionId: "mock-session-id",
+      events: generator() as AsyncGenerator<import("@anthropic-ai/claude-agent-sdk").SDKMessage, void, unknown>,
+      interrupt: () => Promise.resolve(),
+      supportedCommands: () => Promise.resolve([]),
+    });
+  };
+}
+
+function createMockContext(
+  state: ConnectionState = mockState,
+  createSessionOverride?: ReturnType<typeof createMockCreateSession>
+): HandlerContext {
+  const deps = createMockDeps();
+  if (createSessionOverride) {
+    deps.createSession = createSessionOverride;
+  }
   return {
     state,
     send: (message: ServerMessage) => {
@@ -114,7 +146,7 @@ function createMockContext(state: ConnectionState = mockState): HandlerContext {
     sendError: (code, message) => {
       sentErrors.push({ code, message });
     },
-    deps: createMockDeps(),
+    deps,
   };
 }
 
@@ -130,30 +162,6 @@ function createMockRequest(overrides: Partial<QuickActionRequestMessage> = {}): 
     selectionEndLine: 12,
     totalLines: 50,
     ...overrides,
-  };
-}
-
-/**
- * Creates a mock query function that simulates SDK events.
- */
-function createMockQueryFn(events: Array<{
-  type: string;
-  [key: string]: unknown;
-}>): QueryFunction {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (): any => {
-    // eslint-disable-next-line @typescript-eslint/require-await
-    async function* generator() {
-      for (const event of events) {
-        yield event;
-      }
-    }
-    // Return a query result that matches the SDK's interface
-    const gen = generator();
-    return Object.assign(gen, {
-      interrupt: () => Promise.resolve(),
-      supportedCommands: () => Promise.resolve([]),
-    });
   };
 }
 
@@ -230,15 +238,15 @@ describe("handleQuickAction - validation", () => {
 
 describe("handleQuickAction - streaming", () => {
   it("sends response_start at beginning", async () => {
-    const ctx = createMockContext();
     const request = createMockRequest();
 
     // Mock SDK with minimal events
-    const mockQueryFn = createMockQueryFn([
+    const mockCreateSession = createMockCreateSession([
       { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
     ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
 
-    await handleQuickAction(ctx, request, { queryFn: mockQueryFn });
+    await handleQuickAction(ctx, request);
 
     const startMsg = sentMessages.find((m) => m.type === "response_start");
     expect(startMsg).toBeDefined();
@@ -246,14 +254,14 @@ describe("handleQuickAction - streaming", () => {
   });
 
   it("sends response_end at completion", async () => {
-    const ctx = createMockContext();
     const request = createMockRequest();
 
-    const mockQueryFn = createMockQueryFn([
+    const mockCreateSession = createMockCreateSession([
       { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
     ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
 
-    await handleQuickAction(ctx, request, { queryFn: mockQueryFn });
+    await handleQuickAction(ctx, request);
 
     const endMsg = sentMessages.find((m) => m.type === "response_end");
     expect(endMsg).toBeDefined();
@@ -261,10 +269,9 @@ describe("handleQuickAction - streaming", () => {
   });
 
   it("streams text deltas as response_chunk", async () => {
-    const ctx = createMockContext();
     const request = createMockRequest();
 
-    const mockQueryFn = createMockQueryFn([
+    const mockCreateSession = createMockCreateSession([
       {
         type: "stream_event",
         event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
@@ -283,8 +290,9 @@ describe("handleQuickAction - streaming", () => {
       },
       { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
     ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
 
-    await handleQuickAction(ctx, request, { queryFn: mockQueryFn });
+    await handleQuickAction(ctx, request);
 
     const chunks = sentMessages.filter((m) => m.type === "response_chunk");
     expect(chunks.length).toBe(2);
@@ -293,10 +301,9 @@ describe("handleQuickAction - streaming", () => {
   });
 
   it("streams tool_start and tool_end events", async () => {
-    const ctx = createMockContext();
     const request = createMockRequest();
 
-    const mockQueryFn = createMockQueryFn([
+    const mockCreateSession = createMockCreateSession([
       {
         type: "stream_event",
         event: {
@@ -328,8 +335,9 @@ describe("handleQuickAction - streaming", () => {
       },
       { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
     ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
 
-    await handleQuickAction(ctx, request, { queryFn: mockQueryFn });
+    await handleQuickAction(ctx, request);
 
     const toolStart = sentMessages.find((m) => m.type === "tool_start");
     expect(toolStart).toBeDefined();
@@ -351,16 +359,14 @@ describe("handleQuickAction - streaming", () => {
 // =============================================================================
 
 describe("handleQuickAction - error handling", () => {
-  it("sends SDK_ERROR on query failure", async () => {
-    const ctx = createMockContext();
+  it("sends SDK_ERROR on createSession failure", async () => {
     const request = createMockRequest();
 
-    // Mock SDK that throws an error
-    const mockQueryFn: QueryFunction = () => {
-      throw new Error("SDK connection failed");
-    };
+    // Mock createSession that throws an error
+    const mockCreateSession = () => Promise.reject(new Error("SDK connection failed"));
+    const ctx = createMockContext(mockState, mockCreateSession);
 
-    await handleQuickAction(ctx, request, { queryFn: mockQueryFn });
+    await handleQuickAction(ctx, request);
 
     expect(sentErrors.length).toBe(1);
     const error = sentErrors[0];
@@ -370,12 +376,12 @@ describe("handleQuickAction - error handling", () => {
   });
 
   it("handles empty events gracefully", async () => {
-    const ctx = createMockContext();
     const request = createMockRequest();
 
-    const mockQueryFn = createMockQueryFn([]);
+    const mockCreateSession = createMockCreateSession([]);
+    const ctx = createMockContext(mockState, mockCreateSession);
 
-    await handleQuickAction(ctx, request, { queryFn: mockQueryFn });
+    await handleQuickAction(ctx, request);
 
     // Should still send response_start and response_end
     const startMsg = sentMessages.find((m) => m.type === "response_start");
@@ -399,14 +405,14 @@ describe("handleQuickAction - action types", () => {
 
   for (const action of actions) {
     it(`accepts ${action} action type`, async () => {
-      const ctx = createMockContext();
       const request = createMockRequest({ action });
 
-      const mockQueryFn = createMockQueryFn([
+      const mockCreateSession = createMockCreateSession([
         { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
       ]);
+      const ctx = createMockContext(mockState, mockCreateSession);
 
-      await handleQuickAction(ctx, request, { queryFn: mockQueryFn });
+      await handleQuickAction(ctx, request);
 
       // No validation errors for valid action types
       expect(sentErrors.filter((e) => e.code === "VALIDATION_ERROR")).toHaveLength(0);
@@ -426,10 +432,9 @@ describe("handleQuickAction - action types", () => {
 
 describe("handleQuickAction - context usage", () => {
   it("calculates context usage from result event", async () => {
-    const ctx = createMockContext();
     const request = createMockRequest();
 
-    const mockQueryFn = createMockQueryFn([
+    const mockCreateSession = createMockCreateSession([
       {
         type: "result",
         subtype: "success",
@@ -439,8 +444,9 @@ describe("handleQuickAction - context usage", () => {
         },
       },
     ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
 
-    await handleQuickAction(ctx, request, { queryFn: mockQueryFn });
+    await handleQuickAction(ctx, request);
 
     const endMsg = sentMessages.find((m) => m.type === "response_end") as {
       type: "response_end";
@@ -453,14 +459,14 @@ describe("handleQuickAction - context usage", () => {
   });
 
   it("includes durationMs in response_end", async () => {
-    const ctx = createMockContext();
     const request = createMockRequest();
 
-    const mockQueryFn = createMockQueryFn([
+    const mockCreateSession = createMockCreateSession([
       { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
     ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
 
-    await handleQuickAction(ctx, request, { queryFn: mockQueryFn });
+    await handleQuickAction(ctx, request);
 
     const endMsg = sentMessages.find((m) => m.type === "response_end") as {
       type: "response_end";

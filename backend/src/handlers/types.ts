@@ -130,6 +130,10 @@ export interface HandlerDependencies {
     vaultPath: string,
     limit?: number
   ) => Promise<RecentDiscussionEntry[]>;
+  createSession?: (
+    vault: VaultInfo,
+    prompt: string
+  ) => Promise<SessionQueryResult>;
   resumeSession?: (
     vaultPath: string,
     sessionId: string,
@@ -249,6 +253,10 @@ export interface RequiredHandlerDependencies {
     vaultPath: string,
     limit?: number
   ) => Promise<RecentDiscussionEntry[]>;
+  createSession: (
+    vault: VaultInfo,
+    prompt: string
+  ) => Promise<SessionQueryResult>;
   resumeSession: (
     vaultPath: string,
     sessionId: string,

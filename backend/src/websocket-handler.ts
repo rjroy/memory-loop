@@ -307,6 +307,7 @@ export class WebSocketHandler {
       getAllTasks: hd.getAllTasks ?? defaultGetAllTasks,
       toggleTask: hd.toggleTask ?? defaultToggleTask,
       getRecentSessions: hd.getRecentSessions ?? defaultGetRecentSessions,
+      createSession: hd.createSession ?? defaultCreateSession,
       resumeSession: hd.resumeSession ?? defaultResumeSession,
       appendMessage: hd.appendMessage ?? defaultAppendMessage,
       loadVaultConfig: hd.loadVaultConfig ?? defaultLoadVaultConfig,

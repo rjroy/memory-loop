@@ -25,7 +25,7 @@ authored_by:
 - TASK-009: Pair Writing State Management (27 tests passing)
 - TASK-010: Conversation Pane Extraction (17 tests passing)
 - TASK-004: Editor Context Menu Component (28 tests passing)
-- TASK-005: Integrate Context Menu into MemoryEditor (21 tests passing)
+- TASK-005: Integrate Context Menu into PairWritingEditor (created new component)
 - TASK-007: Quick Action Handler (16 tests passing)
 - TASK-008: Quick Action Frontend Flow (25 tests passing)
 - TASK-011: Pair Writing Mode Layout (31 tests passing)
@@ -74,7 +74,17 @@ authored_by:
 
 ## Deviations from Plan
 
-(none yet)
+**PairWritingEditor created instead of using MemoryEditor**
+
+The original implementation incorrectly embedded MemoryEditor in PairWritingMode.
+MemoryEditor is hardcoded to load memory.md (a Claude context file), not the file
+being viewed in BrowseMode.
+
+Fix: Created new PairWritingEditor component that:
+- Receives content via props (initialContent)
+- Displays and edits the actual file content
+- Supports Quick Actions and Advisory Actions via context menu
+- Reverted MemoryEditor and its tests to original state
 
 ---
 
@@ -95,8 +105,9 @@ authored_by:
 | usePairWritingState hook | ✅ Complete (27 tests) |
 | ConversationPane | ✅ Complete (17 tests) |
 | EditorContextMenu | ✅ Complete (28 tests) |
+| PairWritingEditor | ✅ Complete (new component) |
 | pair-writing-handlers | ✅ Complete (16 tests) |
-| PairWritingMode | ✅ Complete (31 tests) |
+| PairWritingMode | ✅ Complete (18 tests) |
 | PairWritingToolbar | ✅ Complete (7 tests) |
 | BrowseMode (pair writing integration) | ✅ Complete (8 tests) |
 

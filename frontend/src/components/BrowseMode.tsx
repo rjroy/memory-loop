@@ -797,6 +797,9 @@ export function BrowseMode(): React.ReactNode {
               assetBaseUrl={assetBaseUrl}
               onExit={handleExitPairWriting}
               onSave={handleSave}
+              sendMessage={sendMessage}
+              lastMessage={lastMessage}
+              onQuickActionComplete={handleNavigate}
             />
           ) : isImageFile(browser.currentPath) ? (
             <ImageViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />

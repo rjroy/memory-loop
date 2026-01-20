@@ -11,8 +11,8 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { PairWritingMode } from "../PairWritingMode";
 
 // Mock imports for child components
-void mock.module("../MemoryEditor", () => ({
-  MemoryEditor: () => <div data-testid="memory-editor">MemoryEditor</div>,
+void mock.module("../PairWritingEditor", () => ({
+  PairWritingEditor: () => <div data-testid="pair-writing-editor">PairWritingEditor</div>,
 }));
 
 void mock.module("../ConversationPane", () => ({
@@ -40,6 +40,8 @@ describe("PairWritingMode", () => {
     assetBaseUrl: "/vault/test-vault/assets",
     onExit: mock(() => {}),
     onSave: mock(() => {}),
+    sendMessage: mock(() => {}),
+    lastMessage: null,
   };
 
   describe("rendering", () => {
@@ -76,8 +78,8 @@ describe("PairWritingMode", () => {
     it("renders child components", () => {
       render(<PairWritingMode {...defaultProps} />);
 
-      // MemoryEditor should be rendered
-      expect(screen.getByTestId("memory-editor")).toBeDefined();
+      // PairWritingEditor should be rendered
+      expect(screen.getByTestId("pair-writing-editor")).toBeDefined();
 
       // ConversationPane should be rendered
       expect(screen.getByTestId("conversation-pane")).toBeDefined();

@@ -2,7 +2,7 @@
  * PairWritingMode Component
  *
  * Split-screen container for desktop pair writing with AI assistance.
- * Left pane: MemoryEditor for document editing
+ * Left pane: PairWritingEditor for document editing with Quick Actions
  * Right pane: ConversationPane for AI feedback and chat
  *
  * Desktop-only: hidden via CSS media query on touch devices (REQ-F-10).
@@ -11,7 +11,7 @@
  * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-10, REQ-F-11, REQ-F-14, REQ-F-30
  */
 
-import React, { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { ClientMessage, ServerMessage } from "@memory-loop/shared";
 import type { ConversationMessage } from "../contexts/SessionContext";
 import {
@@ -19,9 +19,11 @@ import {
   type PairWritingMessage,
 } from "../hooks/usePairWritingState";
 import { PairWritingToolbar } from "./PairWritingToolbar";
-import { MemoryEditor } from "./MemoryEditor";
+import { PairWritingEditor } from "./PairWritingEditor";
 import { ConversationPane } from "./ConversationPane";
 import { ConfirmDialog } from "./ConfirmDialog";
+import type { AdvisoryActionType } from "./EditorContextMenu";
+import type { SelectionContext } from "../hooks/useTextSelection";
 import "./PairWritingMode.css";
 
 /**
@@ -38,10 +40,10 @@ export interface PairWritingModeProps {
   onExit: () => void;
   /** Called to save content to disk */
   onSave: (content: string) => void;
-  /** Function to send WebSocket messages (optional, for full Quick Action support) */
-  sendMessage?: (message: ClientMessage) => void;
-  /** Last received server message (optional, for full Quick Action support) */
-  lastMessage?: ServerMessage | null;
+  /** Function to send WebSocket messages */
+  sendMessage: (message: ClientMessage) => void;
+  /** Last received server message */
+  lastMessage: ServerMessage | null;
   /** Called when Quick Action completes and file should be reloaded */
   onQuickActionComplete?: (path: string) => void;
 }
@@ -110,6 +112,14 @@ export function PairWritingMode({
     }
   }, [state.isActive, actions, initialContent]);
 
+  // Update content when initialContent changes (e.g., after Quick Action reload)
+  useEffect(() => {
+    if (state.isActive && initialContent !== state.content) {
+      // Content was reloaded from disk (e.g., after Quick Action)
+      actions.reloadContent(initialContent);
+    }
+  }, [initialContent, state.isActive, state.content, actions]);
+
   // Handle snapshot button (REQ-F-23)
   const handleSnapshot = useCallback(() => {
     actions.takeSnapshot();
@@ -148,24 +158,64 @@ export function PairWritingMode({
     setShowExitConfirm(false);
   }, []);
 
+  // Handle content change from editor
+  const handleContentChange = useCallback(
+    (newContent: string) => {
+      actions.setContent(newContent);
+    },
+    [actions]
+  );
+
   // Handle Quick Action completion (reload content from disk)
   const handleQuickActionComplete = useCallback(
     (path: string) => {
       // The file was updated by Claude's Edit tool
-      // Parent component should reload the file and call onQuickActionComplete
+      // Parent component should reload the file
       onQuickActionComplete?.(path);
     },
     [onQuickActionComplete]
   );
 
-  // Create a no-op sendMessage if not provided (Quick Actions will be disabled)
-  const safeSendMessage =
-    sendMessage ??
-    (() => {
-      console.warn(
-        "[PairWritingMode] sendMessage not provided, Quick Actions disabled"
-      );
-    });
+  // Handle Advisory Action from editor (REQ-F-15)
+  const handleAdvisoryAction = useCallback(
+    (action: AdvisoryActionType, selection: SelectionContext) => {
+      // Add user message showing what they selected
+      const userMessage = `[${action.charAt(0).toUpperCase() + action.slice(1)}] "${selection.text}"`;
+      actions.addMessage({ role: "user", content: userMessage });
+
+      // Send advisory action request to backend
+      sendMessage({
+        type: "advisory_action_request",
+        action,
+        selection: selection.text,
+        contextBefore: selection.contextBefore,
+        contextAfter: selection.contextAfter,
+        filePath,
+        selectionStartLine: selection.startLine,
+        selectionEndLine: selection.endLine,
+        totalLines: selection.totalLines,
+        snapshotSelection: action === "compare" ? state.snapshot ?? undefined : undefined,
+      });
+    },
+    [actions, sendMessage, filePath, state.snapshot]
+  );
+
+  // Handle streaming response for advisory actions
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    // Handle advisory action streaming (response without tool use)
+    if (lastMessage.type === "response_start") {
+      // Start a new assistant message
+      actions.addMessage({ role: "assistant", content: "", isStreaming: true });
+    } else if (lastMessage.type === "response_chunk") {
+      // Append chunk to current assistant message
+      actions.updateLastMessage(lastMessage.content, true);
+    } else if (lastMessage.type === "response_end") {
+      // Mark message as done streaming
+      actions.updateLastMessage("", false);
+    }
+  }, [lastMessage, actions]);
 
   // Convert conversation messages for ConversationPane
   const conversationMessages = state.conversation.map(toConversationMessage);
@@ -187,11 +237,16 @@ export function PairWritingMode({
       <div className="pair-writing-mode__content">
         {/* Left pane: Editor (REQ-F-12) */}
         <div className="pair-writing-mode__editor-pane">
-          <MemoryEditor
-            sendMessage={safeSendMessage}
-            lastMessage={lastMessage ?? null}
+          <PairWritingEditor
+            initialContent={initialContent}
             filePath={filePath}
+            sendMessage={sendMessage}
+            lastMessage={lastMessage}
+            onContentChange={handleContentChange}
             onQuickActionComplete={handleQuickActionComplete}
+            onAdvisoryAction={handleAdvisoryAction}
+            hasSnapshot={state.snapshot !== null}
+            snapshotContent={state.snapshot ?? undefined}
           />
         </div>
 

@@ -63,7 +63,6 @@ const mockVault: VaultInfo = {
   metadataPath: "06_Metadata/memory-loop",
   attachmentPath: "00_Attachments",
   setupComplete: true,
-  hasSyncConfig: false,
   promptsPerGeneration: 5,
   maxPoolSize: 50,
   quotesPerWeek: 1,

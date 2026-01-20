@@ -26,7 +26,6 @@ import {
   detectGoalsPath,
   parseVault,
   getVaultGoals,
-  hasSyncConfig,
   titleToDirectoryName,
   getUniqueDirectoryName,
   createVault,
@@ -657,7 +656,6 @@ describe("Filesystem Integration", () => {
         metadataPath: "06_Metadata/memory-loop",
         attachmentPath: "05_Attachments",
         setupComplete: false,
-        hasSyncConfig: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
@@ -679,7 +677,6 @@ describe("Filesystem Integration", () => {
         metadataPath: "06_Metadata/memory-loop",
         attachmentPath: "05_Attachments",
         setupComplete: false,
-        hasSyncConfig: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
@@ -701,7 +698,6 @@ describe("Filesystem Integration", () => {
         metadataPath: "06_Metadata/memory-loop",
         attachmentPath: "05_Attachments",
         setupComplete: false,
-        hasSyncConfig: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
@@ -893,7 +889,6 @@ describe("Goals Feature", () => {
         attachmentPath: "05_Attachments",
         goalsPath: undefined,
         setupComplete: false,
-        hasSyncConfig: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
@@ -928,7 +923,6 @@ describe("Goals Feature", () => {
         attachmentPath: "05_Attachments",
         goalsPath: GOALS_FILE_PATH,
         setupComplete: false,
-        hasSyncConfig: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
@@ -952,7 +946,6 @@ describe("Goals Feature", () => {
         attachmentPath: "05_Attachments",
         goalsPath: GOALS_FILE_PATH,
         setupComplete: false,
-        hasSyncConfig: false,
         promptsPerGeneration: 5,
         maxPoolSize: 50,
         quotesPerWeek: 1,
@@ -1111,139 +1104,6 @@ describe("Setup Complete Detection", () => {
 
       expect(vault1!.setupComplete).toBe(false);
       expect(vault2!.setupComplete).toBe(true);
-    });
-  });
-});
-
-// =============================================================================
-// Sync Config Detection Tests
-// =============================================================================
-
-describe("Sync Config Detection", () => {
-  let testDir: string;
-  const originalVaultsDir = process.env.VAULTS_DIR;
-
-  beforeEach(async () => {
-    testDir = join(tmpdir(), `vault-sync-detect-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    await mkdir(testDir, { recursive: true });
-    process.env.VAULTS_DIR = testDir;
-  });
-
-  afterEach(async () => {
-    if (originalVaultsDir === undefined) {
-      delete process.env.VAULTS_DIR;
-    } else {
-      process.env.VAULTS_DIR = originalVaultsDir;
-    }
-    try {
-      await rm(testDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
-  });
-
-  describe("hasSyncConfig", () => {
-    test("returns false when .memory-loop/sync directory does not exist", async () => {
-      const vaultDir = join(testDir, "test-vault");
-      await mkdir(vaultDir);
-
-      expect(await hasSyncConfig(vaultDir)).toBe(false);
-    });
-
-    test("returns false when .memory-loop/sync is empty", async () => {
-      const vaultDir = join(testDir, "test-vault");
-      const syncDir = join(vaultDir, ".memory-loop", "sync");
-      await mkdir(syncDir, { recursive: true });
-
-      expect(await hasSyncConfig(vaultDir)).toBe(false);
-    });
-
-    test("returns true when .yaml file exists in sync directory", async () => {
-      const vaultDir = join(testDir, "test-vault");
-      const syncDir = join(vaultDir, ".memory-loop", "sync");
-      await mkdir(syncDir, { recursive: true });
-      await writeFile(join(syncDir, "bgg.yaml"), "name: BGG Sync");
-
-      expect(await hasSyncConfig(vaultDir)).toBe(true);
-    });
-
-    test("returns true when .yml file exists in sync directory", async () => {
-      const vaultDir = join(testDir, "test-vault");
-      const syncDir = join(vaultDir, ".memory-loop", "sync");
-      await mkdir(syncDir, { recursive: true });
-      await writeFile(join(syncDir, "config.yml"), "name: Config");
-
-      expect(await hasSyncConfig(vaultDir)).toBe(true);
-    });
-
-    test("returns false when only non-yaml files exist", async () => {
-      const vaultDir = join(testDir, "test-vault");
-      const syncDir = join(vaultDir, ".memory-loop", "sync");
-      await mkdir(syncDir, { recursive: true });
-      await writeFile(join(syncDir, "readme.txt"), "Not a config");
-      await writeFile(join(syncDir, "notes.md"), "Some notes");
-
-      expect(await hasSyncConfig(vaultDir)).toBe(false);
-    });
-
-    test("ignores subdirectories", async () => {
-      const vaultDir = join(testDir, "test-vault");
-      const syncDir = join(vaultDir, ".memory-loop", "sync");
-      await mkdir(join(syncDir, "subdir.yaml"), { recursive: true });
-
-      expect(await hasSyncConfig(vaultDir)).toBe(false);
-    });
-  });
-
-  describe("parseVault with hasSyncConfig", () => {
-    test("hasSyncConfig is false when no sync config exists", async () => {
-      const vaultDir = join(testDir, "test-vault");
-      await mkdir(vaultDir);
-      await writeFile(join(vaultDir, "CLAUDE.md"), "# Test Vault");
-
-      const vault = await parseVault(testDir, "test-vault");
-      expect(vault).not.toBeNull();
-      expect(vault!.hasSyncConfig).toBe(false);
-    });
-
-    test("hasSyncConfig is true when sync config exists", async () => {
-      const vaultDir = join(testDir, "test-vault");
-      await mkdir(vaultDir);
-      await writeFile(join(vaultDir, "CLAUDE.md"), "# Test Vault");
-
-      const syncDir = join(vaultDir, ".memory-loop", "sync");
-      await mkdir(syncDir, { recursive: true });
-      await writeFile(join(syncDir, "bgg.yaml"), "name: BGG Sync");
-
-      const vault = await parseVault(testDir, "test-vault");
-      expect(vault).not.toBeNull();
-      expect(vault!.hasSyncConfig).toBe(true);
-    });
-  });
-
-  describe("discoverVaults with hasSyncConfig", () => {
-    test("correctly identifies sync config across multiple vaults", async () => {
-      // Create vault without sync config
-      const vault1Dir = join(testDir, "vault-1");
-      await mkdir(vault1Dir);
-      await writeFile(join(vault1Dir, "CLAUDE.md"), "# Vault 1");
-
-      // Create vault with sync config
-      const vault2Dir = join(testDir, "vault-2");
-      await mkdir(vault2Dir);
-      await writeFile(join(vault2Dir, "CLAUDE.md"), "# Vault 2");
-      const syncDir = join(vault2Dir, ".memory-loop", "sync");
-      await mkdir(syncDir, { recursive: true });
-      await writeFile(join(syncDir, "sync.yaml"), "name: Sync");
-
-      const vaults = await discoverVaults();
-      expect(vaults).toHaveLength(2);
-
-      const vault1 = vaults.find((v) => v.id === "vault-1");
-      const vault2 = vaults.find((v) => v.id === "vault-2");
-
-      expect(vault1!.hasSyncConfig).toBe(false);
-      expect(vault2!.hasSyncConfig).toBe(true);
     });
   });
 });

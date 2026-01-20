@@ -14,7 +14,6 @@ import type {
   FileSearchResult,
   ContentSearchResult,
   ContextSnippet,
-  WidgetResult,
   VaultInfo,
   ConversationMessageProtocol,
   HealthIssue,
@@ -59,28 +58,6 @@ export interface SearchState {
 }
 
 /**
- * Widget state for vault widgets.
- */
-export interface WidgetState {
-  /** Ground widgets for Home/Ground view */
-  groundWidgets: WidgetResult[];
-  /** Recall widgets for Browse/Recall view */
-  recallWidgets: WidgetResult[];
-  /** Current file path for recall widgets (null if none) */
-  recallFilePath: string | null;
-  /** Whether ground widgets are loading */
-  isGroundLoading: boolean;
-  /** Whether recall widgets are loading */
-  isRecallLoading: boolean;
-  /** Error message from ground widget computation */
-  groundError: string | null;
-  /** Error message from recall widget computation */
-  recallError: string | null;
-  /** Pending edits map: filePath:fieldPath -> value (for optimistic updates) */
-  pendingEdits: Map<string, unknown>;
-}
-
-/**
  * Health state for backend health reporting.
  */
 export interface HealthState {
@@ -88,29 +65,6 @@ export interface HealthState {
   issues: HealthIssue[];
   /** Whether the health panel is expanded */
   isExpanded: boolean;
-}
-
-/**
- * Sync status values matching protocol.
- */
-export type SyncStatusValue = "idle" | "syncing" | "success" | "error";
-
-/**
- * Sync state for external data sync operations.
- */
-export interface SyncState {
-  /** Current sync status */
-  status: SyncStatusValue;
-  /** Progress info when syncing */
-  progress: {
-    current: number;
-    total: number;
-    currentFile?: string;
-  } | null;
-  /** Error or summary message */
-  message: string | null;
-  /** Number of files that failed (for error display) */
-  errorCount: number;
 }
 
 /**
@@ -200,12 +154,8 @@ export interface SessionState {
   messages: ConversationMessage[];
   /** Browser state for file browsing mode */
   browser: BrowserState;
-  /** Widget state for vault widgets */
-  widgets: WidgetState;
   /** Health state for backend health reporting */
   health: HealthState;
-  /** Sync state for external data sync */
-  sync: SyncState;
   /** Recent captured notes for note mode */
   recentNotes: RecentNoteEntry[];
   /** Recent discussion sessions for note mode */
@@ -341,25 +291,6 @@ export interface SessionActions {
   setSnippets: (path: string, snippets: ContextSnippet[]) => void;
   /** Clear search and return to file tree */
   clearSearch: () => void;
-  // Widget actions
-  /** Set ground widgets from server */
-  setGroundWidgets: (widgets: WidgetResult[]) => void;
-  /** Set recall widgets from server */
-  setRecallWidgets: (widgets: WidgetResult[], filePath: string) => void;
-  /** Set ground widgets loading state */
-  setGroundWidgetsLoading: (isLoading: boolean) => void;
-  /** Set recall widgets loading state */
-  setRecallWidgetsLoading: (isLoading: boolean) => void;
-  /** Set ground widgets error */
-  setGroundWidgetsError: (error: string | null) => void;
-  /** Set recall widgets error */
-  setRecallWidgetsError: (error: string | null) => void;
-  /** Add pending edit (optimistic update) */
-  addPendingEdit: (filePath: string, fieldPath: string, value: unknown) => void;
-  /** Remove pending edit (server confirmed or failed) */
-  removePendingEdit: (filePath: string, fieldPath: string) => void;
-  /** Clear all widget state (when switching vaults) */
-  clearWidgetState: () => void;
   // Health actions
   /** Set health issues from server */
   setHealthIssues: (issues: HealthIssue[]) => void;
@@ -367,16 +298,6 @@ export interface SessionActions {
   toggleHealthExpanded: () => void;
   /** Dismiss a health issue (also sends to server) */
   dismissHealthIssue: (issueId: string) => void;
-  // Sync actions
-  /** Update sync state from server sync_status message */
-  updateSyncStatus: (
-    status: SyncStatusValue,
-    progress?: { current: number; total: number; currentFile?: string },
-    message?: string,
-    errorCount?: number
-  ) => void;
-  /** Reset sync state to idle (for when vault changes) */
-  resetSyncState: () => void;
   // Meeting actions
   /** Set meeting state from server meeting_state/meeting_started messages */
   setMeetingState: (state: MeetingState) => void;

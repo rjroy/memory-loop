@@ -60,7 +60,6 @@ const testVault: VaultInfo = {
   metadataPath: "06_Metadata/memory-loop",
   attachmentPath: "05_Attachments",
   setupComplete: false,
-  hasSyncConfig: false,
   promptsPerGeneration: 5,
   maxPoolSize: 50,
   quotesPerWeek: 1,
@@ -89,7 +88,7 @@ function createTestIssue(overrides: Partial<HealthIssue> = {}): HealthIssue {
   return {
     id: "test-issue-1",
     severity: "error",
-    category: "widget_config",
+    category: "vault_config",
     message: "Test error message",
     timestamp: new Date().toISOString(),
     dismissible: true,
@@ -239,10 +238,10 @@ describe("HealthPanel", () => {
 
     it("shows category label", () => {
       render(<HealthPanel />, {
-        wrapper: createTestWrapper([createTestIssue({ category: "widget_config" })], true),
+        wrapper: createTestWrapper([createTestIssue({ category: "vault_config" })], true),
       });
 
-      expect(screen.getByText("Widget Config")).toBeDefined();
+      expect(screen.getByText("Vault Config")).toBeDefined();
     });
 
     it("renders multiple issues", () => {
@@ -305,8 +304,6 @@ describe("HealthPanel", () => {
 
   describe("category labels", () => {
     const categories: Array<[HealthIssue["category"], string]> = [
-      ["widget_config", "Widget Config"],
-      ["widget_compute", "Widget Compute"],
       ["vault_config", "Vault Config"],
       ["file_watcher", "File Watcher"],
       ["cache", "Cache"],

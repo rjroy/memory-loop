@@ -73,8 +73,6 @@ function createMockContext(): MockContext {
       activeModel: null,
       cumulativeTokens: 0,
       contextWindow: null,
-      widgetEngine: null,
-      widgetWatcher: null,
       healthCollector: null,
       activeMeeting: null,
     },

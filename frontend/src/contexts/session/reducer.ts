@@ -13,7 +13,6 @@ import type {
   FileSearchResult,
   ContentSearchResult,
   ContextSnippet,
-  WidgetResult,
   VaultInfo,
   ConversationMessageProtocol,
   ToolInvocation,
@@ -32,9 +31,7 @@ import type {
 } from "./types.js";
 import {
   createInitialBrowserState,
-  createInitialWidgetState,
   createInitialHealthState,
-  createInitialSyncState,
   createInitialSearchState,
   generateMessageId,
 } from "./initial-state.js";
@@ -96,22 +93,10 @@ export type SessionAction =
   | { type: "TOGGLE_RESULT_EXPANDED"; path: string }
   | { type: "SET_SNIPPETS"; path: string; snippets: ContextSnippet[] }
   | { type: "CLEAR_SEARCH" }
-  | { type: "SET_GROUND_WIDGETS"; widgets: WidgetResult[] }
-  | { type: "SET_RECALL_WIDGETS"; widgets: WidgetResult[]; filePath: string }
-  | { type: "SET_GROUND_WIDGETS_LOADING"; isLoading: boolean }
-  | { type: "SET_RECALL_WIDGETS_LOADING"; isLoading: boolean }
-  | { type: "SET_GROUND_WIDGETS_ERROR"; error: string | null }
-  | { type: "SET_RECALL_WIDGETS_ERROR"; error: string | null }
-  | { type: "ADD_PENDING_EDIT"; filePath: string; fieldPath: string; value: unknown }
-  | { type: "REMOVE_PENDING_EDIT"; filePath: string; fieldPath: string }
-  | { type: "CLEAR_WIDGET_STATE" }
   // Health actions
   | { type: "SET_HEALTH_ISSUES"; issues: HealthIssue[] }
   | { type: "TOGGLE_HEALTH_EXPANDED" }
   | { type: "DISMISS_HEALTH_ISSUE"; issueId: string }
-  // Sync actions
-  | { type: "UPDATE_SYNC_STATUS"; status: "idle" | "syncing" | "success" | "error"; progress?: { current: number; total: number; currentFile?: string }; message?: string; errorCount?: number }
-  | { type: "RESET_SYNC_STATE" }
   // Meeting actions
   | { type: "SET_MEETING_STATE"; state: MeetingState }
   | { type: "CLEAR_MEETING" };
@@ -182,9 +167,7 @@ function handleSelectVault(state: SessionState, vault: VaultInfo): SessionState 
     sessionId: null,
     messages: [],
     browser: createInitialBrowserState(),
-    widgets: createInitialWidgetState(),
     health: createInitialHealthState(),
-    sync: createInitialSyncState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,
@@ -202,9 +185,7 @@ function handleClearVault(state: SessionState): SessionState {
     sessionId: null,
     messages: [],
     browser: createInitialBrowserState(),
-    widgets: createInitialWidgetState(),
     health: createInitialHealthState(),
-    sync: createInitialSyncState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,
@@ -690,93 +671,6 @@ export function sessionReducer(
     case "CLEAR_SEARCH":
       return updateBrowser(state, { search: createInitialSearchState() });
 
-    // Widget actions
-    case "SET_GROUND_WIDGETS":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          groundWidgets: action.widgets,
-          isGroundLoading: false,
-          groundError: null,
-        },
-      };
-
-    case "SET_RECALL_WIDGETS":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          recallWidgets: action.widgets,
-          recallFilePath: action.filePath,
-          isRecallLoading: false,
-          recallError: null,
-        },
-      };
-
-    case "SET_GROUND_WIDGETS_LOADING":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          isGroundLoading: action.isLoading,
-          groundError: action.isLoading ? null : state.widgets.groundError,
-        },
-      };
-
-    case "SET_RECALL_WIDGETS_LOADING":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          isRecallLoading: action.isLoading,
-          recallError: action.isLoading ? null : state.widgets.recallError,
-        },
-      };
-
-    case "SET_GROUND_WIDGETS_ERROR":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          groundError: action.error,
-          isGroundLoading: false,
-        },
-      };
-
-    case "SET_RECALL_WIDGETS_ERROR":
-      return {
-        ...state,
-        widgets: {
-          ...state.widgets,
-          recallError: action.error,
-          isRecallLoading: false,
-        },
-      };
-
-    case "ADD_PENDING_EDIT": {
-      const key = `${action.filePath}:${action.fieldPath}`;
-      const newPendingEdits = new Map(state.widgets.pendingEdits);
-      newPendingEdits.set(key, action.value);
-      return {
-        ...state,
-        widgets: { ...state.widgets, pendingEdits: newPendingEdits },
-      };
-    }
-
-    case "REMOVE_PENDING_EDIT": {
-      const key = `${action.filePath}:${action.fieldPath}`;
-      const newPendingEdits = new Map(state.widgets.pendingEdits);
-      newPendingEdits.delete(key);
-      return {
-        ...state,
-        widgets: { ...state.widgets, pendingEdits: newPendingEdits },
-      };
-    }
-
-    case "CLEAR_WIDGET_STATE":
-      return { ...state, widgets: createInitialWidgetState() };
-
     // Health actions
     case "SET_HEALTH_ISSUES":
       return {
@@ -797,24 +691,6 @@ export function sessionReducer(
           ...state.health,
           issues: state.health.issues.filter((i) => i.id !== action.issueId),
         },
-      };
-
-    // Sync actions
-    case "UPDATE_SYNC_STATUS":
-      return {
-        ...state,
-        sync: {
-          status: action.status,
-          progress: action.progress ?? null,
-          message: action.message ?? null,
-          errorCount: action.errorCount ?? 0,
-        },
-      };
-
-    case "RESET_SYNC_STATE":
-      return {
-        ...state,
-        sync: createInitialSyncState(),
       };
 
     // Meeting actions

@@ -77,13 +77,6 @@ import {
   type VaultConfig,
 } from "./vault-config.js";
 import { runVaultSetup as defaultRunVaultSetup, type SetupResult } from "./vault-setup.js";
-import {
-  createWidgetEngine as defaultCreateWidgetEngine,
-  createFileWatcher as defaultCreateFileWatcher,
-  type WidgetEngine,
-  type WidgetLoaderResult,
-  parseFrontmatter as defaultParseFrontmatter,
-} from "./widgets/index.js";
 import { createHealthCollector } from "./health-collector.js";
 import {
   captureToDaily as defaultCaptureToDaily,
@@ -141,13 +134,6 @@ export interface WebSocketHandlerDependencies {
   // Vault setup
   runVaultSetup?: (vaultId: string) => Promise<SetupResult>;
 
-  // Widgets
-  createWidgetEngine?: (contentRoot: string, vaultId: string) => Promise<{
-    engine: WidgetEngine;
-    loaderResult: WidgetLoaderResult;
-  }>;
-  createFileWatcher?: typeof defaultCreateFileWatcher;
-
   // Search index
   createSearchIndex?: CreateSearchIndexFn;
 
@@ -187,13 +173,6 @@ import {
 } from "./handlers/search-handlers.js";
 
 import {
-  handleGetGroundWidgets,
-  handleGetRecallWidgets,
-  handleWidgetEdit,
-  handleWidgetFileChanges,
-} from "./handlers/widget-handlers.js";
-
-import {
   handleCaptureNote,
   handleGetRecentNotes,
   handleGetRecentActivity,
@@ -209,8 +188,6 @@ import {
   handleGetMeetingState,
   handleMeetingCapture,
 } from "./handlers/meeting-handlers.js";
-
-import { handleTriggerSync } from "./handlers/sync-handlers.js";
 
 import {
   handleGetMemory,
@@ -301,8 +278,6 @@ export class WebSocketHandler {
       savePinnedAssets: deps.savePinnedAssets ?? defaultSavePinnedAssets,
       saveVaultConfig: deps.saveVaultConfig ?? defaultSaveVaultConfig,
       runVaultSetup: deps.runVaultSetup ?? defaultRunVaultSetup,
-      createWidgetEngine: deps.createWidgetEngine ?? defaultCreateWidgetEngine,
-      createFileWatcher: deps.createFileWatcher ?? defaultCreateFileWatcher,
       createSearchIndex: deps.createSearchIndex ?? ((contentRoot) => new SearchIndexManager(contentRoot)),
     };
 
@@ -328,7 +303,6 @@ export class WebSocketHandler {
       toggleTask: hd.toggleTask ?? defaultToggleTask,
       getRecentSessions: hd.getRecentSessions ?? defaultGetRecentSessions,
       loadVaultConfig: hd.loadVaultConfig ?? defaultLoadVaultConfig,
-      parseFrontmatter: hd.parseFrontmatter ?? defaultParseFrontmatter,
     };
   }
 
@@ -555,7 +529,7 @@ export class WebSocketHandler {
 
   /**
    * Handles the connection close event.
-   * Cleans up any active queries and widget resources.
+   * Cleans up any active queries.
    */
   async onClose(): Promise<void> {
     log.info("Connection closed, cleaning up...");
@@ -568,22 +542,6 @@ export class WebSocketHandler {
         // Ignore interrupt errors on close
       }
       this.state.activeQuery = null;
-    }
-
-    if (this.state.widgetWatcher) {
-      log.info("Stopping widget file watcher");
-      try {
-        await this.state.widgetWatcher.stop();
-      } catch {
-        // Ignore stop errors on close
-      }
-      this.state.widgetWatcher = null;
-    }
-
-    if (this.state.widgetEngine) {
-      log.info("Shutting down widget engine");
-      this.state.widgetEngine.shutdown();
-      this.state.widgetEngine = null;
     }
 
     this.state = createConnectionState();
@@ -716,16 +674,6 @@ export class WebSocketHandler {
         await handleGetSnippets(ctx, message.path, message.query);
         break;
 
-      // Widget handlers (extracted)
-      case "get_ground_widgets":
-        await handleGetGroundWidgets(ctx);
-        break;
-      case "get_recall_widgets":
-        await handleGetRecallWidgets(ctx, message.path);
-        break;
-      case "widget_edit":
-        await handleWidgetEdit(ctx, message.path, message.field, message.value);
-        break;
       case "dismiss_health_issue":
         this.state.healthCollector?.dismiss(message.issueId);
         break;
@@ -782,11 +730,6 @@ export class WebSocketHandler {
         handleGetMeetingState(ctx);
         break;
 
-      // Sync handlers (extracted)
-      case "trigger_sync":
-        await handleTriggerSync(ctx, message.mode, message.pipeline);
-        break;
-
       // Memory extraction handlers
       case "get_memory":
         await handleGetMemory(ctx);
@@ -838,15 +781,6 @@ export class WebSocketHandler {
 
       log.info(`Vault found: ${vault.name} at ${vault.path}`);
 
-      // Clean up existing widget resources
-      if (this.state.widgetWatcher) {
-        await this.state.widgetWatcher.stop();
-        this.state.widgetWatcher = null;
-      }
-      if (this.state.widgetEngine) {
-        this.state.widgetEngine.shutdown();
-        this.state.widgetEngine = null;
-      }
       // Clear health collector (will be recreated below)
       if (this.state.healthCollector) {
         this.state.healthCollector.clear();
@@ -866,72 +800,6 @@ export class WebSocketHandler {
       this.state.healthCollector.subscribe((issues) => {
         this.send(ws, { type: "health_report", issues });
       });
-
-      // Initialize widget engine
-      try {
-        const { engine, loaderResult } = await this.deps.createWidgetEngine(vault.contentRoot, vault.id);
-        this.state.widgetEngine = engine;
-
-        // Connect health callback for widget computation issues (cycles, expression errors)
-        engine.setHealthCallback((issue) => {
-          this.state.healthCollector?.report({
-            id: issue.id,
-            severity: issue.severity,
-            category: "widget_compute",
-            message: issue.message,
-            details: issue.details,
-            dismissible: true, // Computation warnings can be dismissed
-          });
-        });
-
-        if (loaderResult.errors.length > 0) {
-          log.warn(`Widget config errors for vault ${vault.id}:`, loaderResult.errors);
-          for (const err of loaderResult.errors) {
-            // Report to health collector for aggregated display
-            this.state.healthCollector?.report({
-              id: `widget_config_${err.id || err.filePath}`,
-              severity: "error",
-              category: "widget_config",
-              message: `Widget config error: ${err.id || "unknown"}`,
-              details: `${err.filePath}: ${err.error}`,
-              dismissible: false, // Config errors shouldn't be dismissed
-            });
-          }
-        }
-
-        if (loaderResult.widgets.length > 0) {
-          log.info(`Loaded widgets: ${loaderResult.widgets.map(w => `${w.id} (${w.config.location}, pattern: ${w.config.source.pattern})`).join(", ")}`);
-        } else if (loaderResult.hasWidgetsDir) {
-          log.info("Widgets directory exists but no valid widgets were loaded");
-        }
-
-        const widgets = engine.getWidgets();
-        if (widgets.length > 0) {
-          const patterns = [...new Set(widgets.map((w) => w.config.source.pattern))];
-          this.state.widgetWatcher = this.deps.createFileWatcher(
-            vault.contentRoot,
-            (changedPaths) => {
-              handleWidgetFileChanges(this.createContext(ws), ws, changedPaths);
-            }
-          );
-          await this.state.widgetWatcher.start(patterns);
-          log.info(`Widget watcher started with ${patterns.length} pattern(s)`);
-        }
-
-        log.info(`Widget engine initialized: ${widgets.length} widget(s)`);
-      } catch (widgetError) {
-        log.error("Failed to initialize widget engine (continuing without widgets)", widgetError);
-        const errorMessage = widgetError instanceof Error ? widgetError.message : "Widget initialization failed";
-        // Report to health collector
-        this.state.healthCollector?.report({
-          id: "widget_engine_init",
-          severity: "error",
-          category: "widget_config",
-          message: "Widget engine initialization failed",
-          details: errorMessage,
-          dismissible: false,
-        });
-      }
 
       const cachedCommands = await this.deps.loadSlashCommands(vault.path);
 

@@ -34,7 +34,6 @@ beforeEach(() => {
     metadataPath: "06_Metadata/memory-loop",
     attachmentPath: "attachments",
     setupComplete: true,
-    hasSyncConfig: true,
     promptsPerGeneration: 5,
     maxPoolSize: 50,
     quotesPerWeek: 1,
@@ -52,8 +51,6 @@ beforeEach(() => {
     activeModel: null,
     cumulativeTokens: 0,
     contextWindow: null,
-    widgetEngine: null,
-    widgetWatcher: null,
     healthCollector: null,
     activeMeeting: null,
   };
@@ -86,7 +83,6 @@ function createMockDeps(
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
     loadVaultConfig: () => Promise.resolve({}),
-    parseFrontmatter: () => ({ data: {}, content: "" }),
   };
 }
 
@@ -286,7 +282,6 @@ function createMockDepsWithRename(
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
     loadVaultConfig: () => Promise.resolve({}),
-    parseFrontmatter: () => ({ data: {}, content: "" }),
   };
 }
 
@@ -499,7 +494,6 @@ function createMockDepsWithMove(
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
     loadVaultConfig: () => Promise.resolve({}),
-    parseFrontmatter: () => ({ data: {}, content: "" }),
   };
 }
 
@@ -742,7 +736,6 @@ function createMockDepsWithGetDirContents(
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
     loadVaultConfig: () => Promise.resolve({}),
-    parseFrontmatter: () => ({ data: {}, content: "" }),
   };
 }
 
@@ -933,7 +926,6 @@ function createMockDepsWithDeleteDir(
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
     loadVaultConfig: () => Promise.resolve({}),
-    parseFrontmatter: () => ({ data: {}, content: "" }),
   };
 }
 

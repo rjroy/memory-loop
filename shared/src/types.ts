@@ -44,7 +44,6 @@ export interface Badge {
  * @property goalsPath - Path to goals.md if it exists (relative to contentRoot)
  * @property attachmentPath - Path to attachments directory for uploads (relative to contentRoot)
  * @property setupComplete - Whether vault setup has been completed (marker file exists)
- * @property hasSyncConfig - Whether the vault has sync configuration files
  * @property promptsPerGeneration - Number of prompts to generate per cycle (default: 5)
  * @property maxPoolSize - Maximum items to keep in inspiration pools (default: 50)
  * @property quotesPerWeek - Number of quotes to generate per week (default: 1)
@@ -63,7 +62,6 @@ export interface VaultInfo {
   goalsPath?: string;
   attachmentPath: string;
   setupComplete: boolean;
-  hasSyncConfig: boolean;
   discussionModel?: "opus" | "sonnet" | "haiku";
   promptsPerGeneration: number;
   maxPoolSize: number;

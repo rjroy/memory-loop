@@ -19,7 +19,7 @@ describe("HealthCollector", () => {
       collector.report({
         id: "test-issue-1",
         severity: "error",
-        category: "widget_config",
+        category: "vault_config",
         message: "Test error message",
       });
 
@@ -27,7 +27,7 @@ describe("HealthCollector", () => {
       expect(issues).toHaveLength(1);
       expect(issues[0].id).toBe("test-issue-1");
       expect(issues[0].severity).toBe("error");
-      expect(issues[0].category).toBe("widget_config");
+      expect(issues[0].category).toBe("vault_config");
       expect(issues[0].message).toBe("Test error message");
       expect(issues[0].dismissible).toBe(true);
     });
@@ -107,7 +107,7 @@ describe("HealthCollector", () => {
       collector.report({
         id: "to-resolve",
         severity: "error",
-        category: "widget_compute",
+        category: "file_watcher",
         message: "Error to resolve",
       });
 

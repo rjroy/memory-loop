@@ -8,9 +8,7 @@ import type { MeetingState } from "@memory-loop/shared";
 import type {
   BrowserState,
   SearchState,
-  WidgetState,
   HealthState,
-  SyncState,
   SessionState,
 } from "./types.js";
 import { loadPersistedViewMode } from "./storage.js";
@@ -32,40 +30,12 @@ export function createInitialSearchState(): SearchState {
 }
 
 /**
- * Creates initial widget state.
- */
-export function createInitialWidgetState(): WidgetState {
-  return {
-    groundWidgets: [],
-    recallWidgets: [],
-    recallFilePath: null,
-    isGroundLoading: false,
-    isRecallLoading: false,
-    groundError: null,
-    recallError: null,
-    pendingEdits: new Map(),
-  };
-}
-
-/**
  * Creates initial health state.
  */
 export function createInitialHealthState(): HealthState {
   return {
     issues: [],
     isExpanded: false,
-  };
-}
-
-/**
- * Creates initial sync state.
- */
-export function createInitialSyncState(): SyncState {
-  return {
-    status: "idle",
-    progress: null,
-    message: null,
-    errorCount: 0,
   };
 }
 
@@ -114,9 +84,7 @@ export function createInitialSessionState(): SessionState {
     mode: "home",
     messages: [],
     browser: createInitialBrowserState(),
-    widgets: createInitialWidgetState(),
     health: createInitialHealthState(),
-    sync: createInitialSyncState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,

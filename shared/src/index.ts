@@ -142,6 +142,9 @@ export type {
   // Pair Writing types
   QuickActionType,
   QuickActionRequestMessage,
+  AdvisoryActionType,
+  AdvisoryActionRequestMessage,
+  PairChatRequestMessage,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

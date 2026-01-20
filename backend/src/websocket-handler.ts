@@ -198,7 +198,11 @@ import {
   handleTriggerExtraction,
 } from "./handlers/memory-handlers.js";
 
-import { handleQuickAction } from "./handlers/pair-writing-handlers.js";
+import {
+  handleQuickAction,
+  handleAdvisoryAction,
+  handlePairChat,
+} from "./handlers/pair-writing-handlers.js";
 
 // Re-export types for external consumers
 export type { WebSocketLike, ConnectionState };
@@ -760,6 +764,14 @@ export class WebSocketHandler {
       // Pair Writing handlers
       case "quick_action_request":
         await handleQuickAction(ctx, message);
+        break;
+
+      case "advisory_action_request":
+        await handleAdvisoryAction(ctx, message);
+        break;
+
+      case "pair_chat_request":
+        await handlePairChat(ctx, message);
         break;
     }
   }

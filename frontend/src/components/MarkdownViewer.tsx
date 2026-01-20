@@ -34,6 +34,8 @@ export interface MarkdownViewerProps {
   onSave?: (content: string) => void;
   /** Callback to open mobile file browser (only shown on mobile) */
   onMobileMenuClick?: () => void;
+  /** Callback to enter Pair Writing Mode (desktop only, REQ-F-9) */
+  onEnterPairWriting?: () => void;
 }
 
 /**
@@ -354,6 +356,7 @@ export function MarkdownViewer({
   assetBaseUrl = "/vault/assets",
   onSave,
   onMobileMenuClick,
+  onEnterPairWriting,
 }: MarkdownViewerProps): ReactNode {
   const {
     browser,
@@ -609,14 +612,27 @@ export function MarkdownViewer({
           </button>
         )}
         <Breadcrumb path={currentPath} onNavigate={handleBreadcrumbNavigate} />
-        <button
-          type="button"
-          className="markdown-viewer__adjust-btn"
-          onClick={startAdjust}
-          aria-label="Adjust file"
-        >
-          Adjust
-        </button>
+        <div className="markdown-viewer__toolbar-actions">
+          <button
+            type="button"
+            className="markdown-viewer__adjust-btn"
+            onClick={startAdjust}
+            aria-label="Adjust file"
+          >
+            Adjust
+          </button>
+          {/* Pair Writing button - desktop only (REQ-F-9, REQ-F-10) */}
+          {onEnterPairWriting && (
+            <button
+              type="button"
+              className="markdown-viewer__pair-writing-btn"
+              onClick={onEnterPairWriting}
+              aria-label="Enter Pair Writing mode"
+            >
+              Pair Writing
+            </button>
+          )}
+        </div>
       </div>
 
       {currentFileTruncated && (

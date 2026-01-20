@@ -1,0 +1,277 @@
+/**
+ * PairWritingMode Component Styles
+ *
+ * Split-screen layout with editor and conversation panes.
+ * Desktop-only component (hidden via CSS media query on touch devices).
+ *
+ * @see .sdd/plans/memory-loop/2026-01-20-pair-writing-mode-plan.md TD-6, TD-9
+ * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-10, REQ-F-11
+ */
+
+/* ============================================
+   Main Container
+   ============================================ */
+
+.pair-writing-mode {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--glass-bg);
+}
+
+/* ============================================
+   Toolbar Styles (PairWritingToolbar)
+   ============================================ */
+
+.pair-writing-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--glass-bg-secondary);
+  backdrop-filter: blur(var(--glass-blur));
+  min-height: 48px;
+  gap: var(--spacing-md);
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .pair-writing-toolbar {
+    background-color: var(--color-surface);
+  }
+}
+
+.pair-writing-toolbar__left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: 1;
+  min-width: 0; /* Allow text truncation */
+}
+
+.pair-writing-toolbar__file-path {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pair-writing-toolbar__unsaved-indicator {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  color: var(--color-warning);
+  line-height: 1;
+}
+
+.pair-writing-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+/* Toolbar buttons */
+.pair-writing-toolbar__btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.3s ease,
+    color 0.2s ease;
+}
+
+.pair-writing-toolbar__btn:hover:not(:disabled) {
+  background: var(--color-accent-primary-a10);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 12px var(--color-accent-primary-a15);
+}
+
+.pair-writing-toolbar__btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.pair-writing-toolbar__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Snapshot button states */
+.pair-writing-toolbar__btn--snapshot {
+  color: var(--color-text-secondary);
+}
+
+.pair-writing-toolbar__btn--snapshot:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.pair-writing-toolbar__btn--has-snapshot {
+  color: var(--color-accent);
+  border-color: var(--color-accent-a30);
+}
+
+.pair-writing-toolbar__btn--has-snapshot:hover:not(:disabled) {
+  background: var(--color-accent-primary-a15);
+}
+
+/* Save button */
+.pair-writing-toolbar__btn--save {
+  background: var(--gradient-primary);
+  color: white;
+  border-color: transparent;
+}
+
+.pair-writing-toolbar__btn--save:hover:not(:disabled) {
+  box-shadow: var(--glow-primary);
+  background: var(--gradient-primary);
+  border-color: transparent;
+}
+
+.pair-writing-toolbar__btn--save:disabled {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+/* Exit button */
+.pair-writing-toolbar__btn--exit {
+  color: var(--color-text-secondary);
+  border-color: transparent;
+}
+
+.pair-writing-toolbar__btn--exit:hover:not(:disabled) {
+  color: var(--color-error);
+  background: var(--color-error-a10);
+  border-color: var(--color-error-a30);
+  box-shadow: none;
+}
+
+/* Icons and labels */
+.pair-writing-toolbar__icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.pair-writing-toolbar__label {
+  display: none;
+}
+
+/* Show labels on larger screens */
+@media (min-width: 900px) {
+  .pair-writing-toolbar__label {
+    display: inline;
+  }
+}
+
+/* Spinner for saving state */
+.pair-writing-toolbar__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-white-a30);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: pair-writing-toolbar-spin 1s linear infinite;
+}
+
+@keyframes pair-writing-toolbar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============================================
+   Split-Screen Content (TD-6)
+   ============================================ */
+
+.pair-writing-mode__content {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* 50/50 split per REQ-F-11 */
+  gap: 1px;
+  flex: 1;
+  overflow: hidden;
+  background: var(--glass-border); /* Gap color */
+}
+
+.pair-writing-mode__editor-pane,
+.pair-writing-mode__conversation-pane {
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg);
+  overflow: hidden;
+}
+
+/* Editor pane needs to contain the MemoryEditor */
+.pair-writing-mode__editor-pane {
+  position: relative;
+}
+
+/* ============================================
+   Conversation Pane (Pair Writing specific)
+   ============================================ */
+
+.pair-writing-conversation {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.pair-writing-conversation__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: var(--color-text-secondary);
+  padding: var(--spacing-lg);
+}
+
+.pair-writing-conversation__empty p {
+  margin: 0;
+  font-size: var(--font-size-base);
+}
+
+.pair-writing-conversation__hint {
+  font-size: var(--font-size-sm);
+  margin-top: var(--spacing-sm) !important;
+  color: var(--color-text-accent-secondary);
+  font-style: italic;
+}
+
+/* ============================================
+   Desktop-Only Visibility (TD-9, REQ-F-10)
+   ============================================ */
+
+/* Hide on touch devices */
+@media (hover: none), (pointer: coarse) {
+  .pair-writing-mode {
+    display: none;
+  }
+}
+
+/* ============================================
+   Responsive Adjustments
+   ============================================ */
+
+/* On narrower screens, adjust toolbar padding */
+@media (max-width: 768px) {
+  .pair-writing-toolbar {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    gap: var(--spacing-sm);
+  }
+
+  .pair-writing-toolbar__btn {
+    padding: var(--spacing-xs);
+  }
+}

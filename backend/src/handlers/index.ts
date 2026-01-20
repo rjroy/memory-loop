@@ -49,4 +49,8 @@ export {
 } from "./meeting-handlers.js";
 
 // Pair writing handlers
-export { handleQuickAction } from "./pair-writing-handlers.js";
+export {
+  handleQuickAction,
+  handleAdvisoryAction,
+  handlePairChat,
+} from "./pair-writing-handlers.js";

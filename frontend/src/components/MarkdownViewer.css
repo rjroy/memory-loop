@@ -509,6 +509,57 @@
   }
 }
 
+/* Toolbar actions container - groups action buttons */
+.markdown-viewer__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+/* Pair Writing button - desktop only (REQ-F-9, REQ-F-10) */
+.markdown-viewer__pair-writing-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs) var(--spacing-md);
+  min-height: 32px;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-accent);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.3s ease;
+}
+
+.markdown-viewer__pair-writing-btn:hover {
+  background: var(--color-accent-primary-a10);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+  box-shadow: 0 0 12px var(--color-accent-primary-a15);
+}
+
+.markdown-viewer__pair-writing-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Hide Pair Writing button on touch/mobile devices (REQ-F-10) */
+@media (hover: none), (pointer: coarse) {
+  .markdown-viewer__pair-writing-btn {
+    display: none;
+  }
+}
+
+@media (hover: none) {
+  .markdown-viewer__pair-writing-btn:hover {
+    background: transparent;
+    border-color: var(--glass-border);
+    box-shadow: none;
+  }
+}
+
 /* Error message display (REQ-F-14) */
 .markdown-viewer__adjust-error {
   padding: var(--spacing-sm) var(--spacing-md);

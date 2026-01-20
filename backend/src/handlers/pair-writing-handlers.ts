@@ -1,21 +1,36 @@
 /**
  * Pair Writing Mode Handlers
  *
- * Handles Quick Actions (Tighten, Embellish, Correct, Polish) via Claude tool use.
- * Claude reads the file and uses the Edit tool to make changes directly.
+ * Handles:
+ * - Quick Actions (Tighten, Embellish, Correct, Polish) via Claude tool use
+ * - Advisory Actions (Validate, Critique, Compare) via streamed text response
+ * - Pair Chat for freeform conversation with optional selection context
+ *
+ * Quick Actions use Claude's Read/Edit tools to modify files directly.
+ * Advisory Actions and Pair Chat stream text responses without tool use.
  *
  * See: .sdd/plans/memory-loop/2026-01-20-pair-writing-mode-plan.md (TD-2)
  */
 
 import { join } from "node:path";
+import Anthropic from "@anthropic-ai/sdk";
 import { query, type Options, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { QuickActionRequestMessage } from "@memory-loop/shared";
+import type {
+  QuickActionRequestMessage,
+  AdvisoryActionRequestMessage,
+  PairChatRequestMessage,
+} from "@memory-loop/shared";
 import { createLogger } from "../logger.js";
 import { validatePath } from "../file-browser.js";
 import {
   buildQuickActionPrompt,
+  buildAdvisoryActionPrompt,
+  buildPairChatPrompt,
   isQuickActionType,
+  isAdvisoryActionType,
   type QuickActionContext,
+  type AdvisoryActionContext,
+  type PairChatContext,
 } from "../pair-writing-prompts.js";
 import { type HandlerContext, requireVault, generateMessageId } from "./types.js";
 
@@ -342,4 +357,229 @@ async function streamQuickActionEvents(
     content: responseChunks.join(""),
     contextUsage,
   };
+}
+
+// =============================================================================
+// Advisory Action Handler (Validate, Critique, Compare)
+// =============================================================================
+
+/**
+ * Handles an Advisory Action request (Validate, Critique, Compare).
+ *
+ * Advisory actions stream text responses to the conversation pane without tool use.
+ * The user reads the feedback and manually applies changes.
+ *
+ * @param ctx - Handler context with connection state and send functions
+ * @param request - Advisory action request message
+ */
+export async function handleAdvisoryAction(
+  ctx: HandlerContext,
+  request: AdvisoryActionRequestMessage
+): Promise<void> {
+  // Require vault to be selected
+  if (!requireVault(ctx)) {
+    return;
+  }
+
+  const vault = ctx.state.currentVault;
+
+  log.info(`Advisory action "${request.action}" on ${request.filePath}`);
+
+  // Validate action type
+  if (!isAdvisoryActionType(request.action)) {
+    ctx.sendError("VALIDATION_ERROR", `Invalid advisory action type: ${String(request.action)}`);
+    return;
+  }
+
+  // Validate selection
+  if (!request.selection || request.selection.length === 0) {
+    ctx.sendError("VALIDATION_ERROR", "Selection is required");
+    return;
+  }
+
+  // Validate file path is within vault
+  try {
+    await validatePath(vault.contentRoot, request.filePath);
+  } catch (error) {
+    log.warn(`Path validation failed: ${request.filePath}`, error);
+    ctx.sendError("PATH_TRAVERSAL", `File path "${request.filePath}" is not within vault`);
+    return;
+  }
+
+  // Build the prompt context
+  const promptContext: AdvisoryActionContext = {
+    filePath: request.filePath,
+    selectedText: request.selection,
+    contextBefore: request.contextBefore,
+    contextAfter: request.contextAfter,
+    startLine: request.selectionStartLine,
+    endLine: request.selectionEndLine,
+    totalLines: request.totalLines,
+    snapshotSelection: request.snapshotSelection,
+  };
+
+  // Build the action-specific prompt
+  const prompt = buildAdvisoryActionPrompt(request.action, promptContext);
+  log.debug(`Built advisory prompt (${prompt.length} chars)`);
+
+  // Generate message ID and stream response
+  const messageId = generateMessageId();
+  const startTime = Date.now();
+
+  ctx.send({ type: "response_start", messageId });
+
+  try {
+    // Create Anthropic client for streaming
+    const client = new Anthropic();
+    const stream = client.messages.stream({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2048,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    let contextUsage: number | undefined;
+
+    // Stream response chunks
+    for await (const event of stream) {
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        ctx.send({
+          type: "response_chunk",
+          messageId,
+          content: event.delta.text,
+        });
+      }
+
+      if (event.type === "message_delta" && event.usage) {
+        const inputTokens = stream.currentMessage?.usage?.input_tokens ?? 0;
+        const outputTokens = event.usage.output_tokens ?? 0;
+        const totalTokens = inputTokens + outputTokens;
+        // Estimate context usage (Claude sonnet has ~200k context)
+        contextUsage = Math.round((100 * totalTokens) / 200000);
+        contextUsage = Math.max(0, Math.min(100, contextUsage));
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+    log.info(`Advisory action completed in ${durationMs}ms`);
+
+    ctx.send({
+      type: "response_end",
+      messageId,
+      durationMs,
+      contextUsage,
+    });
+  } catch (error) {
+    log.error("Advisory action failed", error);
+    const message = error instanceof Error ? error.message : "Advisory action failed";
+    ctx.sendError("SDK_ERROR", message);
+  }
+}
+
+// =============================================================================
+// Pair Chat Handler (Freeform Conversation)
+// =============================================================================
+
+/**
+ * Handles a freeform chat message in Pair Writing Mode.
+ *
+ * Pair chat allows the user to ask questions about the document or selection.
+ * Selection context is optional.
+ *
+ * @param ctx - Handler context with connection state and send functions
+ * @param request - Pair chat request message
+ */
+export async function handlePairChat(
+  ctx: HandlerContext,
+  request: PairChatRequestMessage
+): Promise<void> {
+  // Require vault to be selected
+  if (!requireVault(ctx)) {
+    return;
+  }
+
+  const vault = ctx.state.currentVault;
+
+  log.info(`Pair chat for ${request.filePath}`);
+
+  // Validate message text
+  if (!request.text || request.text.length === 0) {
+    ctx.sendError("VALIDATION_ERROR", "Message text is required");
+    return;
+  }
+
+  // Validate file path is within vault
+  try {
+    await validatePath(vault.contentRoot, request.filePath);
+  } catch (error) {
+    log.warn(`Path validation failed: ${request.filePath}`, error);
+    ctx.sendError("PATH_TRAVERSAL", `File path "${request.filePath}" is not within vault`);
+    return;
+  }
+
+  // Build the prompt context
+  const promptContext: PairChatContext = {
+    userMessage: request.text,
+    filePath: request.filePath,
+    selectedText: request.selection,
+    contextBefore: request.contextBefore,
+    contextAfter: request.contextAfter,
+    startLine: request.selectionStartLine,
+    endLine: request.selectionEndLine,
+    totalLines: request.totalLines,
+  };
+
+  // Build the chat prompt
+  const prompt = buildPairChatPrompt(promptContext);
+  log.debug(`Built pair chat prompt (${prompt.length} chars)`);
+
+  // Generate message ID and stream response
+  const messageId = generateMessageId();
+  const startTime = Date.now();
+
+  ctx.send({ type: "response_start", messageId });
+
+  try {
+    // Create Anthropic client for streaming
+    const client = new Anthropic();
+    const stream = client.messages.stream({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2048,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    let contextUsage: number | undefined;
+
+    // Stream response chunks
+    for await (const event of stream) {
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        ctx.send({
+          type: "response_chunk",
+          messageId,
+          content: event.delta.text,
+        });
+      }
+
+      if (event.type === "message_delta" && event.usage) {
+        const inputTokens = stream.currentMessage?.usage?.input_tokens ?? 0;
+        const outputTokens = event.usage.output_tokens ?? 0;
+        const totalTokens = inputTokens + outputTokens;
+        contextUsage = Math.round((100 * totalTokens) / 200000);
+        contextUsage = Math.max(0, Math.min(100, contextUsage));
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+    log.info(`Pair chat completed in ${durationMs}ms`);
+
+    ctx.send({
+      type: "response_end",
+      messageId,
+      durationMs,
+      contextUsage,
+    });
+  } catch (error) {
+    log.error("Pair chat failed", error);
+    const message = error instanceof Error ? error.message : "Pair chat failed";
+    ctx.sendError("SDK_ERROR", message);
+  }
 }

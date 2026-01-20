@@ -1,8 +1,10 @@
 /**
  * Pair Writing Prompt Templates
  *
- * Action-specific system prompts for Quick Actions (Tighten, Embellish, Correct, Polish).
- * These prompts instruct Claude to work efficiently: read the file, make the edit, confirm briefly.
+ * Action-specific system prompts for:
+ * - Quick Actions (Tighten, Embellish, Correct, Polish): Use Claude's Read/Edit tools
+ * - Advisory Actions (Validate, Critique, Compare): Stream text feedback only
+ * - Pair Chat: Freeform chat with optional selection context
  *
  * See: .sdd/plans/memory-loop/2026-01-20-pair-writing-mode-plan.md (TD-3)
  */
@@ -11,6 +13,11 @@
  * Quick action types supported by the system.
  */
 export type QuickActionType = "tighten" | "embellish" | "correct" | "polish";
+
+/**
+ * Advisory action types supported by the system.
+ */
+export type AdvisoryActionType = "validate" | "critique" | "compare";
 
 /**
  * Context required to build a Quick Action prompt.
@@ -247,4 +254,291 @@ export function getActionConfig(action: QuickActionType): ActionConfig {
  */
 export function isQuickActionType(action: string): action is QuickActionType {
   return ["tighten", "embellish", "correct", "polish"].includes(action);
+}
+
+/**
+ * Checks if a string is a valid Advisory Action type.
+ *
+ * @param action - String to check
+ * @returns True if valid advisory action type
+ */
+export function isAdvisoryActionType(action: string): action is AdvisoryActionType {
+  return ["validate", "critique", "compare"].includes(action);
+}
+
+// =============================================================================
+// Advisory Action Prompts (Pair Writing Mode)
+// =============================================================================
+
+/**
+ * Context required to build an Advisory Action prompt.
+ */
+export interface AdvisoryActionContext {
+  /** Absolute or relative file path being edited */
+  filePath: string;
+  /** The selected text to analyze */
+  selectedText: string;
+  /** One paragraph before the selection (for context) */
+  contextBefore: string;
+  /** One paragraph after the selection (for context) */
+  contextAfter: string;
+  /** 1-indexed line number where selection starts */
+  startLine: number;
+  /** 1-indexed line number where selection ends */
+  endLine: number;
+  /** Total lines in the document */
+  totalLines: number;
+  /** For compare action: the corresponding text from the snapshot */
+  snapshotSelection?: string;
+}
+
+/**
+ * Configuration for Advisory Action types.
+ */
+interface AdvisoryActionConfig {
+  /** Human-readable action name */
+  name: string;
+  /** Task description for the prompt */
+  taskDescription: string;
+  /** Detailed instructions for this action */
+  instructions: string[];
+}
+
+/**
+ * Advisory action configurations.
+ */
+const ADVISORY_ACTION_CONFIGS: Record<AdvisoryActionType, AdvisoryActionConfig> = {
+  validate: {
+    name: "Validate",
+    taskDescription: "Fact-check the selected text",
+    instructions: [
+      "Identify any factual claims in the selection",
+      "Assess the accuracy of each claim based on your knowledge",
+      "Note claims you cannot verify (requires specialized knowledge, recent events, etc.)",
+      "Be specific about what is correct, questionable, or incorrect",
+      "Suggest corrections for any inaccuracies found",
+    ],
+  },
+  critique: {
+    name: "Critique",
+    taskDescription: "Analyze the clarity, voice, and structure of the selected text",
+    instructions: [
+      "Evaluate clarity: Is the meaning immediately apparent?",
+      "Assess voice: Is the tone consistent with the surrounding context?",
+      "Check structure: Does the text flow logically?",
+      "Identify specific weaknesses with concrete examples",
+      "Suggest improvements without rewriting the text entirely",
+      "Be constructive, not just critical",
+    ],
+  },
+  compare: {
+    name: "Compare",
+    taskDescription: "Analyze how the text has changed from the snapshot",
+    instructions: [
+      "Describe what changed objectively (additions, deletions, rewording)",
+      "Explain how the meaning or emphasis shifted (if at all)",
+      "Note whether the changes improved, degraded, or maintained quality",
+      "Be descriptive rather than judgmental",
+    ],
+  },
+};
+
+/**
+ * Builds the prompt for a Validate action.
+ *
+ * @param context - The context for the action
+ * @returns Complete prompt for Claude
+ */
+export function buildValidatePrompt(context: AdvisoryActionContext): string {
+  const config = ADVISORY_ACTION_CONFIGS.validate;
+  const positionHint = calculatePositionHint(
+    context.startLine,
+    context.endLine,
+    context.totalLines
+  );
+  const positionPhrase = formatPositionHint(positionHint);
+  const formattedInstructions = config.instructions.map((i) => `- ${i}`).join("\n");
+
+  return `You are a writing assistant helping fact-check content.
+
+Task: ${config.taskDescription} ${positionPhrase} "${context.filePath}".
+
+Instructions:
+${formattedInstructions}
+
+Selected text to validate:
+${context.selectedText}
+
+Surrounding context (for reference):
+${context.contextBefore}
+[SELECTED TEXT]
+${context.contextAfter}
+
+Provide your analysis in a clear, organized format. Be specific and actionable.`;
+}
+
+/**
+ * Builds the prompt for a Critique action.
+ *
+ * @param context - The context for the action
+ * @returns Complete prompt for Claude
+ */
+export function buildCritiquePrompt(context: AdvisoryActionContext): string {
+  const config = ADVISORY_ACTION_CONFIGS.critique;
+  const positionHint = calculatePositionHint(
+    context.startLine,
+    context.endLine,
+    context.totalLines
+  );
+  const positionPhrase = formatPositionHint(positionHint);
+  const formattedInstructions = config.instructions.map((i) => `- ${i}`).join("\n");
+
+  return `You are a writing assistant providing editorial feedback.
+
+Task: ${config.taskDescription} ${positionPhrase} "${context.filePath}".
+
+Instructions:
+${formattedInstructions}
+
+Selected text to critique:
+${context.selectedText}
+
+Surrounding context (for tone/style reference):
+${context.contextBefore}
+[SELECTED TEXT]
+${context.contextAfter}
+
+Provide your analysis in a clear, organized format. Focus on specific, actionable feedback.`;
+}
+
+/**
+ * Builds the prompt for a Compare action.
+ *
+ * @param context - The context for the action (must include snapshotSelection)
+ * @returns Complete prompt for Claude
+ */
+export function buildComparePrompt(context: AdvisoryActionContext): string {
+  const config = ADVISORY_ACTION_CONFIGS.compare;
+  const formattedInstructions = config.instructions.map((i) => `- ${i}`).join("\n");
+
+  // Handle case where no snapshot selection was provided
+  if (!context.snapshotSelection) {
+    return `You are a writing assistant helping track document changes.
+
+The user selected text to compare to a snapshot, but no corresponding text was found in the snapshot. This usually means the selection is new content that was added after the snapshot was taken.
+
+Current selection (new content):
+${context.selectedText}
+
+Respond briefly noting that this appears to be new content not present in the snapshot.`;
+  }
+
+  return `You are a writing assistant helping track document changes.
+
+Task: ${config.taskDescription}
+
+Instructions:
+${formattedInstructions}
+
+BEFORE (from snapshot):
+${context.snapshotSelection}
+
+AFTER (current):
+${context.selectedText}
+
+Provide a clear analysis of:
+1. What changed (specific additions, deletions, rewording)
+2. How the meaning or emphasis shifted
+3. Overall assessment of the changes`;
+}
+
+/**
+ * Builds the appropriate advisory action prompt based on action type.
+ *
+ * @param action - The advisory action type
+ * @param context - The context for the action
+ * @returns Complete prompt for Claude
+ */
+export function buildAdvisoryActionPrompt(
+  action: AdvisoryActionType,
+  context: AdvisoryActionContext
+): string {
+  switch (action) {
+    case "validate":
+      return buildValidatePrompt(context);
+    case "critique":
+      return buildCritiquePrompt(context);
+    case "compare":
+      return buildComparePrompt(context);
+  }
+}
+
+// =============================================================================
+// Pair Chat Prompts
+// =============================================================================
+
+/**
+ * Context for building a pair chat prompt.
+ */
+export interface PairChatContext {
+  /** The user's message */
+  userMessage: string;
+  /** Path to the file being edited */
+  filePath: string;
+  /** Optional: selected text for context */
+  selectedText?: string;
+  /** Optional: paragraph before the selection */
+  contextBefore?: string;
+  /** Optional: paragraph after the selection */
+  contextAfter?: string;
+  /** Optional: line number where selection starts */
+  startLine?: number;
+  /** Optional: line number where selection ends */
+  endLine?: number;
+  /** Optional: total lines in document */
+  totalLines?: number;
+}
+
+/**
+ * Builds the prompt for a freeform pair chat message.
+ *
+ * If a selection is provided, includes it as context for the question.
+ * Otherwise, just includes the file path for general context.
+ *
+ * @param context - The chat context
+ * @returns Complete prompt for Claude
+ */
+export function buildPairChatPrompt(context: PairChatContext): string {
+  // Base system context
+  let prompt = `You are a writing assistant helping the user edit "${context.filePath}".
+
+Respond helpfully and concisely. Focus on the user's specific question.`;
+
+  // Add selection context if provided
+  if (context.selectedText) {
+    const positionInfo = context.startLine && context.endLine && context.totalLines
+      ? ` (lines ${context.startLine}-${context.endLine})`
+      : "";
+
+    prompt += `
+
+The user has selected the following text${positionInfo}:
+${context.selectedText}`;
+
+    if (context.contextBefore || context.contextAfter) {
+      prompt += `
+
+Surrounding context:
+${context.contextBefore || "[Beginning of document]"}
+[SELECTED TEXT]
+${context.contextAfter || "[End of document]"}`;
+    }
+  }
+
+  prompt += `
+
+User's question:
+${context.userMessage}`;
+
+  return prompt;
 }

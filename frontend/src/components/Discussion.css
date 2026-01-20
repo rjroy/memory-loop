@@ -12,93 +12,8 @@
   position: relative;
 }
 
-/* Messages container */
-.discussion__messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--spacing-md);
-  scroll-behavior: smooth;
-}
-
-/* Empty state */
-.discussion__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: end;
-  height: 100%;
-  text-align: center;
-  color: var(--color-text-secondary);
-  padding: var(--spacing-lg);
-}
-.discussion__empty p::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: url('/images/bg-quartary.webp');
-  background-size: cover;
-  background-position: center center;
-  border-radius: inherit;
-  opacity: 0.15;
-  z-index: -1;
-}
-
-
-.discussion__empty p,
-.discussion__empty .discussion__hint {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur-light));
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-md);
-}
-
-.discussion__empty::before {
-  content: "";
-  width: 60px;
-  height: 60px;
-  background-image: url('/images/empty-state.webp');
-  filter: hue-rotate(var(--holiday-hue-rotate, 0deg));
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  animation: disintegrate 20s ease-in-out infinite;
-  margin-bottom: var(--space-6);
-}
-
-@keyframes disintegrate {
-  0% { 
-    transform: translateY(50px);
-    filter: blur(0px) opacity(100%);
-  }
-  50% { 
-    transform: translateY(50px) scale(1.5);
-    filter: blur(4px) opacity(25%);
-  }
-  100% { 
-    transform: translateY(50px);
-    filter: blur(0px) opacity(100%);
-  }
-}
-
-/* Larger orb on desktop */
-@media (min-width: 768px) {
-  .discussion__empty::before {
-    width: 60px;
-    height: 60px;
-  }
-}
-
-.discussion__empty p {
-  margin: 0;
-  font-size: var(--font-size-lg);
-}
-
-.discussion__hint {
-  font-size: var(--font-size-sm);
-  margin-top: var(--spacing-sm) !important;
-  color: var(--color-text-accent-secondary);
-  font-style: italic;
-}
+/* Messages container - now uses ConversationPane with discussion__messages class.
+ * Empty state styling is handled by ConversationPane.css. */
 
 /* Input area */
 .discussion__input-area {
@@ -239,10 +154,6 @@
 
 /* Tablet and up */
 @media (min-width: 768px) {
-  .discussion__messages {
-    padding: var(--spacing-lg);
-  }
-
   .discussion__input-area {
     padding: var(--spacing-md) var(--spacing-lg);
   }

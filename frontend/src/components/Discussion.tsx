@@ -9,7 +9,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import type { ServerMessage, SlashCommand } from "@memory-loop/shared";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useSession, useServerMessageHandler } from "../contexts/SessionContext";
-import { MessageBubble } from "./MessageBubble";
+import { ConversationPane, DiscussionEmptyState } from "./ConversationPane";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ToolPermissionDialog, type ToolPermissionRequest } from "./ToolPermissionDialog";
 import { AskUserQuestionDialog, type AskUserQuestionRequest } from "./AskUserQuestionDialog";
@@ -39,7 +39,7 @@ export function Discussion(): React.ReactNode {
   const [autocompleteSelectedIndex, setAutocompleteSelectedIndex] = useState(0);
   const [argumentHintPlaceholder, setArgumentHintPlaceholder] = useState<string | null>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // messagesEndRef removed - auto-scroll now handled by ConversationPane
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasSentVaultSelectionRef = useRef(false);
   const prevSessionIdRef = useRef<string | null>(null);
@@ -285,10 +285,7 @@ export function Discussion(): React.ReactNode {
     }
   }, [input]);
 
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // Auto-scroll removed - now handled by ConversationPane
 
   // Slash command autocomplete logic
   // Check if input starts with "/" and we have commands available
@@ -497,21 +494,13 @@ export function Discussion(): React.ReactNode {
         +
       </button>
 
-      <div className="discussion__messages" role="list" aria-label="Conversation">
-        {messages.length === 0 ? (
-          <div className="discussion__empty">
-            <p>Start a conversation about your vault.</p>
-            <p className="discussion__hint">
-              Try asking questions about your notes or use slash commands.
-            </p>
-          </div>
-        ) : (
-          messages.map((message) => (
-            <MessageBubble key={message.id} message={message} vaultId={vault?.id} />
-          ))
-        )}
-        <div ref={messagesEndRef} aria-hidden="true" />
-      </div>
+      <ConversationPane
+        messages={messages}
+        vaultId={vault?.id}
+        emptyState={<DiscussionEmptyState />}
+        className="discussion__messages"
+        ariaLabel="Conversation"
+      />
 
       <form className="discussion__input-area" onSubmit={handleSubmit}>
         <SlashCommandAutocomplete

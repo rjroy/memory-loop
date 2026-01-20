@@ -16,6 +16,14 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { ClientMessage, ServerMessage } from "@memory-loop/shared";
+import {
+  EditorContextMenu,
+  getMenuPositionFromEvent,
+  type MenuPosition,
+  type QuickActionType,
+} from "./EditorContextMenu";
+import { useLongPress } from "../hooks/useLongPress";
+import { useTextSelection, type SelectionContext } from "../hooks/useTextSelection";
 import "./MemoryEditor.css";
 
 /**
@@ -57,8 +65,22 @@ export function MemoryEditor({
   const [, setSizeBytes] = useState(0);
   const [fileExists, setFileExists] = useState(false);
 
+  // Context menu state
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
+
+  // Ref to the textarea for selection tracking
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
   // Track if we've requested the content
   const hasRequestedRef = useRef(false);
+
+  // Track text selection
+  const { selection } = useTextSelection(textareaRef, content);
+
+  // Store selection context for use in action handler
+  const selectionRef = useRef<SelectionContext | null>(null);
+  selectionRef.current = selection;
 
   // Calculate current content size
   const currentSize = new TextEncoder().encode(content).length;
@@ -133,6 +155,66 @@ export function MemoryEditor({
     setError(null);
   }, [originalContent]);
 
+  // Open context menu at position (only if there's a selection)
+  const openContextMenu = useCallback((position: MenuPosition) => {
+    // Only show menu if there's selected text
+    if (!selectionRef.current) return;
+    setMenuPosition(position);
+    setMenuOpen(true);
+  }, []);
+
+  // Close context menu
+  const closeContextMenu = useCallback(() => {
+    setMenuOpen(false);
+    setMenuPosition(null);
+  }, []);
+
+  // Handle right-click (desktop context menu)
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLTextAreaElement>) => {
+      // Only intercept if there's a selection
+      if (!selectionRef.current) return;
+
+      e.preventDefault();
+      openContextMenu(getMenuPositionFromEvent(e));
+    },
+    [openContextMenu]
+  );
+
+  // Handle long-press (mobile context menu)
+  const handleLongPress = useCallback(
+    (e: React.TouchEvent) => {
+      // Only show menu if there's a selection
+      if (!selectionRef.current) return;
+
+      openContextMenu(getMenuPositionFromEvent(e));
+    },
+    [openContextMenu]
+  );
+
+  // Long press handlers for mobile
+  const longPressHandlers = useLongPress(handleLongPress, { duration: 500 });
+
+  // Handle Quick Action selection
+  const handleAction = useCallback(
+    (action: QuickActionType) => {
+      const currentSelection = selectionRef.current;
+      if (!currentSelection) {
+        closeContextMenu();
+        return;
+      }
+
+      // Log the action with selection context (WebSocket dispatch comes in TASK-008)
+      console.log("Quick Action triggered:", {
+        action,
+        selection: currentSelection,
+      });
+
+      closeContextMenu();
+    },
+    [closeContextMenu]
+  );
+
   // Format bytes for display
   const formatBytes = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -186,9 +268,12 @@ export function MemoryEditor({
           </div>
         ) : (
           <textarea
+            ref={textareaRef}
             className="memory-editor__textarea"
             value={content}
             onChange={handleChange}
+            onContextMenu={handleContextMenu}
+            {...longPressHandlers}
             placeholder="# Memory&#10;&#10;Add facts about yourself that Claude should remember..."
             spellCheck={false}
           />
@@ -228,6 +313,14 @@ export function MemoryEditor({
           {isSaving ? "Saving..." : "Save"}
         </button>
       </div>
+
+      {/* Context Menu for Quick Actions */}
+      <EditorContextMenu
+        isOpen={menuOpen}
+        position={menuPosition}
+        onAction={handleAction}
+        onDismiss={closeContextMenu}
+      />
     </div>
   );
 }

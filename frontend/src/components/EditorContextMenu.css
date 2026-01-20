@@ -1,0 +1,117 @@
+/**
+ * EditorContextMenu Component Styles
+ *
+ * Context menu for Quick Actions on text selections.
+ * Uses glass morphism styling consistent with FileTree context menu.
+ */
+
+.editor-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  max-width: 240px;
+  padding: var(--spacing-xs);
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px var(--color-black-a40);
+  animation: editor-context-menu-appear 0.1s ease-out;
+}
+
+@keyframes editor-context-menu-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Menu item */
+.editor-context-menu__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.editor-context-menu__item:hover,
+.editor-context-menu__item--focused {
+  background: var(--color-accent-primary-a15);
+}
+
+.editor-context-menu__item:focus {
+  outline: none;
+}
+
+.editor-context-menu__item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* Icon container */
+.editor-context-menu__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.editor-context-menu__icon-svg {
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-accent-secondary);
+}
+
+/* Content area (label + description) */
+.editor-context-menu__content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.editor-context-menu__label {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.editor-context-menu__description {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Touch device adjustments */
+@media (hover: none) {
+  .editor-context-menu__item {
+    min-height: 48px;
+    padding: var(--spacing-md);
+  }
+
+  .editor-context-menu__item:hover {
+    background: transparent;
+  }
+
+  .editor-context-menu__item:active {
+    background: var(--color-accent-primary-a15);
+  }
+}

@@ -7,7 +7,7 @@
  * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-14, REQ-F-23, REQ-F-29, REQ-F-30
  */
 
-import React from "react";
+import React, { useState } from "react";
 import "./PairWritingMode.css";
 
 export interface PairWritingToolbarProps {
@@ -15,6 +15,8 @@ export interface PairWritingToolbarProps {
   hasUnsavedChanges: boolean;
   /** Whether a snapshot currently exists (REQ-F-24) */
   hasSnapshot: boolean;
+  /** Whether text is currently selected in the editor */
+  hasSelection?: boolean;
   /** Whether save is in progress */
   isSaving?: boolean;
   /** Called when user clicks Snapshot button (REQ-F-23) */
@@ -25,6 +27,8 @@ export interface PairWritingToolbarProps {
   onExit: () => void;
   /** Current file path being edited (displayed in toolbar) */
   filePath?: string;
+  /** The actual snapshot text content (for hover preview) */
+  snapshotContent?: string;
 }
 
 /**
@@ -37,15 +41,44 @@ export interface PairWritingToolbarProps {
  *
  * Note: Exit confirmation dialog is handled by the parent PairWritingMode component.
  */
+/**
+ * Truncates snapshot content for preview display.
+ * Limits to ~500 characters or ~15 lines, whichever is shorter.
+ */
+function truncateForPreview(content: string): { text: string; isTruncated: boolean } {
+  const MAX_CHARS = 500;
+  const MAX_LINES = 15;
+
+  const lines = content.split("\n");
+  let result = "";
+  let lineCount = 0;
+
+  for (const line of lines) {
+    if (lineCount >= MAX_LINES || result.length + line.length > MAX_CHARS) {
+      return { text: result.trimEnd(), isTruncated: true };
+    }
+    result += (lineCount > 0 ? "\n" : "") + line;
+    lineCount++;
+  }
+
+  return { text: result, isTruncated: false };
+}
+
 export function PairWritingToolbar({
   hasUnsavedChanges,
   hasSnapshot,
+  hasSelection = false,
   isSaving = false,
   onSnapshot,
   onSave,
   onExit,
   filePath,
+  snapshotContent,
 }: PairWritingToolbarProps): React.ReactNode {
+  const [isHoveringSnapshot, setIsHoveringSnapshot] = useState(false);
+
+  // Snapshot requires a selection (captures selected text, not entire file)
+  const canSnapshot = hasSelection;
   return (
     <div className="pair-writing-toolbar" role="toolbar" aria-label="Pair Writing toolbar">
       {/* Left section: file info */}
@@ -64,29 +97,54 @@ export function PairWritingToolbar({
 
       {/* Right section: action buttons */}
       <div className="pair-writing-toolbar__actions">
-        {/* Snapshot button (REQ-F-23) */}
-        <button
-          type="button"
-          className={`pair-writing-toolbar__btn pair-writing-toolbar__btn--snapshot${hasSnapshot ? " pair-writing-toolbar__btn--has-snapshot" : ""}`}
-          onClick={onSnapshot}
-          aria-pressed={hasSnapshot}
-          title={hasSnapshot ? "Update snapshot (replaces previous)" : "Take snapshot for comparison"}
+        {/* Snapshot button with hover preview (REQ-F-23) */}
+        <div
+          className="pair-writing-toolbar__snapshot-wrapper"
+          onMouseEnter={() => setIsHoveringSnapshot(true)}
+          onMouseLeave={() => setIsHoveringSnapshot(false)}
         >
-          <svg
-            className="pair-writing-toolbar__icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+          <button
+            type="button"
+            className={`pair-writing-toolbar__btn pair-writing-toolbar__btn--snapshot${hasSnapshot ? " pair-writing-toolbar__btn--has-snapshot" : ""}`}
+            onClick={onSnapshot}
+            disabled={!canSnapshot}
+            aria-pressed={hasSnapshot}
+            title={
+              !canSnapshot
+                ? "Select text to snapshot"
+                : hasSnapshot
+                  ? "Update snapshot (replaces previous)"
+                  : "Take snapshot of selection"
+            }
           >
-            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-            <circle cx="12" cy="13" r="4" />
-          </svg>
-          <span className="pair-writing-toolbar__label">Snapshot</span>
-        </button>
+            <svg
+              className="pair-writing-toolbar__icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
+            </svg>
+            <span className="pair-writing-toolbar__label">Snapshot</span>
+          </button>
+          {/* Snapshot preview popover */}
+          {hasSnapshot && isHoveringSnapshot && snapshotContent && (() => {
+            const { text, isTruncated } = truncateForPreview(snapshotContent);
+            return (
+              <div className="pair-writing-toolbar__snapshot-preview" role="tooltip">
+                <pre className="pair-writing-toolbar__snapshot-preview-content">
+                  {text}
+                  {isTruncated && <span className="pair-writing-toolbar__snapshot-preview-ellipsis">...</span>}
+                </pre>
+              </div>
+            );
+          })()}
+        </div>
 
         {/* Save button (REQ-F-29) */}
         <button

@@ -18,6 +18,7 @@ describe("PairWritingToolbar", () => {
   const defaultProps = {
     hasUnsavedChanges: false,
     hasSnapshot: false,
+    hasSelection: true, // Most tests assume selection exists
     isSaving: false,
     onSnapshot: mock(() => {}),
     onSave: mock(() => {}),
@@ -55,35 +56,132 @@ describe("PairWritingToolbar", () => {
   });
 
   describe("snapshot button (REQ-F-23)", () => {
-    it("calls onSnapshot when clicked", () => {
+    it("calls onSnapshot when clicked with selection", () => {
       const onSnapshot = mock(() => {});
-      render(<PairWritingToolbar {...defaultProps} onSnapshot={onSnapshot} />);
+      render(<PairWritingToolbar {...defaultProps} onSnapshot={onSnapshot} hasSelection={true} />);
 
       fireEvent.click(screen.getByTitle(/snapshot/i));
 
       expect(onSnapshot).toHaveBeenCalledTimes(1);
     });
 
+    it("is disabled when no selection", () => {
+      render(<PairWritingToolbar {...defaultProps} hasSelection={false} />);
+
+      const snapshotBtn = screen.getByTitle("Select text to snapshot");
+      expect(snapshotBtn.hasAttribute("disabled")).toBe(true);
+    });
+
+    it("is enabled when selection exists", () => {
+      render(<PairWritingToolbar {...defaultProps} hasSelection={true} />);
+
+      const snapshotBtn = screen.getByTitle(/take snapshot/i);
+      expect(snapshotBtn.hasAttribute("disabled")).toBe(false);
+    });
+
     it("has aria-pressed false when no snapshot exists", () => {
-      render(<PairWritingToolbar {...defaultProps} hasSnapshot={false} />);
+      render(<PairWritingToolbar {...defaultProps} hasSnapshot={false} hasSelection={true} />);
 
       const snapshotBtn = screen.getByTitle(/take snapshot/i);
       expect(snapshotBtn.getAttribute("aria-pressed")).toBe("false");
     });
 
     it("has aria-pressed true when snapshot exists", () => {
-      render(<PairWritingToolbar {...defaultProps} hasSnapshot={true} />);
+      render(<PairWritingToolbar {...defaultProps} hasSnapshot={true} hasSelection={true} />);
 
       const snapshotBtn = screen.getByTitle(/update snapshot/i);
       expect(snapshotBtn.getAttribute("aria-pressed")).toBe("true");
     });
 
     it("has different title when snapshot exists", () => {
-      const { rerender } = render(<PairWritingToolbar {...defaultProps} hasSnapshot={false} />);
-      expect(screen.getByTitle("Take snapshot for comparison")).toBeDefined();
+      const { rerender } = render(<PairWritingToolbar {...defaultProps} hasSnapshot={false} hasSelection={true} />);
+      expect(screen.getByTitle("Take snapshot of selection")).toBeDefined();
 
-      rerender(<PairWritingToolbar {...defaultProps} hasSnapshot={true} />);
+      rerender(<PairWritingToolbar {...defaultProps} hasSnapshot={true} hasSelection={true} />);
       expect(screen.getByTitle("Update snapshot (replaces previous)")).toBeDefined();
+    });
+
+    it("shows preview on hover when snapshot content exists", () => {
+      render(
+        <PairWritingToolbar
+          {...defaultProps}
+          hasSnapshot={true}
+          snapshotContent="# Test Snapshot\n\nThis is the snapshot content."
+        />
+      );
+
+      // Preview should not be visible initially
+      expect(screen.queryByRole("tooltip")).toBeNull();
+
+      // Hover over the snapshot wrapper
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      expect(wrapper).not.toBeNull();
+      fireEvent.mouseEnter(wrapper!);
+
+      // Preview should now be visible
+      const preview = screen.getByRole("tooltip");
+      expect(preview).toBeDefined();
+      expect(preview.textContent).toContain("Test Snapshot");
+    });
+
+    it("hides preview on mouse leave", () => {
+      render(
+        <PairWritingToolbar
+          {...defaultProps}
+          hasSnapshot={true}
+          snapshotContent="# Test Snapshot"
+        />
+      );
+
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      fireEvent.mouseEnter(wrapper!);
+      expect(screen.getByRole("tooltip")).toBeDefined();
+
+      fireEvent.mouseLeave(wrapper!);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("truncates long snapshot content with ellipsis", () => {
+      // Generate content longer than 500 chars or 15 lines
+      const longContent = Array(20).fill("This is a line of text.").join("\n");
+      render(
+        <PairWritingToolbar
+          {...defaultProps}
+          hasSnapshot={true}
+          snapshotContent={longContent}
+        />
+      );
+
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      fireEvent.mouseEnter(wrapper!);
+
+      const ellipsis = document.querySelector(".pair-writing-toolbar__snapshot-preview-ellipsis");
+      expect(ellipsis).not.toBeNull();
+      expect(ellipsis?.textContent).toBe("...");
+    });
+
+    it("does not show preview when hasSnapshot is false", () => {
+      render(
+        <PairWritingToolbar
+          {...defaultProps}
+          hasSnapshot={false}
+          snapshotContent="# Some content"
+        />
+      );
+
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      fireEvent.mouseEnter(wrapper!);
+
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("does not show preview when snapshotContent is undefined", () => {
+      render(<PairWritingToolbar {...defaultProps} hasSnapshot={true} />);
+
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      fireEvent.mouseEnter(wrapper!);
+
+      expect(screen.queryByRole("tooltip")).toBeNull();
     });
   });
 

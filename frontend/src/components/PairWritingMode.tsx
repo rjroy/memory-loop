@@ -24,7 +24,7 @@ import { PairWritingEditor } from "./PairWritingEditor";
 import { Discussion } from "./Discussion";
 import { ConfirmDialog } from "./ConfirmDialog";
 import type { AdvisoryActionType, QuickActionType } from "./EditorContextMenu";
-import type { SelectionContext } from "../hooks/useTextSelection";
+import { type SelectionContext } from "../hooks/useTextSelection";
 import type { ConnectionStatus } from "../hooks/useWebSocket";
 import "./PairWritingMode.css";
 
@@ -89,6 +89,7 @@ export function PairWritingMode({
   const { addMessage } = useSession();
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [currentSelection, setCurrentSelection] = useState<SelectionContext | null>(null);
 
   // Track previous initialContent to detect external changes (not local edits)
   const prevInitialContent = useRef(initialContent);
@@ -110,10 +111,18 @@ export function PairWritingMode({
     }
   }, [initialContent, state.isActive, actions]);
 
+  // Handle selection changes from editor
+  const handleSelectionChange = useCallback((selection: SelectionContext | null) => {
+    setCurrentSelection(selection);
+  }, []);
+
   // Handle snapshot button (REQ-F-23)
+  // Captures the currently selected text, not the entire file
   const handleSnapshot = useCallback(() => {
-    actions.takeSnapshot();
-  }, [actions]);
+    if (currentSelection?.text) {
+      actions.takeSnapshot(currentSelection.text);
+    }
+  }, [actions, currentSelection]);
 
   // Handle save button (REQ-F-29)
   const handleSave = useCallback(() => {
@@ -222,11 +231,13 @@ export function PairWritingMode({
       <PairWritingToolbar
         hasUnsavedChanges={state.hasUnsavedChanges}
         hasSnapshot={state.snapshot !== null}
+        hasSelection={currentSelection !== null}
         isSaving={isSaving}
         onSnapshot={handleSnapshot}
         onSave={handleSave}
         onExit={handleExitClick}
         filePath={filePath}
+        snapshotContent={state.snapshot ?? undefined}
       />
 
       {/* Split-screen content (REQ-F-11, TD-6) */}
@@ -242,6 +253,7 @@ export function PairWritingMode({
             onQuickActionComplete={handleQuickActionComplete}
             onQuickAction={handleQuickAction}
             onAdvisoryAction={handleAdvisoryAction}
+            onSelectionChange={handleSelectionChange}
             hasSnapshot={state.snapshot !== null}
             snapshotContent={state.snapshot ?? undefined}
           />

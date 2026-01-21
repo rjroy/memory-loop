@@ -26,7 +26,6 @@ import {
   useTextSelection,
   type SelectionContext,
 } from "../hooks/useTextSelection";
-import { Toast, type ToastVariant } from "./Toast";
 import "./PairWritingEditor.css";
 
 export interface PairWritingEditorProps {
@@ -44,8 +43,6 @@ export interface PairWritingEditorProps {
   snapshotContent?: string;
   /** Dependency injection for testing */
   ContextMenuComponent?: typeof EditorContextMenu;
-  /** Dependency injection for testing */
-  ToastComponent?: typeof Toast;
 }
 
 export function PairWritingEditor({
@@ -58,22 +55,14 @@ export function PairWritingEditor({
   onAdvisoryAction,
   hasSnapshot = false,
   ContextMenuComponent = EditorContextMenu,
-  ToastComponent = Toast,
 }: PairWritingEditorProps): React.ReactNode {
   const [content, setContent] = useState(initialContent);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [isProcessingQuickAction, setIsProcessingQuickAction] = useState(false);
   const [quickActionMessageId, setQuickActionMessageId] = useState<string | null>(null);
-  const [toast, setToast] = useState<{
-    visible: boolean;
-    message: string;
-    variant: ToastVariant;
-  }>({ visible: false, message: "", variant: "success" });
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  // Ref accumulates streamed confirmation text (avoids re-render per chunk)
-  const quickActionConfirmationRef = useRef("");
 
   const { selection } = useTextSelection(textareaRef, content);
 
@@ -97,31 +86,15 @@ export function PairWritingEditor({
         setQuickActionMessageId(lastMessage.messageId);
         break;
 
-      case "response_chunk":
-        if (lastMessage.messageId === quickActionMessageId) {
-          quickActionConfirmationRef.current += lastMessage.content;
-        }
-        break;
-
-      case "response_end": {
+      case "response_end":
         setIsProcessingQuickAction(false);
         setQuickActionMessageId(null);
-
-        const confirmation = quickActionConfirmationRef.current.trim();
-        if (confirmation) {
-          setToast({ visible: true, message: confirmation, variant: "success" });
-        }
-        quickActionConfirmationRef.current = "";
-
         onQuickActionComplete?.(filePathRef.current);
         break;
-      }
 
       case "error":
         setIsProcessingQuickAction(false);
         setQuickActionMessageId(null);
-        quickActionConfirmationRef.current = "";
-        setToast({ visible: true, message: lastMessage.message, variant: "error" });
         break;
     }
   }, [lastMessage, isProcessingQuickAction, quickActionMessageId, onQuickActionComplete]);
@@ -174,7 +147,6 @@ export function PairWritingEditor({
       if (!currentSelection) return;
 
       setIsProcessingQuickAction(true);
-      quickActionConfirmationRef.current = "";
       setQuickActionMessageId(null);
 
       sendMessage({
@@ -237,13 +209,6 @@ export function PairWritingEditor({
         onDismiss={closeContextMenu}
         mode="pair-writing"
         hasSnapshot={hasSnapshot}
-      />
-
-      <ToastComponent
-        isVisible={toast.visible}
-        variant={toast.variant}
-        message={toast.message}
-        onDismiss={() => setToast((prev) => ({ ...prev, visible: false }))}
       />
     </div>
   );

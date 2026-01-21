@@ -259,25 +259,40 @@ export function useTextSelection(
     const element = elementRef.current;
     if (!element) return;
 
-    // For textarea, listen to select event
+    // For textarea, listen to multiple events to catch selection changes
     if (element instanceof HTMLTextAreaElement) {
       const handleSelect = () => updateSelection();
       const handleMouseUp = () => updateSelection();
+      const handleTouchEnd = () => {
+        // iOS Safari needs a small delay for selection to finalize after touch
+        setTimeout(updateSelection, 10);
+      };
       const handleKeyUp = (e: KeyboardEvent) => {
         // Update on shift+arrow keys (selection change)
         if (e.shiftKey || e.key === "Escape") {
           updateSelection();
         }
       };
+      // iOS Safari fires selectionchange on document for textareas too
+      const handleSelectionChange = () => {
+        // Only update if our textarea is focused (selection is in it)
+        if (document.activeElement === element) {
+          updateSelection();
+        }
+      };
 
       element.addEventListener("select", handleSelect);
       element.addEventListener("mouseup", handleMouseUp);
+      element.addEventListener("touchend", handleTouchEnd);
       element.addEventListener("keyup", handleKeyUp);
+      document.addEventListener("selectionchange", handleSelectionChange);
 
       return () => {
         element.removeEventListener("select", handleSelect);
         element.removeEventListener("mouseup", handleMouseUp);
+        element.removeEventListener("touchend", handleTouchEnd);
         element.removeEventListener("keyup", handleKeyUp);
+        document.removeEventListener("selectionchange", handleSelectionChange);
       };
     }
 

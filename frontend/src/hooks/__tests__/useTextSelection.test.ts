@@ -427,4 +427,49 @@ describe("useTextSelection hook", () => {
     expect(result.current.selection?.endLine).toBe(3);
     expect(result.current.selection?.totalLines).toBe(4);
   });
+
+  it("updates selection on touchend (iOS touch selection)", async () => {
+    const ref = createRef<HTMLTextAreaElement>();
+    (ref as { current: HTMLTextAreaElement }).current = mockTextarea;
+
+    const { result } = renderHook(() =>
+      useTextSelection(ref, mockTextarea.value)
+    );
+
+    // Simulate touch selection ending
+    act(() => {
+      mockTextarea.selectionStart = 0;
+      mockTextarea.selectionEnd = 5;
+      mockTextarea.dispatchEvent(new TouchEvent("touchend"));
+    });
+
+    // touchend handler uses setTimeout(10ms), so we need to wait
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(result.current.selection).not.toBeNull();
+    expect(result.current.selection?.text).toBe("Hello");
+  });
+
+  it("updates selection on document selectionchange when textarea is focused", () => {
+    const ref = createRef<HTMLTextAreaElement>();
+    (ref as { current: HTMLTextAreaElement }).current = mockTextarea;
+
+    const { result } = renderHook(() =>
+      useTextSelection(ref, mockTextarea.value)
+    );
+
+    // Focus the textarea and set selection
+    act(() => {
+      mockTextarea.focus();
+      mockTextarea.selectionStart = 7;
+      mockTextarea.selectionEnd = 12;
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    expect(result.current.selection).not.toBeNull();
+    expect(result.current.selection?.text).toBe("World");
+  });
+
 });

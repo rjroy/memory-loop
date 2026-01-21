@@ -351,3 +351,8 @@
   margin: 0 auto;
   overflow: hidden;
 }
+
+/* Full-width layout for Pair Writing mode */
+[data-pair-writing] .app-main {
+  max-width: 100%;
+}

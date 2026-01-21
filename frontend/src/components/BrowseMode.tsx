@@ -69,6 +69,18 @@ export function BrowseMode(): React.ReactNode {
   const isPairWritingActiveRef = useRef(isPairWritingActive);
   isPairWritingActiveRef.current = isPairWritingActive;
 
+  // Set data attribute on document for CSS styling (full-width layout in pair writing mode)
+  useEffect(() => {
+    if (isPairWritingActive) {
+      document.documentElement.dataset.pairWriting = "true";
+    } else {
+      delete document.documentElement.dataset.pairWriting;
+    }
+    return () => {
+      delete document.documentElement.dataset.pairWriting;
+    };
+  }, [isPairWritingActive]);
+
   // Hook to handle session-level messages (widgets, etc.)
   const handleServerMessage = useServerMessageHandler();
 

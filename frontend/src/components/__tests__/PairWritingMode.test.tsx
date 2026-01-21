@@ -12,21 +12,20 @@ import type { ReactNode } from "react";
 import { PairWritingMode } from "../PairWritingMode";
 import { SessionProvider } from "../../contexts/SessionContext";
 
-// Mock imports for child components (NOT SessionContext - use real provider)
-void mock.module("../PairWritingEditor", () => ({
-  PairWritingEditor: () => <div data-testid="pair-writing-editor">PairWritingEditor</div>,
-}));
+// Mock components injected via props (no mock.module pollution)
+function MockEditor() {
+  return <div data-testid="pair-writing-editor">PairWritingEditor</div>;
+}
 
-// Mock Discussion component (replaces ConversationPane)
-void mock.module("../Discussion", () => ({
-  Discussion: () => (
+function MockDiscussion() {
+  return (
     <div data-testid="discussion" aria-label="Pair Writing conversation">
       <div className="pair-writing-conversation__empty">
         <p>Select text and use the context menu for AI assistance.</p>
       </div>
     </div>
-  ),
-}));
+  );
+}
 
 // Wrapper to provide SessionContext
 function TestWrapper({ children }: { children: ReactNode }) {
@@ -47,6 +46,9 @@ describe("PairWritingMode", () => {
     sendMessage: mock(() => {}),
     lastMessage: null,
     connectionStatus: "connected" as const,
+    // Inject mock components to avoid mock.module pollution
+    EditorComponent: MockEditor,
+    DiscussionComponent: MockDiscussion,
   };
 
   describe("rendering", () => {

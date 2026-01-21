@@ -69,6 +69,11 @@ export interface PairWritingEditorProps {
   hasSnapshot?: boolean;
   /** Current snapshot content (for Compare action) */
   snapshotContent?: string;
+  // Dependency injection for testing (avoids mock.module pollution)
+  /** Context menu component (defaults to EditorContextMenu) */
+  ContextMenuComponent?: typeof EditorContextMenu;
+  /** Toast component (defaults to Toast) */
+  ToastComponent?: typeof Toast;
 }
 
 /**
@@ -89,6 +94,8 @@ export function PairWritingEditor({
   onQuickActionComplete,
   onAdvisoryAction,
   hasSnapshot = false,
+  ContextMenuComponent = EditorContextMenu,
+  ToastComponent = Toast,
 }: PairWritingEditorProps): React.ReactNode {
   // Content state - initialized from props, updated on edit
   const [content, setContent] = useState(initialContent);
@@ -102,7 +109,9 @@ export function PairWritingEditor({
   const [quickActionMessageId, setQuickActionMessageId] = useState<
     string | null
   >(null);
-  const [quickActionConfirmation, setQuickActionConfirmation] = useState("");
+  // Use ref for confirmation to avoid infinite loop in useEffect
+  // (state in deps would re-trigger effect on every chunk append)
+  const quickActionConfirmationRef = useRef("");
 
   // Toast state (REQ-F-6: commentary displayed as toast)
   const [toastVisible, setToastVisible] = useState(false);
@@ -138,7 +147,7 @@ export function PairWritingEditor({
     } else if (lastMessage.type === "response_chunk") {
       // Accumulate confirmation message text from Claude
       if (lastMessage.messageId === quickActionMessageId) {
-        setQuickActionConfirmation((prev) => prev + lastMessage.content);
+        quickActionConfirmationRef.current += lastMessage.content;
       }
     } else if (lastMessage.type === "response_end") {
       // Quick Action complete - clear processing state
@@ -146,13 +155,13 @@ export function PairWritingEditor({
       setQuickActionMessageId(null);
 
       // Show toast with confirmation message (REQ-F-6)
-      const confirmation = quickActionConfirmation.trim();
+      const confirmation = quickActionConfirmationRef.current.trim();
       if (confirmation) {
         setToastMessage(confirmation);
         setToastVariant("success");
         setToastVisible(true);
       }
-      setQuickActionConfirmation("");
+      quickActionConfirmationRef.current = "";
 
       // Trigger file reload (REQ-F-8: file is already updated by Claude's Edit tool)
       onQuickActionComplete?.(filePathRef.current);
@@ -160,19 +169,13 @@ export function PairWritingEditor({
       // Clear Quick Action processing state on error
       setIsProcessingQuickAction(false);
       setQuickActionMessageId(null);
-      setQuickActionConfirmation("");
+      quickActionConfirmationRef.current = "";
       // Show error toast
       setToastMessage(lastMessage.message);
       setToastVariant("error");
       setToastVisible(true);
     }
-  }, [
-    lastMessage,
-    isProcessingQuickAction,
-    quickActionMessageId,
-    quickActionConfirmation,
-    onQuickActionComplete,
-  ]);
+  }, [lastMessage, isProcessingQuickAction, quickActionMessageId, onQuickActionComplete]);
 
   // Handle content change
   const handleChange = useCallback(
@@ -238,7 +241,7 @@ export function PairWritingEditor({
 
       // Set processing state for loading indicator (REQ-F-7)
       setIsProcessingQuickAction(true);
-      setQuickActionConfirmation("");
+      quickActionConfirmationRef.current = "";
       setQuickActionMessageId(null);
 
       // Send quick_action_request message (REQ-F-4)
@@ -303,7 +306,7 @@ export function PairWritingEditor({
       )}
 
       {/* Context Menu for Quick Actions and Advisory Actions */}
-      <EditorContextMenu
+      <ContextMenuComponent
         isOpen={menuOpen}
         position={menuPosition}
         onAction={handleQuickAction}
@@ -314,7 +317,7 @@ export function PairWritingEditor({
       />
 
       {/* Toast for Quick Action confirmation (REQ-F-6) */}
-      <Toast
+      <ToastComponent
         isVisible={toastVisible}
         variant={toastVariant}
         message={toastMessage}

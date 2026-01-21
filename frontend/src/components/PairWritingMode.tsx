@@ -50,6 +50,11 @@ export interface PairWritingModeProps {
   connectionStatus: ConnectionStatus;
   /** Called when Quick Action completes and file should be reloaded */
   onQuickActionComplete?: (path: string) => void;
+  // Dependency injection for testing (avoids mock.module pollution)
+  /** Editor component to render (defaults to PairWritingEditor) */
+  EditorComponent?: typeof PairWritingEditor;
+  /** Discussion component to render (defaults to Discussion) */
+  DiscussionComponent?: typeof Discussion;
 }
 
 /**
@@ -76,6 +81,8 @@ export function PairWritingMode({
   lastMessage,
   connectionStatus,
   onQuickActionComplete,
+  EditorComponent = PairWritingEditor,
+  DiscussionComponent = Discussion,
 }: PairWritingModeProps): React.ReactNode {
   void _assetBaseUrl; // Preserved for interface stability; Discussion handles its own asset resolution
   const { state, actions } = usePairWritingState();
@@ -197,7 +204,7 @@ export function PairWritingMode({
       <div className="pair-writing-mode__content">
         {/* Left pane: Editor (REQ-F-12) */}
         <div className="pair-writing-mode__editor-pane">
-          <PairWritingEditor
+          <EditorComponent
             initialContent={initialContent}
             filePath={filePath}
             sendMessage={sendMessage}
@@ -212,7 +219,7 @@ export function PairWritingMode({
 
         {/* Right pane: Discussion (same session as Think tab) */}
         <div className="pair-writing-mode__conversation-pane">
-          <Discussion
+          <DiscussionComponent
             sendMessage={sendMessage}
             connectionStatus={connectionStatus}
             lastMessage={lastMessage}

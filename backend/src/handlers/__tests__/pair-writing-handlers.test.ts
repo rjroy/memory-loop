@@ -13,9 +13,9 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { VaultInfo, ServerMessage, QuickActionRequestMessage } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, QuickActionRequestMessage, AdvisoryActionRequestMessage } from "@memory-loop/shared";
 import type { HandlerContext, ConnectionState, RequiredHandlerDependencies } from "../types.js";
-import { handleQuickAction } from "../pair-writing-handlers.js";
+import { handleQuickAction, handleAdvisoryAction } from "../pair-writing-handlers.js";
 
 // =============================================================================
 // Test Fixtures
@@ -161,6 +161,21 @@ function createMockRequest(overrides: Partial<QuickActionRequestMessage> = {}): 
     selectionStartLine: 10,
     selectionEndLine: 12,
     totalLines: 50,
+    ...overrides,
+  };
+}
+
+function createAdvisoryRequest(overrides: Partial<AdvisoryActionRequestMessage> = {}): AdvisoryActionRequestMessage {
+  return {
+    type: "advisory_action_request",
+    action: "validate",
+    selection: "This text needs to be validated for accuracy.",
+    contextBefore: "The previous paragraph provides context.",
+    contextAfter: "The following paragraph continues.",
+    filePath: "notes/test-file.md",
+    selectionStartLine: 5,
+    selectionEndLine: 7,
+    totalLines: 30,
     ...overrides,
   };
 }
@@ -475,5 +490,290 @@ describe("handleQuickAction - context usage", () => {
     expect(endMsg).toBeDefined();
     expect(endMsg.durationMs).toBeDefined();
     expect(endMsg.durationMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// =============================================================================
+// handleAdvisoryAction Tests - Validation
+// =============================================================================
+
+describe("handleAdvisoryAction - validation", () => {
+  it("requires vault to be selected", async () => {
+    const ctx = createMockContext({
+      ...mockState,
+      currentVault: null,
+    });
+
+    await handleAdvisoryAction(ctx, createAdvisoryRequest());
+
+    expect(sentErrors.length).toBe(1);
+    const error = sentErrors[0];
+    expect(error).toBeDefined();
+    expect(error?.code).toBe("VAULT_NOT_FOUND");
+    expect(error?.message).toContain("No vault selected");
+  });
+
+  it("validates action type", async () => {
+    const ctx = createMockContext();
+    const request = createAdvisoryRequest({
+      action: "invalid" as "validate",
+    });
+
+    await handleAdvisoryAction(ctx, request);
+
+    expect(sentErrors.length).toBe(1);
+    const error = sentErrors[0];
+    expect(error).toBeDefined();
+    expect(error?.code).toBe("VALIDATION_ERROR");
+    expect(error?.message).toContain("Invalid advisory action type");
+  });
+
+  it("validates selection is not empty", async () => {
+    const ctx = createMockContext();
+    const request = createAdvisoryRequest({
+      selection: "",
+    });
+
+    await handleAdvisoryAction(ctx, request);
+
+    expect(sentErrors.length).toBe(1);
+    const error = sentErrors[0];
+    expect(error).toBeDefined();
+    expect(error?.code).toBe("VALIDATION_ERROR");
+    expect(error?.message).toContain("Selection is required");
+  });
+
+  it("rejects path traversal attempts", async () => {
+    const ctx = createMockContext();
+    const request = createAdvisoryRequest({
+      filePath: "../../../etc/passwd",
+    });
+
+    await handleAdvisoryAction(ctx, request);
+
+    expect(sentErrors.length).toBe(1);
+    const error = sentErrors[0];
+    expect(error).toBeDefined();
+    expect(error?.code).toBe("PATH_TRAVERSAL");
+    expect(error?.message).toContain("not within vault");
+  });
+});
+
+// =============================================================================
+// handleAdvisoryAction Tests - Streaming
+// =============================================================================
+
+describe("handleAdvisoryAction - streaming", () => {
+  it("sends response_start at beginning", async () => {
+    const request = createAdvisoryRequest();
+
+    const mockCreateSession = createMockCreateSession([
+      { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
+    ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
+
+    await handleAdvisoryAction(ctx, request);
+
+    const startMsg = sentMessages.find((m) => m.type === "response_start");
+    expect(startMsg).toBeDefined();
+    expect(startMsg?.type).toBe("response_start");
+  });
+
+  it("sends response_end at completion", async () => {
+    const request = createAdvisoryRequest();
+
+    const mockCreateSession = createMockCreateSession([
+      { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
+    ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
+
+    await handleAdvisoryAction(ctx, request);
+
+    const endMsg = sentMessages.find((m) => m.type === "response_end");
+    expect(endMsg).toBeDefined();
+    expect(endMsg?.type).toBe("response_end");
+  });
+
+  it("streams text deltas as response_chunk", async () => {
+    const request = createAdvisoryRequest();
+
+    const mockCreateSession = createMockCreateSession([
+      {
+        type: "stream_event",
+        event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
+      },
+      {
+        type: "stream_event",
+        event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Your text is " } },
+      },
+      {
+        type: "stream_event",
+        event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "accurate." } },
+      },
+      {
+        type: "stream_event",
+        event: { type: "content_block_stop", index: 0 },
+      },
+      { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
+    ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
+
+    await handleAdvisoryAction(ctx, request);
+
+    const chunks = sentMessages.filter((m) => m.type === "response_chunk");
+    expect(chunks.length).toBe(2);
+    expect((chunks[0] as { content: string }).content).toBe("Your text is ");
+    expect((chunks[1] as { content: string }).content).toBe("accurate.");
+  });
+});
+
+// =============================================================================
+// handleAdvisoryAction Tests - Error Handling
+// =============================================================================
+
+describe("handleAdvisoryAction - error handling", () => {
+  it("sends SDK_ERROR on createSession failure", async () => {
+    const request = createAdvisoryRequest();
+
+    const mockCreateSession = () => Promise.reject(new Error("SDK connection failed"));
+    const ctx = createMockContext(mockState, mockCreateSession);
+
+    await handleAdvisoryAction(ctx, request);
+
+    expect(sentErrors.length).toBe(1);
+    const error = sentErrors[0];
+    expect(error).toBeDefined();
+    expect(error?.code).toBe("SDK_ERROR");
+    expect(error?.message).toContain("SDK connection failed");
+  });
+
+  it("handles empty events gracefully", async () => {
+    const request = createAdvisoryRequest();
+
+    const mockCreateSession = createMockCreateSession([]);
+    const ctx = createMockContext(mockState, mockCreateSession);
+
+    await handleAdvisoryAction(ctx, request);
+
+    const startMsg = sentMessages.find((m) => m.type === "response_start");
+    const endMsg = sentMessages.find((m) => m.type === "response_end");
+    expect(startMsg).toBeDefined();
+    expect(endMsg).toBeDefined();
+  });
+});
+
+// =============================================================================
+// handleAdvisoryAction Tests - Action Types
+// =============================================================================
+
+describe("handleAdvisoryAction - action types", () => {
+  const actions: Array<"validate" | "critique" | "compare"> = [
+    "validate",
+    "critique",
+    "compare",
+  ];
+
+  for (const action of actions) {
+    it(`accepts ${action} action type`, async () => {
+      const request = createAdvisoryRequest({ action });
+
+      const mockCreateSession = createMockCreateSession([
+        { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
+      ]);
+      const ctx = createMockContext(mockState, mockCreateSession);
+
+      await handleAdvisoryAction(ctx, request);
+
+      // No validation errors for valid action types
+      expect(sentErrors.filter((e) => e.code === "VALIDATION_ERROR")).toHaveLength(0);
+
+      // Should have sent response_start and response_end
+      const startMsg = sentMessages.find((m) => m.type === "response_start");
+      const endMsg = sentMessages.find((m) => m.type === "response_end");
+      expect(startMsg).toBeDefined();
+      expect(endMsg).toBeDefined();
+    });
+  }
+});
+
+// =============================================================================
+// handleAdvisoryAction Tests - Context Usage
+// =============================================================================
+
+describe("handleAdvisoryAction - context usage", () => {
+  it("calculates context usage from result event", async () => {
+    const request = createAdvisoryRequest();
+
+    const mockCreateSession = createMockCreateSession([
+      {
+        type: "result",
+        subtype: "success",
+        usage: { input_tokens: 1000, output_tokens: 500 },
+        modelUsage: {
+          "claude-sonnet-4-20250514": { contextWindow: 200000 },
+        },
+      },
+    ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
+
+    await handleAdvisoryAction(ctx, request);
+
+    const endMsg = sentMessages.find((m) => m.type === "response_end") as {
+      type: "response_end";
+      contextUsage?: number;
+    };
+    expect(endMsg).toBeDefined();
+    expect(endMsg.contextUsage).toBeDefined();
+    expect(endMsg.contextUsage).toBeLessThanOrEqual(100);
+  });
+
+  it("includes durationMs in response_end", async () => {
+    const request = createAdvisoryRequest();
+
+    const mockCreateSession = createMockCreateSession([
+      { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
+    ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
+
+    await handleAdvisoryAction(ctx, request);
+
+    const endMsg = sentMessages.find((m) => m.type === "response_end") as {
+      type: "response_end";
+      durationMs?: number;
+    };
+    expect(endMsg).toBeDefined();
+    expect(endMsg.durationMs).toBeDefined();
+    expect(endMsg.durationMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// =============================================================================
+// handleAdvisoryAction Tests - No Tool Events
+// =============================================================================
+
+describe("handleAdvisoryAction - no tool events", () => {
+  it("does not send tool_start for advisory actions", async () => {
+    const request = createAdvisoryRequest();
+
+    const mockCreateSession = createMockCreateSession([
+      {
+        type: "stream_event",
+        event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
+      },
+      {
+        type: "stream_event",
+        event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Analysis complete." } },
+      },
+      { type: "result", subtype: "success", usage: { input_tokens: 100, output_tokens: 50 }, modelUsage: {} },
+    ]);
+    const ctx = createMockContext(mockState, mockCreateSession);
+
+    await handleAdvisoryAction(ctx, request);
+
+    // Advisory actions are text-only, no tool events
+    const toolStart = sentMessages.find((m) => m.type === "tool_start");
+    const toolEnd = sentMessages.find((m) => m.type === "tool_end");
+    expect(toolStart).toBeUndefined();
+    expect(toolEnd).toBeUndefined();
   });
 });

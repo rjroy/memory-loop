@@ -5,7 +5,7 @@
  * Left pane: PairWritingEditor for document editing with Quick Actions
  * Right pane: Discussion component (same session as Think tab)
  *
- * Desktop-only: hidden via CSS media query on touch devices (REQ-F-10).
+ * Hidden on phones via CSS media query; visible on iPad and desktop (REQ-F-10).
  *
  * The right pane IS the Discussion tab: same conversation history, same session,
  * same WebSocket connection. Quick Actions and Advisory Actions appear in the
@@ -64,7 +64,7 @@ export interface PairWritingModeProps {
  * - 50/50 split layout with editor and Discussion (REQ-F-11)
  * - Toolbar with Snapshot, Save, Exit buttons (REQ-F-14, REQ-F-23, REQ-F-29)
  * - Exit confirmation when unsaved manual edits exist (REQ-F-30)
- * - Hidden on touch devices via CSS media query (REQ-F-10)
+ * - Hidden on phones via CSS media query; visible on iPad and desktop (REQ-F-10)
  * - Discussion in right pane is the same session as Think tab
  *
  * State management for editor (content, snapshot, unsaved changes) is handled

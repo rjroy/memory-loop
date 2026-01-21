@@ -2,7 +2,7 @@
  * PairWritingMode Component Styles
  *
  * Split-screen layout with editor and conversation panes.
- * Desktop-only component (hidden via CSS media query on touch devices).
+ * Hidden on phones; visible on iPad and desktop (screen width >= 768px).
  *
  * @see .sdd/plans/memory-loop/2026-01-20-pair-writing-mode-plan.md TD-6, TD-9
  * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-10, REQ-F-11
@@ -293,8 +293,8 @@
    Desktop-Only Visibility (TD-9, REQ-F-10)
    ============================================ */
 
-/* Hide on touch devices */
-@media (hover: none), (pointer: coarse) {
+/* Hide on phones (touch devices with narrow screens), but allow iPads (REQ-F-10) */
+@media (hover: none) and (max-width: 767px), (pointer: coarse) and (max-width: 767px) {
   .pair-writing-mode {
     display: none;
   }

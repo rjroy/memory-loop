@@ -85,11 +85,19 @@ HOST=0.0.0.0               # Bind address
 MOCK_SDK=true              # Test without API calls
 ```
 
-## Testing Patterns
+## Testing
+
+### Constraints
+
+**Do not use `mock.module()`** or any module-level mocking (`vi.mock()`, `jest.mock()`). It causes infinite loops in Bun and creates brittle tests that break when implementation details change.
+
+**Use dependency injection instead.** If code needs to be tested with a mock, refactor it to accept the dependency as a parameter. A function that takes a `clock` parameter is testable; a function that imports `Date.now()` internally requires fighting the runtime.
+
+### Patterns
 
 - Backend tests use filesystem operations in temp directories
 - Frontend tests use `@testing-library/react` + happy-dom
-- Mock the WebSocket and SDK for isolation
+- Mock WebSocket and SDK connections via dependency injection, not module replacement
 
 ### Running Tests (IMPORTANT)
 

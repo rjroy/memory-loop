@@ -350,9 +350,10 @@
   max-width: 1000px;
   margin: 0 auto;
   overflow: hidden;
+  transition: max-width 0.3s ease;
 }
 
 /* Full-width layout for Pair Writing mode */
 [data-pair-writing] .app-main {
-  max-width: 100%;
+  max-width: 100vw;
 }

@@ -39,6 +39,10 @@ export interface PairWritingEditorProps {
     action: AdvisoryActionType,
     selection: SelectionContext
   ) => void;
+  onQuickAction?: (
+    action: QuickActionType,
+    selection: SelectionContext
+  ) => void;
   hasSnapshot?: boolean;
   snapshotContent?: string;
   /** Dependency injection for testing */
@@ -53,6 +57,7 @@ export function PairWritingEditor({
   onContentChange,
   onQuickActionComplete,
   onAdvisoryAction,
+  onQuickAction,
   hasSnapshot = false,
   ContextMenuComponent = EditorContextMenu,
 }: PairWritingEditorProps): React.ReactNode {
@@ -149,19 +154,25 @@ export function PairWritingEditor({
       setIsProcessingQuickAction(true);
       setQuickActionMessageId(null);
 
-      sendMessage({
-        type: "quick_action_request",
-        action: action as QuickActionTypeProtocol,
-        selection: currentSelection.text,
-        contextBefore: currentSelection.contextBefore,
-        contextAfter: currentSelection.contextAfter,
-        filePath: filePathRef.current,
-        selectionStartLine: currentSelection.startLine,
-        selectionEndLine: currentSelection.endLine,
-        totalLines: currentSelection.totalLines,
-      });
+      // If parent provides onQuickAction, delegate to it (allows adding to session)
+      if (onQuickAction) {
+        onQuickAction(action, currentSelection);
+      } else {
+        // Fallback: send message directly (for standalone usage)
+        sendMessage({
+          type: "quick_action_request",
+          action: action as QuickActionTypeProtocol,
+          selection: currentSelection.text,
+          contextBefore: currentSelection.contextBefore,
+          contextAfter: currentSelection.contextAfter,
+          filePath: filePathRef.current,
+          selectionStartLine: currentSelection.startLine,
+          selectionEndLine: currentSelection.endLine,
+          totalLines: currentSelection.totalLines,
+        });
+      }
     },
-    [closeContextMenu, sendMessage]
+    [closeContextMenu, sendMessage, onQuickAction]
   );
 
   const handleAdvisoryAction = useCallback(

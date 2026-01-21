@@ -23,7 +23,7 @@ import { PairWritingToolbar } from "./PairWritingToolbar";
 import { PairWritingEditor } from "./PairWritingEditor";
 import { Discussion } from "./Discussion";
 import { ConfirmDialog } from "./ConfirmDialog";
-import type { AdvisoryActionType } from "./EditorContextMenu";
+import type { AdvisoryActionType, QuickActionType } from "./EditorContextMenu";
 import type { SelectionContext } from "../hooks/useTextSelection";
 import type { ConnectionStatus } from "../hooks/useWebSocket";
 import "./PairWritingMode.css";
@@ -161,6 +161,30 @@ export function PairWritingMode({
     [onQuickActionComplete]
   );
 
+  // Handle Quick Action from editor
+  // Adds user message to SessionContext so it appears in the Discussion
+  const handleQuickAction = useCallback(
+    (action: QuickActionType, selection: SelectionContext) => {
+      // Add user message showing what they selected to the shared conversation
+      const userMessage = `[${action.charAt(0).toUpperCase() + action.slice(1)}] "${selection.text}"`;
+      addMessage({ role: "user", content: userMessage });
+
+      // Send quick action request to backend
+      sendMessage({
+        type: "quick_action_request",
+        action,
+        selection: selection.text,
+        contextBefore: selection.contextBefore,
+        contextAfter: selection.contextAfter,
+        filePath,
+        selectionStartLine: selection.startLine,
+        selectionEndLine: selection.endLine,
+        totalLines: selection.totalLines,
+      });
+    },
+    [addMessage, sendMessage, filePath]
+  );
+
   // Handle Advisory Action from editor (REQ-F-15)
   // Adds user message to SessionContext so it appears in the Discussion
   const handleAdvisoryAction = useCallback(
@@ -211,6 +235,7 @@ export function PairWritingMode({
             lastMessage={lastMessage}
             onContentChange={handleContentChange}
             onQuickActionComplete={handleQuickActionComplete}
+            onQuickAction={handleQuickAction}
             onAdvisoryAction={handleAdvisoryAction}
             hasSnapshot={state.snapshot !== null}
             snapshotContent={state.snapshot ?? undefined}

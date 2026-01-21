@@ -10,7 +10,7 @@
  * - Session management
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { SessionProvider, useSession, useServerMessageHandler } from "./contexts/SessionContext";
 import { VaultSelect } from "./components/VaultSelect";
 import { ModeToggle } from "./components/ModeToggle";
@@ -35,7 +35,6 @@ type DialogType = "changeVault" | null;
  */
 function MainContent(): React.ReactNode {
   const { mode, vault, clearVault } = useSession();
-  const { sendMessage, lastMessage } = useWebSocket();
   const handleServerMessage = useServerMessageHandler();
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
@@ -50,6 +49,21 @@ function MainContent(): React.ReactNode {
   const holiday = useHoliday();
   // Mobile header collapse state
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(true);
+  // Session restoration tracking (for page refresh and WebSocket reconnection)
+  const hasRequestedMeetingStateRef = useRef(false);
+  const hasSentVaultSelectionRef = useRef(false);
+
+  // Re-establish vault context and meeting state on WebSocket reconnection.
+  // After reconnect, the server has a fresh connection state and needs to know
+  // which vault we're using before we can query meeting state.
+  const handleReconnect = useCallback(() => {
+    hasSentVaultSelectionRef.current = false;
+    hasRequestedMeetingStateRef.current = false;
+  }, []);
+
+  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
+    onReconnect: handleReconnect,
+  });
 
   // Process server messages through the session handler
   useEffect(() => {
@@ -57,6 +71,33 @@ function MainContent(): React.ReactNode {
       handleServerMessage(lastMessage);
     }
   }, [lastMessage, handleServerMessage]);
+
+  // Re-send vault selection on WebSocket reconnect (server needs vault context)
+  useEffect(() => {
+    if (
+      connectionStatus === "connected" &&
+      vault &&
+      !hasSentVaultSelectionRef.current
+    ) {
+      sendMessage({ type: "select_vault", vaultId: vault.id });
+      hasSentVaultSelectionRef.current = true;
+    }
+  }, [connectionStatus, vault, sendMessage]);
+
+  // Request meeting state after vault selection to restore any active meeting.
+  // This runs on initial mount (page refresh) and after WebSocket reconnection.
+  // Fixes #377 where refreshing with an active meeting orphaned it.
+  useEffect(() => {
+    if (
+      connectionStatus === "connected" &&
+      vault &&
+      hasSentVaultSelectionRef.current &&
+      !hasRequestedMeetingStateRef.current
+    ) {
+      sendMessage({ type: "get_meeting_state" });
+      hasRequestedMeetingStateRef.current = true;
+    }
+  }, [connectionStatus, vault, sendMessage]);
 
   // Use holiday-specific logo if available
   const logoSrc = holiday ? `/images/holiday/${holiday}-logo.webp` : "/images/logo.webp";

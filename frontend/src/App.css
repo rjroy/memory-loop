@@ -127,7 +127,7 @@
   height: 32px;
 }
 
-/* Title button for collapsing (mobile only) */
+/* Title button for collapsing */
 .app-title-btn {
   background: transparent;
   border: none;
@@ -137,33 +137,31 @@
   display: contents;
 }
 
-/* Mobile collapsed state */
-@media (max-width: 767px) {
-  .app-header--collapsed {
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-  }
+/* Collapsed header state (all screen sizes) */
+.app-header--collapsed {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+}
 
-  .app-header--collapsed .app-header__collapse-btn {
-    display: flex;
-  }
+.app-header--collapsed .app-header__collapse-btn {
+  display: flex;
+}
 
-  .app-header--collapsed .app-header__left,
-  .app-header--collapsed .app-header__right {
-    display: none;
-  }
+.app-header--collapsed .app-header__left,
+.app-header--collapsed .app-header__right {
+  display: none;
+}
 
-  .app-header--collapsed .app-header__center {
-    order: 0;
-    width: auto;
-    flex: 1;
-    justify-content: flex-start;
-  }
+.app-header--collapsed .app-header__center {
+  order: 0;
+  width: auto;
+  flex: 1;
+  justify-content: flex-start;
+}
 
-  /* Expanded state on mobile */
-  .app-header--expanded .app-header__collapse-btn {
-    display: none;
-  }
+/* Expanded state - hide collapse button */
+.app-header--expanded .app-header__collapse-btn {
+  display: none;
 }
 
 .app-header__left {

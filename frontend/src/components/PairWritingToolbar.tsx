@@ -15,6 +15,8 @@ export interface PairWritingToolbarProps {
   hasUnsavedChanges: boolean;
   /** Whether a snapshot currently exists (REQ-F-24) */
   hasSnapshot: boolean;
+  /** Whether text is currently selected in the editor */
+  hasSelection?: boolean;
   /** Whether save is in progress */
   isSaving?: boolean;
   /** Called when user clicks Snapshot button (REQ-F-23) */
@@ -65,6 +67,7 @@ function truncateForPreview(content: string): { text: string; isTruncated: boole
 export function PairWritingToolbar({
   hasUnsavedChanges,
   hasSnapshot,
+  hasSelection = false,
   isSaving = false,
   onSnapshot,
   onSave,
@@ -73,6 +76,9 @@ export function PairWritingToolbar({
   snapshotContent,
 }: PairWritingToolbarProps): React.ReactNode {
   const [isHoveringSnapshot, setIsHoveringSnapshot] = useState(false);
+
+  // Snapshot requires a selection (captures selected text, not entire file)
+  const canSnapshot = hasSelection;
   return (
     <div className="pair-writing-toolbar" role="toolbar" aria-label="Pair Writing toolbar">
       {/* Left section: file info */}
@@ -101,8 +107,15 @@ export function PairWritingToolbar({
             type="button"
             className={`pair-writing-toolbar__btn pair-writing-toolbar__btn--snapshot${hasSnapshot ? " pair-writing-toolbar__btn--has-snapshot" : ""}`}
             onClick={onSnapshot}
+            disabled={!canSnapshot}
             aria-pressed={hasSnapshot}
-            title={hasSnapshot ? "Update snapshot (replaces previous)" : "Take snapshot for comparison"}
+            title={
+              !canSnapshot
+                ? "Select text to snapshot"
+                : hasSnapshot
+                  ? "Update snapshot (replaces previous)"
+                  : "Take snapshot of selection"
+            }
           >
             <svg
               className="pair-writing-toolbar__icon"

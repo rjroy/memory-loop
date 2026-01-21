@@ -44,7 +44,7 @@ describe("usePairWritingState", () => {
       // Set up some state
       act(() => {
         result.current.actions.activate("initial content");
-        result.current.actions.takeSnapshot();
+        result.current.actions.takeSnapshot("selected text");
         result.current.actions.setContent("modified content");
       });
 
@@ -66,7 +66,7 @@ describe("usePairWritingState", () => {
       // Set up some state
       act(() => {
         result.current.actions.activate("content");
-        result.current.actions.takeSnapshot();
+        result.current.actions.takeSnapshot("selected text");
         result.current.actions.setContent("modified");
       });
 
@@ -116,33 +116,32 @@ describe("usePairWritingState", () => {
   });
 
   describe("takeSnapshot (REQ-F-23, REQ-F-24)", () => {
-    test("captures current content as snapshot", () => {
+    test("captures selected text as snapshot (not entire file)", () => {
       const { result } = renderHook(() => usePairWritingState());
 
       act(() => {
-        result.current.actions.activate("snapshot this");
-        result.current.actions.takeSnapshot();
+        result.current.actions.activate("full document content here");
+        result.current.actions.takeSnapshot("selected portion");
       });
 
-      expect(result.current.state.snapshot).toBe("snapshot this");
+      expect(result.current.state.snapshot).toBe("selected portion");
     });
 
     test("new snapshot replaces previous (REQ-F-24: only one at a time)", () => {
       const { result } = renderHook(() => usePairWritingState());
 
       act(() => {
-        result.current.actions.activate("first snapshot");
-        result.current.actions.takeSnapshot();
+        result.current.actions.activate("document content");
+        result.current.actions.takeSnapshot("first selection");
       });
 
-      expect(result.current.state.snapshot).toBe("first snapshot");
+      expect(result.current.state.snapshot).toBe("first selection");
 
       act(() => {
-        result.current.actions.setContent("second snapshot");
-        result.current.actions.takeSnapshot();
+        result.current.actions.takeSnapshot("second selection");
       });
 
-      expect(result.current.state.snapshot).toBe("second snapshot");
+      expect(result.current.state.snapshot).toBe("second selection");
     });
   });
 
@@ -152,10 +151,10 @@ describe("usePairWritingState", () => {
 
       act(() => {
         result.current.actions.activate("content");
-        result.current.actions.takeSnapshot();
+        result.current.actions.takeSnapshot("selected text");
       });
 
-      expect(result.current.state.snapshot).toBe("content");
+      expect(result.current.state.snapshot).toBe("selected text");
 
       act(() => {
         result.current.actions.clearSnapshot();
@@ -171,7 +170,7 @@ describe("usePairWritingState", () => {
 
       act(() => {
         result.current.actions.activate("content");
-        result.current.actions.takeSnapshot();
+        result.current.actions.takeSnapshot("selected text");
         result.current.actions.setContent("modified");
       });
 
@@ -230,7 +229,7 @@ describe("usePairWritingState", () => {
 
       act(() => {
         result.current.actions.activate("initial");
-        result.current.actions.takeSnapshot();
+        result.current.actions.takeSnapshot("selected text");
       });
 
       act(() => {
@@ -238,7 +237,7 @@ describe("usePairWritingState", () => {
       });
 
       expect(result.current.state.content).toBe("reloaded");
-      expect(result.current.state.snapshot).toBe("initial");
+      expect(result.current.state.snapshot).toBe("selected text");
     });
   });
 
@@ -268,10 +267,10 @@ describe("usePairWritingState", () => {
 
       act(() => {
         result.current.actions.activate("content");
-        result.current.actions.takeSnapshot();
+        result.current.actions.takeSnapshot("selected text");
       });
 
-      expect(result.current.state.snapshot).toBe("content");
+      expect(result.current.state.snapshot).toBe("selected text");
 
       act(() => {
         result.current.actions.clearAll();
@@ -282,7 +281,7 @@ describe("usePairWritingState", () => {
   });
 
   describe("typical workflow", () => {
-    test("edit-snapshot-compare workflow", () => {
+    test("select-snapshot-edit-compare workflow", () => {
       const { result } = renderHook(() => usePairWritingState());
 
       // 1. Enter Pair Writing Mode with file content
@@ -293,16 +292,16 @@ describe("usePairWritingState", () => {
       expect(result.current.state.isActive).toBe(true);
       expect(result.current.state.hasUnsavedChanges).toBe(false);
 
-      // 2. Take a snapshot before making changes
+      // 2. Select a section and take a snapshot of it
       act(() => {
-        result.current.actions.takeSnapshot();
+        result.current.actions.takeSnapshot("Some content here.");
       });
 
-      expect(result.current.state.snapshot).toBe("# Original Title\n\nSome content here.");
+      expect(result.current.state.snapshot).toBe("Some content here.");
 
-      // 3. User edits the document
+      // 3. User edits the document (reworks the section)
       act(() => {
-        result.current.actions.setContent("# Better Title\n\nRevised content here.");
+        result.current.actions.setContent("# Original Title\n\nRevised and improved content.");
       });
 
       expect(result.current.state.hasUnsavedChanges).toBe(true);

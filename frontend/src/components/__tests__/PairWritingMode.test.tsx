@@ -8,14 +8,28 @@
 
 import { describe, it, expect, afterEach, mock } from "bun:test";
 import { render, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { PairWritingMode } from "../PairWritingMode";
 import { SessionProvider, useSession } from "../../contexts/SessionContext";
 import type { PairWritingEditorProps } from "../PairWritingEditor";
 import type { SelectionContext } from "../../hooks/useTextSelection";
 
+// Mock selection used across mock editors
+const mockSelection: SelectionContext = {
+  text: "test selection",
+  contextBefore: "before ",
+  contextAfter: " after",
+  startLine: 5,
+  endLine: 5,
+  totalLines: 10,
+};
+
 // Mock components injected via props (no mock.module pollution)
-function MockEditor() {
+function MockEditor(props: PairWritingEditorProps) {
+  // Simulate having a selection so the Snapshot button is enabled
+  useEffect(() => {
+    props.onSelectionChange?.(mockSelection);
+  }, []);
   return <div data-testid="pair-writing-editor">PairWritingEditor</div>;
 }
 
@@ -33,14 +47,10 @@ function MockDiscussion() {
  * Mock editor that exposes callbacks via buttons for testing
  */
 function MockEditorWithCallbacks(props: PairWritingEditorProps) {
-  const mockSelection: SelectionContext = {
-    text: "test selection",
-    contextBefore: "before ",
-    contextAfter: " after",
-    startLine: 5,
-    endLine: 5,
-    totalLines: 10,
-  };
+  // Simulate having a selection so the Snapshot button is enabled
+  useEffect(() => {
+    props.onSelectionChange?.(mockSelection);
+  }, []);
 
   return (
     <div data-testid="pair-writing-editor">

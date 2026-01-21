@@ -43,8 +43,8 @@ export interface PairWritingActions {
   deactivate: () => void;
   /** Update editor content */
   setContent: (content: string) => void;
-  /** Take a snapshot of current content (REQ-F-23) */
-  takeSnapshot: () => void;
+  /** Take a snapshot of the selected text (REQ-F-23) */
+  takeSnapshot: (selection: string) => void;
   /** Clear the current snapshot */
   clearSnapshot: () => void;
   /** Clear all state (alias for deactivate, used on exit) */
@@ -63,7 +63,7 @@ type PairWritingAction =
   | { type: "ACTIVATE"; content: string }
   | { type: "DEACTIVATE" }
   | { type: "SET_CONTENT"; content: string }
-  | { type: "TAKE_SNAPSHOT" }
+  | { type: "TAKE_SNAPSHOT"; selection: string }
   | { type: "CLEAR_SNAPSHOT" }
   | { type: "MARK_SAVED" }
   | { type: "RELOAD_CONTENT"; content: string };
@@ -109,9 +109,10 @@ function pairWritingReducer(
 
     case "TAKE_SNAPSHOT":
       // REQ-F-24: Only one snapshot at a time; new snapshot replaces previous
+      // Snapshot captures the selected text, not the entire file
       return {
         ...state,
-        snapshot: state.content,
+        snapshot: action.selection,
       };
 
     case "CLEAR_SNAPSHOT":
@@ -186,8 +187,8 @@ export function usePairWritingState(): {
     dispatch({ type: "SET_CONTENT", content });
   }, []);
 
-  const takeSnapshot = useCallback(() => {
-    dispatch({ type: "TAKE_SNAPSHOT" });
+  const takeSnapshot = useCallback((selection: string) => {
+    dispatch({ type: "TAKE_SNAPSHOT", selection });
   }, []);
 
   const clearSnapshot = useCallback(() => {

@@ -43,6 +43,8 @@ export interface PairWritingEditorProps {
     action: QuickActionType,
     selection: SelectionContext
   ) => void;
+  /** Called when text selection changes (null when no selection) */
+  onSelectionChange?: (selection: SelectionContext | null) => void;
   hasSnapshot?: boolean;
   snapshotContent?: string;
   /** Dependency injection for testing */
@@ -58,6 +60,7 @@ export function PairWritingEditor({
   onQuickActionComplete,
   onAdvisoryAction,
   onQuickAction,
+  onSelectionChange,
   hasSnapshot = false,
   ContextMenuComponent = EditorContextMenu,
 }: PairWritingEditorProps): React.ReactNode {
@@ -70,6 +73,11 @@ export function PairWritingEditor({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { selection } = useTextSelection(textareaRef, content);
+
+  // Notify parent when selection changes
+  useEffect(() => {
+    onSelectionChange?.(selection);
+  }, [selection, onSelectionChange]);
 
   // Refs for stable callback access to current values
   const selectionRef = useRef<SelectionContext | null>(null);

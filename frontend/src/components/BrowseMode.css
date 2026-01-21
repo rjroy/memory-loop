@@ -10,6 +10,7 @@
   height: 100%;
   overflow: hidden;
   background: var(--glass-bg);
+  transition: grid-template-columns 0.3s ease;
 }
 
 .browse-mode--tree-collapsed {

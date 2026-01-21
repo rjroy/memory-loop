@@ -82,6 +82,9 @@ function createMockDeps(
     getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
+    createSession: () => Promise.resolve({ sessionId: "mock-session", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    resumeSession: () => Promise.resolve({ sessionId: "", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    appendMessage: () => Promise.resolve(),
     loadVaultConfig: () => Promise.resolve({}),
   };
 }
@@ -281,6 +284,9 @@ function createMockDepsWithRename(
     getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
+    createSession: () => Promise.resolve({ sessionId: "mock-session", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    resumeSession: () => Promise.resolve({ sessionId: "", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    appendMessage: () => Promise.resolve(),
     loadVaultConfig: () => Promise.resolve({}),
   };
 }
@@ -493,6 +499,9 @@ function createMockDepsWithMove(
     getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
+    createSession: () => Promise.resolve({ sessionId: "mock-session", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    resumeSession: () => Promise.resolve({ sessionId: "", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    appendMessage: () => Promise.resolve(),
     loadVaultConfig: () => Promise.resolve({}),
   };
 }
@@ -735,6 +744,9 @@ function createMockDepsWithGetDirContents(
     getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
+    createSession: () => Promise.resolve({ sessionId: "mock-session", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    resumeSession: () => Promise.resolve({ sessionId: "", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    appendMessage: () => Promise.resolve(),
     loadVaultConfig: () => Promise.resolve({}),
   };
 }
@@ -925,6 +937,9 @@ function createMockDepsWithDeleteDir(
     getAllTasks: () => Promise.resolve({ tasks: [], incomplete: 0, total: 0 }),
     toggleTask: () => Promise.resolve({ success: true }),
     getRecentSessions: () => Promise.resolve([]),
+    createSession: () => Promise.resolve({ sessionId: "mock-session", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    resumeSession: () => Promise.resolve({ sessionId: "", events: (async function* () {})(), interrupt: async () => {}, supportedCommands: () => Promise.resolve([]) }),
+    appendMessage: () => Promise.resolve(),
     loadVaultConfig: () => Promise.resolve({}),
   };
 }

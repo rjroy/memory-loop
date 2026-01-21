@@ -47,3 +47,9 @@ export {
   handleGetMeetingState,
   handleMeetingCapture,
 } from "./meeting-handlers.js";
+
+// Pair writing handlers
+export {
+  handleQuickAction,
+  handleAdvisoryAction,
+} from "./pair-writing-handlers.js";

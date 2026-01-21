@@ -139,6 +139,11 @@ export type {
   AskUserQuestionItem,
   AskUserQuestionResponseMessage,
   AskUserQuestionRequestMessage,
+  // Pair Writing types
+  QuickActionType,
+  QuickActionRequestMessage,
+  AdvisoryActionType,
+  AdvisoryActionRequestMessage,
   // Client message types
   SelectVaultMessage,
   CaptureNoteMessage,

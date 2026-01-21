@@ -6,10 +6,10 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import type { ServerMessage, SlashCommand } from "@memory-loop/shared";
-import { useWebSocket } from "../hooks/useWebSocket";
+import type { ServerMessage, SlashCommand, ClientMessage } from "@memory-loop/shared";
+import { useWebSocket, type ConnectionStatus } from "../hooks/useWebSocket";
 import { useSession, useServerMessageHandler } from "../contexts/SessionContext";
-import { MessageBubble } from "./MessageBubble";
+import { ConversationPane, DiscussionEmptyState } from "./ConversationPane";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ToolPermissionDialog, type ToolPermissionRequest } from "./ToolPermissionDialog";
 import { AskUserQuestionDialog, type AskUserQuestionRequest } from "./AskUserQuestionDialog";
@@ -20,6 +20,22 @@ import "./Discussion.css";
 const STORAGE_KEY = "memory-loop-discussion-draft";
 
 /**
+ * Props for the Discussion component.
+ * All props are optional to maintain backward compatibility.
+ * When provided, Discussion uses the shared WebSocket connection instead of creating its own.
+ */
+export interface DiscussionProps {
+  /** Function to send WebSocket messages (shared connection) */
+  sendMessage?: (message: ClientMessage) => void;
+  /** Current connection status (shared connection) */
+  connectionStatus?: ConnectionStatus;
+  /** Last received server message (shared connection) */
+  lastMessage?: ServerMessage | null;
+  /** Callback fired when reconnecting (shared connection) */
+  onReconnect?: () => void;
+}
+
+/**
  * Chat interface for vault-contextualized AI discussions.
  *
  * - Scrollable message history with user/assistant messages
@@ -28,8 +44,11 @@ const STORAGE_KEY = "memory-loop-discussion-draft";
  * - Slash command autocomplete with keyboard navigation
  * - Auto-scroll to bottom on new messages
  * - Draft preservation in localStorage
+ *
+ * When props are provided, Discussion uses a shared WebSocket connection.
+ * This enables embedding Discussion in Pair Writing Mode with a shared session.
  */
-export function Discussion(): React.ReactNode {
+export function Discussion(props: DiscussionProps = {}): React.ReactNode {
   const [input, setInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -39,7 +58,7 @@ export function Discussion(): React.ReactNode {
   const [autocompleteSelectedIndex, setAutocompleteSelectedIndex] = useState(0);
   const [argumentHintPlaceholder, setArgumentHintPlaceholder] = useState<string | null>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // messagesEndRef removed - auto-scroll now handled by ConversationPane
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasSentVaultSelectionRef = useRef(false);
   const prevSessionIdRef = useRef<string | null>(null);
@@ -76,6 +95,11 @@ export function Discussion(): React.ReactNode {
     return () => query.removeEventListener("change", handler);
   }, []);
 
+  // Check if we're using a shared connection (all three props provided)
+  const isSharedConnection = props.sendMessage !== undefined &&
+    props.connectionStatus !== undefined &&
+    props.lastMessage !== undefined;
+
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
@@ -83,7 +107,9 @@ export function Discussion(): React.ReactNode {
     setIsSubmitting(false);
     // Clear any pending permission dialog - backend lost the request on disconnect
     setPendingPermission(null);
-  }, []);
+    // Call external onReconnect if provided
+    props.onReconnect?.();
+  }, [props.onReconnect]);
 
   const handleServerMessage = useServerMessageHandler();
 
@@ -144,10 +170,30 @@ export function Discussion(): React.ReactNode {
     [handleServerMessage, addToolToLastMessage, updateToolInput, completeToolInvocation]
   );
 
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
-    onReconnect: handleReconnect,
-    onMessage: handleMessage,
-  });
+  // Use internal WebSocket only when not using shared connection
+  const internalWs = useWebSocket(
+    isSharedConnection
+      ? {} // Minimal config when not using (connection still created but not used)
+      : {
+          onReconnect: handleReconnect,
+          onMessage: handleMessage,
+        }
+  );
+
+  // Select between shared and internal connection
+  const sendMessage = isSharedConnection ? props.sendMessage! : internalWs.sendMessage;
+  const connectionStatus = isSharedConnection ? props.connectionStatus! : internalWs.connectionStatus;
+  const lastMessage = isSharedConnection ? props.lastMessage! : internalWs.lastMessage;
+
+  // Process messages from shared connection via useEffect on lastMessage
+  // (internal connection uses onMessage callback instead)
+  const lastProcessedMessageRef = useRef<ServerMessage | null>(null);
+  useEffect(() => {
+    if (isSharedConnection && lastMessage && lastMessage !== lastProcessedMessageRef.current) {
+      lastProcessedMessageRef.current = lastMessage;
+      handleMessage(lastMessage);
+    }
+  }, [isSharedConnection, lastMessage, handleMessage]);
 
   // Send vault selection when WebSocket connects (initial or reconnect)
   // Sessions are stored per-vault, so we must select vault before resuming any session.
@@ -285,10 +331,7 @@ export function Discussion(): React.ReactNode {
     }
   }, [input]);
 
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // Auto-scroll removed - now handled by ConversationPane
 
   // Slash command autocomplete logic
   // Check if input starts with "/" and we have commands available
@@ -497,21 +540,13 @@ export function Discussion(): React.ReactNode {
         +
       </button>
 
-      <div className="discussion__messages" role="list" aria-label="Conversation">
-        {messages.length === 0 ? (
-          <div className="discussion__empty">
-            <p>Start a conversation about your vault.</p>
-            <p className="discussion__hint">
-              Try asking questions about your notes or use slash commands.
-            </p>
-          </div>
-        ) : (
-          messages.map((message) => (
-            <MessageBubble key={message.id} message={message} vaultId={vault?.id} />
-          ))
-        )}
-        <div ref={messagesEndRef} aria-hidden="true" />
-      </div>
+      <ConversationPane
+        messages={messages}
+        vaultId={vault?.id}
+        emptyState={<DiscussionEmptyState />}
+        className="discussion__messages"
+        ariaLabel="Conversation"
+      />
 
       <form className="discussion__input-area" onSubmit={handleSubmit}>
         <SlashCommandAutocomplete

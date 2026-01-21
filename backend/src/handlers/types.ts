@@ -12,6 +12,7 @@ import type {
   RecentNoteEntry,
   RecentDiscussionEntry,
   TaskEntry,
+  ConversationMessage,
 } from "@memory-loop/shared";
 import type { SessionQueryResult } from "../session-manager.js";
 import type { SearchIndexManager } from "../search/search-index.js";
@@ -129,6 +130,20 @@ export interface HandlerDependencies {
     vaultPath: string,
     limit?: number
   ) => Promise<RecentDiscussionEntry[]>;
+  createSession?: (
+    vault: VaultInfo,
+    prompt: string
+  ) => Promise<SessionQueryResult>;
+  resumeSession?: (
+    vaultPath: string,
+    sessionId: string,
+    prompt: string
+  ) => Promise<SessionQueryResult>;
+  appendMessage?: (
+    vaultPath: string,
+    sessionId: string,
+    message: ConversationMessage
+  ) => Promise<void>;
 
   // Vault config
   loadVaultConfig?: (vaultPath: string) => Promise<VaultConfig>;
@@ -238,6 +253,20 @@ export interface RequiredHandlerDependencies {
     vaultPath: string,
     limit?: number
   ) => Promise<RecentDiscussionEntry[]>;
+  createSession: (
+    vault: VaultInfo,
+    prompt: string
+  ) => Promise<SessionQueryResult>;
+  resumeSession: (
+    vaultPath: string,
+    sessionId: string,
+    prompt: string
+  ) => Promise<SessionQueryResult>;
+  appendMessage: (
+    vaultPath: string,
+    sessionId: string,
+    message: ConversationMessage
+  ) => Promise<void>;
   loadVaultConfig: (vaultPath: string) => Promise<VaultConfig>;
 }
 

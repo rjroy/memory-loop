@@ -1,0 +1,101 @@
+/**
+ * ConversationPane Component Styles
+ *
+ * Shared conversation display styles for Discussion mode and Pair Writing Mode.
+ * Extracted from Discussion.css to ensure consistent styling (REQ-NF-4).
+ */
+
+/* Messages container */
+.conversation-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  scroll-behavior: smooth;
+}
+
+/* Empty state */
+.conversation-pane__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: end;
+  height: 100%;
+  text-align: center;
+  color: var(--color-text-secondary);
+  padding: var(--spacing-lg);
+}
+
+.conversation-pane__empty p::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/images/bg-quartary.webp');
+  background-size: cover;
+  background-position: center center;
+  border-radius: inherit;
+  opacity: 0.15;
+  z-index: -1;
+}
+
+.conversation-pane__empty p,
+.conversation-pane__empty .conversation-pane__hint {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-light));
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+}
+
+.conversation-pane__empty::before {
+  content: "";
+  width: 60px;
+  height: 60px;
+  background-image: url('/images/empty-state.webp');
+  filter: hue-rotate(var(--holiday-hue-rotate, 0deg));
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  animation: conversation-pane-disintegrate 20s ease-in-out infinite;
+  margin-bottom: var(--space-6);
+}
+
+@keyframes conversation-pane-disintegrate {
+  0% {
+    transform: translateY(50px);
+    filter: blur(0px) opacity(100%);
+  }
+  50% {
+    transform: translateY(50px) scale(1.5);
+    filter: blur(4px) opacity(25%);
+  }
+  100% {
+    transform: translateY(50px);
+    filter: blur(0px) opacity(100%);
+  }
+}
+
+/* Larger orb on desktop */
+@media (min-width: 768px) {
+  .conversation-pane__empty::before {
+    width: 60px;
+    height: 60px;
+  }
+}
+
+.conversation-pane__empty p {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.conversation-pane__hint {
+  font-size: var(--font-size-sm);
+  margin-top: var(--spacing-sm) !important;
+  color: var(--color-text-accent-secondary);
+  font-style: italic;
+}
+
+/* Tablet and up */
+@media (min-width: 768px) {
+  .conversation-pane {
+    padding: var(--spacing-lg);
+  }
+}

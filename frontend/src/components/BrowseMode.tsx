@@ -22,6 +22,7 @@ import { CsvViewer } from "./CsvViewer";
 import { DownloadViewer } from "./DownloadViewer";
 import { SearchHeader } from "./SearchHeader";
 import { SearchResults } from "./SearchResults";
+import { PairWritingMode } from "./PairWritingMode";
 import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isTxtFile, isCsvFile, hasSupportedViewer } from "../utils/file-types";
 import type { FileSearchResult, ContentSearchResult } from "@memory-loop/shared";
 import "./BrowseMode.css";
@@ -45,6 +46,7 @@ export function BrowseMode(): React.ReactNode {
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
   const [pendingDirectoryContents, setPendingDirectoryContents] = useState<DirectoryContents | null>(null);
+  const [isPairWritingActive, setIsPairWritingActive] = useState(false);
 
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
@@ -63,6 +65,22 @@ export function BrowseMode(): React.ReactNode {
   // Track pending task toggles for rollback on error
   const pendingTaskTogglesRef = useRef<Map<string, string>>(new Map());
 
+  // Track isPairWritingActive in a ref for use in callbacks without stale closures
+  const isPairWritingActiveRef = useRef(isPairWritingActive);
+  isPairWritingActiveRef.current = isPairWritingActive;
+
+  // Set data attribute on document for CSS styling (full-width layout in pair writing mode)
+  useEffect(() => {
+    if (isPairWritingActive) {
+      document.documentElement.dataset.pairWriting = "true";
+    } else {
+      delete document.documentElement.dataset.pairWriting;
+    }
+    return () => {
+      delete document.documentElement.dataset.pairWriting;
+    };
+  }, [isPairWritingActive]);
+
   // Hook to handle session-level messages (widgets, etc.)
   const handleServerMessage = useServerMessageHandler();
 
@@ -72,9 +90,25 @@ export function BrowseMode(): React.ReactNode {
     setHasSessionReady(false);
   }, []);
 
+  // Streaming message types that Discussion handles when PairWritingMode is active
+  const STREAMING_MESSAGE_TYPES = new Set([
+    "response_start",
+    "response_chunk",
+    "response_end",
+    "tool_start",
+    "tool_input",
+    "tool_end",
+  ]);
+
   // Handle incoming messages - route to server message handler for session-level processing
+  // Skip streaming messages when PairWritingMode is active (Discussion handles those)
   const handleMessage = useCallback(
     (message: import("@memory-loop/shared").ServerMessage) => {
+      // When PairWritingMode is active, Discussion handles streaming messages
+      // via its shared connection. Skip them here to avoid double processing.
+      if (isPairWritingActiveRef.current && STREAMING_MESSAGE_TYPES.has(message.type)) {
+        return;
+      }
       handleServerMessage(message);
     },
     [handleServerMessage]
@@ -672,8 +706,21 @@ export function BrowseMode(): React.ReactNode {
     [search.query, sendGetSnippets]
   );
 
+  // Enter Pair Writing Mode (REQ-F-9)
+  const handleEnterPairWriting = useCallback(() => {
+    setIsPairWritingActive(true);
+  }, []);
+
+  // Exit Pair Writing Mode and return to standard Browse view (REQ-F-14)
+  const handleExitPairWriting = useCallback(() => {
+    setIsPairWritingActive(false);
+  }, []);
+
   // Get the view mode title text
   const viewModeTitle = viewMode === "files" ? "Files" : "Tasks";
+
+  // Check if current file is a markdown file (for Pair Writing button visibility)
+  const isCurrentFileMarkdown = isMarkdownFile(browser.currentPath);
 
   return (
     <div className={`browse-mode ${isTreeCollapsed ? "browse-mode--tree-collapsed" : ""}`}>
@@ -774,7 +821,20 @@ export function BrowseMode(): React.ReactNode {
           </div>
         )}
         <article className="browse-mode__viewer-content">
-          {isImageFile(browser.currentPath) ? (
+          {/* Pair Writing Mode takes over the viewer when active (REQ-F-11) */}
+          {isPairWritingActive && isCurrentFileMarkdown && browser.currentFileContent !== null ? (
+            <PairWritingMode
+              filePath={browser.currentPath}
+              content={browser.currentFileContent}
+              assetBaseUrl={assetBaseUrl}
+              onExit={handleExitPairWriting}
+              onSave={handleSave}
+              sendMessage={sendMessage}
+              lastMessage={lastMessage}
+              connectionStatus={connectionStatus}
+              onQuickActionComplete={handleNavigate}
+            />
+          ) : isImageFile(browser.currentPath) ? (
             <ImageViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
           ) : isVideoFile(browser.currentPath) ? (
             <VideoViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
@@ -787,7 +847,13 @@ export function BrowseMode(): React.ReactNode {
           ) : isCsvFile(browser.currentPath) ? (
             <CsvViewer onNavigate={handleNavigate} onMobileMenuClick={toggleMobileTree} />
           ) : isMarkdownFile(browser.currentPath) || !browser.currentPath ? (
-            <MarkdownViewer onNavigate={handleNavigate} assetBaseUrl={assetBaseUrl} onSave={handleSave} onMobileMenuClick={toggleMobileTree} />
+            <MarkdownViewer
+              onNavigate={handleNavigate}
+              assetBaseUrl={assetBaseUrl}
+              onSave={handleSave}
+              onMobileMenuClick={toggleMobileTree}
+              onEnterPairWriting={handleEnterPairWriting}
+            />
           ) : (
             <DownloadViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
           )}

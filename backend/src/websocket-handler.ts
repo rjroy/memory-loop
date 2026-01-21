@@ -198,6 +198,11 @@ import {
   handleTriggerExtraction,
 } from "./handlers/memory-handlers.js";
 
+import {
+  handleQuickAction,
+  handleAdvisoryAction,
+} from "./handlers/pair-writing-handlers.js";
+
 // Re-export types for external consumers
 export type { WebSocketLike, ConnectionState };
 export { createConnectionState, generateMessageId };
@@ -302,6 +307,9 @@ export class WebSocketHandler {
       getAllTasks: hd.getAllTasks ?? defaultGetAllTasks,
       toggleTask: hd.toggleTask ?? defaultToggleTask,
       getRecentSessions: hd.getRecentSessions ?? defaultGetRecentSessions,
+      createSession: hd.createSession ?? defaultCreateSession,
+      resumeSession: hd.resumeSession ?? defaultResumeSession,
+      appendMessage: hd.appendMessage ?? defaultAppendMessage,
       loadVaultConfig: hd.loadVaultConfig ?? defaultLoadVaultConfig,
     };
   }
@@ -753,6 +761,15 @@ export class WebSocketHandler {
 
       case "trigger_extraction":
         await handleTriggerExtraction(ctx);
+        break;
+
+      // Pair Writing handlers
+      case "quick_action_request":
+        await handleQuickAction(ctx, message);
+        break;
+
+      case "advisory_action_request":
+        await handleAdvisoryAction(ctx, message);
         break;
     }
   }

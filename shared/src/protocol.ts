@@ -687,6 +687,77 @@ export const CreateVaultMessageSchema = z.object({
 });
 
 // =============================================================================
+// Pair Writing Mode Client Messages
+// =============================================================================
+
+/**
+ * Action types for Quick Actions (transformative, all platforms)
+ * - tighten: Make more concise without losing meaning
+ * - embellish: Add detail, nuance, or context
+ * - correct: Fix typos and grammar only
+ * - polish: Correct + improve prose
+ */
+export const QuickActionTypeSchema = z.enum(["tighten", "embellish", "correct", "polish"]);
+
+/**
+ * Action types for Advisory Actions (Pair Writing Mode, desktop only)
+ * - validate: Fact-check the claim
+ * - critique: Analyze clarity, voice, structure
+ * - compare: Compare current text to snapshot
+ */
+export const AdvisoryActionTypeSchema = z.enum(["validate", "critique", "compare"]);
+
+/**
+ * Client requests a Quick Action on selected text (all platforms)
+ * Claude uses Read/Edit tools to modify the file directly
+ */
+export const QuickActionRequestMessageSchema = z.object({
+  type: z.literal("quick_action_request"),
+  /** The action to perform */
+  action: QuickActionTypeSchema,
+  /** The selected text to transform */
+  selection: z.string().min(1, "Selection is required"),
+  /** Paragraph before the selection (for context) */
+  contextBefore: z.string(),
+  /** Paragraph after the selection (for context) */
+  contextAfter: z.string(),
+  /** Path to the file being edited (relative to content root) */
+  filePath: z.string().min(1, "File path is required"),
+  /** 1-indexed line number where selection starts */
+  selectionStartLine: z.number().int().min(1, "Selection start line must be at least 1"),
+  /** 1-indexed line number where selection ends */
+  selectionEndLine: z.number().int().min(1, "Selection end line must be at least 1"),
+  /** Total lines in the document (for position hint calculation) */
+  totalLines: z.number().int().min(1, "Total lines must be at least 1"),
+});
+
+/**
+ * Client requests an Advisory Action on selected text (Pair Writing Mode, desktop)
+ * Response appears in conversation pane; user manually applies changes
+ */
+export const AdvisoryActionRequestMessageSchema = z.object({
+  type: z.literal("advisory_action_request"),
+  /** The advisory action to perform */
+  action: AdvisoryActionTypeSchema,
+  /** The selected text to analyze */
+  selection: z.string().min(1, "Selection is required"),
+  /** Paragraph before the selection (for context) */
+  contextBefore: z.string(),
+  /** Paragraph after the selection (for context) */
+  contextAfter: z.string(),
+  /** Path to the file being edited (relative to content root) */
+  filePath: z.string().min(1, "File path is required"),
+  /** 1-indexed line number where selection starts */
+  selectionStartLine: z.number().int().min(1, "Selection start line must be at least 1"),
+  /** 1-indexed line number where selection ends */
+  selectionEndLine: z.number().int().min(1, "Selection end line must be at least 1"),
+  /** Total lines in the document (for position hint calculation) */
+  totalLines: z.number().int().min(1, "Total lines must be at least 1"),
+  /** For compare action: the corresponding text from the snapshot */
+  snapshotSelection: z.string().optional(),
+});
+
+// =============================================================================
 // Memory Extraction Client Messages
 // =============================================================================
 
@@ -787,6 +858,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SetPinnedAssetsMessageSchema,
   UpdateVaultConfigMessageSchema,
   CreateVaultMessageSchema,
+  // Pair Writing Mode
+  QuickActionRequestMessageSchema,
+  AdvisoryActionRequestMessageSchema,
   // Memory Extraction
   GetMemoryMessageSchema,
   SaveMemoryMessageSchema,
@@ -1558,6 +1632,11 @@ export type GetPinnedAssetsMessage = z.infer<typeof GetPinnedAssetsMessageSchema
 export type SetPinnedAssetsMessage = z.infer<typeof SetPinnedAssetsMessageSchema>;
 export type UpdateVaultConfigMessage = z.infer<typeof UpdateVaultConfigMessageSchema>;
 export type CreateVaultMessage = z.infer<typeof CreateVaultMessageSchema>;
+// Pair Writing Mode types
+export type QuickActionType = z.infer<typeof QuickActionTypeSchema>;
+export type AdvisoryActionType = z.infer<typeof AdvisoryActionTypeSchema>;
+export type QuickActionRequestMessage = z.infer<typeof QuickActionRequestMessageSchema>;
+export type AdvisoryActionRequestMessage = z.infer<typeof AdvisoryActionRequestMessageSchema>;
 export type GetMemoryMessage = z.infer<typeof GetMemoryMessageSchema>;
 export type SaveMemoryMessage = z.infer<typeof SaveMemoryMessageSchema>;
 export type GetExtractionPromptMessage = z.infer<typeof GetExtractionPromptMessageSchema>;

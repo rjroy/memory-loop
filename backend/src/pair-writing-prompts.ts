@@ -3,7 +3,7 @@
  *
  * Action-specific system prompts for:
  * - Quick Actions (Tighten, Embellish, Correct, Polish): Use Claude's Read/Edit tools
- * - Advisory Actions (Validate, Critique, Compare): Stream text feedback only
+ * - Advisory Actions (Validate, Critique, Compare, Discuss): Stream text feedback only
  * - Pair Chat: Freeform chat with optional selection context
  *
  * See: .sdd/plans/memory-loop/2026-01-20-pair-writing-mode-plan.md (TD-3)
@@ -45,14 +45,14 @@ export interface QuickActionContext {
 export type PositionHint = "beginning" | "middle" | "end";
 
 /**
- * Configuration for a single Quick Action type.
+ * Configuration for a single action type (Quick or Advisory).
  */
 interface ActionConfig {
   /** Human-readable action name */
   name: string;
   /** Task description for the prompt */
   taskDescription: string;
-  /** Rules specific to this action */
+  /** Rules/instructions specific to this action */
   rules: string[];
 }
 
@@ -293,25 +293,31 @@ export interface AdvisoryActionContext {
 }
 
 /**
- * Configuration for Advisory Action types.
+ * Extended configuration for Advisory Actions with prompt-specific fields.
  */
-interface AdvisoryActionConfig {
-  /** Human-readable action name */
-  name: string;
-  /** Task description for the prompt */
-  taskDescription: string;
-  /** Detailed instructions for this action */
-  instructions: string[];
+interface AdvisoryConfig extends ActionConfig {
+  /** Role description for the opening line */
+  role: string;
+  /** Label for the selected text section */
+  selectionLabel: string;
+  /** Label for the surrounding context section */
+  contextLabel: string;
+  /** Closing instruction */
+  closing: string;
 }
 
 /**
  * Advisory action configurations.
  */
-const ADVISORY_ACTION_CONFIGS: Record<AdvisoryActionType, AdvisoryActionConfig> = {
+const ADVISORY_ACTION_CONFIGS: Record<AdvisoryActionType, AdvisoryConfig> = {
   validate: {
     name: "Validate",
     taskDescription: "Fact-check the selected text",
-    instructions: [
+    role: "helping fact-check content",
+    selectionLabel: "Selected text to validate",
+    contextLabel: "Surrounding context (for reference)",
+    closing: "Provide your analysis in a clear, organized format. Be specific and actionable.",
+    rules: [
       "Identify any factual claims in the selection",
       "Assess the accuracy of each claim based on your knowledge",
       "Note claims you cannot verify (requires specialized knowledge, recent events, etc.)",
@@ -322,7 +328,11 @@ const ADVISORY_ACTION_CONFIGS: Record<AdvisoryActionType, AdvisoryActionConfig> 
   critique: {
     name: "Critique",
     taskDescription: "Analyze the clarity, voice, and structure of the selected text",
-    instructions: [
+    role: "providing editorial feedback",
+    selectionLabel: "Selected text to critique",
+    contextLabel: "Surrounding context (for tone/style reference)",
+    closing: "Provide your analysis in a clear, organized format. Focus on specific, actionable feedback.",
+    rules: [
       "Evaluate clarity: Is the meaning immediately apparent?",
       "Assess voice: Is the tone consistent with the surrounding context?",
       "Check structure: Does the text flow logically?",
@@ -334,7 +344,14 @@ const ADVISORY_ACTION_CONFIGS: Record<AdvisoryActionType, AdvisoryActionConfig> 
   compare: {
     name: "Compare",
     taskDescription: "Analyze how the text has changed from the snapshot",
-    instructions: [
+    role: "helping track document changes",
+    selectionLabel: "",
+    contextLabel: "",
+    closing: `Provide a clear analysis of:
+1. What changed (specific additions, deletions, rewording)
+2. How the meaning or emphasis shifted
+3. Overall assessment of the changes`,
+    rules: [
       "Describe what changed objectively (additions, deletions, rewording)",
       "Explain how the meaning or emphasis shifted (if at all)",
       "Note whether the changes improved, degraded, or maintained quality",
@@ -344,7 +361,11 @@ const ADVISORY_ACTION_CONFIGS: Record<AdvisoryActionType, AdvisoryActionConfig> 
   discuss: {
     name: "Discuss",
     taskDescription: "Engage in a discussion about the selected text",
-    instructions: [
+    role: "engaging in a discussion about content",
+    selectionLabel: "Selected text to discuss",
+    contextLabel: "Surrounding context (for reference)",
+    closing: "Engage thoughtfully, exploring different angles and encouraging deeper understanding.",
+    rules: [
       "Consider different perspectives on the content",
       "Explore implications and underlying assumptions",
       "Ask questions to deepen understanding",
@@ -354,86 +375,50 @@ const ADVISORY_ACTION_CONFIGS: Record<AdvisoryActionType, AdvisoryActionConfig> 
 };
 
 /**
- * Builds the prompt for a Validate action.
- *
- * @param context - The context for the action
- * @returns Complete prompt for Claude
+ * Formats rules as bullet points.
  */
-export function buildValidatePrompt(context: AdvisoryActionContext): string {
-  const config = ADVISORY_ACTION_CONFIGS.validate;
-  const positionHint = calculatePositionHint(
-    context.startLine,
-    context.endLine,
-    context.totalLines
-  );
-  const positionPhrase = formatPositionHint(positionHint);
-  const formattedInstructions = config.instructions.map((i) => `- ${i}`).join("\n");
-
-  return `You are a writing assistant helping fact-check content.
-
-Task: ${config.taskDescription} ${positionPhrase} "${context.filePath}".
-
-Instructions:
-${formattedInstructions}
-
-Selected text to validate:
-${context.selectedText}
-
-Surrounding context (for reference):
-${context.contextBefore}
-[SELECTED TEXT]
-${context.contextAfter}
-
-Provide your analysis in a clear, organized format. Be specific and actionable.`;
+function formatRules(rules: string[]): string {
+  return rules.map((rule) => `- ${rule}`).join("\n");
 }
 
 /**
- * Builds the prompt for a Critique action.
- *
- * @param context - The context for the action
- * @returns Complete prompt for Claude
+ * Builds the standard advisory prompt format used by validate, critique, and discuss.
  */
-export function buildCritiquePrompt(context: AdvisoryActionContext): string {
-  const config = ADVISORY_ACTION_CONFIGS.critique;
-  const positionHint = calculatePositionHint(
-    context.startLine,
-    context.endLine,
-    context.totalLines
+function buildStandardAdvisoryPrompt(
+  config: AdvisoryConfig,
+  context: AdvisoryActionContext
+): string {
+  const positionPhrase = formatPositionHint(
+    calculatePositionHint(context.startLine, context.endLine, context.totalLines)
   );
-  const positionPhrase = formatPositionHint(positionHint);
-  const formattedInstructions = config.instructions.map((i) => `- ${i}`).join("\n");
 
-  return `You are a writing assistant providing editorial feedback.
+  return `You are a writing assistant ${config.role}.
 
 Task: ${config.taskDescription} ${positionPhrase} "${context.filePath}".
 
 Instructions:
-${formattedInstructions}
+${formatRules(config.rules)}
 
-Selected text to critique:
+${config.selectionLabel}:
 ${context.selectedText}
 
-Surrounding context (for tone/style reference):
+${config.contextLabel}:
 ${context.contextBefore}
 [SELECTED TEXT]
 ${context.contextAfter}
 
-Provide your analysis in a clear, organized format. Focus on specific, actionable feedback.`;
+${config.closing}`;
 }
 
 /**
  * Builds the prompt for a Compare action.
- *
- * @param context - The context for the action (must include snapshotSelection)
- * @returns Complete prompt for Claude
+ * Compare has unique structure: shows before/after instead of selection with context.
  */
-export function buildComparePrompt(context: AdvisoryActionContext): string {
+function buildComparePromptInternal(context: AdvisoryActionContext): string {
   const config = ADVISORY_ACTION_CONFIGS.compare;
-  const formattedInstructions = config.instructions.map((i) => `- ${i}`).join("\n");
 
-  // Handle case where no snapshot selection was provided
   if (!context.snapshotSelection) {
-    return `You are a writing assistant helping track document changes.
+    return `You are a writing assistant ${config.role}.
 
 The user selected text to compare to a snapshot, but no corresponding text was found in the snapshot. This usually means the selection is new content that was added after the snapshot was taken.
 
@@ -443,12 +428,12 @@ ${context.selectedText}
 Respond briefly noting that this appears to be new content not present in the snapshot.`;
   }
 
-  return `You are a writing assistant helping track document changes.
+  return `You are a writing assistant ${config.role}.
 
 Task: ${config.taskDescription}
 
 Instructions:
-${formattedInstructions}
+${formatRules(config.rules)}
 
 BEFORE (from snapshot):
 ${context.snapshotSelection}
@@ -456,44 +441,7 @@ ${context.snapshotSelection}
 AFTER (current):
 ${context.selectedText}
 
-Provide a clear analysis of:
-1. What changed (specific additions, deletions, rewording)
-2. How the meaning or emphasis shifted
-3. Overall assessment of the changes`;
-}
-
-/**
- * Builds the prompt for a Discuss action.
- *
- * @param context - The context for the action
- * @returns Complete prompt for Claude
- */
-export function buildDiscussPrompt(context: AdvisoryActionContext): string {
-  const config = ADVISORY_ACTION_CONFIGS.discuss;
-  const positionHint = calculatePositionHint(
-    context.startLine,
-    context.endLine,
-    context.totalLines
-  );
-  const positionPhrase = formatPositionHint(positionHint);
-  const formattedInstructions = config.instructions.map((i) => `- ${i}`).join("\n");
-
-  return `You are a writing assistant engaging in a discussion about content.
-
-Task: ${config.taskDescription} ${positionPhrase} "${context.filePath}".
-
-Instructions:
-${formattedInstructions}
-
-Selected text to discuss:
-${context.selectedText}
-
-Surrounding context (for reference):
-${context.contextBefore}
-[SELECTED TEXT]
-${context.contextAfter}
-
-Engage thoughtfully, exploring different angles and encouraging deeper understanding.`;
+${config.closing}`;
 }
 
 /**
@@ -507,15 +455,25 @@ export function buildAdvisoryActionPrompt(
   action: AdvisoryActionType,
   context: AdvisoryActionContext
 ): string {
-  switch (action) {
-    case "validate":
-      return buildValidatePrompt(context);
-    case "critique":
-      return buildCritiquePrompt(context);
-    case "compare":
-      return buildComparePrompt(context);
-    case "discuss":
-      return buildDiscussPrompt(context);
-
+  if (action === "compare") {
+    return buildComparePromptInternal(context);
   }
+  return buildStandardAdvisoryPrompt(ADVISORY_ACTION_CONFIGS[action], context);
+}
+
+// Exported individual builders for backward compatibility
+export function buildValidatePrompt(context: AdvisoryActionContext): string {
+  return buildAdvisoryActionPrompt("validate", context);
+}
+
+export function buildCritiquePrompt(context: AdvisoryActionContext): string {
+  return buildAdvisoryActionPrompt("critique", context);
+}
+
+export function buildComparePrompt(context: AdvisoryActionContext): string {
+  return buildAdvisoryActionPrompt("compare", context);
+}
+
+export function buildDiscussPrompt(context: AdvisoryActionContext): string {
+  return buildAdvisoryActionPrompt("discuss", context);
 }

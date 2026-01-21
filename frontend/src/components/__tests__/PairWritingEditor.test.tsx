@@ -7,13 +7,12 @@
  * - Context menu interactions (right-click, long-press)
  * - Quick Action flow (send message, processing state, response handling)
  * - Advisory Action delegation
- * - Toast notifications
  * - Error handling
  *
- * Uses dependency injection for ContextMenuComponent and ToastComponent to avoid
+ * Uses dependency injection for ContextMenuComponent to avoid
  * mock.module pollution between test files.
  *
- * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-4, REQ-F-6, REQ-F-7, REQ-F-8, REQ-F-15
+ * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-4, REQ-F-7, REQ-F-8, REQ-F-15
  */
 
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
@@ -25,7 +24,6 @@ import type {
   QuickActionType,
   AdvisoryActionType,
 } from "../EditorContextMenu";
-import type { ToastProps } from "../Toast";
 
 // =============================================================================
 // Mock Components - Injected via props (no mock.module)
@@ -58,18 +56,6 @@ function MockContextMenu({
   ) : null;
 }
 
-/**
- * Mock toast component injected via props.
- * Matches ToastProps signature for type compatibility.
- */
-function MockToast({ isVisible, message, variant }: ToastProps) {
-  return isVisible ? (
-    <div data-testid="toast" data-variant={variant}>
-      {message}
-    </div>
-  ) : null;
-}
-
 // =============================================================================
 // Test Fixtures
 // =============================================================================
@@ -84,9 +70,8 @@ function createDefaultProps() {
     onQuickActionComplete: mock<(path: string) => void>(() => {}),
     onAdvisoryAction: mock(() => {}),
     hasSnapshot: false,
-    // Inject mock components to avoid mock.module pollution
+    // Inject mock component to avoid mock.module pollution
     ContextMenuComponent: MockContextMenu,
-    ToastComponent: MockToast,
   };
 }
 
@@ -141,13 +126,6 @@ describe("PairWritingEditor - rendering", () => {
 
     const textarea = screen.getByLabelText("Document editor");
     expect(textarea).toBeDefined();
-  });
-
-  it("does not render Toast initially", () => {
-    const props = createDefaultProps();
-    render(<PairWritingEditor {...props} />);
-
-    expect(screen.queryByTestId("toast")).toBeNull();
   });
 
   it("does not render context menu initially", () => {
@@ -373,7 +351,7 @@ describe("PairWritingEditor - Quick Action flow", () => {
 });
 
 // =============================================================================
-// Quick Action Response Handling Tests (REQ-F-6, REQ-F-8)
+// Quick Action Response Handling Tests (REQ-F-8)
 // =============================================================================
 
 describe("PairWritingEditor - Quick Action response handling", () => {
@@ -400,103 +378,6 @@ describe("PairWritingEditor - Quick Action response handling", () => {
 
     // Processing should still be active
     expect(screen.getByText("Applying changes...")).toBeDefined();
-  });
-
-  it("accumulates response chunks", () => {
-    const props = createDefaultProps();
-    const { rerender } = render(<PairWritingEditor {...props} />);
-
-    // Trigger Quick Action
-    const textarea = getTextarea();
-    simulateTextSelection(textarea, 18, 37);
-    fireEvent.contextMenu(textarea);
-    fireEvent.click(screen.getByTestId("action-tighten"));
-
-    // Simulate response_start
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{
-          type: "response_start",
-          messageId: "msg_123",
-        }}
-      />
-    );
-
-    // Simulate response chunks
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{
-          type: "response_chunk",
-          messageId: "msg_123",
-          content: "Tightened ",
-        }}
-      />
-    );
-
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{
-          type: "response_chunk",
-          messageId: "msg_123",
-          content: "the text.",
-        }}
-      />
-    );
-
-    // Simulate response_end
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{
-          type: "response_end",
-          messageId: "msg_123",
-        }}
-      />
-    );
-
-    // Toast should show accumulated text
-    const toast = screen.getByTestId("toast");
-    expect(toast).toBeDefined();
-    expect(toast.textContent).toBe("Tightened the text.");
-  });
-
-  it("shows success toast on response_end with confirmation (REQ-F-6)", () => {
-    const props = createDefaultProps();
-    const { rerender } = render(<PairWritingEditor {...props} />);
-
-    // Trigger Quick Action
-    const textarea = getTextarea();
-    simulateTextSelection(textarea, 18, 37);
-    fireEvent.contextMenu(textarea);
-    fireEvent.click(screen.getByTestId("action-tighten"));
-
-    // Simulate response flow
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_start", messageId: "msg_123" }}
-      />
-    );
-
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_chunk", messageId: "msg_123", content: "Done!" }}
-      />
-    );
-
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_end", messageId: "msg_123" }}
-      />
-    );
-
-    const toast = screen.getByTestId("toast");
-    expect(toast.getAttribute("data-variant")).toBe("success");
   });
 
   it("calls onQuickActionComplete on response_end (REQ-F-8)", () => {
@@ -573,34 +454,6 @@ describe("PairWritingEditor - Quick Action response handling", () => {
     expect(textareaAfter.disabled).toBe(false);
     expect(document.querySelector(".pair-writing-editor--processing")).toBeNull();
   });
-
-  it("does not show toast if confirmation is empty", () => {
-    const props = createDefaultProps();
-    const { rerender } = render(<PairWritingEditor {...props} />);
-
-    // Trigger Quick Action
-    const textarea = getTextarea();
-    simulateTextSelection(textarea, 18, 37);
-    fireEvent.contextMenu(textarea);
-    fireEvent.click(screen.getByTestId("action-tighten"));
-
-    // Simulate response with no chunks
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_start", messageId: "msg_123" }}
-      />
-    );
-
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_end", messageId: "msg_123" }}
-      />
-    );
-
-    expect(screen.queryByTestId("toast")).toBeNull();
-  });
 });
 
 // =============================================================================
@@ -636,34 +489,6 @@ describe("PairWritingEditor - error handling", () => {
     expect(textareaAfter.disabled).toBe(false);
   });
 
-  it("shows error toast on error message", () => {
-    const props = createDefaultProps();
-    const { rerender } = render(<PairWritingEditor {...props} />);
-
-    // Trigger Quick Action
-    const textarea = getTextarea();
-    simulateTextSelection(textarea, 18, 37);
-    fireEvent.contextMenu(textarea);
-    fireEvent.click(screen.getByTestId("action-tighten"));
-
-    // Simulate error
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{
-          type: "error",
-          code: "SDK_ERROR",
-          message: "Connection lost",
-        }}
-      />
-    );
-
-    const toast = screen.getByTestId("toast");
-    expect(toast).toBeDefined();
-    expect(toast.textContent).toBe("Connection lost");
-    expect(toast.getAttribute("data-variant")).toBe("error");
-  });
-
   it("ignores messages when not processing Quick Action", () => {
     const props = createDefaultProps();
     const { rerender } = render(<PairWritingEditor {...props} />);
@@ -680,8 +505,7 @@ describe("PairWritingEditor - error handling", () => {
       />
     );
 
-    // Should not show toast or enter processing state
-    expect(screen.queryByTestId("toast")).toBeNull();
+    // Should not enter processing state
     expect(document.querySelector(".pair-writing-editor--processing")).toBeNull();
   });
 });

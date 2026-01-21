@@ -5,7 +5,7 @@
  * Supports right-click (desktop) and long-press (mobile) triggers.
  * Renders via portal at the selection position.
  *
- * In Pair Writing Mode, also shows Advisory Actions (Validate, Critique)
+ * In Pair Writing Mode, also shows Advisory Actions (Validate, Critique, Discuss)
  * and Compare to snapshot action.
  *
  * Implements: TD-1, TD-12 from the Pair Writing Mode plan.
@@ -31,7 +31,7 @@ export type QuickActionType = "tighten" | "embellish" | "correct" | "polish";
  * Advisory Action types available in Pair Writing Mode.
  * These actions send selection to conversation pane (not inline replacement).
  */
-export type AdvisoryActionType = "validate" | "critique" | "compare";
+export type AdvisoryActionType = "validate" | "critique" | "compare" | "discuss";
 
 /**
  * Position for rendering the context menu.
@@ -56,7 +56,7 @@ export interface EditorContextMenuProps {
   /**
    * Editor mode determines which actions are shown.
    * - "browse": Only Quick Actions (Tighten, Embellish, Correct, Polish)
-   * - "pair-writing": Quick Actions + Advisory Actions (Validate, Critique) + Compare
+   * - "pair-writing": Quick Actions + Advisory Actions (Validate, Critique, Discuss) + Compare
    * Defaults to "browse" for backward compatibility.
    */
   mode?: EditorMode;
@@ -66,7 +66,7 @@ export interface EditorContextMenuProps {
    */
   hasSnapshot?: boolean;
   /**
-   * Callback when an Advisory Action is selected (Validate, Critique, Compare).
+   * Callback when an Advisory Action is selected (Validate, Critique, Compare, Discuss).
    * Advisory actions dispatch to conversation pane, not inline replacement.
    * Only relevant in "pair-writing" mode.
    */
@@ -133,6 +133,11 @@ const ADVISORY_ACTIONS: AdvisoryMenuItem[] = [
     label: "Critique",
     description: "Analyze clarity, voice, structure",
   },
+  {
+    action: "discuss",
+    label: "Discuss",
+    description: "Engage in a conversation about the text",
+  },
 ];
 
 /**
@@ -152,7 +157,7 @@ const COMPARE_ACTION: AdvisoryMenuItem = {
  * - Keyboard navigation (Arrow keys, Enter, Escape)
  * - Click outside dismissal
  * - Accessible via role="menu" and role="menuitem"
- * - In Pair Writing Mode: shows Advisory Actions (Validate, Critique)
+ * - In Pair Writing Mode: shows Advisory Actions (Validate, Critique, Discuss)
  * - Shows Compare action when snapshot exists
  *
  * Usage:
@@ -449,6 +454,8 @@ function MenuItemIcon({ action }: { action: QuickActionType | AdvisoryActionType
       return <ValidateIcon />;
     case "critique":
       return <CritiqueIcon />;
+    case "discuss":
+      return <DiscussIcon />;
     case "compare":
       return <CompareIcon />;
   }
@@ -578,6 +585,24 @@ function CritiqueIcon(): React.ReactNode {
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
       <line x1="8" y1="9" x2="14" y2="9" />
       <line x1="8" y1="13" x2="12" y2="13" />
+    </svg>
+  );
+}
+
+function DiscussIcon(): React.ReactNode {
+  return (
+    <svg
+      className="editor-context-menu__icon-svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" />
+      <line x1="8" y1="9" x2="16" y2="9" />
+      <line x1="8" y1="13" x2="14" y2="13" />
     </svg>
   );
 }

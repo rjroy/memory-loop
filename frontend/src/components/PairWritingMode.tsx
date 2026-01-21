@@ -15,7 +15,7 @@
  * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-10, REQ-F-11, REQ-F-14, REQ-F-30
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { ClientMessage, ServerMessage } from "@memory-loop/shared";
 import { useSession } from "../contexts/SessionContext";
 import { usePairWritingState } from "../hooks/usePairWritingState";
@@ -23,7 +23,7 @@ import { PairWritingToolbar } from "./PairWritingToolbar";
 import { PairWritingEditor } from "./PairWritingEditor";
 import { Discussion } from "./Discussion";
 import { ConfirmDialog } from "./ConfirmDialog";
-import type { AdvisoryActionType } from "./EditorContextMenu";
+import type { AdvisoryActionType, QuickActionType } from "./EditorContextMenu";
 import type { SelectionContext } from "../hooks/useTextSelection";
 import type { ConnectionStatus } from "../hooks/useWebSocket";
 import "./PairWritingMode.css";
@@ -90,6 +90,9 @@ export function PairWritingMode({
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Track previous initialContent to detect external changes (not local edits)
+  const prevInitialContent = useRef(initialContent);
+
   // Activate pair writing mode on mount (if not already active)
   useEffect(() => {
     if (!state.isActive) {
@@ -97,13 +100,15 @@ export function PairWritingMode({
     }
   }, [state.isActive, actions, initialContent]);
 
-  // Update content when initialContent changes (e.g., after Quick Action reload)
+  // Update content when initialContent prop changes from parent (e.g., after Quick Action reload)
+  // Only triggers when the PARENT changes the content, not when user makes local edits
   useEffect(() => {
-    if (state.isActive && initialContent !== state.content) {
+    if (state.isActive && initialContent !== prevInitialContent.current) {
       // Content was reloaded from disk (e.g., after Quick Action)
       actions.reloadContent(initialContent);
+      prevInitialContent.current = initialContent;
     }
-  }, [initialContent, state.isActive, state.content, actions]);
+  }, [initialContent, state.isActive, actions]);
 
   // Handle snapshot button (REQ-F-23)
   const handleSnapshot = useCallback(() => {
@@ -161,6 +166,30 @@ export function PairWritingMode({
     [onQuickActionComplete]
   );
 
+  // Handle Quick Action from editor
+  // Adds user message to SessionContext so it appears in the Discussion
+  const handleQuickAction = useCallback(
+    (action: QuickActionType, selection: SelectionContext) => {
+      // Add user message showing what they selected to the shared conversation
+      const userMessage = `[${action.charAt(0).toUpperCase() + action.slice(1)}] "${selection.text}"`;
+      addMessage({ role: "user", content: userMessage });
+
+      // Send quick action request to backend
+      sendMessage({
+        type: "quick_action_request",
+        action,
+        selection: selection.text,
+        contextBefore: selection.contextBefore,
+        contextAfter: selection.contextAfter,
+        filePath,
+        selectionStartLine: selection.startLine,
+        selectionEndLine: selection.endLine,
+        totalLines: selection.totalLines,
+      });
+    },
+    [addMessage, sendMessage, filePath]
+  );
+
   // Handle Advisory Action from editor (REQ-F-15)
   // Adds user message to SessionContext so it appears in the Discussion
   const handleAdvisoryAction = useCallback(
@@ -211,6 +240,7 @@ export function PairWritingMode({
             lastMessage={lastMessage}
             onContentChange={handleContentChange}
             onQuickActionComplete={handleQuickActionComplete}
+            onQuickAction={handleQuickAction}
             onAdvisoryAction={handleAdvisoryAction}
             hasSnapshot={state.snapshot !== null}
             snapshotContent={state.snapshot ?? undefined}

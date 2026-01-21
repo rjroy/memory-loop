@@ -7,10 +7,12 @@
  */
 
 import { describe, it, expect, afterEach, mock } from "bun:test";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { PairWritingMode } from "../PairWritingMode";
-import { SessionProvider } from "../../contexts/SessionContext";
+import { SessionProvider, useSession } from "../../contexts/SessionContext";
+import type { PairWritingEditorProps } from "../PairWritingEditor";
+import type { SelectionContext } from "../../hooks/useTextSelection";
 
 // Mock components injected via props (no mock.module pollution)
 function MockEditor() {
@@ -27,9 +29,82 @@ function MockDiscussion() {
   );
 }
 
+/**
+ * Mock editor that exposes callbacks via buttons for testing
+ */
+function MockEditorWithCallbacks(props: PairWritingEditorProps) {
+  const mockSelection: SelectionContext = {
+    text: "test selection",
+    contextBefore: "before ",
+    contextAfter: " after",
+    startLine: 5,
+    endLine: 5,
+    totalLines: 10,
+  };
+
+  return (
+    <div data-testid="pair-writing-editor">
+      <button
+        data-testid="trigger-quick-action"
+        onClick={() => props.onQuickAction?.("tighten", mockSelection)}
+      >
+        Trigger Quick Action
+      </button>
+      <button
+        data-testid="trigger-advisory-action"
+        onClick={() => props.onAdvisoryAction?.("validate", mockSelection)}
+      >
+        Trigger Advisory Action
+      </button>
+      <button
+        data-testid="trigger-content-change"
+        onClick={() => props.onContentChange?.("changed content")}
+      >
+        Trigger Content Change
+      </button>
+      <button
+        data-testid="trigger-quick-action-complete"
+        onClick={() => props.onQuickActionComplete?.(props.filePath)}
+      >
+        Trigger Quick Action Complete
+      </button>
+      <span data-testid="editor-has-snapshot">
+        {props.hasSnapshot ? "has-snapshot" : "no-snapshot"}
+      </span>
+      <span data-testid="editor-initial-content">{props.initialContent}</span>
+    </div>
+  );
+}
+
+/**
+ * Component that displays SessionContext messages for verification
+ */
+function SessionMessagesDisplay() {
+  const { messages } = useSession();
+  return (
+    <div data-testid="session-messages">
+      {messages.map((msg, i) => (
+        <div key={i} data-testid={`message-${i}`} data-role={msg.role}>
+          {msg.content}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Wrapper to provide SessionContext
 function TestWrapper({ children }: { children: ReactNode }) {
   return <SessionProvider>{children}</SessionProvider>;
+}
+
+// Wrapper that also displays session messages for verification
+function TestWrapperWithMessages({ children }: { children: ReactNode }) {
+  return (
+    <SessionProvider>
+      {children}
+      <SessionMessagesDisplay />
+    </SessionProvider>
+  );
 }
 
 afterEach(() => {
@@ -229,5 +304,425 @@ describe("PairWritingMode CSS", () => {
     // This creates an equal 50/50 split
     // Actual verification requires visual testing
     expect(true).toBe(true); // Placeholder for documentation
+  });
+});
+
+describe("Quick Action handling", () => {
+  const propsWithCallbacks = {
+    filePath: "notes/test-document.md",
+    content: "# Test Document\n\nThis is test content.",
+    assetBaseUrl: "/vault/test-vault/assets",
+    onExit: mock(() => {}),
+    onSave: mock(() => {}),
+    sendMessage: mock(() => {}),
+    lastMessage: null,
+    connectionStatus: "connected" as const,
+    EditorComponent: MockEditorWithCallbacks,
+    DiscussionComponent: MockDiscussion,
+  };
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("sends quick_action_request message when Quick Action is triggered", () => {
+    const sendMessage = mock(() => {});
+    render(
+      <PairWritingMode {...propsWithCallbacks} sendMessage={sendMessage} />,
+      { wrapper: TestWrapper }
+    );
+
+    // Trigger the quick action via mock editor
+    fireEvent.click(screen.getByTestId("trigger-quick-action"));
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith({
+      type: "quick_action_request",
+      action: "tighten",
+      selection: "test selection",
+      contextBefore: "before ",
+      contextAfter: " after",
+      filePath: "notes/test-document.md",
+      selectionStartLine: 5,
+      selectionEndLine: 5,
+      totalLines: 10,
+    });
+  });
+
+  it("adds user message to SessionContext when Quick Action is triggered", () => {
+    render(
+      <PairWritingMode {...propsWithCallbacks} />,
+      { wrapper: TestWrapperWithMessages }
+    );
+
+    // Trigger the quick action
+    fireEvent.click(screen.getByTestId("trigger-quick-action"));
+
+    // Check that a user message was added to session context
+    const messages = screen.getByTestId("session-messages");
+    const userMessage = within(messages).getByTestId("message-0");
+    expect(userMessage.getAttribute("data-role")).toBe("user");
+    expect(userMessage.textContent).toBe('[Tighten] "test selection"');
+  });
+});
+
+describe("Advisory Action handling", () => {
+  const propsWithCallbacks = {
+    filePath: "notes/test-document.md",
+    content: "# Test Document\n\nThis is test content.",
+    assetBaseUrl: "/vault/test-vault/assets",
+    onExit: mock(() => {}),
+    onSave: mock(() => {}),
+    sendMessage: mock(() => {}),
+    lastMessage: null,
+    connectionStatus: "connected" as const,
+    EditorComponent: MockEditorWithCallbacks,
+    DiscussionComponent: MockDiscussion,
+  };
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("sends advisory_action_request message when Advisory Action is triggered", () => {
+    const sendMessage = mock(() => {});
+    render(
+      <PairWritingMode {...propsWithCallbacks} sendMessage={sendMessage} />,
+      { wrapper: TestWrapper }
+    );
+
+    // Trigger the advisory action via mock editor
+    fireEvent.click(screen.getByTestId("trigger-advisory-action"));
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith({
+      type: "advisory_action_request",
+      action: "validate",
+      selection: "test selection",
+      contextBefore: "before ",
+      contextAfter: " after",
+      filePath: "notes/test-document.md",
+      selectionStartLine: 5,
+      selectionEndLine: 5,
+      totalLines: 10,
+      snapshotSelection: undefined,
+    });
+  });
+
+  it("adds user message to SessionContext when Advisory Action is triggered", () => {
+    render(
+      <PairWritingMode {...propsWithCallbacks} />,
+      { wrapper: TestWrapperWithMessages }
+    );
+
+    // Trigger the advisory action
+    fireEvent.click(screen.getByTestId("trigger-advisory-action"));
+
+    // Check that a user message was added to session context
+    const messages = screen.getByTestId("session-messages");
+    const userMessage = within(messages).getByTestId("message-0");
+    expect(userMessage.getAttribute("data-role")).toBe("user");
+    expect(userMessage.textContent).toBe('[Validate] "test selection"');
+  });
+});
+
+describe("onQuickActionComplete callback", () => {
+  const propsWithCallbacks = {
+    filePath: "notes/test-document.md",
+    content: "# Test Document\n\nThis is test content.",
+    assetBaseUrl: "/vault/test-vault/assets",
+    onExit: mock(() => {}),
+    onSave: mock(() => {}),
+    sendMessage: mock(() => {}),
+    lastMessage: null,
+    connectionStatus: "connected" as const,
+    EditorComponent: MockEditorWithCallbacks,
+    DiscussionComponent: MockDiscussion,
+  };
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("calls onQuickActionComplete with file path when editor triggers completion", () => {
+    const onQuickActionComplete = mock(() => {});
+    render(
+      <PairWritingMode
+        {...propsWithCallbacks}
+        onQuickActionComplete={onQuickActionComplete}
+      />,
+      { wrapper: TestWrapper }
+    );
+
+    // Trigger quick action complete via mock editor
+    fireEvent.click(screen.getByTestId("trigger-quick-action-complete"));
+
+    expect(onQuickActionComplete).toHaveBeenCalledTimes(1);
+    expect(onQuickActionComplete).toHaveBeenCalledWith("notes/test-document.md");
+  });
+
+  it("handles missing onQuickActionComplete callback gracefully", () => {
+    // Should not throw when callback is not provided
+    expect(() => {
+      render(
+        <PairWritingMode {...propsWithCallbacks} onQuickActionComplete={undefined} />,
+        { wrapper: TestWrapper }
+      );
+
+      fireEvent.click(screen.getByTestId("trigger-quick-action-complete"));
+    }).not.toThrow();
+  });
+});
+
+describe("content change handling", () => {
+  const propsWithCallbacks = {
+    filePath: "notes/test-document.md",
+    content: "# Test Document\n\nThis is test content.",
+    assetBaseUrl: "/vault/test-vault/assets",
+    onExit: mock(() => {}),
+    onSave: mock(() => {}),
+    sendMessage: mock(() => {}),
+    lastMessage: null,
+    connectionStatus: "connected" as const,
+    EditorComponent: MockEditorWithCallbacks,
+    DiscussionComponent: MockDiscussion,
+  };
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("tracks unsaved changes when content is modified", async () => {
+    render(<PairWritingMode {...propsWithCallbacks} />, { wrapper: TestWrapper });
+
+    // Initially, save button should indicate no unsaved changes
+    expect(screen.getByTitle(/no unsaved changes/i)).toBeDefined();
+
+    // Trigger content change
+    fireEvent.click(screen.getByTestId("trigger-content-change"));
+
+    // Wait for state update and check save button shows unsaved changes
+    await waitFor(() => {
+      expect(screen.getByTitle(/save changes to vault/i)).toBeDefined();
+    });
+  });
+
+  it("shows exit confirmation when attempting to exit with unsaved changes", async () => {
+    render(<PairWritingMode {...propsWithCallbacks} />, { wrapper: TestWrapper });
+
+    // Trigger content change to create unsaved state
+    fireEvent.click(screen.getByTestId("trigger-content-change"));
+
+    // Wait for state to update
+    await waitFor(() => {
+      expect(screen.getByTitle(/save changes to vault/i)).toBeDefined();
+    });
+
+    // Click exit
+    const exitBtn = screen.getByTitle(/exit/i);
+    fireEvent.click(exitBtn);
+
+    // Should show confirmation dialog
+    expect(screen.getByRole("dialog")).toBeDefined();
+    expect(screen.getByText(/unsaved changes/i)).toBeDefined();
+  });
+
+  it("exits without confirmation after saving changes", async () => {
+    const onExit = mock(() => {});
+    const onSave = mock(() => {});
+
+    render(
+      <PairWritingMode {...propsWithCallbacks} onExit={onExit} onSave={onSave} />,
+      { wrapper: TestWrapper }
+    );
+
+    // Trigger content change
+    fireEvent.click(screen.getByTestId("trigger-content-change"));
+
+    // Wait for state to update
+    await waitFor(() => {
+      expect(screen.getByTitle(/save changes to vault/i)).toBeDefined();
+    });
+
+    // Save the changes
+    const saveBtn = screen.getByTitle(/save changes to vault/i);
+    fireEvent.click(saveBtn);
+
+    expect(onSave).toHaveBeenCalledWith("changed content");
+
+    // Now exit should work without confirmation
+    const exitBtn = screen.getByTitle(/exit/i);
+    fireEvent.click(exitBtn);
+
+    // No dialog should appear
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("exit confirmation dialog flow (REQ-F-30)", () => {
+  const propsWithCallbacks = {
+    filePath: "notes/test-document.md",
+    content: "# Test Document\n\nThis is test content.",
+    assetBaseUrl: "/vault/test-vault/assets",
+    onExit: mock(() => {}),
+    onSave: mock(() => {}),
+    sendMessage: mock(() => {}),
+    lastMessage: null,
+    connectionStatus: "connected" as const,
+    EditorComponent: MockEditorWithCallbacks,
+    DiscussionComponent: MockDiscussion,
+  };
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("confirmation dialog has correct title and message", async () => {
+    render(<PairWritingMode {...propsWithCallbacks} />, { wrapper: TestWrapper });
+
+    // Create unsaved state
+    fireEvent.click(screen.getByTestId("trigger-content-change"));
+
+    // Wait for state to update
+    await waitFor(() => {
+      expect(screen.getByTitle(/save changes to vault/i)).toBeDefined();
+    });
+
+    // Click exit
+    fireEvent.click(screen.getByTitle(/exit/i));
+
+    // Verify dialog content
+    expect(screen.getByText("Unsaved Changes")).toBeDefined();
+    expect(screen.getByText(/your changes will be lost/i)).toBeDefined();
+    expect(screen.getByText("Exit Without Saving")).toBeDefined();
+  });
+
+  it("confirming exit calls onExit and closes dialog", async () => {
+    const onExit = mock(() => {});
+    render(
+      <PairWritingMode {...propsWithCallbacks} onExit={onExit} />,
+      { wrapper: TestWrapper }
+    );
+
+    // Create unsaved state
+    fireEvent.click(screen.getByTestId("trigger-content-change"));
+
+    // Wait for state to update
+    await waitFor(() => {
+      expect(screen.getByTitle(/save changes to vault/i)).toBeDefined();
+    });
+
+    // Trigger exit
+    fireEvent.click(screen.getByTitle(/exit/i));
+
+    // Confirm exit
+    fireEvent.click(screen.getByText("Exit Without Saving"));
+
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("canceling exit keeps dialog closed and does not call onExit", async () => {
+    const onExit = mock(() => {});
+    render(
+      <PairWritingMode {...propsWithCallbacks} onExit={onExit} />,
+      { wrapper: TestWrapper }
+    );
+
+    // Create unsaved state
+    fireEvent.click(screen.getByTestId("trigger-content-change"));
+
+    // Wait for state to update
+    await waitFor(() => {
+      expect(screen.getByTitle(/save changes to vault/i)).toBeDefined();
+    });
+
+    // Trigger exit
+    fireEvent.click(screen.getByTitle(/exit/i));
+
+    // Cancel exit
+    fireEvent.click(screen.getByText("Cancel"));
+
+    expect(onExit).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("snapshot state propagation", () => {
+  const propsWithCallbacks = {
+    filePath: "notes/test-document.md",
+    content: "# Test Document\n\nThis is test content.",
+    assetBaseUrl: "/vault/test-vault/assets",
+    onExit: mock(() => {}),
+    onSave: mock(() => {}),
+    sendMessage: mock(() => {}),
+    lastMessage: null,
+    connectionStatus: "connected" as const,
+    EditorComponent: MockEditorWithCallbacks,
+    DiscussionComponent: MockDiscussion,
+  };
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("passes hasSnapshot=false to editor initially", () => {
+    render(<PairWritingMode {...propsWithCallbacks} />, { wrapper: TestWrapper });
+
+    expect(screen.getByTestId("editor-has-snapshot").textContent).toBe("no-snapshot");
+  });
+
+  it("passes hasSnapshot=true to editor after taking snapshot", () => {
+    render(<PairWritingMode {...propsWithCallbacks} />, { wrapper: TestWrapper });
+
+    // Take a snapshot
+    const snapshotBtn = screen.getByTitle(/take snapshot/i);
+    fireEvent.click(snapshotBtn);
+
+    expect(screen.getByTestId("editor-has-snapshot").textContent).toBe("has-snapshot");
+  });
+});
+
+describe("content reloading", () => {
+  const propsWithCallbacks = {
+    filePath: "notes/test-document.md",
+    content: "initial content",
+    assetBaseUrl: "/vault/test-vault/assets",
+    onExit: mock(() => {}),
+    onSave: mock(() => {}),
+    sendMessage: mock(() => {}),
+    lastMessage: null,
+    connectionStatus: "connected" as const,
+    EditorComponent: MockEditorWithCallbacks,
+    DiscussionComponent: MockDiscussion,
+  };
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("passes initialContent to editor", () => {
+    render(<PairWritingMode {...propsWithCallbacks} />, { wrapper: TestWrapper });
+
+    expect(screen.getByTestId("editor-initial-content").textContent).toBe("initial content");
+  });
+
+  it("updates editor when initialContent prop changes", () => {
+    const { rerender } = render(
+      <PairWritingMode {...propsWithCallbacks} content="initial content" />,
+      { wrapper: TestWrapper }
+    );
+
+    expect(screen.getByTestId("editor-initial-content").textContent).toBe("initial content");
+
+    // Simulate content reload (e.g., after Quick Action)
+    rerender(
+      <TestWrapper>
+        <PairWritingMode {...propsWithCallbacks} content="reloaded content" />
+      </TestWrapper>
+    );
+
+    expect(screen.getByTestId("editor-initial-content").textContent).toBe("reloaded content");
   });
 });

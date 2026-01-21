@@ -3,7 +3,7 @@
  *
  * Handles:
  * - Quick Actions (Tighten, Embellish, Correct, Polish) via existing discussion session
- * - Advisory Actions (Validate, Critique, Compare) via existing discussion session
+ * - Advisory Actions (Validate, Critique, Compare, Discuss) via existing discussion session
  *
  * Both action types use the existing discussion session (same as Think tab) so that:
  * - Quick Actions appear in the conversation history with tool usage
@@ -484,7 +484,7 @@ async function streamQuickActionEvents(
 }
 
 // =============================================================================
-// Advisory Action Handler (Validate, Critique, Compare)
+// Advisory Action Handler (Validate, Critique, Compare, Discuss)
 // =============================================================================
 
 /**
@@ -503,7 +503,7 @@ const ADVISORY_ACTION_OPTIONS: Partial<Options> = {
 };
 
 /**
- * Handles an Advisory Action request (Validate, Critique, Compare).
+ * Handles an Advisory Action request (Validate, Critique, Compare, Discuss).
  *
  * Advisory actions stream text responses to the Discussion conversation.
  * When an existing session is available, uses resumeSession to maintain context.

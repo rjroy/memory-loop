@@ -380,3 +380,242 @@ describe("Quick Action types", () => {
     }
   });
 });
+
+describe("Pair Writing Mode (mode='pair-writing')", () => {
+  const pairWritingProps = {
+    isOpen: true,
+    position: { x: 100, y: 100 },
+    onAction: mock(() => {}),
+    onDismiss: mock(() => {}),
+    mode: "pair-writing" as const,
+    onAdvisoryAction: mock(() => {}),
+  };
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  describe("rendering", () => {
+    it("renders Quick Actions in pair-writing mode", () => {
+      render(<EditorContextMenu {...pairWritingProps} />);
+
+      expect(screen.getByText("Tighten")).toBeDefined();
+      expect(screen.getByText("Embellish")).toBeDefined();
+      expect(screen.getByText("Correct")).toBeDefined();
+      expect(screen.getByText("Polish")).toBeDefined();
+    });
+
+    it("renders Advisory Actions in pair-writing mode", () => {
+      render(<EditorContextMenu {...pairWritingProps} />);
+
+      expect(screen.getByText("Validate")).toBeDefined();
+      expect(screen.getByText("Critique")).toBeDefined();
+      expect(screen.getByText("Discuss")).toBeDefined();
+    });
+
+    it("renders Advisory Action descriptions", () => {
+      render(<EditorContextMenu {...pairWritingProps} />);
+
+      expect(screen.getByText("Fact-check the claim")).toBeDefined();
+      expect(screen.getByText("Analyze clarity, voice, structure")).toBeDefined();
+      expect(screen.getByText("Engage in a conversation about the text")).toBeDefined();
+    });
+
+    it("does not render Compare action when hasSnapshot is false", () => {
+      render(<EditorContextMenu {...pairWritingProps} hasSnapshot={false} />);
+
+      expect(screen.queryByText("Compare to snapshot")).toBeNull();
+    });
+
+    it("renders Compare action when hasSnapshot is true", () => {
+      render(<EditorContextMenu {...pairWritingProps} hasSnapshot={true} />);
+
+      expect(screen.getByText("Compare to snapshot")).toBeDefined();
+      expect(screen.getByText("Show what changed")).toBeDefined();
+    });
+
+    it("has 7 menu items in pair-writing mode without snapshot", () => {
+      render(<EditorContextMenu {...pairWritingProps} hasSnapshot={false} />);
+
+      const menuItems = screen.getAllByRole("menuitem");
+      // 4 Quick Actions + 3 Advisory Actions (Validate, Critique, Discuss)
+      expect(menuItems.length).toBe(7);
+    });
+
+    it("has 8 menu items in pair-writing mode with snapshot", () => {
+      render(<EditorContextMenu {...pairWritingProps} hasSnapshot={true} />);
+
+      const menuItems = screen.getAllByRole("menuitem");
+      // 4 Quick Actions + 3 Advisory Actions + Compare
+      expect(menuItems.length).toBe(8);
+    });
+
+    it("applies advisory CSS class to advisory action items", () => {
+      render(<EditorContextMenu {...pairWritingProps} />);
+
+      // Find the Validate button which should have the advisory class
+      const validateButton = screen.getByText("Validate").closest("button");
+      expect(validateButton?.className).toContain("editor-context-menu__item--advisory");
+    });
+  });
+
+  describe("accessibility", () => {
+    it("has 'Writing Actions' aria-label in pair-writing mode", () => {
+      render(<EditorContextMenu {...pairWritingProps} />);
+
+      const menu = screen.getByRole("menu");
+      expect(menu.getAttribute("aria-label")).toBe("Writing Actions");
+    });
+
+    it("has 'Quick Actions' aria-label in browse mode", () => {
+      render(<EditorContextMenu {...pairWritingProps} mode="browse" />);
+
+      const menu = screen.getByRole("menu");
+      expect(menu.getAttribute("aria-label")).toBe("Quick Actions");
+    });
+  });
+
+  describe("Advisory Action interactions", () => {
+    it("clicking Advisory Action calls onAdvisoryAction with correct type", () => {
+      const onAdvisoryAction = mock(() => {});
+      render(
+        <EditorContextMenu
+          {...pairWritingProps}
+          onAdvisoryAction={onAdvisoryAction}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Validate"));
+
+      expect(onAdvisoryAction).toHaveBeenCalledTimes(1);
+      expect(onAdvisoryAction).toHaveBeenCalledWith("validate");
+    });
+
+    it("clicking Critique calls onAdvisoryAction with 'critique'", () => {
+      const onAdvisoryAction = mock(() => {});
+      render(
+        <EditorContextMenu
+          {...pairWritingProps}
+          onAdvisoryAction={onAdvisoryAction}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Critique"));
+
+      expect(onAdvisoryAction).toHaveBeenCalledWith("critique");
+    });
+
+    it("clicking Discuss calls onAdvisoryAction with 'discuss'", () => {
+      const onAdvisoryAction = mock(() => {});
+      render(
+        <EditorContextMenu
+          {...pairWritingProps}
+          onAdvisoryAction={onAdvisoryAction}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Discuss"));
+
+      expect(onAdvisoryAction).toHaveBeenCalledWith("discuss");
+    });
+
+    it("clicking Compare calls onAdvisoryAction with 'compare'", () => {
+      const onAdvisoryAction = mock(() => {});
+      render(
+        <EditorContextMenu
+          {...pairWritingProps}
+          hasSnapshot={true}
+          onAdvisoryAction={onAdvisoryAction}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Compare to snapshot"));
+
+      expect(onAdvisoryAction).toHaveBeenCalledWith("compare");
+    });
+
+    it("clicking Quick Action in pair-writing mode calls onAction (not onAdvisoryAction)", () => {
+      const onAction = mock(() => {});
+      const onAdvisoryAction = mock(() => {});
+      render(
+        <EditorContextMenu
+          {...pairWritingProps}
+          onAction={onAction}
+          onAdvisoryAction={onAdvisoryAction}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Tighten"));
+
+      expect(onAction).toHaveBeenCalledWith("tighten");
+      expect(onAdvisoryAction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("keyboard navigation with Advisory Actions", () => {
+    it("ArrowDown navigates through all items including Advisory Actions", () => {
+      render(<EditorContextMenu {...pairWritingProps} hasSnapshot={false} />);
+
+      const menu = screen.getByRole("menu");
+      const menuItems = screen.getAllByRole("menuitem");
+
+      // Navigate through all 7 items
+      for (let i = 0; i < 7; i++) {
+        expect(menuItems[i].getAttribute("tabindex")).toBe("0");
+        if (i < 6) {
+          fireEvent.keyDown(menu, { key: "ArrowDown" });
+        }
+      }
+    });
+
+    it("Enter activates Advisory Action when focused", () => {
+      const onAdvisoryAction = mock(() => {});
+      render(
+        <EditorContextMenu
+          {...pairWritingProps}
+          onAdvisoryAction={onAdvisoryAction}
+        />
+      );
+
+      const menu = screen.getByRole("menu");
+
+      // Navigate to Validate (5th item, index 4)
+      fireEvent.keyDown(menu, { key: "ArrowDown" }); // Embellish
+      fireEvent.keyDown(menu, { key: "ArrowDown" }); // Correct
+      fireEvent.keyDown(menu, { key: "ArrowDown" }); // Polish
+      fireEvent.keyDown(menu, { key: "ArrowDown" }); // Validate
+      fireEvent.keyDown(menu, { key: "Enter" });
+
+      expect(onAdvisoryAction).toHaveBeenCalledWith("validate");
+    });
+
+    it("End key navigates to last Advisory Action", () => {
+      render(<EditorContextMenu {...pairWritingProps} hasSnapshot={false} />);
+
+      const menu = screen.getByRole("menu");
+      const menuItems = screen.getAllByRole("menuitem");
+
+      fireEvent.keyDown(menu, { key: "End" });
+
+      // Last item (Discuss, index 6) should be focused
+      expect(menuItems[6].getAttribute("tabindex")).toBe("0");
+    });
+  });
+
+  describe("does not call onAdvisoryAction when not provided", () => {
+    it("handles missing onAdvisoryAction gracefully", () => {
+      // Should not throw when clicking advisory action without handler
+      const propsWithoutHandler = {
+        ...pairWritingProps,
+        onAdvisoryAction: undefined,
+      };
+
+      render(<EditorContextMenu {...propsWithoutHandler} />);
+
+      // This should not throw
+      expect(() => {
+        fireEvent.click(screen.getByText("Validate"));
+      }).not.toThrow();
+    });
+  });
+});

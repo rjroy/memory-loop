@@ -545,8 +545,8 @@
   outline-offset: 2px;
 }
 
-/* Hide Pair Writing button on touch/mobile devices (REQ-F-10) */
-@media (hover: none), (pointer: coarse) {
+/* Hide Pair Writing button on phones (touch devices with narrow screens), but allow iPads (REQ-F-10) */
+@media (hover: none) and (max-width: 767px), (pointer: coarse) and (max-width: 767px) {
   .markdown-viewer__pair-writing-btn {
     display: none;
   }

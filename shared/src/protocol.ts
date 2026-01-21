@@ -704,8 +704,9 @@ export const QuickActionTypeSchema = z.enum(["tighten", "embellish", "correct", 
  * - validate: Fact-check the claim
  * - critique: Analyze clarity, voice, structure
  * - compare: Compare current text to snapshot
+ * - discuss: Discuss improvements or alternatives
  */
-export const AdvisoryActionTypeSchema = z.enum(["validate", "critique", "compare"]);
+export const AdvisoryActionTypeSchema = z.enum(["validate", "critique", "compare", "discuss"]);
 
 /**
  * Client requests a Quick Action on selected text (all platforms)

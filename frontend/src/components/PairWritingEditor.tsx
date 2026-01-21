@@ -10,7 +10,7 @@
  * Features:
  * - Textarea for editing content
  * - Context menu with Quick Actions (Tighten, Embellish, Correct, Polish)
- * - Advisory Actions in pair-writing mode (Validate, Critique, Compare)
+ * - Advisory Actions in pair-writing mode (Validate, Critique, Compare, Discuss)
  * - WebSocket integration for streaming Quick Action responses
  * - Toast notifications for Claude's commentary
  *
@@ -20,7 +20,7 @@
  * - REQ-F-7: Loading indicator on selection during processing
  * - REQ-F-8: Quick Actions persist immediately via Claude Edit tool
  * - REQ-F-12: Editor pane in split view
- * - REQ-F-15: Advisory Actions (Validate, Critique)
+ * - REQ-F-15: Advisory Actions (Validate, Critique, Compare, Discuss)
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";

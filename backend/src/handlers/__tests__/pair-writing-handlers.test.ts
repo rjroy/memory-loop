@@ -667,10 +667,11 @@ describe("handleAdvisoryAction - error handling", () => {
 // =============================================================================
 
 describe("handleAdvisoryAction - action types", () => {
-  const actions: Array<"validate" | "critique" | "compare"> = [
+  const actions: Array<"validate" | "critique" | "compare" | "discuss"> = [
     "validate",
     "critique",
     "compare",
+    "discuss",
   ];
 
   for (const action of actions) {

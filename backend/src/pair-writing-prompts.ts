@@ -17,7 +17,7 @@ export type QuickActionType = "tighten" | "embellish" | "correct" | "polish";
 /**
  * Advisory action types supported by the system.
  */
-export type AdvisoryActionType = "validate" | "critique" | "compare";
+export type AdvisoryActionType = "validate" | "critique" | "compare" | "discuss";
 
 /**
  * Context required to build a Quick Action prompt.
@@ -263,7 +263,7 @@ export function isQuickActionType(action: string): action is QuickActionType {
  * @returns True if valid advisory action type
  */
 export function isAdvisoryActionType(action: string): action is AdvisoryActionType {
-  return ["validate", "critique", "compare"].includes(action);
+  return ["validate", "critique", "compare", "discuss"].includes(action);
 }
 
 // =============================================================================
@@ -339,6 +339,16 @@ const ADVISORY_ACTION_CONFIGS: Record<AdvisoryActionType, AdvisoryActionConfig> 
       "Explain how the meaning or emphasis shifted (if at all)",
       "Note whether the changes improved, degraded, or maintained quality",
       "Be descriptive rather than judgmental",
+    ],
+  },
+  discuss: {
+    name: "Discuss",
+    taskDescription: "Engage in a discussion about the selected text",
+    instructions: [
+      "Consider different perspectives on the content",
+      "Explore implications and underlying assumptions",
+      "Ask questions to deepen understanding",
+      "Encourage critical thinking and reflection",
     ],
   },
 };
@@ -453,6 +463,40 @@ Provide a clear analysis of:
 }
 
 /**
+ * Builds the prompt for a Discuss action.
+ *
+ * @param context - The context for the action
+ * @returns Complete prompt for Claude
+ */
+export function buildDiscussPrompt(context: AdvisoryActionContext): string {
+  const config = ADVISORY_ACTION_CONFIGS.discuss;
+  const positionHint = calculatePositionHint(
+    context.startLine,
+    context.endLine,
+    context.totalLines
+  );
+  const positionPhrase = formatPositionHint(positionHint);
+  const formattedInstructions = config.instructions.map((i) => `- ${i}`).join("\n");
+
+  return `You are a writing assistant engaging in a discussion about content.
+
+Task: ${config.taskDescription} ${positionPhrase} "${context.filePath}".
+
+Instructions:
+${formattedInstructions}
+
+Selected text to discuss:
+${context.selectedText}
+
+Surrounding context (for reference):
+${context.contextBefore}
+[SELECTED TEXT]
+${context.contextAfter}
+
+Engage thoughtfully, exploring different angles and encouraging deeper understanding.`;
+}
+
+/**
  * Builds the appropriate advisory action prompt based on action type.
  *
  * @param action - The advisory action type
@@ -470,5 +514,8 @@ export function buildAdvisoryActionPrompt(
       return buildCritiquePrompt(context);
     case "compare":
       return buildComparePrompt(context);
+    case "discuss":
+      return buildDiscussPrompt(context);
+
   }
 }

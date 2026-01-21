@@ -116,8 +116,8 @@
 }
 
 .pair-writing-toolbar__btn--has-snapshot {
-  color: var(--color-accent);
-  border-color: var(--color-accent-a30);
+  color: var(--color-text-success);
+  border-color: var(--color-success-a30);
 }
 
 .pair-writing-toolbar__btn--has-snapshot:hover:not(:disabled) {

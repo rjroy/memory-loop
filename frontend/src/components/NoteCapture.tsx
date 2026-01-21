@@ -9,7 +9,7 @@
  * - Meeting: Captures go to meeting-specific file
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useSession } from "../contexts/SessionContext";
 import "./NoteCapture.css";
@@ -60,10 +60,32 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const meetingTitleRef = useRef<HTMLInputElement>(null);
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasSentVaultSelectionRef = useRef(false);
 
-  const { vault, meeting, clearMeeting, setDiscussionPrefill, setMode } = useSession();
+  const { vault, meeting, setMeetingState, clearMeeting, setDiscussionPrefill, setMode } = useSession();
 
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
+  // Reset vault selection tracking on reconnect so we re-send select_vault
+  const handleReconnect = useCallback(() => {
+    hasSentVaultSelectionRef.current = false;
+  }, []);
+
+  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
+    onReconnect: handleReconnect,
+  });
+
+  // Send vault selection when WebSocket connects (initial or reconnect).
+  // Each WebSocket connection has its own server-side state, so we must
+  // send select_vault on this connection before sending capture_note.
+  useEffect(() => {
+    if (
+      connectionStatus === "connected" &&
+      vault &&
+      !hasSentVaultSelectionRef.current
+    ) {
+      sendMessage({ type: "select_vault", vaultId: vault.id });
+      hasSentVaultSelectionRef.current = true;
+    }
+  }, [connectionStatus, vault, sendMessage]);
 
   // Detect touch-only devices (no hover capability)
   // On touch devices, Enter adds newlines; send button is the only way to submit
@@ -125,19 +147,25 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
     }
   }, [lastMessage, isSubmitting]);
 
-  // Handle meeting_started response (local UI updates only; session context
-  // is updated by useServerMessageHandler in MainContent)
+  // Handle meeting_started response
   useEffect(() => {
     if (lastMessage?.type === "meeting_started" && isStartingMeeting) {
       setIsStartingMeeting(false);
       setShowMeetingPrompt(false);
       setMeetingTitle("");
+      // Update session context with meeting state (this connection receives the response)
+      setMeetingState({
+        isActive: true,
+        title: lastMessage.title,
+        filePath: lastMessage.filePath,
+        startedAt: lastMessage.startedAt,
+      });
       showToast("success", `Meeting started: ${lastMessage.title}`);
       requestAnimationFrame(() => {
         textareaRef.current?.focus();
       });
     }
-  }, [lastMessage, isStartingMeeting]);
+  }, [lastMessage, isStartingMeeting, setMeetingState]);
 
   // Handle meeting_stopped response
   useEffect(() => {

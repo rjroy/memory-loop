@@ -5,7 +5,7 @@
  * Displays a mini file tree for destination selection.
  */
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useSession } from "../contexts/SessionContext.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import type { FileEntry } from "@memory-loop/shared";
@@ -48,9 +48,31 @@ export function MoveDialog({
   onConfirm,
   onCancel,
 }: MoveDialogProps): React.ReactNode {
-  const { browser } = useSession();
-  const { sendMessage } = useWebSocket();
+  const { browser, vault } = useSession();
+  const hasSentVaultSelectionRef = useRef(false);
+
+  // Reset vault selection tracking on reconnect
+  const handleReconnect = useCallback(() => {
+    hasSentVaultSelectionRef.current = false;
+  }, []);
+
+  const { sendMessage, connectionStatus } = useWebSocket({
+    onReconnect: handleReconnect,
+  });
   const { directoryCache } = browser;
+
+  // Send vault selection when WebSocket connects.
+  // Each WebSocket connection has its own server-side state.
+  useEffect(() => {
+    if (
+      connectionStatus === "connected" &&
+      vault &&
+      !hasSentVaultSelectionRef.current
+    ) {
+      sendMessage({ type: "select_vault", vaultId: vault.id });
+      hasSentVaultSelectionRef.current = true;
+    }
+  }, [connectionStatus, vault, sendMessage]);
 
   // Track the selected destination directory
   const [selectedDir, setSelectedDir] = useState<string>("");

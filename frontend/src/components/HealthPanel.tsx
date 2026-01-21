@@ -5,7 +5,7 @@
  * Appears at the bottom of the Home/Ground view when issues exist.
  */
 
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { useSession } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import type { HealthIssue } from "@memory-loop/shared";
@@ -54,8 +54,30 @@ function getCategoryLabel(category: HealthIssue["category"]): string {
  * - Touch-friendly with 44px tap targets
  */
 export function HealthPanel(): React.ReactNode {
-  const { health, toggleHealthExpanded, dismissHealthIssue } = useSession();
-  const { sendMessage } = useWebSocket();
+  const { health, vault, toggleHealthExpanded, dismissHealthIssue } = useSession();
+  const hasSentVaultSelectionRef = useRef(false);
+
+  // Reset vault selection tracking on reconnect
+  const handleReconnect = useCallback(() => {
+    hasSentVaultSelectionRef.current = false;
+  }, []);
+
+  const { sendMessage, connectionStatus } = useWebSocket({
+    onReconnect: handleReconnect,
+  });
+
+  // Send vault selection when WebSocket connects.
+  // Each WebSocket connection has its own server-side state.
+  useEffect(() => {
+    if (
+      connectionStatus === "connected" &&
+      vault &&
+      !hasSentVaultSelectionRef.current
+    ) {
+      sendMessage({ type: "select_vault", vaultId: vault.id });
+      hasSentVaultSelectionRef.current = true;
+    }
+  }, [connectionStatus, vault, sendMessage]);
 
   const handleToggle = useCallback(() => {
     toggleHealthExpanded();

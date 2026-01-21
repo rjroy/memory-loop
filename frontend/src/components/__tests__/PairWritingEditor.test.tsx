@@ -4,7 +4,7 @@
  * Tests cover:
  * - Initial rendering with props
  * - Content state management
- * - Context menu interactions (right-click, long-press)
+ * - Context menu interactions (right-click, openMenuTrigger prop)
  * - Quick Action flow (send message, processing state, response handling)
  * - Advisory Action delegation
  * - Error handling
@@ -256,6 +256,40 @@ describe("PairWritingEditor - context menu", () => {
     textarea.dispatchEvent(event);
 
     expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+
+  it("opens context menu when openMenuTrigger prop increments (for toolbar Actions button)", () => {
+    const props = createDefaultProps();
+    const { rerender } = render(<PairWritingEditor {...props} openMenuTrigger={0} />);
+
+    const textarea = getTextarea();
+
+    // Select some text first
+    simulateTextSelection(textarea, 0, 15);
+
+    // Menu should not be open yet
+    expect(screen.queryByTestId("context-menu")).toBeNull();
+
+    // Increment the trigger to open menu
+    rerender(<PairWritingEditor {...props} openMenuTrigger={1} />);
+
+    expect(screen.getByTestId("context-menu")).toBeDefined();
+  });
+
+  it("does not open context menu via trigger when no selection exists", () => {
+    const props = createDefaultProps();
+    const { rerender } = render(<PairWritingEditor {...props} openMenuTrigger={0} />);
+
+    const textarea = getTextarea();
+
+    // No selection (cursor only)
+    simulateTextSelection(textarea, 5, 5);
+
+    // Increment the trigger
+    rerender(<PairWritingEditor {...props} openMenuTrigger={1} />);
+
+    // Menu should not open without selection
+    expect(screen.queryByTestId("context-menu")).toBeNull();
   });
 });
 

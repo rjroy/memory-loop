@@ -90,6 +90,7 @@ export function PairWritingMode({
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [currentSelection, setCurrentSelection] = useState<SelectionContext | null>(null);
+  const [openMenuTrigger, setOpenMenuTrigger] = useState(0);
 
   // Track previous initialContent to detect external changes (not local edits)
   const prevInitialContent = useRef(initialContent);
@@ -114,6 +115,11 @@ export function PairWritingMode({
   // Handle selection changes from editor
   const handleSelectionChange = useCallback((selection: SelectionContext | null) => {
     setCurrentSelection(selection);
+  }, []);
+
+  // Handle Actions button click (opens context menu in editor)
+  const handleShowActions = useCallback(() => {
+    setOpenMenuTrigger((prev) => prev + 1);
   }, []);
 
   // Handle snapshot button (REQ-F-23)
@@ -236,6 +242,7 @@ export function PairWritingMode({
         onSnapshot={handleSnapshot}
         onSave={handleSave}
         onExit={handleExitClick}
+        onShowActions={handleShowActions}
         filePath={filePath}
         snapshotContent={state.snapshot ?? undefined}
       />
@@ -256,6 +263,7 @@ export function PairWritingMode({
             onSelectionChange={handleSelectionChange}
             hasSnapshot={state.snapshot !== null}
             snapshotContent={state.snapshot ?? undefined}
+            openMenuTrigger={openMenuTrigger}
           />
         </div>
 

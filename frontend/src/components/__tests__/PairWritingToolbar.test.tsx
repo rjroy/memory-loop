@@ -239,6 +239,46 @@ describe("PairWritingToolbar", () => {
     });
   });
 
+  describe("actions button (iPad selection alternative)", () => {
+    it("renders Actions button when onShowActions is provided", () => {
+      const onShowActions = mock(() => {});
+      render(<PairWritingToolbar {...defaultProps} onShowActions={onShowActions} />);
+
+      expect(screen.getByTitle(/show actions/i)).toBeDefined();
+    });
+
+    it("does not render Actions button when onShowActions is not provided", () => {
+      render(<PairWritingToolbar {...defaultProps} />);
+
+      expect(screen.queryByTitle(/show actions/i)).toBeNull();
+    });
+
+    it("calls onShowActions when clicked with selection", () => {
+      const onShowActions = mock(() => {});
+      render(<PairWritingToolbar {...defaultProps} onShowActions={onShowActions} hasSelection={true} />);
+
+      fireEvent.click(screen.getByTitle(/show actions/i));
+
+      expect(onShowActions).toHaveBeenCalledTimes(1);
+    });
+
+    it("is disabled when no selection", () => {
+      const onShowActions = mock(() => {});
+      render(<PairWritingToolbar {...defaultProps} onShowActions={onShowActions} hasSelection={false} />);
+
+      const actionsBtn = screen.getByTitle(/select text to enable/i);
+      expect(actionsBtn.hasAttribute("disabled")).toBe(true);
+    });
+
+    it("is enabled when selection exists", () => {
+      const onShowActions = mock(() => {});
+      render(<PairWritingToolbar {...defaultProps} onShowActions={onShowActions} hasSelection={true} />);
+
+      const actionsBtn = screen.getByTitle(/show actions/i);
+      expect(actionsBtn.hasAttribute("disabled")).toBe(false);
+    });
+  });
+
   describe("accessibility", () => {
     it("has toolbar role", () => {
       render(<PairWritingToolbar {...defaultProps} />);

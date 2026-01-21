@@ -21,7 +21,6 @@ import {
   type QuickActionType,
   type AdvisoryActionType,
 } from "./EditorContextMenu";
-import { useLongPress } from "../hooks/useLongPress";
 import {
   useTextSelection,
   type SelectionContext,
@@ -49,6 +48,8 @@ export interface PairWritingEditorProps {
   snapshotContent?: string;
   /** Dependency injection for testing */
   ContextMenuComponent?: typeof EditorContextMenu;
+  /** Increment this to trigger opening the context menu (for toolbar Actions button) */
+  openMenuTrigger?: number;
 }
 
 export function PairWritingEditor({
@@ -63,6 +64,7 @@ export function PairWritingEditor({
   onSelectionChange,
   hasSnapshot = false,
   ContextMenuComponent = EditorContextMenu,
+  openMenuTrigger = 0,
 }: PairWritingEditorProps): React.ReactNode {
   const [content, setContent] = useState(initialContent);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -78,6 +80,22 @@ export function PairWritingEditor({
   useEffect(() => {
     onSelectionChange?.(selection);
   }, [selection, onSelectionChange]);
+
+  // Track previous trigger value to detect changes
+  const prevTriggerRef = useRef(openMenuTrigger);
+
+  // Open context menu when triggered externally (from toolbar Actions button)
+  useEffect(() => {
+    if (openMenuTrigger > 0 && openMenuTrigger !== prevTriggerRef.current) {
+      prevTriggerRef.current = openMenuTrigger;
+      if (selectionRef.current && textareaRef.current) {
+        // Position menu near top-left of textarea (accessible on mobile)
+        const rect = textareaRef.current.getBoundingClientRect();
+        setMenuPosition({ x: rect.left + 16, y: rect.top + 16 });
+        setMenuOpen(true);
+      }
+    }
+  }, [openMenuTrigger]);
 
   // Refs for stable callback access to current values
   const selectionRef = useRef<SelectionContext | null>(null);
@@ -142,17 +160,6 @@ export function PairWritingEditor({
     [openContextMenu]
   );
 
-  // Mobile: long-press opens context menu
-  const handleLongPress = useCallback(
-    (e: React.TouchEvent) => {
-      if (!selectionRef.current) return;
-      openContextMenu(getMenuPositionFromEvent(e));
-    },
-    [openContextMenu]
-  );
-
-  const longPressHandlers = useLongPress(handleLongPress, { duration: 500 });
-
   const handleQuickAction = useCallback(
     (action: QuickActionType) => {
       const currentSelection = selectionRef.current;
@@ -205,7 +212,6 @@ export function PairWritingEditor({
         value={content}
         onChange={handleChange}
         onContextMenu={handleContextMenu}
-        {...longPressHandlers}
         spellCheck={false}
         disabled={isProcessingQuickAction}
         aria-label="Document editor"

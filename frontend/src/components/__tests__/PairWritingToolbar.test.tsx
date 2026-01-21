@@ -85,6 +85,89 @@ describe("PairWritingToolbar", () => {
       rerender(<PairWritingToolbar {...defaultProps} hasSnapshot={true} />);
       expect(screen.getByTitle("Update snapshot (replaces previous)")).toBeDefined();
     });
+
+    it("shows preview on hover when snapshot content exists", () => {
+      render(
+        <PairWritingToolbar
+          {...defaultProps}
+          hasSnapshot={true}
+          snapshotContent="# Test Snapshot\n\nThis is the snapshot content."
+        />
+      );
+
+      // Preview should not be visible initially
+      expect(screen.queryByRole("tooltip")).toBeNull();
+
+      // Hover over the snapshot wrapper
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      expect(wrapper).not.toBeNull();
+      fireEvent.mouseEnter(wrapper!);
+
+      // Preview should now be visible
+      const preview = screen.getByRole("tooltip");
+      expect(preview).toBeDefined();
+      expect(preview.textContent).toContain("Test Snapshot");
+    });
+
+    it("hides preview on mouse leave", () => {
+      render(
+        <PairWritingToolbar
+          {...defaultProps}
+          hasSnapshot={true}
+          snapshotContent="# Test Snapshot"
+        />
+      );
+
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      fireEvent.mouseEnter(wrapper!);
+      expect(screen.getByRole("tooltip")).toBeDefined();
+
+      fireEvent.mouseLeave(wrapper!);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("truncates long snapshot content with ellipsis", () => {
+      // Generate content longer than 500 chars or 15 lines
+      const longContent = Array(20).fill("This is a line of text.").join("\n");
+      render(
+        <PairWritingToolbar
+          {...defaultProps}
+          hasSnapshot={true}
+          snapshotContent={longContent}
+        />
+      );
+
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      fireEvent.mouseEnter(wrapper!);
+
+      const ellipsis = document.querySelector(".pair-writing-toolbar__snapshot-preview-ellipsis");
+      expect(ellipsis).not.toBeNull();
+      expect(ellipsis?.textContent).toBe("...");
+    });
+
+    it("does not show preview when hasSnapshot is false", () => {
+      render(
+        <PairWritingToolbar
+          {...defaultProps}
+          hasSnapshot={false}
+          snapshotContent="# Some content"
+        />
+      );
+
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      fireEvent.mouseEnter(wrapper!);
+
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("does not show preview when snapshotContent is undefined", () => {
+      render(<PairWritingToolbar {...defaultProps} hasSnapshot={true} />);
+
+      const wrapper = document.querySelector(".pair-writing-toolbar__snapshot-wrapper");
+      fireEvent.mouseEnter(wrapper!);
+
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
   });
 
   describe("save button (REQ-F-29)", () => {

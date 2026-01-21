@@ -227,6 +227,7 @@ export function PairWritingMode({
         onSave={handleSave}
         onExit={handleExitClick}
         filePath={filePath}
+        snapshotContent={state.snapshot ?? undefined}
       />
 
       {/* Split-screen content (REQ-F-11, TD-6) */}

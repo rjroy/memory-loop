@@ -25,6 +25,8 @@ export interface PairWritingToolbarProps {
   onSave: () => void;
   /** Called when user clicks Exit button (REQ-F-14) */
   onExit: () => void;
+  /** Called when user clicks Actions button (opens context menu for selected text) */
+  onShowActions?: () => void;
   /** Current file path being edited (displayed in toolbar) */
   filePath?: string;
   /** The actual snapshot text content (for hover preview) */
@@ -72,6 +74,7 @@ export function PairWritingToolbar({
   onSnapshot,
   onSave,
   onExit,
+  onShowActions,
   filePath,
   snapshotContent,
 }: PairWritingToolbarProps): React.ReactNode {
@@ -97,6 +100,33 @@ export function PairWritingToolbar({
 
       {/* Right section: action buttons */}
       <div className="pair-writing-toolbar__actions">
+        {/* Actions button for mobile/iPad (opens context menu without long-press) */}
+        {onShowActions && (
+          <button
+            type="button"
+            className="pair-writing-toolbar__btn pair-writing-toolbar__btn--actions"
+            onClick={onShowActions}
+            disabled={!hasSelection}
+            title={hasSelection ? "Show actions for selected text" : "Select text to enable actions"}
+          >
+            <svg
+              className="pair-writing-toolbar__icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="1" />
+              <circle cx="12" cy="5" r="1" />
+              <circle cx="12" cy="19" r="1" />
+            </svg>
+            <span className="pair-writing-toolbar__label">Actions</span>
+          </button>
+        )}
+
         {/* Snapshot button with hover preview (REQ-F-23) */}
         <div
           className="pair-writing-toolbar__snapshot-wrapper"

@@ -117,6 +117,8 @@ export function HomeView(): React.ReactNode {
     removeDiscussion,
   } = useSession();
 
+  console.log(`[HomeView] Render - vault:`, vault?.id, `vault object:`, vault);
+
   const hasSentVaultSelectionRef = useRef(false);
 
   // REST API hooks (migrated from WebSocket)
@@ -169,7 +171,9 @@ export function HomeView(): React.ReactNode {
 
   // Load data via REST API when vault.id changes
   useEffect(() => {
+    console.log(`[HomeView] Effect triggered - vault?.id:`, vault?.id);
     if (!vault?.id) {
+      console.log(`[HomeView] No vault.id, skipping data load`);
       return;
     }
 

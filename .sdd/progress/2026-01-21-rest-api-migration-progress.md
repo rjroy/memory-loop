@@ -12,12 +12,16 @@ authored_by:
 
 # REST API Migration - Implementation Progress
 
-**Last Updated**: 2026-01-22 | **Status**: 72% complete (13 of 18 tasks)
+**Last Updated**: 2026-01-22 | **Status**: 83% complete (15 of 18 tasks)
 
 ## Current Session
-**Date**: 2026-01-22 | **Working On**: Phase 2 Complete | **Blockers**: None
+**Date**: 2026-01-22 | **Working On**: Phase 3 Complete | **Blockers**: None
 
 ## Completed Today
+- TASK-014: File Browser Hooks ✅ (commit: d1910a3, 42 tests)
+- TASK-015: Domain Hooks (Capture, Home, Search) ✅ (commit: d9ed013, 61 tests)
+
+## Previously Completed (Earlier Today)
 - TASK-004: File Browser REST Routes ✅ (commit: a6e0778, 51 tests)
 - TASK-005: Capture REST Routes ✅ (commit: 2a9446e, 26 tests)
 - TASK-006: Home Dashboard REST Routes ✅ (commit: 37f9cb7, 25 tests)
@@ -64,10 +68,10 @@ authored_by:
 - [x] TASK-011: Config REST Routes (25 tests)
 - [x] TASK-012: Memory/Sessions REST Routes (20 tests)
 
-### Phase 3 - Frontend Migration (13 pts) - PENDING
+### Phase 3 - Frontend Migration (13 pts) - COMPLETE
 
-- [ ] TASK-014: File Browser Hooks
-- [ ] TASK-015: Domain Hooks (Capture, Home, Search)
+- [x] TASK-014: File Browser Hooks (42 tests)
+- [x] TASK-015: Domain Hooks (Capture, Home, Search) (61 tests)
 
 ### Phase 4 - Cleanup (6 pts) - PENDING
 
@@ -94,11 +98,15 @@ authored_by:
 | Meeting REST Routes | 20 |
 | Config REST Routes | 25 |
 | Memory/Sessions REST Routes | 20 |
-| **Total** | **357** |
+| File Browser Hooks | 42 |
+| Domain Hooks (Capture, Home, Search) | 61 |
+| **Total** | **460** |
 
 ---
 
 ## Notes for Next Session
-- Phase 1 and Phase 2 complete (13 of 18 tasks)
-- Ready for Phase 3 Frontend Migration (TASK-014, TASK-015)
-- Then Phase 4 Cleanup (TASK-016, TASK-017, TASK-018)
+- Phase 1, Phase 2, and Phase 3 complete (15 of 18 tasks)
+- Ready for Phase 4 Cleanup:
+  - TASK-016: Remove Migrated WebSocket Handlers
+  - TASK-017: Protocol Schema Cleanup
+  - TASK-018: End-to-End Integration Tests

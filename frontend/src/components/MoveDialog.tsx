@@ -5,9 +5,9 @@
  * Displays a mini file tree for destination selection.
  */
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useSession } from "../contexts/SessionContext.js";
-import { useWebSocket } from "../hooks/useWebSocket.js";
+import { useFileBrowser } from "../hooks/useFileBrowser.js";
 import type { FileEntry } from "@memory-loop/shared";
 import "./MoveDialog.css";
 
@@ -48,31 +48,11 @@ export function MoveDialog({
   onConfirm,
   onCancel,
 }: MoveDialogProps): React.ReactNode {
-  const { browser, vault } = useSession();
-  const hasSentVaultSelectionRef = useRef(false);
-
-  // Reset vault selection tracking on reconnect
-  const handleReconnect = useCallback(() => {
-    hasSentVaultSelectionRef.current = false;
-  }, []);
-
-  const { sendMessage, connectionStatus } = useWebSocket({
-    onReconnect: handleReconnect,
-  });
+  const { browser, vault, cacheDirectory } = useSession();
   const { directoryCache } = browser;
 
-  // Send vault selection when WebSocket connects.
-  // Each WebSocket connection has its own server-side state.
-  useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      !hasSentVaultSelectionRef.current
-    ) {
-      sendMessage({ type: "select_vault", vaultId: vault.id });
-      hasSentVaultSelectionRef.current = true;
-    }
-  }, [connectionStatus, vault, sendMessage]);
+  // REST API hook for directory listing
+  const { listDirectory: listDirectoryApi } = useFileBrowser(vault?.id);
 
   // Track the selected destination directory
   const [selectedDir, setSelectedDir] = useState<string>("");
@@ -121,21 +101,32 @@ export function MoveDialog({
     }
   }, [isOpen, sourceParent]);
 
-  // Load a directory's contents
+  // Load a directory's contents via REST API
   const loadDirectory = useCallback(
-    (path: string) => {
+    async (path: string) => {
       if (!directoryCache.get(path) && !loadingDirs.has(path)) {
         setLoadingDirs((prev) => new Set([...prev, path]));
-        sendMessage({ type: "list_directory", path });
+        try {
+          const result = await listDirectoryApi(path);
+          cacheDirectory(path, result.entries);
+        } catch {
+          // Silently handle errors - directory just won't expand
+        } finally {
+          setLoadingDirs((prev) => {
+            const next = new Set(prev);
+            next.delete(path);
+            return next;
+          });
+        }
       }
     },
-    [directoryCache, loadingDirs, sendMessage]
+    [directoryCache, loadingDirs, listDirectoryApi, cacheDirectory]
   );
 
   // Load root directory on open
   useEffect(() => {
     if (isOpen) {
-      loadDirectory("");
+      void loadDirectory("");
     }
   }, [isOpen, loadDirectory]);
 
@@ -148,7 +139,8 @@ export function MoveDialog({
           next.delete(path);
         } else {
           next.add(path);
-          loadDirectory(path);
+          // Fire-and-forget async load
+          void loadDirectory(path);
         }
         return next;
       });

@@ -22,6 +22,8 @@ import { isPathWithinVault } from "./file-browser";
 import { getSessionForVault } from "./session-manager";
 import { uploadFile } from "./file-upload";
 import { serverLog as log } from "./logger";
+import { vaultRoutes } from "./routes";
+import { restErrorHandler } from "./middleware/error-handler";
 
 /**
  * Allowed extensions for vault asset serving (images, videos, PDFs).
@@ -199,6 +201,10 @@ export const createHttpRedirectServer = (httpsPort: number) => {
 export const createApp = () => {
   const app = new Hono();
 
+  // Global error handler for REST API routes
+  // Maps domain exceptions to HTTP status codes with JSON error bodies
+  app.onError(restErrorHandler);
+
   // CORS middleware for development
   // Note: CORS is applied before non-WebSocket routes only
   // WebSocket routes handle upgrades before CORS can modify headers
@@ -371,6 +377,11 @@ export const createApp = () => {
 
     return c.json({ success: true, path: result.path });
   });
+
+  // Vault-scoped REST API routes
+  // All routes at /api/vaults/:vaultId/* go through vault resolution middleware
+  // CORS is already applied to /api/* above, so these routes inherit it
+  app.route("/api/vaults/:vaultId", vaultRoutes);
 
   // WebSocket upgrade handler at /ws
   // Each connection gets its own handler instance for state isolation

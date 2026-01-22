@@ -2,16 +2,20 @@
  * Note Capture Component
  *
  * Multiline textarea for capturing notes with auto-save to localStorage.
- * Submits via WebSocket and shows toast feedback.
+ * Submits via REST API and shows toast feedback.
  *
  * Supports two modes:
  * - Normal: Captures go to daily note
  * - Meeting: Captures go to meeting-specific file
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useWebSocket } from "../hooks/useWebSocket";
+/* eslint-disable @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises */
+// REST API calls in async handlers
+
+import React, { useState, useEffect, useRef } from "react";
 import { useSession } from "../contexts/SessionContext";
+import { useCapture } from "../hooks/useCapture";
+import { useMeetings } from "../hooks/useMeetings";
 import "./NoteCapture.css";
 
 const STORAGE_KEY = "memory-loop-draft";
@@ -60,32 +64,12 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const meetingTitleRef = useRef<HTMLInputElement>(null);
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasSentVaultSelectionRef = useRef(false);
 
-  const { vault, meeting, setMeetingState, clearMeeting, setDiscussionPrefill, setMode } = useSession();
+  const { vault, meeting, setMeetingState, clearMeeting, setDiscussionPrefill, setMode, setRecentNotes, setRecentDiscussions } = useSession();
 
-  // Reset vault selection tracking on reconnect so we re-send select_vault
-  const handleReconnect = useCallback(() => {
-    hasSentVaultSelectionRef.current = false;
-  }, []);
-
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
-    onReconnect: handleReconnect,
-  });
-
-  // Send vault selection when WebSocket connects (initial or reconnect).
-  // Each WebSocket connection has its own server-side state, so we must
-  // send select_vault on this connection before sending capture_note.
-  useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      !hasSentVaultSelectionRef.current
-    ) {
-      sendMessage({ type: "select_vault", vaultId: vault.id });
-      hasSentVaultSelectionRef.current = true;
-    }
-  }, [connectionStatus, vault, sendMessage]);
+  // REST API hooks (migrated from WebSocket)
+  const { captureNote, getRecentActivity } = useCapture(vault?.id);
+  const { startMeeting: startMeetingApi, stopMeeting: stopMeetingApi } = useMeetings(vault?.id);
 
   // Detect touch-only devices (no hover capability)
   // On touch devices, Enter adds newlines; send button is the only way to submit
@@ -115,89 +99,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
     }
   }, [content]);
 
-  // Handle note_captured response
-  useEffect(() => {
-    if (lastMessage?.type === "note_captured" && isSubmitting) {
-      // Success - clear everything
-      setContent("");
-      localStorage.removeItem(STORAGE_KEY);
-      setIsSubmitting(false);
-      retryCountRef.current = 0;
-
-      // Context-aware success message
-      const message = meeting.isActive
-        ? "Note added to meeting"
-        : `Note saved at ${lastMessage.timestamp}`;
-      showToast("success", message);
-      onCaptured?.();
-      // Delay focus to ensure it happens after toast renders (toast can steal focus)
-      requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-      });
-
-      // Refresh recent activity for HomeView
-      sendMessage({ type: "get_recent_activity" });
-    }
-  }, [lastMessage, isSubmitting, onCaptured, sendMessage, meeting.isActive]);
-
-  // Handle error response
-  useEffect(() => {
-    if (lastMessage?.type === "error" && isSubmitting) {
-      handleError(lastMessage.message);
-    }
-  }, [lastMessage, isSubmitting]);
-
-  // Handle meeting_started response
-  useEffect(() => {
-    if (lastMessage?.type === "meeting_started" && isStartingMeeting) {
-      setIsStartingMeeting(false);
-      setShowMeetingPrompt(false);
-      setMeetingTitle("");
-      // Update session context with meeting state (this connection receives the response)
-      setMeetingState({
-        isActive: true,
-        title: lastMessage.title,
-        filePath: lastMessage.filePath,
-        startedAt: lastMessage.startedAt,
-      });
-      showToast("success", `Meeting started: ${lastMessage.title}`);
-      requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-      });
-    }
-  }, [lastMessage, isStartingMeeting, setMeetingState]);
-
-  // Handle meeting_stopped response
-  useEffect(() => {
-    if (lastMessage?.type === "meeting_stopped" && isStoppingMeeting) {
-      setIsStoppingMeeting(false);
-      // Clear meeting state in session context
-      clearMeeting();
-      showToast(
-        "success",
-        `Meeting ended: ${lastMessage.entryCount} notes captured`
-      );
-      // Transition to Discussion tab with expand-note command
-      setDiscussionPrefill(`/expand-note ${lastMessage.filePath}`);
-      setMode("discussion");
-    }
-  }, [lastMessage, isStoppingMeeting, clearMeeting, setDiscussionPrefill, setMode]);
-
-  // Handle meeting start error
-  useEffect(() => {
-    if (lastMessage?.type === "error" && isStartingMeeting) {
-      setIsStartingMeeting(false);
-      showToast("error", lastMessage.message);
-    }
-  }, [lastMessage, isStartingMeeting]);
-
-  // Handle meeting stop error
-  useEffect(() => {
-    if (lastMessage?.type === "error" && isStoppingMeeting) {
-      setIsStoppingMeeting(false);
-      showToast("error", lastMessage.message);
-    }
-  }, [lastMessage, isStoppingMeeting]);
+  // Note: WebSocket message handlers removed - using REST API directly in handlers
 
   // Focus meeting title input when prompt opens
   useEffect(() => {
@@ -250,24 +152,48 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
     }
   }
 
-  function submitNote() {
+  // Submit note using REST API
+  async function submitNote() {
     if (!content.trim() || !vault) return;
 
-    sendMessage({
-      type: "capture_note",
-      text: content.trim(),
-    });
+    try {
+      const result = await captureNote(content.trim());
+      if (result) {
+        // Success - clear everything
+        setContent("");
+        localStorage.removeItem(STORAGE_KEY);
+        setIsSubmitting(false);
+        retryCountRef.current = 0;
+
+        // Context-aware success message
+        const message = meeting.isActive
+          ? "Note added to meeting"
+          : `Note saved at ${result.timestamp}`;
+        showToast("success", message);
+        onCaptured?.();
+        // Delay focus to ensure it happens after toast renders
+        requestAnimationFrame(() => {
+          textareaRef.current?.focus();
+        });
+
+        // Refresh recent activity for HomeView
+        const activity = await getRecentActivity();
+        if (activity) {
+          setRecentNotes(activity.captures);
+          setRecentDiscussions(activity.discussions);
+        }
+      } else {
+        handleError("Failed to capture note");
+      }
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : "Failed to capture note");
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
     if (!content.trim()) return;
-
-    if (connectionStatus !== "connected") {
-      showToast("error", "Not connected. Please wait...");
-      return;
-    }
 
     if (!vault) {
       showToast("error", "No vault selected");
@@ -276,7 +202,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
 
     setIsSubmitting(true);
     retryCountRef.current = 0;
-    submitNote();
+    void submitNote();
   }
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -315,35 +241,69 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
     }
   }
 
-  function handleConfirmStartMeeting() {
+  // Start meeting using REST API
+  async function handleConfirmStartMeeting() {
     if (!meetingTitle.trim()) {
       showToast("error", "Please enter a meeting title");
       return;
     }
 
-    if (connectionStatus !== "connected") {
-      showToast("error", "Not connected. Please wait...");
-      return;
-    }
-
     setIsStartingMeeting(true);
-    sendMessage({
-      type: "start_meeting",
-      title: meetingTitle.trim(),
-    });
-  }
 
-  function handleStopMeeting() {
-    if (connectionStatus !== "connected") {
-      showToast("error", "Not connected. Please wait...");
-      return;
+    try {
+      const result = await startMeetingApi(meetingTitle.trim());
+      if (result) {
+        setShowMeetingPrompt(false);
+        setMeetingTitle("");
+        // Update session context with meeting state
+        setMeetingState({
+          isActive: true,
+          title: result.title,
+          filePath: result.filePath,
+          startedAt: result.startedAt,
+        });
+        showToast("success", `Meeting started: ${result.title}`);
+        requestAnimationFrame(() => {
+          textareaRef.current?.focus();
+        });
+      } else {
+        showToast("error", "Failed to start meeting");
+      }
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Failed to start meeting");
+    } finally {
+      setIsStartingMeeting(false);
     }
-
-    setIsStoppingMeeting(true);
-    sendMessage({ type: "stop_meeting" });
   }
 
-  const isDisabled = isSubmitting || connectionStatus !== "connected" || !vault;
+  // Stop meeting using REST API
+  async function handleStopMeeting() {
+    setIsStoppingMeeting(true);
+
+    try {
+      const result = await stopMeetingApi();
+      if (result) {
+        // Clear meeting state in session context
+        clearMeeting();
+        showToast(
+          "success",
+          `Meeting ended: ${result.entryCount} notes captured`
+        );
+        // Transition to Discussion tab with expand-note command
+        setDiscussionPrefill(`/expand-note ${result.filePath}`);
+        setMode("discussion");
+      } else {
+        showToast("error", "Failed to stop meeting");
+      }
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Failed to stop meeting");
+    } finally {
+      setIsStoppingMeeting(false);
+    }
+  }
+
+  // REST API doesn't require WebSocket connection
+  const isDisabled = isSubmitting || !vault;
 
   // Determine placeholder text based on meeting state
   const placeholderText = meeting.isActive

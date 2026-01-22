@@ -5,18 +5,18 @@
  * Displays session context, goals, inspiration, and recent activity.
  */
 
-import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
+// REST API calls in useEffect use fire-and-forget patterns with explicit catch handlers
+
+import React, { useEffect, useCallback, useState, useMemo } from "react";
 import { useSession } from "../contexts/SessionContext";
-import { useWebSocket } from "../hooks/useWebSocket";
+import { useCapture } from "../hooks/useCapture";
+import { useHome } from "../hooks/useHome";
+import { useSessions } from "../hooks/useSessions";
 import { RecentActivity } from "./RecentActivity";
 import { GoalsCard } from "./GoalsCard";
 import { InspirationCard } from "./InspirationCard";
 import { HealthPanel } from "./HealthPanel";
-import type {
-  ClientMessage,
-  InspirationItem,
-  ServerMessage,
-} from "@memory-loop/shared";
+import type { InspirationItem } from "@memory-loop/shared";
 import "./HomeView.css";
 
 /**
@@ -116,16 +116,12 @@ export function HomeView(): React.ReactNode {
     removeDiscussion,
   } = useSession();
 
-  const hasSentVaultSelectionRef = useRef(false);
-  const hasRequestedRecentActivityRef = useRef(false);
-  const hasRequestedGoalsRef = useRef(false);
-  const hasRequestedInspirationRef = useRef(false);
+  console.log(`[HomeView] Render - vault:`, vault?.id, `vault object:`, vault);
 
-  // Keep vault ref in sync for use in callbacks
-  const vaultRef = useRef(vault);
-  useEffect(() => {
-    vaultRef.current = vault;
-  }, [vault]);
+  // REST API hooks (migrated from WebSocket)
+  const { getRecentActivity } = useCapture(vault?.id);
+  const { getGoals, getInspiration } = useHome(vault?.id);
+  const { deleteSession } = useSessions(vault?.id);
 
   // Inspiration state
   const [inspirationLoading, setInspirationLoading] = useState(true);
@@ -134,95 +130,62 @@ export function HomeView(): React.ReactNode {
   const [inspirationQuote, setInspirationQuote] =
     useState<InspirationItem | null>(null);
 
-  // Ref for sendMessage to use in callbacks without stale closure
-  const sendMessageRef = useRef<((msg: ClientMessage) => void) | null>(null);
-
-  // Handle all incoming messages in a single callback (prevents race conditions)
-  const handleMessage = useCallback(
-    (message: ServerMessage) => {
-      switch (message.type) {
-        case "session_ready":
-          // Request recent activity, goals, and inspiration after server confirms vault selection
-          // Note: Goals are only requested if vault has goalsPath set during discovery.
-          // If user creates goals.md after vault selection, they must reselect the vault.
-          if (!hasRequestedRecentActivityRef.current) {
-            sendMessageRef.current?.({ type: "get_recent_activity" });
-            hasRequestedRecentActivityRef.current = true;
-          }
-          if (!hasRequestedGoalsRef.current && vaultRef.current?.goalsPath) {
-            sendMessageRef.current?.({ type: "get_goals" });
-            hasRequestedGoalsRef.current = true;
-          }
-          if (!hasRequestedInspirationRef.current) {
-            sendMessageRef.current?.({ type: "get_inspiration" });
-            hasRequestedInspirationRef.current = true;
-          }
-          break;
-
-        case "recent_activity":
-          setRecentNotes(message.captures);
-          setRecentDiscussions(message.discussions);
-          break;
-
-        case "goals":
-          setGoals(message.content);
-          break;
-
-        case "inspiration":
-          setInspirationContextual(message.contextual);
-          setInspirationQuote(message.quote);
-          setInspirationLoading(false);
-          break;
-
-        case "session_deleted":
-          removeDiscussion(message.sessionId);
-          break;
-      }
-    },
-    [setRecentNotes, setRecentDiscussions, setGoals, removeDiscussion]
-  );
-
-  // Callback to re-send vault selection on WebSocket reconnect
-  const handleReconnect = useCallback(() => {
-    hasSentVaultSelectionRef.current = false;
-    hasRequestedRecentActivityRef.current = false;
-    hasRequestedGoalsRef.current = false;
-    hasRequestedInspirationRef.current = false;
-    setInspirationLoading(true);
-  }, []);
-
-  const { sendMessage, connectionStatus } = useWebSocket({
-    onReconnect: handleReconnect,
-    onMessage: handleMessage,
-  });
-
-  // Keep sendMessage ref in sync
-  useEffect(() => {
-    sendMessageRef.current = sendMessage;
-  }, [sendMessage]);
-
-  // Callback to delete a session
+  // Callback to delete a session (now uses REST API)
   const handleDeleteSession = useCallback(
     (sessionId: string) => {
-      sendMessage({ type: "delete_session", sessionId });
+      void deleteSession(sessionId).then((success) => {
+        if (success) {
+          removeDiscussion(sessionId);
+        }
+      });
     },
-    [sendMessage]
+    [deleteSession, removeDiscussion]
   );
 
-  // Send vault selection when WebSocket connects (initial or reconnect)
+  // Load data via REST API when vault.id changes
   useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      !hasSentVaultSelectionRef.current
-    ) {
-      sendMessage({
-        type: "select_vault",
-        vaultId: vault.id,
-      });
-      hasSentVaultSelectionRef.current = true;
+    console.log(`[HomeView] Effect triggered - vault?.id:`, vault?.id);
+    if (!vault?.id) {
+      console.log(`[HomeView] No vault.id, skipping data load`);
+      return;
     }
-  }, [connectionStatus, vault, sendMessage]);
+
+    const vaultId = vault.id;
+    console.log(`[HomeView] Loading data for vault: ${vaultId}`);
+
+    // Load recent activity
+    getRecentActivity().then((activity) => {
+      console.log(`[HomeView] Recent activity loaded:`, activity);
+      if (activity) {
+        setRecentNotes(activity.captures);
+        setRecentDiscussions(activity.discussions);
+      }
+    }).catch((err) => console.error(`[HomeView] Failed to load activity:`, err));
+
+    // Load goals (only if vault has goalsPath)
+    if (vault.goalsPath) {
+      getGoals().then((content) => {
+        console.log(`[HomeView] Goals loaded:`, content?.slice(0, 50));
+        if (content !== null) {
+          setGoals(content);
+        }
+      }).catch((err) => console.error(`[HomeView] Failed to load goals:`, err));
+    }
+
+    // Load inspiration
+    setInspirationLoading(true);
+    getInspiration().then((result) => {
+      console.log(`[HomeView] Inspiration loaded:`, result);
+      if (result) {
+        setInspirationContextual(result.contextual);
+        setInspirationQuote(result.quote);
+      }
+      setInspirationLoading(false);
+    }).catch((err) => {
+      console.error(`[HomeView] Failed to load inspiration:`, err);
+      setInspirationLoading(false);
+    });
+  }, [vault?.id, getRecentActivity, getGoals, getInspiration, setRecentNotes, setRecentDiscussions, setGoals]);
 
   // Determine which debrief buttons to show (single Date for consistency)
   const today = new Date();

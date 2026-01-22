@@ -522,13 +522,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     setSlashCommands,
     setLastMessageContextUsage,
     setLastMessageDuration,
-    setSearchResults,
-    setSnippets,
-    setSearchLoading,
     setHealthIssues,
-    setPinnedAssets,
-    setMeetingState,
-    clearMeeting,
   } = useSession();
 
   const messagesRef = useRef(messages);
@@ -602,54 +596,11 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           }
           break;
 
-        case "search_results":
-          if (message.mode === "files") {
-            setSearchResults(
-              "files",
-              message.results as FileSearchResult[],
-              undefined
-            );
-          } else {
-            setSearchResults(
-              "content",
-              undefined,
-              message.results as ContentSearchResult[]
-            );
-          }
-          break;
-
-        case "snippets":
-          setSnippets(message.path, message.snippets);
-          break;
-
-        case "index_progress":
-          setSearchLoading(message.stage !== "complete");
-          break;
+        // Note: search_results, snippets, index_progress, pinned_assets, meeting_started,
+        // meeting_stopped, meeting_state handlers removed - now handled by REST API hooks
 
         case "health_report":
           setHealthIssues(message.issues);
-          break;
-
-        case "pinned_assets":
-          setPinnedAssets(message.paths);
-          break;
-
-        // Meeting messages
-        case "meeting_started":
-          setMeetingState({
-            isActive: true,
-            title: message.title,
-            filePath: message.filePath,
-            startedAt: message.startedAt,
-          });
-          break;
-
-        case "meeting_stopped":
-          clearMeeting();
-          break;
-
-        case "meeting_state":
-          setMeetingState(message.state);
           break;
 
         default:
@@ -666,13 +617,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
       setSlashCommands,
       setLastMessageContextUsage,
       setLastMessageDuration,
-      setSearchResults,
-      setSnippets,
-      setSearchLoading,
       setHealthIssues,
-      setPinnedAssets,
-      setMeetingState,
-      clearMeeting,
     ]
   );
 }

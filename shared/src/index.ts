@@ -32,10 +32,10 @@ export {
   RecentDiscussionEntrySchema,
   // Tool invocation schema
   ToolInvocationSchema,
-  // Inspiration schemas
+  // Conversation message schema
+  ConversationMessageSchema,
+  // Inspiration schemas (used by REST API)
   InspirationItemSchema,
-  GetInspirationMessageSchema,
-  InspirationMessageSchema,
   // Slash command schemas
   SlashCommandSchema,
   // Search result schemas
@@ -48,32 +48,21 @@ export {
   HealthIssueSchema,
   HealthReportMessageSchema,
   DismissHealthIssueMessageSchema,
-  // Meeting schemas
+  // Meeting state schema (used by REST API)
   MeetingStateSchema,
-  StartMeetingMessageSchema,
-  StopMeetingMessageSchema,
-  GetMeetingStateMessageSchema,
-  MeetingStartedMessageSchema,
-  MeetingStoppedMessageSchema,
-  MeetingStateMessageSchema,
-  // Client -> Server schemas
+  // Client -> Server schemas (WebSocket only)
   SelectVaultMessageSchema,
-  CaptureNoteMessageSchema,
+  CreateVaultMessageSchema,
   DiscussionMessageSchema,
   ResumeSessionMessageSchema,
   NewSessionMessageSchema,
   AbortMessageSchema,
   PingMessageSchema,
-  ListDirectoryMessageSchema,
-  ReadFileMessageSchema,
-  GetRecentNotesMessageSchema,
-  GetRecentActivityMessageSchema,
-  GetGoalsMessageSchema,
   ClientMessageSchema,
-  // Server -> Client schemas
+  // Server -> Client schemas (WebSocket only)
   VaultListMessageSchema,
+  VaultCreatedMessageSchema,
   SessionReadyMessageSchema,
-  NoteCapturedMessageSchema,
   ResponseStartMessageSchema,
   ResponseChunkMessageSchema,
   ResponseEndMessageSchema,
@@ -82,11 +71,6 @@ export {
   ToolEndMessageSchema,
   ErrorMessageSchema,
   PongMessageSchema,
-  DirectoryListingMessageSchema,
-  FileContentMessageSchema,
-  RecentNotesMessageSchema,
-  RecentActivityMessageSchema,
-  GoalsMessageSchema,
   ServerMessageSchema,
   // Validation utilities
   parseClientMessage,
@@ -110,10 +94,8 @@ export type {
   RecentDiscussionEntry,
   // Tool invocation type
   ToolInvocation,
-  // Inspiration types
+  // Inspiration types (used by REST API)
   InspirationItem,
-  GetInspirationMessage,
-  InspirationMessage,
   // Slash command types
   SlashCommand,
   // Search result types
@@ -126,14 +108,8 @@ export type {
   HealthIssue,
   HealthReportMessage,
   DismissHealthIssueMessage,
-  // Meeting types
+  // Meeting types (used by REST API)
   MeetingState,
-  StartMeetingMessage,
-  StopMeetingMessage,
-  GetMeetingStateMessage,
-  MeetingStartedMessage,
-  MeetingStoppedMessage,
-  MeetingStateMessage,
   // AskUserQuestion types
   AskUserQuestionOption,
   AskUserQuestionItem,
@@ -144,24 +120,19 @@ export type {
   QuickActionRequestMessage,
   AdvisoryActionType,
   AdvisoryActionRequestMessage,
-  // Client message types
+  // Client message types (WebSocket only)
   SelectVaultMessage,
-  CaptureNoteMessage,
+  CreateVaultMessage,
   DiscussionMessage,
   ResumeSessionMessage,
   NewSessionMessage,
   AbortMessage,
   PingMessage,
-  ListDirectoryMessage,
-  ReadFileMessage,
-  GetRecentNotesMessage,
-  GetRecentActivityMessage,
-  GetGoalsMessage,
   ClientMessage,
-  // Server message types
+  // Server message types (WebSocket only)
   VaultListMessage,
+  VaultCreatedMessage,
   SessionReadyMessage,
-  NoteCapturedMessage,
   ResponseStartMessage,
   ResponseChunkMessage,
   ResponseEndMessage,
@@ -170,10 +141,5 @@ export type {
   ToolEndMessage,
   ErrorMessage,
   PongMessage,
-  DirectoryListingMessage,
-  FileContentMessage,
-  RecentNotesMessage,
-  RecentActivityMessage,
-  GoalsMessage,
   ServerMessage,
 } from "./protocol.js";

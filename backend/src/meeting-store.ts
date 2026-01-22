@@ -74,3 +74,22 @@ export function incrementMeetingEntryCount(vaultId: string): void {
 export function hasActiveMeeting(vaultId: string): boolean {
   return activeMeetings.has(vaultId);
 }
+
+/**
+ * Gets all active meetings across all vaults.
+ * Useful for diagnostics and testing.
+ *
+ * @returns Array of [vaultId, meeting] tuples
+ */
+export function getAllActiveMeetings(): Array<[string, ActiveMeeting]> {
+  return Array.from(activeMeetings.entries());
+}
+
+/**
+ * Clears all active meetings.
+ * Intended for testing cleanup only.
+ */
+export function clearAllMeetings(): void {
+  log.info(`[MeetingStore] Clearing all ${activeMeetings.size} active meetings`);
+  activeMeetings.clear();
+}

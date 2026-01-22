@@ -23,6 +23,8 @@ import { ConfigEditorDialog, type EditableVaultConfig } from "./components/Confi
 import { Toast, type ToastVariant } from "./components/Toast";
 import { useHoliday } from "./hooks/useHoliday";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { useMeetings } from "./hooks/useMeetings";
+import { useConfig } from "./hooks/useConfig";
 import "./App.css";
 
 /**
@@ -34,14 +36,10 @@ type DialogType = "changeVault" | null;
  * Main app content when a vault is selected.
  */
 function MainContent(): React.ReactNode {
-  const { mode, vault, clearVault } = useSession();
+  const { mode, vault, clearVault, setMeetingState } = useSession();
   const handleServerMessage = useServerMessageHandler();
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
-  // Config save state (TASK-010)
-  const [configSaving, setConfigSaving] = useState(false);
-  const [configSaveError, setConfigSaveError] = useState<string | null>(null);
-  const pendingConfigRef = useRef<EditableVaultConfig | null>(null);
   // Toast state for success feedback (TASK-010)
   const [toastVisible, setToastVisible] = useState(false);
   const [toastVariant, setToastVariant] = useState<ToastVariant>("success");
@@ -53,9 +51,13 @@ function MainContent(): React.ReactNode {
   const hasRequestedMeetingStateRef = useRef(false);
   const hasSentVaultSelectionRef = useRef(false);
 
-  // Re-establish vault context and meeting state on WebSocket reconnection.
+  // REST API hooks for meeting and config operations (migrated from WebSocket)
+  const { getMeetingState } = useMeetings(vault?.id);
+  const { updateConfig, isLoading: configSaving, error: configError } = useConfig(vault?.id);
+
+  // Re-establish vault context on WebSocket reconnection.
   // After reconnect, the server has a fresh connection state and needs to know
-  // which vault we're using before we can query meeting state.
+  // which vault we're using.
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
     hasRequestedMeetingStateRef.current = false;
@@ -86,7 +88,8 @@ function MainContent(): React.ReactNode {
 
   // Request meeting state after vault selection to restore any active meeting.
   // This runs on initial mount (page refresh) and after WebSocket reconnection.
-  // Fixes #377 where refreshing with an active meeting orphaned it.
+  // Uses REST API (migrated from WebSocket). Fixes #377 where refreshing with
+  // an active meeting orphaned it.
   useEffect(() => {
     if (
       connectionStatus === "connected" &&
@@ -94,10 +97,20 @@ function MainContent(): React.ReactNode {
       hasSentVaultSelectionRef.current &&
       !hasRequestedMeetingStateRef.current
     ) {
-      sendMessage({ type: "get_meeting_state" });
       hasRequestedMeetingStateRef.current = true;
+      // Use REST API to get meeting state
+      void getMeetingState().then((state) => {
+        if (state) {
+          setMeetingState({
+            isActive: state.isActive,
+            title: state.title,
+            filePath: state.filePath,
+            startedAt: state.startedAt,
+          });
+        }
+      });
     }
-  }, [connectionStatus, vault, sendMessage]);
+  }, [connectionStatus, vault, getMeetingState, setMeetingState]);
 
   // Use holiday-specific logo if available
   const logoSrc = holiday ? `/images/holiday/${holiday}-logo.webp` : "/images/logo.webp";
@@ -117,54 +130,33 @@ function MainContent(): React.ReactNode {
 
   function handleGearClick() {
     setConfigEditorOpen(true);
-    setConfigSaveError(null); // Clear any previous error (TASK-010)
   }
 
-  // Handle config editor save - send update_vault_config via WebSocket (TASK-010)
-  function handleConfigSave(config: EditableVaultConfig) {
+  // Handle config editor save - use REST API (migrated from WebSocket in TASK-010)
+  async function handleConfigSave(config: EditableVaultConfig) {
     if (!vault) return;
 
-    setConfigSaving(true);
-    setConfigSaveError(null);
-    pendingConfigRef.current = config; // Store for local state update on success
     console.log(`[App] Saving config for vault: ${vault.id}`, config);
-    sendMessage({ type: "update_vault_config", config, vaultId: vault.id });
+    const success = await updateConfig(config);
+
+    if (success) {
+      // Show success toast
+      setToastVariant("success");
+      setToastMessage("Settings saved");
+      setToastVisible(true);
+
+      // Close dialog
+      setConfigEditorOpen(false);
+      console.log("[App] Config saved successfully");
+    } else {
+      // Error is already set by the hook
+      console.warn("[App] Config save failed:", configError);
+    }
   }
 
   function handleConfigCancel() {
     setConfigEditorOpen(false);
   }
-
-  // Handle config_updated response (TASK-010)
-  useEffect(() => {
-    if (lastMessage?.type === "config_updated" && configSaving) {
-      setConfigSaving(false);
-
-      if (lastMessage.success) {
-        // Note: We don't update vault state in context here because
-        // SessionContext doesn't expose a setVault action. The config
-        // is persisted to the backend and will be loaded on next session.
-        // VaultSelect does update local vault state because it maintains
-        // its own vaults array.
-
-        // Clear pending config
-        pendingConfigRef.current = null;
-
-        // Show success toast
-        setToastVariant("success");
-        setToastMessage("Settings saved");
-        setToastVisible(true);
-
-        // Close dialog
-        setConfigEditorOpen(false);
-        console.log("[App] Config saved successfully");
-      } else {
-        // Show error in dialog
-        setConfigSaveError(lastMessage.error ?? "Failed to save settings");
-        console.warn("[App] Config save failed:", lastMessage.error);
-      }
-    }
-  }, [lastMessage, configSaving]);
 
   // Toast dismiss handler
   function handleToastDismiss() {
@@ -271,7 +263,7 @@ function MainContent(): React.ReactNode {
           onSave={handleConfigSave}
           onCancel={handleConfigCancel}
           isSaving={configSaving}
-          saveError={configSaveError}
+          saveError={configError}
         />
       )}
 

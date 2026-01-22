@@ -27,9 +27,9 @@ export interface SearchHeaderProps {
   /** Whether search is loading */
   isLoading: boolean;
   /** Callback when query changes (debounced) */
-  onQueryChange: (query: string) => void;
+  onQueryChange: (query: string) => void | Promise<void>;
   /** Callback when mode changes */
-  onModeChange: (mode: SearchMode) => void;
+  onModeChange: (mode: SearchMode) => void | Promise<void>;
   /** Callback to clear/close search */
   onClear: () => void;
 }
@@ -83,7 +83,7 @@ export function SearchHeader({
   useEffect(() => {
     const timer = setTimeout(() => {
       if (localQuery !== query) {
-        onQueryChange(localQuery);
+        void onQueryChange(localQuery);
       }
     }, DEBOUNCE_DELAY);
 
@@ -119,7 +119,7 @@ export function SearchHeader({
 
   // Toggle mode
   const handleModeToggle = useCallback(() => {
-    onModeChange(mode === "files" ? "content" : "files");
+    void onModeChange(mode === "files" ? "content" : "files");
     setIsMenuOpen(false);
   }, [mode, onModeChange]);
 

@@ -158,7 +158,7 @@ export function useFileBrowser(
   const [error, setError] = useState<ApiError | null>(null);
 
   // Create API client (memoized to avoid recreating on every render)
-  const api = useMemo(() => createApiClient({ fetch: config.fetch }), [config.fetch]);
+  const api = useMemo(() => createApiClient(config.fetch ? { fetch: config.fetch } : {}), [config.fetch]);
 
   const clearError = useCallback(() => {
     setError(null);

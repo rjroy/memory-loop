@@ -19,6 +19,8 @@ import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApp } from "../server";
+import { setActiveMeeting, clearActiveMeeting } from "../meeting-store";
+import type { ActiveMeeting } from "../meeting-capture";
 import type { RecentNoteEntry, RecentDiscussionEntry } from "@memory-loop/shared";
 import type { RestErrorResponse } from "../middleware/error-handler";
 
@@ -311,6 +313,96 @@ describe("Capture REST Routes", () => {
       // Verify file was created in newly created inbox
       const noteContent = await readFile(json.notePath, "utf-8");
       expect(noteContent).toContain("Test in new inbox");
+    });
+
+    test("routes capture to meeting file when meeting is active", async () => {
+      const vaultPath = await createTestVault(testDir, "meeting-vault");
+      const meetingsDir = join(vaultPath, "00_Inbox", "meetings");
+      await mkdir(meetingsDir, { recursive: true });
+
+      // Create a meeting file
+      const meetingFilePath = join(meetingsDir, "2026-01-22-test-meeting.md");
+      const meetingContent = `---
+date: 2026-01-22
+title: "Test Meeting"
+attendees: []
+---
+
+# Test Meeting
+
+## Capture
+
+`;
+      await writeFile(meetingFilePath, meetingContent);
+
+      // Set up active meeting in the global store
+      const activeMeeting: ActiveMeeting = {
+        title: "Test Meeting",
+        filePath: meetingFilePath,
+        relativePath: "00_Inbox/meetings/2026-01-22-test-meeting.md",
+        startedAt: new Date().toISOString(),
+        entryCount: 0,
+      };
+      setActiveMeeting("meeting-vault", activeMeeting);
+
+      try {
+        const req = new Request("http://localhost/api/vaults/meeting-vault/capture", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: "Meeting note content" }),
+        });
+        const res = await app.fetch(req);
+
+        expect(res.status).toBe(200);
+
+        const json = (await res.json()) as {
+          success: boolean;
+          timestamp: string;
+          notePath: string;
+        };
+
+        expect(json.success).toBe(true);
+        expect(json.notePath).toContain("meetings");
+        expect(json.notePath).toContain("test-meeting.md");
+
+        // Verify the note was written to the meeting file
+        const updatedContent = await readFile(meetingFilePath, "utf-8");
+        expect(updatedContent).toContain("Meeting note content");
+        expect(updatedContent).toContain("## Capture");
+      } finally {
+        // Clean up: clear the active meeting
+        clearActiveMeeting("meeting-vault");
+      }
+    });
+
+    test("routes capture to daily note when no meeting is active", async () => {
+      await createTestVault(testDir, "daily-vault");
+
+      // Ensure no active meeting
+      clearActiveMeeting("daily-vault");
+
+      const req = new Request("http://localhost/api/vaults/daily-vault/capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Daily note content" }),
+      });
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      const json = (await res.json()) as {
+        success: boolean;
+        notePath: string;
+      };
+
+      expect(json.success).toBe(true);
+      // Should be in the inbox, not in a meetings subdirectory
+      expect(json.notePath).toContain("00_Inbox");
+      expect(json.notePath).not.toContain("meetings");
+
+      // Verify the content
+      const noteContent = await readFile(json.notePath, "utf-8");
+      expect(noteContent).toContain("Daily note content");
     });
   });
 

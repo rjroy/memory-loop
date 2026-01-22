@@ -16,6 +16,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getVaultFromContext, jsonError } from "../middleware/vault-resolution";
 import { captureToDaily, getRecentNotes, NoteCaptureError } from "../note-capture";
+import { captureToMeeting, MeetingCaptureError } from "../meeting-capture";
+import { getActiveMeeting, incrementMeetingEntryCount } from "../meeting-store";
 import { getRecentSessions } from "../session-manager";
 import { loadVaultConfig, resolveRecentCaptures, resolveRecentDiscussions } from "../vault-config";
 import { createLogger } from "../logger";
@@ -66,23 +68,48 @@ captureRoutes.post("/capture", async (c) => {
 
   const { text } = parseResult.data;
 
+  // Check for active meeting - route to meeting file if one exists
+  const activeMeeting = getActiveMeeting(vault.id);
+
   try {
-    const result = await captureToDaily(vault, text);
+    if (activeMeeting) {
+      // Capture to meeting file
+      log.info(`Routing capture to meeting: ${activeMeeting.title}`);
+      const result = await captureToMeeting(activeMeeting, text);
 
-    if (!result.success) {
-      log.error(`Capture failed for vault ${vault.id}: ${result.error}`);
-      return jsonError(c, 500, "NOTE_CAPTURE_FAILED", result.error ?? "Failed to capture note");
+      if (!result.success) {
+        log.error(`Meeting capture failed for vault ${vault.id}: ${result.error}`);
+        return jsonError(c, 500, "NOTE_CAPTURE_FAILED", result.error ?? "Failed to capture note");
+      }
+
+      // Keep global meeting state in sync
+      incrementMeetingEntryCount(vault.id);
+
+      log.info(`Note captured to meeting in vault ${vault.id} at ${result.timestamp}`);
+      return c.json({
+        success: true,
+        timestamp: result.timestamp,
+        notePath: activeMeeting.relativePath,
+      });
+    } else {
+      // Capture to daily note
+      const result = await captureToDaily(vault, text);
+
+      if (!result.success) {
+        log.error(`Capture failed for vault ${vault.id}: ${result.error}`);
+        return jsonError(c, 500, "NOTE_CAPTURE_FAILED", result.error ?? "Failed to capture note");
+      }
+
+      log.info(`Note captured in vault ${vault.id} at ${result.timestamp}`);
+      return c.json({
+        success: result.success,
+        timestamp: result.timestamp,
+        notePath: result.notePath,
+      });
     }
-
-    log.info(`Note captured in vault ${vault.id} at ${result.timestamp}`);
-    return c.json({
-      success: result.success,
-      timestamp: result.timestamp,
-      notePath: result.notePath,
-    });
   } catch (error) {
     log.error(`Capture threw for vault ${vault.id}`, error);
-    if (error instanceof NoteCaptureError) {
+    if (error instanceof NoteCaptureError || error instanceof MeetingCaptureError) {
       return jsonError(c, 500, "NOTE_CAPTURE_FAILED", error.message);
     }
     const message = error instanceof Error ? error.message : "Failed to capture note";

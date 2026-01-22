@@ -152,6 +152,8 @@ const mockDeleteFile = mock<
   (...args: any[]) => Promise<void>
 >(() => Promise.resolve());
 
+// UNUSED: Tests migrated to REST API
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockArchiveFile = mock<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (...args: any[]) => Promise<{ originalPath: string; archivePath: string }>
@@ -222,6 +224,11 @@ const mockToggleTask = mock<
 
 /**
  * Creates the mock dependencies for WebSocketHandler.
+ *
+ * After REST API migration, the WebSocket handler only needs dependencies for:
+ * - Vault discovery and creation
+ * - Session management (AI conversation)
+ * - Slash commands caching
  */
 function createMockDeps(): WebSocketHandlerDependencies {
   return {
@@ -232,42 +239,9 @@ function createMockDeps(): WebSocketHandlerDependencies {
     resumeSession: mockResumeSession,
     loadSession: mockLoadSession,
     appendMessage: mockAppendMessage,
-    deleteSession: mockDeleteSession,
-    loadVaultConfig: mockLoadVaultConfig,
     loadSlashCommands: mockLoadSlashCommands,
     saveSlashCommands: mockSaveSlashCommands,
-    savePinnedAssets: mockSavePinnedAssets,
-    saveVaultConfig: mockSaveVaultConfig,
     runVaultSetup: mockRunVaultSetup,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-    createSearchIndex: ((contentRoot: string) => new MockSearchIndexManager(contentRoot)) as any,
-    // Handler dependencies (injected to extracted handlers)
-    handlerDeps: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      captureToDaily: mockCaptureToDaily as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      getRecentNotes: mockGetRecentNotes as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      listDirectory: mockListDirectory as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      readMarkdownFile: mockReadMarkdownFile as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      writeMarkdownFile: mockWriteMarkdownFile as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      deleteFile: mockDeleteFile as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      archiveFile: mockArchiveFile as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      getInspiration: mockGetInspiration as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      getAllTasks: mockGetAllTasks as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      toggleTask: mockToggleTask as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      getRecentSessions: mockGetRecentSessions as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      loadVaultConfig: mockLoadVaultConfig as any,
-    },
   };
 }
 
@@ -314,7 +288,9 @@ const mockGetSnippets = mock<
 /**
  * Mock SearchIndexManager for tests.
  * Instances are set directly on connection state.
+ * UNUSED: Search tests migrated to REST API
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class MockSearchIndexManager {
   private contentRoot: string;
 
@@ -821,7 +797,8 @@ describe("WebSocket Handler", () => {
   // capture_note Handler Tests
   // ===========================================================================
 
-  describe("capture_note", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("capture_note - MIGRATED TO REST", () => {
     test("captures note and sends note_captured", async () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
@@ -911,7 +888,8 @@ describe("WebSocket Handler", () => {
   // get_recent_activity Handler Tests
   // ===========================================================================
 
-  describe("get_recent_activity", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("get_recent_activity - MIGRATED TO REST", () => {
     test("returns error if no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -2326,9 +2304,18 @@ describe("WebSocket Handler", () => {
     test("preserves vault across multiple messages", async () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
-      mockCaptureToDaily.mockResolvedValue({
-        success: true,
-        timestamp: "2025-01-01T00:00:00.000Z",
+      // Mock session creation for discussion messages
+      let sessionCreateCount = 0;
+      mockCreateSession.mockImplementation(async () => {
+        sessionCreateCount++;
+        return {
+          sessionId: `test-session-${sessionCreateCount}`,
+          events: (async function* () {
+            yield { type: "result", subtype: "success" };
+          })(),
+          interrupt: mockInterrupt,
+          supportedCommands: mockSupportedCommands,
+        };
       });
 
       const handler = createTestHandler();
@@ -2340,20 +2327,26 @@ describe("WebSocket Handler", () => {
         JSON.stringify({ type: "select_vault", vaultId: "test-vault" })
       );
 
-      // Capture multiple notes
+      // Vault should be preserved between messages
+      const stateAfterSelect = handler.getState();
+      expect(stateAfterSelect.currentVault?.id).toBe("test-vault");
+
+      // Send a discussion message to trigger session creation
       await handler.onMessage(
         ws as unknown as Parameters<typeof handler.onMessage>[0],
-        JSON.stringify({ type: "capture_note", text: "Note 1" })
-      );
-      await handler.onMessage(
-        ws as unknown as Parameters<typeof handler.onMessage>[0],
-        JSON.stringify({ type: "capture_note", text: "Note 2" })
+        JSON.stringify({ type: "discussion_message", text: "Hello" })
       );
 
-      // captureToDaily should have been called with the vault both times
-      expect(mockCaptureToDaily).toHaveBeenCalledTimes(2);
-      expect(mockCaptureToDaily).toHaveBeenCalledWith(vault, "Note 1");
-      expect(mockCaptureToDaily).toHaveBeenCalledWith(vault, "Note 2");
+      // Vault should still be the same after the message
+      const stateAfterMessage = handler.getState();
+      expect(stateAfterMessage.currentVault?.id).toBe("test-vault");
+
+      // Session should have been created using the vault
+      // Note: createSession is called with (vault, prompt, ...) - verify vault was passed
+      expect(mockCreateSession).toHaveBeenCalled();
+      const callArgs = mockCreateSession.mock.calls[0];
+      expect(callArgs?.[0]).toBe(vault);
+      expect(callArgs?.[1]).toBe("Hello");
     });
   });
 
@@ -2423,7 +2416,8 @@ describe("WebSocket Handler", () => {
   // File Browser Tests
   // ===========================================================================
 
-  describe("list_directory handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("list_directory handler - MIGRATED TO REST", () => {
     test("returns error if no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -2585,7 +2579,8 @@ describe("WebSocket Handler", () => {
     });
   });
 
-  describe("read_file handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("read_file handler - MIGRATED TO REST", () => {
     test("returns error if no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -2775,7 +2770,8 @@ describe("WebSocket Handler", () => {
   // write_file Handler Tests
   // ===========================================================================
 
-  describe("write_file handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("write_file handler - MIGRATED TO REST", () => {
     test("returns error if no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -3042,7 +3038,8 @@ describe("WebSocket Handler", () => {
   // delete_file Handler Tests
   // ===========================================================================
 
-  describe("delete_file handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("delete_file handler - MIGRATED TO REST", () => {
     test("returns error if no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -3226,7 +3223,8 @@ describe("WebSocket Handler", () => {
   // get_inspiration Handler Tests
   // ===========================================================================
 
-  describe("get_inspiration", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("get_inspiration - MIGRATED TO REST", () => {
     test("returns error if no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -3359,7 +3357,8 @@ describe("WebSocket Handler", () => {
   // get_tasks Handler Tests
   // ===========================================================================
 
-  describe("get_tasks handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("get_tasks handler - MIGRATED TO REST", () => {
     test("returns error if no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -3508,7 +3507,8 @@ describe("WebSocket Handler", () => {
   // toggle_task Handler Tests
   // ===========================================================================
 
-  describe("toggle_task handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("toggle_task handler - MIGRATED TO REST", () => {
     test("returns error if no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -3742,7 +3742,8 @@ describe("WebSocket Handler", () => {
     });
   });
 
-  describe("delete_session handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("delete_session handler - MIGRATED TO REST", () => {
     test("deletes session and returns session_deleted message", async () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
@@ -3859,7 +3860,8 @@ describe("WebSocket Handler", () => {
     });
   });
 
-  describe("setup_vault handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("setup_vault handler - MIGRATED TO REST", () => {
     test("runs setup and returns setup_complete message on success", async () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);
@@ -4156,7 +4158,8 @@ describe("WebSocket Handler", () => {
   // Search Handler Tests
   // ===========================================================================
 
-  describe("search_files handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("search_files handler - MIGRATED TO REST", () => {
     test("returns VAULT_NOT_FOUND when no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -4276,7 +4279,8 @@ describe("WebSocket Handler", () => {
     });
   });
 
-  describe("search_content handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("search_content handler - MIGRATED TO REST", () => {
     test("returns VAULT_NOT_FOUND when no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -4380,7 +4384,8 @@ describe("WebSocket Handler", () => {
     });
   });
 
-  describe("get_snippets handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("get_snippets handler - MIGRATED TO REST", () => {
     test("returns VAULT_NOT_FOUND when no vault selected", async () => {
       const handler = createTestHandler();
       const ws = createMockWebSocket();
@@ -4527,7 +4532,8 @@ describe("WebSocket Handler", () => {
     });
   });
 
-  describe("searchIndex initialization on vault select", () => {
+  // MIGRATED TO REST API - SearchIndex now managed by REST routes
+  describe.skip("searchIndex initialization on vault select - MIGRATED TO REST", () => {
     test("creates searchIndex when vault is selected", async () => {
       const vault = createMockVault({ contentRoot: "/test/vault/content" });
       mockGetVaultById.mockResolvedValue(vault);
@@ -4579,7 +4585,8 @@ describe("WebSocket Handler", () => {
       expect(secondSearchIndex).not.toBe(firstSearchIndex);
     });
   });
-  describe("update_vault_config handler", () => {
+  // MIGRATED TO REST API - See backend/src/__tests__/rest-routes/ tests
+  describe.skip("update_vault_config handler - MIGRATED TO REST", () => {
     test("returns config_updated with success true on valid config", async () => {
       const vault = createMockVault();
       mockGetVaultById.mockResolvedValue(vault);

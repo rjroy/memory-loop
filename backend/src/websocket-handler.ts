@@ -11,10 +11,8 @@ import type {
   ErrorCode,
   StoredToolInvocation,
   SlashCommand,
-  EditableVaultConfig,
   VaultInfo,
 } from "@memory-loop/shared";
-import { EditableVaultConfigSchema } from "@memory-loop/shared";
 import type {
   SDKMessage,
   SDKPartialAssistantMessage,
@@ -44,18 +42,11 @@ import {
   createVault as defaultCreateVault,
   VaultCreationError,
 } from "./vault-manager.js";
-import { SearchIndexManager, type SearchIndexManager as ISearchIndexManager } from "./search/search-index.js";
-
-/**
- * Factory type for creating SearchIndexManager instances.
- */
-export type CreateSearchIndexFn = (contentRoot: string) => ISearchIndexManager;
 import {
   createSession as defaultCreateSession,
   resumeSession as defaultResumeSession,
   loadSession as defaultLoadSession,
   appendMessage as defaultAppendMessage,
-  deleteSession as defaultDeleteSession,
   SessionError,
   type SessionQueryResult,
   type ToolPermissionCallback,
@@ -67,41 +58,12 @@ import {
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk.js";
 import { wsLog as log } from "./logger.js";
 import {
-  loadVaultConfig as defaultLoadVaultConfig,
   loadSlashCommands as defaultLoadSlashCommands,
   saveSlashCommands as defaultSaveSlashCommands,
   slashCommandsEqual,
-  savePinnedAssets as defaultSavePinnedAssets,
-  resolvePinnedAssets,
-  saveVaultConfig as defaultSaveVaultConfig,
-  type VaultConfig,
 } from "./vault-config.js";
 import { runVaultSetup as defaultRunVaultSetup, type SetupResult } from "./vault-setup.js";
 import { createHealthCollector } from "./health-collector.js";
-import {
-  captureToDaily as defaultCaptureToDaily,
-  getRecentNotes as defaultGetRecentNotes,
-} from "./note-capture.js";
-import {
-  listDirectory as defaultListDirectory,
-  readMarkdownFile as defaultReadMarkdownFile,
-  writeMarkdownFile as defaultWriteMarkdownFile,
-  deleteFile as defaultDeleteFile,
-  getDirectoryContents as defaultGetDirectoryContents,
-  deleteDirectory as defaultDeleteDirectory,
-  archiveFile as defaultArchiveFile,
-  createDirectory as defaultCreateDirectory,
-  createFile as defaultCreateFile,
-  renameFile as defaultRenameFile,
-  moveFile as defaultMoveFile,
-} from "./file-browser.js";
-import { updateReferences as defaultUpdateReferences } from "./reference-updater.js";
-import { getInspiration as defaultGetInspiration } from "./inspiration-manager.js";
-import {
-  getAllTasks as defaultGetAllTasks,
-  toggleTask as defaultToggleTask,
-} from "./task-manager.js";
-import { getRecentSessions as defaultGetRecentSessions } from "./session-manager.js";
 
 // =============================================================================
 // Dependency Injection Types
@@ -110,94 +72,50 @@ import { getRecentSessions as defaultGetRecentSessions } from "./session-manager
 /**
  * Dependencies for WebSocketHandler (injectable for testing).
  * All functions default to their real implementations.
+ *
+ * After REST API migration, this interface only contains dependencies needed for:
+ * - Vault discovery and creation (for WebSocket session establishment)
+ * - AI conversation streaming (Claude Agent SDK)
+ * - Slash commands caching
  */
 export interface WebSocketHandlerDependencies {
-  // Vault manager
+  // Vault manager (for session establishment)
   discoverVaults?: () => Promise<VaultInfo[]>;
   getVaultById?: (id: string) => Promise<VaultInfo | null>;
   createVault?: (title: string) => Promise<VaultInfo>;
 
-  // Session manager
+  // Session manager (for AI conversation)
   createSession?: typeof defaultCreateSession;
   resumeSession?: typeof defaultResumeSession;
   loadSession?: (vaultPath: string, sessionId: string) => Promise<SessionMetadata | null>;
   appendMessage?: (vaultPath: string, sessionId: string, message: ConversationMessage) => Promise<void>;
-  deleteSession?: (vaultPath: string, sessionId: string) => Promise<boolean>;
 
-  // Vault config
-  loadVaultConfig?: (vaultPath: string) => Promise<VaultConfig>;
+  // Slash commands (cached for session_ready responses)
   loadSlashCommands?: (vaultPath: string) => Promise<SlashCommand[] | undefined>;
   saveSlashCommands?: (vaultPath: string, commands: SlashCommand[]) => Promise<void>;
-  savePinnedAssets?: (vaultPath: string, paths: string[]) => Promise<void>;
-  saveVaultConfig?: (vaultPath: string, config: EditableVaultConfig) => Promise<{ success: true } | { success: false; error: string }>;
 
-  // Vault setup
+  // Vault setup (called during create_vault)
   runVaultSetup?: (vaultId: string) => Promise<SetupResult>;
-
-  // Search index
-  createSearchIndex?: CreateSearchIndexFn;
-
-  // Handler dependencies (passed through to extracted handlers)
-  handlerDeps?: HandlerDependencies;
 }
 
-// Import extracted handlers
+// Import handler types and utilities
 import {
   type WebSocketLike,
   type ConnectionState,
   type HandlerContext,
-  type HandlerDependencies,
-  type RequiredHandlerDependencies,
   createConnectionState,
   generateMessageId,
 } from "./handlers/types.js";
 
+// Extraction prompt handlers (not yet migrated to REST)
 import {
-  handleListDirectory,
-  handleReadFile,
-  handleWriteFile,
-  handleDeleteFile,
-  handleGetDirectoryContents,
-  handleDeleteDirectory,
-  handleArchiveFile,
-  handleCreateDirectory,
-  handleCreateFile,
-  handleRenameFile,
-  handleMoveFile,
-} from "./handlers/browser-handlers.js";
-
-import {
-  handleSearchFiles,
-  handleSearchContent,
-  handleGetSnippets,
-} from "./handlers/search-handlers.js";
-
-import {
-  handleCaptureNote,
-  handleGetRecentNotes,
-  handleGetRecentActivity,
-  handleGetGoals,
-  handleGetInspiration,
-  handleGetTasks,
-  handleToggleTask,
-} from "./handlers/home-handlers.js";
-
-import {
-  handleStartMeeting,
-  handleStopMeeting,
-  handleGetMeetingState,
-  handleMeetingCapture,
-} from "./handlers/meeting-handlers.js";
-
-import {
-  handleGetMemory,
-  handleSaveMemory,
   handleGetExtractionPrompt,
   handleSaveExtractionPrompt,
   handleResetExtractionPrompt,
   handleTriggerExtraction,
 } from "./handlers/memory-handlers.js";
 
+// Pair writing handlers (require WebSocket for streaming)
 import {
   handleQuickAction,
   handleAdvisoryAction,
@@ -260,11 +178,17 @@ function sanitizeSlashCommands(commands: SlashCommand[] | undefined): SlashComma
 
 /**
  * WebSocket handler class that manages connection state and message routing.
+ *
+ * After REST API migration, this handler focuses on:
+ * - Vault discovery and session establishment (select_vault, create_vault)
+ * - AI conversation streaming (discussion_message, abort)
+ * - Interactive prompts (tool_permission, ask_user_question)
+ * - Extraction prompt management (not yet migrated to REST)
+ * - Pair writing (requires WebSocket for streaming)
  */
 export class WebSocketHandler {
   private state: ConnectionState;
-  private readonly deps: Required<Omit<WebSocketHandlerDependencies, "handlerDeps">>;
-  private readonly handlerDeps: RequiredHandlerDependencies;
+  private readonly deps: Required<WebSocketHandlerDependencies>;
 
   constructor(deps: WebSocketHandlerDependencies = {}) {
     this.state = createConnectionState();
@@ -276,41 +200,9 @@ export class WebSocketHandler {
       resumeSession: deps.resumeSession ?? defaultResumeSession,
       loadSession: deps.loadSession ?? defaultLoadSession,
       appendMessage: deps.appendMessage ?? defaultAppendMessage,
-      deleteSession: deps.deleteSession ?? defaultDeleteSession,
-      loadVaultConfig: deps.loadVaultConfig ?? defaultLoadVaultConfig,
       loadSlashCommands: deps.loadSlashCommands ?? defaultLoadSlashCommands,
       saveSlashCommands: deps.saveSlashCommands ?? defaultSaveSlashCommands,
-      savePinnedAssets: deps.savePinnedAssets ?? defaultSavePinnedAssets,
-      saveVaultConfig: deps.saveVaultConfig ?? defaultSaveVaultConfig,
       runVaultSetup: deps.runVaultSetup ?? defaultRunVaultSetup,
-      createSearchIndex: deps.createSearchIndex ?? ((contentRoot) => new SearchIndexManager(contentRoot)),
-    };
-
-    // Handler dependencies (injectable for testing)
-    const hd = deps.handlerDeps ?? {};
-    this.handlerDeps = {
-      captureToDaily: hd.captureToDaily ?? defaultCaptureToDaily,
-      getRecentNotes: hd.getRecentNotes ?? defaultGetRecentNotes,
-      listDirectory: hd.listDirectory ?? defaultListDirectory,
-      readMarkdownFile: hd.readMarkdownFile ?? defaultReadMarkdownFile,
-      writeMarkdownFile: hd.writeMarkdownFile ?? defaultWriteMarkdownFile,
-      deleteFile: hd.deleteFile ?? defaultDeleteFile,
-      getDirectoryContents: hd.getDirectoryContents ?? defaultGetDirectoryContents,
-      deleteDirectory: hd.deleteDirectory ?? defaultDeleteDirectory,
-      archiveFile: hd.archiveFile ?? defaultArchiveFile,
-      createDirectory: hd.createDirectory ?? defaultCreateDirectory,
-      createFile: hd.createFile ?? defaultCreateFile,
-      renameFile: hd.renameFile ?? defaultRenameFile,
-      moveFile: hd.moveFile ?? defaultMoveFile,
-      updateReferences: hd.updateReferences ?? defaultUpdateReferences,
-      getInspiration: hd.getInspiration ?? defaultGetInspiration,
-      getAllTasks: hd.getAllTasks ?? defaultGetAllTasks,
-      toggleTask: hd.toggleTask ?? defaultToggleTask,
-      getRecentSessions: hd.getRecentSessions ?? defaultGetRecentSessions,
-      createSession: hd.createSession ?? defaultCreateSession,
-      resumeSession: hd.resumeSession ?? defaultResumeSession,
-      appendMessage: hd.appendMessage ?? defaultAppendMessage,
-      loadVaultConfig: hd.loadVaultConfig ?? defaultLoadVaultConfig,
     };
   }
 
@@ -343,13 +235,55 @@ export class WebSocketHandler {
 
   /**
    * Creates a handler context for extracted handlers.
+   *
+   * After REST API migration, only extraction prompt and pair writing handlers
+   * use this context. The deps object provides minimal functions needed:
+   * - createSession: Used by pair writing when no session exists
+   *
+   * Other deps are provided as stubs that throw errors (they should not be called
+   * since those handlers have been migrated to REST).
    */
   private createContext(ws: WebSocketLike): HandlerContext {
+    const notImplemented = () => {
+      throw new Error("Handler migrated to REST API");
+    };
+
+    // Minimal deps for remaining WebSocket handlers
+    // Pair writing only uses createSession from deps; other fields are stubs
+    const minimalDeps = {
+      // Used by pair writing handlers
+      createSession: this.deps.createSession,
+      resumeSession: this.deps.resumeSession,
+      appendMessage: this.deps.appendMessage,
+
+      // Stubs for unused deps (handlers using these have been migrated to REST)
+      captureToDaily: notImplemented,
+      getRecentNotes: notImplemented,
+      listDirectory: notImplemented,
+      readMarkdownFile: notImplemented,
+      writeMarkdownFile: notImplemented,
+      deleteFile: notImplemented,
+      getDirectoryContents: notImplemented,
+      deleteDirectory: notImplemented,
+      archiveFile: notImplemented,
+      createDirectory: notImplemented,
+      createFile: notImplemented,
+      renameFile: notImplemented,
+      moveFile: notImplemented,
+      updateReferences: notImplemented,
+      getInspiration: notImplemented,
+      getAllTasks: notImplemented,
+      toggleTask: notImplemented,
+      getRecentSessions: notImplemented,
+      loadVaultConfig: notImplemented,
+    };
+
     return {
       state: this.state,
       send: (message: ServerMessage) => this.send(ws, message),
       sendError: (code: ErrorCode, message: string) => this.sendError(ws, code, message),
-      deps: this.handlerDeps,
+      // Cast to expected type - stubs throw if called (indicates bug)
+      deps: minimalDeps as HandlerContext["deps"],
     };
   }
 
@@ -599,7 +533,7 @@ export class WebSocketHandler {
     const ctx = this.createContext(ws);
 
     switch (message.type) {
-      // Vault and session management (kept in main handler due to tight coupling)
+      // Vault and session management (kept for WebSocket session establishment)
       case "select_vault":
         await this.handleSelectVault(ws, message.vaultId);
         break;
@@ -609,26 +543,24 @@ export class WebSocketHandler {
       case "new_session":
         await this.handleNewSession(ws);
         break;
-      case "delete_session":
-        await this.handleDeleteSession(ws, message.sessionId);
+      case "create_vault":
+        await this.handleCreateVault(ws, message.title);
         break;
+
+      // AI conversation streaming (requires WebSocket for real-time updates)
       case "discussion_message":
         await this.handleDiscussionMessage(ws, message.text);
         break;
       case "abort":
         await this.handleAbort(ws);
         break;
+
+      // Interactive prompts (require WebSocket for bidirectional communication)
       case "tool_permission_response":
         this.handleToolPermissionResponse(message.toolUseId, message.allowed);
         break;
       case "ask_user_question_response":
         this.handleAskUserQuestionResponse(message.toolUseId, message.answers);
-        break;
-      case "setup_vault":
-        await this.handleSetupVault(ws, message.vaultId);
-        break;
-      case "create_vault":
-        await this.handleCreateVault(ws, message.title);
         break;
 
       // Simple handlers
@@ -636,117 +568,12 @@ export class WebSocketHandler {
         this.send(ws, { type: "pong" });
         break;
 
-      // Browser handlers (extracted)
-      case "list_directory":
-        await handleListDirectory(ctx, message.path);
-        break;
-      case "read_file":
-        await handleReadFile(ctx, message.path);
-        break;
-      case "write_file":
-        await handleWriteFile(ctx, message.path, message.content);
-        break;
-      case "delete_file":
-        await handleDeleteFile(ctx, message.path);
-        break;
-      case "get_directory_contents":
-        await handleGetDirectoryContents(ctx, message.path);
-        break;
-      case "delete_directory":
-        await handleDeleteDirectory(ctx, message.path);
-        break;
-      case "archive_file":
-        await handleArchiveFile(ctx, message.path);
-        break;
-      case "create_directory":
-        await handleCreateDirectory(ctx, message.path, message.name);
-        break;
-      case "create_file":
-        await handleCreateFile(ctx, message.path, message.name);
-        break;
-      case "rename_file":
-        await handleRenameFile(ctx, message.path, message.newName);
-        break;
-      case "move_file":
-        await handleMoveFile(ctx, message.path, message.newPath);
-        break;
-
-      // Search handlers (extracted)
-      case "search_files":
-        await handleSearchFiles(ctx, message.query, message.limit);
-        break;
-      case "search_content":
-        await handleSearchContent(ctx, message.query, message.limit);
-        break;
-      case "get_snippets":
-        await handleGetSnippets(ctx, message.path, message.query);
-        break;
-
+      // Health issue dismiss (kept for WebSocket-based health reporting)
       case "dismiss_health_issue":
         this.state.healthCollector?.dismiss(message.issueId);
         break;
 
-      // Pinned assets handlers
-      case "get_pinned_assets":
-        await this.handleGetPinnedAssets(ws);
-        break;
-      case "set_pinned_assets":
-        await this.handleSetPinnedAssets(ws, message.paths);
-        break;
-
-      // Vault config handlers
-      case "update_vault_config":
-        await this.handleUpdateVaultConfig(ws, message.config, message.vaultId);
-        break;
-
-      // Home/dashboard handlers (extracted)
-      case "capture_note": {
-        // Route to meeting if one is active, otherwise to daily note
-        const handledByMeeting = await handleMeetingCapture(ctx, message.text);
-        if (!handledByMeeting) {
-          await handleCaptureNote(ctx, message.text);
-        }
-        break;
-      }
-      case "get_recent_notes":
-        await handleGetRecentNotes(ctx);
-        break;
-      case "get_recent_activity":
-        await handleGetRecentActivity(ctx);
-        break;
-      case "get_goals":
-        await handleGetGoals(ctx);
-        break;
-      case "get_inspiration":
-        await handleGetInspiration(ctx);
-        break;
-      case "get_tasks":
-        await handleGetTasks(ctx);
-        break;
-      case "toggle_task":
-        await handleToggleTask(ctx, message.filePath, message.lineNumber, message.newState);
-        break;
-
-      // Meeting handlers (extracted)
-      case "start_meeting":
-        await handleStartMeeting(ctx, message.title);
-        break;
-      case "stop_meeting":
-        await handleStopMeeting(ctx);
-        break;
-      case "get_meeting_state":
-        handleGetMeetingState(ctx);
-        break;
-
-      // Memory extraction handlers
-      case "get_memory":
-        await handleGetMemory(ctx);
-        break;
-
-      case "save_memory":
-        await handleSaveMemory(ctx, message.content);
-        break;
-
+      // Extraction prompt handlers (not yet migrated to REST)
       case "get_extraction_prompt":
         await handleGetExtractionPrompt(ctx);
         break;
@@ -810,7 +637,7 @@ export class WebSocketHandler {
       this.state.currentVault = vault;
       this.state.currentSessionId = null;
       this.state.activeQuery = null;
-      this.state.searchIndex = this.deps.createSearchIndex(vault.contentRoot);
+      // Note: searchIndex is now managed by REST API routes, not WebSocket
 
       // Create health collector and subscribe to changes
       this.state.healthCollector = createHealthCollector();
@@ -1089,96 +916,6 @@ export class WebSocketHandler {
   }
 
   /**
-   * Handles delete_session message.
-   */
-  private async handleDeleteSession(
-    ws: WebSocketLike,
-    sessionId: string
-  ): Promise<void> {
-    log.info(`Deleting session: ${sessionId.slice(0, 8)}...`);
-
-    if (!this.state.currentVault) {
-      log.warn("Cannot delete session: no vault selected");
-      this.sendError(ws, "VAULT_NOT_FOUND", "Please select a vault first");
-      return;
-    }
-
-    if (this.state.currentSessionId === sessionId) {
-      log.warn("Attempted to delete active session");
-      this.sendError(ws, "SESSION_INVALID", "Cannot delete the currently active session");
-      return;
-    }
-
-    try {
-      const deleted = await this.deps.deleteSession(this.state.currentVault.path, sessionId);
-      if (deleted) {
-        log.info(`Session deleted: ${sessionId.slice(0, 8)}...`);
-        this.send(ws, { type: "session_deleted", sessionId });
-      } else {
-        log.warn(`Session not found: ${sessionId.slice(0, 8)}...`);
-        this.sendError(ws, "SESSION_NOT_FOUND", `Session "${sessionId}" not found`);
-      }
-    } catch (error) {
-      log.error("Failed to delete session", error);
-      if (error instanceof SessionError) {
-        this.sendError(ws, mapSessionErrorCode(error.code), error.message);
-      } else {
-        const message = error instanceof Error ? error.message : "Failed to delete session";
-        this.sendError(ws, "INTERNAL_ERROR", message);
-      }
-    }
-  }
-
-  /**
-   * Handles setup_vault message.
-   */
-  private async handleSetupVault(
-    ws: WebSocketLike,
-    vaultId: string
-  ): Promise<void> {
-    log.info(`Setting up vault: ${vaultId}`);
-
-    const vault = await this.deps.getVaultById(vaultId);
-    if (!vault) {
-      log.warn(`Vault not found for setup: ${vaultId}`);
-      this.sendError(ws, "VAULT_NOT_FOUND", `Vault "${vaultId}" not found`);
-      return;
-    }
-
-    if (!vault.hasClaudeMd) {
-      log.warn(`Vault missing CLAUDE.md: ${vaultId}`);
-      this.sendError(
-        ws,
-        "VALIDATION_ERROR",
-        `Vault "${vault.name}" is missing CLAUDE.md at root`
-      );
-      return;
-    }
-
-    try {
-      const result = await this.deps.runVaultSetup(vaultId);
-
-      log.info(
-        `Setup complete for ${vaultId}: success=${result.success}, ` +
-          `summary=${result.summary.length} items`
-      );
-
-      this.send(ws, {
-        type: "setup_complete",
-        vaultId,
-        success: result.success,
-        summary: result.summary,
-        errors: result.errors,
-      });
-    } catch (error) {
-      log.error(`Setup failed for ${vaultId}:`, error);
-      const message =
-        error instanceof Error ? error.message : "Setup failed unexpectedly";
-      this.sendError(ws, "INTERNAL_ERROR", message);
-    }
-  }
-
-  /**
    * Handles create_vault message.
    * Creates a new vault directory with CLAUDE.md and runs setup.
    */
@@ -1236,104 +973,6 @@ export class WebSocketHandler {
         console.warn("Failed to abort query:", error);
       }
       this.state.activeQuery = null;
-    }
-  }
-
-  /**
-   * Handles get_pinned_assets message.
-   * Returns pinned assets from .memory-loop.json for the current vault.
-   */
-  private async handleGetPinnedAssets(ws: WebSocketLike): Promise<void> {
-    if (!this.state.currentVault) {
-      this.sendError(ws, "VAULT_NOT_FOUND", "No vault selected");
-      return;
-    }
-
-    try {
-      const config = await this.deps.loadVaultConfig(this.state.currentVault.path);
-      const paths = resolvePinnedAssets(config);
-      this.send(ws, { type: "pinned_assets", paths });
-    } catch (error) {
-      log.error("Failed to get pinned assets", error);
-      const message = error instanceof Error ? error.message : "Failed to get pinned assets";
-      this.sendError(ws, "INTERNAL_ERROR", message);
-    }
-  }
-
-  /**
-   * Handles set_pinned_assets message.
-   * Saves pinned assets to .memory-loop.json for the current vault.
-   */
-  private async handleSetPinnedAssets(
-    ws: WebSocketLike,
-    paths: string[]
-  ): Promise<void> {
-    if (!this.state.currentVault) {
-      this.sendError(ws, "VAULT_NOT_FOUND", "No vault selected");
-      return;
-    }
-
-    try {
-      await this.deps.savePinnedAssets(this.state.currentVault.path, paths);
-      this.send(ws, { type: "pinned_assets", paths });
-    } catch (error) {
-      log.error("Failed to save pinned assets", error);
-      const message = error instanceof Error ? error.message : "Failed to save pinned assets";
-      this.sendError(ws, "INTERNAL_ERROR", message);
-    }
-  }
-
-  /**
-   * Handles update_vault_config message.
-   * Validates and saves editable vault configuration fields.
-   * @param vaultId - Optional explicit vault ID for editing before vault selection
-   */
-  private async handleUpdateVaultConfig(
-    ws: WebSocketLike,
-    config: EditableVaultConfig,
-    vaultId?: string
-  ): Promise<void> {
-    // Determine which vault to update: explicit vaultId takes priority, then currentVault
-    let targetVault = this.state.currentVault;
-    if (vaultId) {
-      targetVault = await this.deps.getVaultById(vaultId);
-    }
-
-    if (!targetVault) {
-      this.send(ws, {
-        type: "config_updated",
-        success: false,
-        error: vaultId ? `Vault not found: ${vaultId}` : "No vault selected",
-      });
-      return;
-    }
-
-    // Validate config against schema
-    const validation = EditableVaultConfigSchema.safeParse(config);
-    if (!validation.success) {
-      const errorMessage = validation.error.issues[0]?.message ?? "Invalid configuration";
-      log.warn("Vault config validation failed", { errors: validation.error.issues });
-      this.send(ws, {
-        type: "config_updated",
-        success: false,
-        error: errorMessage,
-      });
-      return;
-    }
-
-    // Save validated config
-    const result = await this.deps.saveVaultConfig(targetVault.path, validation.data);
-
-    if (result.success) {
-      log.info(`Vault config updated for ${targetVault.id}`);
-      this.send(ws, { type: "config_updated", success: true });
-    } else {
-      log.error(`Failed to save vault config: ${result.error}`);
-      this.send(ws, {
-        type: "config_updated",
-        success: false,
-        error: result.error,
-      });
     }
   }
 

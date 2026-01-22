@@ -1,7 +1,19 @@
 /**
  * WebSocket Handlers Module
  *
- * Re-exports all handler modules for convenient importing.
+ * Re-exports handler modules for WebSocket operations.
+ *
+ * After REST API migration, many handlers have been moved to REST routes.
+ * This module now primarily exports:
+ * - Shared types and utilities (still used by remaining WebSocket handlers)
+ * - Search handlers (used by REST routes)
+ * - Config handlers (used by REST routes)
+ * - Pair writing handlers (used by WebSocket for streaming)
+ *
+ * The following handlers have been migrated to REST and are deprecated:
+ * - browser-handlers.ts (use REST /files/* routes)
+ * - home-handlers.ts (use REST /capture, /goals, etc.)
+ * - meeting-handlers.ts (use REST /meetings/* routes)
  */
 
 // Shared types and utilities
@@ -14,41 +26,25 @@ export type {
 
 export { createConnectionState, generateMessageId, requireVault } from "./types.js";
 
-// Browser handlers
-export {
-  handleListDirectory,
-  handleReadFile,
-  handleWriteFile,
-  handleDeleteFile,
-} from "./browser-handlers.js";
-
-// Search handlers
+// Search handlers (used by REST routes/search.ts)
 export {
   handleSearchFiles,
   handleSearchContent,
   handleGetSnippets,
 } from "./search-handlers.js";
 
-// Home/dashboard handlers
+// Config handlers (used by REST routes/config.ts)
 export {
-  handleCaptureNote,
-  handleGetRecentNotes,
-  handleGetRecentActivity,
-  handleGetGoals,
-  handleGetInspiration,
-  handleGetTasks,
-  handleToggleTask,
-} from "./home-handlers.js";
+  handleGetPinnedAssets,
+  handleSetPinnedAssets,
+  handleUpdateVaultConfig,
+  handleSetupVault,
+  handleCreateVault,
+  ConfigValidationError,
+  VaultNotFoundError,
+} from "./config-handlers.js";
 
-// Meeting handlers
-export {
-  handleStartMeeting,
-  handleStopMeeting,
-  handleGetMeetingState,
-  handleMeetingCapture,
-} from "./meeting-handlers.js";
-
-// Pair writing handlers
+// Pair writing handlers (used by WebSocket for streaming)
 export {
   handleQuickAction,
   handleAdvisoryAction,

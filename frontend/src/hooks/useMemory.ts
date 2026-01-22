@@ -83,7 +83,7 @@ export function useMemory(
 
   // Memoize API client to avoid recreating on each render
   const api = useMemo(
-    () => createApiClient({ fetch: options.fetch }),
+    () => createApiClient(options.fetch ? { fetch: options.fetch } : {}),
     [options.fetch]
   );
 

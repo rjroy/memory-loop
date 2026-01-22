@@ -85,8 +85,9 @@ export function useCapture(
   const [error, setError] = useState<string | null>(null);
 
   // Memoize API client to avoid recreating on each render
+  // Only pass fetch if provided, otherwise use default
   const api = useMemo(
-    () => createApiClient({ fetch: options.fetch }),
+    () => createApiClient(options.fetch ? { fetch: options.fetch } : {}),
     [options.fetch]
   );
 

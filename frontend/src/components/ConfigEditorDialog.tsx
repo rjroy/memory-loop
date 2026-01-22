@@ -59,7 +59,7 @@ export interface EditableVaultConfig {
 export interface ConfigEditorDialogProps {
   isOpen: boolean;
   initialConfig: EditableVaultConfig;
-  onSave: (config: EditableVaultConfig) => void;
+  onSave: (config: EditableVaultConfig) => void | Promise<void>;
   onCancel: () => void;
   /** Show loading indicator during save (TASK-010) */
   isSaving?: boolean;
@@ -404,7 +404,7 @@ export function ConfigEditorDialog({
 
   // Handle save button click
   const handleSave = useCallback(() => {
-    onSave(formState);
+    void onSave(formState);
   }, [onSave, formState]);
 
   if (!isOpen) return null;

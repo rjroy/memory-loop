@@ -6,12 +6,16 @@
  * Uses API to check for existing sessions before connecting.
  */
 
+/* eslint-disable @typescript-eslint/no-floating-promises */
+// REST API calls in async handlers
+
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import type { VaultInfo, ServerMessage } from "@memory-loop/shared";
+import type { VaultInfo, ServerMessage, EditableVaultConfig } from "@memory-loop/shared";
 import { useSession, STORAGE_KEY_VAULT } from "../contexts/SessionContext";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { createApiClient, vaultPath } from "../api/client.js";
 import { Toast, type ToastVariant } from "./Toast";
-import { ConfigEditorDialog, type EditableVaultConfig } from "./ConfigEditorDialog";
+import { ConfigEditorDialog } from "./ConfigEditorDialog";
 import { AddVaultDialog } from "./AddVaultDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { MemoryEditor } from "./MemoryEditor";
@@ -58,8 +62,6 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   // Config save state (TASK-010)
   const [configSaving, setConfigSaving] = useState(false);
   const [configSaveError, setConfigSaveError] = useState<string | null>(null);
-  // Track the config being saved so we can update local state on success (TASK-010)
-  const pendingConfigRef = useRef<EditableVaultConfig | null>(null);
 
   // Add Vault dialog state
   const [addVaultDialogOpen, setAddVaultDialogOpen] = useState(false);
@@ -70,18 +72,16 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
 
   // Dedicated message state for Settings dialog editors to avoid race conditions
-  // Each editor needs its own message stream since lastMessage is overwritten on each message
-  const [memoryEditorMessage, setMemoryEditorMessage] = useState<ServerMessage | null>(null);
+  // (MemoryEditor now uses REST API, only ExtractionPromptEditor uses WebSocket)
   const [extractionPromptMessage, setExtractionPromptMessage] = useState<ServerMessage | null>(null);
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
 
+  // API client for REST operations (setup, config)
+  const api = useMemo(() => createApiClient(), []);
+
   // Route messages to appropriate handlers - onMessage fires for every message
   const handleWebSocketMessage = useCallback((message: ServerMessage) => {
-    // Route memory-related messages to MemoryEditor
-    if (message.type === "memory_content" || message.type === "memory_saved") {
-      setMemoryEditorMessage(message);
-    }
     // Route extraction prompt messages to ExtractionPromptEditor
     if (
       message.type === "extraction_prompt_content" ||
@@ -91,9 +91,8 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     ) {
       setExtractionPromptMessage(message);
     }
-    // Error messages go to both editors
+    // Error messages go to extraction prompt editor
     if (message.type === "error") {
-      setMemoryEditorMessage(message);
       setExtractionPromptMessage(message);
     }
   }, []);
@@ -104,8 +103,6 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
 
   // Track whether we've attempted auto-resume from localStorage
   const hasAttemptedAutoResumeRef = useRef(false);
-  // Track the last processed setup_complete vaultId to prevent re-processing
-  const lastProcessedSetupVaultIdRef = useRef<string | null>(null);
 
   // Sort vaults by order (lower first), then alphabetically by name
   // This ensures consistent display even if backend doesn't pre-sort
@@ -232,56 +229,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     }
   }, [lastMessage, selectedVaultId, sendMessage]);
 
-  // Handle setup_complete message (TASK-008, TASK-010)
-  // Note: We don't depend on setupVaultId for matching because the server response
-  // may arrive before React finishes processing setSetupVaultId (race condition).
-  // Instead, we use the vaultId from the message and verify the vault exists.
-  useEffect(() => {
-    if (lastMessage?.type === "setup_complete") {
-      const { vaultId, success, summary, errors } = lastMessage;
-
-      // Prevent re-processing the same setup_complete message
-      // This can happen because setVaults() triggers a re-render with the same lastMessage
-      if (lastProcessedSetupVaultIdRef.current === vaultId) {
-        return;
-      }
-
-      // Verify this vault exists in our list (guards against stale messages)
-      const vault = vaults.find((v) => v.id === vaultId);
-      if (!vault) {
-        console.warn(`[VaultSelect] Received setup_complete for unknown vault: ${vaultId}`);
-        return;
-      }
-
-      // Mark this message as processed before any state updates
-      lastProcessedSetupVaultIdRef.current = vaultId;
-
-      // Update vault's setupComplete status in local state
-      if (success) {
-        setVaults((prev) =>
-          prev.map((v) =>
-            v.id === vaultId ? { ...v, setupComplete: true } : v
-          )
-        );
-        // Show success toast with summary
-        const summaryText = summary?.join(", ") ?? "Setup complete";
-        setToastVariant("success");
-        setToastMessage(summaryText);
-        setToastVisible(true);
-        console.log(`[VaultSelect] Setup complete for vault: ${vaultId}`);
-      } else {
-        // Setup failed - show error toast
-        const errorMessages = errors?.join(", ") ?? "Setup failed";
-        setToastVariant("error");
-        setToastMessage(errorMessages);
-        setToastVisible(true);
-        console.warn(`[VaultSelect] Setup failed for vault: ${vaultId}`, errors);
-      }
-
-      // Clear setup state (if it was set)
-      setSetupVaultId(null);
-    }
-  }, [lastMessage, vaults]);
+  // Note: setup_complete message handling moved to REST API in handleSetupClick
 
   // Handle vault_created response
   useEffect(() => {
@@ -312,73 +260,62 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     }
   }, [lastMessage, addVaultCreating]);
 
-  // Handle config_updated response (TASK-010)
-  useEffect(() => {
-    if (lastMessage?.type === "config_updated" && configSaving) {
-      setConfigSaving(false);
-
-      if (lastMessage.success) {
-        const savedConfig = pendingConfigRef.current;
-        const vaultId = configEditorVault?.id;
-
-        // Update local vault state with the saved config values
-        if (vaultId && savedConfig) {
-          setVaults((prev) =>
-            prev.map((v) =>
-              v.id === vaultId
-                ? {
-                    ...v,
-                    // Map EditableVaultConfig fields to VaultInfo fields
-                    name: savedConfig.title ?? v.name,
-                    subtitle: savedConfig.subtitle ?? v.subtitle,
-                    promptsPerGeneration: savedConfig.promptsPerGeneration ?? v.promptsPerGeneration,
-                    maxPoolSize: savedConfig.maxPoolSize ?? v.maxPoolSize,
-                    quotesPerWeek: savedConfig.quotesPerWeek ?? v.quotesPerWeek,
-                    badges: savedConfig.badges ?? v.badges,
-                  }
-                : v
-            )
-          );
-        }
-
-        // Clear pending config
-        pendingConfigRef.current = null;
-
-        // Show success toast
-        setToastVariant("success");
-        setToastMessage("Settings saved");
-        setToastVisible(true);
-
-        // Close dialog
-        setConfigEditorOpen(false);
-        setConfigEditorVault(null);
-        console.log("[VaultSelect] Config saved successfully");
-      } else {
-        // Show error in dialog
-        setConfigSaveError(lastMessage.error ?? "Failed to save settings");
-        console.warn("[VaultSelect] Config save failed:", lastMessage.error);
-      }
-    }
-  }, [lastMessage, configSaving, configEditorVault]);
+  // Note: config_updated message handling moved to REST API in handleConfigSave
 
   // Toast dismiss handler
   const handleToastDismiss = useCallback(() => {
     setToastVisible(false);
   }, []);
 
-  // Handle setup button click - send setup_vault message
-  function handleSetupClick(vault: VaultInfo) {
-    if (connectionStatus !== "connected") {
-      setError("Not connected to server. Please wait...");
-      return;
-    }
-
+  // Handle setup button click - call REST API
+  async function handleSetupClick(vault: VaultInfo) {
     setSetupVaultId(vault.id);
     setError(null);
-    // Reset the processed ref so this vault's setup_complete will be processed
-    lastProcessedSetupVaultIdRef.current = null;
     console.log(`[VaultSelect] Starting setup for vault: ${vault.id}`);
-    sendMessage({ type: "setup_vault", vaultId: vault.id });
+
+    try {
+      interface SetupResponse {
+        success: boolean;
+        summary: Array<{ step: string; success: boolean; message?: string }>;
+      }
+      const result = await api.post<SetupResponse>(vaultPath(vault.id, "setup"));
+
+      if (result.success) {
+        // Update vault's setupComplete status in local state
+        setVaults((prev) =>
+          prev.map((v) =>
+            v.id === vault.id ? { ...v, setupComplete: true } : v
+          )
+        );
+        // Show success toast with summary
+        const summaryText = result.summary
+          .filter((s) => s.success)
+          .map((s) => s.message ?? s.step)
+          .join(", ") || "Setup complete";
+        setToastVariant("success");
+        setToastMessage(summaryText);
+        setToastVisible(true);
+        console.log(`[VaultSelect] Setup complete for vault: ${vault.id}`);
+      } else {
+        // Setup failed - show error toast
+        const errorMessages = result.summary
+          .filter((s) => !s.success)
+          .map((s) => s.message ?? s.step)
+          .join(", ") || "Setup failed";
+        setToastVariant("error");
+        setToastMessage(errorMessages);
+        setToastVisible(true);
+        console.warn(`[VaultSelect] Setup failed for vault: ${vault.id}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to setup vault";
+      setToastVariant("error");
+      setToastMessage(message);
+      setToastVisible(true);
+      console.warn(`[VaultSelect] Setup error for vault: ${vault.id}`, err);
+    } finally {
+      setSetupVaultId(null);
+    }
   }
 
   // Handle gear button click - open config editor (TASK-008)
@@ -389,15 +326,59 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     setConfigSaveError(null); // Clear any previous error (TASK-010)
   }
 
-  // Handle config editor save - send update_vault_config via WebSocket (TASK-010)
-  function handleConfigSave(config: EditableVaultConfig) {
+  // Handle config editor save - call REST API (TASK-010)
+  async function handleConfigSave(config: EditableVaultConfig) {
     if (!configEditorVault) return;
 
     setConfigSaving(true);
     setConfigSaveError(null);
-    pendingConfigRef.current = config; // Store for local state update on success
     console.log(`[VaultSelect] Saving config for vault: ${configEditorVault.id}`, config);
-    sendMessage({ type: "update_vault_config", config, vaultId: configEditorVault.id });
+
+    try {
+      interface ConfigUpdateResponse {
+        success: boolean;
+      }
+      await api.patch<ConfigUpdateResponse>(
+        vaultPath(configEditorVault.id, "config"),
+        config
+      );
+
+      const vaultId = configEditorVault.id;
+
+      // Update local vault state with the saved config values
+      setVaults((prev) =>
+        prev.map((v) =>
+          v.id === vaultId
+            ? {
+                ...v,
+                // Map EditableVaultConfig fields to VaultInfo fields
+                name: config.title ?? v.name,
+                subtitle: config.subtitle ?? v.subtitle,
+                promptsPerGeneration: config.promptsPerGeneration ?? v.promptsPerGeneration,
+                maxPoolSize: config.maxPoolSize ?? v.maxPoolSize,
+                quotesPerWeek: config.quotesPerWeek ?? v.quotesPerWeek,
+                badges: config.badges ?? v.badges,
+              }
+            : v
+        )
+      );
+
+      // Show success toast
+      setToastVariant("success");
+      setToastMessage("Settings saved");
+      setToastVisible(true);
+
+      // Close dialog
+      setConfigEditorOpen(false);
+      setConfigEditorVault(null);
+      console.log("[VaultSelect] Config saved successfully");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save settings";
+      setConfigSaveError(message);
+      console.warn("[VaultSelect] Config save failed:", message);
+    } finally {
+      setConfigSaving(false);
+    }
   }
 
   // Handle config editor cancel
@@ -752,8 +733,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         onClose={() => setSettingsDialogOpen(false)}
         memoryEditorContent={
           <MemoryEditor
-            sendMessage={sendMessage}
-            lastMessage={memoryEditorMessage}
+            vaultId={currentVault?.id}
           />
         }
         promptEditorContent={

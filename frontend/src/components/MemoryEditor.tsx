@@ -14,8 +14,11 @@
  * - REQ-NF-1: Enforce 50KB memory file limit
  */
 
+/* eslint-disable @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises */
+// REST API calls in useEffect and button handlers
+
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { ClientMessage, ServerMessage } from "@memory-loop/shared";
+import { useMemory } from "../hooks/useMemory";
 import "./MemoryEditor.css";
 
 /**
@@ -32,10 +35,8 @@ const WARNING_THRESHOLD = 45 * 1024;
  * Props for the MemoryEditor component.
  */
 export interface MemoryEditorProps {
-  /** Function to send WebSocket messages */
-  sendMessage: (message: ClientMessage) => void;
-  /** Last received server message (for handling responses) */
-  lastMessage: ServerMessage | null;
+  /** Vault ID for REST API calls */
+  vaultId: string | undefined;
 }
 
 /**
@@ -43,11 +44,14 @@ export interface MemoryEditorProps {
  *
  * Provides an interface for viewing and editing the memory.md file.
  * The content is loaded from the server on mount and can be saved back.
+ * Uses REST API via useMemory hook (migrated from WebSocket).
  */
 export function MemoryEditor({
-  sendMessage,
-  lastMessage,
+  vaultId,
 }: MemoryEditorProps): React.ReactNode {
+  // REST API hook for memory operations
+  const { getMemory, saveMemory, isLoading: apiLoading, error: apiError } = useMemory(vaultId);
+
   // State
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
@@ -57,8 +61,8 @@ export function MemoryEditor({
   const [, setSizeBytes] = useState(0);
   const [fileExists, setFileExists] = useState(false);
 
-  // Track if we've requested the content
-  const hasRequestedRef = useRef(false);
+  // Track if we've loaded the content
+  const hasLoadedRef = useRef(false);
 
   // Calculate current content size
   const currentSize = new TextEncoder().encode(content).length;
@@ -67,48 +71,34 @@ export function MemoryEditor({
   const isWarning = currentSize >= WARNING_THRESHOLD && !isOverLimit;
   const hasChanges = content !== originalContent;
 
-  // Request memory content on mount
+  // Load memory content on mount via REST API
   useEffect(() => {
-    if (!hasRequestedRef.current) {
-      hasRequestedRef.current = true;
-      sendMessage({ type: "get_memory" });
+    if (!hasLoadedRef.current && vaultId) {
+      hasLoadedRef.current = true;
+      getMemory().then((result) => {
+        if (result) {
+          setContent(result.content);
+          setOriginalContent(result.content);
+          setSizeBytes(result.sizeBytes);
+          setFileExists(result.exists);
+        }
+        setIsLoading(false);
+      });
     }
-  }, [sendMessage]);
+  }, [vaultId, getMemory]);
+
+  // Update error state from API error
+  useEffect(() => {
+    if (apiError) {
+      setError(apiError);
+      setIsLoading(false);
+      setIsSaving(false);
+    }
+  }, [apiError]);
 
   // Ref to track current content for save callback
   const contentRef = useRef(content);
   contentRef.current = content;
-
-  // Handle server messages
-  useEffect(() => {
-    if (!lastMessage) return;
-
-    if (lastMessage.type === "memory_content") {
-      setContent(lastMessage.content);
-      setOriginalContent(lastMessage.content);
-      setSizeBytes(lastMessage.sizeBytes);
-      setFileExists(lastMessage.exists);
-      setIsLoading(false);
-      setError(null);
-    } else if (lastMessage.type === "memory_saved") {
-      setIsSaving(false);
-      if (lastMessage.success) {
-        // Update original content to match current content (use ref to avoid stale closure)
-        setOriginalContent(contentRef.current);
-        if (lastMessage.sizeBytes !== undefined) {
-          setSizeBytes(lastMessage.sizeBytes);
-        }
-        setFileExists(true);
-        setError(null);
-      } else {
-        setError(lastMessage.error ?? "Failed to save memory file");
-      }
-    } else if (lastMessage.type === "error") {
-      setIsLoading(false);
-      setIsSaving(false);
-      setError(lastMessage.message);
-    }
-  }, [lastMessage]);
 
   // Handle content change
   const handleChange = useCallback(
@@ -119,13 +109,25 @@ export function MemoryEditor({
     []
   );
 
-  // Handle save
-  const handleSave = useCallback(() => {
+  // Handle save via REST API
+  const handleSave = useCallback(async () => {
     if (isSaving || isOverLimit) return;
     setIsSaving(true);
     setError(null);
-    sendMessage({ type: "save_memory", content });
-  }, [sendMessage, content, isSaving, isOverLimit]);
+
+    const success = await saveMemory(content);
+
+    setIsSaving(false);
+    if (success) {
+      // Update original content to match current content (use ref to avoid stale closure)
+      setOriginalContent(contentRef.current);
+      setSizeBytes(new TextEncoder().encode(contentRef.current).length);
+      setFileExists(true);
+      setError(null);
+    } else {
+      setError(apiError ?? "Failed to save memory file");
+    }
+  }, [saveMemory, content, isSaving, isOverLimit, apiError]);
 
   // Handle reset to original
   const handleReset = useCallback(() => {
@@ -179,7 +181,7 @@ export function MemoryEditor({
 
       {/* Editor area */}
       <div className="memory-editor__content">
-        {isLoading ? (
+        {isLoading || apiLoading ? (
           <div className="memory-editor__loading">
             <div className="memory-editor__spinner" />
             <span>Loading memory file...</span>

@@ -1,19 +1,20 @@
 /**
- * WebSocket Handlers Module
+ * Handlers Module
  *
- * Re-exports handler modules for WebSocket operations.
+ * Re-exports handler modules for REST routes and WebSocket operations.
  *
- * After REST API migration, many handlers have been moved to REST routes.
- * This module now primarily exports:
- * - Shared types and utilities (still used by remaining WebSocket handlers)
- * - Search handlers (used by REST routes)
- * - Config handlers (used by REST routes)
- * - Pair writing handlers (used by WebSocket for streaming)
+ * After REST API migration, most handlers have been moved to REST routes.
+ * This module exports:
+ * - Shared types and utilities
+ * - Search handlers (REST-only, used by routes/search.ts)
+ * - Config handlers (REST-only, used by routes/config.ts)
+ * - Pair writing handlers (WebSocket, for streaming responses)
+ * - Memory/extraction handlers (WebSocket, for extraction prompt operations)
  *
- * The following handlers have been migrated to REST and are deprecated:
- * - browser-handlers.ts (use REST /files/* routes)
- * - home-handlers.ts (use REST /capture, /goals, etc.)
- * - meeting-handlers.ts (use REST /meetings/* routes)
+ * Removed handlers (now in REST routes):
+ * - browser-handlers.ts -> routes/files.ts
+ * - home-handlers.ts -> routes/home.ts, routes/capture.ts
+ * - meeting-handlers.ts -> routes/meetings.ts
  */
 
 // Shared types and utilities
@@ -26,14 +27,15 @@ export type {
 
 export { createConnectionState, generateMessageId, requireVault } from "./types.js";
 
-// Search handlers (used by REST routes/search.ts)
+// Search handlers (REST-only, used by routes/search.ts)
 export {
-  handleSearchFiles,
-  handleSearchContent,
-  handleGetSnippets,
+  searchFilesRest,
+  searchContentRest,
+  getSnippetsRest,
+  type SearchResultWithTiming,
 } from "./search-handlers.js";
 
-// Config handlers (used by REST routes/config.ts)
+// Config handlers (REST-only, used by routes/config.ts)
 export {
   handleGetPinnedAssets,
   handleSetPinnedAssets,
@@ -42,10 +44,21 @@ export {
   handleCreateVault,
   ConfigValidationError,
   VaultNotFoundError,
+  type PinnedAssetsResult,
+  type ConfigUpdateResult,
+  type VaultCreatedResult,
 } from "./config-handlers.js";
 
-// Pair writing handlers (used by WebSocket for streaming)
+// Pair writing handlers (WebSocket, for streaming responses)
 export {
   handleQuickAction,
   handleAdvisoryAction,
 } from "./pair-writing-handlers.js";
+
+// Memory/extraction handlers (WebSocket, for extraction prompt operations)
+export {
+  handleGetExtractionPrompt,
+  handleSaveExtractionPrompt,
+  handleResetExtractionPrompt,
+  handleTriggerExtraction,
+} from "./memory-handlers.js";

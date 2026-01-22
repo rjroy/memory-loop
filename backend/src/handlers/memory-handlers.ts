@@ -1,29 +1,24 @@
 /**
- * Memory and Extraction Handlers
+ * Extraction Prompt Handlers
  *
- * Handles memory file and extraction prompt operations:
- * - get_memory: Read memory.md content
- * - save_memory: Write memory.md content
+ * Handles extraction prompt operations over WebSocket:
  * - get_extraction_prompt: Read extraction prompt with override status
  * - save_extraction_prompt: Write extraction prompt (creates user override)
+ * - reset_extraction_prompt: Remove user override
  * - trigger_extraction: Manually trigger extraction run
  *
+ * Note: Memory file operations (get_memory, save_memory) have been migrated
+ * to REST API routes. See routes/memory.ts.
+ *
  * Spec Requirements:
- * - REQ-F-12: View memory.md
- * - REQ-F-13: Edit memory.md
  * - REQ-F-15: View extraction prompt
  * - REQ-F-16: Edit extraction prompt
  */
 
-import { writeFile, mkdir, stat, unlink } from "node:fs/promises";
+import { writeFile, mkdir, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { HandlerContext } from "./types.js";
 import { wsLog as log } from "../logger.js";
-import {
-  readMemoryFile,
-  writeMemoryFile,
-  MEMORY_FILE_PATH,
-} from "../extraction/memory-writer.js";
 import {
   loadExtractionPrompt,
   hasPromptOverride,
@@ -33,78 +28,6 @@ import {
   runExtraction,
   isExtractionRunning,
 } from "../extraction/extraction-manager.js";
-import { fileExists } from "../vault-manager.js";
-
-// =============================================================================
-// Memory File Handlers
-// =============================================================================
-
-/**
- * Handles get_memory message.
- * Returns the current memory.md content and metadata.
- */
-export async function handleGetMemory(ctx: HandlerContext): Promise<void> {
-  log.info("Getting memory file content");
-
-  try {
-    const content = await readMemoryFile();
-    const exists = await fileExists(MEMORY_FILE_PATH);
-    const sizeBytes = exists
-      ? (await stat(MEMORY_FILE_PATH)).size
-      : 0;
-
-    log.info(`Memory file: exists=${exists}, size=${sizeBytes}`);
-    ctx.send({
-      type: "memory_content",
-      content,
-      sizeBytes,
-      exists,
-    });
-  } catch (error) {
-    log.error("Failed to get memory", error);
-    const message = error instanceof Error ? error.message : "Failed to get memory";
-    ctx.sendError("INTERNAL_ERROR", message);
-  }
-}
-
-/**
- * Handles save_memory message.
- * Writes content to memory.md with size enforcement.
- */
-export async function handleSaveMemory(
-  ctx: HandlerContext,
-  content: string
-): Promise<void> {
-  log.info(`Saving memory file (${content.length} chars)`);
-
-  try {
-    const result = await writeMemoryFile(content);
-
-    if (result.success) {
-      log.info(`Memory saved: ${result.sizeBytes} bytes, pruned=${result.wasPruned}`);
-      ctx.send({
-        type: "memory_saved",
-        success: true,
-        sizeBytes: result.sizeBytes,
-      });
-    } else {
-      log.error(`Memory save failed: ${result.error}`);
-      ctx.send({
-        type: "memory_saved",
-        success: false,
-        error: result.error,
-      });
-    }
-  } catch (error) {
-    log.error("Failed to save memory", error);
-    const message = error instanceof Error ? error.message : "Failed to save memory";
-    ctx.send({
-      type: "memory_saved",
-      success: false,
-      error: message,
-    });
-  }
-}
 
 // =============================================================================
 // Extraction Prompt Handlers

@@ -273,32 +273,22 @@ export const ContextSnippetSchema = z.object({
 });
 
 // =============================================================================
-// Client -> Server Message Schemas
+// REST API Data Schemas
 // =============================================================================
 
 /**
- * Client requests to select a vault and start/resume a session
+ * Schema for an inspiration item (used for both contextual prompts and quotes).
+ * Used by REST API responses.
  */
-export const SelectVaultMessageSchema = z.object({
-  type: z.literal("select_vault"),
-  vaultId: z.string().min(1, "Vault ID is required"),
+export const InspirationItemSchema = z.object({
+  text: z.string().min(1, "Inspiration text is required"),
+  attribution: z.string().optional(),
 });
 
 /**
- * Client sends a note to be captured in the daily note
- */
-export const CaptureNoteMessageSchema = z.object({
-  type: z.literal("capture_note"),
-  text: z.string().min(1, "Note text is required"),
-});
-
-// =============================================================================
-// Meeting Capture Schemas
-// =============================================================================
-
-/**
- * Schema for active meeting state sent from server to client.
+ * Schema for active meeting state.
  * Tracks the current meeting session if one is active.
+ * Used by REST API responses.
  */
 export const MeetingStateSchema = z.object({
   /** Whether a meeting is currently active */
@@ -311,30 +301,16 @@ export const MeetingStateSchema = z.object({
   startedAt: z.string().optional(),
 });
 
-/**
- * Client requests to start a meeting capture session.
- * Creates a new meeting file and routes subsequent captures there.
- */
-export const StartMeetingMessageSchema = z.object({
-  type: z.literal("start_meeting"),
-  /** Meeting title (used in filename and frontmatter) */
-  title: z.string().min(1, "Meeting title is required"),
-});
+// =============================================================================
+// Client -> Server Message Schemas
+// =============================================================================
 
 /**
- * Client requests to stop the current meeting capture session.
- * Returns to normal daily note capture mode.
+ * Client requests to select a vault and start/resume a session
  */
-export const StopMeetingMessageSchema = z.object({
-  type: z.literal("stop_meeting"),
-});
-
-/**
- * Client requests current meeting state.
- * Used to sync state after reconnection.
- */
-export const GetMeetingStateMessageSchema = z.object({
-  type: z.literal("get_meeting_state"),
+export const SelectVaultMessageSchema = z.object({
+  type: z.literal("select_vault"),
+  vaultId: z.string().min(1, "Vault ID is required"),
 });
 
 /**
@@ -372,90 +348,6 @@ export const AbortMessageSchema = z.object({
  */
 export const PingMessageSchema = z.object({
   type: z.literal("ping"),
-});
-
-/**
- * Client requests directory listing in the vault
- * Path is relative to vault root; empty string for root directory
- */
-export const ListDirectoryMessageSchema = z.object({
-  type: z.literal("list_directory"),
-  path: z.string(), // Empty string for root, or relative path like "folder/subfolder"
-});
-
-/**
- * Client requests to read a markdown file from the vault
- * Path is relative to vault root and must end with .md
- */
-export const ReadFileMessageSchema = z.object({
-  type: z.literal("read_file"),
-  path: z.string().min(1, "File path is required"),
-});
-
-/**
- * Client requests recent captured notes from the vault inbox
- */
-export const GetRecentNotesMessageSchema = z.object({
-  type: z.literal("get_recent_notes"),
-});
-
-/**
- * Client requests recent activity (captures + discussions) from the vault
- */
-export const GetRecentActivityMessageSchema = z.object({
-  type: z.literal("get_recent_activity"),
-});
-
-/**
- * Client requests goals from the vault's goals.md file
- */
-export const GetGoalsMessageSchema = z.object({
-  type: z.literal("get_goals"),
-});
-
-/**
- * Client requests inspiration (contextual prompt and quote)
- */
-export const GetInspirationMessageSchema = z.object({
-  type: z.literal("get_inspiration"),
-});
-
-/**
- * Client requests to write content to a markdown file in the vault
- * Path is relative to vault root and must end with .md
- */
-export const WriteFileMessageSchema = z.object({
-  type: z.literal("write_file"),
-  path: z.string().min(1, "File path is required"),
-  content: z.string(), // Empty string is valid (clearing file)
-});
-
-/**
- * Client requests task list from configured directories
- */
-export const GetTasksMessageSchema = z.object({
-  type: z.literal("get_tasks"),
-});
-
-/**
- * Client requests to toggle a task's checkbox state.
- * If newState is provided, sets task to that state directly.
- * Otherwise cycles through states: ' ' -> 'x' -> '/' -> '?' -> 'b' -> 'f' -> ' '
- */
-export const ToggleTaskMessageSchema = z.object({
-  type: z.literal("toggle_task"),
-  filePath: z.string().min(1, "File path is required"),
-  lineNumber: z.number().int().min(1, "Line number must be at least 1"),
-  /** Optional: set task to this specific state instead of cycling */
-  newState: z.string().length(1, "State must be a single character").optional(),
-});
-
-/**
- * Client requests to delete a session
- */
-export const DeleteSessionMessageSchema = z.object({
-  type: z.literal("delete_session"),
-  sessionId: z.string().min(1, "Session ID is required"),
 });
 
 /**
@@ -511,132 +403,6 @@ export const AskUserQuestionResponseMessageSchema = z.object({
 });
 
 /**
- * Client requests to run vault setup (install commands, create PARA dirs, update CLAUDE.md)
- */
-export const SetupVaultMessageSchema = z.object({
-  type: z.literal("setup_vault"),
-  vaultId: z.string().min(1, "Vault ID is required"),
-});
-
-/**
- * Client requests file name search with fuzzy matching
- * Results are sorted by match quality score
- */
-export const SearchFilesMessageSchema = z.object({
-  type: z.literal("search_files"),
-  query: z.string().min(1, "Search query is required"),
-  /** Maximum number of results to return (default: 50) */
-  limit: z.number().int().positive().optional(),
-});
-
-/**
- * Client requests content search across markdown files
- * Results show files with match counts
- */
-export const SearchContentMessageSchema = z.object({
-  type: z.literal("search_content"),
-  query: z.string().min(1, "Search query is required"),
-  /** Maximum number of results to return (default: 50) */
-  limit: z.number().int().positive().optional(),
-});
-
-/**
- * Client requests context snippets for a specific file in content search results
- * Used for lazy loading of match context when expanding a result
- */
-export const GetSnippetsMessageSchema = z.object({
-  type: z.literal("get_snippets"),
-  /** File path to get snippets for */
-  path: z.string().min(1, "File path is required"),
-  /** Original search query to find matches */
-  query: z.string().min(1, "Search query is required"),
-});
-
-/**
- * Client requests to delete a file from the vault
- * Path is relative to vault content root
- */
-export const DeleteFileMessageSchema = z.object({
-  type: z.literal("delete_file"),
-  path: z.string().min(1, "File path is required"),
-});
-
-/**
- * Client requests to get directory contents for deletion preview
- * Returns list of files and subdirectories with counts
- */
-export const GetDirectoryContentsMessageSchema = z.object({
-  type: z.literal("get_directory_contents"),
-  path: z.string().min(1, "Directory path is required"),
-});
-
-/**
- * Client requests to delete a directory and all its contents from the vault
- * Path is relative to vault content root
- * This is a destructive operation that cannot be undone
- */
-export const DeleteDirectoryMessageSchema = z.object({
-  type: z.literal("delete_directory"),
-  path: z.string().min(1, "Directory path is required"),
-});
-
-/**
- * Client requests to archive a directory from the vault
- * Path is relative to vault content root
- * Only valid for: chats directory, project directories, area directories
- */
-export const ArchiveFileMessageSchema = z.object({
-  type: z.literal("archive_file"),
-  path: z.string().min(1, "File path is required"),
-});
-
-/**
- * Client requests to create a new directory in the vault
- * Path is relative to vault content root (parent directory)
- * Name must be alphanumeric with - and _ only
- */
-export const CreateDirectoryMessageSchema = z.object({
-  type: z.literal("create_directory"),
-  path: z.string(), // Parent directory path (empty string for root)
-  name: z.string().min(1, "Directory name is required").regex(/^[a-zA-Z0-9_-]+$/, "Directory name must be alphanumeric with - and _ only"),
-});
-
-/**
- * Client requests to create a new markdown file in the vault
- * Path is relative to vault content root (parent directory)
- * Name must be alphanumeric with - and _ only (extension added automatically)
- */
-export const CreateFileMessageSchema = z.object({
-  type: z.literal("create_file"),
-  path: z.string(), // Parent directory path (empty string for root)
-  name: z.string().min(1, "File name is required").regex(/^[a-zA-Z0-9_-]+$/, "File name must be alphanumeric with - and _ only"),
-});
-
-/**
- * Client requests to rename a file or directory in the vault
- * Path is the current path relative to vault content root
- * NewName is the new name (alphanumeric with - and _ only)
- * For files, the extension is preserved automatically
- */
-export const RenameFileMessageSchema = z.object({
-  type: z.literal("rename_file"),
-  path: z.string().min(1, "File path is required"),
-  newName: z.string().min(1, "New name is required").regex(/^[a-zA-Z0-9_-]+$/, "New name must be alphanumeric with - and _ only"),
-});
-
-/**
- * Client requests to move a file or directory to a new location in the vault
- * Path is the current path relative to vault content root
- * NewPath is the destination path relative to vault content root
- * References in markdown files will be updated automatically
- */
-export const MoveFileMessageSchema = z.object({
-  type: z.literal("move_file"),
-  path: z.string().min(1, "File path is required"),
-  newPath: z.string().min(1, "New path is required"),
-});
-
-/**
  * Client requests to dismiss a health issue.
  * Dismissed issues won't reappear until vault is reselected.
  */
@@ -644,36 +410,6 @@ export const DismissHealthIssueMessageSchema = z.object({
   type: z.literal("dismiss_health_issue"),
   /** ID of the issue to dismiss */
   issueId: z.string().min(1, "Issue ID is required"),
-});
-
-/**
- * Client requests pinned assets for current vault
- * Returns paths stored in .memory-loop.json
- */
-export const GetPinnedAssetsMessageSchema = z.object({
-  type: z.literal("get_pinned_assets"),
-});
-
-/**
- * Client updates pinned assets for current vault
- * Saves paths to .memory-loop.json
- */
-export const SetPinnedAssetsMessageSchema = z.object({
-  type: z.literal("set_pinned_assets"),
-  /** Array of paths (relative to content root) to pin */
-  paths: z.array(z.string()),
-});
-
-/**
- * Client requests to update vault configuration.
- * Partial updates are supported (only provided fields are updated).
- */
-export const UpdateVaultConfigMessageSchema = z.object({
-  type: z.literal("update_vault_config"),
-  /** Configuration fields to update */
-  config: EditableVaultConfigSchema,
-  /** Optional vault ID for editing before vault selection (VaultSelect use case) */
-  vaultId: z.string().optional(),
 });
 
 /**
@@ -763,24 +499,6 @@ export const AdvisoryActionRequestMessageSchema = z.object({
 // =============================================================================
 
 /**
- * Client requests current memory.md content (REQ-F-12)
- * Response: memory_content message
- */
-export const GetMemoryMessageSchema = z.object({
-  type: z.literal("get_memory"),
-});
-
-/**
- * Client requests to save updated memory content (REQ-F-13)
- * Response: memory_saved message
- */
-export const SaveMemoryMessageSchema = z.object({
-  type: z.literal("save_memory"),
-  /** Updated memory file content */
-  content: z.string(),
-});
-
-/**
  * Client requests current extraction prompt with override status (REQ-F-15)
  * Response: extraction_prompt_content message
  */
@@ -821,50 +539,19 @@ export const TriggerExtractionMessageSchema = z.object({
  */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   SelectVaultMessageSchema,
-  CaptureNoteMessageSchema,
-  StartMeetingMessageSchema,
-  StopMeetingMessageSchema,
-  GetMeetingStateMessageSchema,
+  CreateVaultMessageSchema,
   DiscussionMessageSchema,
   ResumeSessionMessageSchema,
   NewSessionMessageSchema,
   AbortMessageSchema,
   PingMessageSchema,
-  ListDirectoryMessageSchema,
-  ReadFileMessageSchema,
-  GetRecentNotesMessageSchema,
-  GetRecentActivityMessageSchema,
-  GetGoalsMessageSchema,
-  GetInspirationMessageSchema,
-  WriteFileMessageSchema,
-  GetTasksMessageSchema,
-  ToggleTaskMessageSchema,
-  DeleteSessionMessageSchema,
   ToolPermissionResponseMessageSchema,
   AskUserQuestionResponseMessageSchema,
-  SetupVaultMessageSchema,
-  SearchFilesMessageSchema,
-  SearchContentMessageSchema,
-  GetSnippetsMessageSchema,
-  DeleteFileMessageSchema,
-  GetDirectoryContentsMessageSchema,
-  DeleteDirectoryMessageSchema,
-  ArchiveFileMessageSchema,
-  CreateDirectoryMessageSchema,
-  CreateFileMessageSchema,
-  RenameFileMessageSchema,
-  MoveFileMessageSchema,
   DismissHealthIssueMessageSchema,
-  GetPinnedAssetsMessageSchema,
-  SetPinnedAssetsMessageSchema,
-  UpdateVaultConfigMessageSchema,
-  CreateVaultMessageSchema,
   // Pair Writing Mode
   QuickActionRequestMessageSchema,
   AdvisoryActionRequestMessageSchema,
   // Memory Extraction
-  GetMemoryMessageSchema,
-  SaveMemoryMessageSchema,
   GetExtractionPromptMessageSchema,
   SaveExtractionPromptMessageSchema,
   ResetExtractionPromptMessageSchema,
@@ -895,56 +582,6 @@ export const SessionReadyMessageSchema = z.object({
   messages: z.array(ConversationMessageSchema).optional(), // Sent on resume
   createdAt: z.string().optional(), // ISO 8601 timestamp of session creation
   slashCommands: z.array(SlashCommandSchema).optional(), // Available slash commands
-});
-
-/**
- * Server confirms note was captured
- */
-export const NoteCapturedMessageSchema = z.object({
-  type: z.literal("note_captured"),
-  timestamp: z.string().min(1, "Timestamp is required"),
-});
-
-// =============================================================================
-// Meeting Server Messages
-// =============================================================================
-
-/**
- * Server confirms meeting has started.
- * Client should switch to meeting capture mode.
- */
-export const MeetingStartedMessageSchema = z.object({
-  type: z.literal("meeting_started"),
-  /** Meeting title */
-  title: z.string().min(1, "Meeting title is required"),
-  /** Path to the meeting file (relative to content root) */
-  filePath: z.string().min(1, "File path is required"),
-  /** ISO 8601 timestamp when meeting started */
-  startedAt: z.string().min(1, "Start time is required"),
-});
-
-/**
- * Server confirms meeting has stopped.
- * Includes the file content for Claude Code integration.
- */
-export const MeetingStoppedMessageSchema = z.object({
-  type: z.literal("meeting_stopped"),
-  /** Path to the meeting file (relative to content root) */
-  filePath: z.string().min(1, "File path is required"),
-  /** Full content of the meeting file for Claude Code */
-  content: z.string(),
-  /** Number of entries captured during the meeting */
-  entryCount: z.number().int().min(0),
-});
-
-/**
- * Server sends current meeting state.
- * Response to get_meeting_state request or sent on vault selection.
- */
-export const MeetingStateMessageSchema = z.object({
-  type: z.literal("meeting_state"),
-  /** Current meeting state */
-  state: MeetingStateSchema,
 });
 
 /**
@@ -1018,109 +655,6 @@ export const PongMessageSchema = z.object({
 });
 
 /**
- * Server sends directory listing response
- */
-export const DirectoryListingMessageSchema = z.object({
-  type: z.literal("directory_listing"),
-  path: z.string(), // The requested directory path (empty string for root)
-  entries: z.array(FileEntrySchema), // Sorted: directories first, then files, alphabetically
-});
-
-/**
- * Server sends file content response
- */
-export const FileContentMessageSchema = z.object({
-  type: z.literal("file_content"),
-  path: z.string().min(1, "File path is required"),
-  content: z.string(),
-  truncated: z.boolean(), // True if file exceeded 1MB and was truncated
-});
-
-/**
- * Server sends recent captured notes from the vault inbox
- */
-export const RecentNotesMessageSchema = z.object({
-  type: z.literal("recent_notes"),
-  notes: z.array(RecentNoteEntrySchema),
-});
-
-/**
- * Server sends recent activity (captures + discussions) from the vault
- */
-export const RecentActivityMessageSchema = z.object({
-  type: z.literal("recent_activity"),
-  captures: z.array(RecentNoteEntrySchema),
-  discussions: z.array(RecentDiscussionEntrySchema),
-});
-
-/**
- * Server sends goals from the vault's goals.md file
- * Returns null for content if the file doesn't exist
- */
-export const GoalsMessageSchema = z.object({
-  type: z.literal("goals"),
-  content: z.string().nullable(),
-});
-
-/**
- * Schema for an inspiration item (used for both contextual prompts and quotes)
- */
-export const InspirationItemSchema = z.object({
-  text: z.string().min(1, "Inspiration text is required"),
-  attribution: z.string().optional(),
-});
-
-/**
- * Server sends inspiration (contextual prompt and quote)
- * contextual is null if the prompts file is missing/empty
- */
-export const InspirationMessageSchema = z.object({
-  type: z.literal("inspiration"),
-  contextual: InspirationItemSchema.nullable(),
-  quote: InspirationItemSchema,
-});
-
-/**
- * Server confirms file was written successfully
- */
-export const FileWrittenMessageSchema = z.object({
-  type: z.literal("file_written"),
-  path: z.string().min(1, "File path is required"),
-  success: z.literal(true),
-});
-
-/**
- * Server sends task list from configured directories
- */
-export const TasksMessageSchema = z.object({
-  type: z.literal("tasks"),
-  tasks: z.array(TaskEntrySchema),
-  /** Count of incomplete tasks (state = ' ') for rollup display */
-  incomplete: z.number().int().min(0),
-  /** Total task count for rollup display */
-  total: z.number().int().min(0),
-});
-
-/**
- * Server confirms task toggle was successful
- */
-export const TaskToggledMessageSchema = z.object({
-  type: z.literal("task_toggled"),
-  filePath: z.string().min(1, "File path is required"),
-  lineNumber: z.number().int().min(1, "Line number must be at least 1"),
-  /** The new checkbox state character after toggle */
-  newState: z.string().length(1, "State must be a single character"),
-});
-
-/**
- * Server confirms session was deleted successfully
- */
-export const SessionDeletedMessageSchema = z.object({
-  type: z.literal("session_deleted"),
-  sessionId: z.string().min(1, "Session ID is required"),
-});
-
-/**
  * Server requests permission from the user before running a tool
  * The client should display a dialog and respond with tool_permission_response
  */
@@ -1144,159 +678,6 @@ export const AskUserQuestionRequestMessageSchema = z.object({
   toolUseId: z.string().min(1, "Tool use ID is required"),
   /** Array of questions to present to the user (1-4 questions) */
   questions: z.array(AskUserQuestionItemSchema).min(1).max(4),
-});
-
-/**
- * Server reports vault setup completion (commands installed, PARA created, CLAUDE.md updated)
- */
-export const SetupCompleteMessageSchema = z.object({
-  type: z.literal("setup_complete"),
-  vaultId: z.string().min(1, "Vault ID is required"),
-  success: z.boolean(),
-  /** Human-readable summary of actions taken */
-  summary: z.array(z.string()),
-  /** Details of any errors that occurred during setup */
-  errors: z.array(z.string()).optional(),
-});
-
-/**
- * Server sends search results (for both file name and content search)
- * Query is echoed back for client-side correlation with requests
- */
-export const SearchResultsMessageSchema = z.object({
-  type: z.literal("search_results"),
-  /** Search mode: 'files' for file name search, 'content' for full-text search */
-  mode: z.enum(["files", "content"]),
-  /** Original query (echoed for correlation) */
-  query: z.string(),
-  /** Search results (type depends on mode) */
-  results: z.union([
-    z.array(FileSearchResultSchema),
-    z.array(ContentSearchResultSchema),
-  ]),
-  /** Total matches before limit was applied */
-  totalMatches: z.number().int().min(0),
-  /** Search execution time in milliseconds (for monitoring) */
-  searchTimeMs: z.number().min(0),
-});
-
-/**
- * Server sends context snippets for a specific file
- * Response to get_snippets request
- */
-export const SnippetsMessageSchema = z.object({
-  type: z.literal("snippets"),
-  /** File path the snippets are from */
-  path: z.string().min(1, "File path is required"),
-  /** Context snippets showing matched lines */
-  snippets: z.array(ContextSnippetSchema),
-});
-
-/**
- * Server reports index building progress for large vaults
- * Sent during initial index build or rebuild
- */
-export const IndexProgressMessageSchema = z.object({
-  type: z.literal("index_progress"),
-  /** Current indexing stage */
-  stage: z.enum(["scanning", "indexing", "complete"]),
-  /** Number of files processed so far */
-  filesProcessed: z.number().int().min(0),
-  /** Total number of files to process */
-  totalFiles: z.number().int().min(0),
-});
-
-/**
- * Server confirms file was deleted successfully
- */
-export const FileDeletedMessageSchema = z.object({
-  type: z.literal("file_deleted"),
-  path: z.string().min(1, "File path is required"),
-});
-
-/**
- * Server sends directory contents for deletion preview
- */
-export const DirectoryContentsMessageSchema = z.object({
-  type: z.literal("directory_contents"),
-  path: z.string().min(1, "Directory path is required"),
-  /** List of file paths (relative to the directory) */
-  files: z.array(z.string()),
-  /** List of subdirectory paths (relative to the directory) */
-  directories: z.array(z.string()),
-  /** Total count of files (including in subdirectories) */
-  totalFiles: z.number().int().min(0),
-  /** Total count of directories (including nested) */
-  totalDirectories: z.number().int().min(0),
-  /** Whether the preview list was truncated */
-  truncated: z.boolean(),
-});
-
-/**
- * Server confirms directory was deleted successfully
- */
-export const DirectoryDeletedMessageSchema = z.object({
-  type: z.literal("directory_deleted"),
-  path: z.string().min(1, "Directory path is required"),
-  /** Number of files that were deleted */
-  filesDeleted: z.number().int().min(0),
-  /** Number of subdirectories that were deleted */
-  directoriesDeleted: z.number().int().min(0),
-});
-
-/**
- * Server confirms directory was archived successfully
- */
-export const FileArchivedMessageSchema = z.object({
-  type: z.literal("file_archived"),
-  /** Original path that was archived */
-  path: z.string().min(1, "File path is required"),
-  /** Destination path in archive */
-  archivePath: z.string().min(1, "Archive path is required"),
-});
-
-/**
- * Server confirms directory was created successfully
- */
-export const DirectoryCreatedMessageSchema = z.object({
-  type: z.literal("directory_created"),
-  /** Full path of the created directory (relative to content root) */
-  path: z.string().min(1, "Directory path is required"),
-});
-
-/**
- * Server confirms file was created successfully
- */
-export const FileCreatedMessageSchema = z.object({
-  type: z.literal("file_created"),
-  /** Full path of the created file (relative to content root) */
-  path: z.string().min(1, "File path is required"),
-});
-
-/**
- * Server confirms file or directory was renamed successfully
- */
-export const FileRenamedMessageSchema = z.object({
-  type: z.literal("file_renamed"),
-  /** Original path (relative to content root) */
-  oldPath: z.string().min(1, "Old path is required"),
-  /** New path (relative to content root) */
-  newPath: z.string().min(1, "New path is required"),
-  /** Number of references updated in .md files */
-  referencesUpdated: z.number().int().min(0),
-});
-
-/**
- * Server confirms file or directory was moved successfully
- */
-export const FileMovedMessageSchema = z.object({
-  type: z.literal("file_moved"),
-  /** Original path (relative to content root) */
-  oldPath: z.string().min(1, "Old path is required"),
-  /** New path (relative to content root) */
-  newPath: z.string().min(1, "New path is required"),
-  /** Number of references updated in .md files */
-  referencesUpdated: z.number().int().min(0),
 });
 
 // =============================================================================
@@ -1351,25 +732,13 @@ export const HealthReportMessageSchema = z.object({
 });
 
 /**
- * Server sends pinned assets for the current vault.
- * Response to get_pinned_assets or set_pinned_assets request.
+ * Server confirms vault was created successfully.
+ * Response to create_vault request.
  */
-export const PinnedAssetsMessageSchema = z.object({
-  type: z.literal("pinned_assets"),
-  /** Array of pinned asset paths (relative to content root) */
-  paths: z.array(z.string()),
-});
-
-/**
- * Server confirms vault configuration update.
- * Response to update_vault_config request.
- */
-export const ConfigUpdatedMessageSchema = z.object({
-  type: z.literal("config_updated"),
-  /** Whether the update was successful */
-  success: z.boolean(),
-  /** Error message if success is false */
-  error: z.string().optional(),
+export const VaultCreatedMessageSchema = z.object({
+  type: z.literal("vault_created"),
+  /** The newly created vault info */
+  vault: VaultInfoSchema,
 });
 
 // =============================================================================
@@ -1386,34 +755,6 @@ export const ConfigUpdatedMessageSchema = z.object({
 export const ExtractionStatusValueSchema = z.enum(["idle", "running", "complete", "error"]);
 
 /**
- * Server confirms vault was created successfully.
- * Response to create_vault request.
- */
-export const VaultCreatedMessageSchema = z.object({
-  type: z.literal("vault_created"),
-  /** The newly created vault info */
-  vault: VaultInfoSchema,
-});
-
-// =============================================================================
-// Memory Extraction Server Messages
-// =============================================================================
-
-/**
- * Server sends memory.md content (REQ-F-12)
- * Response to get_memory request
- */
-export const MemoryContentMessageSchema = z.object({
-  type: z.literal("memory_content"),
-  /** Memory file content (empty string if file doesn't exist yet) */
-  content: z.string(),
-  /** File size in bytes (REQ-NF-1: must stay under 50KB) */
-  sizeBytes: z.number().int().min(0),
-  /** Whether the memory file exists */
-  exists: z.boolean(),
-});
-
-/**
  * Server sends extraction prompt content (REQ-F-15)
  * Response to get_extraction_prompt request
  */
@@ -1423,20 +764,6 @@ export const ExtractionPromptContentMessageSchema = z.object({
   content: z.string(),
   /** True if using user override at ~/.config/memory-loop/extraction-prompt.md */
   isOverride: z.boolean(),
-});
-
-/**
- * Server confirms memory was saved (REQ-F-13)
- * Response to save_memory request
- */
-export const MemorySavedMessageSchema = z.object({
-  type: z.literal("memory_saved"),
-  /** Whether the save was successful */
-  success: z.boolean(),
-  /** New file size in bytes after save */
-  sizeBytes: z.number().int().min(0).optional(),
-  /** Error message if success is false */
-  error: z.string().optional(),
 });
 
 /**
@@ -1492,11 +819,8 @@ export const ExtractionStatusMessageSchema = z.object({
  */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
   VaultListMessageSchema,
+  VaultCreatedMessageSchema,
   SessionReadyMessageSchema,
-  NoteCapturedMessageSchema,
-  MeetingStartedMessageSchema,
-  MeetingStoppedMessageSchema,
-  MeetingStateMessageSchema,
   ResponseStartMessageSchema,
   ResponseChunkMessageSchema,
   ResponseEndMessageSchema,
@@ -1505,38 +829,11 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   ToolEndMessageSchema,
   ErrorMessageSchema,
   PongMessageSchema,
-  DirectoryListingMessageSchema,
-  FileContentMessageSchema,
-  RecentNotesMessageSchema,
-  RecentActivityMessageSchema,
-  GoalsMessageSchema,
-  InspirationMessageSchema,
-  FileWrittenMessageSchema,
-  TasksMessageSchema,
-  TaskToggledMessageSchema,
-  SessionDeletedMessageSchema,
   ToolPermissionRequestMessageSchema,
   AskUserQuestionRequestMessageSchema,
-  SetupCompleteMessageSchema,
-  SearchResultsMessageSchema,
-  SnippetsMessageSchema,
-  IndexProgressMessageSchema,
-  FileDeletedMessageSchema,
-  DirectoryContentsMessageSchema,
-  DirectoryDeletedMessageSchema,
-  FileArchivedMessageSchema,
-  DirectoryCreatedMessageSchema,
-  FileCreatedMessageSchema,
-  FileRenamedMessageSchema,
-  FileMovedMessageSchema,
   HealthReportMessageSchema,
-  PinnedAssetsMessageSchema,
-  ConfigUpdatedMessageSchema,
-  VaultCreatedMessageSchema,
   // Memory Extraction
-  MemoryContentMessageSchema,
   ExtractionPromptContentMessageSchema,
-  MemorySavedMessageSchema,
   ExtractionPromptSavedMessageSchema,
   ExtractionPromptResetMessageSchema,
   ExtractionStatusMessageSchema,
@@ -1591,55 +888,27 @@ export type EditableVaultConfig = z.infer<typeof EditableVaultConfigSchema>;
 // Meeting types
 export type MeetingState = z.infer<typeof MeetingStateSchema>;
 
+// Inspiration types (used by REST API)
+export type InspirationItem = z.infer<typeof InspirationItemSchema>;
+
 // Client message types
 export type SelectVaultMessage = z.infer<typeof SelectVaultMessageSchema>;
-export type CaptureNoteMessage = z.infer<typeof CaptureNoteMessageSchema>;
-export type StartMeetingMessage = z.infer<typeof StartMeetingMessageSchema>;
-export type StopMeetingMessage = z.infer<typeof StopMeetingMessageSchema>;
-export type GetMeetingStateMessage = z.infer<typeof GetMeetingStateMessageSchema>;
+export type CreateVaultMessage = z.infer<typeof CreateVaultMessageSchema>;
 export type DiscussionMessage = z.infer<typeof DiscussionMessageSchema>;
 export type ResumeSessionMessage = z.infer<typeof ResumeSessionMessageSchema>;
 export type NewSessionMessage = z.infer<typeof NewSessionMessageSchema>;
 export type AbortMessage = z.infer<typeof AbortMessageSchema>;
 export type PingMessage = z.infer<typeof PingMessageSchema>;
-export type ListDirectoryMessage = z.infer<typeof ListDirectoryMessageSchema>;
-export type ReadFileMessage = z.infer<typeof ReadFileMessageSchema>;
-export type GetRecentNotesMessage = z.infer<typeof GetRecentNotesMessageSchema>;
-export type GetRecentActivityMessage = z.infer<typeof GetRecentActivityMessageSchema>;
-export type GetGoalsMessage = z.infer<typeof GetGoalsMessageSchema>;
-export type GetInspirationMessage = z.infer<typeof GetInspirationMessageSchema>;
-export type WriteFileMessage = z.infer<typeof WriteFileMessageSchema>;
-export type GetTasksMessage = z.infer<typeof GetTasksMessageSchema>;
-export type ToggleTaskMessage = z.infer<typeof ToggleTaskMessageSchema>;
-export type DeleteSessionMessage = z.infer<typeof DeleteSessionMessageSchema>;
 export type ToolPermissionResponseMessage = z.infer<typeof ToolPermissionResponseMessageSchema>;
 export type AskUserQuestionOption = z.infer<typeof AskUserQuestionOptionSchema>;
 export type AskUserQuestionItem = z.infer<typeof AskUserQuestionItemSchema>;
 export type AskUserQuestionResponseMessage = z.infer<typeof AskUserQuestionResponseMessageSchema>;
-export type SetupVaultMessage = z.infer<typeof SetupVaultMessageSchema>;
-export type SearchFilesMessage = z.infer<typeof SearchFilesMessageSchema>;
-export type SearchContentMessage = z.infer<typeof SearchContentMessageSchema>;
-export type GetSnippetsMessage = z.infer<typeof GetSnippetsMessageSchema>;
-export type DeleteFileMessage = z.infer<typeof DeleteFileMessageSchema>;
-export type GetDirectoryContentsMessage = z.infer<typeof GetDirectoryContentsMessageSchema>;
-export type DeleteDirectoryMessage = z.infer<typeof DeleteDirectoryMessageSchema>;
-export type ArchiveFileMessage = z.infer<typeof ArchiveFileMessageSchema>;
-export type CreateDirectoryMessage = z.infer<typeof CreateDirectoryMessageSchema>;
-export type CreateFileMessage = z.infer<typeof CreateFileMessageSchema>;
-export type RenameFileMessage = z.infer<typeof RenameFileMessageSchema>;
-export type MoveFileMessage = z.infer<typeof MoveFileMessageSchema>;
 export type DismissHealthIssueMessage = z.infer<typeof DismissHealthIssueMessageSchema>;
-export type GetPinnedAssetsMessage = z.infer<typeof GetPinnedAssetsMessageSchema>;
-export type SetPinnedAssetsMessage = z.infer<typeof SetPinnedAssetsMessageSchema>;
-export type UpdateVaultConfigMessage = z.infer<typeof UpdateVaultConfigMessageSchema>;
-export type CreateVaultMessage = z.infer<typeof CreateVaultMessageSchema>;
 // Pair Writing Mode types
 export type QuickActionType = z.infer<typeof QuickActionTypeSchema>;
 export type AdvisoryActionType = z.infer<typeof AdvisoryActionTypeSchema>;
 export type QuickActionRequestMessage = z.infer<typeof QuickActionRequestMessageSchema>;
 export type AdvisoryActionRequestMessage = z.infer<typeof AdvisoryActionRequestMessageSchema>;
-export type GetMemoryMessage = z.infer<typeof GetMemoryMessageSchema>;
-export type SaveMemoryMessage = z.infer<typeof SaveMemoryMessageSchema>;
 export type GetExtractionPromptMessage = z.infer<typeof GetExtractionPromptMessageSchema>;
 export type SaveExtractionPromptMessage = z.infer<typeof SaveExtractionPromptMessageSchema>;
 export type ResetExtractionPromptMessage = z.infer<typeof ResetExtractionPromptMessageSchema>;
@@ -1648,11 +917,8 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
 export type VaultListMessage = z.infer<typeof VaultListMessageSchema>;
+export type VaultCreatedMessage = z.infer<typeof VaultCreatedMessageSchema>;
 export type SessionReadyMessage = z.infer<typeof SessionReadyMessageSchema>;
-export type NoteCapturedMessage = z.infer<typeof NoteCapturedMessageSchema>;
-export type MeetingStartedMessage = z.infer<typeof MeetingStartedMessageSchema>;
-export type MeetingStoppedMessage = z.infer<typeof MeetingStoppedMessageSchema>;
-export type MeetingStateMessage = z.infer<typeof MeetingStateMessageSchema>;
 export type ResponseStartMessage = z.infer<typeof ResponseStartMessageSchema>;
 export type ResponseChunkMessage = z.infer<typeof ResponseChunkMessageSchema>;
 export type ResponseEndMessage = z.infer<typeof ResponseEndMessageSchema>;
@@ -1661,38 +927,10 @@ export type ToolInputMessage = z.infer<typeof ToolInputMessageSchema>;
 export type ToolEndMessage = z.infer<typeof ToolEndMessageSchema>;
 export type ErrorMessage = z.infer<typeof ErrorMessageSchema>;
 export type PongMessage = z.infer<typeof PongMessageSchema>;
-export type DirectoryListingMessage = z.infer<typeof DirectoryListingMessageSchema>;
-export type FileContentMessage = z.infer<typeof FileContentMessageSchema>;
-export type RecentNotesMessage = z.infer<typeof RecentNotesMessageSchema>;
-export type RecentActivityMessage = z.infer<typeof RecentActivityMessageSchema>;
-export type GoalsMessage = z.infer<typeof GoalsMessageSchema>;
-export type InspirationItem = z.infer<typeof InspirationItemSchema>;
-export type InspirationMessage = z.infer<typeof InspirationMessageSchema>;
-export type FileWrittenMessage = z.infer<typeof FileWrittenMessageSchema>;
-export type TasksMessage = z.infer<typeof TasksMessageSchema>;
-export type TaskToggledMessage = z.infer<typeof TaskToggledMessageSchema>;
-export type SessionDeletedMessage = z.infer<typeof SessionDeletedMessageSchema>;
 export type ToolPermissionRequestMessage = z.infer<typeof ToolPermissionRequestMessageSchema>;
 export type AskUserQuestionRequestMessage = z.infer<typeof AskUserQuestionRequestMessageSchema>;
-export type SetupCompleteMessage = z.infer<typeof SetupCompleteMessageSchema>;
-export type SearchResultsMessage = z.infer<typeof SearchResultsMessageSchema>;
-export type SnippetsMessage = z.infer<typeof SnippetsMessageSchema>;
-export type IndexProgressMessage = z.infer<typeof IndexProgressMessageSchema>;
-export type FileDeletedMessage = z.infer<typeof FileDeletedMessageSchema>;
-export type DirectoryContentsMessage = z.infer<typeof DirectoryContentsMessageSchema>;
-export type DirectoryDeletedMessage = z.infer<typeof DirectoryDeletedMessageSchema>;
-export type FileArchivedMessage = z.infer<typeof FileArchivedMessageSchema>;
-export type DirectoryCreatedMessage = z.infer<typeof DirectoryCreatedMessageSchema>;
-export type FileCreatedMessage = z.infer<typeof FileCreatedMessageSchema>;
-export type FileRenamedMessage = z.infer<typeof FileRenamedMessageSchema>;
-export type FileMovedMessage = z.infer<typeof FileMovedMessageSchema>;
-export type PinnedAssetsMessage = z.infer<typeof PinnedAssetsMessageSchema>;
-export type ConfigUpdatedMessage = z.infer<typeof ConfigUpdatedMessageSchema>;
-export type VaultCreatedMessage = z.infer<typeof VaultCreatedMessageSchema>;
 export type ExtractionStatusValue = z.infer<typeof ExtractionStatusValueSchema>;
-export type MemoryContentMessage = z.infer<typeof MemoryContentMessageSchema>;
 export type ExtractionPromptContentMessage = z.infer<typeof ExtractionPromptContentMessageSchema>;
-export type MemorySavedMessage = z.infer<typeof MemorySavedMessageSchema>;
 export type ExtractionPromptSavedMessage = z.infer<typeof ExtractionPromptSavedMessageSchema>;
 export type ExtractionPromptResetMessage = z.infer<typeof ExtractionPromptResetMessageSchema>;
 export type ExtractionStatusMessage = z.infer<typeof ExtractionStatusMessageSchema>;

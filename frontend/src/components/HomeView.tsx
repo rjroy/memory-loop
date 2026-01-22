@@ -5,8 +5,7 @@
  * Displays session context, goals, inspiration, and recent activity.
  */
 
-/* eslint-disable @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises */
-// REST API calls in useEffect fire-and-forget patterns
+// REST API calls in useEffect use fire-and-forget patterns with explicit catch handlers
 
 import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useSession } from "../contexts/SessionContext";
@@ -119,7 +118,6 @@ export function HomeView(): React.ReactNode {
   } = useSession();
 
   const hasSentVaultSelectionRef = useRef(false);
-  const hasLoadedDataRef = useRef(false);
 
   // REST API hooks (migrated from WebSocket)
   const { getRecentActivity } = useCapture(vault?.id);
@@ -133,12 +131,6 @@ export function HomeView(): React.ReactNode {
   const [inspirationQuote, setInspirationQuote] =
     useState<InspirationItem | null>(null);
 
-  // Reset data loading state when vault changes
-  useEffect(() => {
-    hasLoadedDataRef.current = false;
-    setInspirationLoading(true);
-  }, [vault?.id]);
-
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
@@ -150,11 +142,12 @@ export function HomeView(): React.ReactNode {
 
   // Callback to delete a session (now uses REST API)
   const handleDeleteSession = useCallback(
-    async (sessionId: string) => {
-      const success = await deleteSession(sessionId);
-      if (success) {
-        removeDiscussion(sessionId);
-      }
+    (sessionId: string) => {
+      void deleteSession(sessionId).then((success) => {
+        if (success) {
+          removeDiscussion(sessionId);
+        }
+      });
     },
     [deleteSession, removeDiscussion]
   );
@@ -174,39 +167,48 @@ export function HomeView(): React.ReactNode {
     }
   }, [connectionStatus, vault, sendMessage]);
 
-  // Load data via REST API when vault is available (independent of WebSocket)
+  // Load data via REST API when vault.id changes
   useEffect(() => {
-    if (!vault || hasLoadedDataRef.current) {
+    if (!vault?.id) {
       return;
     }
-    hasLoadedDataRef.current = true;
+
+    const vaultId = vault.id;
+    console.log(`[HomeView] Loading data for vault: ${vaultId}`);
 
     // Load recent activity
     getRecentActivity().then((activity) => {
+      console.log(`[HomeView] Recent activity loaded:`, activity);
       if (activity) {
         setRecentNotes(activity.captures);
         setRecentDiscussions(activity.discussions);
       }
-    });
+    }).catch((err) => console.error(`[HomeView] Failed to load activity:`, err));
 
     // Load goals (only if vault has goalsPath)
     if (vault.goalsPath) {
       getGoals().then((content) => {
+        console.log(`[HomeView] Goals loaded:`, content?.slice(0, 50));
         if (content !== null) {
           setGoals(content);
         }
-      });
+      }).catch((err) => console.error(`[HomeView] Failed to load goals:`, err));
     }
 
     // Load inspiration
+    setInspirationLoading(true);
     getInspiration().then((result) => {
+      console.log(`[HomeView] Inspiration loaded:`, result);
       if (result) {
         setInspirationContextual(result.contextual);
         setInspirationQuote(result.quote);
       }
       setInspirationLoading(false);
+    }).catch((err) => {
+      console.error(`[HomeView] Failed to load inspiration:`, err);
+      setInspirationLoading(false);
     });
-  }, [vault, getRecentActivity, getGoals, getInspiration, setRecentNotes, setRecentDiscussions, setGoals]);
+  }, [vault?.id, getRecentActivity, getGoals, getInspiration, setRecentNotes, setRecentDiscussions, setGoals]);
 
   // Determine which debrief buttons to show (single Date for consistency)
   const today = new Date();

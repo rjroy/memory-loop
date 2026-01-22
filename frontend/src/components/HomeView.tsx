@@ -133,11 +133,15 @@ export function HomeView(): React.ReactNode {
   const [inspirationQuote, setInspirationQuote] =
     useState<InspirationItem | null>(null);
 
+  // Reset data loading state when vault changes
+  useEffect(() => {
+    hasLoadedDataRef.current = false;
+    setInspirationLoading(true);
+  }, [vault?.id]);
+
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
     hasSentVaultSelectionRef.current = false;
-    hasLoadedDataRef.current = false;
-    setInspirationLoading(true);
   }, []);
 
   const { sendMessage, connectionStatus } = useWebSocket({
@@ -170,43 +174,39 @@ export function HomeView(): React.ReactNode {
     }
   }, [connectionStatus, vault, sendMessage]);
 
-  // Load data via REST API after vault selection is confirmed
+  // Load data via REST API when vault is available (independent of WebSocket)
   useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      hasSentVaultSelectionRef.current &&
-      !hasLoadedDataRef.current
-    ) {
-      hasLoadedDataRef.current = true;
+    if (!vault || hasLoadedDataRef.current) {
+      return;
+    }
+    hasLoadedDataRef.current = true;
 
-      // Load recent activity
-      getRecentActivity().then((activity) => {
-        if (activity) {
-          setRecentNotes(activity.captures);
-          setRecentDiscussions(activity.discussions);
-        }
-      });
-
-      // Load goals (only if vault has goalsPath)
-      if (vault.goalsPath) {
-        getGoals().then((content) => {
-          if (content !== null) {
-            setGoals(content);
-          }
-        });
+    // Load recent activity
+    getRecentActivity().then((activity) => {
+      if (activity) {
+        setRecentNotes(activity.captures);
+        setRecentDiscussions(activity.discussions);
       }
+    });
 
-      // Load inspiration
-      getInspiration().then((result) => {
-        if (result) {
-          setInspirationContextual(result.contextual);
-          setInspirationQuote(result.quote);
+    // Load goals (only if vault has goalsPath)
+    if (vault.goalsPath) {
+      getGoals().then((content) => {
+        if (content !== null) {
+          setGoals(content);
         }
-        setInspirationLoading(false);
       });
     }
-  }, [connectionStatus, vault, getRecentActivity, getGoals, getInspiration, setRecentNotes, setRecentDiscussions, setGoals]);
+
+    // Load inspiration
+    getInspiration().then((result) => {
+      if (result) {
+        setInspirationContextual(result.contextual);
+        setInspirationQuote(result.quote);
+      }
+      setInspirationLoading(false);
+    });
+  }, [vault, getRecentActivity, getGoals, getInspiration, setRecentNotes, setRecentDiscussions, setGoals]);
 
   // Determine which debrief buttons to show (single Date for consistency)
   const today = new Date();

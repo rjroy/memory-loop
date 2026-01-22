@@ -160,10 +160,11 @@ export function BrowseMode(): React.ReactNode {
   }, [connectionStatus, vault, sendMessage]);
 
   // Load root directory after session is ready, if not cached (uses REST API)
+  const { listDirectory } = fileBrowser;
   useEffect(() => {
     if (vault && hasSessionReady && !browser.directoryCache.has("")) {
       setFileLoading(true);
-      fileBrowser.listDirectory("").then((listing) => {
+      listDirectory("").then((listing) => {
         cacheDirectory(listing.path, listing.entries);
         setFileLoading(false);
       }).catch((err) => {
@@ -171,21 +172,22 @@ export function BrowseMode(): React.ReactNode {
         setFileLoading(false);
       });
     }
-  }, [vault, hasSessionReady, browser.directoryCache, fileBrowser, cacheDirectory, setFileLoading, setFileError]);
+  }, [vault, hasSessionReady, browser.directoryCache, listDirectory, cacheDirectory, setFileLoading, setFileError]);
 
   // Load pinned assets from server after session is ready (uses REST API)
   const hasFetchedPinnedAssetsRef = useRef(false);
+  const { getPinnedAssets } = configApi;
   useEffect(() => {
     if (vault && hasSessionReady && !hasFetchedPinnedAssetsRef.current) {
       hasFetchedPinnedAssetsRef.current = true;
-      void configApi.getPinnedAssets().then((paths) => {
+      void getPinnedAssets().then((paths) => {
         if (paths) {
           // Store pinned assets in session state via context (handled by setPinnedAssets in session)
           // Note: This needs setPinnedAssets from useSession - if not available, we can store locally
         }
       });
     }
-  }, [vault, hasSessionReady, configApi]);
+  }, [vault, hasSessionReady, getPinnedAssets]);
 
   // Reset pinned assets fetch flag on vault change or reconnect
   useEffect(() => {
@@ -195,10 +197,11 @@ export function BrowseMode(): React.ReactNode {
   }, [hasSessionReady]);
 
   // Load tasks when viewMode is "tasks" (uses REST API)
+  const { getTasks } = homeApi;
   useEffect(() => {
     if (vault && hasSessionReady && viewMode === "tasks") {
       setTasksLoading(true);
-      homeApi.getTasks().then((result) => {
+      getTasks().then((result) => {
         if (result) {
           setTasks(result.tasks);
         }
@@ -208,7 +211,7 @@ export function BrowseMode(): React.ReactNode {
         setTasksLoading(false);
       });
     }
-  }, [vault, hasSessionReady, viewMode, homeApi, setTasks, setTasksLoading, setTasksError]);
+  }, [vault, hasSessionReady, viewMode, getTasks, setTasks, setTasksLoading, setTasksError]);
 
   // Auto-load file when currentPath is set externally (e.g., from RecentActivity View button)
   // Only load text files (markdown, JSON) - images are rendered directly via asset URL

@@ -5,97 +5,100 @@ tasks: [.sdd/tasks/2026-01-21-rest-api-migration-tasks.md](./../tasks/2026-01-21
 status: In Progress
 version: 1.0.0
 created: 2026-01-21
-last_updated: 2026-01-21
+last_updated: 2026-01-22
 authored_by:
   - Ronald Roy <gsdwig@gmail.com>
 ---
 
 # REST API Migration - Implementation Progress
 
-**Last Updated**: 2026-01-21 | **Status**: 17% complete (3 of 18 tasks)
+**Last Updated**: 2026-01-22 | **Status**: 72% complete (13 of 18 tasks)
 
 ## Current Session
-**Date**: 2026-01-21 | **Working On**: Phase 1 Foundation Complete | **Blockers**: None
+**Date**: 2026-01-22 | **Working On**: Phase 2 Complete | **Blockers**: None
 
 ## Completed Today
-- TASK-001: Vault Resolution Middleware ✅ (commit: 67ef0d1, iterations: 1)
-- TASK-002: REST Error Handling Middleware ✅ (commit: 15e7e90, iterations: 1)
-- TASK-003: REST Route Registration Infrastructure ✅ (commit: 0db196c, iterations: 1)
+- TASK-004: File Browser REST Routes ✅ (commit: a6e0778, 51 tests)
+- TASK-005: Capture REST Routes ✅ (commit: 2a9446e, 26 tests)
+- TASK-006: Home Dashboard REST Routes ✅ (commit: 37f9cb7, 25 tests)
+- TASK-008: Meeting REST Routes ✅ (commit: 5708d4f, 20 tests)
+- TASK-011: Config REST Routes ✅ (commit: fee395c, 25 tests)
+- TASK-012: Memory/Sessions REST Routes ✅ (commit: 6d5433a, 20 tests)
+- Route index updated to register all routes ✅ (commit: e4aba15)
+
+## Previously Completed
+- TASK-001: Vault Resolution Middleware ✅
+- TASK-002: REST Error Handling Middleware ✅
+- TASK-003: REST Route Registration Infrastructure ✅
+- TASK-007: Meeting State Store ✅
+- TASK-009: Search Index Cache ✅
+- TASK-010: Search REST Routes ✅
+- TASK-013: REST API Client Foundation ✅
 
 ## Discovered Issues
-- None
+- Flaky timing test in search-cache.test.ts (fixed: added 5ms tolerance)
+- Git index corruption in worktree (fixed: deleted and rebuilt index)
+- Two home inspiration tests call SDK (skipped: require live SDK)
+- Memory routes had bug using deprecated path constant (fixed by agent)
 
 ---
 
 ## Overall Progress
 
-### Phase 1 - Foundation (7 pts)
+### Phase 1 - Foundation (7 pts) - COMPLETE
 
-**Completed** ✅
-- [x] TASK-001: Vault Resolution Middleware - *Completed 2026-01-21*
+- [x] TASK-001: Vault Resolution Middleware
+- [x] TASK-002: REST Error Handling Middleware
+- [x] TASK-003: REST Route Registration Infrastructure
+- [x] TASK-013: REST API Client Foundation
 
-**Completed** ✅
-- [x] TASK-002: REST Error Handling Middleware - *Completed 2026-01-21*
+### Phase 2 - Backend Routes (26 pts) - COMPLETE
 
-**Completed** ✅
-- [x] TASK-003: REST Route Registration Infrastructure - *Completed 2026-01-21*
+- [x] TASK-004: File Browser REST Routes (51 tests)
+- [x] TASK-005: Capture REST Routes (26 tests)
+- [x] TASK-006: Home Dashboard REST Routes (25 tests)
+- [x] TASK-007: Meeting State Store (31 tests)
+- [x] TASK-008: Meeting REST Routes (20 tests)
+- [x] TASK-009: Search Index Cache (29 tests)
+- [x] TASK-010: Search REST Routes (30 tests)
+- [x] TASK-011: Config REST Routes (25 tests)
+- [x] TASK-012: Memory/Sessions REST Routes (20 tests)
 
-**Upcoming** ⏳
-- [ ] TASK-013: REST API Client Foundation
+### Phase 3 - Frontend Migration (13 pts) - PENDING
 
-### Phase 2 - Backend Routes (26 pts)
-
-**Upcoming** ⏳
-- [ ] TASK-004: File Browser REST Routes
-- [ ] TASK-005: Capture REST Routes
-- [ ] TASK-006: Home Dashboard REST Routes
-- [ ] TASK-007: Meeting State Store
-- [ ] TASK-008: Meeting REST Routes
-- [ ] TASK-009: Search Index Cache
-- [ ] TASK-010: Search REST Routes
-- [ ] TASK-011: Config REST Routes
-- [ ] TASK-012: Memory and Sessions REST Routes
-
-### Phase 3 - Frontend Migration (13 pts)
-
-**Upcoming** ⏳
 - [ ] TASK-014: File Browser Hooks
 - [ ] TASK-015: Domain Hooks (Capture, Home, Search)
 
-### Phase 4 - Cleanup (6 pts)
+### Phase 4 - Cleanup (6 pts) - PENDING
 
-**Upcoming** ⏳
 - [ ] TASK-016: Remove Migrated WebSocket Handlers
 - [ ] TASK-017: Protocol Schema Cleanup
 - [ ] TASK-018: End-to-End Integration Tests
 
 ---
 
-## Deviations from Plan
-
-(none yet)
-
----
-
-## Technical Discoveries
-
-(none yet)
-
----
-
 ## Test Coverage
 
-| Component | Status |
-|-----------|--------|
-| Vault Resolution Middleware | ✅ Complete (25 tests) |
-| Error Handler Middleware | ✅ Complete (21 tests) |
-| REST Routes Infrastructure | ✅ Complete (15 tests) |
-| Frontend Hooks | ⏳ Pending |
+| Component | Tests |
+|-----------|-------|
+| Vault Resolution Middleware | 25 |
+| Error Handler Middleware | 21 |
+| REST Routes Infrastructure | 15 |
+| Meeting State Store | 31 |
+| Search Index Cache | 29 |
+| Search REST Routes | 30 |
+| REST API Client | 39 |
+| File Browser REST Routes | 51 |
+| Capture REST Routes | 26 |
+| Home Dashboard REST Routes | 25 |
+| Meeting REST Routes | 20 |
+| Config REST Routes | 25 |
+| Memory/Sessions REST Routes | 20 |
+| **Total** | **357** |
 
 ---
 
 ## Notes for Next Session
-- Phase 1 Foundation complete (TASK-001, TASK-002, TASK-003)
-- Ready to start Phase 2 Backend Routes
-- TASK-004 (File Browser) is the critical path item
-- TASK-007 (Meeting Store) and TASK-009 (Search Cache) can run in parallel with other Phase 2 tasks
+- Phase 1 and Phase 2 complete (13 of 18 tasks)
+- Ready for Phase 3 Frontend Migration (TASK-014, TASK-015)
+- Then Phase 4 Cleanup (TASK-016, TASK-017, TASK-018)

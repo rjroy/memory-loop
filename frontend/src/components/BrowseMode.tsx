@@ -56,9 +56,6 @@ export function BrowseMode(): React.ReactNode {
   const [pendingDirectoryContents, setPendingDirectoryContents] = useState<DirectoryContents | null>(null);
   const [isPairWritingActive, setIsPairWritingActive] = useState(false);
 
-  const hasSentVaultSelectionRef = useRef(false);
-  const [hasSessionReady, setHasSessionReady] = useState(false);
-
   const { browser, vault, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch, setMode, setPinnedAssets } = useSession();
 
   // REST API hooks (migrated from WebSocket)
@@ -98,12 +95,6 @@ export function BrowseMode(): React.ReactNode {
   // Hook to handle session-level messages (widgets, etc.)
   const handleServerMessage = useServerMessageHandler();
 
-  // Callback to re-send vault selection on WebSocket reconnect
-  const handleReconnect = useCallback(() => {
-    hasSentVaultSelectionRef.current = false;
-    setHasSessionReady(false);
-  }, []);
-
   // Streaming message types that Discussion handles when PairWritingMode is active
   const STREAMING_MESSAGE_TYPES = new Set([
     "response_start",
@@ -129,7 +120,6 @@ export function BrowseMode(): React.ReactNode {
   );
 
   const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
-    onReconnect: handleReconnect,
     onMessage: handleMessage,
   });
 
@@ -144,25 +134,10 @@ export function BrowseMode(): React.ReactNode {
     }
   }, [connectionStatus, search.isActive, clearSearch]);
 
-  // Send vault selection when WebSocket connects (initial or reconnect)
-  useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      !hasSentVaultSelectionRef.current
-    ) {
-      sendMessage({
-        type: "select_vault",
-        vaultId: vault.id,
-      });
-      hasSentVaultSelectionRef.current = true;
-    }
-  }, [connectionStatus, vault, sendMessage]);
-
-  // Load root directory after session is ready, if not cached (uses REST API)
+  // Load root directory when vault is selected, if not cached (uses REST API)
   const { listDirectory } = fileBrowser;
   useEffect(() => {
-    if (vault && hasSessionReady && !browser.directoryCache.has("")) {
+    if (vault && !browser.directoryCache.has("")) {
       setFileLoading(true);
       listDirectory("").then((listing) => {
         cacheDirectory(listing.path, listing.entries);
@@ -172,13 +147,13 @@ export function BrowseMode(): React.ReactNode {
         setFileLoading(false);
       });
     }
-  }, [vault, hasSessionReady, browser.directoryCache, listDirectory, cacheDirectory, setFileLoading, setFileError]);
+  }, [vault, browser.directoryCache, listDirectory, cacheDirectory, setFileLoading, setFileError]);
 
-  // Load pinned assets from server after session is ready (uses REST API)
+  // Load pinned assets from server when vault is selected (uses REST API)
   const hasFetchedPinnedAssetsRef = useRef(false);
   const { getPinnedAssets } = configApi;
   useEffect(() => {
-    if (vault && hasSessionReady && !hasFetchedPinnedAssetsRef.current) {
+    if (vault && !hasFetchedPinnedAssetsRef.current) {
       hasFetchedPinnedAssetsRef.current = true;
       void getPinnedAssets().then((paths) => {
         if (paths) {
@@ -186,19 +161,19 @@ export function BrowseMode(): React.ReactNode {
         }
       });
     }
-  }, [vault, hasSessionReady, getPinnedAssets, setPinnedAssets]);
+  }, [vault, getPinnedAssets, setPinnedAssets]);
 
-  // Reset pinned assets fetch flag on vault change or reconnect
+  // Reset pinned assets fetch flag on vault change
   useEffect(() => {
-    if (!hasSessionReady) {
+    if (!vault) {
       hasFetchedPinnedAssetsRef.current = false;
     }
-  }, [hasSessionReady]);
+  }, [vault]);
 
   // Load tasks when viewMode is "tasks" (uses REST API)
   const { getTasks } = homeApi;
   useEffect(() => {
-    if (vault && hasSessionReady && viewMode === "tasks") {
+    if (vault && viewMode === "tasks") {
       setTasksLoading(true);
       getTasks().then((result) => {
         if (result) {
@@ -210,7 +185,7 @@ export function BrowseMode(): React.ReactNode {
         setTasksLoading(false);
       });
     }
-  }, [vault, hasSessionReady, viewMode, getTasks, setTasks, setTasksLoading, setTasksError]);
+  }, [vault, viewMode, getTasks, setTasks, setTasksLoading, setTasksError]);
 
   // Auto-load file when currentPath is set externally (e.g., from RecentActivity View button)
   // Only load text files (markdown, JSON) - images are rendered directly via asset URL
@@ -218,8 +193,8 @@ export function BrowseMode(): React.ReactNode {
   useEffect(() => {
     const path = browser.currentPath;
 
-    // Skip if no path or not ready
-    if (!hasSessionReady || !path) {
+    // Skip if no vault or no path
+    if (!vault || !path) {
       hasAutoLoadedRef.current = null;
       return;
     }
@@ -264,44 +239,38 @@ export function BrowseMode(): React.ReactNode {
     if (!isTextFile || browser.currentFileContent !== null || browser.fileError || browser.isLoading) {
       hasAutoLoadedRef.current = null;
     }
-  }, [hasSessionReady, browser.currentPath, browser.currentFileContent, browser.fileError, browser.isLoading, sendMessage, setFileLoading]);
+  }, [vault, browser.currentPath, browser.currentFileContent, browser.fileError, browser.isLoading, fileBrowser, setFileLoading, setFileContent, setFileError]);
 
-  // Handle WebSocket messages (only session_ready and error remain - file operations use REST)
+  // Handle WebSocket error messages (file operations use REST, errors come via WebSocket for PairWritingMode)
   useEffect(() => {
     if (!lastMessage) return;
 
-    switch (lastMessage.type) {
-      case "session_ready":
-        setHasSessionReady(true);
-        break;
-
-      case "error":
-        // Check if this is a save error (while in adjust mode)
-        // Use ref to get current saving state, avoiding stale closure issue
-        if (isSavingRef.current && SAVE_ERROR_CODES.includes(lastMessage.code as typeof SAVE_ERROR_CODES[number])) {
-          // Save failed - preserve content and show error (REQ-F-15)
-          saveError(lastMessage.message);
-        } else if (
-          lastMessage.code === "FILE_NOT_FOUND" ||
-          lastMessage.code === "DIRECTORY_NOT_FOUND" ||
-          lastMessage.code === "INVALID_FILE_TYPE"
-        ) {
-          // Check if this is a task toggle error - rollback optimistic update
-          if (pendingTaskTogglesRef.current.size > 0) {
-            // Rollback all pending task toggles and show error (REQ-F-24)
-            for (const [taskKey, originalState] of pendingTaskTogglesRef.current) {
-              const [filePath, lineNumberStr] = taskKey.split(":");
-              const lineNumber = parseInt(lineNumberStr, 10);
-              updateTask(filePath, lineNumber, originalState);
-            }
-            pendingTaskTogglesRef.current.clear();
-            setTasksError(lastMessage.message);
-          } else {
-            setFileError(lastMessage.message);
+    if (lastMessage.type === "error") {
+      // Check if this is a save error (while in adjust mode)
+      // Use ref to get current saving state, avoiding stale closure issue
+      if (isSavingRef.current && SAVE_ERROR_CODES.includes(lastMessage.code as typeof SAVE_ERROR_CODES[number])) {
+        // Save failed - preserve content and show error (REQ-F-15)
+        saveError(lastMessage.message);
+      } else if (
+        lastMessage.code === "FILE_NOT_FOUND" ||
+        lastMessage.code === "DIRECTORY_NOT_FOUND" ||
+        lastMessage.code === "INVALID_FILE_TYPE"
+      ) {
+        // Check if this is a task toggle error - rollback optimistic update
+        if (pendingTaskTogglesRef.current.size > 0) {
+          // Rollback all pending task toggles and show error (REQ-F-24)
+          for (const [taskKey, originalState] of pendingTaskTogglesRef.current) {
+            const [filePath, lineNumberStr] = taskKey.split(":");
+            const lineNumber = parseInt(lineNumberStr, 10);
+            updateTask(filePath, lineNumber, originalState);
           }
+          pendingTaskTogglesRef.current.clear();
+          setTasksError(lastMessage.message);
+        } else {
+          setFileError(lastMessage.message);
         }
-        setFileLoading(false);
-        break;
+      }
+      setFileLoading(false);
     }
   }, [lastMessage, saveError, setFileError, setFileLoading, updateTask, setTasksError]);
 

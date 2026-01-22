@@ -7,9 +7,8 @@
 
 // REST API calls in useEffect use fire-and-forget patterns with explicit catch handlers
 
-import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
+import React, { useEffect, useCallback, useState, useMemo } from "react";
 import { useSession } from "../contexts/SessionContext";
-import { useWebSocket } from "../hooks/useWebSocket";
 import { useCapture } from "../hooks/useCapture";
 import { useHome } from "../hooks/useHome";
 import { useSessions } from "../hooks/useSessions";
@@ -119,8 +118,6 @@ export function HomeView(): React.ReactNode {
 
   console.log(`[HomeView] Render - vault:`, vault?.id, `vault object:`, vault);
 
-  const hasSentVaultSelectionRef = useRef(false);
-
   // REST API hooks (migrated from WebSocket)
   const { getRecentActivity } = useCapture(vault?.id);
   const { getGoals, getInspiration } = useHome(vault?.id);
@@ -133,15 +130,6 @@ export function HomeView(): React.ReactNode {
   const [inspirationQuote, setInspirationQuote] =
     useState<InspirationItem | null>(null);
 
-  // Callback to re-send vault selection on WebSocket reconnect
-  const handleReconnect = useCallback(() => {
-    hasSentVaultSelectionRef.current = false;
-  }, []);
-
-  const { sendMessage, connectionStatus } = useWebSocket({
-    onReconnect: handleReconnect,
-  });
-
   // Callback to delete a session (now uses REST API)
   const handleDeleteSession = useCallback(
     (sessionId: string) => {
@@ -153,21 +141,6 @@ export function HomeView(): React.ReactNode {
     },
     [deleteSession, removeDiscussion]
   );
-
-  // Send vault selection when WebSocket connects (initial or reconnect)
-  useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      !hasSentVaultSelectionRef.current
-    ) {
-      sendMessage({
-        type: "select_vault",
-        vaultId: vault.id,
-      });
-      hasSentVaultSelectionRef.current = true;
-    }
-  }, [connectionStatus, vault, sendMessage]);
 
   // Load data via REST API when vault.id changes
   useEffect(() => {

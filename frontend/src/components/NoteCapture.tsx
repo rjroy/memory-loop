@@ -12,8 +12,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises */
 // REST API calls in async handlers
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useWebSocket } from "../hooks/useWebSocket";
+import React, { useState, useEffect, useRef } from "react";
 import { useSession } from "../contexts/SessionContext";
 import { useCapture } from "../hooks/useCapture";
 import { useMeetings } from "../hooks/useMeetings";
@@ -65,36 +64,12 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
   const meetingTitleRef = useRef<HTMLInputElement>(null);
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasSentVaultSelectionRef = useRef(false);
 
   const { vault, meeting, setMeetingState, clearMeeting, setDiscussionPrefill, setMode, setRecentNotes, setRecentDiscussions } = useSession();
 
   // REST API hooks (migrated from WebSocket)
   const { captureNote, getRecentActivity } = useCapture(vault?.id);
   const { startMeeting: startMeetingApi, stopMeeting: stopMeetingApi } = useMeetings(vault?.id);
-
-  // Reset vault selection tracking on reconnect so we re-send select_vault
-  const handleReconnect = useCallback(() => {
-    hasSentVaultSelectionRef.current = false;
-  }, []);
-
-  const { sendMessage, connectionStatus } = useWebSocket({
-    onReconnect: handleReconnect,
-  });
-
-  // Send vault selection when WebSocket connects (initial or reconnect).
-  // Each WebSocket connection has its own server-side state, so we must
-  // send select_vault on this connection before sending capture_note.
-  useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      !hasSentVaultSelectionRef.current
-    ) {
-      sendMessage({ type: "select_vault", vaultId: vault.id });
-      hasSentVaultSelectionRef.current = true;
-    }
-  }, [connectionStatus, vault, sendMessage]);
 
   // Detect touch-only devices (no hover capability)
   // On touch devices, Enter adds newlines; send button is the only way to submit

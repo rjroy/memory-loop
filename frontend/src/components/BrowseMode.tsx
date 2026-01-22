@@ -59,7 +59,7 @@ export function BrowseMode(): React.ReactNode {
   const hasSentVaultSelectionRef = useRef(false);
   const [hasSessionReady, setHasSessionReady] = useState(false);
 
-  const { browser, vault, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch, setMode } = useSession();
+  const { browser, vault, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch, setMode, setPinnedAssets } = useSession();
 
   // REST API hooks (migrated from WebSocket)
   const fileBrowser = useFileBrowser(vault?.id);
@@ -182,12 +182,11 @@ export function BrowseMode(): React.ReactNode {
       hasFetchedPinnedAssetsRef.current = true;
       void getPinnedAssets().then((paths) => {
         if (paths) {
-          // Store pinned assets in session state via context (handled by setPinnedAssets in session)
-          // Note: This needs setPinnedAssets from useSession - if not available, we can store locally
+          setPinnedAssets(paths);
         }
       });
     }
-  }, [vault, hasSessionReady, getPinnedAssets]);
+  }, [vault, hasSessionReady, getPinnedAssets, setPinnedAssets]);
 
   // Reset pinned assets fetch flag on vault change or reconnect
   useEffect(() => {

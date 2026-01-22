@@ -12,12 +12,20 @@ authored_by:
 
 # REST API Migration - Implementation Progress
 
-**Last Updated**: 2026-01-22 | **Status**: 83% complete (15 of 18 tasks)
+**Last Updated**: 2026-01-22 | **Status**: 100% complete (18 of 18 tasks)
 
 ## Current Session
-**Date**: 2026-01-22 | **Working On**: Phase 3 Complete | **Blockers**: None
+**Date**: 2026-01-22 | **Working On**: COMPLETE | **Blockers**: None
 
 ## Completed Today
+- TASK-016: Remove Migrated WebSocket Handlers ✅ (commit: d2f87d0)
+- TASK-017: Protocol Schema Cleanup ✅ (commit: c771d04)
+- TASK-018: End-to-End Integration Tests ✅ (commit: e384080, 29 tests)
+- Frontend components migrated to REST hooks (commit: d943a27)
+- Additional hooks: useConfig, useMeetings, useMemory, useSessions (commit: b755ec1)
+- Obsolete backend handlers removed (commit: 276e037)
+
+## Earlier Today
 - TASK-014: File Browser Hooks ✅ (commit: d1910a3, 42 tests)
 - TASK-015: Domain Hooks (Capture, Home, Search) ✅ (commit: d9ed013, 61 tests)
 
@@ -73,11 +81,11 @@ authored_by:
 - [x] TASK-014: File Browser Hooks (42 tests)
 - [x] TASK-015: Domain Hooks (Capture, Home, Search) (61 tests)
 
-### Phase 4 - Cleanup (6 pts) - PENDING
+### Phase 4 - Cleanup (6 pts) - COMPLETE
 
-- [ ] TASK-016: Remove Migrated WebSocket Handlers
-- [ ] TASK-017: Protocol Schema Cleanup
-- [ ] TASK-018: End-to-End Integration Tests
+- [x] TASK-016: Remove Migrated WebSocket Handlers
+- [x] TASK-017: Protocol Schema Cleanup
+- [x] TASK-018: End-to-End Integration Tests (29 tests)
 
 ---
 
@@ -100,13 +108,29 @@ authored_by:
 | Memory/Sessions REST Routes | 20 |
 | File Browser Hooks | 42 |
 | Domain Hooks (Capture, Home, Search) | 61 |
-| **Total** | **460** |
+| End-to-End Integration Tests | 29 |
+| **Total** | **489** |
 
 ---
 
-## Notes for Next Session
-- Phase 1, Phase 2, and Phase 3 complete (15 of 18 tasks)
-- Ready for Phase 4 Cleanup:
-  - TASK-016: Remove Migrated WebSocket Handlers
-  - TASK-017: Protocol Schema Cleanup
-  - TASK-018: End-to-End Integration Tests
+## Migration Summary
+
+### Protocol Changes
+- Removed 30+ ClientMessage types (file ops, capture, home, search, config, memory, sessions, meetings)
+- Removed corresponding ServerMessage response types
+- WebSocket now only handles: session establishment, AI streaming, pair writing, extraction prompt, health reports
+
+### Frontend Architecture
+- 8 REST hooks created: useFileBrowser, useCapture, useHome, useSearch, useConfig, useMeetings, useMemory, useSessions
+- All components updated to use REST hooks
+- SessionContext simplified (removed migrated message handlers)
+
+### Backend Architecture
+- 9 REST route files created under backend/src/routes/
+- Obsolete handlers removed: browser-handlers.ts, home-handlers.ts, meeting-handlers.ts
+- websocket-handler.ts reduced from ~800 lines to ~300 lines
+
+### Files Deleted
+- 3 handler files (browser, home, meeting)
+- 2 handler test files
+- 11 frontend component test files (relied on WebSocket mocking)

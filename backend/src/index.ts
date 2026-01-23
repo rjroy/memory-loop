@@ -8,6 +8,10 @@
  * - Memory extraction scheduler (REQ-F-4)
  */
 
+// Initialize SDK provider FIRST, before any other imports that might use it
+import { initializeSdkProvider } from "./sdk-provider";
+initializeSdkProvider();
+
 import { serverConfig, isTlsEnabled, createHttpRedirectServer, getPort } from "./server";
 import { serverLog as log } from "./logger";
 import { startScheduler, getCronSchedule } from "./extraction/extraction-manager";

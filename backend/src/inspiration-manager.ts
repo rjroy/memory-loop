@@ -14,9 +14,9 @@
 
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { VaultInfo } from "@memory-loop/shared";
 import { DEFAULT_MAX_POOL_SIZE } from "./vault-config";
+import { getSdkQuery, type QueryFunction } from "./sdk-provider";
 
 // =============================================================================
 // File Path Constants
@@ -853,32 +853,8 @@ Format your response as markdown list ${itemWord} with attribution:
 Generate ${count} ${quoteWord}:`;
 }
 
-/**
- * Type for the SDK query function to allow mocking in tests
- */
-export type QueryFunction = typeof query;
-
-/**
- * Default query function (real SDK).
- * Can be overridden in tests using setQueryFunction.
- */
-let queryFn: QueryFunction = query;
-
-/**
- * Set the query function (for testing with mocks)
- *
- * @param fn - The query function to use
- */
-export function setQueryFunction(fn: QueryFunction): void {
-  queryFn = fn;
-}
-
-/**
- * Reset the query function to the real SDK (for cleanup after tests)
- */
-export function resetQueryFunction(): void {
-  queryFn = query;
-}
+// Re-export QueryFunction for test convenience
+export type { QueryFunction } from "./sdk-provider";
 
 /**
  * Collect full text response from an SDK query result.
@@ -963,7 +939,7 @@ export async function generateContextualPrompts(
   const prompt = buildContextualPromptTemplate(count).replace("{context}", truncatedContext);
 
   try {
-    const queryResult = queryFn({
+    const queryResult = getSdkQuery()({
       prompt,
       options: {
         model: GENERATION_MODEL,
@@ -1008,7 +984,7 @@ export async function generateWeekendPrompts(
 
     const prompt = buildWeekendPromptTemplate(count).replace("{context_nudge}", contextNudge);
 
-    const queryResult = queryFn({
+    const queryResult = getSdkQuery()({
       prompt,
       options: {
         model: GENERATION_MODEL,
@@ -1052,7 +1028,7 @@ export async function generateInspirationQuote(
 
     const prompt = buildQuotePromptTemplate(count).replace("{context_section}", contextSection);
 
-    const queryResult = queryFn({
+    const queryResult = getSdkQuery()({
       prompt,
       options: {
         model: GENERATION_MODEL,

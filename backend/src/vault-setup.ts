@@ -11,7 +11,6 @@
 import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import { createLogger } from "./logger";
 import { getVaultById, fileExists, directoryExists } from "./vault-manager";
 import { validatePath } from "./file-browser";
@@ -24,38 +23,9 @@ import {
   resolveAttachmentPath,
   type VaultConfig,
 } from "./vault-config";
+import { getSdkQuery } from "./sdk-provider";
 
 const log = createLogger("VaultSetup");
-
-// =============================================================================
-// SDK Query Injection (for testing)
-// =============================================================================
-
-/**
- * Type for the SDK query function.
- */
-export type QueryFunction = typeof query;
-
-/**
- * Module-level query function reference.
- * Can be overridden in tests using setQueryFunction.
- */
-let queryFn: QueryFunction = query;
-
-/**
- * Sets the query function for testing purposes.
- * Allows mocking SDK calls.
- */
-export function setQueryFunction(fn: QueryFunction): void {
-  queryFn = fn;
-}
-
-/**
- * Resets the query function to the default SDK implementation.
- */
-export function resetQueryFunction(): void {
-  queryFn = query;
-}
 
 // =============================================================================
 // Types
@@ -513,7 +483,7 @@ export async function updateClaudeMd(
   try {
     log.info("Calling SDK to update CLAUDE.md...");
 
-    const queryResult = queryFn({
+    const queryResult = getSdkQuery()({
       prompt,
       options: {
         cwd: vaultPath,

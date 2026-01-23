@@ -39,8 +39,6 @@ import {
   generateContextualPrompts,
   generateInspirationQuote,
   generateWeekendPrompts,
-  setQueryFunction,
-  resetQueryFunction,
   selectRandom,
   selectWeightedRandom,
   getInspiration,
@@ -55,8 +53,8 @@ import {
   DAY_CONTEXT_CONFIG,
   GENERATION_MODEL,
   MAX_GENERATION_CONTEXT,
-  type QueryFunction,
 } from "../inspiration-manager";
+import { configureSdkForTesting, _resetForTesting, type QueryFunction } from "../sdk-provider";
 
 // =============================================================================
 // parseGenerationMarker Tests
@@ -2422,7 +2420,7 @@ function createErrorMockQueryFn(message: string): QueryFunction {
 
 describe("generateContextualPrompts", () => {
   afterEach(() => {
-    resetQueryFunction();
+    _resetForTesting();
   });
 
   test("returns empty array for empty context", async () => {
@@ -2438,7 +2436,7 @@ describe("generateContextualPrompts", () => {
   test("calls query function with correct parameters", async () => {
     let capturedArgs: { prompt: string; options: { model: string } } | null = null;
 
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn('- "A prompt based on context"', (args) => {
         capturedArgs = args;
       })
@@ -2452,7 +2450,7 @@ describe("generateContextualPrompts", () => {
   });
 
   test("parses response from mock SDK", async () => {
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn(`- "What goals energize you most?"
 - "How can you build on yesterday's momentum?"`)
     );
@@ -2467,7 +2465,7 @@ describe("generateContextualPrompts", () => {
   test("truncates long context", async () => {
     let capturedPrompt = "";
 
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn("", (args) => {
         capturedPrompt = args.prompt;
       })
@@ -2486,7 +2484,7 @@ describe("generateContextualPrompts", () => {
   });
 
   test("returns empty array on SDK error", async () => {
-    setQueryFunction(createErrorMockQueryFn("SDK connection failed"));
+    configureSdkForTesting(createErrorMockQueryFn("SDK connection failed"));
 
     const items = await generateContextualPrompts("Some context");
 
@@ -2494,7 +2492,7 @@ describe("generateContextualPrompts", () => {
   });
 
   test("handles SDK returning empty response", async () => {
-    setQueryFunction(createMockQueryFn(""));
+    configureSdkForTesting(createMockQueryFn(""));
 
     const items = await generateContextualPrompts("Some context");
 
@@ -2508,13 +2506,13 @@ describe("generateContextualPrompts", () => {
 
 describe("generateInspirationQuote", () => {
   afterEach(() => {
-    resetQueryFunction();
+    _resetForTesting();
   });
 
   test("calls query function with correct parameters", async () => {
     let capturedArgs: { prompt: string; options: { model: string } } | null = null;
 
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn('- "A wise quote" -- Someone', (args) => {
         capturedArgs = args;
       })
@@ -2528,7 +2526,7 @@ describe("generateInspirationQuote", () => {
   });
 
   test("parses quote with attribution", async () => {
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn('- "The only way to do great work is to love what you do." -- Steve Jobs')
     );
 
@@ -2542,7 +2540,7 @@ describe("generateInspirationQuote", () => {
   });
 
   test("handles quote without attribution", async () => {
-    setQueryFunction(createMockQueryFn('- "An anonymous wise saying"'));
+    configureSdkForTesting(createMockQueryFn('- "An anonymous wise saying"'));
 
     const items = await generateInspirationQuote();
 
@@ -2551,7 +2549,7 @@ describe("generateInspirationQuote", () => {
   });
 
   test("returns empty array on SDK error", async () => {
-    setQueryFunction(createErrorMockQueryFn("API rate limit exceeded"));
+    configureSdkForTesting(createErrorMockQueryFn("API rate limit exceeded"));
 
     const items = await generateInspirationQuote();
 
@@ -2559,7 +2557,7 @@ describe("generateInspirationQuote", () => {
   });
 
   test("handles multiple assistant events", async () => {
-    setQueryFunction(
+    configureSdkForTesting(
       createMultiResponseMockQueryFn(['- "First part', ' continued" -- Author'])
     );
 
@@ -2580,13 +2578,13 @@ describe("generateInspirationQuote", () => {
 
 describe("generateWeekendPrompts", () => {
   afterEach(() => {
-    resetQueryFunction();
+    _resetForTesting();
   });
 
   test("calls query function with correct parameters", async () => {
     let capturedArgs: { prompt: string; options: { model: string } } | null = null;
 
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn('- "A creative prompt"', (args) => {
         capturedArgs = args;
       })
@@ -2601,7 +2599,7 @@ describe("generateWeekendPrompts", () => {
   });
 
   test("parses multiple creative prompts", async () => {
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn(`- "What would you create if you had no constraints?"
 - "If you could learn any skill instantly, what would it be?"
 - "Describe your perfect lazy day"`)
@@ -2617,7 +2615,7 @@ describe("generateWeekendPrompts", () => {
   test("works without context (general creative prompts)", async () => {
     let capturedPrompt = "";
 
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn('- "A creative prompt"', (args) => {
         capturedPrompt = args.prompt;
       })
@@ -2632,7 +2630,7 @@ describe("generateWeekendPrompts", () => {
   test("works with context (uses light nudge)", async () => {
     let capturedPrompt = "";
 
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn('- "A creative prompt"', (args) => {
         capturedPrompt = args.prompt;
       })
@@ -2646,7 +2644,7 @@ describe("generateWeekendPrompts", () => {
   });
 
   test("returns empty array on SDK error", async () => {
-    setQueryFunction(createErrorMockQueryFn("SDK error"));
+    configureSdkForTesting(createErrorMockQueryFn("SDK error"));
 
     const items = await generateWeekendPrompts();
 
@@ -2654,7 +2652,7 @@ describe("generateWeekendPrompts", () => {
   });
 
   test("handles empty SDK response", async () => {
-    setQueryFunction(createMockQueryFn(""));
+    configureSdkForTesting(createMockQueryFn(""));
 
     const items = await generateWeekendPrompts();
 
@@ -2663,18 +2661,18 @@ describe("generateWeekendPrompts", () => {
 });
 
 // =============================================================================
-// setQueryFunction / resetQueryFunction Tests
+// SDK Provider Injection Tests
 // =============================================================================
 
-describe("Query Function Injection", () => {
+describe("SDK Provider Injection", () => {
   afterEach(() => {
-    resetQueryFunction();
+    _resetForTesting();
   });
 
-  test("setQueryFunction allows mocking SDK calls", async () => {
+  test("configureSdkForTesting allows mocking SDK calls", async () => {
     let wasCalled = false;
 
-    setQueryFunction(
+    configureSdkForTesting(
       createMockQueryFn('- "Test"', () => {
         wasCalled = true;
       })
@@ -2684,13 +2682,13 @@ describe("Query Function Injection", () => {
     expect(wasCalled).toBe(true);
   });
 
-  test("resetQueryFunction restores default behavior", async () => {
-    setQueryFunction(createMockQueryFn('- "Mock"'));
-    resetQueryFunction();
+  test("_resetForTesting clears SDK configuration", async () => {
+    configureSdkForTesting(createMockQueryFn('- "Mock"'));
+    _resetForTesting();
 
-    // After reset, calling with empty context should return empty array
-    // (testing that it doesn't use mock anymore, which would return a result)
-    const items = await generateContextualPrompts("");
+    // After reset, SDK is uninitialized so calls should fail gracefully
+    // (the function catches errors and returns empty array)
+    const items = await generateContextualPrompts("context");
     expect(items).toEqual([]);
   });
 });
@@ -2898,7 +2896,7 @@ describe("getInspiration", () => {
   });
 
   afterEach(async () => {
-    resetQueryFunction();
+    _resetForTesting();
     await rm(testVaultPath, { recursive: true, force: true });
   });
 
@@ -2910,7 +2908,7 @@ describe("getInspiration", () => {
   describe("basic functionality", () => {
     test("returns object with contextual and quote properties", async () => {
       // Mock to prevent real SDK calls
-      setQueryFunction(createMockQueryFn(""));
+      configureSdkForTesting(createMockQueryFn(""));
 
       const vault = createTestVault();
       const result = await getInspiration(vault);
@@ -2920,7 +2918,7 @@ describe("getInspiration", () => {
     });
 
     test("returns fallback quote when quote file missing", async () => {
-      setQueryFunction(createMockQueryFn(""));
+      configureSdkForTesting(createMockQueryFn(""));
 
       const vault = createTestVault();
       const result = await getInspiration(vault);
@@ -2929,7 +2927,7 @@ describe("getInspiration", () => {
     });
 
     test("returns null for contextual when file missing", async () => {
-      setQueryFunction(createMockQueryFn(""));
+      configureSdkForTesting(createMockQueryFn(""));
 
       // Use a weekday date
       const vault = createTestVault();
@@ -2955,7 +2953,7 @@ describe("getInspiration", () => {
         quoteContent
       );
 
-      setQueryFunction(createMockQueryFn(""));
+      configureSdkForTesting(createMockQueryFn(""));
 
       const vault = createTestVault();
       const result = await getInspiration(vault);
@@ -2985,7 +2983,7 @@ describe("getInspiration", () => {
         quoteContent
       );
 
-      setQueryFunction(createMockQueryFn(""));
+      configureSdkForTesting(createMockQueryFn(""));
 
       // Only test on weekdays - the function checks isWeekday internally
       const vault = createTestVault();
@@ -3005,7 +3003,7 @@ describe("getInspiration", () => {
     test("triggers quote generation when quote file missing", async () => {
       let queryWasCalled = false;
 
-      setQueryFunction(
+      configureSdkForTesting(
         createMockQueryFn('- "Generated quote" -- AI', () => {
           queryWasCalled = true;
         })
@@ -3041,7 +3039,7 @@ describe("getInspiration", () => {
       );
 
       let queryWasCalled = false;
-      setQueryFunction(
+      configureSdkForTesting(
         createMockQueryFn("", () => {
           queryWasCalled = true;
         })
@@ -3057,7 +3055,7 @@ describe("getInspiration", () => {
 
   describe("error handling", () => {
     test("returns fallback quote when generation fails", async () => {
-      setQueryFunction(createErrorMockQueryFn("SDK error"));
+      configureSdkForTesting(createErrorMockQueryFn("SDK error"));
 
       const vault = createTestVault();
       const result = await getInspiration(vault);
@@ -3067,7 +3065,7 @@ describe("getInspiration", () => {
     });
 
     test("handles permission errors gracefully", async () => {
-      setQueryFunction(createMockQueryFn(""));
+      configureSdkForTesting(createMockQueryFn(""));
 
       // Point to a path that definitely doesn't exist
       const nonExistentVault = createMockVault({
@@ -3101,7 +3099,7 @@ describe("getInspiration", () => {
         quoteContent
       );
 
-      setQueryFunction(createMockQueryFn(""));
+      configureSdkForTesting(createMockQueryFn(""));
 
       // On weekends, contextual should be null
       // Note: We can't easily mock the date in this test, so we verify the
@@ -3124,7 +3122,7 @@ describe("getInspiration", () => {
 
   describe("integration with file writing", () => {
     test("creates quote file after generation", async () => {
-      setQueryFunction(
+      configureSdkForTesting(
         createMockQueryFn('- "Newly generated" -- AI Author')
       );
 
@@ -3150,7 +3148,7 @@ describe("getInspiration", () => {
         oldContent
       );
 
-      setQueryFunction(
+      configureSdkForTesting(
         createMockQueryFn('- "New quote" -- New Author')
       );
 

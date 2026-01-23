@@ -7,13 +7,13 @@
 
 import { mkdir, readFile, writeFile, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  query,
-  type Query,
-  type SDKMessage,
-  type Options,
-  type SlashCommand as SDKSlashCommand,
+import type {
+  Query,
+  SDKMessage,
+  Options,
+  SlashCommand as SDKSlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
+import { getSdkQuery, type QueryFunction } from "./sdk-provider";
 
 // Re-export the SDK's SlashCommand type for use by other modules
 export type { SDKSlashCommand };
@@ -21,10 +21,8 @@ export type { SDKSlashCommand };
 // Re-export types from shared for convenience
 export type { SessionMetadata, ConversationMessage } from "@memory-loop/shared";
 
-/**
- * Type for the SDK query function, to enable dependency injection for testing.
- */
-export type QueryFunction = typeof query;
+// Re-export QueryFunction for backward compatibility
+export type { QueryFunction } from "./sdk-provider";
 import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@memory-loop/shared";
 import { directoryExists, fileExists, getVaultById } from "./vault-manager";
 import {
@@ -785,8 +783,11 @@ export async function createSession(
   options?: Partial<Options>,
   requestToolPermission?: ToolPermissionCallback,
   askUserQuestion?: AskUserQuestionCallback,
-  queryFn: QueryFunction = query
+  queryFn?: QueryFunction
 ): Promise<SessionQueryResult> {
+  // Use provided mock or fall back to centralized SDK provider
+  const query = queryFn ?? getSdkQuery();
+
   log.info(`Creating session for vault: ${vault.id}`);
   log.info(`Vault path: ${vault.path}`);
   log.debug(`Prompt: ${prompt.slice(0, 100)}...`);
@@ -830,7 +831,7 @@ export async function createSession(
       permissionMode: mergedOptions.permissionMode,
       hasCanUseTool: !!mergedOptions.canUseTool,
     });
-    const queryResult = queryFn({
+    const queryResult = query({
       prompt,
       options: mergedOptions,
     });
@@ -896,8 +897,11 @@ export async function resumeSession(
   options?: Partial<Options>,
   requestToolPermission?: ToolPermissionCallback,
   askUserQuestion?: AskUserQuestionCallback,
-  queryFn: QueryFunction = query
+  queryFn?: QueryFunction
 ): Promise<SessionQueryResult> {
+  // Use provided mock or fall back to centralized SDK provider
+  const query = queryFn ?? getSdkQuery();
+
   log.info(`Resuming session: ${sessionId}`);
 
   // Load existing session metadata
@@ -953,7 +957,7 @@ export async function resumeSession(
       permissionMode: mergedOptions.permissionMode,
       hasCanUseTool: !!mergedOptions.canUseTool,
     });
-    const queryResult = queryFn({
+    const queryResult = query({
       prompt,
       options: mergedOptions,
     });
@@ -1001,7 +1005,7 @@ export async function querySession(
   sessionId?: string,
   options?: Partial<Options>,
   requestToolPermission?: ToolPermissionCallback,
-  queryFn: QueryFunction = query
+  queryFn?: QueryFunction
 ): Promise<SessionQueryResult> {
   if (sessionId) {
     return resumeSession(vault.path, sessionId, prompt, options, requestToolPermission, undefined, queryFn);

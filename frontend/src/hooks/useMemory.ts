@@ -2,15 +2,22 @@
  * useMemory Hook
  *
  * Handles memory file operations via REST API.
+ * Memory is user-global (stored at ~/.claude/rules/memory.md),
+ * not vault-scoped.
  *
  * Requirements:
- * - REQ-F-35: Get memory content via GET /api/vaults/:vaultId/memory
- * - REQ-F-36: Save memory content via PUT /api/vaults/:vaultId/memory
+ * - REQ-F-35: Get memory content via GET /api/config/memory
+ * - REQ-F-36: Save memory content via PUT /api/config/memory
  */
 
 import { useState, useCallback, useMemo } from "react";
-import { createApiClient, vaultPath, ApiError } from "../api/client.js";
+import { createApiClient, ApiError } from "../api/client.js";
 import type { FetchFn } from "../api/types.js";
+
+/**
+ * API path for global memory endpoint.
+ */
+const MEMORY_API_PATH = "/api/config/memory";
 
 /**
  * Response from GET /memory.
@@ -57,13 +64,14 @@ export interface UseMemoryOptions {
 /**
  * React hook for memory file operations.
  *
- * @param vaultId - The vault ID to operate on
+ * Memory is user-global, not vault-scoped.
+ *
  * @param options - Optional configuration (fetch for testing)
  * @returns Memory functions, loading state, and error state
  *
  * @example
  * ```tsx
- * const { getMemory, saveMemory, isLoading } = useMemory(vault?.id);
+ * const { getMemory, saveMemory, isLoading } = useMemory();
  *
  * useEffect(() => {
  *   getMemory().then((result) => {
@@ -74,10 +82,7 @@ export interface UseMemoryOptions {
  * }, [getMemory]);
  * ```
  */
-export function useMemory(
-  vaultId: string | undefined,
-  options: UseMemoryOptions = {}
-): UseMemoryResult {
+export function useMemory(options: UseMemoryOptions = {}): UseMemoryResult {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,18 +100,11 @@ export function useMemory(
    * Get memory file content and metadata.
    */
   const getMemory = useCallback(async (): Promise<MemoryContentResponse | null> => {
-    if (!vaultId) {
-      setError("No vault selected");
-      return null;
-    }
-
     setIsLoading(true);
     setError(null);
 
     try {
-      const result = await api.get<MemoryContentResponse>(
-        vaultPath(vaultId, "memory")
-      );
+      const result = await api.get<MemoryContentResponse>(MEMORY_API_PATH);
       return result;
     } catch (err) {
       const message =
@@ -120,24 +118,19 @@ export function useMemory(
     } finally {
       setIsLoading(false);
     }
-  }, [vaultId, api]);
+  }, [api]);
 
   /**
    * Save memory file content.
    */
   const saveMemory = useCallback(
     async (content: string): Promise<boolean> => {
-      if (!vaultId) {
-        setError("No vault selected");
-        return false;
-      }
-
       setIsLoading(true);
       setError(null);
 
       try {
         const result = await api.put<MemorySavedResponse>(
-          vaultPath(vaultId, "memory"),
+          MEMORY_API_PATH,
           { content }
         );
         return result.success;
@@ -154,7 +147,7 @@ export function useMemory(
         setIsLoading(false);
       }
     },
-    [vaultId, api]
+    [api]
   );
 
   return {

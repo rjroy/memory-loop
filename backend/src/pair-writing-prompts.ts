@@ -360,17 +360,12 @@ const ADVISORY_ACTION_CONFIGS: Record<AdvisoryActionType, AdvisoryConfig> = {
   },
   discuss: {
     name: "Discuss",
-    taskDescription: "Engage in a discussion about the selected text",
-    role: "engaging in a discussion about content",
-    selectionLabel: "Selected text to discuss",
-    contextLabel: "Surrounding context (for reference)",
-    closing: "Engage thoughtfully, exploring different angles and encouraging deeper understanding.",
-    rules: [
-      "Consider different perspectives on the content",
-      "Explore implications and underlying assumptions",
-      "Ask questions to deepen understanding",
-      "Encourage critical thinking and reflection",
-    ],
+    taskDescription: "Discuss the selected text",
+    role: "a writing partner ready to discuss",
+    selectionLabel: "Selected text",
+    contextLabel: "Surrounding context",
+    closing: "What would you like to explore?",
+    rules: [],
   },
 };
 
@@ -392,13 +387,14 @@ function buildStandardAdvisoryPrompt(
     calculatePositionHint(context.startLine, context.endLine, context.totalLines)
   );
 
+  const instructionsBlock = config.rules.length > 0
+    ? `\nInstructions:\n${formatRules(config.rules)}\n`
+    : "";
+
   return `You are a writing assistant ${config.role}.
 
 Task: ${config.taskDescription} ${positionPhrase} "${context.filePath}".
-
-Instructions:
-${formatRules(config.rules)}
-
+${instructionsBlock}
 ${config.selectionLabel}:
 ${context.selectedText}
 

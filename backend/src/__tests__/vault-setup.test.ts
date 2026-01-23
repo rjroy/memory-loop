@@ -22,8 +22,6 @@ import {
   buildClaudeMdPrompt,
   updateClaudeMd,
   updateGitignore,
-  setQueryFunction,
-  resetQueryFunction,
   SETUP_VERSION,
   SETUP_MARKER_PATH,
   COMMANDS_DEST_PATH,
@@ -31,9 +29,9 @@ import {
   MEMORY_LOOP_IGNORE_PATTERNS,
   MEMORY_LOOP_GITIGNORE_PATH,
   type SetupCompleteMarker,
-  type QueryFunction,
 } from "../vault-setup";
 import { directoryExists, fileExists } from "../vault-manager";
+import { configureSdkForTesting, _resetForTesting, type QueryFunction } from "../sdk-provider";
 
 // =============================================================================
 // Mock Query Function Factory
@@ -126,7 +124,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   // Reset SDK mock
-  resetQueryFunction();
+  _resetForTesting();
 
   // Restore original env
   if (originalVaultsDir === undefined) {
@@ -589,7 +587,7 @@ describe("updateClaudeMd", () => {
   const mockUpdatedContent = "# Test Vault\n\nTest content.\n\n## Memory Loop\n\nUpdated by LLM.";
 
   test("updates CLAUDE.md when SDK completes successfully", async () => {
-    setQueryFunction(createMockQueryFn(mockUpdatedContent, vaultPathRef));
+    configureSdkForTesting(createMockQueryFn(mockUpdatedContent, vaultPathRef));
 
     const result = await updateClaudeMd(vaultPath, {});
 
@@ -600,7 +598,7 @@ describe("updateClaudeMd", () => {
   });
 
   test("creates backup before updating", async () => {
-    setQueryFunction(createMockQueryFn(mockUpdatedContent, vaultPathRef));
+    configureSdkForTesting(createMockQueryFn(mockUpdatedContent, vaultPathRef));
 
     await updateClaudeMd(vaultPath, {});
 
@@ -609,7 +607,7 @@ describe("updateClaudeMd", () => {
 
   test("backup contains original content", async () => {
     const originalContent = "# Test Vault\n\nTest content.";
-    setQueryFunction(createMockQueryFn(mockUpdatedContent, vaultPathRef));
+    configureSdkForTesting(createMockQueryFn(mockUpdatedContent, vaultPathRef));
 
     await updateClaudeMd(vaultPath, {});
 
@@ -628,7 +626,7 @@ describe("updateClaudeMd", () => {
   });
 
   test("returns error if SDK does not emit result event", async () => {
-    setQueryFunction(createIncompleteQueryFn());
+    configureSdkForTesting(createIncompleteQueryFn());
 
     const result = await updateClaudeMd(vaultPath, {});
 
@@ -637,7 +635,7 @@ describe("updateClaudeMd", () => {
   });
 
   test("returns error if SDK throws", async () => {
-    setQueryFunction(createErrorMockQueryFn("API rate limit exceeded"));
+    configureSdkForTesting(createErrorMockQueryFn("API rate limit exceeded"));
 
     const result = await updateClaudeMd(vaultPath, {});
 
@@ -647,7 +645,7 @@ describe("updateClaudeMd", () => {
 
   test("preserves CLAUDE.md on SDK error", async () => {
     const originalContent = "# Test Vault\n\nTest content.";
-    setQueryFunction(createErrorMockQueryFn("SDK error"));
+    configureSdkForTesting(createErrorMockQueryFn("SDK error"));
 
     await updateClaudeMd(vaultPath, {});
 
@@ -810,7 +808,7 @@ describe("runVaultSetup", () => {
 
   beforeEach(() => {
     // Set up mock for SDK calls in runVaultSetup tests
-    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd, vaultPathRef));
+    configureSdkForTesting(createMockQueryFn(mockUpdatedClaudeMd, vaultPathRef));
   });
 
   test("returns error for non-existent vault", async () => {
@@ -884,7 +882,7 @@ describe("runVaultSetup", () => {
   });
 
   test("marker has claudeMdUpdated as false when SDK fails", async () => {
-    setQueryFunction(createErrorMockQueryFn("SDK error"));
+    configureSdkForTesting(createErrorMockQueryFn("SDK error"));
 
     await runVaultSetup("test-vault");
 
@@ -958,7 +956,7 @@ describe("Partial Failure Handling", () => {
   const mockUpdatedClaudeMd = "# Test Vault\n\n## Memory Loop\n\nConfigured.";
 
   beforeEach(() => {
-    setQueryFunction(createMockQueryFn(mockUpdatedClaudeMd, vaultPathRef));
+    configureSdkForTesting(createMockQueryFn(mockUpdatedClaudeMd, vaultPathRef));
   });
 
   test("continues after command install failure and accumulates errors", async () => {
@@ -1006,7 +1004,7 @@ describe("Edge Cases", () => {
   beforeEach(() => {
     // Use no-op mock since these tests use different vault paths
     // and just verify setup completes without error
-    setQueryFunction(createNoOpMockQueryFn());
+    configureSdkForTesting(createNoOpMockQueryFn());
   });
 
   test("handles vault with spaces in name", async () => {

@@ -18,10 +18,11 @@ import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { query, type Options, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { createLogger } from "../logger.js";
 import { fileExists } from "../vault-manager.js";
 import type { DiscoveredTranscript } from "./transcript-reader.js";
+import { getSdkQuery, type QueryFunction } from "../sdk-provider.js";
 
 const log = createLogger("fact-extractor");
 
@@ -73,14 +74,8 @@ export const EXTRACTION_SDK_OPTIONS: Partial<Options> = {
   maxBudgetUsd: 0.50, // Conservative budget for extraction
 };
 
-// =============================================================================
-// Types
-// =============================================================================
-
-/**
- * Type for the SDK query function, to enable dependency injection for testing.
- */
-export type QueryFunction = typeof query;
+// Re-export QueryFunction for test convenience
+export type { QueryFunction } from "../sdk-provider.js";
 
 /**
  * Result of an extraction run.
@@ -378,8 +373,11 @@ function sleep(ms: number): Promise<void> {
 export async function extractFacts(
   transcripts: DiscoveredTranscript[],
   vaultsDir: string,
-  queryFn: QueryFunction = query
+  queryFn?: QueryFunction
 ): Promise<ExtractionResult> {
+  // Use provided mock or fall back to centralized SDK provider
+  const query = queryFn ?? getSdkQuery();
+
   if (transcripts.length === 0) {
     log.info("No transcripts to process");
     return {
@@ -413,7 +411,7 @@ export async function extractFacts(
 
   // First attempt
   try {
-    await runExtractionAttempt(fullPrompt, vaultsDir, queryFn);
+    await runExtractionAttempt(fullPrompt, vaultsDir, query);
     return {
       success: true,
       transcriptsProcessed: transcripts.length,
@@ -428,7 +426,7 @@ export async function extractFacts(
   await sleep(RETRY_DELAY_MS);
 
   try {
-    await runExtractionAttempt(fullPrompt, vaultsDir, queryFn);
+    await runExtractionAttempt(fullPrompt, vaultsDir, query);
     return {
       success: true,
       transcriptsProcessed: transcripts.length,

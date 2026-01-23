@@ -2,8 +2,10 @@
  * Memory and Sessions REST Routes Integration Tests
  *
  * Tests the memory and session REST endpoints:
- * - GET /api/vaults/:vaultId/memory - Get memory file content
- * - PUT /api/vaults/:vaultId/memory - Save memory file content
+ * - GET /api/config/memory - Get memory file content (global, preferred)
+ * - PUT /api/config/memory - Save memory file content (global, preferred)
+ * - GET /api/vaults/:vaultId/memory - Get memory file content (legacy)
+ * - PUT /api/vaults/:vaultId/memory - Save memory file content (legacy)
  * - DELETE /api/vaults/:vaultId/sessions/:sessionId - Delete a session
  *
  * Requirements:
@@ -285,6 +287,220 @@ describe("Memory REST Routes", () => {
       // Verify empty file was written
       const savedContent = await readFile(memoryFilePath, "utf-8");
       expect(savedContent).toBe("");
+    });
+  });
+});
+
+// =============================================================================
+// Global Memory Routes Tests (preferred endpoint)
+// =============================================================================
+
+describe("Global Memory REST Routes", () => {
+  let testDir: string;
+  let memoryFilePath: string;
+  let app: ReturnType<typeof createApp>;
+  const originalVaultsDir = process.env.VAULTS_DIR;
+  const originalMemoryPath = process.env.MEMORY_FILE_PATH_OVERRIDE;
+
+  beforeEach(async () => {
+    testDir = await createTestDir();
+    process.env.VAULTS_DIR = testDir;
+
+    // Set up memory file path in temp directory
+    memoryFilePath = join(testDir, ".claude", "rules", "memory.md");
+    process.env.MEMORY_FILE_PATH_OVERRIDE = memoryFilePath;
+
+    app = createApp();
+  });
+
+  afterEach(async () => {
+    // Restore original env
+    if (originalVaultsDir === undefined) {
+      delete process.env.VAULTS_DIR;
+    } else {
+      process.env.VAULTS_DIR = originalVaultsDir;
+    }
+
+    if (originalMemoryPath === undefined) {
+      delete process.env.MEMORY_FILE_PATH_OVERRIDE;
+    } else {
+      process.env.MEMORY_FILE_PATH_OVERRIDE = originalMemoryPath;
+    }
+
+    // Clean up test directory
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  // ===========================================================================
+  // GET /api/config/memory Tests (REQ-F-35)
+  // ===========================================================================
+
+  describe("GET /api/config/memory", () => {
+    test("returns memory content when file exists", async () => {
+      const content = "# Memory\n\n- Global fact one\n- Global fact two\n";
+      await createMemoryFile(memoryFilePath, content);
+
+      const req = new Request("http://localhost/api/config/memory");
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      const json = (await res.json()) as MemoryContentResponse;
+
+      expect(json.content).toBe(content);
+      expect(json.exists).toBe(true);
+      expect(json.sizeBytes).toBe(Buffer.byteLength(content, "utf-8"));
+    });
+
+    test("returns empty content when file does not exist", async () => {
+      // Do not create memory file
+
+      const req = new Request("http://localhost/api/config/memory");
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      const json = (await res.json()) as MemoryContentResponse;
+
+      expect(json.content).toBe("");
+      expect(json.exists).toBe(false);
+      expect(json.sizeBytes).toBe(0);
+    });
+
+    test("does not require vault context", async () => {
+      // No vault created - global endpoint should still work
+      const content = "# Memory without vault\n";
+      await createMemoryFile(memoryFilePath, content);
+
+      const req = new Request("http://localhost/api/config/memory");
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      const json = (await res.json()) as MemoryContentResponse;
+      expect(json.content).toBe(content);
+      expect(json.exists).toBe(true);
+    });
+  });
+
+  // ===========================================================================
+  // PUT /api/config/memory Tests (REQ-F-36)
+  // ===========================================================================
+
+  describe("PUT /api/config/memory", () => {
+    test("saves memory content successfully", async () => {
+      const newContent = "# Memory\n\n- New global fact\n";
+
+      const req = new Request("http://localhost/api/config/memory", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newContent }),
+      });
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      const json = (await res.json()) as MemorySavedResponse;
+
+      expect(json.success).toBe(true);
+      expect(json.sizeBytes).toBeGreaterThan(0);
+
+      // Verify file was written
+      const savedContent = await readFile(memoryFilePath, "utf-8");
+      expect(savedContent).toBe(newContent);
+    });
+
+    test("overwrites existing memory content", async () => {
+      await createMemoryFile(memoryFilePath, "# Old Global Content\n");
+
+      const newContent = "# New Global Content\n\n- Updated global fact\n";
+      const req = new Request("http://localhost/api/config/memory", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newContent }),
+      });
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      const json = (await res.json()) as MemorySavedResponse;
+      expect(json.success).toBe(true);
+
+      // Verify file was overwritten
+      const savedContent = await readFile(memoryFilePath, "utf-8");
+      expect(savedContent).toBe(newContent);
+    });
+
+    test("returns 400 when content is missing", async () => {
+      const req = new Request("http://localhost/api/config/memory", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(400);
+
+      const json = (await res.json()) as RestErrorResponse;
+      expect(json.error.code).toBe("VALIDATION_ERROR");
+      expect(json.error.message).toContain("content");
+    });
+
+    test("returns 400 when content is not a string", async () => {
+      const req = new Request("http://localhost/api/config/memory", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: 123 }),
+      });
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(400);
+
+      const json = (await res.json()) as RestErrorResponse;
+      expect(json.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    test("handles empty content string", async () => {
+      const req = new Request("http://localhost/api/config/memory", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "" }),
+      });
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      const json = (await res.json()) as MemorySavedResponse;
+      expect(json.success).toBe(true);
+
+      // Verify empty file was written
+      const savedContent = await readFile(memoryFilePath, "utf-8");
+      expect(savedContent).toBe("");
+    });
+
+    test("does not require vault context", async () => {
+      // No vault created - global endpoint should still work
+      const newContent = "# Memory without vault context\n";
+
+      const req = new Request("http://localhost/api/config/memory", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newContent }),
+      });
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      const json = (await res.json()) as MemorySavedResponse;
+      expect(json.success).toBe(true);
+
+      // Verify file was written
+      const savedContent = await readFile(memoryFilePath, "utf-8");
+      expect(savedContent).toBe(newContent);
     });
   });
 });

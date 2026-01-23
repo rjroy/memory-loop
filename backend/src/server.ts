@@ -23,6 +23,7 @@ import { getSessionForVault } from "./session-manager";
 import { uploadFile } from "./file-upload";
 import { serverLog as log } from "./logger";
 import { vaultRoutes } from "./routes";
+import { globalMemoryRoutes } from "./routes/memory";
 import { restErrorHandler } from "./middleware/error-handler";
 
 /**
@@ -243,6 +244,10 @@ export const createApp = () => {
     const sessionId = await getSessionForVault(vaultId);
     return c.json({ sessionId });
   });
+
+  // Global memory routes - memory.md is user-global, not vault-scoped
+  // Routes: GET/PUT /api/config/memory
+  app.route("/api/config/memory", globalMemoryRoutes);
 
   // Vault asset serving endpoint
   // Serves images from vault with security validation

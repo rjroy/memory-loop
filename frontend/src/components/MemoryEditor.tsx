@@ -32,25 +32,15 @@ const MAX_MEMORY_SIZE = 50 * 1024;
 const WARNING_THRESHOLD = 45 * 1024;
 
 /**
- * Props for the MemoryEditor component.
- */
-export interface MemoryEditorProps {
-  /** Vault ID for REST API calls */
-  vaultId: string | undefined;
-}
-
-/**
  * MemoryEditor Component
  *
  * Provides an interface for viewing and editing the memory.md file.
  * The content is loaded from the server on mount and can be saved back.
- * Uses REST API via useMemory hook (migrated from WebSocket).
+ * Uses REST API via useMemory hook. Memory is user-global, not vault-scoped.
  */
-export function MemoryEditor({
-  vaultId,
-}: MemoryEditorProps): React.ReactNode {
+export function MemoryEditor(): React.ReactNode {
   // REST API hook for memory operations
-  const { getMemory, saveMemory, isLoading: apiLoading, error: apiError } = useMemory(vaultId);
+  const { getMemory, saveMemory, isLoading: apiLoading, error: apiError } = useMemory();
 
   // State
   const [content, setContent] = useState("");
@@ -73,7 +63,7 @@ export function MemoryEditor({
 
   // Load memory content on mount via REST API
   useEffect(() => {
-    if (!hasLoadedRef.current && vaultId) {
+    if (!hasLoadedRef.current) {
       hasLoadedRef.current = true;
       getMemory().then((result) => {
         if (result) {
@@ -85,7 +75,7 @@ export function MemoryEditor({
         setIsLoading(false);
       });
     }
-  }, [vaultId, getMemory]);
+  }, [getMemory]);
 
   // Update error state from API error
   useEffect(() => {

@@ -731,11 +731,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       <SettingsDialog
         isOpen={settingsDialogOpen}
         onClose={() => setSettingsDialogOpen(false)}
-        memoryEditorContent={
-          <MemoryEditor
-            vaultId={currentVault?.id}
-          />
-        }
+        memoryEditorContent={<MemoryEditor />}
         promptEditorContent={
           <ExtractionPromptEditor
             sendMessage={sendMessage}

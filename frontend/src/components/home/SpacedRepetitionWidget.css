@@ -340,10 +340,32 @@
    ============================================== */
 
 .spaced-repetition-widget__source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.spaced-repetition-widget__source-text {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
-  margin-bottom: var(--spacing-md);
   word-break: break-all;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Open button - neutral secondary action */
+.spaced-repetition-widget__btn--open {
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-secondary);
+}
+
+.spaced-repetition-widget__btn--open:hover:not(:disabled) {
+  background: var(--color-surface-elevated);
+  border-color: var(--glass-border-hover);
 }
 
 /* ==============================================
@@ -493,7 +515,8 @@
     /* Disable hover effects on touch devices */
   }
 
-  .spaced-repetition-widget__btn--skip:hover:not(:disabled) {
+  .spaced-repetition-widget__btn--skip:hover:not(:disabled),
+  .spaced-repetition-widget__btn--open:hover:not(:disabled) {
     background: var(--color-surface);
     border-color: var(--glass-border);
   }

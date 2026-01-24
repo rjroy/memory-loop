@@ -9,11 +9,12 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, writeFile, rm, readFile, readdir } from "node:fs/promises";
+import { mkdir, writeFile, rm, readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   installCommands,
+  installSkills,
   createParaDirectories,
   writeSetupMarker,
   isSetupComplete,
@@ -25,6 +26,7 @@ import {
   SETUP_VERSION,
   SETUP_MARKER_PATH,
   COMMANDS_DEST_PATH,
+  SKILLS_DEST_PATH,
   CLAUDEMD_BACKUP_PATH,
   MEMORY_LOOP_IGNORE_PATTERNS,
   MEMORY_LOOP_GITIGNORE_PATH,
@@ -254,6 +256,106 @@ describe("installCommands", () => {
 });
 
 // =============================================================================
+// installSkills Tests
+// =============================================================================
+
+describe("installSkills", () => {
+  test("creates .claude/skills directory", async () => {
+    const result = await installSkills(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(await directoryExists(join(vaultPath, SKILLS_DEST_PATH))).toBe(true);
+  });
+
+  test("copies skill directories", async () => {
+    const result = await installSkills(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(result.installed.length).toBeGreaterThan(0);
+
+    // Check that skill directory was created
+    const skillsDir = join(vaultPath, SKILLS_DEST_PATH);
+    const skills = await readdir(skillsDir);
+    expect(skills.length).toBeGreaterThan(0);
+  });
+
+  test("installs vault-task-management skill", async () => {
+    const result = await installSkills(vaultPath);
+
+    expect(result.success).toBe(true);
+
+    const skillsDir = join(vaultPath, SKILLS_DEST_PATH);
+    const skills = await readdir(skillsDir);
+
+    expect(skills).toContain("vault-task-management");
+  });
+
+  test("skill contains SKILL.md", async () => {
+    await installSkills(vaultPath);
+
+    const skillMdPath = join(vaultPath, SKILLS_DEST_PATH, "vault-task-management", "SKILL.md");
+    expect(await fileExists(skillMdPath)).toBe(true);
+  });
+
+  test("skill contains scripts directory with shell scripts", async () => {
+    await installSkills(vaultPath);
+
+    const scriptsDir = join(vaultPath, SKILLS_DEST_PATH, "vault-task-management", "scripts");
+    expect(await directoryExists(scriptsDir)).toBe(true);
+
+    const scripts = await readdir(scriptsDir);
+    expect(scripts).toContain("find-tasks.sh");
+    expect(scripts).toContain("show-tasks.sh");
+  });
+
+  test("preserves executable permissions on shell scripts", async () => {
+    await installSkills(vaultPath);
+
+    const scriptPath = join(vaultPath, SKILLS_DEST_PATH, "vault-task-management", "scripts", "find-tasks.sh");
+    const stats = await stat(scriptPath);
+
+    // Check that the file is executable (owner execute bit set)
+    expect(stats.mode & 0o100).toBeTruthy();
+  });
+
+  test("skips existing skill directories", async () => {
+    // First install
+    const result1 = await installSkills(vaultPath);
+    expect(result1.success).toBe(true);
+    expect(result1.installed.length).toBeGreaterThan(0);
+
+    // Second install should skip all
+    const result2 = await installSkills(vaultPath);
+    expect(result2.success).toBe(true);
+    expect(result2.installed.length).toBe(0);
+    expect(result2.message).toContain("already existed");
+  });
+
+  test("does not overwrite existing skill", async () => {
+    // Create skills directory with a custom file in the skill
+    const skillDir = join(vaultPath, SKILLS_DEST_PATH, "vault-task-management");
+    await mkdir(skillDir, { recursive: true });
+    const customContent = "# Custom SKILL.md content\n\nDo not overwrite me.";
+    await writeFile(join(skillDir, "SKILL.md"), customContent);
+
+    // Run install
+    await installSkills(vaultPath);
+
+    // Verify custom file was preserved
+    const content = await readFile(join(skillDir, "SKILL.md"), "utf-8");
+    expect(content).toBe(customContent);
+  });
+
+  test("returns list of installed skills", async () => {
+    const result = await installSkills(vaultPath);
+
+    expect(result.success).toBe(true);
+    expect(Array.isArray(result.installed)).toBe(true);
+    expect(result.installed).toContain("vault-task-management");
+  });
+});
+
+// =============================================================================
 // createParaDirectories Tests
 // =============================================================================
 
@@ -363,6 +465,7 @@ describe("writeSetupMarker", () => {
       completedAt: new Date().toISOString(),
       version: SETUP_VERSION,
       commandsInstalled: ["test.md"],
+      skillsInstalled: [],
       paraCreated: ["Projects"],
       claudeMdUpdated: false,
       gitignoreUpdated: false,
@@ -379,6 +482,7 @@ describe("writeSetupMarker", () => {
       completedAt: "2026-01-05T12:00:00.000Z",
       version: SETUP_VERSION,
       commandsInstalled: ["daily-debrief.md", "weekly-debrief.md"],
+      skillsInstalled: ["vault-task-management"],
       paraCreated: ["Projects", "Areas"],
       claudeMdUpdated: true,
       gitignoreUpdated: true,
@@ -405,6 +509,7 @@ describe("writeSetupMarker", () => {
       completedAt: new Date().toISOString(),
       version: SETUP_VERSION,
       commandsInstalled: [],
+      skillsInstalled: [],
       paraCreated: [],
       claudeMdUpdated: false,
       gitignoreUpdated: false,
@@ -430,6 +535,7 @@ describe("writeSetupMarker", () => {
       completedAt: "2026-01-01T00:00:00.000Z",
       version: "0.0.1",
       commandsInstalled: [],
+      skillsInstalled: [],
       paraCreated: [],
       claudeMdUpdated: false,
       gitignoreUpdated: false,
@@ -441,6 +547,7 @@ describe("writeSetupMarker", () => {
       completedAt: "2026-01-05T12:00:00.000Z",
       version: SETUP_VERSION,
       commandsInstalled: ["updated.md"],
+      skillsInstalled: ["vault-task-management"],
       paraCreated: ["All"],
       claudeMdUpdated: true,
       gitignoreUpdated: true,
@@ -474,6 +581,7 @@ describe("isSetupComplete", () => {
       completedAt: new Date().toISOString(),
       version: SETUP_VERSION,
       commandsInstalled: [],
+      skillsInstalled: [],
       paraCreated: [],
       claudeMdUpdated: false,
       gitignoreUpdated: false,
@@ -829,6 +937,10 @@ describe("runVaultSetup", () => {
     // Verify commands installed
     expect(await directoryExists(join(vaultPath, COMMANDS_DEST_PATH))).toBe(true);
 
+    // Verify skills installed
+    expect(await directoryExists(join(vaultPath, SKILLS_DEST_PATH))).toBe(true);
+    expect(await directoryExists(join(vaultPath, SKILLS_DEST_PATH, "vault-task-management"))).toBe(true);
+
     // Verify PARA directories created
     expect(await directoryExists(join(vaultPath, "01_Projects"))).toBe(true);
     expect(await directoryExists(join(vaultPath, "02_Areas"))).toBe(true);
@@ -858,6 +970,15 @@ describe("runVaultSetup", () => {
 
     expect(marker.commandsInstalled.length).toBeGreaterThan(0);
     expect(marker.commandsInstalled).toContain("daily-debrief.md");
+  });
+
+  test("marker includes installed skills", async () => {
+    await runVaultSetup("test-vault");
+
+    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
+    const marker = JSON.parse(content) as SetupCompleteMarker;
+
+    expect(marker.skillsInstalled).toContain("vault-task-management");
   });
 
   test("marker includes created PARA directories", async () => {
@@ -1032,7 +1153,7 @@ describe("Edge Cases", () => {
   });
 
   test("setup version is correct", () => {
-    expect(SETUP_VERSION).toBe("1.2.0");
+    expect(SETUP_VERSION).toBe("1.3.0");
   });
 
   test("marker path is correct", () => {
@@ -1041,5 +1162,9 @@ describe("Edge Cases", () => {
 
   test("commands destination path is correct", () => {
     expect(COMMANDS_DEST_PATH).toBe(".claude/commands");
+  });
+
+  test("skills destination path is correct", () => {
+    expect(SKILLS_DEST_PATH).toBe(".claude/skills");
   });
 });

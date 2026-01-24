@@ -55,11 +55,10 @@ function createMockSdk(response: string): QueryFunction {
  */
 function createErrorMockSdk(error: Error): QueryFunction {
   return (() => {
-    // eslint-disable-next-line @typescript-eslint/require-await
-    async function* mockGenerator() {
+    // Generator that throws immediately - no yield needed since error is thrown first
+    // eslint-disable-next-line require-yield, @typescript-eslint/require-await
+    async function* mockGenerator(): AsyncGenerator<{ type: string }> {
       throw error;
-      // Never yields, TypeScript needs this for generator type
-      yield { type: "never" };
     }
     return mockGenerator();
   }) as unknown as QueryFunction;

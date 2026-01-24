@@ -33,6 +33,14 @@ export interface CardContent {
 }
 
 /**
+ * Result of card generation - either success with cards or failure with error.
+ * Using a discriminated union makes failure handling explicit.
+ */
+export type GenerationResult =
+  | { success: true; cards: CardContent[]; skipped?: boolean }
+  | { success: false; error: string; retriable: boolean };
+
+/**
  * Interface for card type generators.
  * Allows different extraction strategies for different card types.
  */
@@ -40,7 +48,7 @@ export interface CardTypeGenerator {
   /** Identifier for the card type (e.g., "qa") */
   type: string;
   /** Extract cards from content */
-  generate(content: string, filePath: string): Promise<CardContent[]>;
+  generate(content: string, filePath: string): Promise<GenerationResult>;
 }
 
 // =============================================================================
@@ -48,7 +56,7 @@ export interface CardTypeGenerator {
 // =============================================================================
 
 /** Model to use for card generation (cost-efficient) */
-export const GENERATION_MODEL = "claude-haiku-4-20250514";
+export const GENERATION_MODEL = "haiku";
 
 /** Minimum content length to attempt extraction (characters) */
 export const MIN_CONTENT_LENGTH = 100;
@@ -223,6 +231,44 @@ async function collectResponse(queryResult: ReturnType<QueryFunction>): Promise<
 }
 
 // =============================================================================
+// Error Classification
+// =============================================================================
+
+/**
+ * Determine if an error is retriable (should be retried on next run)
+ * vs permanent (file should be marked as processed to avoid infinite retries).
+ *
+ * Retriable errors include:
+ * - Rate limits / token limits
+ * - Network/connection issues
+ * - Process exit codes (usually transient SDK issues)
+ * - Timeouts
+ *
+ * Permanent errors include:
+ * - Invalid content that will never parse
+ * - Authentication failures (need manual intervention)
+ */
+function isRetriableError(message: string): boolean {
+  const retriablePatterns = [
+    /rate.?limit/i,
+    /token.?limit/i,
+    /quota/i,
+    /too many requests/i,
+    /429/,
+    /network/i,
+    /connection/i,
+    /timeout/i,
+    /ECONNREFUSED/,
+    /ETIMEDOUT/,
+    /ENOTFOUND/,
+    /process exited/i,
+    /exit.?code/i,
+  ];
+
+  return retriablePatterns.some((pattern) => pattern.test(message));
+}
+
+// =============================================================================
 // QA Card Generator
 // =============================================================================
 
@@ -240,13 +286,13 @@ export class QACardGenerator implements CardTypeGenerator {
    *
    * @param content - Markdown content to extract from
    * @param filePath - Path to source file (for context and logging)
-   * @returns Array of CardContent (may be empty)
+   * @returns GenerationResult with cards on success, error details on failure
    */
-  async generate(content: string, filePath: string): Promise<CardContent[]> {
+  async generate(content: string, filePath: string): Promise<GenerationResult> {
     // Skip if content is too short
     if (content.length < MIN_CONTENT_LENGTH) {
       log.debug(`Skipping ${filePath}: content too short (${content.length} chars)`);
-      return [];
+      return { success: true, cards: [], skipped: true };
     }
 
     // Truncate if content is too long
@@ -276,12 +322,21 @@ export class QACardGenerator implements CardTypeGenerator {
       const cards = parseQAResponse(response);
 
       log.info(`Extracted ${cards.length} Q&A pairs from ${filePath}`);
-      return cards;
+      return { success: true, cards };
     } catch (error) {
-      // Log error but return empty (graceful degradation)
       const message = error instanceof Error ? error.message : String(error);
-      log.error(`Failed to generate cards from ${filePath}: ${message}`);
-      return [];
+
+      // Determine if this is a retriable error (rate limits, network issues)
+      // vs a permanent failure (invalid content, parsing errors)
+      const retriable = isRetriableError(message);
+
+      // Log with context for diagnosability
+      log.error(
+        `Card generation failed for ${filePath}: ${message}`,
+        { model: GENERATION_MODEL, contentLength: content.length, retriable }
+      );
+
+      return { success: false, error: message, retriable };
     }
   }
 }

@@ -26,7 +26,7 @@ import {
   markFileProcessed,
   type CardDiscoveryState,
 } from "./card-discovery-state.js";
-import { createQACardGenerator, type CardContent } from "./card-generator.js";
+import { createQACardGenerator } from "./card-generator.js";
 import { createCard, type VaultPathInfo } from "./card-manager.js";
 
 const log = createLogger("card-discovery-scheduler");
@@ -73,15 +73,17 @@ export interface FileToProcess {
 export interface DiscoveryStats {
   /** Number of files scanned */
   filesScanned: number;
-  /** Number of files processed (content read and sent to LLM) */
+  /** Number of files processed successfully (LLM returned a result) */
   filesProcessed: number;
   /** Number of files skipped (already processed with same checksum) */
   filesSkipped: number;
+  /** Number of files that failed with retriable errors (will retry next run) */
+  filesRetriable: number;
   /** Number of cards created */
   cardsCreated: number;
   /** Total bytes processed */
   bytesProcessed: number;
-  /** Number of errors encountered */
+  /** Number of permanent errors encountered */
   errors: number;
 }
 
@@ -203,10 +205,13 @@ export async function discoverAllFiles(): Promise<FileToProcess[]> {
 /**
  * Process a single file for card extraction.
  *
+ * Only marks file as processed if generation succeeds. Retriable errors
+ * (rate limits, network issues) leave the file unprocessed for retry.
+ *
  * @param file - File to process
  * @param state - Current discovery state
  * @param stats - Stats to update
- * @returns Updated state with file marked as processed
+ * @returns Updated state (file marked as processed only on success)
  */
 async function processFile(
   file: FileToProcess,
@@ -236,18 +241,30 @@ async function processFile(
 
   // Generate cards from content
   const generator = createQACardGenerator();
-  let cards: CardContent[];
-  try {
-    cards = await generator.generate(content, file.relativePath);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    log.error(`Failed to generate cards from ${file.relativePath}: ${msg}`);
-    stats.errors++;
+  const result = await generator.generate(content, file.relativePath);
+
+  // Handle generation failure - don't mark as processed so it retries
+  if (!result.success) {
+    if (result.retriable) {
+      log.warn(`Retriable error for ${file.relativePath}: ${result.error} (will retry next run)`);
+      stats.filesRetriable++;
+    } else {
+      log.error(`Permanent error for ${file.relativePath}: ${result.error}`);
+      stats.errors++;
+      // Mark permanent failures as processed to avoid infinite retries
+      return markFileProcessed(state, file.absolutePath, checksum);
+    }
     return state;
   }
 
+  // Generation succeeded
   stats.filesProcessed++;
   stats.bytesProcessed += file.size;
+
+  // Skipped files (too short) are marked as processed but don't create cards
+  if (result.skipped) {
+    return markFileProcessed(state, file.absolutePath, checksum);
+  }
 
   // Create cards via CardManager
   const vaultPathInfo: VaultPathInfo = {
@@ -255,17 +272,17 @@ async function processFile(
     metadataPath: file.vault.metadataPath,
   };
 
-  for (const card of cards) {
+  for (const card of result.cards) {
     try {
-      const result = await createCard(vaultPathInfo, {
+      const createResult = await createCard(vaultPathInfo, {
         question: card.question,
         answer: card.answer,
         sourceFile: file.relativePath,
       });
-      if (result.success) {
+      if (createResult.success) {
         stats.cardsCreated++;
       } else {
-        log.warn(`Failed to create card: ${result.error}`);
+        log.warn(`Failed to create card: ${createResult.error}`);
         stats.errors++;
       }
     } catch (e) {
@@ -275,7 +292,7 @@ async function processFile(
     }
   }
 
-  // Mark file as processed
+  // Mark file as processed only after successful generation
   return markFileProcessed(state, file.absolutePath, checksum);
 }
 
@@ -295,6 +312,7 @@ export async function runDailyPass(getNow: () => Date = () => new Date()): Promi
     filesScanned: 0,
     filesProcessed: 0,
     filesSkipped: 0,
+    filesRetriable: 0,
     cardsCreated: 0,
     bytesProcessed: 0,
     errors: 0,
@@ -326,16 +344,30 @@ export async function runDailyPass(getNow: () => Date = () => new Date()): Promi
     state = await processFile(file, state, stats);
   }
 
-  // Update last daily run and save state
-  state = {
-    ...state,
-    lastDailyRun: now.toISOString(),
-  };
+  // Determine if run was successful enough to mark as complete
+  // If mostly retriable errors (e.g., rate limit), don't mark as complete so next run retries
+  const totalAttempted = stats.filesProcessed + stats.filesSkipped + stats.filesRetriable + stats.errors;
+  const successfullyHandled = stats.filesProcessed + stats.filesSkipped;
+  const runSuccessful = totalAttempted === 0 || successfullyHandled > stats.filesRetriable;
+
+  if (runSuccessful) {
+    state = {
+      ...state,
+      lastDailyRun: now.toISOString(),
+    };
+    log.info(
+      `Daily pass complete: ${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.filesSkipped} skipped, ${stats.filesRetriable} retriable, ${stats.errors} errors`
+    );
+  } else {
+    log.warn(
+      `Daily pass incomplete (${stats.filesRetriable} retriable errors) - will retry next run. ` +
+      `${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.filesSkipped} skipped, ${stats.errors} permanent errors`
+    );
+  }
+
+  // Always save state (processed files are tracked even on incomplete runs)
   await writeDiscoveryState(state);
 
-  log.info(
-    `Daily pass complete: ${stats.filesProcessed} files processed, ${stats.cardsCreated} cards created, ${stats.filesSkipped} skipped, ${stats.errors} errors`
-  );
   return stats;
 }
 
@@ -355,6 +387,7 @@ export async function runWeeklyPass(
     filesScanned: 0,
     filesProcessed: 0,
     filesSkipped: 0,
+    filesRetriable: 0,
     cardsCreated: 0,
     bytesProcessed: 0,
     errors: 0,
@@ -420,20 +453,33 @@ export async function runWeeklyPass(
     bytesThisRun += file.size;
   }
 
-  // Update weekly progress and last run time
+  // Determine if run was successful enough to mark as complete
+  const totalAttempted = stats.filesProcessed + stats.filesSkipped + stats.filesRetriable + stats.errors;
+  const successfullyHandled = stats.filesProcessed + stats.filesSkipped;
+  const runSuccessful = totalAttempted === 0 || successfullyHandled > stats.filesRetriable;
+
+  // Always update weekly progress (bytes attempted), but only update lastWeeklyRun on success
   state = {
     ...state,
-    lastWeeklyRun: now.toISOString(),
     weeklyProgress: {
       bytesProcessed: (state.weeklyProgress?.bytesProcessed ?? 0) + bytesThisRun,
       weekStartDate: weekStart,
     },
   };
-  await writeDiscoveryState(state);
 
-  log.info(
-    `Weekly pass complete: ${stats.filesProcessed} files processed, ${stats.cardsCreated} cards created, ${stats.bytesProcessed} bytes`
-  );
+  if (runSuccessful) {
+    state = { ...state, lastWeeklyRun: now.toISOString() };
+    log.info(
+      `Weekly pass complete: ${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.filesRetriable} retriable, ${stats.errors} errors, ${stats.bytesProcessed} bytes`
+    );
+  } else {
+    log.warn(
+      `Weekly pass incomplete (${stats.filesRetriable} retriable errors) - will retry. ` +
+      `${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.errors} permanent errors, ${stats.bytesProcessed} bytes`
+    );
+  }
+
+  await writeDiscoveryState(state);
   return stats;
 }
 

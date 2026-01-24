@@ -1,0 +1,537 @@
+/**
+ * SpacedRepetitionWidget Component Styles
+ *
+ * Flashcard review widget with glassmorphism styling.
+ * Uses BEM naming convention and existing design tokens.
+ */
+
+/* ==============================================
+   Container
+   ============================================== */
+
+.spaced-repetition-widget {
+  position: relative;
+  isolation: isolate;
+  padding: var(--spacing-lg);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-left: 3px solid var(--color-accent-primary);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow);
+  font-family: var(--font-family-user);
+}
+
+.spaced-repetition-widget::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/images/bg-primary.webp');
+  background-size: cover;
+  background-position: center center;
+  border-radius: inherit;
+  opacity: 0.1;
+  z-index: -1;
+  filter: hue-rotate(var(--holiday-hue-rotate, 0deg));
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .spaced-repetition-widget {
+    background-color: var(--color-surface);
+  }
+}
+
+/* ==============================================
+   Header
+   ============================================== */
+
+.spaced-repetition-widget__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+}
+
+.spaced-repetition-widget__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-accent-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.spaced-repetition-widget__count {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ==============================================
+   Loading State
+   ============================================== */
+
+.spaced-repetition-widget__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.spaced-repetition-widget__spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-accent-primary-a25);
+  border-top-color: var(--color-accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spaced-repetition-widget__spinner {
+    animation: none;
+    border-color: var(--color-accent-primary);
+  }
+}
+
+/* ==============================================
+   Error State
+   ============================================== */
+
+.spaced-repetition-widget__error {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-error-a10);
+  border: 1px solid var(--color-error-a30);
+  border-radius: var(--radius-md);
+  color: var(--color-text-error);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+/* ==============================================
+   Question Display
+   ============================================== */
+
+.spaced-repetition-widget__question {
+  font-family: var(--font-family-ai);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text);
+  margin-bottom: var(--spacing-md);
+}
+
+.spaced-repetition-widget__question p {
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.spaced-repetition-widget__question p:last-child {
+  margin-bottom: 0;
+}
+
+.spaced-repetition-widget__question code {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+  background: var(--color-surface-elevated);
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-sm);
+}
+
+.spaced-repetition-widget__question pre {
+  background: var(--color-surface-elevated);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: var(--spacing-sm) 0;
+}
+
+.spaced-repetition-widget__question pre code {
+  background: none;
+  padding: 0;
+}
+
+/* ==============================================
+   Answer Input
+   ============================================== */
+
+.spaced-repetition-widget__input {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-family: var(--font-family-user);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  margin-bottom: var(--spacing-md);
+}
+
+.spaced-repetition-widget__input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.spaced-repetition-widget__input:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 2px var(--color-accent-primary-a25);
+}
+
+.spaced-repetition-widget__input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ==============================================
+   Action Buttons (Question Phase)
+   ============================================== */
+
+.spaced-repetition-widget__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.spaced-repetition-widget__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+  flex: 1 1 auto;
+}
+
+.spaced-repetition-widget__btn:active {
+  transform: scale(0.98);
+}
+
+.spaced-repetition-widget__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Skip button - neutral */
+.spaced-repetition-widget__btn--skip {
+  background: var(--color-surface);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-secondary);
+}
+
+.spaced-repetition-widget__btn--skip:hover:not(:disabled) {
+  background: var(--color-surface-elevated);
+  border-color: var(--glass-border-hover);
+}
+
+/* Forget button - danger */
+.spaced-repetition-widget__btn--forget {
+  background: var(--color-error-a10);
+  border: 1px solid var(--color-error-a30);
+  color: var(--color-text-error);
+}
+
+.spaced-repetition-widget__btn--forget:hover:not(:disabled) {
+  background: var(--color-error-a30);
+  border-color: var(--color-error-a40);
+}
+
+/* Show Answer button - primary */
+.spaced-repetition-widget__btn--reveal {
+  background: var(--glass-bg-primary-button);
+  border: 1px solid var(--color-accent-primary-a40);
+  color: var(--color-text-accent-primary);
+  flex: 2 1 auto;
+}
+
+.spaced-repetition-widget__btn--reveal:hover:not(:disabled) {
+  background: var(--glass-bg-primary-hover);
+  border-color: var(--color-accent-primary);
+}
+
+/* ==============================================
+   User Answer Display (Revealed Phase)
+   ============================================== */
+
+.spaced-repetition-widget__user-answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.spaced-repetition-widget__user-answer-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.spaced-repetition-widget__user-answer-text {
+  font-family: var(--font-family-user);
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+}
+
+/* ==============================================
+   Answer Display (Revealed Phase)
+   ============================================== */
+
+.spaced-repetition-widget__answer {
+  padding: var(--spacing-md);
+  background: var(--color-success-a10);
+  border: 1px solid var(--color-success-a30);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.spaced-repetition-widget__answer-label {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-success);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--spacing-xs);
+}
+
+.spaced-repetition-widget__answer-content {
+  font-family: var(--font-family-ai);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text);
+}
+
+.spaced-repetition-widget__answer-content p {
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.spaced-repetition-widget__answer-content p:last-child {
+  margin-bottom: 0;
+}
+
+.spaced-repetition-widget__answer-content code {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+  background: var(--color-surface-elevated);
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-sm);
+}
+
+/* ==============================================
+   Source Link
+   ============================================== */
+
+.spaced-repetition-widget__source {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-md);
+  word-break: break-all;
+}
+
+/* ==============================================
+   Assessment Buttons (Revealed Phase)
+   ============================================== */
+
+.spaced-repetition-widget__assessment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.spaced-repetition-widget__assessment-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.spaced-repetition-widget__assessment-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-sm);
+}
+
+/* Assessment button base */
+.spaced-repetition-widget__btn--again,
+.spaced-repetition-widget__btn--hard,
+.spaced-repetition-widget__btn--good,
+.spaced-repetition-widget__btn--easy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+}
+
+.spaced-repetition-widget__btn-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.spaced-repetition-widget__btn-shortcut {
+  font-size: var(--font-size-xs);
+  opacity: 0.7;
+  font-family: var(--font-family-mono);
+}
+
+/* Again - red (failed recall) */
+.spaced-repetition-widget__btn--again {
+  background: var(--color-error-a10);
+  border: 1px solid var(--color-error-a30);
+  color: var(--color-text-error);
+}
+
+.spaced-repetition-widget__btn--again:hover:not(:disabled) {
+  background: var(--color-error-a30);
+  border-color: var(--color-error-a40);
+}
+
+/* Hard - orange/warning (difficult recall) */
+.spaced-repetition-widget__btn--hard {
+  background: var(--color-bg-warning);
+  border: 1px solid oklch(from var(--color-warning) l c h / 0.3);
+  color: var(--color-text-warning);
+}
+
+.spaced-repetition-widget__btn--hard:hover:not(:disabled) {
+  background: oklch(from var(--color-warning) calc(l / 3) c h);
+  border-color: oklch(from var(--color-warning) l c h / 0.4);
+}
+
+/* Good - primary (normal recall) */
+.spaced-repetition-widget__btn--good {
+  background: var(--glass-bg-primary-button);
+  border: 1px solid var(--color-accent-primary-a40);
+  color: var(--color-text-accent-primary);
+}
+
+.spaced-repetition-widget__btn--good:hover:not(:disabled) {
+  background: var(--glass-bg-primary-hover);
+  border-color: var(--color-accent-primary);
+}
+
+/* Easy - green (perfect recall) */
+.spaced-repetition-widget__btn--easy {
+  background: var(--color-success-a10);
+  border: 1px solid var(--color-success-a30);
+  color: var(--color-text-success);
+}
+
+.spaced-repetition-widget__btn--easy:hover:not(:disabled) {
+  background: var(--color-success-a20);
+  border-color: oklch(from var(--color-success) l c h / 0.4);
+}
+
+/* ==============================================
+   Complete State
+   ============================================== */
+
+.spaced-repetition-widget__complete {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  text-align: center;
+}
+
+.spaced-repetition-widget__complete-icon {
+  font-size: var(--font-size-3xl);
+  color: var(--color-text-success);
+  line-height: 1;
+}
+
+.spaced-repetition-widget__complete-message {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.spaced-repetition-widget__complete-count {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ==============================================
+   Responsive Adjustments
+   ============================================== */
+
+/* Mobile: stack assessment buttons 2x2 */
+@media (max-width: 400px) {
+  .spaced-repetition-widget__assessment-buttons {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Mobile: reduce blur for performance */
+@media (max-width: 767px) {
+  .spaced-repetition-widget {
+    backdrop-filter: blur(4px);
+  }
+}
+
+/* Touch device adjustments */
+@media (hover: none) {
+  .spaced-repetition-widget__btn:hover {
+    /* Disable hover effects on touch devices */
+  }
+
+  .spaced-repetition-widget__btn--skip:hover:not(:disabled) {
+    background: var(--color-surface);
+    border-color: var(--glass-border);
+  }
+
+  .spaced-repetition-widget__btn--forget:hover:not(:disabled) {
+    background: var(--color-error-a10);
+    border-color: var(--color-error-a30);
+  }
+
+  .spaced-repetition-widget__btn--reveal:hover:not(:disabled) {
+    background: var(--glass-bg-primary-button);
+    border-color: var(--color-accent-primary-a40);
+  }
+
+  .spaced-repetition-widget__btn--again:hover:not(:disabled) {
+    background: var(--color-error-a10);
+    border-color: var(--color-error-a30);
+  }
+
+  .spaced-repetition-widget__btn--hard:hover:not(:disabled) {
+    background: var(--color-bg-warning);
+    border-color: oklch(from var(--color-warning) l c h / 0.3);
+  }
+
+  .spaced-repetition-widget__btn--good:hover:not(:disabled) {
+    background: var(--glass-bg-primary-button);
+    border-color: var(--color-accent-primary-a40);
+  }
+
+  .spaced-repetition-widget__btn--easy:hover:not(:disabled) {
+    background: var(--color-success-a10);
+    border-color: var(--color-success-a30);
+  }
+}
+
+/* Fallback for browsers without backdrop-filter */
+@supports not (backdrop-filter: blur(10px)) {
+  .spaced-repetition-widget {
+    background-color: var(--color-surface);
+  }
+}

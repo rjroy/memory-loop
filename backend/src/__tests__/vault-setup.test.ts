@@ -685,6 +685,19 @@ describe("buildClaudeMdPrompt", () => {
     expect(prompt).toContain("Edit tool");
     expect(prompt).toContain("Preserve all existing content");
   });
+
+  test("includes chat transcripts location", () => {
+    const prompt = buildClaudeMdPrompt({}, vaultPath);
+
+    expect(prompt).toContain("Chat transcripts location");
+    expect(prompt).toContain("/chats/");
+  });
+
+  test("chat transcripts location uses custom inbox path", () => {
+    const prompt = buildClaudeMdPrompt({ inboxPath: "Custom_Inbox" }, vaultPath);
+
+    expect(prompt).toContain("Custom_Inbox/chats/");
+  });
 });
 
 // =============================================================================

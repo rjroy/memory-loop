@@ -611,6 +611,7 @@ Steps:
 1. Read the current CLAUDE.md file
 2. Add or update a "## Memory Loop" section with:
    - Inbox location for daily note capture (${inboxPath})
+   - Chat transcripts location (${inboxPath}/chats/) - AI conversations from the Think tab are saved here as searchable markdown
    - Goals file location (${goalsPath})
    - Note that daily notes are created via the capture tab
    - PARA directory locations for organization

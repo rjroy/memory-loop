@@ -50,6 +50,14 @@ export {
   DismissHealthIssueMessageSchema,
   // Meeting state schema (used by REST API)
   MeetingStateSchema,
+  // Spaced repetition card schemas (used by REST API)
+  ReviewResponseSchema,
+  DueCardSchema,
+  CardDetailSchema,
+  ReviewRequestSchema,
+  ReviewResultSchema,
+  ArchiveResponseSchema,
+  DueCardsResponseSchema,
   // Client -> Server schemas (WebSocket only)
   SelectVaultMessageSchema,
   CreateVaultMessageSchema,
@@ -110,6 +118,14 @@ export type {
   DismissHealthIssueMessage,
   // Meeting types (used by REST API)
   MeetingState,
+  // Spaced repetition card types (used by REST API)
+  ReviewResponse,
+  DueCard,
+  CardDetail,
+  ReviewRequest,
+  ReviewResult,
+  ArchiveResponse,
+  DueCardsResponse,
   // AskUserQuestion types
   AskUserQuestionOption,
   AskUserQuestionItem,

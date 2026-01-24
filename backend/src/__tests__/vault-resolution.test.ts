@@ -47,6 +47,12 @@ describe("isValidVaultId", () => {
     expect(isValidVaultId("vault_1-test")).toBe(true);
   });
 
+  it("accepts vault IDs with dots", () => {
+    expect(isValidVaultId("rjroy.github.io")).toBe(true);
+    expect(isValidVaultId("my.vault.name")).toBe(true);
+    expect(isValidVaultId("vault.v2")).toBe(true);
+  });
+
   it("rejects empty vault IDs", () => {
     expect(isValidVaultId("")).toBe(false);
   });
@@ -57,6 +63,11 @@ describe("isValidVaultId", () => {
 
   it("rejects vault IDs starting with underscore", () => {
     expect(isValidVaultId("_vault")).toBe(false);
+  });
+
+  it("rejects vault IDs starting with dot", () => {
+    expect(isValidVaultId(".vault")).toBe(false);
+    expect(isValidVaultId(".hidden")).toBe(false);
   });
 
   it("rejects path traversal attempts", () => {

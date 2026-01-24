@@ -16,10 +16,10 @@ import { getVaultById } from "../vault-manager";
 
 /**
  * Regular expression for valid vault IDs.
- * Allows alphanumeric characters, hyphens, and underscores.
+ * Allows alphanumeric characters, hyphens, underscores, and dots.
  * Must start with alphanumeric and be 1-100 characters.
  */
-const VAULT_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/;
+const VAULT_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/;
 
 /**
  * Error response format for REST endpoints.
@@ -101,7 +101,7 @@ export function vaultResolution(): MiddlewareHandler {
         c,
         400,
         "VALIDATION_ERROR",
-        "Invalid vault ID format. Must be alphanumeric with hyphens or underscores."
+        "Invalid vault ID format. Must be alphanumeric with hyphens, underscores, or dots."
       );
     }
 

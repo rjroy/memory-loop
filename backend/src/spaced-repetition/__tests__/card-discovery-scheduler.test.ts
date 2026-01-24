@@ -373,7 +373,7 @@ describe("runDailyPass", () => {
     // Mock card generator to return a card
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.resolve([{ question: "Capital of France?", answer: "Paris" }]),
+      generate: () => Promise.resolve({ success: true, cards: [{ question: "Capital of France?", answer: "Paris" }] }),
     }));
 
     // Mock card manager
@@ -429,7 +429,7 @@ describe("runDailyPass", () => {
     // Mock generator - should not be called for already processed file
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.resolve([]),
+      generate: () => Promise.resolve({ success: true, cards: [] }),
     }));
 
     const getNow = () => new Date("2026-01-24T03:00:00Z");
@@ -458,7 +458,7 @@ describe("runDailyPass", () => {
     // Mock generator
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.resolve([{ question: "Q", answer: "A" }]),
+      generate: () => Promise.resolve({ success: true, cards: [{ question: "Q", answer: "A" }] }),
     }));
 
     const mockCreateCard = spyOn(cardManager, "createCard").mockImplementation(() =>
@@ -526,7 +526,7 @@ describe("runWeeklyPass", () => {
       type: "qa",
       generate: (_content: string, filePath: string) => {
         processedFiles.push(filePath);
-        return Promise.resolve([]);
+        return Promise.resolve({ success: true, cards: [] });
       },
     }));
 
@@ -547,7 +547,7 @@ describe("runWeeklyPass", () => {
 
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.resolve([]),
+      generate: () => Promise.resolve({ success: true, cards: [] }),
     }));
 
     const getNow = () => new Date("2026-01-24T03:00:00Z");
@@ -565,7 +565,7 @@ describe("runWeeklyPass", () => {
 
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.resolve([]),
+      generate: () => Promise.resolve({ success: true, cards: [] }),
     }));
 
     const getNow = () => new Date("2026-01-24T03:00:00Z");
@@ -593,7 +593,7 @@ describe("runWeeklyPass", () => {
 
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.resolve([]),
+      generate: () => Promise.resolve({ success: true, cards: [] }),
     }));
 
     // Run in new week
@@ -662,7 +662,7 @@ describe("startScheduler / stopScheduler", () => {
 
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.resolve([]),
+      generate: () => Promise.resolve({ success: true, cards: [] }),
     }));
 
     const getNow = () => new Date("2026-01-24T10:00:00Z");
@@ -702,13 +702,32 @@ describe("startScheduler / stopScheduler", () => {
 // =============================================================================
 
 describe("error handling", () => {
-  it("handles card generator errors gracefully", async () => {
+  it("handles retriable generator errors gracefully", async () => {
     const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
     await createMarkdownFile(vaultPath, "note.md", "# Test\nContent here.");
 
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.reject(new Error("LLM error")),
+      generate: () => Promise.resolve({ success: false, error: "LLM rate limit", retriable: true }),
+    }));
+
+    const getNow = () => new Date("2026-01-24T03:00:00Z");
+    const stats = await runDailyPass(getNow);
+
+    // Should complete with retriable count (not errors)
+    expect(stats.filesRetriable).toBeGreaterThan(0);
+    expect(stats.errors).toBe(0);
+
+    mockGenerate.mockRestore();
+  });
+
+  it("handles permanent generator errors", async () => {
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    await createMarkdownFile(vaultPath, "note.md", "# Test\nContent here.");
+
+    const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
+      type: "qa",
+      generate: () => Promise.resolve({ success: false, error: "Invalid content", retriable: false }),
     }));
 
     const getNow = () => new Date("2026-01-24T03:00:00Z");
@@ -726,7 +745,7 @@ describe("error handling", () => {
 
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.resolve([{ question: "Q?", answer: "A" }]),
+      generate: () => Promise.resolve({ success: true, cards: [{ question: "Q?", answer: "A" }] }),
     }));
 
     const mockCreateCard = spyOn(cardManager, "createCard").mockImplementation(() =>
@@ -759,9 +778,9 @@ describe("error handling", () => {
       generate: (content: string) => {
         callCount++;
         if (content.includes("Error trigger")) {
-          return Promise.reject(new Error("Simulated error"));
+          return Promise.resolve({ success: false, error: "Simulated error", retriable: false });
         }
-        return Promise.resolve([{ question: "Q?", answer: "A" }]);
+        return Promise.resolve({ success: true, cards: [{ question: "Q?", answer: "A" }] });
       },
     }));
 
@@ -813,12 +832,15 @@ describe("integration", () => {
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
       generate: () =>
-        Promise.resolve([
-          {
-            question: "How long does Earth take to orbit the Sun?",
-            answer: "Approximately 365.25 days",
-          },
-        ]),
+        Promise.resolve({
+          success: true,
+          cards: [
+            {
+              question: "How long does Earth take to orbit the Sun?",
+              answer: "Approximately 365.25 days",
+            },
+          ],
+        }),
     }));
 
     const mockCreateCard = spyOn(cardManager, "createCard").mockImplementation((_vault, input) => {
@@ -860,7 +882,7 @@ describe("integration", () => {
 
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",
-      generate: () => Promise.resolve([]),
+      generate: () => Promise.resolve({ success: true, cards: [] }),
     }));
 
     const getNow = () => new Date("2026-01-24T03:00:00Z");

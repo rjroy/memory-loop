@@ -310,11 +310,14 @@ describe("QACardGenerator", () => {
 
       const generator = createQACardGenerator();
       const content = "TypeScript is a typed superset of JavaScript. ".repeat(10);
-      const cards = await generator.generate(content, "notes/ts.md");
+      const result = await generator.generate(content, "notes/ts.md");
 
-      expect(cards).toHaveLength(1);
-      expect(cards[0].question).toBe("What is TypeScript?");
-      expect(cards[0].answer).toBe("A typed superset of JavaScript");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.cards).toHaveLength(1);
+        expect(result.cards[0].question).toBe("What is TypeScript?");
+        expect(result.cards[0].answer).toBe("A typed superset of JavaScript");
+      }
     });
 
     test("returns multiple cards when LLM extracts multiple", async () => {
@@ -327,12 +330,15 @@ describe("QACardGenerator", () => {
 
       const generator = createQACardGenerator();
       const content = "Lots of content here. ".repeat(50);
-      const cards = await generator.generate(content, "notes.md");
+      const result = await generator.generate(content, "notes.md");
 
-      expect(cards).toHaveLength(3);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.cards).toHaveLength(3);
+      }
     });
 
-    test("returns empty array for content below minimum length", async () => {
+    test("returns skipped result for content below minimum length", async () => {
       // Should not call SDK at all for short content
       let sdkCalled = false;
       const mockSdk = (() => {
@@ -348,9 +354,13 @@ describe("QACardGenerator", () => {
       const shortContent = "Too short.";
       expect(shortContent.length).toBeLessThan(MIN_CONTENT_LENGTH);
 
-      const cards = await generator.generate(shortContent, "short.md");
+      const result = await generator.generate(shortContent, "short.md");
 
-      expect(cards).toEqual([]);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.cards).toEqual([]);
+        expect(result.skipped).toBe(true);
+      }
       expect(sdkCalled).toBe(false);
     });
 
@@ -397,31 +407,42 @@ describe("QACardGenerator", () => {
       expect(options.allowedTools).toEqual([]);
     });
 
-    test("returns empty array when LLM returns empty array", async () => {
+    test("returns empty cards when LLM returns empty array", async () => {
       configureSdkForTesting(createMockSdk("[]"));
 
       const generator = createQACardGenerator();
-      const cards = await generator.generate("Some content. ".repeat(20), "empty.md");
+      const result = await generator.generate("Some content. ".repeat(20), "empty.md");
 
-      expect(cards).toEqual([]);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.cards).toEqual([]);
+      }
     });
 
-    test("returns empty array on LLM error (graceful degradation)", async () => {
+    test("returns failure result on LLM error with retriable flag", async () => {
       configureSdkForTesting(createErrorMockSdk(new Error("API rate limit exceeded")));
 
       const generator = createQACardGenerator();
-      const cards = await generator.generate("Content here. ".repeat(20), "error.md");
+      const result = await generator.generate("Content here. ".repeat(20), "error.md");
 
-      expect(cards).toEqual([]);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toContain("rate limit");
+        expect(result.retriable).toBe(true);
+      }
     });
 
-    test("returns empty array on invalid LLM response", async () => {
+    test("returns success with empty cards on invalid LLM response", async () => {
       configureSdkForTesting(createMockSdk("This is not JSON at all!"));
 
       const generator = createQACardGenerator();
-      const cards = await generator.generate("Content here. ".repeat(20), "invalid.md");
+      const result = await generator.generate("Content here. ".repeat(20), "invalid.md");
 
-      expect(cards).toEqual([]);
+      // Invalid JSON is a successful call that just didn't extract anything
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.cards).toEqual([]);
+      }
     });
 
     test("handles markdown-wrapped JSON response", async () => {
@@ -435,10 +456,13 @@ That's all I found.`;
       configureSdkForTesting(createMockSdk(mockResponse));
 
       const generator = createQACardGenerator();
-      const cards = await generator.generate("Content here. ".repeat(20), "wrapped.md");
+      const result = await generator.generate("Content here. ".repeat(20), "wrapped.md");
 
-      expect(cards).toHaveLength(1);
-      expect(cards[0].question).toBe("Wrapped Q");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.cards).toHaveLength(1);
+        expect(result.cards[0].question).toBe("Wrapped Q");
+      }
     });
 
     test("includes file path in prompt for context", async () => {
@@ -496,10 +520,13 @@ are automatically cleaned up when objects go out of scope.
     `;
 
     const generator = createQACardGenerator();
-    const cards = await generator.generate(content, "docs/cpp/raii.md");
+    const result = await generator.generate(content, "docs/cpp/raii.md");
 
-    expect(cards).toHaveLength(2);
-    expect(cards[0].question).toContain("RAII");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.cards).toHaveLength(2);
+      expect(result.cards[0].question).toContain("RAII");
+    }
   });
 
   test("handles content with no extractable facts", async () => {
@@ -514,8 +541,11 @@ are automatically cleaned up when objects go out of scope.
     `.repeat(5);
 
     const generator = createQACardGenerator();
-    const cards = await generator.generate(content, "notes/todo.md");
+    const result = await generator.generate(content, "notes/todo.md");
 
-    expect(cards).toEqual([]);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.cards).toEqual([]);
+    }
   });
 });

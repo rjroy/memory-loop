@@ -86,3 +86,38 @@
 .download-viewer__button:active {
   background-color: var(--accent-active);
 }
+
+/* Delete button */
+.download-viewer__delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs);
+  min-height: 32px;
+  min-width: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.download-viewer__delete-btn:hover {
+  background: var(--color-danger-a10);
+  border-color: var(--color-danger-a20);
+  color: var(--color-danger);
+}
+
+.download-viewer__icon {
+  width: 18px;
+  height: 18px;
+}
+
+@media (hover: none) {
+  .download-viewer__delete-btn:hover {
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-text-secondary);
+  }
+}

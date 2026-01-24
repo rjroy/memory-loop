@@ -131,4 +131,34 @@ describe("ImageViewer", () => {
     const newImg = screen.getByRole("img");
     expect(newImg.className).toContain("image-viewer__image--loading");
   });
+
+  describe("delete button", () => {
+    it("does not render delete button when onDelete is not provided", () => {
+      render(<ImageViewer {...defaultProps} />);
+
+      const deleteBtn = screen.queryByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeNull();
+    });
+
+    it("renders delete button when onDelete is provided", () => {
+      const handleDelete = () => {};
+      render(<ImageViewer {...defaultProps} onDelete={handleDelete} />);
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeDefined();
+    });
+
+    it("calls onDelete when delete button is clicked", () => {
+      let deleted = false;
+      const handleDelete = () => {
+        deleted = true;
+      };
+      render(<ImageViewer {...defaultProps} onDelete={handleDelete} />);
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      fireEvent.click(deleteBtn);
+
+      expect(deleted).toBe(true);
+    });
+  });
 });

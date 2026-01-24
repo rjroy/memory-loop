@@ -125,6 +125,41 @@
   box-shadow: 0 0 16px var(--color-accent-primary-a20);
 }
 
+/* Delete button */
+.pdf-viewer__delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs);
+  min-height: 32px;
+  min-width: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.pdf-viewer__delete-btn:hover {
+  background: var(--color-danger-a10);
+  border-color: var(--color-danger-a20);
+  color: var(--color-danger);
+}
+
+.pdf-viewer__icon {
+  width: 18px;
+  height: 18px;
+}
+
+@media (hover: none) {
+  .pdf-viewer__delete-btn:hover {
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-text-secondary);
+  }
+}
+
 /* Mobile adjustments */
 @media (max-width: 767px) {
   .pdf-viewer__header {

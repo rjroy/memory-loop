@@ -105,4 +105,34 @@ describe("PdfViewer", () => {
       expect(pdfObject?.getAttribute("data")).toBe("/vault/v1/assets/docs/my%20report%20(final).pdf");
     });
   });
+
+  describe("delete button", () => {
+    it("does not render delete button when onDelete is not provided", () => {
+      render(<PdfViewer {...defaultProps} />);
+
+      const deleteBtn = screen.queryByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeNull();
+    });
+
+    it("renders delete button when onDelete is provided", () => {
+      const handleDelete = () => {};
+      render(<PdfViewer {...defaultProps} onDelete={handleDelete} />);
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeDefined();
+    });
+
+    it("calls onDelete when delete button is clicked", () => {
+      let deleted = false;
+      const handleDelete = () => {
+        deleted = true;
+      };
+      render(<PdfViewer {...defaultProps} onDelete={handleDelete} />);
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      fireEvent.click(deleteBtn);
+
+      expect(deleted).toBe(true);
+    });
+  });
 });

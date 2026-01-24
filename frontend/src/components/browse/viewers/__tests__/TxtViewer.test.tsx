@@ -1,14 +1,14 @@
 /**
- * Tests for JsonViewer component
+ * Tests for TxtViewer component
  *
- * Tests JSON display, editing, breadcrumb navigation,
+ * Tests plain text display, editing, breadcrumb navigation,
  * and mobile menu button functionality.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
-import { JsonViewer } from "../JsonViewer";
+import { TxtViewer } from "../TxtViewer";
 import { SessionProvider, useSession } from "../../../../contexts/SessionContext";
 
 // Mock WebSocket
@@ -44,6 +44,10 @@ interface BrowserStateConfig {
   currentFileTruncated?: boolean;
   fileError?: string | null;
   isLoading?: boolean;
+  isAdjusting?: boolean;
+  adjustContent?: string;
+  adjustError?: string | null;
+  isSaving?: boolean;
 }
 
 function createTestWrapper(config: BrowserStateConfig = {}) {
@@ -78,6 +82,18 @@ function StatePopulator({
     if (config.isLoading !== undefined) {
       session.setFileLoading(config.isLoading);
     }
+    if (config.isAdjusting) {
+      session.startAdjust();
+      if (config.adjustContent !== undefined) {
+        session.updateAdjustContent(config.adjustContent);
+      }
+    }
+    if (config.isSaving) {
+      session.startSave();
+    }
+    if (config.adjustError !== undefined && config.adjustError !== null) {
+      session.saveError(config.adjustError);
+    }
   }, []);
 
   return <>{children}</>;
@@ -94,10 +110,10 @@ afterEach(() => {
   globalThis.WebSocket = originalWebSocket;
 });
 
-describe("JsonViewer", () => {
+describe("TxtViewer", () => {
   describe("empty state", () => {
     it("shows empty message when no file is selected", () => {
-      render(<JsonViewer />, { wrapper: createTestWrapper() });
+      render(<TxtViewer />, { wrapper: createTestWrapper() });
 
       expect(screen.getByText("Select a file to view its content")).toBeDefined();
     });
@@ -105,8 +121,8 @@ describe("JsonViewer", () => {
 
   describe("loading state", () => {
     it("shows loading skeleton when loading", () => {
-      render(<JsonViewer />, {
-        wrapper: createTestWrapper({ isLoading: true, currentPath: "test.json" }),
+      render(<TxtViewer />, {
+        wrapper: createTestWrapper({ isLoading: true, currentPath: "test.txt" }),
       });
 
       expect(screen.getByLabelText("Loading content")).toBeDefined();
@@ -115,9 +131,9 @@ describe("JsonViewer", () => {
 
   describe("error state", () => {
     it("shows error message on file error", () => {
-      render(<JsonViewer />, {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "missing.json",
+          currentPath: "missing.txt",
           fileError: "File not found",
         }),
       });
@@ -126,49 +142,47 @@ describe("JsonViewer", () => {
     });
   });
 
-  describe("JSON rendering", () => {
-    it("renders formatted JSON", () => {
-      render(<JsonViewer />, {
+  describe("text rendering", () => {
+    it("renders plain text content", () => {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "config.json",
-          currentFileContent: '{"name":"test","value":42}',
+          currentPath: "notes.txt",
+          currentFileContent: "Hello, world!\nLine 2",
         }),
       });
 
-      // JSON should be formatted in a pre element
-      const preElement = document.querySelector("pre");
-      expect(preElement).toBeDefined();
-      expect(preElement?.textContent).toContain('"name"');
-      expect(preElement?.textContent).toContain('"test"');
+      expect(screen.getByText(/Hello, world!/)).toBeDefined();
+      expect(screen.getByText(/Line 2/)).toBeDefined();
     });
 
-    it("shows error for invalid JSON", () => {
-      render(<JsonViewer />, {
+    it("renders text in pre/code elements", () => {
+      const { container } = render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "broken.json",
-          currentFileContent: "{invalid json",
+          currentPath: "notes.txt",
+          currentFileContent: "Some text content",
         }),
       });
 
-      // Should show error alert
-      const errorAlert = document.querySelector(".json-viewer__invalid-json");
-      expect(errorAlert).toBeDefined();
-      expect(errorAlert?.textContent).toContain("invalid JSON");
+      const preElement = container.querySelector("pre.txt-viewer__text");
+      expect(preElement).toBeDefined();
+      const codeElement = preElement?.querySelector("code");
+      expect(codeElement).toBeDefined();
+      expect(codeElement?.textContent).toBe("Some text content");
     });
   });
 
   describe("breadcrumb navigation", () => {
     it("renders breadcrumb for file path", () => {
-      render(<JsonViewer />, {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "config/settings.json",
-          currentFileContent: "{}",
+          currentPath: "notes/readme.txt",
+          currentFileContent: "text",
         }),
       });
 
       expect(screen.getByText("Root")).toBeDefined();
-      expect(screen.getByText("config")).toBeDefined();
-      expect(screen.getByText("settings.json")).toBeDefined();
+      expect(screen.getByText("notes")).toBeDefined();
+      expect(screen.getByText("readme.txt")).toBeDefined();
     });
 
     it("calls onNavigate when breadcrumb is clicked", () => {
@@ -177,10 +191,10 @@ describe("JsonViewer", () => {
         navigatedPath = path;
       };
 
-      render(<JsonViewer onNavigate={handleNavigate} />, {
+      render(<TxtViewer onNavigate={handleNavigate} />, {
         wrapper: createTestWrapper({
-          currentPath: "config/settings.json",
-          currentFileContent: "{}",
+          currentPath: "notes/readme.txt",
+          currentFileContent: "text",
         }),
       });
 
@@ -189,55 +203,49 @@ describe("JsonViewer", () => {
     });
 
     it("collapses breadcrumb when path has more than 3 segments", () => {
-      render(<JsonViewer />, {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "a/b/c/d/file.json",
-          currentFileContent: "{}",
+          currentPath: "a/b/c/d/file.txt",
+          currentFileContent: "text",
         }),
       });
 
-      // Should show Root, ellipsis, and last 2 segments
       expect(screen.getByText("Root")).toBeDefined();
-      expect(screen.getByLabelText("Show full path")).toBeDefined(); // The ellipsis button
+      expect(screen.getByLabelText("Show full path")).toBeDefined();
       expect(screen.getByText("d")).toBeDefined();
-      expect(screen.getByText("file.json")).toBeDefined();
+      expect(screen.getByText("file.txt")).toBeDefined();
 
-      // Middle segments should be hidden
       expect(screen.queryByText("a")).toBeNull();
       expect(screen.queryByText("b")).toBeNull();
       expect(screen.queryByText("c")).toBeNull();
     });
 
     it("expands breadcrumb when ellipsis is clicked", () => {
-      render(<JsonViewer />, {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "a/b/c/d/file.json",
-          currentFileContent: "{}",
+          currentPath: "a/b/c/d/file.txt",
+          currentFileContent: "text",
         }),
       });
 
-      // Click ellipsis to expand
       const ellipsisBtn = screen.getByLabelText("Show full path");
       fireEvent.click(ellipsisBtn);
 
-      // All segments should now be visible
       expect(screen.getByText("a")).toBeDefined();
       expect(screen.getByText("b")).toBeDefined();
       expect(screen.getByText("c")).toBeDefined();
       expect(screen.getByText("d")).toBeDefined();
-      expect(screen.getByText("file.json")).toBeDefined();
-
-      // Ellipsis should be gone
+      expect(screen.getByText("file.txt")).toBeDefined();
       expect(screen.queryByLabelText("Show full path")).toBeNull();
     });
   });
 
   describe("truncation warning", () => {
     it("shows warning when file was truncated", () => {
-      render(<JsonViewer />, {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "large.json",
-          currentFileContent: "{}",
+          currentPath: "large.txt",
+          currentFileContent: "content",
           currentFileTruncated: true,
         }),
       });
@@ -248,10 +256,10 @@ describe("JsonViewer", () => {
 
   describe("mobile menu button", () => {
     it("does not render mobile menu button when onMobileMenuClick is not provided", () => {
-      render(<JsonViewer />, {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "test.json",
-          currentFileContent: "{}",
+          currentPath: "test.txt",
+          currentFileContent: "text",
         }),
       });
 
@@ -261,10 +269,10 @@ describe("JsonViewer", () => {
 
     it("renders mobile menu button when onMobileMenuClick is provided", () => {
       const handleClick = () => {};
-      render(<JsonViewer onMobileMenuClick={handleClick} />, {
+      render(<TxtViewer onMobileMenuClick={handleClick} />, {
         wrapper: createTestWrapper({
-          currentPath: "test.json",
-          currentFileContent: "{}",
+          currentPath: "test.txt",
+          currentFileContent: "text",
         }),
       });
 
@@ -277,10 +285,10 @@ describe("JsonViewer", () => {
       const handleClick = () => {
         clicked = true;
       };
-      render(<JsonViewer onMobileMenuClick={handleClick} />, {
+      render(<TxtViewer onMobileMenuClick={handleClick} />, {
         wrapper: createTestWrapper({
-          currentPath: "test.json",
-          currentFileContent: "{}",
+          currentPath: "test.txt",
+          currentFileContent: "text",
         }),
       });
 
@@ -293,10 +301,10 @@ describe("JsonViewer", () => {
 
   describe("adjust mode", () => {
     it("shows Adjust button in normal view", () => {
-      render(<JsonViewer />, {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "test.json",
-          currentFileContent: "{}",
+          currentPath: "test.txt",
+          currentFileContent: "text",
         }),
       });
 
@@ -304,44 +312,134 @@ describe("JsonViewer", () => {
     });
 
     it("shows Save and Cancel buttons in adjust mode", () => {
-      render(<JsonViewer />, {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "test.json",
-          currentFileContent: "{}",
+          currentPath: "test.txt",
+          currentFileContent: "text",
         }),
       });
 
-      // Click Adjust to enter adjust mode
       fireEvent.click(screen.getByRole("button", { name: /adjust file/i }));
 
       expect(screen.getByRole("button", { name: /save changes/i })).toBeDefined();
       expect(screen.getByRole("button", { name: /cancel editing/i })).toBeDefined();
     });
 
-    it("shows mobile menu button in adjust mode when prop is provided", () => {
-      const handleClick = () => {};
-      render(<JsonViewer onMobileMenuClick={handleClick} />, {
+    it("shows textarea with content in adjust mode", () => {
+      const content = "Original text content";
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "test.json",
-          currentFileContent: "{}",
+          currentPath: "test.txt",
+          currentFileContent: content,
+          isAdjusting: true,
         }),
       });
 
-      // Click Adjust to enter adjust mode
-      fireEvent.click(screen.getByRole("button", { name: /adjust file/i }));
+      const textarea = screen.getByRole("textbox", { name: "File content editor" });
+      expect(textarea).toBeDefined();
+      expect((textarea as HTMLTextAreaElement).value).toBe(content);
+    });
 
-      // Mobile menu button should still be visible
-      const menuBtn = screen.getByRole("button", { name: /open file browser/i });
-      expect(menuBtn).toBeDefined();
+    it("calls onSave with adjusted content when Save clicked", () => {
+      let savedContent: string | undefined;
+      const onSave = (content: string) => {
+        savedContent = content;
+      };
+      const content = "Original text";
+      render(<TxtViewer onSave={onSave} />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.txt",
+          currentFileContent: content,
+          isAdjusting: true,
+        }),
+      });
+
+      const saveButton = screen.getByRole("button", { name: "Save changes" });
+      fireEvent.click(saveButton);
+
+      expect(savedContent).toBe(content);
+    });
+
+    it("exits adjust mode when Cancel clicked", async () => {
+      render(<TxtViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.txt",
+          currentFileContent: "text",
+          isAdjusting: true,
+        }),
+      });
+
+      const cancelButton = screen.getByRole("button", { name: "Cancel editing" });
+      fireEvent.click(cancelButton);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.getByRole("button", { name: /adjust file/i })).toBeDefined();
+    });
+
+    it("triggers cancel when Escape is pressed in textarea", async () => {
+      render(<TxtViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.txt",
+          currentFileContent: "text",
+          isAdjusting: true,
+        }),
+      });
+
+      const textarea = screen.getByRole("textbox", { name: "File content editor" });
+      fireEvent.keyDown(textarea, { key: "Escape" });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.getByRole("button", { name: /adjust file/i })).toBeDefined();
+    });
+
+    it("shows error message when adjustError is set", () => {
+      render(<TxtViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.txt",
+          currentFileContent: "text",
+          isAdjusting: true,
+          adjustError: "Permission denied",
+        }),
+      });
+
+      expect(screen.getByRole("alert")).toBeDefined();
+      expect(screen.getByText("Permission denied")).toBeDefined();
+    });
+
+    it("disables Save button when saving", () => {
+      render(<TxtViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.txt",
+          currentFileContent: "text",
+          isAdjusting: true,
+          isSaving: true,
+        }),
+      });
+
+      const saveButton = screen.getByRole("button", { name: "Save changes" });
+      expect(saveButton.hasAttribute("disabled")).toBe(true);
+    });
+
+    it("shows 'Saving...' text when isSaving is true", () => {
+      render(<TxtViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.txt",
+          currentFileContent: "text",
+          isAdjusting: true,
+          isSaving: true,
+        }),
+      });
+
+      expect(screen.getByText("Saving...")).toBeDefined();
     });
   });
 
   describe("delete button", () => {
     it("does not render delete button when onDelete is not provided", () => {
-      render(<JsonViewer />, {
+      render(<TxtViewer />, {
         wrapper: createTestWrapper({
-          currentPath: "test.json",
-          currentFileContent: "{}",
+          currentPath: "test.txt",
+          currentFileContent: "text",
         }),
       });
 
@@ -351,10 +449,10 @@ describe("JsonViewer", () => {
 
     it("renders delete button when onDelete is provided", () => {
       const handleDelete = () => {};
-      render(<JsonViewer onDelete={handleDelete} />, {
+      render(<TxtViewer onDelete={handleDelete} />, {
         wrapper: createTestWrapper({
-          currentPath: "test.json",
-          currentFileContent: "{}",
+          currentPath: "test.txt",
+          currentFileContent: "text",
         }),
       });
 
@@ -367,10 +465,10 @@ describe("JsonViewer", () => {
       const handleDelete = () => {
         deleted = true;
       };
-      render(<JsonViewer onDelete={handleDelete} />, {
+      render(<TxtViewer onDelete={handleDelete} />, {
         wrapper: createTestWrapper({
-          currentPath: "test.json",
-          currentFileContent: "{}",
+          currentPath: "test.txt",
+          currentFileContent: "text",
         }),
       });
 

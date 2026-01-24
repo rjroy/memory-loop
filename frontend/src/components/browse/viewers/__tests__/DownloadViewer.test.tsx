@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it, afterEach } from "bun:test";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { DownloadViewer } from "../DownloadViewer";
 
 afterEach(() => {
@@ -92,5 +92,35 @@ describe("DownloadViewer", () => {
     rerender(<DownloadViewer path="file.zip" assetBaseUrl="/vault/vault-2/assets" />);
     link = screen.getByRole("link", { name: "Download File" });
     expect(link.getAttribute("href")).toBe("/vault/vault-2/assets/file.zip");
+  });
+
+  describe("delete button", () => {
+    it("does not render delete button when onDelete is not provided", () => {
+      render(<DownloadViewer {...defaultProps} />);
+
+      const deleteBtn = screen.queryByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeNull();
+    });
+
+    it("renders delete button when onDelete is provided", () => {
+      const handleDelete = () => {};
+      render(<DownloadViewer {...defaultProps} onDelete={handleDelete} />);
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeDefined();
+    });
+
+    it("calls onDelete when delete button is clicked", () => {
+      let deleted = false;
+      const handleDelete = () => {
+        deleted = true;
+      };
+      render(<DownloadViewer {...defaultProps} onDelete={handleDelete} />);
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      fireEvent.click(deleteBtn);
+
+      expect(deleted).toBe(true);
+    });
   });
 });

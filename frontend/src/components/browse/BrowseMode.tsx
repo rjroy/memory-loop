@@ -31,6 +31,7 @@ import { DownloadViewer } from "./viewers/DownloadViewer";
 import { SearchHeader } from "./SearchHeader";
 import { SearchResults } from "./SearchResults";
 import { PairWritingMode } from "../pair-writing/PairWritingMode";
+import { ConfirmDialog } from "../shared/ConfirmDialog";
 import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isTxtFile, isCsvFile, hasSupportedViewer } from "../../utils/file-types";
 // Note: FileSearchResult, ContentSearchResult types removed - now handled internally by REST API hooks
 import "./BrowseMode.css";
@@ -55,6 +56,7 @@ export function BrowseMode(): React.ReactNode {
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
   const [pendingDirectoryContents, setPendingDirectoryContents] = useState<DirectoryContents | null>(null);
   const [isPairWritingActive, setIsPairWritingActive] = useState(false);
+  const [pendingViewerDeletePath, setPendingViewerDeletePath] = useState<string | null>(null);
 
   const { browser, vault, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch, setMode, setPinnedAssets } = useSession();
 
@@ -735,6 +737,26 @@ export function BrowseMode(): React.ReactNode {
     setIsPairWritingActive(false);
   }, []);
 
+  // Handle viewer delete request - shows confirmation dialog
+  const handleViewerDelete = useCallback(() => {
+    if (browser.currentPath) {
+      setPendingViewerDeletePath(browser.currentPath);
+    }
+  }, [browser.currentPath]);
+
+  // Confirm viewer delete - delegates to existing handleDeleteFile
+  const handleConfirmViewerDelete = useCallback(async () => {
+    if (pendingViewerDeletePath) {
+      await handleDeleteFile(pendingViewerDeletePath);
+      setPendingViewerDeletePath(null);
+    }
+  }, [pendingViewerDeletePath, handleDeleteFile]);
+
+  // Cancel viewer delete
+  const handleCancelViewerDelete = useCallback(() => {
+    setPendingViewerDeletePath(null);
+  }, []);
+
   // Get the view mode title text
   const viewModeTitle = viewMode === "files" ? "Files" : "Tasks";
 
@@ -854,17 +876,17 @@ export function BrowseMode(): React.ReactNode {
               onQuickActionComplete={handleNavigate}
             />
           ) : isImageFile(browser.currentPath) ? (
-            <ImageViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
+            <ImageViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} onDelete={handleViewerDelete} />
           ) : isVideoFile(browser.currentPath) ? (
-            <VideoViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
+            <VideoViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} onDelete={handleViewerDelete} />
           ) : isPdfFile(browser.currentPath) ? (
-            <PdfViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
+            <PdfViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} onDelete={handleViewerDelete} />
           ) : isJsonFile(browser.currentPath) ? (
-            <JsonViewer onNavigate={handleNavigate} onSave={handleSave} onMobileMenuClick={toggleMobileTree} />
+            <JsonViewer onNavigate={handleNavigate} onSave={handleSave} onMobileMenuClick={toggleMobileTree} onDelete={handleViewerDelete} />
           ) : isTxtFile(browser.currentPath) ? (
-            <TxtViewer onNavigate={handleNavigate} onSave={handleSave} onMobileMenuClick={toggleMobileTree} />
+            <TxtViewer onNavigate={handleNavigate} onSave={handleSave} onMobileMenuClick={toggleMobileTree} onDelete={handleViewerDelete} />
           ) : isCsvFile(browser.currentPath) ? (
-            <CsvViewer onNavigate={handleNavigate} onMobileMenuClick={toggleMobileTree} />
+            <CsvViewer onNavigate={handleNavigate} onMobileMenuClick={toggleMobileTree} onDelete={handleViewerDelete} />
           ) : isMarkdownFile(browser.currentPath) || !browser.currentPath ? (
             <MarkdownViewer
               onNavigate={handleNavigate}
@@ -872,9 +894,10 @@ export function BrowseMode(): React.ReactNode {
               onSave={handleSave}
               onMobileMenuClick={toggleMobileTree}
               onEnterPairWriting={handleEnterPairWriting}
+              onDelete={handleViewerDelete}
             />
           ) : (
-            <DownloadViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} />
+            <DownloadViewer path={browser.currentPath} assetBaseUrl={assetBaseUrl} onMobileMenuClick={toggleMobileTree} onDelete={handleViewerDelete} />
           )}
         </article>
       </main>
@@ -958,6 +981,16 @@ export function BrowseMode(): React.ReactNode {
           </aside>
         </>
       )}
+
+      {/* Viewer delete confirmation dialog */}
+      <ConfirmDialog
+        isOpen={pendingViewerDeletePath !== null}
+        title="Delete File?"
+        message={`This cannot be undone! The file "${pendingViewerDeletePath?.split("/").pop() ?? ""}" will be permanently deleted.`}
+        confirmLabel="Delete"
+        onConfirm={handleConfirmViewerDelete}
+        onCancel={handleCancelViewerDelete}
+      />
     </div>
   );
 }

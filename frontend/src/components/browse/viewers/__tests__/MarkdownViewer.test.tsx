@@ -1047,4 +1047,49 @@ title: Test
       });
     });
   });
+
+  describe("delete button", () => {
+    it("does not render delete button when onDelete is not provided", () => {
+      render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: "# Test",
+        }),
+      });
+
+      const deleteBtn = screen.queryByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeNull();
+    });
+
+    it("renders delete button when onDelete is provided", () => {
+      const handleDelete = () => {};
+      render(<MarkdownViewer onDelete={handleDelete} />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: "# Test",
+        }),
+      });
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeDefined();
+    });
+
+    it("calls onDelete when delete button is clicked", () => {
+      let deleted = false;
+      const handleDelete = () => {
+        deleted = true;
+      };
+      render(<MarkdownViewer onDelete={handleDelete} />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: "# Test",
+        }),
+      });
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      fireEvent.click(deleteBtn);
+
+      expect(deleted).toBe(true);
+    });
+  });
 });

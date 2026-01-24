@@ -391,4 +391,49 @@ describe("CsvViewer", () => {
       expect(cells.length).toBe(2);
     });
   });
+
+  describe("delete button", () => {
+    it("does not render delete button when onDelete is not provided", () => {
+      render(<CsvViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "data.csv",
+          currentFileContent: "A,B\n1,2",
+        }),
+      });
+
+      const deleteBtn = screen.queryByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeNull();
+    });
+
+    it("renders delete button when onDelete is provided", () => {
+      const handleDelete = () => {};
+      render(<CsvViewer onDelete={handleDelete} />, {
+        wrapper: createTestWrapper({
+          currentPath: "data.csv",
+          currentFileContent: "A,B\n1,2",
+        }),
+      });
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      expect(deleteBtn).toBeDefined();
+    });
+
+    it("calls onDelete when delete button is clicked", () => {
+      let deleted = false;
+      const handleDelete = () => {
+        deleted = true;
+      };
+      render(<CsvViewer onDelete={handleDelete} />, {
+        wrapper: createTestWrapper({
+          currentPath: "data.csv",
+          currentFileContent: "A,B\n1,2",
+        }),
+      });
+
+      const deleteBtn = screen.getByRole("button", { name: /delete file/i });
+      fireEvent.click(deleteBtn);
+
+      expect(deleted).toBe(true);
+    });
+  });
 });

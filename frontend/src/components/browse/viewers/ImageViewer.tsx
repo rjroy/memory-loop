@@ -16,6 +16,8 @@ export interface ImageViewerProps {
   assetBaseUrl: string;
   /** Callback to open mobile file browser (only shown on mobile) */
   onMobileMenuClick?: () => void;
+  /** Callback to delete the current file */
+  onDelete?: () => void;
 }
 
 /**
@@ -24,7 +26,7 @@ export interface ImageViewerProps {
  * Uses the existing asset serving endpoint to fetch the image,
  * leveraging the same infrastructure used for embedded markdown images.
  */
-export function ImageViewer({ path, assetBaseUrl, onMobileMenuClick }: ImageViewerProps): ReactNode {
+export function ImageViewer({ path, assetBaseUrl, onMobileMenuClick, onDelete }: ImageViewerProps): ReactNode {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
@@ -73,6 +75,16 @@ export function ImageViewer({ path, assetBaseUrl, onMobileMenuClick }: ImageView
           </button>
         )}
         <span className="image-viewer__filename">{fileName}</span>
+        {onDelete && (
+          <button
+            type="button"
+            className="image-viewer__delete-btn"
+            onClick={onDelete}
+            aria-label="Delete file"
+          >
+            <TrashIcon />
+          </button>
+        )}
       </div>
 
       <div className="image-viewer__container">
@@ -98,5 +110,27 @@ export function ImageViewer({ path, assetBaseUrl, onMobileMenuClick }: ImageView
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * Trash icon for delete button.
+ */
+function TrashIcon(): ReactNode {
+  return (
+    <svg
+      className="image-viewer__icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
   );
 }

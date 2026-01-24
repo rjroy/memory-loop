@@ -8,7 +8,7 @@
  * 4. Write setup completion marker
  */
 
-import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, writeFile, stat, chmod } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLogger } from "./logger";
@@ -57,6 +57,7 @@ export interface SetupCompleteMarker {
   completedAt: string;
   version: string;
   commandsInstalled: string[];
+  skillsInstalled: string[];
   paraCreated: string[];
   claudeMdUpdated: boolean;
   gitignoreUpdated: boolean;
@@ -70,7 +71,7 @@ export interface SetupCompleteMarker {
 /**
  * Setup marker version for this implementation.
  */
-export const SETUP_VERSION = "1.2.0";
+export const SETUP_VERSION = "1.3.0";
 
 /**
  * Path to the setup marker file relative to vault root.
@@ -81,6 +82,11 @@ export const SETUP_MARKER_PATH = ".memory-loop/setup-complete";
  * Path to command templates relative to vault root.
  */
 export const COMMANDS_DEST_PATH = ".claude/commands";
+
+/**
+ * Path to skills relative to vault root.
+ */
+export const SKILLS_DEST_PATH = ".claude/skills";
 
 /**
  * Default path for Resources directory (relative to content root).
@@ -222,6 +228,170 @@ export async function installCommands(
   }
 
   const resultMessage = parts.join(", ") || "No commands to install";
+
+  if (errors.length > 0) {
+    return {
+      success: false,
+      message: resultMessage,
+      error: errors.join("; "),
+      installed,
+    };
+  }
+
+  return {
+    success: true,
+    message: resultMessage,
+    installed,
+  };
+}
+
+// =============================================================================
+// Skill Installation
+// =============================================================================
+
+/**
+ * Gets the path to the bundled skills directory.
+ */
+function getSkillTemplatesDir(): string {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+  return join(currentDir, "skills");
+}
+
+/**
+ * Recursively copies a directory, preserving executable permissions on scripts.
+ *
+ * @param srcDir - Source directory path
+ * @param destDir - Destination directory path
+ * @param vaultPath - Vault root for path validation
+ */
+async function copyDirectoryRecursive(
+  srcDir: string,
+  destDir: string,
+  vaultPath: string
+): Promise<void> {
+  // Create destination directory
+  await mkdir(destDir, { recursive: true });
+
+  const entries = await readdir(srcDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const srcPath = join(srcDir, entry.name);
+    const destPath = join(destDir, entry.name);
+
+    // Validate destination is within vault boundary
+    await validatePath(vaultPath, destPath);
+
+    if (entry.isDirectory()) {
+      await copyDirectoryRecursive(srcPath, destPath, vaultPath);
+    } else {
+      await copyFile(srcPath, destPath);
+
+      // Preserve executable permission for shell scripts
+      if (entry.name.endsWith(".sh")) {
+        const srcStat = await stat(srcPath);
+        await chmod(destPath, srcStat.mode);
+      }
+    }
+  }
+}
+
+/**
+ * Installs skill directories to the vault's .claude/skills/ directory.
+ * Each skill is a directory containing SKILL.md and supporting files.
+ * Skips skills that already exist (does not overwrite).
+ *
+ * @param vaultPath - Absolute path to the vault root
+ * @returns Setup step result with list of installed skills
+ */
+export async function installSkills(
+  vaultPath: string
+): Promise<SetupStepResult & { installed: string[] }> {
+  log.info(`Installing skills to ${vaultPath}`);
+
+  const installed: string[] = [];
+  const skipped: string[] = [];
+  const errors: string[] = [];
+
+  const templatesDir = getSkillTemplatesDir();
+  const destDir = join(vaultPath, SKILLS_DEST_PATH);
+
+  // Validate destination is within vault boundary
+  try {
+    await validatePath(vaultPath, SKILLS_DEST_PATH);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      message: "Failed to validate skills destination path",
+      error: message,
+      installed: [],
+    };
+  }
+
+  // Create destination directory if it doesn't exist
+  try {
+    await mkdir(destDir, { recursive: true });
+    log.debug(`Created skills directory: ${destDir}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      message: "Failed to create .claude/skills directory",
+      error: message,
+      installed: [],
+    };
+  }
+
+  // List available skill directories
+  let skillDirs: string[];
+  try {
+    const entries = await readdir(templatesDir, { withFileTypes: true });
+    skillDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      message: "Failed to read skill templates",
+      error: message,
+      installed: [],
+    };
+  }
+
+  // Copy each skill directory
+  for (const skillName of skillDirs) {
+    const srcPath = join(templatesDir, skillName);
+    const destPath = join(destDir, skillName);
+
+    // Check if skill already exists
+    if (await directoryExists(destPath)) {
+      log.debug(`Skipping existing skill: ${skillName}`);
+      skipped.push(skillName);
+      continue;
+    }
+
+    // Copy skill directory recursively
+    try {
+      await copyDirectoryRecursive(srcPath, destPath, vaultPath);
+      log.info(`Installed skill: ${skillName}`);
+      installed.push(skillName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn(`Failed to install skill ${skillName}: ${message}`);
+      errors.push(`${skillName}: ${message}`);
+    }
+  }
+
+  // Build result message
+  const parts: string[] = [];
+  if (installed.length > 0) {
+    parts.push(`Installed ${installed.length} skill(s)`);
+  }
+  if (skipped.length > 0) {
+    parts.push(`${skipped.length} already existed`);
+  }
+
+  const resultMessage = parts.join(", ") || "No skills to install";
 
   if (errors.length > 0) {
     return {
@@ -720,10 +890,11 @@ export async function isSetupComplete(vaultPath: string): Promise<boolean> {
  *
  * Steps:
  * 1. Install command templates
- * 2. Create PARA directories
- * 3. Update CLAUDE.md with Memory Loop context
- * 4. Update .gitignore with SQLite cache patterns
- * 5. Write setup marker
+ * 2. Install skills
+ * 3. Create PARA directories
+ * 4. Update CLAUDE.md with Memory Loop context
+ * 5. Update .gitignore with SQLite cache patterns
+ * 6. Write setup marker
  *
  * @param vaultId - ID of the vault to set up
  * @returns Setup result with summary and any errors
@@ -749,6 +920,7 @@ export async function runVaultSetup(vaultId: string): Promise<SetupResult> {
 
   // Track what was installed/created for the marker
   let commandsInstalled: string[] = [];
+  let skillsInstalled: string[] = [];
   let paraCreated: string[] = [];
 
   // Step 1: Install commands
@@ -759,7 +931,15 @@ export async function runVaultSetup(vaultId: string): Promise<SetupResult> {
     errors.push(`Commands: ${commandsResult.error}`);
   }
 
-  // Step 2: Create PARA directories
+  // Step 2: Install skills
+  const skillsResult = await installSkills(vaultPath);
+  summary.push(skillsResult.message);
+  skillsInstalled = skillsResult.installed;
+  if (!skillsResult.success && skillsResult.error) {
+    errors.push(`Skills: ${skillsResult.error}`);
+  }
+
+  // Step 3: Create PARA directories
   const paraResult = await createParaDirectories(vaultPath, config);
   summary.push(paraResult.message);
   paraCreated = paraResult.created;
@@ -767,7 +947,7 @@ export async function runVaultSetup(vaultId: string): Promise<SetupResult> {
     errors.push(`PARA: ${paraResult.error}`);
   }
 
-  // Step 3: Update CLAUDE.md with Memory Loop context
+  // Step 4: Update CLAUDE.md with Memory Loop context
   const claudeMdResult = await updateClaudeMd(vaultPath, config);
   summary.push(claudeMdResult.message);
   const claudeMdUpdated = claudeMdResult.success;
@@ -775,7 +955,7 @@ export async function runVaultSetup(vaultId: string): Promise<SetupResult> {
     errors.push(`CLAUDE.md: ${claudeMdResult.error}`);
   }
 
-  // Step 4: Update .gitignore with SQLite cache patterns
+  // Step 5: Update .gitignore with SQLite cache patterns
   const gitignoreResult = await updateGitignore(vaultPath);
   summary.push(gitignoreResult.message);
   const gitignoreUpdated = gitignoreResult.success;
@@ -783,11 +963,12 @@ export async function runVaultSetup(vaultId: string): Promise<SetupResult> {
     errors.push(`.gitignore: ${gitignoreResult.error}`);
   }
 
-  // Step 5: Write setup marker (always attempt, even with partial failures)
+  // Step 6: Write setup marker (always attempt, even with partial failures)
   const marker: SetupCompleteMarker = {
     completedAt: new Date().toISOString(),
     version: SETUP_VERSION,
     commandsInstalled,
+    skillsInstalled,
     paraCreated,
     claudeMdUpdated,
     gitignoreUpdated,

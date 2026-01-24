@@ -172,7 +172,9 @@ afterEach(() => {
 
 ### Running Tests (IMPORTANT)
 
-**For full test suites**: Always use `./git-hooks/pre-commit.sh`. This runs all tests correctly.
+**Tests cannot run in parallel.** Running multiple test suites simultaneously causes flaky failures due to filesystem contention, temp directory conflicts, and shared resource access. If you see random test failures that pass when re-run, this is likely the cause. Do not waste tokens debugging phantom failures from parallel execution.
+
+**For full test suites**: Always use `./git-hooks/pre-commit.sh`. This runs all tests correctly (sequentially, one workspace at a time).
 
 **For targeted tests**: Use the specific test file path:
 ```bash
@@ -184,6 +186,7 @@ bun run --cwd frontend test src/components/__tests__/Home.test.tsx
 - Run `bun run test` (combined command causes resource conflicts)
 - Run `bun run --cwd <module> test` without a specific file (runs all tests in module)
 - Pipe test output through `head` or `tail` (truncates output, hides results)
+- Launch multiple test commands in parallel (causes flaky failures)
 
 ## Documentation
 

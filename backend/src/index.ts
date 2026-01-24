@@ -15,6 +15,10 @@ initializeSdkProvider();
 import { serverConfig, isTlsEnabled, createHttpRedirectServer, getPort } from "./server";
 import { serverLog as log } from "./logger";
 import { startScheduler, getCronSchedule } from "./extraction/extraction-manager";
+import {
+  startScheduler as startCardDiscoveryScheduler,
+  getDiscoveryHourFromEnv,
+} from "./spaced-repetition/card-discovery-scheduler";
 
 const server = Bun.serve(serverConfig);
 
@@ -60,5 +64,26 @@ if (process.env.NODE_ENV === "development") {
     }
   }).catch((error: unknown) => {
     log.error("Failed to start extraction scheduler:", error);
+  });
+}
+
+// =============================================================================
+// Card Discovery Scheduler (REQ-F-3, REQ-F-4)
+// =============================================================================
+
+// Start the card discovery scheduler (disabled in development mode)
+// - Performs catch-up if last run was >24h ago
+// - Schedules daily discovery at configured time (default: 3am, env: CARD_DISCOVERY_HOUR)
+// - Weekly catch-up processes oldest unprocessed files (500KB per run)
+if (process.env.NODE_ENV === "development") {
+  log.info("Card discovery scheduler disabled in development mode");
+} else {
+  void startCardDiscoveryScheduler({
+    discoveryHour: getDiscoveryHourFromEnv(),
+    catchUpOnStartup: true,
+  }).then(() => {
+    log.info(`Card discovery scheduler started (daily at ${getDiscoveryHourFromEnv()}:00)`);
+  }).catch((error: unknown) => {
+    log.error("Failed to start card discovery scheduler:", error);
   });
 }

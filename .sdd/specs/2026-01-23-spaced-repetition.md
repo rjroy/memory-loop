@@ -1,6 +1,6 @@
 ---
 version: 1.0.0
-status: Draft
+status: Approved
 created: 2026-01-23
 last_updated: 2026-01-23
 authored_by:

@@ -99,6 +99,42 @@ MOCK_SDK=true              # Test without API calls
 - Frontend tests use `@testing-library/react` + happy-dom
 - Mock WebSocket and SDK connections via dependency injection, not module replacement
 
+### SDK Provider Pattern (Prevents Test Token Usage)
+
+The Claude Agent SDK uses a centralized provider pattern (`backend/src/sdk-provider.ts`) to prevent accidental API calls in tests:
+
+**Production (in `backend/src/index.ts` only):**
+```typescript
+import { initializeSdkProvider } from "./sdk-provider";
+initializeSdkProvider();  // Call ONCE at server startup
+```
+
+**Consuming modules (everywhere else):**
+```typescript
+import { getSdkQuery } from "../sdk-provider.js";
+
+// Get the query function when needed
+const query = getSdkQuery();
+const result = query({ prompt: "...", options: { ... } });
+```
+
+**Tests:**
+```typescript
+import { configureSdkForTesting, _resetForTesting } from "../sdk-provider.js";
+
+let cleanupSdk: () => void;
+
+beforeEach(() => {
+  cleanupSdk = configureSdkForTesting(mockQueryFunction);
+});
+
+afterEach(() => {
+  cleanupSdk();
+});
+```
+
+**Why this matters:** Without initialization, `getSdkQuery()` throws `SdkNotInitializedError`. This ensures tests never accidentally call the real API and spend tokens. Only `backend/src/index.ts` should call `initializeSdkProvider()`.
+
 ### Running Tests (IMPORTANT)
 
 **For full test suites**: Always use `./git-hooks/pre-commit.sh`. This runs all tests correctly.

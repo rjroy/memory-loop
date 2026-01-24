@@ -15,6 +15,7 @@ import { useSessions } from "../hooks/useSessions";
 import { RecentActivity } from "./RecentActivity";
 import { GoalsCard } from "./GoalsCard";
 import { InspirationCard } from "./InspirationCard";
+import { SpacedRepetitionWidget } from "./SpacedRepetitionWidget";
 import { HealthPanel } from "./HealthPanel";
 import type { InspirationItem } from "@memory-loop/shared";
 import "./HomeView.css";
@@ -241,6 +242,9 @@ export function HomeView(): React.ReactNode {
           isLoading={inspirationLoading}
         />
       )}
+
+      {/* Spaced Repetition - renders null internally when no cards due */}
+      <SpacedRepetitionWidget vaultId={vault?.id} />
 
       {/* Goals */}
       <GoalsCard />

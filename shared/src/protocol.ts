@@ -302,6 +302,104 @@ export const MeetingStateSchema = z.object({
 });
 
 // =============================================================================
+// Spaced Repetition Card Schemas
+// =============================================================================
+
+/**
+ * Valid review responses for spaced repetition cards.
+ * Maps to SM-2 algorithm quality ratings:
+ * - again: Complete failure (q=0)
+ * - hard: Correct but with difficulty (q=3)
+ * - good: Correct with some effort (q=4)
+ * - easy: Perfect recall (q=5)
+ */
+export const ReviewResponseSchema = z.enum(["again", "hard", "good", "easy"]);
+
+/**
+ * Schema for a due card preview (question only, no answer).
+ * Used in GET /cards/due response items.
+ */
+export const DueCardSchema = z.object({
+  /** Unique card identifier (UUID) */
+  id: z.string().uuid(),
+  /** The question to display */
+  question: z.string().min(1, "Question is required"),
+  /** ISO 8601 date when card is due for review */
+  next_review: z.string(),
+});
+
+/**
+ * Schema for full card detail with answer.
+ * Used in GET /cards/:cardId response after revealing answer.
+ */
+export const CardDetailSchema = z.object({
+  /** Unique card identifier (UUID) */
+  id: z.string().uuid(),
+  /** The question to display */
+  question: z.string().min(1, "Question is required"),
+  /** The answer to reveal */
+  answer: z.string().min(1, "Answer is required"),
+  /** SM-2 ease factor (default 2.5, adjusted based on performance) */
+  ease_factor: z.number().min(1.3),
+  /** Days until next review */
+  interval: z.number().int().min(0),
+  /** Number of successful reviews in a row */
+  repetitions: z.number().int().min(0),
+  /** ISO 8601 timestamp of last review, null if never reviewed */
+  last_reviewed: z.string().nullable(),
+  /** ISO 8601 date when card is due for review */
+  next_review: z.string(),
+  /** Source file path if card was extracted from a note */
+  source_file: z.string().optional(),
+});
+
+/**
+ * Schema for review request body.
+ * Used in POST /cards/:cardId/review request.
+ */
+export const ReviewRequestSchema = z.object({
+  /** User's self-assessment of recall quality */
+  response: ReviewResponseSchema,
+});
+
+/**
+ * Schema for review result response.
+ * Used in POST /cards/:cardId/review response.
+ */
+export const ReviewResultSchema = z.object({
+  /** Card identifier */
+  id: z.string().uuid(),
+  /** Updated next review date (ISO 8601) */
+  next_review: z.string(),
+  /** Updated interval in days */
+  interval: z.number().int().min(0),
+  /** Updated ease factor */
+  ease_factor: z.number().min(1.3),
+});
+
+/**
+ * Schema for archive response.
+ * Used in POST /cards/:cardId/archive response.
+ */
+export const ArchiveResponseSchema = z.object({
+  /** Card identifier */
+  id: z.string().uuid(),
+  /** Confirmation that card was archived */
+  archived: z.literal(true),
+});
+
+/**
+ * Schema for due cards list response.
+ * Used in GET /cards/due response.
+ */
+export const DueCardsResponseSchema = z.object({
+  /** Array of due card previews */
+  cards: z.array(DueCardSchema),
+  /** Total count of due cards */
+  count: z.number().int().min(0),
+});
+
+// =============================================================================
 // Client -> Server Message Schemas
 // =============================================================================
 
@@ -890,6 +988,15 @@ export type MeetingState = z.infer<typeof MeetingStateSchema>;
 
 // Inspiration types (used by REST API)
 export type InspirationItem = z.infer<typeof InspirationItemSchema>;
+
+// Spaced repetition card types (used by REST API)
+export type ReviewResponse = z.infer<typeof ReviewResponseSchema>;
+export type DueCard = z.infer<typeof DueCardSchema>;
+export type CardDetail = z.infer<typeof CardDetailSchema>;
+export type ReviewRequest = z.infer<typeof ReviewRequestSchema>;
+export type ReviewResult = z.infer<typeof ReviewResultSchema>;
+export type ArchiveResponse = z.infer<typeof ArchiveResponseSchema>;
+export type DueCardsResponse = z.infer<typeof DueCardsResponseSchema>;
 
 // Client message types
 export type SelectVaultMessage = z.infer<typeof SelectVaultMessageSchema>;

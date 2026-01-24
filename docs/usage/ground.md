@@ -53,6 +53,64 @@ If your vault has a `goals.md` file, its content displays here as rendered markd
 
 **Interaction**: Tap the goals card to open the Think tab with the `/review-goals` command. The AI will analyze your goals and help you assess progress, identify blockers, or refine priorities.
 
+## Spaced Repetition Widget
+
+When you have flashcards due for review, the spaced repetition widget appears on the Ground tab. This widget helps you retain knowledge from your vault using the SM-2 algorithm.
+
+[ img: Spaced repetition widget showing a question card ]
+
+### How It Works
+
+1. **Card Discovery**: The system periodically scans your vault for knowledge-worthy content and generates Q&A flashcards from factual information in your notes.
+
+2. **Spaced Review**: Cards appear for review based on how well you remember them. Cards you know well appear less frequently; cards you struggle with appear more often.
+
+3. **Widget Display**: When cards are due, the widget shows the count and lets you start a review session directly from Ground.
+
+### Review Flow
+
+When you tap the widget to review:
+
+1. **Question Phase**: The card shows only the question. Take a moment to recall the answer.
+
+2. **Reveal**: Tap **Show Answer** (or press Space) to reveal the answer.
+
+3. **Self-Assessment**: Rate how well you remembered:
+   - **Again** (1): Completely forgot, need to see it soon
+   - **Hard** (2): Struggled but eventually remembered
+   - **Good** (3): Recalled correctly with some effort
+   - **Easy** (4): Recalled instantly and confidently
+
+4. **Next Card**: After rating, the next due card appears automatically.
+
+[ img: Review flow showing question, revealed answer, and assessment buttons ]
+
+### Keyboard Shortcuts
+
+During review, you can use keyboard shortcuts for faster assessment:
+- **Space**: Reveal answer (when viewing question)
+- **1-4**: Select assessment rating (when answer is revealed)
+
+### Actions
+
+Each card has additional actions available:
+
+- **Skip**: Move the card to the end of today's review queue. Use this when you want to come back to it later in the session.
+
+- **Forget**: Archive the card permanently. Use this for cards that are no longer relevant or contain outdated information. Archived cards move to `06_Metadata/memory-loop/cards/archive/`.
+
+### Completion
+
+When you've reviewed all due cards, the widget shows a completion message. New cards will become due based on their scheduled review dates.
+
+### Card Sources
+
+Cards are generated from your vault notes during discovery runs:
+- **Daily discovery**: Processes notes modified in the last 24 hours
+- **Weekly catch-up**: Gradually processes older unprocessed notes
+
+Cards include a source reference so you can find the original note if needed.
+
 ## Ground Widgets
 
 If you've configured vault widgets with `location: ground`, they appear in this section. Ground widgets show vault-wide aggregations and statistics.
@@ -117,3 +175,10 @@ The currently active session cannot be deleted; you must start a new session fir
 1. Tap your goals card to trigger `/review-goals`
 2. The AI analyzes your goals against recent vault activity
 3. Get suggestions for next actions or goal refinements
+
+### Knowledge Review
+
+1. When the spaced repetition widget shows due cards, tap to start reviewing
+2. For each card, think of the answer before revealing it
+3. Rate your recall honestly (better recall means longer intervals)
+4. Complete your daily review to strengthen long-term retention

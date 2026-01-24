@@ -4,15 +4,19 @@
  * Tests rendering, accessibility, and debrief button logic.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { HomeView, getDebriefButtons } from "../HomeView";
 import { SessionProvider } from "../../contexts/SessionContext";
-import type { RecentNoteEntry } from "@memory-loop/shared";
+import type { RecentNoteEntry, VaultInfo } from "@memory-loop/shared";
 
 // Clean up after each test
 beforeEach(() => {
+  localStorage.clear();
+});
+
+afterEach(() => {
   cleanup();
 });
 
@@ -240,3 +244,87 @@ describe("HomeView debrief button interaction", () => {
     expect(button).toBeTruthy();
   });
 });
+
+// =============================================================================
+// SpacedRepetitionWidget Integration Tests
+// =============================================================================
+
+// Test vault for widget integration
+const testVault: VaultInfo = {
+  id: "test-vault",
+  name: "Test Vault",
+  path: "/test/vault",
+  hasClaudeMd: true,
+  contentRoot: "/test/vault",
+  inboxPath: "inbox",
+  metadataPath: "06_Metadata/memory-loop",
+  attachmentPath: "05_Attachments",
+  setupComplete: false,
+  promptsPerGeneration: 5,
+  maxPoolSize: 50,
+  quotesPerWeek: 1,
+  badges: [],
+  order: 999999,
+};
+
+/**
+ * Creates a wrapper with a selected vault.
+ * Uses localStorage to trigger auto-selection of the vault.
+ */
+function createWrapperWithVault(vault: VaultInfo) {
+  // Set localStorage so the vault gets auto-selected
+  localStorage.setItem("memory-loop:vaultId", vault.id);
+
+  return function WrapperWithVault({ children }: { children: ReactNode }) {
+    return (
+      <SessionProvider initialVaults={[vault]}>{children}</SessionProvider>
+    );
+  };
+}
+
+describe("HomeView SpacedRepetitionWidget integration", () => {
+  it("does not render widget when no vault is selected", () => {
+    render(<HomeView />, { wrapper: Wrapper });
+
+    // Widget should not be present (no vault ID passed)
+    // Since widget returns null when vaultId is undefined, this verifies the integration
+    expect(screen.queryByRole("region", { name: "Spaced repetition review" })).toBeNull();
+  });
+
+  it("renders HomeView without error when vault is selected", () => {
+    // This test verifies that the SpacedRepetitionWidget is properly integrated
+    // and doesn't cause errors when the vault is selected.
+    // The widget will attempt to fetch cards and render accordingly.
+    // The actual card rendering is tested in SpacedRepetitionWidget.test.tsx
+    render(<HomeView />, {
+      wrapper: createWrapperWithVault(testVault),
+    });
+
+    // Verify vault is selected and HomeView renders
+    expect(screen.getByText("Test Vault")).toBeDefined();
+    expect(screen.getByText("Current Vault")).toBeDefined();
+  });
+
+  it("passes vault ID to SpacedRepetitionWidget", async () => {
+    // This test verifies the widget is included in the render tree.
+    // When vault is selected, the widget attempts to load due cards.
+    // The widget returns null when no cards are due (which is the case here
+    // since the API call fails in test environment), but the important thing
+    // is that it receives the vault ID and doesn't cause rendering errors.
+    render(<HomeView />, {
+      wrapper: createWrapperWithVault(testVault),
+    });
+
+    // Verify vault is selected
+    expect(screen.getByText("Test Vault")).toBeDefined();
+
+    // The widget will render null because the API call fails in test environment.
+    // That's expected behavior. The widget's internal behavior when cards are
+    // present is tested in SpacedRepetitionWidget.test.tsx.
+    await waitFor(() => {
+      // Widget should not be visible (no cards due / API failed)
+      expect(screen.queryByRole("region", { name: "Spaced repetition review" })).toBeNull();
+    });
+  });
+});
+

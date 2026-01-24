@@ -21,6 +21,7 @@ import { searchRoutes } from "./search";
 import { configRoutes } from "./config";
 import { memoryRoutes } from "./memory";
 import { sessionsRoutes } from "./sessions";
+import { cardRoutes } from "./cards";
 
 /**
  * Hono router for vault-scoped REST API routes.
@@ -66,5 +67,8 @@ vaultRoutes.route("/memory", memoryRoutes);
 
 // Sessions routes (TASK-012)
 vaultRoutes.route("/sessions", sessionsRoutes);
+
+// Spaced repetition card routes (TASK-004)
+vaultRoutes.route("/cards", cardRoutes);
 
 export { vaultRoutes };

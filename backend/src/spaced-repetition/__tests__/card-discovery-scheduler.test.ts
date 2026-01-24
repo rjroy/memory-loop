@@ -194,6 +194,21 @@ describe("discoverAllFiles", () => {
     expect(files.some((f) => f.relativePath === "regular.md")).toBe(true);
   });
 
+  it("skips chat transcripts directory", async () => {
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    // Create inbox directory (00_Inbox is auto-detected as inboxPath)
+    await createMarkdownFile(vaultPath, "00_Inbox/chats/2026-01-24-session.md", "# Chat Transcript");
+    await createMarkdownFile(vaultPath, "00_Inbox/daily/2026-01-24.md", "# Daily Note");
+    await createMarkdownFile(vaultPath, "regular.md", "# Regular");
+
+    const files = await discoverAllFiles();
+    // Chats should be excluded (ephemeral, not curated knowledge)
+    expect(files.some((f) => f.relativePath.includes("00_Inbox/chats"))).toBe(false);
+    // Other inbox files should be included
+    expect(files.some((f) => f.relativePath === "00_Inbox/daily/2026-01-24.md")).toBe(true);
+    expect(files.some((f) => f.relativePath === "regular.md")).toBe(true);
+  });
+
   it("only includes .md files", async () => {
     const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
     await createMarkdownFile(vaultPath, "note.md", "# Note");

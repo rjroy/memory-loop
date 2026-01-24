@@ -157,6 +157,10 @@ async function discoverMarkdownFiles(
       if (entry === "06_Metadata" || entryRelPath === vault.metadataPath) {
         continue;
       }
+      // Skip chat transcripts directory (ephemeral, not curated knowledge)
+      if (entryRelPath === `${vault.inboxPath}/chats`) {
+        continue;
+      }
       // Recurse into subdirectory
       const subFiles = await discoverMarkdownFiles(basePath, vault, entryRelPath);
       files.push(...subFiles);

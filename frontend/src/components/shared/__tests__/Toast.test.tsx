@@ -4,7 +4,7 @@
  * Tests rendering, accessibility, auto-dismiss, and user interactions.
  */
 
-import { describe, it, expect, afterEach, mock, beforeEach } from "bun:test";
+import { describe, it, expect, afterEach, mock, beforeEach, jest } from "bun:test";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { Toast, type ToastProps } from "../Toast";
 
@@ -102,7 +102,11 @@ describe("Toast", () => {
 
   describe("auto-dismiss", () => {
     beforeEach(() => {
-      // Use fake timers for auto-dismiss tests
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it("verifies default autoDismissMs is 5000", () => {
@@ -121,33 +125,33 @@ describe("Toast", () => {
       // which proves the auto-dismiss mechanism works
     });
 
-    it("calls onDismiss after custom timeout", async () => {
+    it("calls onDismiss after custom timeout", () => {
       const onDismiss = mock(() => {});
       render(<Toast {...defaultProps} onDismiss={onDismiss} autoDismissMs={100} />);
 
       // Wait for custom auto-dismiss
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      jest.advanceTimersByTime(150);
 
       expect(onDismiss).toHaveBeenCalledTimes(1);
     });
 
-    it("does not auto-dismiss when not visible", async () => {
+    it("does not auto-dismiss when not visible", () => {
       const onDismiss = mock(() => {});
       render(<Toast {...defaultProps} isVisible={false} onDismiss={onDismiss} autoDismissMs={100} />);
 
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      jest.advanceTimersByTime(150);
 
       expect(onDismiss).not.toHaveBeenCalled();
     });
 
-    it("clears timer when component unmounts", async () => {
+    it("clears timer when component unmounts", () => {
       const onDismiss = mock(() => {});
       const { unmount } = render(<Toast {...defaultProps} onDismiss={onDismiss} autoDismissMs={200} />);
 
       // Unmount before timeout
       unmount();
 
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      jest.advanceTimersByTime(250);
 
       expect(onDismiss).not.toHaveBeenCalled();
     });

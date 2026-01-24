@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { SearchIndexManager, type IndexData } from "../search/search-index";
+import { setFileMtime } from "./test-helpers";
 
 // =============================================================================
 // Test Helpers
@@ -1027,10 +1028,10 @@ describe("index persistence", () => {
 
       // Modify an existing file (need to change mtime)
       const filePath = join(vaultPath, "README.md");
-
-      // Wait a bit to ensure mtime changes
-      await new Promise((resolve) => setTimeout(resolve, 10));
       await writeFile(filePath, "# Modified README\n\nNow contains MODIFIED_CONTENT");
+
+      // Set mtime to future to ensure change detection
+      await setFileMtime(filePath, new Date(Date.now() + 1000));
 
       // Run incremental update
       const result = await manager.updateIndex();
@@ -1076,8 +1077,11 @@ describe("index persistence", () => {
       await writeFile(join(vaultPath, "new-file.md"), "New content");
 
       // Modify an existing file
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      await writeFile(join(vaultPath, "notes/meeting-notes.md"), "# Modified Meeting\n\nModified content");
+      const modifiedFilePath = join(vaultPath, "notes/meeting-notes.md");
+      await writeFile(modifiedFilePath, "# Modified Meeting\n\nModified content");
+
+      // Set mtime to future to ensure change detection
+      await setFileMtime(modifiedFilePath, new Date(Date.now() + 1000));
 
       // Delete a file
       await rm(join(vaultPath, "projects/project-alpha.md"));

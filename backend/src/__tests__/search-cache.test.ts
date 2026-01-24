@@ -8,7 +8,7 @@
  * @see .sdd/tasks/2026-01-21-rest-api-migration-tasks.md (TASK-009)
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach, jest, setSystemTime } from "bun:test";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -31,9 +31,11 @@ import {
  * Creates a unique temporary directory for testing.
  */
 async function createTestVault(suffix: string = ""): Promise<string> {
+  // Use real time for unique directory names (not affected by system time mock)
+  const realNow = Bun.nanoseconds();
   const testDir = join(
     tmpdir(),
-    `search-cache-test-${Date.now()}-${Math.random().toString(36).slice(2)}${suffix}`
+    `search-cache-test-${realNow}-${Math.random().toString(36).slice(2)}${suffix}`
   );
   await mkdir(testDir, { recursive: true });
   // Create at least one .md file so the index has something to work with
@@ -52,21 +54,20 @@ async function cleanupTestVault(testDir: string): Promise<void> {
   }
 }
 
-/**
- * Delays execution for specified milliseconds.
- */
-function delay(ms: number): Promise<void> {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
 // =============================================================================
 // Search Cache Tests
 // =============================================================================
 
 describe("SearchCache", () => {
   let testVaults: string[] = [];
+  let testTime: Date;
 
   beforeEach(() => {
+    // Use fake timers to control Date.now()
+    jest.useFakeTimers();
+    testTime = new Date("2026-01-24T12:00:00.000Z");
+    setSystemTime(testTime);
+
     // Clear cache and reset config before each test
     clearCache();
     configureSearchCache({ maxVaults: 10, ttlMs: 5 * 60 * 1000 });
@@ -74,12 +75,23 @@ describe("SearchCache", () => {
   });
 
   afterEach(async () => {
+    // Restore real timers before async cleanup
+    jest.useRealTimers();
+
     // Cleanup all test vaults
     for (const vault of testVaults) {
       await cleanupTestVault(vault);
     }
     clearCache();
   });
+
+  /**
+   * Helper to advance the mocked system time.
+   */
+  function advanceTime(ms: number): void {
+    testTime = new Date(testTime.getTime() + ms);
+    setSystemTime(testTime);
+  }
 
   // ===========================================================================
   // Basic Cache Operations
@@ -174,9 +186,9 @@ describe("SearchCache", () => {
 
       // Add 3 vaults (fills cache)
       getOrCreateIndex("vault1", vaultPaths[0]);
-      await delay(10); // Ensure different timestamps
+      advanceTime(10); // Ensure different timestamps
       getOrCreateIndex("vault2", vaultPaths[1]);
-      await delay(10);
+      advanceTime(10);
       getOrCreateIndex("vault3", vaultPaths[2]);
 
       expect(getCacheSize()).toBe(3);
@@ -207,17 +219,17 @@ describe("SearchCache", () => {
 
       // Add 3 vaults
       getOrCreateIndex("vault1", vaultPaths[0]);
-      await delay(10);
+      advanceTime(10);
       getOrCreateIndex("vault2", vaultPaths[1]);
-      await delay(10);
+      advanceTime(10);
       getOrCreateIndex("vault3", vaultPaths[2]);
 
       // Access vault1 again (makes it most recently used)
-      await delay(10);
+      advanceTime(10);
       getOrCreateIndex("vault1", vaultPaths[0]);
 
       // Add 4th vault (should evict vault2 now, not vault1)
-      await delay(10);
+      advanceTime(10);
       getOrCreateIndex("vault4", vaultPaths[3]);
 
       const stats = getCacheStats();
@@ -263,7 +275,7 @@ describe("SearchCache", () => {
       testVaults.push(vaultPath);
 
       const index1 = getOrCreateIndex("vault1", vaultPath);
-      await delay(10);
+      advanceTime(10);
       const index2 = getOrCreateIndex("vault1", vaultPath);
 
       expect(index1).toBe(index2); // Same reference (cache hit)
@@ -278,7 +290,7 @@ describe("SearchCache", () => {
       const index1 = getOrCreateIndex("vault1", vaultPath);
 
       // Wait for TTL to expire
-      await delay(100);
+      advanceTime(100);
 
       const index2 = getOrCreateIndex("vault1", vaultPath);
 
@@ -292,7 +304,7 @@ describe("SearchCache", () => {
       testVaults.push(vaultPath);
 
       getOrCreateIndex("vault1", vaultPath);
-      await delay(100); // Let TTL expire
+      advanceTime(100); // Let TTL expire
 
       // This creates a new entry with fresh createdAt
       getOrCreateIndex("vault1", vaultPath);
@@ -360,7 +372,7 @@ describe("SearchCache", () => {
       testVaults.push(vault1Path, vault2Path);
 
       getOrCreateIndex("vault1", vault1Path);
-      await delay(50);
+      advanceTime(50);
       getOrCreateIndex("vault2", vault2Path);
 
       const stats = getCacheStats();
@@ -376,16 +388,15 @@ describe("SearchCache", () => {
       testVaults.push(vaultPath);
 
       getOrCreateIndex("vault1", vaultPath);
-      await delay(50);
+      advanceTime(50);
 
       const stats = getCacheStats();
       const entry = stats.entries.find((e) => e.vaultId === "vault1");
 
       expect(entry).toBeDefined();
       expect(entry!.vaultId).toBe("vault1");
-      // Allow 5ms tolerance for timing precision
-      expect(entry!.ageMs).toBeGreaterThanOrEqual(45);
-      expect(entry!.lastAccessMs).toBeGreaterThanOrEqual(45);
+      expect(entry!.ageMs).toBe(50);
+      expect(entry!.lastAccessMs).toBe(50);
       expect(typeof entry!.isIndexBuilt).toBe("boolean");
     });
 
@@ -394,14 +405,14 @@ describe("SearchCache", () => {
       testVaults.push(vaultPath);
 
       getOrCreateIndex("vault1", vaultPath);
-      await delay(100);
+      advanceTime(100);
 
       const stats1 = getCacheStats();
       const lastAccess1 = stats1.entries[0].lastAccessMs;
 
       // Access the entry again
       getOrCreateIndex("vault1", vaultPath);
-      await delay(10);
+      advanceTime(10);
 
       const stats2 = getCacheStats();
       const lastAccess2 = stats2.entries[0].lastAccessMs;
@@ -537,9 +548,11 @@ describe("SearchCache", () => {
     });
 
     test("handles empty vault gracefully", async () => {
+      // Use real time for unique directory name
+      const realNow = Bun.nanoseconds();
       const vaultPath = join(
         tmpdir(),
-        `search-cache-empty-${Date.now()}-${Math.random().toString(36).slice(2)}`
+        `search-cache-empty-${realNow}-${Math.random().toString(36).slice(2)}`
       );
       await mkdir(vaultPath, { recursive: true });
       testVaults.push(vaultPath);
@@ -563,7 +576,7 @@ describe("SearchCache", () => {
       // Add 10 vaults (should evict older ones)
       for (let i = 0; i < 10; i++) {
         getOrCreateIndex(`vault${i + 1}`, vaultPaths[i]);
-        await delay(5); // Small delay to ensure ordering
+        advanceTime(5); // Small time advance to ensure ordering
       }
 
       // Should only have last 5 vaults

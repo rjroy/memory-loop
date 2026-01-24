@@ -424,7 +424,8 @@ describe("runExtraction pipeline", () => {
     // Start extraction without awaiting
     const extractionPromise = runExtraction(false);
 
-    // Give it a tick to start
+    // Real delay required: allows async extraction to begin before checking state.
+    // Fake timers cannot coordinate with async Promise execution.
     await new Promise((resolve) => setTimeout(resolve, 1));
 
     // May or may not be running depending on how fast it fails

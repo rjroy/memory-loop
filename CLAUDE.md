@@ -99,6 +99,41 @@ MOCK_SDK=true              # Test without API calls
 - Frontend tests use `@testing-library/react` + happy-dom
 - Mock WebSocket and SDK connections via dependency injection, not module replacement
 
+### Fake Timers
+
+Use `jest.useFakeTimers()` from `bun:test` to eliminate sleeps in tests. This makes tests faster and deterministic.
+
+**When to use fake timers:**
+- Timer-based behavior (setTimeout, setInterval callbacks)
+- Date.now()-based logic (TTL, LRU timestamps)
+- Auto-dismiss timeouts, debouncing, long press detection
+
+**When NOT to use fake timers:**
+- Async generator coordination (fake timers can't advance yield points)
+- Tests using `waitFor()` from testing-library (may conflict)
+- Complex async state machine tests where real event loop timing matters
+
+**Pattern:**
+```typescript
+import { jest, setSystemTime } from "bun:test";
+
+beforeEach(() => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-01-24T12:00:00.000Z")); // If testing Date.now()
+});
+
+afterEach(() => {
+  jest.useRealTimers();
+});
+
+// In tests:
+act(() => {
+  jest.advanceTimersByTime(500); // Advance timers
+});
+```
+
+**For file mtime testing:** Use `setFileMtime()` from `test-helpers.ts` instead of sleeping to ensure mtime changes.
+
 ### SDK Provider Pattern (Prevents Test Token Usage)
 
 The Claude Agent SDK uses a centralized provider pattern (`backend/src/sdk-provider.ts`) to prevent accidental API calls in tests:

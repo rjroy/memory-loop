@@ -12,6 +12,7 @@ import {
   beforeEach,
   afterEach,
   spyOn,
+  jest,
 } from "bun:test";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useWebSocket, buildWebSocketUrl } from "../useWebSocket";
@@ -349,7 +350,9 @@ describe("useWebSocket", () => {
       );
     });
 
-    it("does not reconnect when autoReconnect is false", async () => {
+    it("does not reconnect when autoReconnect is false", () => {
+      jest.useFakeTimers();
+
       renderHook(() =>
         useWebSocket({ initialDelay: 10, autoReconnect: false })
       );
@@ -359,13 +362,19 @@ describe("useWebSocket", () => {
         instances[0].simulateClose();
       });
 
-      // Wait and verify no reconnect
-      await new Promise((r) => setTimeout(r, 50));
+      // Advance time and verify no reconnect
+      act(() => {
+        jest.advanceTimersByTime(50);
+      });
 
       expect(instances.length).toBe(1);
+
+      jest.useRealTimers();
     });
 
-    it("does not reconnect after unmount", async () => {
+    it("does not reconnect after unmount", () => {
+      jest.useFakeTimers();
+
       const { unmount } = renderHook(() =>
         useWebSocket({ initialDelay: 10, autoReconnect: true })
       );
@@ -377,10 +386,14 @@ describe("useWebSocket", () => {
       // Unmount before close
       unmount();
 
-      // Wait and verify no new instances
-      await new Promise((r) => setTimeout(r, 50));
+      // Advance time and verify no new instances
+      act(() => {
+        jest.advanceTimersByTime(50);
+      });
 
       expect(instances.length).toBe(1);
+
+      jest.useRealTimers();
     });
   });
 

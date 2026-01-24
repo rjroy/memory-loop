@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { SearchIndexManager } from "../search/search-index";
+import { setFileMtime } from "./test-helpers";
 
 // =============================================================================
 // Test Helpers
@@ -415,14 +416,12 @@ describe("Incremental index updates", () => {
   });
 
   test("modified files are re-indexed", async () => {
-    // Wait to ensure mtime changes
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
     // Modify existing file
-    await writeFile(
-      join(tempDir, "notes", "existing.md"),
-      "# Existing\n\nMODIFIED_UNIQUE_CONTENT"
-    );
+    const filePath = join(tempDir, "notes", "existing.md");
+    await writeFile(filePath, "# Existing\n\nMODIFIED_UNIQUE_CONTENT");
+
+    // Set mtime to future to ensure change detection
+    await setFileMtime(filePath, new Date(Date.now() + 1000));
 
     // Run incremental update
     const result = await manager.updateIndex();

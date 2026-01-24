@@ -681,9 +681,7 @@ describe("Session Manager", () => {
       });
       await saveSession(metadata);
 
-      // Wait a tiny bit to ensure different timestamp
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
+      // touchSession sets lastActiveAt to now, which will differ from 2025-01-01
       await touchSession(vaultPath, metadata.id);
 
       const loaded = await loadSession(vaultPath, metadata.id);

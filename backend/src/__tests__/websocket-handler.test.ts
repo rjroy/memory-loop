@@ -572,6 +572,8 @@ describe("WebSocket Handler", () => {
       const slowGenerator = (async function* () {
         yield { type: "system", session_id: "slow-test" };
         // Wait until stopped
+        // Real delay required: async generator coordination.
+        // Fake timers cannot advance generator yield points.
         while (!shouldStop) {
           await new Promise((resolve) => setTimeout(resolve, 5));
         }
@@ -594,7 +596,8 @@ describe("WebSocket Handler", () => {
         JSON.stringify({ type: "discussion_message", text: "Another message" })
       );
 
-      // Give it a moment to start
+      // Real delay required: allows async generator to start before we trigger close.
+      // Fake timers cannot coordinate with generator yield points.
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Close connection - this should trigger interrupt
@@ -1173,6 +1176,8 @@ describe("WebSocket Handler", () => {
       mockCreateSession.mockResolvedValueOnce({
         sessionId: "slow-session",
         events: (async function* () {
+          // Real delay required: simulates slow generator processing.
+          // Fake timers cannot advance async generator yield points.
           await new Promise((resolve) => setTimeout(resolve, 1000));
           yield { type: "system", session_id: "slow-session" };
         })(),
@@ -1200,7 +1205,8 @@ describe("WebSocket Handler", () => {
         JSON.stringify({ type: "discussion_message", text: "First" })
       );
 
-      // Give it a moment to start
+      // Real delay required: allows async generator to start before sending second message.
+      // Fake timers cannot coordinate with generator yield points.
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Start second discussion (this should abort the first)
@@ -1872,6 +1878,8 @@ describe("WebSocket Handler", () => {
       mockCreateSession.mockResolvedValue({
         sessionId: "active-session",
         events: (async function* () {
+          // Real delay required: simulates slow generator processing.
+          // Fake timers cannot advance async generator yield points.
           await new Promise((resolve) => setTimeout(resolve, 1000));
         })(),
         interrupt: activeInterrupt,
@@ -1891,6 +1899,8 @@ describe("WebSocket Handler", () => {
         JSON.stringify({ type: "discussion_message", text: "Hello" })
       );
 
+      // Real delay required: allows async generator to start before triggering new_session.
+      // Fake timers cannot coordinate with generator yield points.
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       // New session should interrupt
@@ -1962,6 +1972,8 @@ describe("WebSocket Handler", () => {
       mockCreateSession.mockResolvedValue({
         sessionId: "active-session",
         events: (async function* () {
+          // Real delay required: simulates slow generator processing.
+          // Fake timers cannot advance async generator yield points.
           await new Promise((resolve) => setTimeout(resolve, 1000));
         })(),
         interrupt: activeInterrupt,
@@ -1981,6 +1993,8 @@ describe("WebSocket Handler", () => {
         JSON.stringify({ type: "discussion_message", text: "Hello" })
       );
 
+      // Real delay required: allows async generator to start before triggering abort.
+      // Fake timers cannot coordinate with generator yield points.
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Abort

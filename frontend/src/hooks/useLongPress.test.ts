@@ -1,8 +1,15 @@
-import { describe, test, expect, mock } from "bun:test";
+import { describe, test, expect, mock, beforeEach, afterEach, jest } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
 import { useLongPress, DEFAULT_LONG_PRESS_DURATION } from "./useLongPress";
 
 describe("useLongPress", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
 
   /**
    * Helper to create a mock touch event
@@ -26,7 +33,7 @@ describe("useLongPress", () => {
       expect(DEFAULT_LONG_PRESS_DURATION).toBe(500);
     });
 
-    test("uses 500ms duration by default", async () => {
+    test("uses 500ms duration by default", () => {
       const callback = mock(() => {});
       const { result } = renderHook(() => useLongPress(callback));
 
@@ -39,17 +46,21 @@ describe("useLongPress", () => {
       expect(callback).not.toHaveBeenCalled();
 
       // Wait less than 500ms
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      act(() => {
+        jest.advanceTimersByTime(400);
+      });
       expect(callback).not.toHaveBeenCalled();
 
       // Wait past 500ms
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      act(() => {
+        jest.advanceTimersByTime(150);
+      });
       expect(callback).toHaveBeenCalledTimes(1);
     });
   });
 
   describe("custom duration", () => {
-    test("respects custom duration option", async () => {
+    test("respects custom duration option", () => {
       const callback = mock(() => {});
       const { result } = renderHook(() => useLongPress(callback, { duration: 200 }));
 
@@ -59,17 +70,21 @@ describe("useLongPress", () => {
       });
 
       // Not called at 150ms
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      act(() => {
+        jest.advanceTimersByTime(150);
+      });
       expect(callback).not.toHaveBeenCalled();
 
       // Called after 200ms
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
       expect(callback).toHaveBeenCalledTimes(1);
     });
   });
 
   describe("callback invocation", () => {
-    test("calls callback with the touch event", async () => {
+    test("calls callback with the touch event", () => {
       const callback = mock(() => {});
       const { result } = renderHook(() => useLongPress(callback, { duration: 50 }));
 
@@ -78,13 +93,15 @@ describe("useLongPress", () => {
         result.current.onTouchStart(event);
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
       expect(callback).toHaveBeenCalledTimes(1);
       // The callback receives the event
       expect(callback).toHaveBeenCalledWith(event);
     });
 
-    test("does not call callback if undefined", async () => {
+    test("does not call callback if undefined", () => {
       const { result } = renderHook(() => useLongPress(undefined, { duration: 50 }));
 
       const event = createTouchEvent("start");
@@ -92,7 +109,9 @@ describe("useLongPress", () => {
         result.current.onTouchStart(event);
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
       // No error thrown, just no callback
     });
   });
@@ -114,7 +133,7 @@ describe("useLongPress", () => {
   });
 
   describe("cancellation on move", () => {
-    test("cancels timer when touch moves", async () => {
+    test("cancels timer when touch moves", () => {
       const callback = mock(() => {});
       const { result } = renderHook(() => useLongPress(callback, { duration: 100 }));
 
@@ -123,19 +142,23 @@ describe("useLongPress", () => {
       });
 
       // Move before timer fires
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      act(() => {
+        jest.advanceTimersByTime(50);
+      });
       act(() => {
         result.current.onTouchMove(createTouchEvent("move"));
       });
 
       // Wait past original timer
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
       expect(callback).not.toHaveBeenCalled();
     });
   });
 
   describe("cancellation on end", () => {
-    test("cancels timer when touch ends", async () => {
+    test("cancels timer when touch ends", () => {
       const callback = mock(() => {});
       const { result } = renderHook(() => useLongPress(callback, { duration: 100 }));
 
@@ -144,19 +167,23 @@ describe("useLongPress", () => {
       });
 
       // End before timer fires
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      act(() => {
+        jest.advanceTimersByTime(50);
+      });
       act(() => {
         result.current.onTouchEnd(createTouchEvent("end"));
       });
 
       // Wait past original timer
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
       expect(callback).not.toHaveBeenCalled();
     });
   });
 
   describe("cleanup", () => {
-    test("cleans up timer on unmount", async () => {
+    test("cleans up timer on unmount", () => {
       const callback = mock(() => {});
       const { result, unmount } = renderHook(() => useLongPress(callback, { duration: 100 }));
 
@@ -165,17 +192,21 @@ describe("useLongPress", () => {
       });
 
       // Unmount before timer fires
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      act(() => {
+        jest.advanceTimersByTime(50);
+      });
       unmount();
 
       // Wait past original timer
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
       expect(callback).not.toHaveBeenCalled();
     });
   });
 
   describe("multiple interactions", () => {
-    test("can trigger multiple long presses sequentially", async () => {
+    test("can trigger multiple long presses sequentially", () => {
       const callback = mock(() => {});
       const { result } = renderHook(() => useLongPress(callback, { duration: 50 }));
 
@@ -183,7 +214,9 @@ describe("useLongPress", () => {
       act(() => {
         result.current.onTouchStart(createTouchEvent("start"));
       });
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
       expect(callback).toHaveBeenCalledTimes(1);
 
       // End first touch
@@ -195,11 +228,13 @@ describe("useLongPress", () => {
       act(() => {
         result.current.onTouchStart(createTouchEvent("start"));
       });
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
       expect(callback).toHaveBeenCalledTimes(2);
     });
 
-    test("restarting touch before timer fires resets the timer", async () => {
+    test("restarting touch before timer fires resets the timer", () => {
       const callback = mock(() => {});
       const { result } = renderHook(() => useLongPress(callback, { duration: 100 }));
 
@@ -209,7 +244,9 @@ describe("useLongPress", () => {
       });
 
       // Wait 60ms, then end
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      act(() => {
+        jest.advanceTimersByTime(60);
+      });
       act(() => {
         result.current.onTouchEnd(createTouchEvent("end"));
       });
@@ -220,11 +257,15 @@ describe("useLongPress", () => {
       });
 
       // Wait another 60ms (total 120ms from first start, but only 60ms from second)
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      act(() => {
+        jest.advanceTimersByTime(60);
+      });
       expect(callback).not.toHaveBeenCalled();
 
       // Wait for second timer to complete
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      act(() => {
+        jest.advanceTimersByTime(50);
+      });
       expect(callback).toHaveBeenCalledTimes(1);
     });
   });

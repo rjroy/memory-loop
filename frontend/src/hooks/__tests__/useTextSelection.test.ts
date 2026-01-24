@@ -4,7 +4,7 @@
  * Tests line counting, paragraph extraction, and hook behavior.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, jest } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
 import {
   useTextSelection,
@@ -428,7 +428,9 @@ describe("useTextSelection hook", () => {
     expect(result.current.selection?.totalLines).toBe(4);
   });
 
-  it("updates selection on touchend (iOS touch selection)", async () => {
+  it("updates selection on touchend (iOS touch selection)", () => {
+    jest.useFakeTimers();
+
     const ref = createRef<HTMLTextAreaElement>();
     (ref as { current: HTMLTextAreaElement }).current = mockTextarea;
 
@@ -443,13 +445,15 @@ describe("useTextSelection hook", () => {
       mockTextarea.dispatchEvent(new TouchEvent("touchend"));
     });
 
-    // touchend handler uses setTimeout(10ms), so we need to wait
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    // touchend handler uses setTimeout(10ms), advance past it
+    act(() => {
+      jest.advanceTimersByTime(20);
     });
 
     expect(result.current.selection).not.toBeNull();
     expect(result.current.selection?.text).toBe("Hello");
+
+    jest.useRealTimers();
   });
 
   it("updates selection on document selectionchange when textarea is focused", () => {

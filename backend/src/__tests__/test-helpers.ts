@@ -4,6 +4,7 @@
  * Common utilities for creating mock objects in tests.
  */
 
+import { open } from "node:fs/promises";
 import type { VaultInfo } from "@memory-loop/shared";
 
 /**
@@ -32,4 +33,20 @@ export function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     // Ensure order is always a number (Partial<VaultInfo> allows undefined)
     order: overrides.order ?? 999999,
   };
+}
+
+/**
+ * Sets the modification time (mtime) of a file.
+ * Use instead of sleep() when testing mtime-based change detection.
+ *
+ * @param path - Absolute path to the file
+ * @param time - The time to set as mtime (also sets atime)
+ */
+export async function setFileMtime(path: string, time: Date): Promise<void> {
+  const handle = await open(path, "r");
+  try {
+    await handle.utimes(time, time);
+  } finally {
+    await handle.close();
+  }
 }

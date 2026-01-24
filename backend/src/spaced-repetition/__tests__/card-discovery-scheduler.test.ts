@@ -298,8 +298,8 @@ describe("shouldRunWeekly", () => {
 });
 
 describe("shouldCatchUpOnStartup", () => {
-  it("returns true when never run", () => {
-    expect(shouldCatchUpOnStartup(null)).toBe(true);
+  it("returns false when never run (first run lets weekly handle backlog)", () => {
+    expect(shouldCatchUpOnStartup(null)).toBe(false);
   });
 
   it("returns true when last run was more than 24h ago", () => {
@@ -674,6 +674,23 @@ describe("startScheduler / stopScheduler", () => {
 
     stopScheduler();
     mockGenerate.mockRestore();
+  });
+
+  it("skips catch-up on first run to let weekly pass handle backlog", async () => {
+    // First run: no prior state, lastDailyRun is null
+    // Should NOT run catch-up - weekly pass handles the backlog gradually
+
+    // Create vault with files
+    await createTestVault(join(testDir, "vaults"), "test-vault");
+
+    const getNow = () => new Date("2026-01-24T10:00:00Z");
+    await startScheduler({ catchUpOnStartup: true, getNow });
+
+    // lastDailyRun should still be null (no catch-up ran)
+    const newState = await readDiscoveryState();
+    expect(newState.lastDailyRun).toBeNull();
+
+    stopScheduler();
   });
 
   it("skips catch-up on startup when disabled", async () => {

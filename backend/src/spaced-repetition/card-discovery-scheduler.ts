@@ -343,9 +343,14 @@ export async function runDailyPass(getNow: () => Date = () => new Date()): Promi
   // Load current state
   let state = await readDiscoveryState();
 
-  // Process each file
+  // Process each file, saving state after each to prevent repeat work on crash
   for (const file of recentFiles) {
+    const prevState = state;
     state = await processFile(file, state, stats);
+    // Save immediately if state changed (file was processed or marked)
+    if (state !== prevState) {
+      await writeDiscoveryState(state);
+    }
   }
 
   // Determine if run was successful enough to mark as complete
@@ -445,7 +450,7 @@ export async function runWeeklyPass(
     return stats;
   }
 
-  // Process files up to byte limit
+  // Process files up to byte limit, saving state after each to prevent repeat work
   let bytesThisRun = 0;
   for (const file of unprocessedFiles) {
     if (bytesThisRun + file.size > weeklyBytesRemaining) {
@@ -453,8 +458,13 @@ export async function runWeeklyPass(
       break;
     }
 
+    const prevState = state;
     state = await processFile(file, state, stats);
     bytesThisRun += file.size;
+    // Save immediately if state changed (file was processed or marked)
+    if (state !== prevState) {
+      await writeDiscoveryState(state);
+    }
   }
 
   // Determine if run was successful enough to mark as complete

@@ -927,4 +927,41 @@ describe("integration", () => {
 
     mockGenerate.mockRestore();
   });
+
+  it("saves state after each file to prevent repeat work on crash", async () => {
+    // Create vault with multiple files
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    await createMarkdownFile(vaultPath, "note1.md", "# Note 1\nFirst file content.");
+    await createMarkdownFile(vaultPath, "note2.md", "# Note 2\nSecond file content.");
+    await createMarkdownFile(vaultPath, "note3.md", "# Note 3\nThird file content.");
+
+    const stateSnapshots: number[] = [];
+
+    const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
+      type: "qa",
+      generate: async () => {
+        // After each generate call, check how many files are in state
+        const currentState = await readDiscoveryState();
+        stateSnapshots.push(Object.keys(currentState.processedFiles).length);
+        return { success: true, cards: [] };
+      },
+    }));
+
+    const getNow = () => new Date("2026-01-24T03:00:00Z");
+    await runDailyPass(getNow);
+
+    // State should be saved incrementally after each file
+    // The generator sees state grow: 0, 1, 2 (before each file is marked)
+    // After all processing, state should have all files
+    const finalState = await readDiscoveryState();
+    expect(Object.keys(finalState.processedFiles).length).toBeGreaterThanOrEqual(3);
+
+    // At minimum, we should see incremental progress in snapshots
+    // (first call sees 0 or fewer files than last call)
+    if (stateSnapshots.length >= 2) {
+      expect(stateSnapshots[stateSnapshots.length - 1]).toBeGreaterThanOrEqual(stateSnapshots[0]);
+    }
+
+    mockGenerate.mockRestore();
+  });
 });

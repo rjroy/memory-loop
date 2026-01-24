@@ -12,15 +12,13 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { SessionProvider, useSession, useServerMessageHandler } from "./contexts/SessionContext";
-import { VaultSelect } from "./components/VaultSelect";
-import { ModeToggle } from "./components/ModeToggle";
-import { HomeView } from "./components/HomeView";
-import { NoteCapture } from "./components/NoteCapture";
-import { Discussion } from "./components/Discussion";
-import { BrowseMode } from "./components/BrowseMode";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { ConfigEditorDialog, type EditableVaultConfig } from "./components/ConfigEditorDialog";
-import { Toast, type ToastVariant } from "./components/Toast";
+import { VaultSelect } from "./components/vault";
+import { ModeToggle, ConfirmDialog, Toast, type ToastVariant } from "./components/shared";
+import { HomeView } from "./components/home";
+import { NoteCapture } from "./components/capture";
+import { Discussion } from "./components/discussion";
+import { BrowseMode } from "./components/browse";
+import { ConfigEditorDialog, type EditableVaultConfig } from "./components/vault";
 import { useHoliday } from "./hooks/useHoliday";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useMeetings } from "./hooks/useMeetings";

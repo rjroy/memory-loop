@@ -7,9 +7,24 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { SessionProvider } from "../../../contexts/SessionContext";
 import { SpacedRepetitionWidget } from "../SpacedRepetitionWidget";
 import type { FetchFn } from "../../../api/types";
 import type { DueCardsResponse, CardDetail } from "@memory-loop/shared";
+
+/**
+ * Wrapper component that provides SessionContext for testing.
+ */
+function TestWrapper({ children }: { children: React.ReactNode }) {
+  return <SessionProvider>{children}</SessionProvider>;
+}
+
+/**
+ * Helper to render component with SessionProvider.
+ */
+function renderWithSession(ui: React.ReactElement) {
+  return render(ui, { wrapper: TestWrapper });
+}
 
 // =============================================================================
 // Test Data
@@ -147,7 +162,7 @@ describe("SpacedRepetitionWidget", () => {
   describe("initial rendering", () => {
     it("renders nothing when vaultId is undefined", () => {
       const mockFetch = createMockFetch();
-      const { container } = render(
+      const { container } = renderWithSession(
         <SpacedRepetitionWidget vaultId={undefined} fetchFn={mockFetch} />
       );
       expect(container.firstChild).toBeNull();
@@ -155,7 +170,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("renders nothing when no cards are due", async () => {
       const mockFetch = createMockFetch({ dueCards: { cards: [], count: 0 } });
-      const { container } = render(
+      const { container } = renderWithSession(
         <SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />
       );
 
@@ -168,7 +183,7 @@ describe("SpacedRepetitionWidget", () => {
     it("shows loading state then transitions to question", async () => {
       const mockFetch = createMockFetch({ dueCardsDelay: 50 });
 
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       // Wait for question to appear
       await waitFor(() => {
@@ -180,7 +195,7 @@ describe("SpacedRepetitionWidget", () => {
   describe("question phase", () => {
     it("displays the header with card count", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByText("Spaced Repetition")).toBeDefined();
@@ -190,7 +205,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("displays the current question", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByText("What is TypeScript?")).toBeDefined();
@@ -199,7 +214,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("has an answer input field", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         const input = screen.getByPlaceholderText("Type your answer...");
@@ -209,7 +224,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("has Skip, Forget, and Show Answer buttons", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Skip this card" })).toBeDefined();
@@ -220,7 +235,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("updates user answer as they type", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText("Type your answer...")).toBeDefined();
@@ -236,7 +251,7 @@ describe("SpacedRepetitionWidget", () => {
   describe("skip action", () => {
     it("moves current card to end of queue", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByText("What is TypeScript?")).toBeDefined();
@@ -253,7 +268,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("preserves card count after skip", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByText("3 cards")).toBeDefined();
@@ -271,7 +286,7 @@ describe("SpacedRepetitionWidget", () => {
   describe("show answer action", () => {
     it("transitions to revealed phase when clicking Show Answer", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
@@ -287,7 +302,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("transitions to revealed phase when pressing Enter in input", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText("Type your answer...")).toBeDefined();
@@ -303,7 +318,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("shows user answer in revealed phase if provided", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText("Type your answer...")).toBeDefined();
@@ -321,7 +336,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("shows source file if available", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
@@ -333,12 +348,49 @@ describe("SpacedRepetitionWidget", () => {
         expect(screen.getByText(/notes\/programming.md/)).toBeDefined();
       });
     });
+
+    it("shows Open button when source file is available", async () => {
+      const mockFetch = createMockFetch();
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Show answer" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Open source file in Recall tab" })).toBeDefined();
+      });
+    });
+
+    it("does not show Open button when source file is not available", async () => {
+      const cardWithoutSource: CardDetail = {
+        ...mockCardDetail,
+        source_file: undefined,
+      };
+      const mockFetch = createMockFetch({ cardDetail: cardWithoutSource });
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Show answer" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Answer:")).toBeDefined();
+      });
+
+      // Open button should not be present
+      expect(screen.queryByRole("button", { name: "Open source file in Recall tab" })).toBeNull();
+    });
   });
 
   describe("revealed phase", () => {
     it("shows assessment buttons", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
@@ -357,7 +409,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("shows keyboard shortcuts on assessment buttons", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
@@ -376,7 +428,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("advances to next card after assessment", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
@@ -402,7 +454,7 @@ describe("SpacedRepetitionWidget", () => {
   describe("forget action", () => {
     it("shows confirmation dialog when clicking Forget", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Forget this card" })).toBeDefined();
@@ -418,7 +470,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("archives card and advances when confirmed", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Forget this card" })).toBeDefined();
@@ -443,7 +495,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("closes dialog without action when cancelled", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Forget this card" })).toBeDefined();
@@ -476,7 +528,7 @@ describe("SpacedRepetitionWidget", () => {
       };
 
       const mockFetch = createMockFetch({ dueCards: singleCardResponse });
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
@@ -503,7 +555,7 @@ describe("SpacedRepetitionWidget", () => {
       };
 
       const mockFetch = createMockFetch({ dueCards: singleCardResponse });
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
@@ -533,7 +585,7 @@ describe("SpacedRepetitionWidget", () => {
           json: () => Promise.resolve({ error: { code: "INTERNAL_ERROR", message: "Server error" } }),
         } as Response);
 
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={errorFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={errorFetch} />);
 
       // Widget doesn't render when initial fetch fails
       await waitFor(() => {
@@ -546,7 +598,7 @@ describe("SpacedRepetitionWidget", () => {
   describe("accessibility", () => {
     it("has aria-label on the section", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("region", { name: "Spaced repetition review" })).toBeDefined();
@@ -555,7 +607,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("has aria-label on answer input", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByLabelText("Your answer")).toBeDefined();
@@ -564,7 +616,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("has aria-labels on all buttons", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Skip this card" })).toBeDefined();
@@ -577,7 +629,7 @@ describe("SpacedRepetitionWidget", () => {
   describe("keyboard shortcuts", () => {
     it("responds to keyboard shortcut 3 (Good) in revealed phase", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Show answer" })).toBeDefined();
@@ -600,7 +652,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("ignores keyboard shortcuts when typing in input", async () => {
       const mockFetch = createMockFetch();
-      render(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
+      renderWithSession(<SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />);
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText("Type your answer...")).toBeDefined();

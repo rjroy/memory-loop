@@ -14,6 +14,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useSession } from "../../contexts/SessionContext";
 import { useCards } from "../../hooks/useCards";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
 import type { DueCard, CardDetail, ReviewResponse } from "@memory-loop/shared";
@@ -99,6 +100,7 @@ export function SpacedRepetitionWidget({
   const [showForgetConfirm, setShowForgetConfirm] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const { setMode, setCurrentPath } = useSession();
   const { getDueCards, getCard, submitReview, archiveCard, isLoading, error } =
     useCards(vaultId, { fetch: fetchFn });
 
@@ -242,6 +244,15 @@ export function SpacedRepetitionWidget({
     },
     [state.currentCard, submitReview, advanceToNextCard]
   );
+
+  /**
+   * Handle Open action: navigate to source file in Recall tab.
+   */
+  const handleOpenCard = useCallback(() => {
+    if (!state.cardDetail?.source_file) return;
+    setCurrentPath(state.cardDetail.source_file);
+    setMode("browse");
+  }, [state.cardDetail?.source_file, setCurrentPath, setMode]);
 
   /**
    * Handle keyboard shortcuts for assessment (1/2/3/4 keys).
@@ -416,7 +427,17 @@ export function SpacedRepetitionWidget({
 
             {state.cardDetail.source_file && (
               <div className="spaced-repetition-widget__source">
-                Source: {state.cardDetail.source_file}
+                <span className="spaced-repetition-widget__source-text">
+                  Source: {state.cardDetail.source_file}
+                </span>
+                <button
+                  type="button"
+                  className="spaced-repetition-widget__btn spaced-repetition-widget__btn--open"
+                  onClick={handleOpenCard}
+                  aria-label="Open source file in Recall tab"
+                >
+                  Open
+                </button>
               </div>
             )}
 

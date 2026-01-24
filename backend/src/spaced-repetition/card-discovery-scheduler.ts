@@ -35,8 +35,8 @@ const log = createLogger("card-discovery-scheduler");
 // Constants
 // =============================================================================
 
-/** Default cron hour for daily discovery (3am local time) */
-export const DEFAULT_DISCOVERY_HOUR = 3;
+/** Default cron hour for daily discovery (4am local time) */
+export const DEFAULT_DISCOVERY_HOUR = 4;
 
 /** Weekly catch-up byte limit per run (500KB) */
 export const WEEKLY_CATCH_UP_LIMIT = 500 * 1024;

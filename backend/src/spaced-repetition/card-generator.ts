@@ -83,9 +83,13 @@ export function buildQAExtractionPrompt(content: string, filePath: string): stri
 
 Requirements:
 - Focus on key facts, concepts, definitions, and relationships
-- Questions should be specific and have a clear, testable answer
+- Questions must be self-contained and answerable without seeing the source
+- Never use "this", "the above", or assume the reader knows the context
+- Include enough context in the question itself (name the system, concept, or domain)
 - Answers should be concise but complete
 - Skip subjective opinions, TODOs, or transient information
+- Skip session-specific details (debugging values, conversation artifacts, temporary states)
+- Only extract facts that would be useful to recall weeks or months later
 - If the content has no extractable facts, return an empty array
 
 Source file: ${filePath}

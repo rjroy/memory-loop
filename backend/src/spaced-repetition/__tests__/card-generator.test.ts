@@ -287,6 +287,13 @@ describe("buildQAExtractionPrompt", () => {
 
     expect(prompt).toContain("[]");
   });
+
+  test("requires questions to be self-contained", () => {
+    const prompt = buildQAExtractionPrompt("content", "file.md");
+
+    expect(prompt).toContain("self-contained");
+    expect(prompt).toContain("without seeing the source");
+  });
 });
 
 // =============================================================================

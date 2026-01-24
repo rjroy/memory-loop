@@ -592,16 +592,20 @@ export function shouldRunWeekly(
 /**
  * Check if catch-up should run on startup.
  *
+ * Returns false for first run ever - let weekly catch-up handle the backlog
+ * gradually instead of processing everything at once.
+ *
  * @param lastRun - Last daily run time (ISO string or null)
  * @param getNow - Function to get current time
- * @returns true if should run catch-up
+ * @returns true if should run catch-up (only if has run before and >24h ago)
  */
 export function shouldCatchUpOnStartup(
   lastRun: string | null,
   getNow: () => Date = () => new Date()
 ): boolean {
+  // First run ever: don't do catch-up, let weekly pass handle the backlog
   if (!lastRun) {
-    return true; // Never run before
+    return false;
   }
 
   const lastRunDate = new Date(lastRun);
@@ -629,10 +633,14 @@ export async function startScheduler(options: SchedulerOptions = {}): Promise<vo
   log.info(`Starting card discovery scheduler (daily at ${discoveryHour}:00)`);
   schedulerState.running = true;
 
-  // Check for catch-up on startup
+  // Check for catch-up on startup (only if has run before and >24h ago)
+  // First run ever skips catch-up - let weekly pass handle the backlog gradually
   if (catchUpOnStartup) {
     const state = await readDiscoveryState();
-    if (shouldCatchUpOnStartup(state.lastDailyRun, getNow)) {
+    const isFirstRun = state.lastDailyRun === null;
+    if (isFirstRun) {
+      log.info("First run - skipping catch-up, weekly pass will handle backlog");
+    } else if (shouldCatchUpOnStartup(state.lastDailyRun, getNow)) {
       log.info("Running catch-up discovery (last run > 24h ago)");
       try {
         await runDailyPass(getNow);

@@ -44,6 +44,9 @@ export const WEEKLY_CATCH_UP_LIMIT = 500 * 1024;
 /** Milliseconds in a day (24 hours) */
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/** Overlap buffer for daily pass (30 minutes) to handle schedule drift */
+const DAILY_OVERLAP_MS = 30 * 60 * 1000;
+
 /** Milliseconds in a week (7 days) */
 const MS_PER_WEEK = 7 * MS_PER_DAY;
 
@@ -337,7 +340,7 @@ export async function runDailyPass(getNow: () => Date = () => new Date()): Promi
   };
 
   const now = getNow();
-  const cutoffTime = new Date(now.getTime() - MS_PER_DAY);
+  const cutoffTime = new Date(now.getTime() - MS_PER_DAY - DAILY_OVERLAP_MS);
 
   log.info(`Starting daily discovery pass (files modified since ${cutoffTime.toISOString()})`);
 

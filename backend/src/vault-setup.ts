@@ -949,13 +949,23 @@ export async function runVaultSetup(vaultId: string): Promise<SetupResult> {
     errors.push(`PARA: ${paraResult.error}`);
   }
 
-  // Step 4: Update CLAUDE.md with Memory Loop context
-  const claudeMdResult = await updateClaudeMd(vaultPath, config);
-  summary.push(claudeMdResult.message);
-  const claudeMdUpdated = claudeMdResult.success;
-  if (!claudeMdResult.success && claudeMdResult.error) {
-    errors.push(`CLAUDE.md: ${claudeMdResult.error}`);
-  }
+  // Step 4: Update CLAUDE.md with Memory Loop context (fire-and-forget)
+  // The SDK call can take 30-60+ seconds, which causes HTTP timeouts.
+  // We start it in the background and don't block setup completion.
+  updateClaudeMd(vaultPath, config)
+    .then((result) => {
+      if (result.success) {
+        log.info(`CLAUDE.md update completed for ${vaultId}`);
+      } else {
+        log.warn(`CLAUDE.md update failed for ${vaultId}: ${result.error}`);
+      }
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error(`CLAUDE.md update threw for ${vaultId}: ${message}`);
+    });
+  summary.push("CLAUDE.md update started (background)");
+  const claudeMdUpdated = false; // Unknown - runs in background
 
   // Step 5: Update .gitignore with SQLite cache patterns
   const gitignoreResult = await updateGitignore(vaultPath);

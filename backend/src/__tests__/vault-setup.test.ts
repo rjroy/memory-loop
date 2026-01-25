@@ -1006,18 +1006,9 @@ describe("runVaultSetup", () => {
     expect(marker.paraCreated).toContain("Archives");
   });
 
-  test("marker has claudeMdUpdated as true when SDK succeeds", async () => {
-    await runVaultSetup("test-vault");
-
-    const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");
-    const marker = JSON.parse(content) as SetupCompleteMarker;
-
-    expect(marker.claudeMdUpdated).toBe(true);
-  });
-
-  test("marker has claudeMdUpdated as false when SDK fails", async () => {
-    configureSdkForTesting(createErrorMockQueryFn("SDK error"));
-
+  test("marker has claudeMdUpdated as false (fire-and-forget, result unknown)", async () => {
+    // CLAUDE.md update runs in background to avoid HTTP timeouts,
+    // so the marker always shows false since we don't wait for the result
     await runVaultSetup("test-vault");
 
     const content = await readFile(join(vaultPath, SETUP_MARKER_PATH), "utf-8");

@@ -62,6 +62,7 @@ const QUICK_ACTION_OPTIONS: Partial<Options> = {
   maxTurns: 10,
   maxBudgetUsd: 0.5,
   includePartialMessages: true,
+  settingSources: ["local", "project", "user"],
 };
 
 /**
@@ -195,7 +196,6 @@ export async function handleQuickAction(
         {
           ...QUICK_ACTION_OPTIONS,
           cwd: vault.contentRoot,
-          settingSources: ["local", "project", "user"],
         }
       );
       queryResult = sessionResult.events;
@@ -500,6 +500,7 @@ const ADVISORY_ACTION_OPTIONS: Partial<Options> = {
   maxTurns: 1,
   maxBudgetUsd: 0.25,
   includePartialMessages: true,
+  settingSources: ["local", "project", "user"],
 };
 
 /**
@@ -592,7 +593,6 @@ export async function handleAdvisoryAction(
         {
           ...ADVISORY_ACTION_OPTIONS,
           cwd: vault.contentRoot,
-          settingSources: ["local", "project", "user"],
         }
       );
       queryResult = sessionResult.events;

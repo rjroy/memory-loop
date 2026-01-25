@@ -73,6 +73,7 @@ export const DISCUSSION_MODE_OPTIONS: Partial<Options> = {
   maxBudgetUsd: 2.0,
   // Enable streaming for real-time response display
   includePartialMessages: true,
+  settingSources: ["local", "project", "user"],
 };
 
 /**
@@ -809,7 +810,6 @@ export async function createSession(
       model, // Set model from vault config
       ...options, // Merge defaults then caller options, then force specific fields below
       cwd: vault.path,
-      settingSources: ["local", "project", "user"],
       mcpServers: {
         ...options?.mcpServers,
         "vault-transfer": vaultTransferServer, // Always include vault-transfer
@@ -935,7 +935,6 @@ export async function resumeSession(
       ...options, // Merge defaults then caller options, then force specific fields below
       resume: sessionId,
       cwd: metadata.vaultPath,
-      settingSources: ["local", "project", "user"],
       mcpServers: {
         ...options?.mcpServers,
         "vault-transfer": vaultTransferServer, // Always include vault-transfer

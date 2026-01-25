@@ -87,8 +87,11 @@ Requirements:
 - Never use "this", "the above", or assume the reader knows the context
 - Include enough context in the question itself (name the system, concept, or domain)
 - Answers should be concise but complete
+- Each question should test a distinct piece of knowledge - avoid variations that ask the same thing differently
 - Skip subjective opinions, TODOs, or transient information
-- Skip session-specific details (debugging values, conversation artifacts, temporary states)
+- Skip self-referential questions about the note-taker's actions, decisions, or personal context
+- Questions must be answerable by anyone, not just the person who wrote the note
+- Avoid first-person or second-person framing ("you", "we", "I", "my", "our")
 - Only extract facts that would be useful to recall weeks or months later
 - If the content has no extractable facts, return an empty array
 

@@ -945,6 +945,7 @@ export async function generateContextualPrompts(
         model: GENERATION_MODEL,
         maxTurns: 1,
         allowedTools: [], // No tools needed for generation
+        settingSources: ["local", "project", "user"],
       },
     });
 
@@ -989,7 +990,8 @@ export async function generateWeekendPrompts(
       options: {
         model: GENERATION_MODEL,
         maxTurns: 1,
-        allowedTools: [],
+        allowedTools: [],  
+        settingSources: ["local", "project", "user"],
       },
     });
 
@@ -1034,6 +1036,7 @@ export async function generateInspirationQuote(
         model: GENERATION_MODEL,
         maxTurns: 1,
         allowedTools: [], // No tools needed for generation
+        settingSources: ["local", "project", "user"],
       },
     });
 

@@ -39,6 +39,7 @@ interface DueCardPreview {
   id: string;
   question: string;
   next_review: string;
+  card_file: string;
 }
 
 /**
@@ -113,6 +114,7 @@ cardRoutes.get("/due", async (c) => {
       id: card.metadata.id,
       question: card.content.question,
       next_review: card.metadata.next_review,
+      card_file: `${vault.metadataPath}/cards/${card.metadata.id}.md`,
     }));
 
     const response: DueCardsResponse = {

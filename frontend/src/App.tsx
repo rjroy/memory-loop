@@ -34,7 +34,7 @@ type DialogType = "changeVault" | null;
  * Main app content when a vault is selected.
  */
 function MainContent(): React.ReactNode {
-  const { mode, vault, clearVault, setMeetingState } = useSession();
+  const { mode, vault, clearVault, setMeetingState, updateVaultConfig } = useSession();
   const handleServerMessage = useServerMessageHandler();
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
@@ -138,6 +138,9 @@ function MainContent(): React.ReactNode {
     const success = await updateConfig(config);
 
     if (success) {
+      // Update session vault with new config values
+      updateVaultConfig(config);
+
       // Show success toast
       setToastVariant("success");
       setToastMessage("Settings saved");
@@ -257,6 +260,7 @@ function MainContent(): React.ReactNode {
             recentDiscussions: vault.recentDiscussions,
             badges: vault.badges,
             order: vault.order === Infinity ? undefined : vault.order,
+            cardsEnabled: vault.cardsEnabled,
           }}
           onSave={handleConfigSave}
           onCancel={handleConfigCancel}

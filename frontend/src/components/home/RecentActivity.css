@@ -266,3 +266,106 @@
     padding: var(--spacing-sm) var(--spacing-md);
   }
 }
+
+/* ==============================================
+   Skeleton Loading State
+   ============================================== */
+
+.recent-activity__card--skeleton {
+  pointer-events: none;
+}
+
+.recent-activity__skeleton-text {
+  width: 100%;
+  height: 2.4em;
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--glass-border) 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: activity-shimmer 1.5s infinite;
+  margin-bottom: var(--spacing-sm);
+}
+
+.recent-activity__skeleton-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.recent-activity__skeleton-meta {
+  width: 80px;
+  height: 1em;
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--glass-border) 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: activity-shimmer 1.5s infinite;
+}
+
+.recent-activity__skeleton-action {
+  width: 50px;
+  height: 1.5em;
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--glass-border) 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-md);
+  animation: activity-shimmer 1.5s infinite;
+}
+
+@keyframes activity-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ==============================================
+   Entrance Animation
+   ============================================== */
+
+@keyframes recent-activity-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.recent-activity__card--enter {
+  animation: recent-activity-enter 0.25s ease backwards;
+  /* animationDelay set via inline style for staggering */
+}
+
+/* ==============================================
+   Reduced Motion Preference
+   ============================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .recent-activity__skeleton-text,
+  .recent-activity__skeleton-meta,
+  .recent-activity__skeleton-action {
+    animation: none;
+    background: var(--glass-border);
+  }
+
+  .recent-activity__card--enter {
+    animation: none;
+  }
+}

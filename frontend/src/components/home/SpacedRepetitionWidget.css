@@ -104,6 +104,45 @@
 }
 
 /* ==============================================
+   Idle State (No Cards Due)
+   ============================================== */
+
+.spaced-repetition-widget__idle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.spaced-repetition-widget__idle-message {
+  opacity: 0.8;
+}
+
+/* ==============================================
+   Entrance Animation
+   ============================================== */
+
+@keyframes widget-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.spaced-repetition-widget__question,
+.spaced-repetition-widget__answer,
+.spaced-repetition-widget__complete,
+.spaced-repetition-widget__idle {
+  animation: widget-content-enter 0.2s ease backwards;
+}
+
+/* ==============================================
    Error State
    ============================================== */
 
@@ -556,5 +595,15 @@
 @supports not (backdrop-filter: blur(10px)) {
   .spaced-repetition-widget {
     background-color: var(--color-surface);
+  }
+}
+
+/* Reduced motion preference for entrance animations */
+@media (prefers-reduced-motion: reduce) {
+  .spaced-repetition-widget__question,
+  .spaced-repetition-widget__answer,
+  .spaced-repetition-widget__complete,
+  .spaced-repetition-widget__idle {
+    animation: none;
   }
 }

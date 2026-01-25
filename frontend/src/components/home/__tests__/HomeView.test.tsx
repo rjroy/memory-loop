@@ -52,10 +52,11 @@ describe("HomeView", () => {
   });
 
   describe("inspiration", () => {
-    it("does not render InspirationCard when no inspiration data", () => {
+    it("renders InspirationCard with skeleton when no inspiration data", () => {
       render(<HomeView />, { wrapper: Wrapper });
 
-      expect(screen.queryByLabelText("Inspiration")).toBeNull();
+      // InspirationCard always renders, showing skeleton when loading or no data
+      expect(screen.getByLabelText("Inspiration")).toBeTruthy();
     });
   });
 });

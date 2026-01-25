@@ -16,8 +16,8 @@ import "./InspirationCard.css";
 export interface InspirationCardProps {
   /** Contextual prompt (null if not available or on weekends) */
   contextual: InspirationItem | null;
-  /** Inspirational quote (always present) */
-  quote: InspirationItem;
+  /** Inspirational quote (null during loading or if unavailable) */
+  quote: InspirationItem | null;
   /** Whether data is still loading */
   isLoading?: boolean;
 }
@@ -44,7 +44,8 @@ export function InspirationCard({
     [setDiscussionPrefill, setMode]
   );
 
-  if (isLoading) {
+  // Show skeleton if loading or no quote available
+  if (isLoading || !quote) {
     return (
       <section className="inspiration-card inspiration-card--loading" aria-label="Inspiration">
         <div className="inspiration-card__skeleton">
@@ -59,7 +60,7 @@ export function InspirationCard({
     <section className="inspiration-card" aria-label="Inspiration">
       <button
         type="button"
-        className="inspiration-card__item inspiration-card__quote"
+        className="inspiration-card__item inspiration-card__quote inspiration-card__item--enter"
         onClick={() => handleClick(quote.text)}
         aria-label="Use this quote for discussion"
       >
@@ -74,7 +75,7 @@ export function InspirationCard({
       {contextual && (
         <button
           type="button"
-          className="inspiration-card__item inspiration-card__prompt"
+          className="inspiration-card__item inspiration-card__prompt inspiration-card__item--enter"
           onClick={() => handleClick(contextual.text)}
           aria-label="Use this prompt for discussion"
         >

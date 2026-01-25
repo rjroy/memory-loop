@@ -45,6 +45,8 @@ function formatRelativeDate(dateStr: string): string {
  * Props for RecentActivity component.
  */
 export interface RecentActivityProps {
+  /** Whether activity data is still loading */
+  isLoading?: boolean;
   /** Callback when user wants to resume a discussion */
   onResumeDiscussion?: (sessionId: string) => void;
   /** Callback when user wants to view a capture in browse mode */
@@ -63,6 +65,7 @@ export interface RecentActivityProps {
  * - Handling session_deleted response and calling removeDiscussion
  */
 export function RecentActivity({
+  isLoading = false,
   onResumeDiscussion,
   onViewCapture,
   onDeleteSession,
@@ -132,6 +135,24 @@ export function RecentActivity({
   const hasCaptures = recentNotes.length > 0;
   const hasDiscussions = recentDiscussions.length > 0;
 
+  // Show skeleton during load
+  if (isLoading) {
+    return (
+      <section className="recent-activity" aria-label="Recent activity loading">
+        <div className="recent-activity__section">
+          <h3 className="recent-activity__section-title">
+            <span className="recent-activity__heading">Recent</span>
+          </h3>
+          <div className="recent-activity__list">
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Don't render if no activity
   if (!hasCaptures && !hasDiscussions) {
     return null;
   }
@@ -145,10 +166,11 @@ export function RecentActivity({
             <span className="recent-activity__heading">Recent: Captures</span>
           </h3>
           <div className="recent-activity__list">
-            {recentNotes.map((note) => (
+            {recentNotes.map((note, index) => (
               <CaptureCard
                 key={note.id}
                 note={note}
+                animationDelay={index * 50}
                 onView={() => handleViewCapture(note.date)}
               />
             ))}
@@ -162,11 +184,12 @@ export function RecentActivity({
             <span className="recent-activity__heading">Recent: Discussions</span>
           </h3>
           <div className="recent-activity__list">
-            {recentDiscussions.map((discussion) => (
+            {recentDiscussions.map((discussion, index) => (
               <DiscussionCard
                 key={discussion.sessionId}
                 discussion={discussion}
                 isActive={discussion.sessionId === sessionId}
+                animationDelay={index * 50}
                 onResume={() => handleResumeDiscussion(discussion.sessionId)}
                 onDelete={() => handleDeleteClick(discussion.sessionId)}
               />
@@ -188,19 +211,38 @@ export function RecentActivity({
 }
 
 /**
+ * Skeleton card for loading state.
+ */
+function SkeletonCard(): React.ReactNode {
+  return (
+    <article className="recent-activity__card recent-activity__card--skeleton">
+      <div className="recent-activity__skeleton-text" />
+      <div className="recent-activity__skeleton-footer">
+        <div className="recent-activity__skeleton-meta" />
+        <div className="recent-activity__skeleton-action" />
+      </div>
+    </article>
+  );
+}
+
+/**
  * Card for displaying a recent capture.
  */
 interface CaptureCardProps {
   note: RecentNoteEntry;
+  animationDelay?: number;
   onView: () => void;
 }
 
-function CaptureCard({ note, onView }: CaptureCardProps): React.ReactNode {
+function CaptureCard({ note, animationDelay = 0, onView }: CaptureCardProps): React.ReactNode {
   const relativeDate = formatRelativeDate(note.date);
   const showDate = relativeDate !== "Today";
 
   return (
-    <article className="recent-activity__card recent-activity__card--capture">
+    <article
+      className="recent-activity__card recent-activity__card--capture recent-activity__card--enter"
+      style={{ animationDelay: `${animationDelay}ms` }}
+    >
       <p className="recent-activity__text">{note.text}</p>
       <div className="recent-activity__footer">
         <div className="recent-activity__meta">
@@ -228,6 +270,7 @@ function CaptureCard({ note, onView }: CaptureCardProps): React.ReactNode {
 interface DiscussionCardProps {
   discussion: RecentDiscussionEntry;
   isActive: boolean;
+  animationDelay?: number;
   onResume: () => void;
   onDelete: () => void;
 }
@@ -235,6 +278,7 @@ interface DiscussionCardProps {
 function DiscussionCard({
   discussion,
   isActive,
+  animationDelay = 0,
   onResume,
   onDelete,
 }: DiscussionCardProps): React.ReactNode {
@@ -242,7 +286,10 @@ function DiscussionCard({
   const showDate = relativeDate !== "Today";
 
   return (
-    <article className="recent-activity__card recent-activity__card--discussion">
+    <article
+      className="recent-activity__card recent-activity__card--discussion recent-activity__card--enter"
+      style={{ animationDelay: `${animationDelay}ms` }}
+    >
       <p className="recent-activity__text">{discussion.preview}</p>
       <div className="recent-activity__footer">
         <div className="recent-activity__meta">

@@ -194,6 +194,7 @@ describe("getMeetingsDirectory", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
     const dir = getMeetingsDirectory(vault);
     expect(dir).toBe("/vaults/test/00_Inbox/meetings");
@@ -215,6 +216,7 @@ describe("getMeetingsDirectory", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
     const dir = getMeetingsDirectory(vault);
     expect(dir).toBe("/vaults/custom/Custom/Inbox/meetings");
@@ -377,6 +379,7 @@ describe("startMeeting Integration", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
   });
 
@@ -489,6 +492,7 @@ describe("captureToMeeting Integration", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
 
     // Start a meeting to get active meeting state
@@ -614,6 +618,7 @@ describe("stopMeeting Integration", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
   });
 
@@ -718,6 +723,7 @@ describe("Edge Cases", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
   });
 

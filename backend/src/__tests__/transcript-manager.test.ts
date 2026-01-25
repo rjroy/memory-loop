@@ -323,6 +323,7 @@ describe("getTranscriptsDirectory", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
     const dir = getTranscriptsDirectory(vault);
     expect(dir).toBe("/vaults/test-vault/00_Inbox/chats");
@@ -344,6 +345,7 @@ describe("getTranscriptsDirectory", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
     const dir = getTranscriptsDirectory(vault);
     expect(dir).toBe("/vaults/test-vault/Custom/Inbox/chats");
@@ -365,6 +367,7 @@ describe("getTranscriptsDirectory", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
     const dir = getTranscriptsDirectory(vault);
     expect(dir).toBe("/vaults/test-vault/content/00_Inbox/chats");
@@ -424,6 +427,7 @@ describe("Transcript Integration", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
   });
 

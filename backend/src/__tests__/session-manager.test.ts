@@ -69,6 +69,7 @@ function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     badges: [],
     ...overrides,
     order: overrides.order ?? 999999,
+    cardsEnabled: overrides.cardsEnabled ?? true,
   };
 }
 

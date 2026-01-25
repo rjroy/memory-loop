@@ -180,14 +180,23 @@ async function discoverMarkdownFiles(
 
 /**
  * Discover all markdown files across all vaults.
+ * Skips vaults with cardsEnabled === false.
  *
  * @returns Array of files to process
  */
 export async function discoverAllFiles(): Promise<FileToProcess[]> {
   const vaults = await discoverVaults();
   const allFiles: FileToProcess[] = [];
+  let skippedVaults = 0;
 
   for (const vault of vaults) {
+    // Skip vaults with card discovery disabled
+    if (!vault.cardsEnabled) {
+      log.debug(`Skipping vault ${vault.name}: card discovery disabled`);
+      skippedVaults++;
+      continue;
+    }
+
     try {
       const vaultFiles = await discoverMarkdownFiles(vault.contentRoot, vault);
       allFiles.push(...vaultFiles);
@@ -198,7 +207,8 @@ export async function discoverAllFiles(): Promise<FileToProcess[]> {
     }
   }
 
-  log.info(`Discovered ${allFiles.length} total markdown files across ${vaults.length} vaults`);
+  const enabledVaults = vaults.length - skippedVaults;
+  log.info(`Discovered ${allFiles.length} total markdown files across ${enabledVaults} vaults (${skippedVaults} skipped)`);
   return allFiles;
 }
 

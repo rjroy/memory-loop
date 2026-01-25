@@ -49,6 +49,7 @@ export interface Badge {
  * @property quotesPerWeek - Number of quotes to generate per week (default: 1)
  * @property badges - Custom badges configured in .memory-loop.json
  * @property order - Display order for vault selection (lower values first, Infinity for unset)
+ * @property cardsEnabled - Whether spaced repetition card discovery is enabled (default: true)
  */
 export interface VaultInfo {
   id: string;
@@ -70,6 +71,7 @@ export interface VaultInfo {
   recentDiscussions?: number;
   badges: Badge[];
   order: number;
+  cardsEnabled: boolean;
 }
 
 /**

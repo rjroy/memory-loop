@@ -54,6 +54,7 @@ export interface EditableVaultConfig {
   recentDiscussions?: number; // 1-20
   badges?: Badge[]; // max 5
   order?: number; // display order on vault selection screen
+  cardsEnabled?: boolean; // whether spaced repetition card discovery is enabled
 }
 
 export interface ConfigEditorDialogProps {
@@ -85,6 +86,7 @@ function hasConfigChanged(
   if (initial.recentCaptures !== current.recentCaptures) return true;
   if (initial.recentDiscussions !== current.recentDiscussions) return true;
   if (initial.order !== current.order) return true;
+  if (initial.cardsEnabled !== current.cardsEnabled) return true;
 
   // Compare badges array
   const initialBadges = initial.badges ?? [];
@@ -339,6 +341,7 @@ export function ConfigEditorDialog({
   const quotesPerWeekId = useId();
   const recentCapturesId = useId();
   const recentDiscussionsId = useId();
+  const cardsEnabledId = useId();
 
   // Form state - initialized from initialConfig
   const [formState, setFormState] = useState<EditableVaultConfig>(initialConfig);
@@ -743,6 +746,35 @@ export function ConfigEditorDialog({
                     {formState.recentCaptures ?? 5}
                   </span>
                 </div>
+              </div>
+            </section>
+
+            {/* Spaced Repetition Settings Section */}
+            <section className="config-editor__section">
+              <h3 className="config-editor__section-title">Spaced Repetition</h3>
+              <p className="config-editor__section-description">
+                Configure flashcard discovery for this vault.
+              </p>
+
+              <div className="config-editor__checkbox-field">
+                <label className="config-editor__checkbox-label">
+                  <input
+                    id={cardsEnabledId}
+                    type="checkbox"
+                    className="config-editor__checkbox"
+                    checked={formState.cardsEnabled ?? true}
+                    onChange={(e) =>
+                      setFormState((prev) => ({
+                        ...prev,
+                        cardsEnabled: e.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Enable Card Discovery</span>
+                </label>
+                <p className="config-editor__field-hint">
+                  Scan notes in this vault to create spaced repetition flashcards.
+                </p>
               </div>
             </section>
           </div>

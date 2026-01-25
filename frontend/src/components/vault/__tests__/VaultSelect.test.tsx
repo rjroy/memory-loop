@@ -68,6 +68,7 @@ const testVaults: VaultInfo[] = [
     quotesPerWeek: 1,
     badges: [{ text: "Primary", color: "blue" }],
     order: 1,
+    cardsEnabled: true,
   },
   {
     id: "vault-2",
@@ -85,6 +86,7 @@ const testVaults: VaultInfo[] = [
     quotesPerWeek: 1,
     badges: [],
     order: 2,
+    cardsEnabled: true,
   },
 ];
 
@@ -780,6 +782,7 @@ describe("VaultSelect", () => {
         quotesPerWeek: 1,
         badges: [],
         order: 999,
+        cardsEnabled: true,
       };
 
       wsInstances[0].simulateMessage({

@@ -67,6 +67,7 @@ export const EditableVaultConfigSchema = z.object({
   recentDiscussions: z.number().int().min(1).max(20).optional(),
   badges: z.array(EditableBadgeSchema).max(5).optional(),
   order: z.number().int().min(1).optional(),
+  cardsEnabled: z.boolean().optional(),
 });
 
 // =============================================================================
@@ -96,6 +97,7 @@ export const VaultInfoSchema = z.object({
   recentDiscussions: z.number().int().positive().optional(),
   badges: z.array(BadgeSchema),
   order: z.number(), // Can be Infinity for unset vaults
+  cardsEnabled: z.boolean(),
 });
 
 // =============================================================================

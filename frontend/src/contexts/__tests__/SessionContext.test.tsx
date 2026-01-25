@@ -49,6 +49,7 @@ const testVault: VaultInfo = {
   quotesPerWeek: 1,
   badges: [],
   order: 999999,
+    cardsEnabled: true,
 };
 
 const testVault2: VaultInfo = {
@@ -66,6 +67,7 @@ const testVault2: VaultInfo = {
   quotesPerWeek: 1,
   badges: [],
   order: 999999,
+    cardsEnabled: true,
 };
 
 describe("SessionContext", () => {

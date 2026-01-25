@@ -18,6 +18,7 @@ import type {
   ConversationMessageProtocol,
   HealthIssue,
   MeetingState,
+  EditableVaultConfig,
 } from "@memory-loop/shared";
 
 /**
@@ -303,6 +304,9 @@ export interface SessionActions {
   setMeetingState: (state: MeetingState) => void;
   /** Clear meeting state (meeting stopped or vault changed) */
   clearMeeting: () => void;
+  // Vault config actions
+  /** Update vault config fields after successful save */
+  updateVaultConfig: (config: EditableVaultConfig) => void;
 }
 
 /**

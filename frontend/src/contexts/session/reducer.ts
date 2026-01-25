@@ -18,6 +18,7 @@ import type {
   ToolInvocation,
   HealthIssue,
   MeetingState,
+  EditableVaultConfig,
 } from "@memory-loop/shared";
 
 import type {
@@ -99,7 +100,9 @@ export type SessionAction =
   | { type: "DISMISS_HEALTH_ISSUE"; issueId: string }
   // Meeting actions
   | { type: "SET_MEETING_STATE"; state: MeetingState }
-  | { type: "CLEAR_MEETING" };
+  | { type: "CLEAR_MEETING" }
+  // Vault config update
+  | { type: "UPDATE_VAULT_CONFIG"; config: EditableVaultConfig };
 
 // ----------------------------------------------------------------------------
 // Helper functions for reducer
@@ -704,6 +707,28 @@ export function sessionReducer(
       return {
         ...state,
         meeting: { isActive: false },
+      };
+
+    // Vault config update - merges editable config fields into current vault
+    case "UPDATE_VAULT_CONFIG":
+      if (!state.vault) return state;
+      return {
+        ...state,
+        vault: {
+          ...state.vault,
+          // Apply editable fields from config
+          name: action.config.title ?? state.vault.name,
+          subtitle: action.config.subtitle,
+          discussionModel: action.config.discussionModel ?? state.vault.discussionModel,
+          promptsPerGeneration: action.config.promptsPerGeneration ?? state.vault.promptsPerGeneration,
+          maxPoolSize: action.config.maxPoolSize ?? state.vault.maxPoolSize,
+          quotesPerWeek: action.config.quotesPerWeek ?? state.vault.quotesPerWeek,
+          recentCaptures: action.config.recentCaptures ?? state.vault.recentCaptures,
+          recentDiscussions: action.config.recentDiscussions ?? state.vault.recentDiscussions,
+          badges: action.config.badges ?? state.vault.badges,
+          order: action.config.order ?? state.vault.order,
+          cardsEnabled: action.config.cardsEnabled ?? state.vault.cardsEnabled,
+        },
       };
 
     default:

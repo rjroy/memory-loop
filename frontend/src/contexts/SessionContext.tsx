@@ -28,6 +28,7 @@ import type {
   ContextSnippet,
   HealthIssue,
   MeetingState,
+  EditableVaultConfig,
 } from "@memory-loop/shared";
 
 import {
@@ -427,6 +428,11 @@ export function SessionProvider({
     dispatch({ type: "CLEAR_MEETING" });
   }, []);
 
+  // Vault config actions
+  const updateVaultConfig = useCallback((config: EditableVaultConfig) => {
+    dispatch({ type: "UPDATE_VAULT_CONFIG", config });
+  }, []);
+
   const value: SessionContextValue = {
     ...state,
     selectVault,
@@ -487,6 +493,7 @@ export function SessionProvider({
     dismissHealthIssue,
     setMeetingState,
     clearMeeting,
+    updateVaultConfig,
   };
 
   return (

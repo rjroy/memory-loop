@@ -124,8 +124,12 @@ export function HomeView(): React.ReactNode {
   const { getGoals, getInspiration } = useHome(vault?.id);
   const { deleteSession } = useSessions(vault?.id);
 
-  // Inspiration state
+  // Loading states
   const [inspirationLoading, setInspirationLoading] = useState(true);
+  const [goalsLoading, setGoalsLoading] = useState(true);
+  const [activityLoading, setActivityLoading] = useState(true);
+
+  // Inspiration state
   const [inspirationContextual, setInspirationContextual] =
     useState<InspirationItem | null>(null);
   const [inspirationQuote, setInspirationQuote] =
@@ -154,38 +158,58 @@ export function HomeView(): React.ReactNode {
     const vaultId = vault.id;
     console.log(`[HomeView] Loading data for vault: ${vaultId}`);
 
+    // Reset loading states for new vault
+    setActivityLoading(true);
+    setGoalsLoading(true);
+    setInspirationLoading(true);
+
     // Load recent activity
-    getRecentActivity().then((activity) => {
-      console.log(`[HomeView] Recent activity loaded:`, activity);
-      if (activity) {
-        setRecentNotes(activity.captures);
-        setRecentDiscussions(activity.discussions);
-      }
-    }).catch((err) => console.error(`[HomeView] Failed to load activity:`, err));
+    getRecentActivity()
+      .then((activity) => {
+        console.log(`[HomeView] Recent activity loaded:`, activity);
+        if (activity) {
+          setRecentNotes(activity.captures);
+          setRecentDiscussions(activity.discussions);
+        }
+        setActivityLoading(false);
+      })
+      .catch((err) => {
+        console.error(`[HomeView] Failed to load activity:`, err);
+        setActivityLoading(false);
+      });
 
     // Load goals (only if vault has goalsPath)
     if (vault.goalsPath) {
-      getGoals().then((content) => {
-        console.log(`[HomeView] Goals loaded:`, content?.slice(0, 50));
-        if (content !== null) {
-          setGoals(content);
-        }
-      }).catch((err) => console.error(`[HomeView] Failed to load goals:`, err));
+      getGoals()
+        .then((content) => {
+          console.log(`[HomeView] Goals loaded:`, content?.slice(0, 50));
+          if (content !== null) {
+            setGoals(content);
+          }
+          setGoalsLoading(false);
+        })
+        .catch((err) => {
+          console.error(`[HomeView] Failed to load goals:`, err);
+          setGoalsLoading(false);
+        });
+    } else {
+      setGoalsLoading(false);
     }
 
     // Load inspiration
-    setInspirationLoading(true);
-    getInspiration().then((result) => {
-      console.log(`[HomeView] Inspiration loaded:`, result);
-      if (result) {
-        setInspirationContextual(result.contextual);
-        setInspirationQuote(result.quote);
-      }
-      setInspirationLoading(false);
-    }).catch((err) => {
-      console.error(`[HomeView] Failed to load inspiration:`, err);
-      setInspirationLoading(false);
-    });
+    getInspiration()
+      .then((result) => {
+        console.log(`[HomeView] Inspiration loaded:`, result);
+        if (result) {
+          setInspirationContextual(result.contextual);
+          setInspirationQuote(result.quote);
+        }
+        setInspirationLoading(false);
+      })
+      .catch((err) => {
+        console.error(`[HomeView] Failed to load inspiration:`, err);
+        setInspirationLoading(false);
+      });
   }, [vault?.id, getRecentActivity, getGoals, getInspiration, setRecentNotes, setRecentDiscussions, setGoals]);
 
   // Determine which debrief buttons to show (single Date for consistency)
@@ -234,23 +258,21 @@ export function HomeView(): React.ReactNode {
         )}
       </section>
 
-      {/* Inspiration */}
-      {inspirationQuote && (
-        <InspirationCard
-          contextual={inspirationContextual}
-          quote={inspirationQuote}
-          isLoading={inspirationLoading}
-        />
-      )}
+      {/* Inspiration - always rendered, shows skeleton when loading */}
+      <InspirationCard
+        contextual={inspirationContextual}
+        quote={inspirationQuote}
+        isLoading={inspirationLoading}
+      />
 
-      {/* Spaced Repetition - renders null internally when no cards due */}
+      {/* Spaced Repetition - shows idle state when no cards due */}
       <SpacedRepetitionWidget vaultId={vault?.id} />
 
       {/* Goals */}
-      <GoalsCard />
+      <GoalsCard isLoading={goalsLoading} />
 
       {/* Recent Activity */}
-      <RecentActivity onDeleteSession={handleDeleteSession} />
+      <RecentActivity isLoading={activityLoading} onDeleteSession={handleDeleteSession} />
 
       {/* Health Issues */}
       <HealthPanel />

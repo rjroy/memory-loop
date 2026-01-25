@@ -33,8 +33,13 @@ export interface SpacedRepetitionWidgetProps {
 
 /**
  * Widget state machine phases.
+ * - loading: Initial fetch in progress
+ * - idle: No cards due today
+ * - question: Showing question, awaiting user input
+ * - revealed: Answer shown, awaiting self-assessment
+ * - complete: All cards reviewed for this session
  */
-type WidgetPhase = "loading" | "question" | "revealed" | "complete";
+type WidgetPhase = "loading" | "idle" | "question" | "revealed" | "complete";
 
 /**
  * Internal widget state.
@@ -53,6 +58,8 @@ interface WidgetState {
   initialCount: number;
   /** Whether we've started a review session */
   sessionStarted: boolean;
+  /** Whether the initial fetch failed (hide widget on error) */
+  fetchFailed: boolean;
 }
 
 const INITIAL_STATE: WidgetState = {
@@ -63,6 +70,7 @@ const INITIAL_STATE: WidgetState = {
   queue: [],
   initialCount: 0,
   sessionStarted: false,
+  fetchFailed: false,
 };
 
 /**
@@ -117,11 +125,23 @@ export function SpacedRepetitionWidget({
 
     getDueCards()
       .then((result) => {
-        if (!result || result.count === 0) {
-          setState(INITIAL_STATE);
+        // API error (returns null on failure) - hide widget
+        if (result === null) {
+          setState({ ...INITIAL_STATE, fetchFailed: true });
           return;
         }
 
+        // No cards due - show idle state
+        if (result.count === 0) {
+          setState({
+            ...INITIAL_STATE,
+            phase: "idle",
+            sessionStarted: true,
+          });
+          return;
+        }
+
+        // Cards available - show first question
         const cards = result.cards;
         setState({
           phase: "question",
@@ -131,10 +151,12 @@ export function SpacedRepetitionWidget({
           queue: cards.slice(1),
           initialCount: result.count,
           sessionStarted: true,
+          fetchFailed: false,
         });
       })
       .catch(() => {
-        setState(INITIAL_STATE);
+        // Unexpected error - hide widget
+        setState({ ...INITIAL_STATE, fetchFailed: true });
       });
   }, [vaultId, getDueCards]);
 
@@ -305,12 +327,15 @@ export function SpacedRepetitionWidget({
     [handleShowAnswer]
   );
 
-  // Don't render if no vault or if we haven't loaded cards yet
+  // Don't render if no vault or if initial fetch failed
   if (!vaultId) return null;
-  if (!state.sessionStarted) return null;
+  if (state.fetchFailed) return null;
 
-  // Calculate remaining cards for header
+  // Calculate remaining cards for header (0 during loading/idle)
   const remainingCount = state.queue.length + (state.currentCard ? 1 : 0);
+
+  // Show loading state during initial fetch
+  const showLoading = state.phase === "loading";
 
   return (
     <>
@@ -321,16 +346,27 @@ export function SpacedRepetitionWidget({
         {/* Header */}
         <header className="spaced-repetition-widget__header">
           <h3 className="spaced-repetition-widget__title">Spaced Repetition</h3>
-          <span className="spaced-repetition-widget__count">
-            {remainingCount} {remainingCount === 1 ? "card" : "cards"}
-          </span>
+          {!showLoading && state.phase !== "idle" && (
+            <span className="spaced-repetition-widget__count">
+              {remainingCount} {remainingCount === 1 ? "card" : "cards"}
+            </span>
+          )}
         </header>
 
         {/* Loading state */}
-        {state.phase === "loading" && (
+        {showLoading && (
           <div className="spaced-repetition-widget__loading">
             <div className="spaced-repetition-widget__spinner" />
             <span>Loading cards...</span>
+          </div>
+        )}
+
+        {/* Idle state - no cards due */}
+        {state.phase === "idle" && (
+          <div className="spaced-repetition-widget__idle">
+            <span className="spaced-repetition-widget__idle-message">
+              No cards due today
+            </span>
           </div>
         )}
 

@@ -168,15 +168,15 @@ describe("SpacedRepetitionWidget", () => {
       expect(container.firstChild).toBeNull();
     });
 
-    it("renders nothing when no cards are due", async () => {
+    it("shows idle state when no cards are due", async () => {
       const mockFetch = createMockFetch({ dueCards: { cards: [], count: 0 } });
-      const { container } = renderWithSession(
+      renderWithSession(
         <SpacedRepetitionWidget vaultId="test-vault" fetchFn={mockFetch} />
       );
 
-      // Wait for the fetch to complete
+      // Wait for the fetch to complete and show idle state
       await waitFor(() => {
-        expect(container.firstChild).toBeNull();
+        expect(screen.getByText("No cards due today")).toBeDefined();
       });
     });
 

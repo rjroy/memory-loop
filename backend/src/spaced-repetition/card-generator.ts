@@ -319,7 +319,6 @@ export class QACardGenerator implements CardTypeGenerator {
           model: GENERATION_MODEL,
           maxTurns: 1,
           allowedTools: [], // No tools needed for extraction
-          settingSources: ["local", "project", "user"],
         },
       });
 

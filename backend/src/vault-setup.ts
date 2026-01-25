@@ -662,6 +662,7 @@ export async function updateClaudeMd(
         maxTurns: 10,
         allowedTools: ["Read", "Edit"],
         permissionMode: "acceptEdits",
+        settingSources: ["local", "project", "user"],
       },
     });
 

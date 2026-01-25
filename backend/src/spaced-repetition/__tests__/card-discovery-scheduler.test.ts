@@ -243,6 +243,53 @@ describe("discoverAllFiles", () => {
     expect(noteFile!.size).toBe(Buffer.byteLength(content));
     expect(noteFile!.mtime instanceof Date).toBe(true);
   });
+
+  it("skips vaults with cardsEnabled set to false", async () => {
+    // Create vault with cardsEnabled false
+    const disabledVault = await createTestVault(join(testDir, "vaults"), "disabled-vault");
+    await writeFile(
+      join(disabledVault, ".memory-loop.json"),
+      JSON.stringify({ cardsEnabled: false })
+    );
+    await createMarkdownFile(disabledVault, "note-in-disabled.md", "# Disabled vault note");
+
+    // Create vault with cardsEnabled true (or default)
+    const enabledVault = await createTestVault(join(testDir, "vaults"), "enabled-vault");
+    await createMarkdownFile(enabledVault, "note-in-enabled.md", "# Enabled vault note");
+
+    const files = await discoverAllFiles();
+
+    // Should find files from enabled vault
+    expect(files.some((f) => f.relativePath === "note-in-enabled.md")).toBe(true);
+
+    // Should NOT find files from disabled vault
+    expect(files.some((f) => f.relativePath === "note-in-disabled.md")).toBe(false);
+    expect(files.some((f) => f.vault.name === "disabled-vault")).toBe(false);
+  });
+
+  it("includes vaults with cardsEnabled set to true", async () => {
+    // Create vault with explicit cardsEnabled true
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "explicit-enabled-vault");
+    await writeFile(
+      join(vaultPath, ".memory-loop.json"),
+      JSON.stringify({ cardsEnabled: true })
+    );
+    await createMarkdownFile(vaultPath, "note.md", "# Test Note");
+
+    const files = await discoverAllFiles();
+
+    expect(files.some((f) => f.relativePath === "note.md")).toBe(true);
+  });
+
+  it("includes vaults without cardsEnabled setting (default true)", async () => {
+    // Create vault without .memory-loop.json
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "default-vault");
+    await createMarkdownFile(vaultPath, "default-note.md", "# Default Note");
+
+    const files = await discoverAllFiles();
+
+    expect(files.some((f) => f.relativePath === "default-note.md")).toBe(true);
+  });
 });
 
 // =============================================================================

@@ -32,6 +32,8 @@ export function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     ...overrides,
     // Ensure order is always a number (Partial<VaultInfo> allows undefined)
     order: overrides.order ?? 999999,
+    // Ensure cardsEnabled is always a boolean
+    cardsEnabled: overrides.cardsEnabled ?? true,
   };
 }
 

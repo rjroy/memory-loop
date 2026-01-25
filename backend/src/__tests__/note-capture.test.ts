@@ -580,6 +580,7 @@ describe("captureToDaily Integration", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
   });
 
@@ -810,6 +811,7 @@ describe("Edge Cases", () => {
       quotesPerWeek: 1,
       badges: [],
       order: 999999,
+    cardsEnabled: true,
     };
   });
 

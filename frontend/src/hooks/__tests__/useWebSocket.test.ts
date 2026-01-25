@@ -264,6 +264,7 @@ describe("useWebSocket", () => {
             quotesPerWeek: 1,
             badges: [],
             order: 999999,
+            cardsEnabled: true,
           },
         ],
       };

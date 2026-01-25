@@ -354,6 +354,7 @@ describe("getVaultFromContext", () => {
         quotesPerWeek: 1,
         badges: [],
         order: Infinity,
+        cardsEnabled: true,
       };
       c.set("vault", mockVault);
 

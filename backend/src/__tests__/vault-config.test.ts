@@ -19,6 +19,7 @@ import {
   DEFAULT_MAX_POOL_SIZE,
   DEFAULT_QUOTES_PER_WEEK,
   DEFAULT_DISCUSSION_MODEL,
+  DEFAULT_CARDS_ENABLED,
   VALID_DISCUSSION_MODELS,
   loadVaultConfig,
   loadSlashCommands,
@@ -35,6 +36,7 @@ import {
   resolveBadges,
   resolvePinnedAssets,
   resolveDiscussionModel,
+  resolveCardsEnabled,
   saveSlashCommands,
   savePinnedAssets,
   saveVaultConfig,
@@ -113,6 +115,12 @@ describe("vault-config", () => {
   describe("VALID_DISCUSSION_MODELS", () => {
     test("exports expected valid model options", () => {
       expect(VALID_DISCUSSION_MODELS).toEqual(["opus", "sonnet", "haiku"]);
+    });
+  });
+
+  describe("DEFAULT_CARDS_ENABLED", () => {
+    test("exports expected default cards enabled value", () => {
+      expect(DEFAULT_CARDS_ENABLED).toBe(true);
     });
   });
 
@@ -767,6 +775,84 @@ describe("vault-config", () => {
     test("returns configured discussionModel haiku", () => {
       const result = resolveDiscussionModel({ discussionModel: "haiku" });
       expect(result).toBe("haiku");
+    });
+  });
+
+  describe("loadVaultConfig with cardsEnabled", () => {
+    test("loads config with cardsEnabled true", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ cardsEnabled: true })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.cardsEnabled).toBe(true);
+    });
+
+    test("loads config with cardsEnabled false", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ cardsEnabled: false })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.cardsEnabled).toBe(false);
+    });
+
+    test("ignores non-boolean cardsEnabled value", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ cardsEnabled: "true" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.cardsEnabled).toBeUndefined();
+    });
+
+    test("ignores numeric cardsEnabled value", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ cardsEnabled: 1 })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.cardsEnabled).toBeUndefined();
+    });
+
+    test("loads cardsEnabled alongside other fields", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          contentRoot: "content",
+          cardsEnabled: false,
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.contentRoot).toBe("content");
+      expect(config.cardsEnabled).toBe(false);
+    });
+  });
+
+  describe("resolveCardsEnabled", () => {
+    test("returns default (true) when cardsEnabled not configured", () => {
+      const result = resolveCardsEnabled({});
+      expect(result).toBe(true);
+    });
+
+    test("returns default (true) when cardsEnabled is undefined", () => {
+      const result = resolveCardsEnabled({ cardsEnabled: undefined });
+      expect(result).toBe(true);
+    });
+
+    test("returns true when cardsEnabled is true", () => {
+      const result = resolveCardsEnabled({ cardsEnabled: true });
+      expect(result).toBe(true);
+    });
+
+    test("returns false when cardsEnabled is false", () => {
+      const result = resolveCardsEnabled({ cardsEnabled: false });
+      expect(result).toBe(false);
     });
   });
 
@@ -1636,6 +1722,61 @@ describe("vault-config", () => {
       expect(content.endsWith("\n")).toBe(true);
       // Should be valid JSON
       expect(() => JSON.parse(content) as unknown).not.toThrow();
+    });
+
+    test("saves cardsEnabled field correctly", async () => {
+      const editableConfig: EditableVaultConfig = {
+        title: "Test Vault",
+        cardsEnabled: false,
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.title).toBe("Test Vault");
+      expect(parsed.cardsEnabled).toBe(false);
+    });
+
+    test("preserves cardsEnabled false when updating other fields", async () => {
+      // Create existing config with cardsEnabled
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ cardsEnabled: false })
+      );
+
+      const editableConfig: EditableVaultConfig = {
+        title: "New Title",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.title).toBe("New Title");
+      expect(parsed.cardsEnabled).toBe(false);
+    });
+
+    test("updates cardsEnabled when explicitly set", async () => {
+      // Create existing config with cardsEnabled false
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ cardsEnabled: false, title: "Vault" })
+      );
+
+      const editableConfig: EditableVaultConfig = {
+        cardsEnabled: true,
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.cardsEnabled).toBe(true);
+      expect(parsed.title).toBe("Vault");
     });
   });
 });

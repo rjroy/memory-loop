@@ -143,6 +143,13 @@ export interface VaultConfig {
    * Default: Infinity (sorted last)
    */
   order?: number;
+
+  /**
+   * Whether spaced repetition card discovery is enabled for this vault.
+   * When false, this vault is skipped during card discovery passes.
+   * Default: true
+   */
+  cardsEnabled?: boolean;
 }
 
 /**
@@ -211,6 +218,12 @@ export const DEFAULT_DISCUSSION_MODEL: DiscussionModel = "opus";
  * Note: Cannot use Infinity as it's not JSON-serializable.
  */
 export const DEFAULT_ORDER = 999999;
+
+/**
+ * Default value for card discovery enabled.
+ * When true (default), the vault participates in spaced repetition card discovery.
+ */
+export const DEFAULT_CARDS_ENABLED = true;
 
 /**
  * Valid badge color names.
@@ -317,6 +330,11 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
     // Validate order (must be a finite number)
     if (typeof obj.order === "number" && Number.isFinite(obj.order)) {
       config.order = obj.order;
+    }
+
+    // Validate cardsEnabled (must be a boolean)
+    if (typeof obj.cardsEnabled === "boolean") {
+      config.cardsEnabled = obj.cardsEnabled;
     }
 
     // Validate badges array
@@ -542,6 +560,16 @@ export function resolveOrder(config: VaultConfig): number {
 }
 
 /**
+ * Resolves whether card discovery is enabled for this vault.
+ *
+ * @param config - Vault configuration
+ * @returns true if card discovery is enabled (default: true)
+ */
+export function resolveCardsEnabled(config: VaultConfig): boolean {
+  return config.cardsEnabled ?? DEFAULT_CARDS_ENABLED;
+}
+
+/**
  * Saves pinned assets to the vault configuration file.
  * Preserves existing configuration fields while updating pinnedAssets.
  *
@@ -595,7 +623,8 @@ function isAllDefaults(config: EditableVaultConfig): boolean {
     config.recentCaptures === undefined &&
     config.recentDiscussions === undefined &&
     (config.badges === undefined || config.badges.length === 0) &&
-    config.order === undefined
+    config.order === undefined &&
+    config.cardsEnabled === undefined
   );
 }
 
@@ -674,6 +703,9 @@ export async function saveVaultConfig(
     }
     if (editableConfig.order !== undefined) {
       mergedConfig.order = editableConfig.order;
+    }
+    if (editableConfig.cardsEnabled !== undefined) {
+      mergedConfig.cardsEnabled = editableConfig.cardsEnabled;
     }
 
     // Write merged config back to file

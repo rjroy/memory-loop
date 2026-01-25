@@ -661,6 +661,7 @@ describe("Filesystem Integration", () => {
         quotesPerWeek: 1,
         badges: [],
         order: 999999,
+    cardsEnabled: true,
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/00_Inbox");
@@ -682,6 +683,7 @@ describe("Filesystem Integration", () => {
         quotesPerWeek: 1,
         badges: [],
         order: 999999,
+    cardsEnabled: true,
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/Custom/Inbox");
@@ -703,6 +705,7 @@ describe("Filesystem Integration", () => {
         quotesPerWeek: 1,
         badges: [],
         order: 999999,
+    cardsEnabled: true,
       };
 
       expect(getVaultInboxPath(vault)).toBe("/vaults/test-vault/content/00_Inbox");
@@ -894,6 +897,7 @@ describe("Goals Feature", () => {
         quotesPerWeek: 1,
         badges: [],
         order: 999999,
+    cardsEnabled: true,
       };
 
       const goals = await getVaultGoals(vault);
@@ -928,6 +932,7 @@ describe("Goals Feature", () => {
         quotesPerWeek: 1,
         badges: [],
         order: 999999,
+    cardsEnabled: true,
       };
 
       const content = await getVaultGoals(vault);
@@ -951,6 +956,7 @@ describe("Goals Feature", () => {
         quotesPerWeek: 1,
         badges: [],
         order: 999999,
+    cardsEnabled: true,
       };
 
       const goals = await getVaultGoals(vault);

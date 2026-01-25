@@ -24,6 +24,7 @@ import {
   resolveDiscussionModel,
   resolveBadges,
   resolveOrder,
+  resolveCardsEnabled,
   type VaultConfig,
 } from "./vault-config";
 
@@ -341,6 +342,7 @@ export async function parseVault(
     recentDiscussions: resolveRecentDiscussions(config),
     badges: resolveBadges(config),
     order: resolveOrder(config),
+    cardsEnabled: resolveCardsEnabled(config),
   };
 }
 

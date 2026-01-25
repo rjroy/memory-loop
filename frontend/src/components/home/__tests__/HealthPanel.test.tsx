@@ -65,6 +65,7 @@ const testVault: VaultInfo = {
   quotesPerWeek: 1,
   badges: [],
   order: 999999,
+    cardsEnabled: true,
 };
 
 beforeEach(() => {

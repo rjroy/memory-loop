@@ -51,6 +51,7 @@ beforeEach(async () => {
     quotesPerWeek: 1,
     badges: [],
     order: 0,
+    cardsEnabled: true,
   };
   sentMessages = [];
   sentErrors = [];

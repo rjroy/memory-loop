@@ -836,6 +836,52 @@ Test
       expect(dueCards[2].metadata.id).toBe("550e8400-e29b-41d4-a716-446655440022"); // 2026-01-23
     });
 
+    test("uses date-seeded secondary sort for cards with same next_review", async () => {
+      const today = "2026-01-23";
+
+      // Create 6 cards all due on the same date using valid UUIDs
+      // With 6 cards (720 permutations), chance of same order on different day is < 0.2%
+      const cardIds = [
+        "a1b2c3d4-e5f6-4a1b-8c2d-100000000001",
+        "b2c3d4e5-f6a1-4b2c-9d3e-200000000002",
+        "c3d4e5f6-a1b2-4c3d-ae4f-300000000003",
+        "d4e5f6a1-b2c3-4d4e-bf5a-400000000004",
+        "e5f6a1b2-c3d4-4e5f-8a6b-500000000005",
+        "f6a1b2c3-d4e5-4f6a-9b7c-600000000006",
+      ];
+
+      for (let i = 0; i < cardIds.length; i++) {
+        const card: Card = {
+          metadata: {
+            id: cardIds[i],
+            type: "qa",
+            created_date: "2026-01-20",
+            last_reviewed: "2026-01-20",
+            next_review: "2026-01-23",
+            ease_factor: 2.5,
+            interval: 3,
+            repetitions: 1,
+          },
+          content: { question: `Q${i}`, answer: `A${i}` },
+        };
+        await saveCard(vault, card);
+      }
+
+      // Same date should produce same order
+      const firstLoad = await loadDueCards(vault, today);
+      const secondLoad = await loadDueCards(vault, today);
+      expect(firstLoad.map((c) => c.metadata.id)).toEqual(
+        secondLoad.map((c) => c.metadata.id)
+      );
+
+      // Different date should produce different order
+      const differentDay = await loadDueCards(vault, "2026-01-24");
+      const sameOrderAsDifferentDay =
+        firstLoad.map((c) => c.metadata.id).join(",") ===
+        differentDay.map((c) => c.metadata.id).join(",");
+      expect(sameOrderAsDifferentDay).toBe(false);
+    });
+
     test("returns empty array when no cards are due", async () => {
       const today = "2026-01-20";
       const card: Card = {

@@ -419,22 +419,64 @@ export async function loadAllCards(vault: VaultPathInfo): Promise<Card[]> {
 }
 
 /**
+ * Hash a string to a 32-bit integer using djb2 variant.
+ */
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+  return hash;
+}
+
+/**
+ * Generate a deterministic hash for sorting cards.
+ * Uses a pre-computed seed hash to avoid recalculating it for each comparison.
+ * This prevents sequence effects where users recognize cards by position.
+ *
+ * @param seedHash - Pre-computed hash of the date seed
+ * @param cardId - Card ID to hash
+ * @returns Numeric hash for sorting
+ */
+function hashForSort(seedHash: number, cardId: string): number {
+  let hash = seedHash;
+  for (let i = 0; i < cardId.length; i++) {
+    const char = cardId.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash ^ seedHash;
+    hash = hash & hash;
+  }
+  return hash;
+}
+
+/**
  * Load all cards that are due for review (next_review <= today).
- * Sorted by next_review ascending (oldest first).
+ * Sorted by next_review ascending (oldest first), with date-seeded
+ * randomization as secondary sort to prevent sequence effects.
  *
  * @param vault - Vault path information
  * @param today - Today's date in YYYY-MM-DD format (defaults to actual today)
- * @returns Array of due cards, sorted by next_review
+ * @returns Array of due cards, sorted by next_review then randomized by date seed
  */
 export async function loadDueCards(
   vault: VaultPathInfo,
   today: string = getToday()
 ): Promise<Card[]> {
   const allCards = await loadAllCards(vault);
+  const seedHash = hashString(today);
 
   return allCards
     .filter((card) => isDueToday(card.metadata.next_review, today))
-    .sort((a, b) => a.metadata.next_review.localeCompare(b.metadata.next_review));
+    .sort((a, b) => {
+      // Primary: sort by next_review date (older cards first)
+      const dateCompare = a.metadata.next_review.localeCompare(b.metadata.next_review);
+      if (dateCompare !== 0) return dateCompare;
+
+      // Secondary: deterministic shuffle seeded by today's date
+      return hashForSort(seedHash, a.metadata.id) - hashForSort(seedHash, b.metadata.id);
+    });
 }
 
 // =============================================================================

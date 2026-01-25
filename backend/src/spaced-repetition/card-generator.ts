@@ -86,7 +86,9 @@ Requirements:
 - Questions must be self-contained and answerable without seeing the source
 - Never use "this", "the above", or assume the reader knows the context
 - Include enough context in the question itself (name the system, concept, or domain)
-- Answers should be concise but complete
+- Answers should be concise but complete (the actual answer must be in the content)
+- Skip Q&A pairs where the answer would be vague, incomplete, or "not provided"
+- If the content mentions something but doesn't explain it, don't make a card about it
 - Each question should test a distinct piece of knowledge - avoid variations that ask the same thing differently
 - Skip subjective opinions, TODOs, or transient information
 - Skip self-referential questions about the note-taker's actions, decisions, or personal context

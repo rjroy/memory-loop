@@ -90,6 +90,7 @@ describe("VaultInfoSchema", () => {
       quotesPerWeek: 3,
       badges: [],
       order: 0,
+      cardsEnabled: true,
     };
 
     const result = VaultInfoSchema.parse(validVault);
@@ -571,6 +572,7 @@ describe("Server -> Client Messages", () => {
             quotesPerWeek: 3,
             badges: [],
             order: 1,
+            cardsEnabled: true,
           },
         ],
       };

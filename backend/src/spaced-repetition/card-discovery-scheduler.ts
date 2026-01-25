@@ -165,6 +165,10 @@ async function discoverMarkdownFiles(
       const subFiles = await discoverMarkdownFiles(basePath, vault, entryRelPath);
       files.push(...subFiles);
     } else if (stats.isFile() && extname(entry).toLowerCase() === ".md") {
+      // Skip CLAUDE.md files (project instructions, not knowledge content)
+      if (entry === "CLAUDE.md") {
+        continue;
+      }
       files.push({
         absolutePath: entryAbsPath,
         relativePath: entryRelPath,

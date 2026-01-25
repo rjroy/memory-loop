@@ -354,10 +354,15 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
                 // Map EditableVaultConfig fields to VaultInfo fields
                 name: config.title ?? v.name,
                 subtitle: config.subtitle ?? v.subtitle,
+                discussionModel: config.discussionModel ?? v.discussionModel,
                 promptsPerGeneration: config.promptsPerGeneration ?? v.promptsPerGeneration,
                 maxPoolSize: config.maxPoolSize ?? v.maxPoolSize,
                 quotesPerWeek: config.quotesPerWeek ?? v.quotesPerWeek,
+                recentCaptures: config.recentCaptures ?? v.recentCaptures,
+                recentDiscussions: config.recentDiscussions ?? v.recentDiscussions,
                 badges: config.badges ?? v.badges,
+                order: config.order ?? v.order,
+                cardsEnabled: config.cardsEnabled ?? v.cardsEnabled,
               }
             : v
         )
@@ -703,6 +708,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
             recentDiscussions: configEditorVault.recentDiscussions,
             badges: configEditorVault.badges,
             order: configEditorVault.order === Infinity ? undefined : configEditorVault.order,
+            cardsEnabled: configEditorVault.cardsEnabled,
           }}
           onSave={handleConfigSave}
           onCancel={handleConfigCancel}

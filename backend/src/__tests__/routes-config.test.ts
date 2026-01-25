@@ -527,6 +527,43 @@ describe("Config REST Routes", () => {
         { text: "Active", color: "green" },
       ]);
     });
+
+    test("updates cardsEnabled to false successfully", async () => {
+      const vaultPath = await createTestVault(testDir, "test-vault");
+
+      const req = new Request("http://localhost/api/vaults/test-vault/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardsEnabled: false }),
+      });
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      // Verify persisted
+      const configContent = await readFile(
+        join(vaultPath, ".memory-loop.json"),
+        "utf-8"
+      );
+      const config = JSON.parse(configContent) as { cardsEnabled?: boolean };
+      expect(config.cardsEnabled).toBe(false);
+    });
+
+    test("cardsEnabled false is returned in vault list", async () => {
+      await createTestVault(testDir, "test-vault", {
+        config: { cardsEnabled: false },
+      });
+
+      const req = new Request("http://localhost/api/vaults");
+      const res = await app.fetch(req);
+
+      expect(res.status).toBe(200);
+
+      const json = (await res.json()) as { vaults: Array<{ id: string; cardsEnabled: boolean }> };
+      const vault = json.vaults.find((v) => v.id === "test-vault");
+      expect(vault).toBeDefined();
+      expect(vault?.cardsEnabled).toBe(false);
+    });
   });
 
   // ===========================================================================

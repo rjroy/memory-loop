@@ -53,6 +53,7 @@ const mockDueCard: DueCard = {
   id: "550e8400-e29b-41d4-a716-446655440001",
   question: "What is the capital of France?",
   next_review: "2026-01-23",
+  card_file: "06_Metadata/memory-loop/cards/550e8400-e29b-41d4-a716-446655440001.md",
 };
 
 const mockCardDetail: CardDetail = {

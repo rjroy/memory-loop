@@ -268,13 +268,24 @@ export function SpacedRepetitionWidget({
   );
 
   /**
-   * Handle Open action: navigate to source file in Recall tab.
+   * Handle Open Source action: navigate to source file in Recall tab.
+   * Used in revealed phase to view the original note.
    */
-  const handleOpenCard = useCallback(() => {
+  const handleOpenSource = useCallback(() => {
     if (!state.cardDetail?.source_file) return;
     setCurrentPath(state.cardDetail.source_file);
     setMode("browse");
   }, [state.cardDetail?.source_file, setCurrentPath, setMode]);
+
+  /**
+   * Handle Open Card action: navigate to card file in Recall tab.
+   * Used in question phase to edit the card (e.g., fix the question).
+   */
+  const handleOpenCard = useCallback(() => {
+    if (!state.currentCard?.card_file) return;
+    setCurrentPath(state.currentCard.card_file);
+    setMode("browse");
+  }, [state.currentCard?.card_file, setCurrentPath, setMode]);
 
   /**
    * Handle keyboard shortcuts for assessment (1/2/3/4 keys).
@@ -417,6 +428,17 @@ export function SpacedRepetitionWidget({
               >
                 Forget
               </button>
+              {state.currentCard?.card_file && (
+                <button
+                  type="button"
+                  className="spaced-repetition-widget__btn spaced-repetition-widget__btn--open"
+                  onClick={handleOpenCard}
+                  disabled={isLoading}
+                  aria-label="Open card file in Recall tab"
+                >
+                  Open
+                </button>
+              )}
               <button
                 type="button"
                 className="spaced-repetition-widget__btn spaced-repetition-widget__btn--reveal"
@@ -469,7 +491,7 @@ export function SpacedRepetitionWidget({
                 <button
                   type="button"
                   className="spaced-repetition-widget__btn spaced-repetition-widget__btn--open"
-                  onClick={handleOpenCard}
+                  onClick={handleOpenSource}
                   aria-label="Open source file in Recall tab"
                 >
                   Open

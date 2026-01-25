@@ -328,6 +328,8 @@ export const DueCardSchema = z.object({
   question: z.string().min(1, "Question is required"),
   /** ISO 8601 date when card is due for review */
   next_review: z.string(),
+  /** Path to the card file (relative to vault, e.g., 06_Metadata/memory-loop/cards/{id}.md) */
+  card_file: z.string(),
 });
 
 /**

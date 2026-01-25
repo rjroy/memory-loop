@@ -32,9 +32,9 @@ function renderWithSession(ui: React.ReactElement) {
 
 const mockDueCardsResponse: DueCardsResponse = {
   cards: [
-    { id: "card-1", question: "What is TypeScript?", next_review: "2026-01-23" },
-    { id: "card-2", question: "What is React?", next_review: "2026-01-23" },
-    { id: "card-3", question: "What is Bun?", next_review: "2026-01-23" },
+    { id: "card-1", question: "What is TypeScript?", next_review: "2026-01-23", card_file: "06_Metadata/memory-loop/cards/card-1.md" },
+    { id: "card-2", question: "What is React?", next_review: "2026-01-23", card_file: "06_Metadata/memory-loop/cards/card-2.md" },
+    { id: "card-3", question: "What is Bun?", next_review: "2026-01-23", card_file: "06_Metadata/memory-loop/cards/card-3.md" },
   ],
   count: 3,
 };
@@ -523,7 +523,7 @@ describe("SpacedRepetitionWidget", () => {
     it("shows completion message when all cards reviewed", async () => {
       // Start with a single card
       const singleCardResponse: DueCardsResponse = {
-        cards: [{ id: "card-1", question: "What is TypeScript?", next_review: "2026-01-23" }],
+        cards: [{ id: "card-1", question: "What is TypeScript?", next_review: "2026-01-23", card_file: "06_Metadata/memory-loop/cards/card-1.md" }],
         count: 1,
       };
 
@@ -550,7 +550,7 @@ describe("SpacedRepetitionWidget", () => {
 
     it("shows checkmark icon in completion state", async () => {
       const singleCardResponse: DueCardsResponse = {
-        cards: [{ id: "card-1", question: "What is TypeScript?", next_review: "2026-01-23" }],
+        cards: [{ id: "card-1", question: "What is TypeScript?", next_review: "2026-01-23", card_file: "06_Metadata/memory-loop/cards/card-1.md" }],
         count: 1,
       };
 

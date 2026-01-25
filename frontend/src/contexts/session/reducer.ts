@@ -718,7 +718,7 @@ export function sessionReducer(
           ...state.vault,
           // Apply editable fields from config
           name: action.config.title ?? state.vault.name,
-          subtitle: action.config.subtitle,
+          subtitle: action.config.subtitle ?? state.vault.subtitle,
           discussionModel: action.config.discussionModel ?? state.vault.discussionModel,
           promptsPerGeneration: action.config.promptsPerGeneration ?? state.vault.promptsPerGeneration,
           maxPoolSize: action.config.maxPoolSize ?? state.vault.maxPoolSize,

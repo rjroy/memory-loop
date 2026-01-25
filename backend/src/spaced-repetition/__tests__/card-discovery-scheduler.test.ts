@@ -157,9 +157,24 @@ describe("discoverAllFiles", () => {
     await createMarkdownFile(vaultPath, "note2.md", "# Test Note 2\nMore content.");
 
     const files = await discoverAllFiles();
-    expect(files.length).toBe(3); // note1.md, note2.md, CLAUDE.md
+    expect(files.length).toBe(2); // note1.md, note2.md (CLAUDE.md excluded)
     expect(files.some((f) => f.relativePath === "note1.md")).toBe(true);
     expect(files.some((f) => f.relativePath === "note2.md")).toBe(true);
+  });
+
+  it("skips CLAUDE.md files (project instructions)", async () => {
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    // createTestVault already creates CLAUDE.md at root
+    await createMarkdownFile(vaultPath, "regular.md", "# Regular Note");
+    // Also test CLAUDE.md in subdirectory
+    await createMarkdownFile(vaultPath, "folder/CLAUDE.md", "# Nested CLAUDE");
+    await createMarkdownFile(vaultPath, "folder/note.md", "# Nested Note");
+
+    const files = await discoverAllFiles();
+    expect(files.some((f) => f.relativePath === "CLAUDE.md")).toBe(false);
+    expect(files.some((f) => f.relativePath === "folder/CLAUDE.md")).toBe(false);
+    expect(files.some((f) => f.relativePath === "regular.md")).toBe(true);
+    expect(files.some((f) => f.relativePath === "folder/note.md")).toBe(true);
   });
 
   it("discovers files in subdirectories", async () => {
@@ -563,13 +578,21 @@ describe("runDailyPass", () => {
   });
 
   it("logs progress and updates state", async () => {
-    await createTestVault(join(testDir, "vaults"), "test-vault");
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    await createMarkdownFile(vaultPath, "note.md", "# Test Note");
+
+    const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
+      type: "qa",
+      generate: () => Promise.resolve({ success: true, cards: [] }),
+    }));
 
     const getNow = () => new Date("2026-01-24T03:00:00Z");
     await runDailyPass(getNow);
 
     const state = await readDiscoveryState();
     expect(state.lastDailyRun).toBe("2026-01-24T03:00:00.000Z");
+
+    mockGenerate.mockRestore();
   });
 });
 
@@ -670,13 +693,21 @@ describe("runWeeklyPass", () => {
   });
 
   it("updates lastWeeklyRun timestamp", async () => {
-    await createTestVault(join(testDir, "vaults"), "test-vault");
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    await createMarkdownFile(vaultPath, "note.md", "# Test Note");
+
+    const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
+      type: "qa",
+      generate: () => Promise.resolve({ success: true, cards: [] }),
+    }));
 
     const getNow = () => new Date("2026-01-24T03:00:00Z");
     await runWeeklyPass(WEEKLY_CATCH_UP_LIMIT, getNow);
 
     const state = await readDiscoveryState();
     expect(state.lastWeeklyRun).toBe("2026-01-24T03:00:00.000Z");
+
+    mockGenerate.mockRestore();
   });
 });
 
@@ -719,8 +750,9 @@ describe("startScheduler / stopScheduler", () => {
     state.lastDailyRun = "2026-01-20T00:00:00Z"; // Several days ago
     await writeDiscoveryState(state);
 
-    // Create vault for catch-up to process
-    await createTestVault(join(testDir, "vaults"), "test-vault");
+    // Create vault with a markdown file for catch-up to process
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    await createMarkdownFile(vaultPath, "note.md", "# Test Note");
 
     const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
       type: "qa",

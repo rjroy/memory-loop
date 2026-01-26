@@ -85,7 +85,9 @@ Requirements:
 - Focus on key facts, concepts, definitions, and relationships
 - Questions must be self-contained and answerable without seeing the source
 - Never use "this", "the above", or assume the reader knows the context
-- Include enough context in the question itself (name the system, concept, or domain)
+- Questions must have a unique, unambiguous answer that doesn't depend on when the note was written
+- Avoid questions like "What did X implement?" or "What was decided?" that could have many valid answers
+- Include enough specifics in the question to uniquely identify what's being asked (project name, feature name, date, version)
 - Answers should be concise but complete (the actual answer must be in the content)
 - Skip Q&A pairs where the answer would be vague, incomplete, or "not provided"
 - If the content mentions something but doesn't explain it, don't make a card about it

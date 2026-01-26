@@ -20,6 +20,7 @@ import { AddVaultDialog } from "./AddVaultDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { MemoryEditor } from "./MemoryEditor";
 import { ExtractionPromptEditor } from "./ExtractionPromptEditor";
+import { CardGeneratorEditor } from "./CardGeneratorEditor";
 import "./VaultSelect.css";
 
 /**
@@ -72,8 +73,9 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
 
   // Dedicated message state for Settings dialog editors to avoid race conditions
-  // (MemoryEditor now uses REST API, only ExtractionPromptEditor uses WebSocket)
+  // (MemoryEditor now uses REST API, ExtractionPromptEditor and CardGeneratorEditor use WebSocket)
   const [extractionPromptMessage, setExtractionPromptMessage] = useState<ServerMessage | null>(null);
+  const [cardGeneratorMessage, setCardGeneratorMessage] = useState<ServerMessage | null>(null);
 
   const { selectVault, vault: currentVault, setSlashCommands } = useSession();
 
@@ -91,9 +93,20 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     ) {
       setExtractionPromptMessage(message);
     }
-    // Error messages go to extraction prompt editor
+    // Route card generator messages to CardGeneratorEditor
+    if (
+      message.type === "card_generator_config_content" ||
+      message.type === "card_generator_requirements_saved" ||
+      message.type === "card_generator_config_saved" ||
+      message.type === "card_generator_requirements_reset" ||
+      message.type === "card_generation_status"
+    ) {
+      setCardGeneratorMessage(message);
+    }
+    // Error messages go to both editors (they filter internally)
     if (message.type === "error") {
       setExtractionPromptMessage(message);
+      setCardGeneratorMessage(message);
     }
   }, []);
 
@@ -742,6 +755,12 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
           <ExtractionPromptEditor
             sendMessage={sendMessage}
             lastMessage={extractionPromptMessage}
+          />
+        }
+        cardGeneratorContent={
+          <CardGeneratorEditor
+            sendMessage={sendMessage}
+            lastMessage={cardGeneratorMessage}
           />
         }
       />

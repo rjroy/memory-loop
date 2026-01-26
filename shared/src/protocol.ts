@@ -636,6 +636,64 @@ export const TriggerExtractionMessageSchema = z.object({
   type: z.literal("trigger_extraction"),
 });
 
+// =============================================================================
+// Card Generator Client Messages
+// =============================================================================
+
+/**
+ * Client requests current card generator config with requirements override status
+ * Response: card_generator_config_content message
+ */
+export const GetCardGeneratorConfigMessageSchema = z.object({
+  type: z.literal("get_card_generator_config"),
+});
+
+/**
+ * Client requests to save card generator requirements (creates user override)
+ * Response: card_generator_requirements_saved message
+ */
+export const SaveCardGeneratorRequirementsMessageSchema = z.object({
+  type: z.literal("save_card_generator_requirements"),
+  /** Updated requirements content */
+  content: z.string(),
+});
+
+/**
+ * Client requests to save card generator config (byte limit)
+ * Response: card_generator_config_saved message
+ */
+export const SaveCardGeneratorConfigMessageSchema = z.object({
+  type: z.literal("save_card_generator_config"),
+  /** Weekly byte limit for card generation */
+  weeklyByteLimit: z.number().int().min(102400).max(10485760), // 100KB - 10MB
+});
+
+/**
+ * Client requests to reset card generator requirements to default
+ * Removes user override at ~/.config/memory-loop/card-generator-requirements.md
+ * Response: card_generator_requirements_reset message
+ */
+export const ResetCardGeneratorRequirementsMessageSchema = z.object({
+  type: z.literal("reset_card_generator_requirements"),
+});
+
+/**
+ * Client requests to manually trigger card generation
+ * Bypasses "already ran this week" check, uses remaining weekly budget
+ * Response: card_generation_status messages with progress updates
+ */
+export const TriggerCardGenerationMessageSchema = z.object({
+  type: z.literal("trigger_card_generation"),
+});
+
+/**
+ * Client requests current card generation status
+ * Response: card_generation_status message
+ */
+export const GetCardGenerationStatusMessageSchema = z.object({
+  type: z.literal("get_card_generation_status"),
+});
+
 /**
  * Discriminated union of all client message types
  */
@@ -658,6 +716,13 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SaveExtractionPromptMessageSchema,
   ResetExtractionPromptMessageSchema,
   TriggerExtractionMessageSchema,
+  // Card Generator
+  GetCardGeneratorConfigMessageSchema,
+  SaveCardGeneratorRequirementsMessageSchema,
+  SaveCardGeneratorConfigMessageSchema,
+  ResetCardGeneratorRequirementsMessageSchema,
+  TriggerCardGenerationMessageSchema,
+  GetCardGenerationStatusMessageSchema,
 ]);
 
 // =============================================================================
@@ -916,6 +981,95 @@ export const ExtractionStatusMessageSchema = z.object({
   factsExtracted: z.number().int().min(0).optional(),
 });
 
+// =============================================================================
+// Card Generator Server Messages
+// =============================================================================
+
+/**
+ * Schema for card generation status enum values
+ * - idle: No generation running
+ * - running: Generation in progress
+ * - complete: Generation finished successfully
+ * - error: Generation failed
+ */
+export const CardGenerationStatusValueSchema = z.enum(["idle", "running", "complete", "error"]);
+
+/**
+ * Server sends card generator config content
+ * Response to get_card_generator_config request
+ */
+export const CardGeneratorConfigContentMessageSchema = z.object({
+  type: z.literal("card_generator_config_content"),
+  /** Requirements prompt content */
+  requirements: z.string(),
+  /** True if using user override for requirements */
+  isOverride: z.boolean(),
+  /** Weekly byte limit for card generation */
+  weeklyByteLimit: z.number().int().min(0),
+  /** Bytes used this week */
+  weeklyBytesUsed: z.number().int().min(0),
+});
+
+/**
+ * Server confirms card generator requirements were saved
+ * Response to save_card_generator_requirements request
+ */
+export const CardGeneratorRequirementsSavedMessageSchema = z.object({
+  type: z.literal("card_generator_requirements_saved"),
+  /** Whether the save was successful */
+  success: z.boolean(),
+  /** True if this created/updated user override */
+  isOverride: z.boolean(),
+  /** Error message if success is false */
+  error: z.string().optional(),
+});
+
+/**
+ * Server confirms card generator config was saved
+ * Response to save_card_generator_config request
+ */
+export const CardGeneratorConfigSavedMessageSchema = z.object({
+  type: z.literal("card_generator_config_saved"),
+  /** Whether the save was successful */
+  success: z.boolean(),
+  /** Error message if success is false */
+  error: z.string().optional(),
+});
+
+/**
+ * Server confirms card generator requirements were reset to default
+ * Response to reset_card_generator_requirements request
+ */
+export const CardGeneratorRequirementsResetMessageSchema = z.object({
+  type: z.literal("card_generator_requirements_reset"),
+  /** Whether the reset was successful */
+  success: z.boolean(),
+  /** The default requirements content */
+  content: z.string(),
+  /** Error message if success is false */
+  error: z.string().optional(),
+});
+
+/**
+ * Server sends card generation status updates
+ * Sent during generation run (triggered manually or scheduled)
+ */
+export const CardGenerationStatusMessageSchema = z.object({
+  type: z.literal("card_generation_status"),
+  /** Current generation status */
+  status: CardGenerationStatusValueSchema,
+  /** Human-readable status message */
+  message: z.string().optional(),
+  /** Error details when status is "error" */
+  error: z.string().optional(),
+  /** Number of files processed (on completion) */
+  filesProcessed: z.number().int().min(0).optional(),
+  /** Number of cards created (on completion) */
+  cardsCreated: z.number().int().min(0).optional(),
+  /** Bytes processed (on completion) */
+  bytesProcessed: z.number().int().min(0).optional(),
+});
+
 /**
  * Discriminated union of all server message types
  */
@@ -939,6 +1093,12 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   ExtractionPromptSavedMessageSchema,
   ExtractionPromptResetMessageSchema,
   ExtractionStatusMessageSchema,
+  // Card Generator
+  CardGeneratorConfigContentMessageSchema,
+  CardGeneratorRequirementsSavedMessageSchema,
+  CardGeneratorConfigSavedMessageSchema,
+  CardGeneratorRequirementsResetMessageSchema,
+  CardGenerationStatusMessageSchema,
 ]);
 
 // =============================================================================
@@ -1024,6 +1184,13 @@ export type GetExtractionPromptMessage = z.infer<typeof GetExtractionPromptMessa
 export type SaveExtractionPromptMessage = z.infer<typeof SaveExtractionPromptMessageSchema>;
 export type ResetExtractionPromptMessage = z.infer<typeof ResetExtractionPromptMessageSchema>;
 export type TriggerExtractionMessage = z.infer<typeof TriggerExtractionMessageSchema>;
+// Card Generator client message types
+export type GetCardGeneratorConfigMessage = z.infer<typeof GetCardGeneratorConfigMessageSchema>;
+export type SaveCardGeneratorRequirementsMessage = z.infer<typeof SaveCardGeneratorRequirementsMessageSchema>;
+export type SaveCardGeneratorConfigMessage = z.infer<typeof SaveCardGeneratorConfigMessageSchema>;
+export type ResetCardGeneratorRequirementsMessage = z.infer<typeof ResetCardGeneratorRequirementsMessageSchema>;
+export type TriggerCardGenerationMessage = z.infer<typeof TriggerCardGenerationMessageSchema>;
+export type GetCardGenerationStatusMessage = z.infer<typeof GetCardGenerationStatusMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // Server message types
@@ -1045,6 +1212,13 @@ export type ExtractionPromptContentMessage = z.infer<typeof ExtractionPromptCont
 export type ExtractionPromptSavedMessage = z.infer<typeof ExtractionPromptSavedMessageSchema>;
 export type ExtractionPromptResetMessage = z.infer<typeof ExtractionPromptResetMessageSchema>;
 export type ExtractionStatusMessage = z.infer<typeof ExtractionStatusMessageSchema>;
+// Card Generator server message types
+export type CardGenerationStatusValue = z.infer<typeof CardGenerationStatusValueSchema>;
+export type CardGeneratorConfigContentMessage = z.infer<typeof CardGeneratorConfigContentMessageSchema>;
+export type CardGeneratorRequirementsSavedMessage = z.infer<typeof CardGeneratorRequirementsSavedMessageSchema>;
+export type CardGeneratorConfigSavedMessage = z.infer<typeof CardGeneratorConfigSavedMessageSchema>;
+export type CardGeneratorRequirementsResetMessage = z.infer<typeof CardGeneratorRequirementsResetMessageSchema>;
+export type CardGenerationStatusMessage = z.infer<typeof CardGenerationStatusMessageSchema>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 // =============================================================================

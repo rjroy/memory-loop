@@ -17,6 +17,10 @@ import {
   writeDiscoveryState,
   isFileProcessed,
   markFileProcessed,
+  isRunInProgress,
+  markRunStarted,
+  markRunComplete,
+  STALE_RUN_TIMEOUT_MS,
 } from "../card-discovery-state.js";
 
 describe("card-discovery-state", () => {
@@ -550,6 +554,269 @@ describe("card-discovery-state", () => {
 
       // Change one file
       expect(isFileProcessed(state, "/file2.md", "new-hash")).toBe(false);
+    });
+  });
+
+  // =============================================================================
+  // Run-in-Progress Tracking Tests
+  // =============================================================================
+
+  describe("isRunInProgress", () => {
+    test("returns false when runInProgress is null", () => {
+      const state = createEmptyState();
+      expect(isRunInProgress(state)).toBe(false);
+    });
+
+    test("returns true when run is in progress and not stale", () => {
+      const now = new Date("2026-01-23T10:00:00.000Z");
+      const state: CardDiscoveryState = {
+        ...createEmptyState(),
+        runInProgress: {
+          startedAt: "2026-01-23T09:30:00.000Z", // 30 minutes ago
+          type: "manual",
+        },
+      };
+
+      const result = isRunInProgress(state, () => now);
+      expect(result).toBe(true);
+    });
+
+    test("returns false when run is stale (older than 2 hours)", () => {
+      const now = new Date("2026-01-23T12:00:00.000Z");
+      const state: CardDiscoveryState = {
+        ...createEmptyState(),
+        runInProgress: {
+          startedAt: "2026-01-23T09:00:00.000Z", // 3 hours ago
+          type: "weekly",
+        },
+      };
+
+      const result = isRunInProgress(state, () => now);
+      expect(result).toBe(false);
+    });
+
+    test("returns true at exactly 2 hours minus 1ms", () => {
+      const startTime = new Date("2026-01-23T10:00:00.000Z");
+      const almostStale = new Date(startTime.getTime() + STALE_RUN_TIMEOUT_MS - 1);
+
+      const state: CardDiscoveryState = {
+        ...createEmptyState(),
+        runInProgress: {
+          startedAt: startTime.toISOString(),
+          type: "daily",
+        },
+      };
+
+      expect(isRunInProgress(state, () => almostStale)).toBe(true);
+    });
+
+    test("returns false at exactly 2 hours plus 1ms", () => {
+      const startTime = new Date("2026-01-23T10:00:00.000Z");
+      const justStale = new Date(startTime.getTime() + STALE_RUN_TIMEOUT_MS + 1);
+
+      const state: CardDiscoveryState = {
+        ...createEmptyState(),
+        runInProgress: {
+          startedAt: startTime.toISOString(),
+          type: "daily",
+        },
+      };
+
+      expect(isRunInProgress(state, () => justStale)).toBe(false);
+    });
+  });
+
+  describe("markRunStarted", () => {
+    test("sets runInProgress with manual type", () => {
+      const now = new Date("2026-01-23T10:00:00.000Z");
+      const state = createEmptyState();
+
+      const newState = markRunStarted(state, "manual", () => now);
+
+      expect(newState.runInProgress).not.toBeNull();
+      expect(newState.runInProgress?.type).toBe("manual");
+      expect(newState.runInProgress?.startedAt).toBe(now.toISOString());
+    });
+
+    test("sets runInProgress with daily type", () => {
+      const now = new Date("2026-01-23T10:00:00.000Z");
+      const state = createEmptyState();
+
+      const newState = markRunStarted(state, "daily", () => now);
+
+      expect(newState.runInProgress?.type).toBe("daily");
+    });
+
+    test("sets runInProgress with weekly type", () => {
+      const now = new Date("2026-01-23T10:00:00.000Z");
+      const state = createEmptyState();
+
+      const newState = markRunStarted(state, "weekly", () => now);
+
+      expect(newState.runInProgress?.type).toBe("weekly");
+    });
+
+    test("does not mutate original state", () => {
+      const state = createEmptyState();
+      const newState = markRunStarted(state, "manual");
+
+      expect(state.runInProgress).toBeNull();
+      expect(newState.runInProgress).not.toBeNull();
+    });
+
+    test("preserves other state fields", () => {
+      const state: CardDiscoveryState = {
+        lastDailyRun: "2026-01-23T08:00:00.000Z",
+        lastWeeklyRun: "2026-01-20T08:00:00.000Z",
+        processedFiles: {
+          "/test.md": { checksum: "abc", processedAt: "2026-01-23T08:00:00.000Z" },
+        },
+        weeklyProgress: { bytesProcessed: 1024, weekStartDate: "2026-01-20" },
+        runInProgress: null,
+      };
+
+      const newState = markRunStarted(state, "manual");
+
+      expect(newState.lastDailyRun).toBe(state.lastDailyRun);
+      expect(newState.lastWeeklyRun).toBe(state.lastWeeklyRun);
+      expect(newState.processedFiles).toEqual(state.processedFiles);
+      expect(newState.weeklyProgress).toEqual(state.weeklyProgress);
+    });
+
+    test("overwrites existing run in progress", () => {
+      const state: CardDiscoveryState = {
+        ...createEmptyState(),
+        runInProgress: {
+          startedAt: "2026-01-23T08:00:00.000Z",
+          type: "daily",
+        },
+      };
+
+      const now = new Date("2026-01-23T10:00:00.000Z");
+      const newState = markRunStarted(state, "manual", () => now);
+
+      expect(newState.runInProgress?.type).toBe("manual");
+      expect(newState.runInProgress?.startedAt).toBe(now.toISOString());
+    });
+  });
+
+  describe("markRunComplete", () => {
+    test("clears runInProgress", () => {
+      const state: CardDiscoveryState = {
+        ...createEmptyState(),
+        runInProgress: {
+          startedAt: "2026-01-23T10:00:00.000Z",
+          type: "manual",
+        },
+      };
+
+      const newState = markRunComplete(state);
+
+      expect(newState.runInProgress).toBeNull();
+    });
+
+    test("does not mutate original state", () => {
+      const state: CardDiscoveryState = {
+        ...createEmptyState(),
+        runInProgress: {
+          startedAt: "2026-01-23T10:00:00.000Z",
+          type: "manual",
+        },
+      };
+
+      const newState = markRunComplete(state);
+
+      expect(state.runInProgress).not.toBeNull();
+      expect(newState.runInProgress).toBeNull();
+    });
+
+    test("preserves other state fields", () => {
+      const state: CardDiscoveryState = {
+        lastDailyRun: "2026-01-23T08:00:00.000Z",
+        lastWeeklyRun: "2026-01-20T08:00:00.000Z",
+        processedFiles: {
+          "/test.md": { checksum: "abc", processedAt: "2026-01-23T08:00:00.000Z" },
+        },
+        weeklyProgress: { bytesProcessed: 1024, weekStartDate: "2026-01-20" },
+        runInProgress: {
+          startedAt: "2026-01-23T10:00:00.000Z",
+          type: "weekly",
+        },
+      };
+
+      const newState = markRunComplete(state);
+
+      expect(newState.lastDailyRun).toBe(state.lastDailyRun);
+      expect(newState.lastWeeklyRun).toBe(state.lastWeeklyRun);
+      expect(newState.processedFiles).toEqual(state.processedFiles);
+      expect(newState.weeklyProgress).toEqual(state.weeklyProgress);
+    });
+
+    test("is idempotent when already null", () => {
+      const state = createEmptyState();
+
+      const newState = markRunComplete(state);
+
+      expect(newState.runInProgress).toBeNull();
+    });
+  });
+
+  describe("schema: runInProgress", () => {
+    test("validates state with runInProgress null", () => {
+      const state = {
+        lastDailyRun: null,
+        lastWeeklyRun: null,
+        processedFiles: {},
+        runInProgress: null,
+      };
+
+      const result = CardDiscoveryStateSchema.safeParse(state);
+      expect(result.success).toBe(true);
+    });
+
+    test("validates state with valid runInProgress", () => {
+      const state = {
+        lastDailyRun: null,
+        lastWeeklyRun: null,
+        processedFiles: {},
+        runInProgress: {
+          startedAt: "2026-01-23T10:00:00.000Z",
+          type: "manual",
+        },
+      };
+
+      const result = CardDiscoveryStateSchema.safeParse(state);
+      expect(result.success).toBe(true);
+    });
+
+    test("rejects invalid runInProgress type", () => {
+      const state = {
+        lastDailyRun: null,
+        lastWeeklyRun: null,
+        processedFiles: {},
+        runInProgress: {
+          startedAt: "2026-01-23T10:00:00.000Z",
+          type: "invalid",
+        },
+      };
+
+      const result = CardDiscoveryStateSchema.safeParse(state);
+      expect(result.success).toBe(false);
+    });
+
+    test("rejects invalid startedAt format", () => {
+      const state = {
+        lastDailyRun: null,
+        lastWeeklyRun: null,
+        processedFiles: {},
+        runInProgress: {
+          startedAt: "not-a-datetime",
+          type: "manual",
+        },
+      };
+
+      const result = CardDiscoveryStateSchema.safeParse(state);
+      expect(result.success).toBe(false);
     });
   });
 });

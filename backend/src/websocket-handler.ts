@@ -121,6 +121,16 @@ import {
   handleAdvisoryAction,
 } from "./handlers/pair-writing-handlers.js";
 
+// Card generator handlers
+import {
+  handleGetCardGeneratorConfig,
+  handleSaveCardGeneratorRequirements,
+  handleSaveCardGeneratorConfig,
+  handleResetCardGeneratorRequirements,
+  handleTriggerCardGeneration,
+  handleGetCardGenerationStatus,
+} from "./handlers/card-generator-handlers.js";
+
 // Re-export types for external consumers
 export type { WebSocketLike, ConnectionState };
 export { createConnectionState, generateMessageId };
@@ -597,6 +607,31 @@ export class WebSocketHandler {
 
       case "advisory_action_request":
         await handleAdvisoryAction(ctx, message);
+        break;
+
+      // Card Generator handlers
+      case "get_card_generator_config":
+        await handleGetCardGeneratorConfig(ctx);
+        break;
+
+      case "save_card_generator_requirements":
+        await handleSaveCardGeneratorRequirements(ctx, message.content);
+        break;
+
+      case "save_card_generator_config":
+        await handleSaveCardGeneratorConfig(ctx, message.weeklyByteLimit);
+        break;
+
+      case "reset_card_generator_requirements":
+        await handleResetCardGeneratorRequirements(ctx);
+        break;
+
+      case "trigger_card_generation":
+        await handleTriggerCardGeneration(ctx);
+        break;
+
+      case "get_card_generation_status":
+        handleGetCardGenerationStatus(ctx);
         break;
     }
   }

@@ -24,10 +24,14 @@ import {
   writeDiscoveryState,
   isFileProcessed,
   markFileProcessed,
+  isRunInProgress,
+  markRunStarted,
+  markRunComplete,
   type CardDiscoveryState,
 } from "./card-discovery-state.js";
 import { createQACardGenerator } from "./card-generator.js";
 import { createCard, type VaultPathInfo } from "./card-manager.js";
+import { loadCardGeneratorConfig } from "./card-generator-config.js";
 
 const log = createLogger("card-discovery-scheduler");
 
@@ -520,7 +524,7 @@ export async function runWeeklyPass(
  * @param date - Date to get week start for
  * @returns Week start date string
  */
-function getWeekStart(date: Date): string {
+export function getWeekStart(date: Date): string {
   const d = new Date(date);
   const day = d.getDay();
   // Adjust to Monday (day 1). Sunday (0) becomes -6, others subtract to Monday.
@@ -541,6 +545,8 @@ interface SchedulerState {
   timerId: ReturnType<typeof setInterval> | null;
   /** Whether scheduler is running */
   running: boolean;
+  /** Whether a generation run is currently in progress */
+  runInProgress: boolean;
 }
 
 /**
@@ -549,6 +555,7 @@ interface SchedulerState {
 const schedulerState: SchedulerState = {
   timerId: null,
   running: false,
+  runInProgress: false,
 };
 
 /**
@@ -685,23 +692,61 @@ export async function startScheduler(options: SchedulerOptions = {}): Promise<vo
   // Set up hourly check for scheduled runs
   schedulerState.timerId = setInterval(() => {
     void (async () => {
+      // Skip if a run is already in progress
+      if (schedulerState.runInProgress) {
+        log.debug("Skipping scheduled check: run already in progress");
+        return;
+      }
+
       try {
         const state = await readDiscoveryState();
 
+        // Also check persisted run-in-progress state
+        if (isRunInProgress(state, getNow)) {
+          log.debug("Skipping scheduled check: run already in progress (persisted)");
+          return;
+        }
+
         // Check for daily run
         if (shouldRunDaily(discoveryHour, state.lastDailyRun, getNow)) {
-          log.info("Running scheduled daily discovery");
-          await runDailyPass(getNow);
+          schedulerState.runInProgress = true;
+          let updatedState = markRunStarted(state, "daily", getNow);
+          await writeDiscoveryState(updatedState);
+
+          try {
+            log.info("Running scheduled daily discovery");
+            await runDailyPass(getNow);
+          } finally {
+            updatedState = await readDiscoveryState();
+            updatedState = markRunComplete(updatedState);
+            await writeDiscoveryState(updatedState);
+            schedulerState.runInProgress = false;
+          }
         }
 
         // Check for weekly run
-        if (shouldRunWeekly(discoveryHour, state.lastWeeklyRun, getNow)) {
-          log.info("Running scheduled weekly catch-up");
-          await runWeeklyPass(WEEKLY_CATCH_UP_LIMIT, getNow);
+        const currentState = await readDiscoveryState();
+        if (shouldRunWeekly(discoveryHour, currentState.lastWeeklyRun, getNow)) {
+          schedulerState.runInProgress = true;
+          let updatedState = markRunStarted(currentState, "weekly", getNow);
+          await writeDiscoveryState(updatedState);
+
+          try {
+            // Load config for byte limit
+            const config = await loadCardGeneratorConfig();
+            log.info("Running scheduled weekly catch-up");
+            await runWeeklyPass(config.weeklyByteLimit, getNow);
+          } finally {
+            updatedState = await readDiscoveryState();
+            updatedState = markRunComplete(updatedState);
+            await writeDiscoveryState(updatedState);
+            schedulerState.runInProgress = false;
+          }
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         log.error(`Scheduled discovery check failed: ${msg}`);
+        schedulerState.runInProgress = false;
       }
     })();
   }, 60 * 60 * 1000); // Check every hour
@@ -730,6 +775,117 @@ export function stopScheduler(): void {
  */
 export function isSchedulerRunning(): boolean {
   return schedulerState.running;
+}
+
+/**
+ * Check if a card generation run is currently in progress.
+ */
+export function isGenerationRunning(): boolean {
+  return schedulerState.runInProgress;
+}
+
+/**
+ * Result of a manual generation trigger.
+ */
+export interface ManualTriggerResult {
+  /** Whether the trigger was accepted */
+  started: boolean;
+  /** Reason if not started */
+  reason?: string;
+  /** Stats if generation completed immediately (synchronous mock scenarios) */
+  stats?: DiscoveryStats;
+}
+
+/**
+ * Manually trigger card generation.
+ *
+ * Bypasses the "already ran this week" check but respects the remaining
+ * weekly budget. Will not start if a run is already in progress.
+ *
+ * @param getNow - Function to get current time (for testing)
+ * @returns Result indicating whether generation started
+ */
+export async function triggerManualGeneration(
+  getNow: () => Date = () => new Date()
+): Promise<ManualTriggerResult> {
+  // Check for existing run in memory
+  if (schedulerState.runInProgress) {
+    return { started: false, reason: "A generation run is already in progress" };
+  }
+
+  // Check for existing run in persisted state (in case of server restart)
+  const state = await readDiscoveryState();
+  if (isRunInProgress(state, getNow)) {
+    return { started: false, reason: "A generation run is already in progress" };
+  }
+
+  // Load config for byte limit
+  const config = await loadCardGeneratorConfig();
+  const byteLimit = config.weeklyByteLimit;
+
+  // Calculate remaining budget
+  const weekStart = getWeekStart(getNow());
+  const weeklyBytesUsed = state.weeklyProgress?.weekStartDate === weekStart
+    ? state.weeklyProgress.bytesProcessed
+    : 0;
+  const remaining = byteLimit - weeklyBytesUsed;
+
+  if (remaining <= 0) {
+    return { started: false, reason: "Weekly byte budget exhausted" };
+  }
+
+  // Mark run as started (both in-memory and persisted)
+  schedulerState.runInProgress = true;
+  let updatedState = markRunStarted(state, "manual", getNow);
+  await writeDiscoveryState(updatedState);
+
+  try {
+    log.info(`Manual generation triggered (budget: ${remaining} bytes remaining)`);
+    const stats = await runWeeklyPass(remaining, getNow);
+
+    // Mark run as complete
+    updatedState = await readDiscoveryState();
+    updatedState = markRunComplete(updatedState);
+    await writeDiscoveryState(updatedState);
+    schedulerState.runInProgress = false;
+
+    return { started: true, stats };
+  } catch (error) {
+    // Mark run as complete even on error
+    updatedState = await readDiscoveryState();
+    updatedState = markRunComplete(updatedState);
+    await writeDiscoveryState(updatedState);
+    schedulerState.runInProgress = false;
+
+    const msg = error instanceof Error ? error.message : String(error);
+    log.error(`Manual generation failed: ${msg}`);
+    return { started: true, reason: `Generation failed: ${msg}` };
+  }
+}
+
+/**
+ * Get the current weekly bytes used and limit.
+ *
+ * @param getNow - Function to get current time (for testing)
+ * @returns Object with bytesUsed and byteLimit
+ */
+export async function getWeeklyUsage(
+  getNow: () => Date = () => new Date()
+): Promise<{ bytesUsed: number; byteLimit: number }> {
+  const [state, config] = await Promise.all([
+    readDiscoveryState(),
+    loadCardGeneratorConfig(),
+  ]);
+
+  const weekStart = getWeekStart(getNow());
+  const bytesUsed = state.weeklyProgress?.weekStartDate === weekStart
+    ? state.weeklyProgress.bytesProcessed
+    : 0;
+
+  return {
+    bytesUsed,
+    byteLimit: config.weeklyByteLimit,
+  };
 }
 
 // =============================================================================

@@ -26,6 +26,12 @@ const log = createLogger("card-discovery-state");
 // =============================================================================
 
 /**
+ * Stale run timeout (2 hours in milliseconds).
+ * If a run has been in progress for longer than this, it's considered stale.
+ */
+export const STALE_RUN_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+/**
  * Config directory name within user home.
  */
 const CONFIG_DIR = ".config/memory-loop";
@@ -63,6 +69,21 @@ const WeeklyProgressSchema = z.object({
 });
 
 /**
+ * Schema for run type enum.
+ */
+export const RunTypeSchema = z.enum(["manual", "daily", "weekly"]);
+
+/**
+ * Schema for run-in-progress tracking.
+ */
+const RunInProgressSchema = z.object({
+  /** ISO datetime when run started */
+  startedAt: z.string().datetime(),
+  /** Type of run (manual, daily, weekly) */
+  type: RunTypeSchema,
+});
+
+/**
  * Schema for the complete card discovery state.
  */
 export const CardDiscoveryStateSchema = z.object({
@@ -74,6 +95,8 @@ export const CardDiscoveryStateSchema = z.object({
   processedFiles: z.record(z.string(), ProcessedFileSchema),
   /** Weekly progress tracking */
   weeklyProgress: WeeklyProgressSchema.optional(),
+  /** Currently running card generation, null if idle */
+  runInProgress: RunInProgressSchema.nullable().optional(),
 });
 
 // =============================================================================
@@ -82,6 +105,7 @@ export const CardDiscoveryStateSchema = z.object({
 
 export type ProcessedFile = z.infer<typeof ProcessedFileSchema>;
 export type WeeklyProgress = z.infer<typeof WeeklyProgressSchema>;
+export type RunType = z.infer<typeof RunTypeSchema>;
 export type CardDiscoveryState = z.infer<typeof CardDiscoveryStateSchema>;
 
 // =============================================================================
@@ -100,6 +124,7 @@ export function createEmptyState(): CardDiscoveryState {
       bytesProcessed: 0,
       weekStartDate: null,
     },
+    runInProgress: null,
   };
 }
 
@@ -259,5 +284,96 @@ export function markFileProcessed(
         processedAt: now,
       },
     },
+  };
+}
+
+// =============================================================================
+// Run-in-Progress Tracking
+// =============================================================================
+
+/**
+ * Check if a run is currently in progress.
+ *
+ * A run is considered in progress if:
+ * 1. runInProgress is not null
+ * 2. The run started less than STALE_RUN_TIMEOUT_MS ago
+ *
+ * Stale runs (older than 2 hours) are considered complete/failed
+ * to prevent permanent blocking from crashed runs.
+ *
+ * @param state - Current discovery state
+ * @param getNow - Function to get current time (for testing)
+ * @returns true if a non-stale run is in progress
+ */
+export function isRunInProgress(
+  state: CardDiscoveryState,
+  getNow: () => Date = () => new Date()
+): boolean {
+  if (!state.runInProgress) {
+    return false;
+  }
+
+  const startedAt = new Date(state.runInProgress.startedAt);
+  const now = getNow();
+  const elapsed = now.getTime() - startedAt.getTime();
+
+  // Run is stale if it's been running for more than 2 hours
+  if (elapsed > STALE_RUN_TIMEOUT_MS) {
+    log.warn(
+      `Run of type ${state.runInProgress.type} started at ${state.runInProgress.startedAt} ` +
+      `is stale (${Math.round(elapsed / 60000)} minutes), treating as complete`
+    );
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Mark a run as started.
+ *
+ * Returns a new state object with runInProgress set.
+ * Does not mutate the input state.
+ *
+ * @param state - Current discovery state
+ * @param type - Type of run (manual, daily, weekly)
+ * @param getNow - Function to get current time (for testing)
+ * @returns New state with run marked as started
+ */
+export function markRunStarted(
+  state: CardDiscoveryState,
+  type: RunType,
+  getNow: () => Date = () => new Date()
+): CardDiscoveryState {
+  const now = getNow().toISOString();
+
+  log.info(`Marking run as started: type=${type}, startedAt=${now}`);
+
+  return {
+    ...state,
+    runInProgress: {
+      startedAt: now,
+      type,
+    },
+  };
+}
+
+/**
+ * Mark a run as complete (or failed).
+ *
+ * Returns a new state object with runInProgress cleared.
+ * Does not mutate the input state.
+ *
+ * @param state - Current discovery state
+ * @returns New state with run marked as complete
+ */
+export function markRunComplete(state: CardDiscoveryState): CardDiscoveryState {
+  if (state.runInProgress) {
+    log.info(`Marking run as complete: type=${state.runInProgress.type}`);
+  }
+
+  return {
+    ...state,
+    runInProgress: null,
   };
 }

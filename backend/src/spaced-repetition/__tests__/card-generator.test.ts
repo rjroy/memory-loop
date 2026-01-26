@@ -386,7 +386,7 @@ describe("QACardGenerator", () => {
       // Prompt should contain truncated content, not full content
       expect(prompt).toContain("[Content truncated...]");
       // The original long content should not appear in full
-      expect(prompt.length).toBeLessThan(longContent.length + 500);
+      expect(prompt).not.toContain(longContent);
     });
 
     test("uses correct model", async () => {

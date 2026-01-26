@@ -36,7 +36,7 @@ describe("SettingsDialog", () => {
       render(<SettingsDialog isOpen={true} onClose={() => {}} />);
 
       expect(screen.getByRole("tablist")).not.toBeNull();
-      expect(screen.getAllByRole("tab")).toHaveLength(2);
+      expect(screen.getAllByRole("tab")).toHaveLength(3);
     });
 
     it("renders Memory tab", () => {
@@ -49,6 +49,12 @@ describe("SettingsDialog", () => {
       render(<SettingsDialog isOpen={true} onClose={() => {}} />);
 
       expect(screen.getByRole("tab", { name: /extraction prompt/i })).not.toBeNull();
+    });
+
+    it("renders Card Generator tab", () => {
+      render(<SettingsDialog isOpen={true} onClose={() => {}} />);
+
+      expect(screen.getByRole("tab", { name: /card generator/i })).not.toBeNull();
     });
 
     it("renders close buttons", () => {
@@ -104,12 +110,12 @@ describe("SettingsDialog", () => {
       expect(memoryPanel.getAttribute("hidden")).toBeNull();
     });
 
-    it("hides Prompt panel when Memory tab is active", () => {
+    it("hides other panels when Memory tab is active", () => {
       render(<SettingsDialog isOpen={true} onClose={() => {}} />);
 
-      // The hidden panel should have the hidden attribute
+      // The hidden panels should have the hidden attribute (Prompt and Card Generator)
       const hiddenPanels = document.querySelectorAll('.settings-dialog__panel[hidden]');
-      expect(hiddenPanels.length).toBe(1);
+      expect(hiddenPanels.length).toBe(2);
     });
   });
 
@@ -222,6 +228,7 @@ describe("SettingsDialog", () => {
       const tablist = screen.getByRole("tablist");
       const memoryTab = screen.getByRole("tab", { name: /memory/i });
       const promptTab = screen.getByRole("tab", { name: /extraction prompt/i });
+      const cardsTab = screen.getByRole("tab", { name: /card generator/i });
 
       // Initially Memory is active
       expect(memoryTab.getAttribute("aria-selected")).toBe("true");
@@ -230,9 +237,17 @@ describe("SettingsDialog", () => {
       fireEvent.keyDown(tablist, { key: "ArrowRight" });
       expect(promptTab.getAttribute("aria-selected")).toBe("true");
 
-      // Press ArrowLeft to switch back to Memory
-      fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+      // Press ArrowRight to switch to Card Generator
+      fireEvent.keyDown(tablist, { key: "ArrowRight" });
+      expect(cardsTab.getAttribute("aria-selected")).toBe("true");
+
+      // Press ArrowRight to wrap back to Memory
+      fireEvent.keyDown(tablist, { key: "ArrowRight" });
       expect(memoryTab.getAttribute("aria-selected")).toBe("true");
+
+      // Press ArrowLeft to wrap to Card Generator
+      fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+      expect(cardsTab.getAttribute("aria-selected")).toBe("true");
     });
   });
 });

@@ -2,12 +2,13 @@
  * SettingsDialog Component
  *
  * Portal-based modal dialog for Memory Loop settings.
- * Tabbed interface with Memory Editor and Extraction Prompt tabs.
+ * Tabbed interface with Memory Editor, Extraction Prompt, and Card Generator tabs.
  * Mobile-optimized layout with proper accessibility.
  *
  * Spec Requirements:
  * - REQ-F-12: Memory.md editor
  * - REQ-F-15: Extraction prompt editor
+ * - Card Generator settings (requirements, byte limit, manual trigger)
  */
 
 import { useId, useState, useCallback, useEffect } from "react";
@@ -17,7 +18,7 @@ import "./SettingsDialog.css";
 /**
  * Tab identifiers for the settings dialog.
  */
-export type SettingsTab = "memory" | "prompt";
+export type SettingsTab = "memory" | "prompt" | "cards";
 
 /**
  * Props for the SettingsDialog component.
@@ -29,9 +30,10 @@ export interface SettingsDialogProps {
   initialTab?: SettingsTab;
   /** Callback when dialog is closed */
   onClose: () => void;
-  /** Optional children to render in tabs (for TASK-011/012) */
+  /** Optional children to render in tabs */
   memoryEditorContent?: React.ReactNode;
   promptEditorContent?: React.ReactNode;
+  cardGeneratorContent?: React.ReactNode;
 }
 
 /**
@@ -47,13 +49,16 @@ export function SettingsDialog({
   onClose,
   memoryEditorContent,
   promptEditorContent,
+  cardGeneratorContent,
 }: SettingsDialogProps): React.ReactNode {
   const dialogTitleId = useId();
   const tablistId = useId();
   const memoryTabId = useId();
   const promptTabId = useId();
+  const cardsTabId = useId();
   const memoryPanelId = useId();
   const promptPanelId = useId();
+  const cardsPanelId = useId();
 
   // Current active tab
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
@@ -86,12 +91,22 @@ export function SettingsDialog({
     [onClose]
   );
 
-  // Handle tab keyboard navigation
+  // Handle tab keyboard navigation (cycles through all 3 tabs)
   const handleTabKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      const tabs: SettingsTab[] = ["memory", "prompt", "cards"];
+      if (e.key === "ArrowRight") {
         e.preventDefault();
-        setActiveTab((prev) => (prev === "memory" ? "prompt" : "memory"));
+        setActiveTab((prev) => {
+          const idx = tabs.indexOf(prev);
+          return tabs[(idx + 1) % tabs.length];
+        });
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setActiveTab((prev) => {
+          const idx = tabs.indexOf(prev);
+          return tabs[(idx - 1 + tabs.length) % tabs.length];
+        });
       }
     },
     []
@@ -201,6 +216,33 @@ export function SettingsDialog({
               </svg>
               Extraction Prompt
             </button>
+            <button
+              id={cardsTabId}
+              role="tab"
+              type="button"
+              aria-selected={activeTab === "cards"}
+              aria-controls={cardsPanelId}
+              tabIndex={activeTab === "cards" ? 0 : -1}
+              className={`settings-dialog__tab${activeTab === "cards" ? " settings-dialog__tab--active" : ""}`}
+              onClick={() => setActiveTab("cards")}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="settings-dialog__tab-icon"
+              >
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="M7 8h10" />
+                <path d="M7 12h6" />
+              </svg>
+              Card Generator
+            </button>
           </div>
         </div>
 
@@ -239,6 +281,25 @@ export function SettingsDialog({
                 <p>
                   This tab allows you to customize the prompt used for fact
                   extraction from transcripts.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Card Generator Panel */}
+          <div
+            id={cardsPanelId}
+            role="tabpanel"
+            aria-labelledby={cardsTabId}
+            hidden={activeTab !== "cards"}
+            className="settings-dialog__panel"
+          >
+            {cardGeneratorContent ?? (
+              <div className="settings-dialog__placeholder">
+                <p>Card Generator settings.</p>
+                <p>
+                  Configure the requirements for flashcard generation and set
+                  weekly byte limits.
                 </p>
               </div>
             )}

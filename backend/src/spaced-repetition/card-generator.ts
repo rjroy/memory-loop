@@ -15,6 +15,13 @@
 
 import { getSdkQuery, type QueryFunction } from "../sdk-provider.js";
 import { createLogger } from "../logger.js";
+import {
+  DEFAULT_REQUIREMENTS,
+  loadRequirements,
+} from "./card-generator-config.js";
+
+// Re-export DEFAULT_REQUIREMENTS for convenience
+export { DEFAULT_REQUIREMENTS };
 
 const log = createLogger("card-generator");
 
@@ -76,28 +83,20 @@ export const MAX_CONTENT_LENGTH = 8000;
  *
  * @param content - The markdown content to extract from
  * @param filePath - Path to source file (for context)
+ * @param customRequirements - Optional custom requirements (defaults to DEFAULT_REQUIREMENTS)
  * @returns The prompt to send to the LLM
  */
-export function buildQAExtractionPrompt(content: string, filePath: string): string {
+export function buildQAExtractionPrompt(
+  content: string,
+  filePath: string,
+  customRequirements?: string
+): string {
+  const requirements = customRequirements ?? DEFAULT_REQUIREMENTS;
+
   return `Extract factual Q&A pairs from the following content for spaced repetition learning.
 
 Requirements:
-- Focus on key facts, concepts, definitions, and relationships
-- Questions must be self-contained and answerable without seeing the source
-- Never use "this", "the above", or assume the reader knows the context
-- Questions must have a unique, unambiguous answer that doesn't depend on when the note was written
-- Avoid questions like "What did X implement?" or "What was decided?" that could have many valid answers
-- Include enough specifics in the question to uniquely identify what's being asked (project name, feature name, date, version)
-- Answers should be concise but complete (the actual answer must be in the content)
-- Skip Q&A pairs where the answer would be vague, incomplete, or "not provided"
-- If the content mentions something but doesn't explain it, don't make a card about it
-- Each question should test a distinct piece of knowledge - avoid variations that ask the same thing differently
-- Skip subjective opinions, TODOs, or transient information
-- Skip self-referential questions about the note-taker's actions, decisions, or personal context
-- Questions must be answerable by anyone, not just the person who wrote the note
-- Avoid first-person or second-person framing ("you", "we", "I", "my", "our")
-- Only extract facts that would be useful to recall weeks or months later
-- If the content has no extractable facts, return an empty array
+${requirements}
 
 Source file: ${filePath}
 
@@ -292,6 +291,26 @@ function isRetriableError(message: string): boolean {
 export class QACardGenerator implements CardTypeGenerator {
   readonly type = "qa";
 
+  /** Cached custom requirements (loaded once on first generate call) */
+  private customRequirements: string | null = null;
+  private requirementsLoaded = false;
+
+  /**
+   * Load custom requirements if not already loaded.
+   * Results are cached for the lifetime of this generator instance.
+   */
+  private async ensureRequirementsLoaded(): Promise<string | undefined> {
+    if (!this.requirementsLoaded) {
+      const { content, isOverride } = await loadRequirements();
+      this.customRequirements = isOverride ? content : null;
+      this.requirementsLoaded = true;
+      if (isOverride) {
+        log.info("Using custom requirements override for card generation");
+      }
+    }
+    return this.customRequirements ?? undefined;
+  }
+
   /**
    * Generate Q&A cards from markdown content.
    *
@@ -312,8 +331,11 @@ export class QACardGenerator implements CardTypeGenerator {
         ? content.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated...]"
         : content;
 
+    // Load custom requirements if available
+    const customRequirements = await this.ensureRequirementsLoaded();
+
     // Build the prompt
-    const prompt = buildQAExtractionPrompt(truncatedContent, filePath);
+    const prompt = buildQAExtractionPrompt(truncatedContent, filePath, customRequirements);
 
     try {
       // Call the LLM
@@ -358,7 +380,9 @@ export class QACardGenerator implements CardTypeGenerator {
 
 /**
  * Create a new QA card generator instance.
+ *
+ * Returns CardTypeGenerator interface to allow for mock implementations in tests.
  */
-export function createQACardGenerator(): QACardGenerator {
+export function createQACardGenerator(): CardTypeGenerator {
   return new QACardGenerator();
 }

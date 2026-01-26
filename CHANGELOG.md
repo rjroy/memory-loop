@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-01-26
+
+### Added
+
+**Spaced Repetition System**
+- Complete flashcard system with SM-2 algorithm for optimal retention scheduling (#396)
+- Automatic card discovery extracts Q&A pairs from vault notes using Claude Haiku
+- Touch-friendly review widget on Ground tab with keyboard shortcuts (1-4 for rating)
+- Open button to edit source files directly from review (#403, #421)
+- Per-vault toggle to enable/disable card discovery (#410)
+- Daily discovery of new content with weekly catch-up for backlog
+- Self-contained question requirements and answer validation (#407, #420, #423)
+
+**Pair Writing Mode**
+- Split-screen AI-assisted text revision in Recall tab (#379)
+- Quick Actions for selected text: Tighten, Embellish, Polish, Correct
+- Advisory Actions for document-level feedback: Validate, Critique, Compare
+- Discuss action for open-ended conversation about selections (#380, #395)
+- Snapshot hover preview in toolbar (#382)
+- iPad support with Actions button for text selection (#385, #386, #388)
+
+**Memory Extraction System**
+- Automatic fact extraction from meeting transcripts (#361)
+- Overnight batch processing with incremental extraction via SHA-256 checksums
+- Duplicate detection using Levenshtein distance similarity
+- 50KB memory file limit with automatic pruning
+- Settings UI for viewing/editing memory and extraction prompts (#364)
+- Research assistant skill for proactive vault context (#412)
+
+**File Management**
+- Create files and directories from FileTree context menu (#333, #336)
+- Rename files and directories (#338)
+- Move files and directories with dialog (#343)
+- Delete directories (#346)
+- Delete action in file viewers (#406)
+- Archive functionality for chats, projects, and areas (#325)
+
+**Vault Management**
+- Vault creation from VaultSelect screen (#340)
+- Vault task management skill installed during setup (#401)
+- VAULTS_DIR now optional with default to ./vaults (#337)
+- Dots allowed in vault IDs for GitHub-style directory names (#400)
+
+**Infrastructure**
+- REST API migration for stateless operations (#390)
+- Auto-save chat transcripts to vault (#317)
+- Turn duration tracking for assistant messages (#339)
+- Cumulative context usage tracking across session turns (#344)
+- SDK dependency injection with fail-safe pattern (#393)
+
+### Changed
+
+- Theme colors updated to Gruvbox Dark palette (#357)
+- Mobile screen space optimizations (#354)
+- Semantic article element for viewer content (#353)
+- Settings sources order corrected to local, project, user (#315)
+
+### Removed
+
+- **Vault Widgets subsystem** — computed frontmatter aggregation, DAG dependency resolution, expression language, and all widget components (#373)
+- **External Data Sync subsystem** — BGG connector, sync pipeline, vocabulary normalizer (#373)
+
+### Fixed
+
+- Card discovery: error handling and retry logic (#398), crash recovery (#409), exclusion of CLAUDE.md (#417) and chat transcripts (#408)
+- Card scheduling: date-seeded secondary sort for stable daily randomization (#419), 30-minute overlap for daily cutoff (#418)
+- Card generation: unique/unambiguous answers (#423), answer must be in source content (#420)
+- Pair Writing: meeting state restoration after refresh (#378), text selection on iOS Safari (#389)
+- File operations: breadcrumb updates on search/link navigation (#352), file name in delete confirmation (#351), tree refresh after move (#348)
+- Context menu positioning near bottom of screen (#347)
+- Stop button reappearance when streaming starts after early abort (#349)
+- CLAUDE.md update made fire-and-forget to prevent HTTP timeouts (#413)
+- Skeleton loading states and entrance animations for HomeView widgets (#415)
+- Delete button dimmed and DownloadViewer layout overlap fixed (#422)
+- Test pollution from bun mock.module resolved (#313, #326)
+- Fake timers eliminate sleeps in unit tests (#399)
+
+### Documentation
+
+- Spaced repetition system documentation with screenshots (#424)
+- Mock.module() prohibition documented in CLAUDE.md (#381)
+- Chat transcripts location in CLAUDE.md setup (#402)
+
 ## [1.3.0] - 2026-01-15
 
 ### Added

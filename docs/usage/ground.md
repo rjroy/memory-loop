@@ -57,51 +57,52 @@ If your vault has a `goals.md` file, its content displays here as rendered markd
 
 When you have flashcards due for review, the spaced repetition widget appears on the Ground tab. This widget helps you retain knowledge from your vault using the SM-2 algorithm.
 
-[ img: Spaced repetition widget showing a question card ]
-
 ### How It Works
 
 1. **Card Discovery**: The system periodically scans your vault for knowledge-worthy content and generates Q&A flashcards from factual information in your notes.
 
 2. **Spaced Review**: Cards appear for review based on how well you remember them. Cards you know well appear less frequently; cards you struggle with appear more often.
 
-3. **Widget Display**: When cards are due, the widget shows the count and lets you start a review session directly from Ground.
+3. **Widget Display**: When cards are due, the widget shows the count and lets you review directly from Ground.
 
 ### Review Flow
 
-When you tap the widget to review:
+#### Question Phase
 
-1. **Question Phase**: The card shows only the question. Take a moment to recall the answer.
+The card shows only the question. Type your answer in the input field to help focus your recall before revealing.
 
-2. **Reveal**: Tap **Show Answer** (or press Space) to reveal the answer.
+<img src="images/spaced-rep-q.webp" alt="Spaced repetition question phase showing a question card with answer input and action buttons"/>
 
-3. **Self-Assessment**: Rate how well you remembered:
-   - **Again** (1): Completely forgot, need to see it soon
-   - **Hard** (2): Struggled but eventually remembered
-   - **Good** (3): Recalled correctly with some effort
-   - **Easy** (4): Recalled instantly and confidently
+**Actions available:**
+- **Skip**: Move the card to the end of today's queue
+- **Forget**: Archive the card permanently (requires confirmation)
+- **Open**: Edit the card file in Recall (useful if the question needs fixing)
+- **Show Answer**: Reveal the answer
 
-4. **Next Card**: After rating, the next due card appears automatically.
+Press **Enter** while in the answer input to reveal the answer.
 
-[ img: Review flow showing question, revealed answer, and assessment buttons ]
+#### Answer Phase
+
+After revealing, your typed answer appears above the correct answer for comparison. The source file is shown so you can verify context.
+
+<img src="images/spaced-rep-a.webp" alt="Spaced repetition answer phase showing the question, user answer, correct answer, and assessment buttons"/>
+
+Rate how well you remembered:
+- **Again** (1): Completely forgot, need to see it soon
+- **Hard** (2): Struggled but eventually remembered
+- **Good** (3): Recalled correctly with some effort
+- **Easy** (4): Recalled instantly and confidently
+
+Tap **Open** next to the source file to view the original note in Recall.
 
 ### Keyboard Shortcuts
 
-During review, you can use keyboard shortcuts for faster assessment:
-- **Space**: Reveal answer (when viewing question)
+- **Enter**: Reveal answer (when typing in question phase)
 - **1-4**: Select assessment rating (when answer is revealed)
-
-### Actions
-
-Each card has additional actions available:
-
-- **Skip**: Move the card to the end of today's review queue. Use this when you want to come back to it later in the session.
-
-- **Forget**: Archive the card permanently. Use this for cards that are no longer relevant or contain outdated information. Archived cards move to `06_Metadata/memory-loop/cards/archive/`.
 
 ### Completion
 
-When you've reviewed all due cards, the widget shows a completion message. New cards will become due based on their scheduled review dates.
+When you've reviewed all due cards, the widget shows a completion message with the count of cards reviewed. New cards become due based on their scheduled review dates.
 
 ### Card Sources
 

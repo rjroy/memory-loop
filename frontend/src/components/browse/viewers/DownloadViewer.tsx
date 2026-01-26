@@ -115,7 +115,7 @@ function FileIcon(): ReactNode {
 function TrashIcon(): ReactNode {
   return (
     <svg
-      className="download-viewer__icon"
+      className="download-viewer__trash-icon"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

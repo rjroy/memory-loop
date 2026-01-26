@@ -98,7 +98,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
+  color: var(--color-text-muted);
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
@@ -109,7 +109,7 @@
   color: var(--color-danger);
 }
 
-.download-viewer__icon {
+.download-viewer__trash-icon {
   width: 18px;
   height: 18px;
 }
@@ -118,6 +118,6 @@
   .download-viewer__delete-btn:hover {
     background: transparent;
     border-color: transparent;
-    color: var(--color-text-secondary);
+    color: var(--color-text-muted);
   }
 }

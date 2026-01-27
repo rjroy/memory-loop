@@ -47,9 +47,10 @@ export const DEFAULT_WEEKLY_BYTE_LIMIT = 500 * 1024;
  * Default requirements for Q&A extraction.
  * This is the content that can be customized by users.
  */
-export const DEFAULT_REQUIREMENTS = `- Focus on key facts, concepts, definitions, and relationships
+export const DEFAULT_REQUIREMENTS = `- Generate zero questions rather than questions that don't fully satisfy these requirements
+- Focus on key facts, concepts, definitions, and relationships
 - Questions must be self-contained and answerable without seeing the source
-- Never use "this", "the above", or assume the reader knows the context
+- Never use "this", "the above", or assume the reader knows or has access to the context
 - Questions must have a unique, unambiguous answer that doesn't depend on when the note was written
 - Avoid questions like "What did X implement?" or "What was decided?" that could have many valid answers
 - Include enough specifics in the question to uniquely identify what's being asked (project name, feature name, date, version)
@@ -58,9 +59,7 @@ export const DEFAULT_REQUIREMENTS = `- Focus on key facts, concepts, definitions
 - If the content mentions something but doesn't explain it, don't make a card about it
 - Each question should test a distinct piece of knowledge - avoid variations that ask the same thing differently
 - Skip subjective opinions, TODOs, or transient information
-- Skip self-referential questions about the note-taker's actions, decisions, or personal context
-- Questions must be answerable by anyone, not just the person who wrote the note
-- Avoid first-person or second-person framing ("you", "we", "I", "my", "our")
+- Questions must be answerable by anyone - avoid self-referential framing, first/second person pronouns ("you", "we", "I", "my", "our"), and author references
 - Only extract facts that would be useful to recall weeks or months later
 - If the content has no extractable facts, return an empty array`;
 

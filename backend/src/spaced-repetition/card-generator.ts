@@ -62,8 +62,8 @@ export interface CardTypeGenerator {
 // Constants
 // =============================================================================
 
-/** Model to use for card generation (cost-efficient) */
-export const GENERATION_MODEL = "haiku";
+/** Model to use for card generation */
+export const GENERATION_MODEL = "sonnet";
 
 /** Minimum content length to attempt extraction (characters) */
 export const MIN_CONTENT_LENGTH = 100;

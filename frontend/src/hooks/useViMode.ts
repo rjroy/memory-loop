@@ -227,15 +227,12 @@ export function useViMode(options: UseViModeOptions): UseViModeResult {
 
   /**
    * Pop and restore the most recent undo state.
-   * Returns true if undo was performed, false if stack was empty.
+   * Does nothing if stack is empty or textarea is unavailable.
    */
-  const popUndoState = useCallback((): boolean => {
+  const popUndoState = useCallback((): void => {
     const textarea = textareaRef?.current;
-    if (!textarea) return false;
+    if (!textarea) return;
 
-    // We need to access current stack state for the pop operation
-    // This is handled by using a functional update and returning the result
-    let restored = false;
     setUndoStack((prev) => {
       if (prev.length === 0) return prev;
 
@@ -245,12 +242,9 @@ export function useViMode(options: UseViModeOptions): UseViModeResult {
       textarea.value = state.content;
       moveCursor(textarea, state.cursorPosition);
       onContentChange?.(state.content);
-      restored = true;
 
       return newStack;
     });
-
-    return restored;
   }, [textareaRef, onContentChange]);
 
   const handleKeyDown = useCallback(
@@ -329,7 +323,7 @@ function handleNormalModeKey(
   textarea: HTMLTextAreaElement | null,
   onContentChange?: (content: string) => void,
   pushUndoState?: () => void,
-  popUndoState?: () => boolean,
+  popUndoState?: () => void,
   pendingOperator?: "d" | "y" | null,
   setPendingOperator?: React.Dispatch<React.SetStateAction<"d" | "y" | null>>,
   clipboard?: string | null,

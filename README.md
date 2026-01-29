@@ -15,19 +15,21 @@ A mobile-friendly web interface for interacting with Obsidian vaults via Claude 
 
 ## Features
 
+The app is organized around four modes (the GCTR framework), each named for what you *do*:
+
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/ground.webp" width="180"><br><b>Home</b></td>
-    <td align="center"><img src="docs/screenshots/capture.webp" width="180"><br><b>Note</b></td>
-    <td align="center"><img src="docs/screenshots/think.webp" width="180"><br><b>Chat</b></td>
-    <td align="center"><img src="docs/screenshots/recall.webp" width="180"><br><b>View</b></td>
+    <td align="center"><img src="docs/screenshots/ground.webp" width="180"><br><b>🪨 Ground</b></td>
+    <td align="center"><img src="docs/screenshots/capture.webp" width="180"><br><b>🪶 Capture</b></td>
+    <td align="center"><img src="docs/screenshots/think.webp" width="180"><br><b>✨ Think</b></td>
+    <td align="center"><img src="docs/screenshots/recall.webp" width="180"><br><b>🪞 Recall</b></td>
   </tr>
 </table>
 
-- **Home** — Dashboard showing your goals, AI-generated inspiration, and recent activity
-- **Note** — Quick capture that appends to daily notes with timestamps
-- **Chat** — AI conversations powered by Claude, with full vault access and image upload
-- **View** — Browse files, manage tasks, search notes, and view images/PDFs/videos
+- **Ground** — Orient yourself. Dashboard with goals, AI-generated inspiration, and spaced repetition review
+- **Capture** — Record thoughts before they vanish. Quick notes append to daily files with timestamps
+- **Think** — Process ideas with AI as thinking partner. Conversations with full vault access and image upload
+- **Recall** — Find and review what you've stored. Browse files, manage tasks, search, pair-write with AI
 
 **Designed for mobile:**
 
@@ -70,7 +72,7 @@ MOCK_SDK=true               # Test without API calls
 Each vault needs a `CLAUDE.md` file at its root. Optional structure for full feature support:
 
 - `00_Inbox/` — Daily notes location (configurable)
-- Goals section in `CLAUDE.md` — Displayed on Home dashboard
+- Goals section in `CLAUDE.md` — Displayed on Ground dashboard
 - `06_Metadata/memory-loop/` — Inspiration prompt sources
 
 ### Per-Vault Configuration
@@ -126,6 +128,7 @@ http://YOUR_IP:5173
 
 ## Documentation
 
+- [System Overview](.lore/specs/_overview.md) — Architecture, design decisions, and feature specs
 - [Usage Guide](docs/usage/README.md) — How to use each tab (Ground, Capture, Think, Recall)
 - [Widgets](docs/widgets/README.md) — Configure computed widgets for dashboards and file views
 
@@ -140,10 +143,10 @@ http://YOUR_IP:5173
 memory-loop/
 ├── backend/        # Hono server + Claude Agent SDK
 ├── frontend/       # React 19 + Vite
-└── shared/         # Zod schemas for WebSocket protocol
+└── shared/         # Zod schemas for type-safe messages
 ```
 
-Communication happens over WebSocket with typed message schemas.
+Two communication channels: REST API for stateless operations (file CRUD, search, config) and WebSocket for streaming (AI responses, tool execution, session state). Both use Zod-validated message schemas.
 
 ## License
 

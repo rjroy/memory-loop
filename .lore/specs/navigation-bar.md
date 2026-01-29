@@ -87,7 +87,11 @@ const modes: ModeOption[] = [
 | [Capture](./capture.md) | Capture mode content |
 | [Think](./think.md) | Think mode content |
 | [Recall](./recall.md) | Recall mode content |
-| [Configuration](../_infrastructure/configuration.md) | Header layout context |
+| [Configuration](./_infrastructure/configuration.md) | Header layout context |
+
+## Diagrams
+
+- [GCTR Mode Transitions](../diagrams/gctr-mode-transitions.md) - All mode switches and contextual transitions with data flow
 
 ## Notes
 

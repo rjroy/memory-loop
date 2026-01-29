@@ -202,6 +202,10 @@ All fields optional:
 | [Ground](../home-dashboard.md) | First tab after selection |
 | All tabs | Require vault to be selected |
 
+## Diagrams
+
+- [Session Auto-Resume Flow](../../diagrams/session-auto-resume.md) - How vault selection triggers session lookup and establishment
+
 ## Setup Wizard
 
 New or unconfigured vaults show a "Configure" button instead of "Select." Running setup prepares the vault for Memory Loop usage.

@@ -209,6 +209,11 @@ The trend is toward REST for everything except streaming. This reduces complexit
 | [Spaced Repetition](../spaced-repetition.md) | REST for cards |
 | [System Settings](./system-settings.md) | WebSocket (migration candidate) |
 
+## Diagrams
+
+- [Session Auto-Resume Flow](../../diagrams/session-auto-resume.md) - How REST lookup and WebSocket establishment work together
+- [WebSocket Connection Lifecycle](../../diagrams/websocket-connection-lifecycle.md) - Connect, operate, reconnect, cleanup
+
 ## Notes
 
 - Health issues surfaced via `health_report` messages (file watcher failures, config problems)

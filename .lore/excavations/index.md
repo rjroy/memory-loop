@@ -54,6 +54,9 @@
 | ~~WebSocket handlers~~ | Backend | ✓ Documented as Communication Layer |
 | ~~/api/sessions~~ | REST | ✓ Documented as Communication Layer (session management split) |
 | ~~Card Generator~~ | Backend | ✓ Documented as Card Generator infrastructure |
+| ~~Tasks~~ | REST | ✓ Documented in Home Dashboard (Tasks Widget section) |
+| ~~Health Issues~~ | REST | ✓ Documented in Home Dashboard (Health Panel section) |
+| ~~Setup Wizard~~ | REST | ✓ Documented in Vault Selection (Setup Wizard section) |
 
 ## Architecture Notes
 

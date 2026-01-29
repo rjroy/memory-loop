@@ -113,9 +113,9 @@ attendees: []
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | POST | `/api/vaults/:id/capture` | Submit a capture |
-| POST | `/api/vaults/:id/meetings/start` | Start meeting mode |
-| POST | `/api/vaults/:id/meetings/stop` | Stop meeting mode |
-| GET | `/api/vaults/:id/meetings/state` | Check active meeting |
+| POST | `/api/vaults/:id/meetings` | Start meeting mode |
+| DELETE | `/api/vaults/:id/meetings/current` | Stop meeting mode |
+| GET | `/api/vaults/:id/meetings/current` | Check active meeting |
 
 ### Capture Request/Response
 

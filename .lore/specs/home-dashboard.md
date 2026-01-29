@@ -24,6 +24,8 @@ This is a **container feature**. It orchestrates widgets from several sub-featur
 | GET /api/vaults/:id/goals | REST | `backend/src/routes/home.ts:84` |
 | GET /api/vaults/:id/inspiration | REST | `backend/src/routes/home.ts:108` |
 | GET /api/vaults/:id/tasks | REST | `backend/src/routes/home.ts:146` |
+| PATCH /api/vaults/:id/tasks | REST | `backend/src/routes/home.ts:175` |
+| DELETE /api/vaults/:id/health-issues/:issueId | REST | `backend/src/routes/config.ts:144` |
 
 ## Implementation
 
@@ -74,15 +76,85 @@ This is a **container feature**. It orchestrates widgets from several sub-featur
 | View capture | Browse | Daily note file path |
 | Resume discussion | Discussion | Restores session by ID |
 
+## Tasks Widget
+
+Scans vault directories for markdown checkboxes and displays them as a task list.
+
+### Source Directories
+
+Tasks are discovered from three PARA directories (configurable in vault config):
+- **Inbox** (`inboxPath`, default: `00_Inbox/`)
+- **Projects** (`projectsPath`, default: `01_Projects/`)
+- **Areas** (`areasPath`, default: `02_Areas/`)
+
+### Task Format
+
+Standard markdown checkbox syntax with extended states:
+
+```markdown
+- [ ] Incomplete task
+- [x] Complete task
+- [/] Partial progress
+- [?] Needs more information
+- [b] Bookmarked
+- [f] Urgent/flagged
+```
+
+### State Cycling
+
+Clicking a task cycles through states: `[ ]` → `[x]` → `[/]` → `[?]` → `[b]` → `[f]` → `[ ]`
+
+### API
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/vaults/:id/tasks` | Get all tasks from configured directories |
+| PATCH | `/api/vaults/:id/tasks` | Toggle task state |
+
+**PATCH request body:**
+```json
+{
+  "filePath": "01_Projects/project.md",
+  "lineNumber": 12,
+  "newState": "x"  // optional: omit to cycle
+}
+```
+
+### Implementation Note
+
+Backend (`task-manager.ts`) is complete with full test coverage. Frontend hook (`useHome.ts`) exposes `getTasks()` and `toggleTask()`. UI widget not yet implemented in `HomeView.tsx`.
+
+## Health Panel
+
+Displays backend health issues (file watcher failures, config problems, etc.).
+
+### Issue Display
+
+Issues appear in a collapsible panel with:
+- Issue severity icon
+- Description text
+- Dismiss button
+
+### Dismissal
+
+Health issues are managed per-WebSocket session. Two dismissal paths:
+
+| Channel | Endpoint | Effect |
+|---------|----------|--------|
+| WebSocket | `dismiss_health_issue` message | Immediate removal from session state |
+| REST | `DELETE /health-issues/:issueId` | Acknowledged but requires WebSocket for actual removal |
+
+The REST endpoint exists for API completeness but returns a note: "Dismiss via WebSocket for immediate effect."
+
 ## Connected Features
 
 | Feature | Relationship | Spec |
 |---------|-------------|------|
-| [Spaced Repetition](./spaced-repetition.md) | Widget embedded in Ground | Not yet documented |
-| [Inspiration](./inspiration.md) | Widget embedded in Ground | Not yet documented |
-| [Capture](./capture.md) | Tab: recent captures displayed here | Not yet documented |
-| [Think](./think.md) | Tab: debrief buttons navigate here | Not yet documented |
-| [Recall](./recall.md) | Tab: view capture navigates here | Not yet documented |
+| [Spaced Repetition](./spaced-repetition.md) | Widget embedded in Ground | Documented |
+| [Inspiration](./inspiration.md) | Widget embedded in Ground | Documented |
+| [Capture](./capture.md) | Tab: recent captures displayed here | Documented |
+| [Think](./think.md) | Tab: debrief buttons navigate here | Documented |
+| [Recall](./recall.md) | Tab: view capture navigates here | Documented |
 
 ## Notes
 

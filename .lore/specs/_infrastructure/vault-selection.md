@@ -69,6 +69,7 @@ The app has two different gear buttons that open different dialogs:
 | App mount (no vault) | Frontend | `App.tsx` → `AppShell` renders `VaultSelect` |
 | GET /api/vaults | REST | `backend/src/server.ts:228` |
 | GET /api/sessions/:vaultId | REST | `backend/src/server.ts:242` |
+| POST /api/vaults/:id/setup | REST | `backend/src/routes/config.ts:114` |
 | select_vault | WebSocket | `backend/src/websocket-handler.ts` |
 | resume_session | WebSocket | `backend/src/websocket-handler.ts` |
 | create_vault | WebSocket | `backend/src/websocket-handler.ts` |
@@ -200,6 +201,75 @@ All fields optional:
 | [System Settings](./system-settings.md) | Memory/Prompt/Cards via SettingsDialog |
 | [Ground](../home-dashboard.md) | First tab after selection |
 | All tabs | Require vault to be selected |
+
+## Setup Wizard
+
+New or unconfigured vaults show a "Configure" button instead of "Select." Running setup prepares the vault for Memory Loop usage.
+
+### Trigger
+
+`POST /api/vaults/:id/setup` (REST endpoint in `routes/config.ts`)
+
+### What Setup Does
+
+1. **Install Claude Commands** (`vault-setup.ts:installCommands`)
+   - Copies bundled command templates to `.claude/commands/`
+   - Skips existing files (no overwrite)
+   - Templates: `/daily-debrief`, `/weekly-debrief`, `/expand-note`, etc.
+
+2. **Install Claude Skills** (`vault-setup.ts:installSkills`)
+   - Copies skill files to `.claude/skills/`
+   - Same skip-existing behavior
+
+3. **Create PARA Directories** (`vault-setup.ts:createParaDirectories`)
+   - Creates missing directories based on config:
+     - Inbox (default: `00_Inbox/`)
+     - Projects (default: `01_Projects/`)
+     - Areas (default: `02_Areas/`)
+     - Resources (default: `03_Resources/`)
+     - Archives (default: `04_Archive/`)
+     - Attachments (default: `05_Attachments/`)
+   - Respects `contentRoot` if configured
+
+4. **Update CLAUDE.md** (`vault-setup.ts:updateClaudeMd`)
+   - Backs up existing to `.memory-loop/claude-md-backup.md`
+   - Uses LLM to merge Memory Loop context into existing content
+   - Preserves user's structure while adding Memory Loop instructions
+
+5. **Create .gitignore** (`vault-setup.ts:createGitignore`)
+   - Writes `.memory-loop/.gitignore` with patterns for:
+     - `cache.db*` (SQLite cache)
+     - `sessions/` (conversation state)
+     - `slash-commands.json`
+
+6. **Write Completion Marker**
+   - Creates `.memory-loop/setup-complete` with metadata:
+     ```json
+     {
+       "completedAt": "2026-01-28T12:00:00.000Z",
+       "version": "1.3.0",
+       "commandsInstalled": ["daily-debrief", "weekly-debrief", ...],
+       "skillsInstalled": [...],
+       "paraCreated": ["00_Inbox", "01_Projects", ...],
+       "claudeMdUpdated": true,
+       "gitignoreUpdated": true
+     }
+     ```
+
+### Setup Marker Effects
+
+| Marker State | Vault Card | Button |
+|--------------|------------|--------|
+| Missing | "Needs setup" badge | "Configure" |
+| Present | Normal appearance | "Select" |
+
+### Re-running Setup
+
+Setup is idempotent:
+- Skips existing commands/skills (no overwrite)
+- Skips existing directories
+- CLAUDE.md backup prevents data loss
+- Updates marker with new timestamp
 
 ## Notes
 

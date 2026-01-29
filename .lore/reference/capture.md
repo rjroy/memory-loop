@@ -172,7 +172,7 @@ Captures appear in the Recent Activity section on Ground:
 | [Ground](./home-dashboard.md) | Shows recent captures |
 | [Think](./think.md) | `/expand-note` processes capture files |
 | [Recall](./recall.md) | "View" button opens daily note |
-| [Configuration](../specs/_infrastructure/configuration.md) | `recentCaptures` setting |
+| [Configuration](./_infrastructure/configuration.md) | `recentCaptures` setting |
 
 ## Notes
 

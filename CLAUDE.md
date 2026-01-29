@@ -146,7 +146,7 @@ This ensures tests never accidentally spend API tokens.
 
 ## Documentation
 
-- `.lore/specs/` contains feature specifications following the GCTR framework
+- `.lore/reference/` contains technical reference documentation for implemented features
 - `docs/usage/` has user-facing guides for each mode
 - `docs/adr/` contains architecture decision records
 
@@ -156,4 +156,4 @@ When making changes that affect user-facing behavior, update the relevant docs. 
 
 - Usage docs in `docs/usage/` when tab behavior changes
 - ADRs for significant architectural decisions
-- Specs in `.lore/specs/` when features are added or modified
+- Reference docs in `.lore/reference/` when features are added or modified

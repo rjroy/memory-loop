@@ -85,7 +85,7 @@ The flow has two distinct phases:
 
 ## Related
 
-- [Communication Layer](../specs/_infrastructure/communication-layer.md) - Protocol details
-- [Vault Selection](../specs/_infrastructure/vault-selection.md) - UI component spec
+- [Communication Layer](../reference/_infrastructure/communication-layer.md) - Protocol details
+- [Vault Selection](../reference/_infrastructure/vault-selection.md) - UI component spec
 - `frontend/src/components/vault/VaultSelect.tsx:435-469` - handleVaultClick implementation
 - `backend/src/websocket-handler.ts:869-914` - handleResumeSession implementation

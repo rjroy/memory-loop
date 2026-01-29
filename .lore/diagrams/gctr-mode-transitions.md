@@ -127,9 +127,9 @@ Both sub-modes preserve the file tree and current path. Switching GCTR modes whi
 
 ## Related
 
-- [System Overview](../specs/_overview.md) - GCTR framework explanation
-- [Navigation Bar](../specs/navigation-bar.md) - Nav component spec
-- [Pair Writing](../specs/pair-writing.md) - AI-assisted editing spec
-- [Recall](../specs/recall.md) - File browser and viewer spec
+- [System Overview](../reference/_overview.md) - GCTR framework explanation
+- [Navigation Bar](../reference/navigation-bar.md) - Nav component spec
+- [Pair Writing](../reference/pair-writing.md) - AI-assisted editing spec
+- [Recall](../reference/recall.md) - File browser and viewer spec
 - `frontend/src/components/shared/ModeToggle.tsx` - Nav bar implementation
 - `frontend/src/contexts/session/types.ts:27` - AppMode type definition

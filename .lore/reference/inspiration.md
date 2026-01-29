@@ -178,7 +178,7 @@ Used when quote file missing, empty, or generation fails.
 |---------|-------------|
 | [Ground](./home-dashboard.md) | Widget lives in Ground tab |
 | [Think](./think.md) | Click navigates here with prefilled text |
-| [Configuration](../specs/_infrastructure/configuration.md) | Pool size and generation counts |
+| [Configuration](./_infrastructure/configuration.md) | Pool size and generation counts |
 
 ## Notes
 

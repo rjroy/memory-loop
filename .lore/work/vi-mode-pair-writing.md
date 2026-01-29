@@ -96,10 +96,11 @@ Tasks:
 - `O`: insert newline above, enter Insert
 - Unit tests for cursor position after each
 
-### 8. Undo Stack
+### 8. Undo Stack ✓
 **What**: Internal undo history for `u` command
 **Delivers**: Can undo edit operations
 **Depends on**: Chunk 3 (needs to hook into content changes)
+**Completed**: 2026-01-29
 
 Tasks:
 - Add undo stack to `useViMode` state
@@ -109,10 +110,11 @@ Tasks:
 - Limit stack depth (100 entries)
 - Unit tests for undo behavior
 
-### 9. Delete Commands
+### 9. Delete Commands ✓
 **What**: `x` (character) and `dd` (line) deletion
 **Delivers**: Can delete content in Normal mode
 **Depends on**: Chunks 6, 8 (movement + undo)
+**Completed**: 2026-01-29
 
 Tasks:
 - Implement `x`: delete character at cursor
@@ -122,10 +124,11 @@ Tasks:
 - Handle edge cases (empty line, end of doc)
 - Unit tests
 
-### 10. Yank/Put Commands
+### 10. Yank/Put Commands ✓
 **What**: `yy`, `p`, `P` with internal clipboard
 **Delivers**: Copy/paste lines within editor
 **Depends on**: Chunks 6, 8, 9 (movement, undo, line operations)
+**Completed**: 2026-01-29
 
 Tasks:
 - Add clipboard state to `useViMode`
@@ -135,10 +138,11 @@ Tasks:
 - Push to undo stack before paste
 - Unit tests
 
-### 11. Numeric Prefixes
+### 11. Numeric Prefixes ✓
 **What**: Count prefix for commands (e.g., `5j`, `3dd`)
 **Delivers**: Commands can be repeated with count
 **Depends on**: Chunks 6, 9, 10 (needs commands to prefix)
+**Completed**: 2026-01-29
 
 Tasks:
 - Add `pendingCount` state to `useViMode`
@@ -209,10 +213,10 @@ Tasks:
 5. ~~**Chunk 5** (Mode Indicator) - Quick UI win, depends on 3~~ ✓
 6. ~~**Chunk 6** (Basic Movement) - First real vi behavior~~ ✓
 7. ~~**Chunk 7** (Insert Entry) - Can now edit text~~ ✓
-8. **Chunk 8** (Undo Stack) - Safety net before destructive commands
-9. **Chunk 9** (Delete) - First destructive command
-10. **Chunk 10** (Yank/Put) - Copy/paste
-11. **Chunk 11** (Numeric Prefixes) - Power user feature
+8. ~~**Chunk 8** (Undo Stack) - Safety net before destructive commands~~ ✓
+9. ~~**Chunk 9** (Delete) - First destructive command~~ ✓
+10. ~~**Chunk 10** (Yank/Put) - Copy/paste~~ ✓
+11. ~~**Chunk 11** (Numeric Prefixes) - Power user feature~~ ✓
 12. **Chunk 12** (Command Mode UI) - Needed for ex commands
 13. **Chunk 13** (Ex Commands) - Save/exit flow
 14. **Chunk 14** (Integration) - Wire it all together
@@ -226,6 +230,7 @@ Vi mode toggle works, shows mode indicator and block cursor. No commands yet, bu
 **Milestone B (Chunks 6-7)**: ✓ COMPLETE (2026-01-29)
 Navigation and insert mode work. Can move around and type text.
 
-**Milestone C (Chunks 8-11)**: Full Normal mode editing. Delete, yank, put, undo, counts all work.
+**Milestone C (Chunks 8-11)**: ✓ COMPLETE (2026-01-29)
+Full Normal mode editing. Delete, yank, put, undo, counts all work.
 
 **Milestone D (Chunks 12-15)**: Complete feature. Ex commands for save/exit, full integration, polished.

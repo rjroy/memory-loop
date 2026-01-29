@@ -2,13 +2,17 @@
  * useViMode Hook Tests
  *
  * Tests the vi mode state machine: mode transitions between normal, insert, and command.
- * Also tests movement commands (h, j, k, l, 0, $) in normal mode.
+ * Also tests movement commands (h, j, k, l, 0, $), delete commands (x, dd),
+ * yank/put commands (yy, p, P), and undo.
  *
  * @see .lore/plans/vi-mode-pair-writing.md
  * @see REQ-4: Support three modes: Normal (default), Insert, and Command
  * @see REQ-6: Esc returns to Normal mode from Insert or Command mode
  * @see REQ-7: Movement: h (left), j (down), k (up), l (right)
  * @see REQ-8: Line movement: 0 (start of line), $ (end of line)
+ * @see REQ-10: Delete: x (character), dd (line)
+ * @see REQ-11: Yank/put: yy (copy line), p (paste after), P (paste before)
+ * @see REQ-12: Undo: u undoes last edit operation
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -78,6 +82,12 @@ describe("useViMode", () => {
       const { result } = renderHook(() => useViMode(defaultOptions));
 
       expect(result.current.clipboard).toBeNull();
+    });
+
+    it("starts with empty undo stack", () => {
+      const { result } = renderHook(() => useViMode(defaultOptions));
+
+      expect(result.current.undoStackSize).toBe(0);
     });
   });
 
@@ -1880,6 +1890,2420 @@ describe("insert mode entry commands", () => {
       });
 
       expect(event.defaultPrevented).toBe(true);
+    });
+  });
+});
+
+/**
+ * Undo stack tests.
+ *
+ * @see REQ-12: Undo: u undoes last edit operation (maintains internal undo stack)
+ * @see TD-9: Undo stack implementation in .lore/plans/vi-mode-pair-writing.md
+ */
+describe("undo stack", () => {
+  let textarea: HTMLTextAreaElement;
+  let textareaRef: React.RefObject<HTMLTextAreaElement>;
+
+  function createTextareaRef(ta: HTMLTextAreaElement) {
+    return { current: ta } as React.RefObject<HTMLTextAreaElement>;
+  }
+
+  beforeEach(() => {
+    textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+    textareaRef = createTextareaRef(textarea);
+  });
+
+  afterEach(() => {
+    textarea.remove();
+  });
+
+  function getOptionsWithTextarea(
+    onContentChange?: (content: string) => void
+  ): UseViModeOptions {
+    return {
+      enabled: true,
+      textareaRef,
+      onContentChange,
+    };
+  }
+
+  describe("pushUndoState", () => {
+    it("increases undo stack size when called", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      expect(result.current.undoStackSize).toBe(0);
+
+      act(() => {
+        result.current.pushUndoState();
+      });
+
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("pushes state before entering insert mode via 'i'", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      expect(result.current.undoStackSize).toBe(0);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("i"));
+      });
+
+      expect(result.current.mode).toBe("insert");
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("pushes state before entering insert mode via 'a'", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("a"));
+      });
+
+      expect(result.current.mode).toBe("insert");
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("pushes state before entering insert mode via 'A'", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("A"));
+      });
+
+      expect(result.current.mode).toBe("insert");
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("pushes state before 'o' command (which modifies content)", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("o"));
+      });
+
+      expect(result.current.mode).toBe("insert");
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("pushes state before 'O' command (which modifies content)", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("O"));
+      });
+
+      expect(result.current.mode).toBe("insert");
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("does not push state for movement commands", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("h"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("l"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+    });
+  });
+
+  describe("'u' command (undo)", () => {
+    it("prevents default", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      const event = createKeyEvent("u");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("does nothing when undo stack is empty", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      // Content and cursor should be unchanged
+      expect(textarea.value).toBe("Hello");
+      expect(textarea.selectionStart).toBe(2);
+      expect(result.current.undoStackSize).toBe(0);
+    });
+
+    it("restores content from undo stack", () => {
+      textarea.value = "Original";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      let capturedContent = "";
+      const { result } = renderHook(() =>
+        useViMode(
+          getOptionsWithTextarea((content) => {
+            capturedContent = content;
+          })
+        )
+      );
+
+      // Push the original state to undo stack
+      act(() => {
+        result.current.pushUndoState();
+      });
+
+      // Simulate an edit (in real usage, this would be insert mode changes)
+      textarea.value = "Modified";
+      textarea.selectionStart = 5;
+      textarea.selectionEnd = 5;
+
+      // Now undo
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("Original");
+      expect(capturedContent).toBe("Original");
+    });
+
+    it("restores cursor position from undo stack", () => {
+      textarea.value = "Hello World";
+      textarea.selectionStart = 5;
+      textarea.selectionEnd = 5;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Push state with cursor at position 5
+      act(() => {
+        result.current.pushUndoState();
+      });
+
+      // Move cursor
+      textarea.selectionStart = 8;
+      textarea.selectionEnd = 8;
+
+      // Undo should restore cursor to position 5
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.selectionStart).toBe(5);
+      expect(textarea.selectionEnd).toBe(5);
+    });
+
+    it("decreases undo stack size when undo is performed", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Push two states
+      act(() => {
+        result.current.pushUndoState();
+      });
+      act(() => {
+        result.current.pushUndoState();
+      });
+
+      expect(result.current.undoStackSize).toBe(2);
+
+      // Undo once
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(result.current.undoStackSize).toBe(1);
+
+      // Undo again
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+    });
+
+    it("supports multiple consecutive undos", () => {
+      textarea.value = "State 1";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Push State 1
+      act(() => {
+        result.current.pushUndoState();
+      });
+
+      // Change to State 2
+      textarea.value = "State 2";
+      textarea.selectionStart = 1;
+      textarea.selectionEnd = 1;
+
+      // Push State 2
+      act(() => {
+        result.current.pushUndoState();
+      });
+
+      // Change to State 3
+      textarea.value = "State 3";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      // First undo: back to State 2
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("State 2");
+      expect(textarea.selectionStart).toBe(1);
+
+      // Second undo: back to State 1
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("State 1");
+      expect(textarea.selectionStart).toBe(0);
+
+      // Third undo: stack is empty, no change
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("State 1");
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("undoes 'o' command modifications", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Enter insert mode via 'o' (this pushes undo state first)
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("o"));
+      });
+
+      expect(textarea.value).toBe("Hello\n");
+      expect(result.current.mode).toBe("insert");
+
+      // Exit insert mode
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Escape"));
+      });
+
+      expect(result.current.mode).toBe("normal");
+
+      // Undo should restore original content
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("Hello");
+      expect(textarea.selectionStart).toBe(3);
+    });
+
+    it("undoes 'O' command modifications", () => {
+      textarea.value = "World";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Enter insert mode via 'O' (this pushes undo state first)
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("O"));
+      });
+
+      expect(textarea.value).toBe("\nWorld");
+      expect(result.current.mode).toBe("insert");
+
+      // Exit insert mode
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Escape"));
+      });
+
+      // Undo should restore original content
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("World");
+      expect(textarea.selectionStart).toBe(2);
+    });
+
+    it("batches insert mode changes into single undo entry", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 5;
+      textarea.selectionEnd = 5;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Enter insert mode (pushes undo state)
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("a"));
+      });
+
+      expect(result.current.undoStackSize).toBe(1);
+
+      // Simulate typing multiple characters in insert mode
+      // (In real usage, the browser handles this, we just simulate the result)
+      textarea.value = "Hello World";
+      textarea.selectionStart = 11;
+      textarea.selectionEnd = 11;
+
+      // Exit insert mode
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Escape"));
+      });
+
+      // Stack size should still be 1 (no new entries during insert mode)
+      expect(result.current.undoStackSize).toBe(1);
+
+      // Single undo should restore the entire insert mode session
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("Hello");
+      expect(result.current.undoStackSize).toBe(0);
+    });
+  });
+
+  describe("undo stack depth limit", () => {
+    it("limits stack to 100 entries", () => {
+      textarea.value = "Test";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Push 105 states
+      for (let i = 0; i < 105; i++) {
+        act(() => {
+          result.current.pushUndoState();
+        });
+      }
+
+      // Stack should be capped at 100
+      expect(result.current.undoStackSize).toBe(100);
+    });
+
+    it("removes oldest entries when limit exceeded", () => {
+      textarea.value = "Entry 0";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Push first state (Entry 0)
+      act(() => {
+        result.current.pushUndoState();
+      });
+
+      // Push 100 more states (101 total, limit is 100)
+      for (let i = 1; i <= 100; i++) {
+        textarea.value = `Entry ${i}`;
+        textarea.selectionStart = i;
+        textarea.selectionEnd = i;
+        act(() => {
+          result.current.pushUndoState();
+        });
+      }
+
+      // Set to final state
+      textarea.value = "Final";
+      textarea.selectionStart = 101;
+      textarea.selectionEnd = 101;
+
+      // Stack should have 100 entries, oldest (Entry 0) should be removed
+      expect(result.current.undoStackSize).toBe(100);
+
+      // Undo 100 times - should get to "Entry 1" (Entry 0 was removed)
+      for (let i = 0; i < 100; i++) {
+        act(() => {
+          result.current.handleKeyDown(createKeyEvent("u"));
+        });
+      }
+
+      // After 100 undos, we should be at the oldest remaining entry
+      // The oldest entry is "Entry 1" (Entry 0 was removed when we exceeded 100)
+      expect(textarea.value).toBe("Entry 1");
+      expect(result.current.undoStackSize).toBe(0);
+    });
+  });
+
+  describe("undo without textarea", () => {
+    it("does not crash when textareaRef is not provided", () => {
+      const { result } = renderHook(() =>
+        useViMode({ enabled: true, textareaRef: undefined })
+      );
+
+      // Push should not crash
+      act(() => {
+        result.current.pushUndoState();
+      });
+
+      // Undo should not crash
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+    });
+
+    it("does not crash when textareaRef.current is null", () => {
+      const nullRef = {
+        current: null,
+      } as React.RefObject<HTMLTextAreaElement | null>;
+      const { result } = renderHook(() =>
+        useViMode({ enabled: true, textareaRef: nullRef })
+      );
+
+      // Push should not crash
+      act(() => {
+        result.current.pushUndoState();
+      });
+
+      // Undo should not crash
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+    });
+  });
+});
+
+/**
+ * Delete command tests.
+ *
+ * @see REQ-10: Delete: x (character), dd (line)
+ */
+describe("delete commands", () => {
+  let textarea: HTMLTextAreaElement;
+  let textareaRef: React.RefObject<HTMLTextAreaElement>;
+
+  function createTextareaRef(ta: HTMLTextAreaElement) {
+    return { current: ta } as React.RefObject<HTMLTextAreaElement>;
+  }
+
+  beforeEach(() => {
+    textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+    textareaRef = createTextareaRef(textarea);
+  });
+
+  afterEach(() => {
+    textarea.remove();
+  });
+
+  function getOptionsWithTextarea(
+    onContentChange?: (content: string) => void
+  ): UseViModeOptions {
+    return {
+      enabled: true,
+      textareaRef,
+      onContentChange,
+    };
+  }
+
+  describe("'x' command (delete character)", () => {
+    it("deletes the character at cursor position", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      let capturedContent = "";
+      const { result } = renderHook(() =>
+        useViMode(
+          getOptionsWithTextarea((content) => {
+            capturedContent = content;
+          })
+        )
+      );
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.value).toBe("Helo");
+      expect(capturedContent).toBe("Helo");
+    });
+
+    it("prevents default", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      const event = createKeyEvent("x");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("keeps cursor at same position after delete", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.selectionStart).toBe(2);
+      expect(textarea.selectionEnd).toBe(2);
+    });
+
+    it("clamps cursor when deleting last character", () => {
+      textarea.value = "Hi";
+      textarea.selectionStart = 1;
+      textarea.selectionEnd = 1;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.value).toBe("H");
+      expect(textarea.selectionStart).toBe(1); // Clamped to end
+    });
+
+    it("does nothing when cursor is at end of text", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 5;
+      textarea.selectionEnd = 5;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.value).toBe("Hello");
+      expect(textarea.selectionStart).toBe(5);
+    });
+
+    it("does nothing on empty text", () => {
+      textarea.value = "";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.value).toBe("");
+    });
+
+    it("pushes to undo stack before delete", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      expect(result.current.undoStackSize).toBe(0);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("does not push to undo stack when nothing to delete", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 5; // At end
+      textarea.selectionEnd = 5;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+    });
+
+    it("can be undone with 'u'", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.value).toBe("Helo");
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("Hello");
+      expect(textarea.selectionStart).toBe(2);
+    });
+
+    it("deletes newline character when cursor is on it", () => {
+      textarea.value = "Hello\nWorld";
+      textarea.selectionStart = 5; // On the newline
+      textarea.selectionEnd = 5;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.value).toBe("HelloWorld");
+    });
+
+    it("deletes first character when at position 0", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.value).toBe("ello");
+      expect(textarea.selectionStart).toBe(0);
+    });
+  });
+
+  describe("'dd' command (delete line)", () => {
+    it("sets pending operator on first 'd' press", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(result.current.pendingOperator).toBe("d");
+      expect(textarea.value).toBe("Hello"); // No change yet
+    });
+
+    it("prevents default on 'd' press", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      const event = createKeyEvent("d");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("deletes line on 'dd' sequence", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 10; // In "Line 2"
+      textarea.selectionEnd = 10;
+
+      let capturedContent = "";
+      const { result } = renderHook(() =>
+        useViMode(
+          getOptionsWithTextarea((content) => {
+            capturedContent = content;
+          })
+        )
+      );
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("Line 1\nLine 3");
+      expect(capturedContent).toBe("Line 1\nLine 3");
+    });
+
+    it("clears pending operator after dd execution", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(result.current.pendingOperator).toBeNull();
+    });
+
+    it("positions cursor at start of next line after delete", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 10; // In "Line 2"
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      // Cursor should be at start of what was "Line 3" (now at position 7)
+      expect(textarea.selectionStart).toBe(7);
+    });
+
+    it("deletes last line and positions cursor at previous line", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 10; // In "Line 2"
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("Line 1");
+      // Cursor should be at start of Line 1
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("deletes only line leaving empty document", () => {
+      textarea.value = "Only line";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("");
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("deletes first line of multi-line text", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("Line 2\nLine 3");
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("deletes empty line", () => {
+      textarea.value = "Line 1\n\nLine 3";
+      textarea.selectionStart = 7; // On empty line
+      textarea.selectionEnd = 7;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("Line 1\nLine 3");
+    });
+
+    it("does nothing on empty document", () => {
+      textarea.value = "";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("");
+    });
+
+    it("pushes to undo stack before delete", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      expect(result.current.undoStackSize).toBe(0);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      // First 'd' should not push undo state yet
+      expect(result.current.undoStackSize).toBe(0);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      // Second 'd' (execution) should push undo state
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("does not push undo state on empty document", () => {
+      textarea.value = "";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+    });
+
+    it("can be undone with 'u'", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 10; // In "Line 2"
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("Line 1\nLine 3");
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("Line 1\nLine 2\nLine 3");
+      expect(textarea.selectionStart).toBe(10);
+    });
+
+    it("clears pending operator when other key is pressed", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(result.current.pendingOperator).toBe("d");
+
+      // Press a different key
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("h"));
+      });
+
+      expect(result.current.pendingOperator).toBeNull();
+    });
+
+    it("clears pending operator on insert mode entry", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(result.current.pendingOperator).toBe("d");
+
+      // Enter insert mode
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("i"));
+      });
+
+      expect(result.current.pendingOperator).toBeNull();
+      expect(result.current.mode).toBe("insert");
+    });
+  });
+
+  describe("delete without textarea", () => {
+    it("'x' does not crash when textareaRef is null", () => {
+      const nullRef = {
+        current: null,
+      } as React.RefObject<HTMLTextAreaElement | null>;
+      const { result } = renderHook(() =>
+        useViMode({ enabled: true, textareaRef: nullRef })
+      );
+
+      const event = createKeyEvent("x");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      // Should prevent default but not crash
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("'dd' does not crash when textareaRef is null", () => {
+      const nullRef = {
+        current: null,
+      } as React.RefObject<HTMLTextAreaElement | null>;
+      const { result } = renderHook(() =>
+        useViMode({ enabled: true, textareaRef: nullRef })
+      );
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      // Should not crash
+      expect(result.current.mode).toBe("normal");
+    });
+  });
+});
+
+/**
+ * Yank/Put command tests.
+ *
+ * @see REQ-11: Yank/put: yy (copy line), p (paste after), P (paste before)
+ * @see REQ-20: Yank/put operations use internal clipboard (separate from system)
+ * @see REQ-21: Clipboard persists within Pair Writing session
+ */
+describe("yank/put commands", () => {
+  let textarea: HTMLTextAreaElement;
+  let textareaRef: React.RefObject<HTMLTextAreaElement>;
+
+  function createTextareaRef(ta: HTMLTextAreaElement) {
+    return { current: ta } as React.RefObject<HTMLTextAreaElement>;
+  }
+
+  beforeEach(() => {
+    textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+    textareaRef = createTextareaRef(textarea);
+  });
+
+  afterEach(() => {
+    textarea.remove();
+  });
+
+  function getOptionsWithTextarea(
+    onContentChange?: (content: string) => void
+  ): UseViModeOptions {
+    return {
+      enabled: true,
+      textareaRef,
+      onContentChange,
+    };
+  }
+
+  describe("'yy' command (yank line)", () => {
+    it("sets pending operator on first 'y' press", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.pendingOperator).toBe("y");
+      expect(textarea.value).toBe("Hello"); // No change
+    });
+
+    it("prevents default on 'y' press", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      const event = createKeyEvent("y");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("yanks line to clipboard on 'yy' sequence", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 10; // In "Line 2"
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.clipboard).toBe("Line 2");
+      expect(textarea.value).toBe("Line 1\nLine 2\nLine 3"); // No change to text
+    });
+
+    it("clears pending operator after yy execution", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.pendingOperator).toBeNull();
+    });
+
+    it("yanks empty line", () => {
+      textarea.value = "Line 1\n\nLine 3";
+      textarea.selectionStart = 7; // On empty line
+      textarea.selectionEnd = 7;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.clipboard).toBe("");
+    });
+
+    it("yanks first line", () => {
+      textarea.value = "First\nSecond";
+      textarea.selectionStart = 2; // In "First"
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.clipboard).toBe("First");
+    });
+
+    it("yanks last line", () => {
+      textarea.value = "First\nLast";
+      textarea.selectionStart = 8; // In "Last"
+      textarea.selectionEnd = 8;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.clipboard).toBe("Last");
+    });
+
+    it("clipboard persists across multiple yanks (last yank wins)", () => {
+      textarea.value = "Line A\nLine B\nLine C";
+      textarea.selectionStart = 3; // In "Line A"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank Line A
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.clipboard).toBe("Line A");
+
+      // Move to Line B and yank
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.clipboard).toBe("Line B");
+    });
+
+    it("does not push to undo stack (yank is non-destructive)", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+    });
+  });
+
+  describe("'p' command (paste after)", () => {
+    it("pastes clipboard content after current line", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      let capturedContent = "";
+      const { result } = renderHook(() =>
+        useViMode(
+          getOptionsWithTextarea((content) => {
+            capturedContent = content;
+          })
+        )
+      );
+
+      // First yank Line 2
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      // Move back to Line 1 and paste after
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("p"));
+      });
+
+      expect(textarea.value).toBe("Line 1\nLine 2\nLine 2\nLine 3");
+      expect(capturedContent).toBe("Line 1\nLine 2\nLine 2\nLine 3");
+    });
+
+    it("prevents default on 'p' press", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      const event = createKeyEvent("p");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("positions cursor at start of pasted line", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank Line 2
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      // Move to Line 1 and paste
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("p"));
+      });
+
+      // Cursor should be at start of pasted line (after "Line 1\n")
+      expect(textarea.selectionStart).toBe(7);
+    });
+
+    it("does nothing with empty clipboard", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // No yank, clipboard is null
+      expect(result.current.clipboard).toBeNull();
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("p"));
+      });
+
+      // Content unchanged
+      expect(textarea.value).toBe("Line 1\nLine 2");
+    });
+
+    it("pushes to undo stack before paste", () => {
+      textarea.value = "Line 1";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank current line
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+
+      // Paste
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("p"));
+      });
+
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("paste on last line creates new last line", () => {
+      textarea.value = "First\nLast";
+      textarea.selectionStart = 8; // In "Last"
+      textarea.selectionEnd = 8;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank "First"
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      // Move to Last and paste after
+      textarea.selectionStart = 8;
+      textarea.selectionEnd = 8;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("p"));
+      });
+
+      expect(textarea.value).toBe("First\nLast\nFirst");
+    });
+
+    it("can undo paste operation", () => {
+      textarea.value = "Original";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank and paste
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("p"));
+      });
+
+      expect(textarea.value).toBe("Original\nOriginal");
+
+      // Undo
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("Original");
+    });
+  });
+
+  describe("'P' command (paste before)", () => {
+    it("pastes clipboard content before current line", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 10; // In "Line 2"
+      textarea.selectionEnd = 10;
+
+      let capturedContent = "";
+      const { result } = renderHook(() =>
+        useViMode(
+          getOptionsWithTextarea((content) => {
+            capturedContent = content;
+          })
+        )
+      );
+
+      // First yank Line 1
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      // Move to Line 2 and paste before
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("P"));
+      });
+
+      expect(textarea.value).toBe("Line 1\nLine 1\nLine 2\nLine 3");
+      expect(capturedContent).toBe("Line 1\nLine 1\nLine 2\nLine 3");
+    });
+
+    it("prevents default on 'P' press", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      const event = createKeyEvent("P");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("positions cursor at start of pasted line", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 10; // In "Line 2"
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank Line 1
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      // Move to Line 2 and paste before
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("P"));
+      });
+
+      // Cursor should be at start of pasted line (at "Line 1" insertion point)
+      expect(textarea.selectionStart).toBe(7);
+    });
+
+    it("does nothing with empty clipboard", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // No yank, clipboard is null
+      expect(result.current.clipboard).toBeNull();
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("P"));
+      });
+
+      // Content unchanged
+      expect(textarea.value).toBe("Line 1\nLine 2");
+    });
+
+    it("pushes to undo stack before paste", () => {
+      textarea.value = "Line 1";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank current line
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.undoStackSize).toBe(0);
+
+      // Paste before
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("P"));
+      });
+
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("paste on first line creates new first line", () => {
+      textarea.value = "First\nSecond";
+      textarea.selectionStart = 2; // In "First"
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank "Second"
+      textarea.selectionStart = 8;
+      textarea.selectionEnd = 8;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      // Move to First and paste before
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("P"));
+      });
+
+      expect(textarea.value).toBe("Second\nFirst\nSecond");
+    });
+
+    it("can undo paste operation", () => {
+      textarea.value = "Original";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank and paste before
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("P"));
+      });
+
+      expect(textarea.value).toBe("Original\nOriginal");
+
+      // Undo
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      expect(textarea.value).toBe("Original");
+    });
+  });
+
+  describe("pending operator interaction", () => {
+    it("other keys clear pending 'y' operator", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.pendingOperator).toBe("y");
+
+      // Press 'h' (movement key)
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("h"));
+      });
+
+      expect(result.current.pendingOperator).toBeNull();
+    });
+
+    it("'y' then 'd' starts delete operator (not yank)", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.pendingOperator).toBe("y");
+
+      // Press 'd' - should start delete operator
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(result.current.pendingOperator).toBe("d");
+    });
+
+    it("'d' then 'y' starts yank operator (not delete)", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(result.current.pendingOperator).toBe("d");
+
+      // Press 'y' - should start yank operator
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.pendingOperator).toBe("y");
+    });
+  });
+
+  describe("yank/put without textarea", () => {
+    it("'yy' does not crash when textareaRef is null", () => {
+      const nullRef = {
+        current: null,
+      } as React.RefObject<HTMLTextAreaElement | null>;
+      const { result } = renderHook(() =>
+        useViMode({ enabled: true, textareaRef: nullRef })
+      );
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      // Should not crash
+      expect(result.current.mode).toBe("normal");
+    });
+
+    it("'p' does not crash when textareaRef is null", () => {
+      const nullRef = {
+        current: null,
+      } as React.RefObject<HTMLTextAreaElement | null>;
+      const { result } = renderHook(() =>
+        useViMode({ enabled: true, textareaRef: nullRef })
+      );
+
+      const event = createKeyEvent("p");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      // Should prevent default but not crash
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("'P' does not crash when textareaRef is null", () => {
+      const nullRef = {
+        current: null,
+      } as React.RefObject<HTMLTextAreaElement | null>;
+      const { result } = renderHook(() =>
+        useViMode({ enabled: true, textareaRef: nullRef })
+      );
+
+      const event = createKeyEvent("P");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      // Should prevent default but not crash
+      expect(event.defaultPrevented).toBe(true);
+    });
+  });
+});
+
+/**
+ * Numeric prefix tests.
+ *
+ * @see REQ-13: Numeric prefixes for command repetition (e.g., 5j, 3dd, 2x)
+ * @see TD-8: Numeric prefix handling
+ */
+describe("numeric prefixes", () => {
+  let textarea: HTMLTextAreaElement;
+  let textareaRef: React.RefObject<HTMLTextAreaElement>;
+
+  function createTextareaRef(ta: HTMLTextAreaElement) {
+    return { current: ta } as React.RefObject<HTMLTextAreaElement>;
+  }
+
+  beforeEach(() => {
+    textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+    textareaRef = createTextareaRef(textarea);
+  });
+
+  afterEach(() => {
+    textarea.remove();
+  });
+
+  function getOptionsWithTextarea(
+    onContentChange?: (content: string) => void
+  ): UseViModeOptions {
+    return {
+      enabled: true,
+      textareaRef,
+      onContentChange,
+    };
+  }
+
+  describe("count accumulation", () => {
+    it("starts with null pending count", () => {
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      expect(result.current.pendingCount).toBeNull();
+    });
+
+    it("accumulates digits 1-9 as count", () => {
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("5"));
+      });
+
+      expect(result.current.pendingCount).toBe(5);
+    });
+
+    it("accumulates multiple digits", () => {
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("1"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("2"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("3"));
+      });
+
+      expect(result.current.pendingCount).toBe(123);
+    });
+
+    it("treats 0 as movement command when no count pending", () => {
+      textarea.value = "Hello, world!";
+      textarea.selectionStart = 7;
+      textarea.selectionEnd = 7;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("0"));
+      });
+
+      // Should move to line start, not set count
+      expect(result.current.pendingCount).toBeNull();
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("treats 0 as digit when count is pending (10j case)", () => {
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("1"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("0"));
+      });
+
+      expect(result.current.pendingCount).toBe(10);
+    });
+
+    it("prevents default for digit keys", () => {
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      const event = createKeyEvent("5");
+      act(() => {
+        result.current.handleKeyDown(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("clears count on Escape", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("5"));
+      });
+      expect(result.current.pendingCount).toBe(5);
+
+      // Enter insert mode to test Escape clearing
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("i"));
+      });
+
+      // Count should be cleared when entering insert mode
+      expect(result.current.pendingCount).toBeNull();
+    });
+
+    it("clears count after command execution", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 4;
+      textarea.selectionEnd = 4;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("2"));
+      });
+      expect(result.current.pendingCount).toBe(2);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("h"));
+      });
+
+      expect(result.current.pendingCount).toBeNull();
+      expect(textarea.selectionStart).toBe(2); // Moved 2 left
+    });
+  });
+
+  describe("movement with count", () => {
+    it("5h moves left 5 characters", () => {
+      textarea.value = "Hello, world!";
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("5"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("h"));
+      });
+
+      expect(textarea.selectionStart).toBe(5);
+    });
+
+    it("5l moves right 5 characters", () => {
+      textarea.value = "Hello, world!";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("5"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("l"));
+      });
+
+      expect(textarea.selectionStart).toBe(5);
+    });
+
+    it("3j moves down 3 lines", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("3"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("j"));
+      });
+
+      // Should be on Line 4, column 3
+      expect(textarea.selectionStart).toBe(24); // "Line 1\nLine 2\nLine 3\n" = 21, + 3 = 24
+    });
+
+    it("3k moves up 3 lines", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+      textarea.selectionStart = 24; // In "Line 4"
+      textarea.selectionEnd = 24;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("3"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("k"));
+      });
+
+      // Should be on Line 1, column 3
+      expect(textarea.selectionStart).toBe(3);
+    });
+
+    it("clamps h movement at beginning of text", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("h"));
+      });
+
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("clamps l movement at end of text", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("l"));
+      });
+
+      expect(textarea.selectionStart).toBe(5);
+    });
+
+    it("j stops at last line when count exceeds available lines", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("j"));
+      });
+
+      // Should be on Line 3 (last line), column 3
+      expect(textarea.selectionStart).toBe(17);
+    });
+
+    it("k stops at first line when count exceeds available lines", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 17; // In "Line 3"
+      textarea.selectionEnd = 17;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("k"));
+      });
+
+      // Should be on Line 1 (first line), column 3
+      expect(textarea.selectionStart).toBe(3);
+    });
+  });
+
+  describe("delete with count", () => {
+    it("3x deletes 3 characters", () => {
+      textarea.value = "Hello, world!";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("3"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.value).toBe("lo, world!");
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("x clamps delete count to available characters", () => {
+      textarea.value = "Hi";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+
+      expect(textarea.value).toBe("");
+    });
+
+    it("3dd deletes 3 lines", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("3"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("Line 4\nLine 5");
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("dd clamps line count to available lines", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("");
+    });
+
+    it("dd with count from middle of document", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+      textarea.selectionStart = 10; // In "Line 2"
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("2"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(textarea.value).toBe("Line 1\nLine 4\nLine 5");
+    });
+
+    it("dd with count from near end of document", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 17; // In "Line 3"
+      textarea.selectionEnd = 17;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("5"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      // Should delete just Line 3 (only 1 line available)
+      expect(textarea.value).toBe("Line 1\nLine 2");
+    });
+  });
+
+  describe("yank with count", () => {
+    it("3yy yanks 3 lines", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("3"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.clipboard).toBe("Line 1\nLine 2\nLine 3");
+      // Text should be unchanged
+      expect(textarea.value).toBe("Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
+    });
+
+    it("yy clamps line count to available lines", () => {
+      textarea.value = "Line 1\nLine 2";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.clipboard).toBe("Line 1\nLine 2");
+    });
+
+    it("multi-line yank and paste works correctly", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 3; // In "Line 1"
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Yank 2 lines
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("2"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.clipboard).toBe("Line 1\nLine 2");
+
+      // Move to Line 3 and paste after
+      textarea.selectionStart = 17;
+      textarea.selectionEnd = 17;
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("p"));
+      });
+
+      expect(textarea.value).toBe("Line 1\nLine 2\nLine 3\nLine 1\nLine 2");
+    });
+  });
+
+  describe("count with pending operator", () => {
+    it("count persists across first d key", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("2"));
+      });
+      expect(result.current.pendingCount).toBe(2);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      // Count should still be there, pending operator set
+      expect(result.current.pendingOperator).toBe("d");
+      expect(result.current.pendingCount).toBe(2);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+      // Now both should be cleared
+      expect(result.current.pendingOperator).toBeNull();
+      expect(result.current.pendingCount).toBeNull();
+      expect(textarea.value).toBe("Line 3");
+    });
+
+    it("count persists across first y key", () => {
+      textarea.value = "Line 1\nLine 2\nLine 3";
+      textarea.selectionStart = 3;
+      textarea.selectionEnd = 3;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("2"));
+      });
+      expect(result.current.pendingCount).toBe(2);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      // Count should still be there, pending operator set
+      expect(result.current.pendingOperator).toBe("y");
+      expect(result.current.pendingCount).toBe(2);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+      // Now both should be cleared
+      expect(result.current.pendingOperator).toBeNull();
+      expect(result.current.pendingCount).toBeNull();
+      expect(result.current.clipboard).toBe("Line 1\nLine 2");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("handles very large counts gracefully", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Type 999
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("9"));
+      });
+
+      expect(result.current.pendingCount).toBe(999);
+
+      // Move left should clamp to start
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("h"));
+      });
+
+      expect(textarea.selectionStart).toBe(0);
+      expect(result.current.pendingCount).toBeNull();
+    });
+
+    it("count clears when entering command mode", () => {
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("5"));
+      });
+      expect(result.current.pendingCount).toBe(5);
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+
+      expect(result.current.mode).toBe("command");
+      expect(result.current.pendingCount).toBeNull();
+    });
+
+    it("count does not apply to 0 movement (0 is always line start)", () => {
+      textarea.value = "    Hello, world!";
+      textarea.selectionStart = 10;
+      textarea.selectionEnd = 10;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Start a count, then press 0
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("5"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("0"));
+      });
+
+      // Should have count 50 now, not moved
+      expect(result.current.pendingCount).toBe(50);
+      expect(textarea.selectionStart).toBe(10);
+
+      // Now press h to use the count
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("h"));
+      });
+
+      expect(textarea.selectionStart).toBe(0); // Clamped from 10-50
+      expect(result.current.pendingCount).toBeNull();
+    });
+
+    it("undo does not use count (just undoes once)", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 0;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Delete two characters separately to have two undo states
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+      expect(textarea.value).toBe("ello");
+
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+      expect(textarea.value).toBe("llo");
+
+      // Try 2u - should only undo once (count ignored for u in our impl)
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("2"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("u"));
+      });
+
+      // Should only undo once
+      expect(textarea.value).toBe("ello");
     });
   });
 });

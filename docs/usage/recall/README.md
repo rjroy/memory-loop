@@ -2,7 +2,7 @@
 
 The Recall tab is your file browser and content viewer. Navigate your vault structure, read files, search across notes, manage tasks, and make quick edits.
 
-<img src="../screenshots/recall.webp"/>
+<img src="../../screenshots/recall.webp"/>
 
 ## Layout
 
@@ -125,52 +125,7 @@ Changes are saved directly to your vault. If the save fails, your changes are pr
 
 ### Pair Writing Mode
 
-For longer writing sessions, tap the **Pair Writing** button in the markdown viewer toolbar to enter a split-pane editing experience with AI assistance.
-
-[ img: Pair Writing split-pane view ]
-
-**Availability**: Pair Writing is designed for larger screens. The button is hidden on phones but visible on tablets and desktops where the split layout is practical.
-
-#### Layout
-
-The screen splits into two panes:
-- **Left pane**: Markdown editor with your document
-- **Right pane**: AI conversation for writing assistance
-
-Both panes share the same Think session, so conversation context persists if you exit and return.
-
-#### Quick Actions
-
-Quick action buttons apply specific transformations to selected text or the entire document:
-
-| Action | Effect |
-|--------|--------|
-| Tighten | Remove unnecessary words, make prose more concise |
-| Embellish | Add detail, expand descriptions, enrich language |
-| Correct | Fix grammar, spelling, and punctuation |
-| Polish | Light overall improvement without changing voice |
-
-Select text before tapping to transform just that selection. With no selection, the action applies to the full document.
-
-#### Advisory Actions
-
-Advisory actions don't modify your text directly. Instead, they provide feedback in the conversation pane:
-
-| Action | Purpose |
-|--------|---------|
-| Validate | Check claims, consistency, and accuracy |
-| Critique | Identify weaknesses and suggest improvements |
-| Compare | Compare current version against a snapshot |
-| Discuss | Open-ended conversation about the document |
-
-#### Snapshots
-
-Tap **Snapshot** to save the current document state. Use snapshots to:
-- Mark a "known good" version before major changes
-- Create comparison points for the Compare action
-- Track progress across editing sessions
-
-Snapshots are stored in the session and persist across tab switches.
+For longer writing sessions with AI assistance, see [Pair Writing](./pair-writing.md).
 
 ### Images
 

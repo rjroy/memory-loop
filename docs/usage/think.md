@@ -38,7 +38,7 @@ Tap the send icon (arrow) to submit your message. While Claude is responding, th
 
 ### File Attachment
 
-The paperclip button lets you attach files from your device. Attached files are uploaded to your vault and their path is added to your message. Claude can then read and analyze the file content.
+The paperclip button lets you attach files from your device. Attached files are uploaded to `{vault}/06_Metadata/memory-loop/attachments/` and their path is added to your message. Claude can then read and analyze the file content.
 
 [ img: File attachment button ]
 
@@ -97,6 +97,29 @@ Certain operations require your approval before proceeding. When Claude attempts
 **Deny**: Block the operation and continue the conversation
 
 This gives you control over what changes Claude can make to your vault.
+
+## Structured Questions
+
+Sometimes Claude needs your input to proceed. When this happens, a dialog appears with the heading "Claude needs your input" containing one or more questions.
+
+[ img: AskUserQuestion dialog with single-select options ]
+
+### Question Types
+
+Questions can be **single-select** (radio buttons) or **multi-select** (checkboxes):
+
+- **Single-select**: Choose exactly one option from the list
+- **Multi-select**: Choose any combination of options
+
+Each question also includes an "Other" option that lets you provide custom text if none of the predefined options fit your situation.
+
+### Responding
+
+1. Select your answer(s) for each question
+2. If using "Other", type your response in the text field
+3. Tap **Submit** to send your answers
+
+Claude continues the conversation using your responses to guide its next steps.
 
 ## Session Management
 

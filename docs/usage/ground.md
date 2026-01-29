@@ -47,7 +47,7 @@ A context-aware prompt drawn from your vault's prompt sources. These prompts cha
 
 ## Goals Section
 
-If your vault has a `goals.md` file, its content displays here as rendered markdown. This keeps your current objectives visible whenever you open the app.
+If your vault has a configured goals file (set via `vault.goalsPath` in `.memory-loop.json`), its content displays here as rendered markdown. This keeps your current objectives visible whenever you open the app.
 
 [ img: Goals card showing rendered markdown ]
 
@@ -119,6 +119,44 @@ If you've configured vault widgets with `location: ground`, they appear in this 
 [ img: Ground widgets showing aggregate data ]
 
 See the [Widgets documentation](../widgets/README.md) for configuration details.
+
+## Health Panel
+
+When the backend detects issues that need attention, a collapsible Health Panel appears at the bottom of the Ground tab. This panel only shows when there are active issues to report.
+
+[ img: Health panel showing warning and error items ]
+
+### When It Appears
+
+The Health Panel is hidden by default and only becomes visible when:
+- File watcher encounters errors monitoring your vault
+- Vault configuration has problems
+- Cache systems report issues
+- Other backend components report problems
+
+When issues are resolved, the panel automatically disappears.
+
+### Severity Levels
+
+Issues are categorized by severity:
+
+| Level | Meaning |
+|-------|---------|
+| Error | Something is broken and needs immediate attention |
+| Warning | A potential problem that may affect functionality |
+
+### Issue Categories
+
+The panel groups issues by their source:
+
+- **Vault Config**: Problems with `.memory-loop.json` or vault setup
+- **File Watcher**: Errors monitoring your vault for changes
+- **Cache**: Issues with caching systems
+- **General**: Other backend issues
+
+### Dismissal
+
+Tap an issue to dismiss it from the panel. Dismissed issues won't reappear unless the underlying problem recurs. Errors typically require fixing the root cause before they stop appearing.
 
 ## Recent Activity
 

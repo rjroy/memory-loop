@@ -29,15 +29,17 @@ When you submit a capture:
 
 ### Daily Note Format
 
-Captures append to `{inbox}/{YYYY-MM-DD}.md` in this format:
+Captures append to `{inbox}/{YYYY-MM-DD}.md` under a `## Capture` heading in timestamped bullet format:
 
 ```markdown
-## 10:42 AM
+## Capture
 
-Your captured thought goes here.
+- [09:15] Morning standup notes
+- [14:30] Remember to call mom
+- [16:42] Your captured thought goes here
 ```
 
-If the daily note doesn't exist, it's created automatically.
+If the daily note doesn't exist, it's created automatically. New captures append to the existing bullet list.
 
 ### Inbox Location
 

@@ -7,9 +7,8 @@
  * @see .lore/specs/vi-mode-pair-writing.md REQ-5
  */
 
+import type { ViMode } from "../../hooks/useViMode";
 import "./vi-mode.css";
-
-export type ViMode = "normal" | "insert" | "command";
 
 export interface ViModeIndicatorProps {
   /** Current vi mode */

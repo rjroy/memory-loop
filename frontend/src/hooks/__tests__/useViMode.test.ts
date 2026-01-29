@@ -256,6 +256,32 @@ describe("useViMode", () => {
       expect(result.current.commandBuffer).toBe("");
     });
 
+    it("transitions to normal mode on Ctrl+C", () => {
+      const { result } = renderHook(() => useViMode(defaultOptions));
+
+      // Enter command mode
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      expect(result.current.mode).toBe("command");
+
+      // Type something
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("w"));
+      });
+      expect(result.current.commandBuffer).toBe("w");
+
+      // Press Ctrl+C (standard vi abort)
+      const ctrlCEvent = createKeyEvent("c", { ctrlKey: true });
+      act(() => {
+        result.current.handleKeyDown(ctrlCEvent);
+      });
+
+      expect(result.current.mode).toBe("normal");
+      expect(result.current.commandBuffer).toBe("");
+      expect(ctrlCEvent.defaultPrevented).toBe(true);
+    });
+
     it("transitions to normal mode on Enter", () => {
       const { result } = renderHook(() => useViMode(defaultOptions));
 

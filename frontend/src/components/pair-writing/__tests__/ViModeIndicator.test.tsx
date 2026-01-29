@@ -12,7 +12,8 @@
 
 import { describe, it, expect, afterEach } from "bun:test";
 import { render, screen, cleanup } from "@testing-library/react";
-import { ViModeIndicator, type ViMode } from "../ViModeIndicator";
+import { ViModeIndicator } from "../ViModeIndicator";
+import type { ViMode } from "../../../hooks/useViMode";
 
 afterEach(() => {
   cleanup();

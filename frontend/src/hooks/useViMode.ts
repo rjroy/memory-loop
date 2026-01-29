@@ -146,7 +146,8 @@ function handleCommandModeKey(
   setMode: React.Dispatch<React.SetStateAction<ViMode>>,
   setCommandBuffer: React.Dispatch<React.SetStateAction<string>>
 ): void {
-  if (key === "Escape") {
+  // Escape or Ctrl+C aborts command mode (standard vi behavior)
+  if (key === "Escape" || (e.ctrlKey && key === "c")) {
     e.preventDefault();
     setMode("normal");
     setCommandBuffer("");

@@ -47,13 +47,15 @@ Your Notes           Claude Sonnet         Review Widget
 
 ## Card Generation
 
+See [Card Generator](./_infrastructure/card-generator.md) for detailed scheduling, cost controls, and deduplication logic.
+
 ### Triggers
 
 | Trigger | Schedule | Scope |
 |---------|----------|-------|
 | **Daily** | 4am | Files modified in last 24h (unbounded) |
-| **Weekly** | Every 7 days | Older unprocessed files (byte-limited) |
-| **Manual** | User-initiated | All unprocessed files (byte-limited) |
+| **Weekly** | Sundays 4am | Oldest unprocessed files (byte-limited) |
+| **Manual** | User-initiated | Remaining weekly budget |
 
 ### Discovery Process
 
@@ -242,7 +244,8 @@ Weekly pass processes older files up to a configurable byte limit (default 500KB
 | Feature | Relationship |
 |---------|-------------|
 | [Ground](./home-dashboard.md) | Widget lives in Ground tab |
-| [System Settings](../specs/_infrastructure/system-settings.md) | Card Generator tab for config |
+| [Card Generator](./_infrastructure/card-generator.md) | Creates cards from vault notes |
+| [System Settings](./_infrastructure/system-settings.md) | Card Generator tab for config |
 | [Recall](./recall.md) | "Open" and "Open Source" navigate here |
 
 ## Notes

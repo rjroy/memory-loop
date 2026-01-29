@@ -11,6 +11,8 @@
 | Extraction | [extraction.md](../specs/_infrastructure/extraction.md) | 2026-01-28 | Infrastructure | system-settings, think |
 | System Settings | [system-settings.md](../specs/_infrastructure/system-settings.md) | 2026-01-28 | Infrastructure | vault-selection, extraction, spaced-repetition |
 | Configuration | [configuration.md](../specs/_infrastructure/configuration.md) | 2026-01-28 | Infrastructure | vault-selection, inspiration, ground, think |
+| Communication Layer | [communication-layer.md](../specs/_infrastructure/communication-layer.md) | 2026-01-28 | Infrastructure | think, pair-writing, all REST features |
+| Card Generator | [card-generator.md](../specs/_infrastructure/card-generator.md) | 2026-01-28 | Infrastructure | spaced-repetition, system-settings, configuration |
 | Ground | [home-dashboard.md](../specs/home-dashboard.md) | 2026-01-28 | Tab (container) | spaced-repetition, inspiration, capture, think, recall |
 | Spaced Repetition | [spaced-repetition.md](../specs/spaced-repetition.md) | 2026-01-28 | Sub-feature | ground, system-settings, recall |
 | Inspiration | [inspiration.md](../specs/inspiration.md) | 2026-01-28 | Sub-feature | ground, think, configuration |
@@ -49,9 +51,9 @@
 
 | Entry Point | Type | Notes |
 |-------------|------|-------|
-| WebSocket handlers | Backend | Real-time communication (chat streaming) |
-| /api/sessions | REST | Discussion session management |
-| Card Generator | Backend | Automatic card creation from vault content |
+| ~~WebSocket handlers~~ | Backend | ✓ Documented as Communication Layer |
+| ~~/api/sessions~~ | REST | ✓ Documented as Communication Layer (session management split) |
+| ~~Card Generator~~ | Backend | ✓ Documented as Card Generator infrastructure |
 
 ## Architecture Notes
 
@@ -70,9 +72,13 @@ Always-visible toolbar with four tabs:
 | Recall | browse | File tree navigation |
 
 ### Communication Pattern
-- Frontend ↔ Backend via WebSocket (chat streaming) and REST (data operations)
+
+See [Communication Layer](../specs/_infrastructure/communication-layer.md) for details.
+
+- **REST**: Stateless CRUD (files, capture, cards, search, config)
+- **WebSocket**: Streaming and bidirectional (AI chat, pair writing, session establishment)
 - Shared Zod schemas in `shared/src/protocol.ts` for type-safe messages
-- Recent migration from WebSocket to REST for non-streaming operations
+- Ongoing migration from WebSocket to REST for non-streaming operations
 
 ### Data Storage
 - Vault files stored in user's Obsidian vault

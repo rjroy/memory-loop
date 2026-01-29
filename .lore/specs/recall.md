@@ -176,6 +176,19 @@ Multi-layer defense:
 - Persists during session, cleared on refresh button
 - Reduces redundant API calls
 
+## View Toggle: Files / Tasks
+
+The tree pane header toggles between two views:
+
+| View | Header Text | Content |
+|------|-------------|---------|
+| Files | "Files" | Directory tree navigation |
+| Tasks | "Tasks" | Task list from vault |
+
+Click the header text to toggle. Both views share the same pane location.
+
+See [Task List](./task-list.md) for full documentation of the Tasks view.
+
 ## Connected Features
 
 | Feature | Relationship |
@@ -185,6 +198,7 @@ Multi-layer defense:
 | [Think](./think.md) | Claude's Read tool shows files from here |
 | [Capture](./capture.md) | Daily notes viewable here |
 | [Pair Writing](./pair-writing.md) | AI-assisted editing from markdown viewer |
+| [Task List](./task-list.md) | Alternative view in same pane |
 
 ## Notes
 

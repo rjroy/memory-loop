@@ -76,54 +76,6 @@ This is a **container feature**. It orchestrates widgets from several sub-featur
 | View capture | Browse | Daily note file path |
 | Resume discussion | Discussion | Restores session by ID |
 
-## Tasks Widget
-
-Scans vault directories for markdown checkboxes and displays them as a task list.
-
-### Source Directories
-
-Tasks are discovered from three PARA directories (configurable in vault config):
-- **Inbox** (`inboxPath`, default: `00_Inbox/`)
-- **Projects** (`projectsPath`, default: `01_Projects/`)
-- **Areas** (`areasPath`, default: `02_Areas/`)
-
-### Task Format
-
-Standard markdown checkbox syntax with extended states:
-
-```markdown
-- [ ] Incomplete task
-- [x] Complete task
-- [/] Partial progress
-- [?] Needs more information
-- [b] Bookmarked
-- [f] Urgent/flagged
-```
-
-### State Cycling
-
-Clicking a task cycles through states: `[ ]` → `[x]` → `[/]` → `[?]` → `[b]` → `[f]` → `[ ]`
-
-### API
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/api/vaults/:id/tasks` | Get all tasks from configured directories |
-| PATCH | `/api/vaults/:id/tasks` | Toggle task state |
-
-**PATCH request body:**
-```json
-{
-  "filePath": "01_Projects/project.md",
-  "lineNumber": 12,
-  "newState": "x"  // optional: omit to cycle
-}
-```
-
-### Implementation Note
-
-Backend (`task-manager.ts`) is complete with full test coverage. Frontend hook (`useHome.ts`) exposes `getTasks()` and `toggleTask()`. UI widget not yet implemented in `HomeView.tsx`.
-
 ## Health Panel
 
 Displays backend health issues (file watcher failures, config problems, etc.).

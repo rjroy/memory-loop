@@ -18,7 +18,8 @@
 | Inspiration | [inspiration.md](../specs/inspiration.md) | 2026-01-28 | Sub-feature | ground, think, configuration |
 | Capture | [capture.md](../specs/capture.md) | 2026-01-28 | Tab | ground, think, recall |
 | Think | [think.md](../specs/think.md) | 2026-01-28 | Tab | ground, capture, recall, extraction, configuration |
-| Recall | [recall.md](../specs/recall.md) | 2026-01-28 | Tab | ground, spaced-repetition, think, capture |
+| Recall | [recall.md](../specs/recall.md) | 2026-01-28 | Tab | ground, spaced-repetition, think, capture, task-list |
+| Task List | [task-list.md](../specs/task-list.md) | 2026-01-28 | Sub-feature | recall, configuration |
 | Pair Writing | [pair-writing.md](../specs/pair-writing.md) | 2026-01-28 | Sub-feature | recall, think |
 
 ## Discovered (Not Yet Documented)
@@ -54,7 +55,7 @@
 | ~~WebSocket handlers~~ | Backend | ✓ Documented as Communication Layer |
 | ~~/api/sessions~~ | REST | ✓ Documented as Communication Layer (session management split) |
 | ~~Card Generator~~ | Backend | ✓ Documented as Card Generator infrastructure |
-| ~~Tasks~~ | REST | ✓ Documented in Home Dashboard (Tasks Widget section) |
+| ~~Tasks~~ | REST | ✓ Documented as standalone Task List feature |
 | ~~Health Issues~~ | REST | ✓ Documented in Home Dashboard (Health Panel section) |
 | ~~Setup Wizard~~ | REST | ✓ Documented in Vault Selection (Setup Wizard section) |
 

@@ -66,5 +66,4 @@ Each tab maintains its state when you switch away. Your draft messages, scroll p
 
 ## Related Documentation
 
-- [Widgets](../widgets/README.md): Configure computed widgets for Ground and Recall
 - [Deployment](../deployment/systemd.md): Self-hosting setup

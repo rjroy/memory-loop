@@ -130,7 +130,6 @@ http://YOUR_IP:5173
 
 - [System Overview](.lore/specs/_overview.md) — Architecture, design decisions, and feature specs
 - [Usage Guide](docs/usage/README.md) — How to use each tab (Ground, Capture, Think, Recall)
-- [Widgets](docs/widgets/README.md) — Configure computed widgets for dashboards and file views
 
 ### Deployment
 

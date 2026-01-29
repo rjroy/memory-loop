@@ -24,6 +24,7 @@ import {
   getLineCount,
   getLinePositions,
   moveCursor,
+  executeExCommand,
 } from "../useViMode";
 
 // Helper to create a mock KeyboardEvent
@@ -746,6 +747,156 @@ describe("cursor manipulation helpers", () => {
       expect(textarea.selectionStart).toBe(13);
       expect(textarea.selectionEnd).toBe(13);
     });
+  });
+});
+
+/**
+ * Unit tests for executeExCommand function.
+ *
+ * @see REQ-15: :w saves file, remains in Pair Writing
+ * @see REQ-16: :wq saves file and exits Pair Writing
+ * @see REQ-17: :q exits if no unsaved changes; shows confirmation dialog if unsaved
+ * @see REQ-18: :q! exits without saving (discards changes)
+ */
+describe("executeExCommand", () => {
+  it(":w calls onSave callback only", () => {
+    let saveCalled = false;
+    let exitCalled = false;
+    let quitWithUnsavedCalled = false;
+
+    executeExCommand("w", {
+      onSave: () => {
+        saveCalled = true;
+      },
+      onExit: () => {
+        exitCalled = true;
+      },
+      onQuitWithUnsaved: () => {
+        quitWithUnsavedCalled = true;
+      },
+    });
+
+    expect(saveCalled).toBe(true);
+    expect(exitCalled).toBe(false);
+    expect(quitWithUnsavedCalled).toBe(false);
+  });
+
+  it(":wq calls onSave then onExit", () => {
+    const callOrder: string[] = [];
+
+    executeExCommand("wq", {
+      onSave: () => {
+        callOrder.push("save");
+      },
+      onExit: () => {
+        callOrder.push("exit");
+      },
+    });
+
+    expect(callOrder).toEqual(["save", "exit"]);
+  });
+
+  it(":x is alias for :wq", () => {
+    const callOrder: string[] = [];
+
+    executeExCommand("x", {
+      onSave: () => {
+        callOrder.push("save");
+      },
+      onExit: () => {
+        callOrder.push("exit");
+      },
+    });
+
+    expect(callOrder).toEqual(["save", "exit"]);
+  });
+
+  it(":q calls onQuitWithUnsaved", () => {
+    let quitWithUnsavedCalled = false;
+    let exitCalled = false;
+
+    executeExCommand("q", {
+      onExit: () => {
+        exitCalled = true;
+      },
+      onQuitWithUnsaved: () => {
+        quitWithUnsavedCalled = true;
+      },
+    });
+
+    expect(quitWithUnsavedCalled).toBe(true);
+    expect(exitCalled).toBe(false);
+  });
+
+  it(":q! calls onExit directly (force quit)", () => {
+    let exitCalled = false;
+    let quitWithUnsavedCalled = false;
+
+    executeExCommand("q!", {
+      onExit: () => {
+        exitCalled = true;
+      },
+      onQuitWithUnsaved: () => {
+        quitWithUnsavedCalled = true;
+      },
+    });
+
+    expect(exitCalled).toBe(true);
+    expect(quitWithUnsavedCalled).toBe(false);
+  });
+
+  it("trims whitespace from command", () => {
+    let saveCalled = false;
+
+    executeExCommand("  w  ", {
+      onSave: () => {
+        saveCalled = true;
+      },
+    });
+
+    expect(saveCalled).toBe(true);
+  });
+
+  it("unknown command is no-op", () => {
+    let saveCalled = false;
+    let exitCalled = false;
+    let quitWithUnsavedCalled = false;
+
+    executeExCommand("foo", {
+      onSave: () => {
+        saveCalled = true;
+      },
+      onExit: () => {
+        exitCalled = true;
+      },
+      onQuitWithUnsaved: () => {
+        quitWithUnsavedCalled = true;
+      },
+    });
+
+    expect(saveCalled).toBe(false);
+    expect(exitCalled).toBe(false);
+    expect(quitWithUnsavedCalled).toBe(false);
+  });
+
+  it("empty command is no-op", () => {
+    let saveCalled = false;
+
+    executeExCommand("", {
+      onSave: () => {
+        saveCalled = true;
+      },
+    });
+
+    expect(saveCalled).toBe(false);
+  });
+
+  it("handles empty callbacks object", () => {
+    // Should not throw
+    expect(() => executeExCommand("w", {})).not.toThrow();
+    expect(() => executeExCommand("wq", {})).not.toThrow();
+    expect(() => executeExCommand("q", {})).not.toThrow();
+    expect(() => executeExCommand("q!", {})).not.toThrow();
   });
 });
 
@@ -2919,6 +3070,103 @@ describe("delete commands", () => {
       expect(result.current.pendingOperator).toBeNull();
       expect(result.current.mode).toBe("insert");
     });
+
+    it("clears pending operator on Escape in Normal mode", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Press 'd' to set pending operator
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(result.current.pendingOperator).toBe("d");
+      expect(result.current.mode).toBe("normal");
+
+      // Press Escape in normal mode to cancel
+      const escEvent = createKeyEvent("Escape");
+      act(() => {
+        result.current.handleKeyDown(escEvent);
+      });
+
+      expect(result.current.pendingOperator).toBeNull();
+      expect(result.current.mode).toBe("normal"); // Still in normal mode
+      expect(escEvent.defaultPrevented).toBe(true);
+    });
+
+    it("clears pending 'y' operator on Escape in Normal mode", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Press 'y' to set pending operator
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("y"));
+      });
+
+      expect(result.current.pendingOperator).toBe("y");
+
+      // Press Escape to cancel
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Escape"));
+      });
+
+      expect(result.current.pendingOperator).toBeNull();
+    });
+
+    it("clears pending count on Escape in Normal mode", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Press '5' to set pending count
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("5"));
+      });
+
+      expect(result.current.pendingCount).toBe(5);
+
+      // Press Escape to cancel
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Escape"));
+      });
+
+      expect(result.current.pendingCount).toBeNull();
+    });
+
+    it("clears both pending count and operator on Escape in Normal mode", () => {
+      textarea.value = "Hello";
+      textarea.selectionStart = 2;
+      textarea.selectionEnd = 2;
+
+      const { result } = renderHook(() => useViMode(getOptionsWithTextarea()));
+
+      // Type "3d" (count + operator pending)
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("3"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("d"));
+      });
+
+      expect(result.current.pendingCount).toBe(3);
+      expect(result.current.pendingOperator).toBe("d");
+
+      // Press Escape to cancel both
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Escape"));
+      });
+
+      expect(result.current.pendingCount).toBeNull();
+      expect(result.current.pendingOperator).toBeNull();
+    });
   });
 
   describe("delete without textarea", () => {
@@ -3745,7 +3993,7 @@ describe("numeric prefixes", () => {
       expect(event.defaultPrevented).toBe(true);
     });
 
-    it("clears count on Escape", () => {
+    it("clears count when entering insert mode", () => {
       textarea.value = "Hello";
       textarea.selectionStart = 2;
       textarea.selectionEnd = 2;
@@ -3757,7 +4005,7 @@ describe("numeric prefixes", () => {
       });
       expect(result.current.pendingCount).toBe(5);
 
-      // Enter insert mode to test Escape clearing
+      // Enter insert mode
       act(() => {
         result.current.handleKeyDown(createKeyEvent("i"));
       });
@@ -4304,6 +4552,415 @@ describe("numeric prefixes", () => {
 
       // Should only undo once
       expect(textarea.value).toBe("ello");
+    });
+  });
+
+  /**
+   * Ex Command Execution Tests
+   *
+   * Tests for ex commands (:w, :wq, :q, :q!) that control save and exit.
+   *
+   * @see REQ-15: :w saves file, remains in Pair Writing
+   * @see REQ-16: :wq saves file and exits Pair Writing
+   * @see REQ-17: :q exits if no unsaved changes; shows confirmation dialog if unsaved
+   * @see REQ-18: :q! exits without saving (discards changes)
+   */
+  describe("ex command execution", () => {
+    it(":w calls onSave callback", () => {
+      let saveCalled = false;
+      const options: UseViModeOptions = {
+        enabled: true,
+        onSave: () => {
+          saveCalled = true;
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type :w
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("w"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(saveCalled).toBe(true);
+      expect(result.current.mode).toBe("normal");
+    });
+
+    it(":w does not call onExit", () => {
+      let exitCalled = false;
+      const options: UseViModeOptions = {
+        enabled: true,
+        onSave: () => {},
+        onExit: () => {
+          exitCalled = true;
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type :w
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("w"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(exitCalled).toBe(false);
+    });
+
+    it(":wq calls onSave then onExit", () => {
+      const callOrder: string[] = [];
+      const options: UseViModeOptions = {
+        enabled: true,
+        onSave: () => {
+          callOrder.push("save");
+        },
+        onExit: () => {
+          callOrder.push("exit");
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type :wq
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("w"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("q"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(callOrder).toEqual(["save", "exit"]);
+      expect(result.current.mode).toBe("normal");
+    });
+
+    it(":x is alias for :wq (calls onSave then onExit)", () => {
+      const callOrder: string[] = [];
+      const options: UseViModeOptions = {
+        enabled: true,
+        onSave: () => {
+          callOrder.push("save");
+        },
+        onExit: () => {
+          callOrder.push("exit");
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type :x
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("x"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(callOrder).toEqual(["save", "exit"]);
+    });
+
+    it(":q calls onQuitWithUnsaved (parent handles unsaved check)", () => {
+      let quitWithUnsavedCalled = false;
+      let exitCalled = false;
+      const options: UseViModeOptions = {
+        enabled: true,
+        onQuitWithUnsaved: () => {
+          quitWithUnsavedCalled = true;
+        },
+        onExit: () => {
+          exitCalled = true;
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type :q
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("q"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(quitWithUnsavedCalled).toBe(true);
+      expect(exitCalled).toBe(false); // :q does NOT call onExit directly
+      expect(result.current.mode).toBe("normal");
+    });
+
+    it(":q! calls onExit directly (force quit)", () => {
+      let exitCalled = false;
+      let quitWithUnsavedCalled = false;
+      const options: UseViModeOptions = {
+        enabled: true,
+        onExit: () => {
+          exitCalled = true;
+        },
+        onQuitWithUnsaved: () => {
+          quitWithUnsavedCalled = true;
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type :q!
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("q"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("!"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(exitCalled).toBe(true);
+      expect(quitWithUnsavedCalled).toBe(false); // :q! skips the unsaved check
+      expect(result.current.mode).toBe("normal");
+    });
+
+    it("unknown command is silently ignored", () => {
+      let saveCalled = false;
+      let exitCalled = false;
+      let quitWithUnsavedCalled = false;
+      const options: UseViModeOptions = {
+        enabled: true,
+        onSave: () => {
+          saveCalled = true;
+        },
+        onExit: () => {
+          exitCalled = true;
+        },
+        onQuitWithUnsaved: () => {
+          quitWithUnsavedCalled = true;
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type an unknown command
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("f"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("o"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("o"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(saveCalled).toBe(false);
+      expect(exitCalled).toBe(false);
+      expect(quitWithUnsavedCalled).toBe(false);
+      expect(result.current.mode).toBe("normal");
+    });
+
+    it("empty command is silently ignored", () => {
+      let saveCalled = false;
+      const options: UseViModeOptions = {
+        enabled: true,
+        onSave: () => {
+          saveCalled = true;
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and immediately press Enter (empty command)
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(saveCalled).toBe(false);
+      expect(result.current.mode).toBe("normal");
+    });
+
+    it("command with leading/trailing whitespace is trimmed", () => {
+      let saveCalled = false;
+      const options: UseViModeOptions = {
+        enabled: true,
+        onSave: () => {
+          saveCalled = true;
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type " w " (with spaces)
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(" "));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("w"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(" "));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(saveCalled).toBe(true);
+    });
+
+    it("Escape cancels command mode without executing", () => {
+      let saveCalled = false;
+      const options: UseViModeOptions = {
+        enabled: true,
+        onSave: () => {
+          saveCalled = true;
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type :w
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("w"));
+      });
+      // Press Escape instead of Enter
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Escape"));
+      });
+
+      expect(saveCalled).toBe(false);
+      expect(result.current.mode).toBe("normal");
+      expect(result.current.commandBuffer).toBe("");
+    });
+
+    it("Ctrl+C cancels command mode without executing", () => {
+      let saveCalled = false;
+      const options: UseViModeOptions = {
+        enabled: true,
+        onSave: () => {
+          saveCalled = true;
+        },
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and type :w
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("w"));
+      });
+      // Press Ctrl+C instead of Enter
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("c", { ctrlKey: true }));
+      });
+
+      expect(saveCalled).toBe(false);
+      expect(result.current.mode).toBe("normal");
+      expect(result.current.commandBuffer).toBe("");
+    });
+
+    it("callbacks are optional (no crash when undefined)", () => {
+      const options: UseViModeOptions = {
+        enabled: true,
+        // No callbacks defined
+      };
+
+      const { result } = renderHook(() => useViMode(options));
+
+      // Enter command mode and execute various commands
+      // Should not throw even without callbacks
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("w"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(result.current.mode).toBe("normal");
+
+      // Try :wq
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("w"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("q"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(result.current.mode).toBe("normal");
+
+      // Try :q
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("q"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(result.current.mode).toBe("normal");
+
+      // Try :q!
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent(":"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("q"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("!"));
+      });
+      act(() => {
+        result.current.handleKeyDown(createKeyEvent("Enter"));
+      });
+
+      expect(result.current.mode).toBe("normal");
     });
   });
 });

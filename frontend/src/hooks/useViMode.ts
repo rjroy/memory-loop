@@ -5,15 +5,16 @@
  * Handles mode transitions between normal, insert, and command modes,
  * cursor movement commands, insert mode entry with cursor positioning,
  * internal undo stack for the `u` command, delete commands, yank/put,
- * and numeric prefixes for command repetition.
+ * numeric prefixes for command repetition, and ex command execution.
  *
- * @see .lore/plans/vi-mode-pair-writing.md (TD-1, TD-4, TD-8, TD-9)
+ * @see .lore/plans/vi-mode-pair-writing.md (TD-1, TD-4, TD-6, TD-8, TD-9)
  * @see REQ-7, REQ-8: Movement commands (h, j, k, l, 0, $)
  * @see REQ-9: Insert mode entry commands (i, a, A, o, O)
  * @see REQ-10: Delete commands (x, dd)
  * @see REQ-11: Yank/put commands (yy, p, P)
  * @see REQ-12: Undo: u undoes last edit operation
  * @see REQ-13: Numeric prefixes (e.g., 5j, 3dd, 2x)
+ * @see REQ-15, REQ-16, REQ-17, REQ-18: Ex commands (:w, :wq, :q, :q!)
  */
 
 import { useState, useCallback } from "react";
@@ -178,7 +179,7 @@ export function moveCursor(
 }
 
 export function useViMode(options: UseViModeOptions): UseViModeResult {
-  const { enabled, textareaRef, onContentChange } = options;
+  const { enabled, textareaRef, onContentChange, onSave, onExit, onQuitWithUnsaved } = options;
 
   const [mode, setMode] = useState<ViMode>("normal");
   const [commandBuffer, setCommandBuffer] = useState("");
@@ -282,7 +283,11 @@ export function useViMode(options: UseViModeOptions): UseViModeResult {
           break;
 
         case "command":
-          handleCommandModeKey(e, key, setMode, setCommandBuffer);
+          handleCommandModeKey(e, key, setMode, commandBuffer, setCommandBuffer, {
+            onSave,
+            onExit,
+            onQuitWithUnsaved,
+          });
           break;
       }
     },
@@ -296,6 +301,10 @@ export function useViMode(options: UseViModeOptions): UseViModeResult {
       pendingOperator,
       clipboard,
       pendingCount,
+      commandBuffer,
+      onSave,
+      onExit,
+      onQuitWithUnsaved,
     ]
   );
 
@@ -437,6 +446,15 @@ function handleNormalModeKey(
     e.preventDefault();
     clearPendingCount();
     popUndoState?.();
+    return;
+  }
+
+  // Handle Escape in normal mode: cancel pending operator and count
+  // This provides a way to cancel partially-entered commands like "d" waiting for second key
+  if (key === "Escape") {
+    e.preventDefault();
+    setPendingOperator?.(null);
+    setPendingCount?.(null);
     return;
   }
 
@@ -893,16 +911,79 @@ function handleInsertModeKey(
 }
 
 /**
+ * Callbacks for ex command execution.
+ */
+interface ExCommandCallbacks {
+  onSave?: () => void;
+  onExit?: () => void;
+  onQuitWithUnsaved?: () => void;
+}
+
+/**
+ * Execute an ex command (commands entered after ':' in command mode).
+ *
+ * Supported commands:
+ * - `:w` - Save file, remain in Pair Writing (REQ-15)
+ * - `:wq` or `:x` - Save file and exit Pair Writing (REQ-16)
+ * - `:q` - Exit if no unsaved changes; triggers confirmation if unsaved (REQ-17)
+ * - `:q!` - Exit without saving, discarding changes (REQ-18)
+ *
+ * Unknown commands are silently ignored (no-op).
+ *
+ * @param command - The command string (without the leading ':')
+ * @param callbacks - Callbacks for save/exit operations
+ */
+export function executeExCommand(
+  command: string,
+  callbacks: ExCommandCallbacks
+): void {
+  const { onSave, onExit, onQuitWithUnsaved } = callbacks;
+  const trimmed = command.trim();
+
+  switch (trimmed) {
+    case "w":
+      // :w - Save file, remain in Pair Writing
+      onSave?.();
+      break;
+
+    case "wq":
+    case "x":
+      // :wq or :x - Save file and exit Pair Writing
+      onSave?.();
+      onExit?.();
+      break;
+
+    case "q":
+      // :q - Exit if no unsaved changes; parent handles the check
+      // We call onQuitWithUnsaved and let the parent decide whether to show
+      // a confirmation dialog or exit directly based on unsaved state
+      onQuitWithUnsaved?.();
+      break;
+
+    case "q!":
+      // :q! - Exit without saving (force quit)
+      onExit?.();
+      break;
+
+    default:
+      // Unknown commands are silently ignored
+      break;
+  }
+}
+
+/**
  * Handle keystrokes in command mode.
  * Escape returns to normal mode.
- * Enter will execute the command (implemented in later chunk).
- * Other keys are captured in the command buffer (implemented in later chunk).
+ * Enter executes the command and returns to normal mode.
+ * Other keys are captured in the command buffer.
  */
 function handleCommandModeKey(
   e: React.KeyboardEvent<HTMLTextAreaElement>,
   key: string,
   setMode: React.Dispatch<React.SetStateAction<ViMode>>,
-  setCommandBuffer: React.Dispatch<React.SetStateAction<string>>
+  commandBuffer: string,
+  setCommandBuffer: React.Dispatch<React.SetStateAction<string>>,
+  callbacks: ExCommandCallbacks
 ): void {
   // Escape or Ctrl+C aborts command mode (standard vi behavior)
   if (key === "Escape" || (e.ctrlKey && key === "c")) {
@@ -914,15 +995,14 @@ function handleCommandModeKey(
 
   if (key === "Enter") {
     e.preventDefault();
-    // Command execution will be added in a later chunk
-    // For now, just return to normal mode
+    // Execute the command before returning to normal mode
+    executeExCommand(commandBuffer, callbacks);
     setMode("normal");
     setCommandBuffer("");
     return;
   }
 
   // Prevent default for all keys in command mode to avoid inserting into textarea
-  // Command buffer building will be implemented in a later chunk
   if (key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     setCommandBuffer((prev) => prev + key);

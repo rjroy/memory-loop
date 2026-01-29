@@ -73,3 +73,47 @@
 .vi-mode-indicator[data-mode="command"] {
   color: var(--color-accent-quartary);
 }
+
+/* ============================================
+   Command Line Input
+
+   Vim-style command input at bottom of editor.
+   Shows ":" prefix followed by input field.
+   ============================================ */
+
+.vi-command-line {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  background-color: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  z-index: 10;
+}
+
+.vi-command-line__prefix {
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+  margin-right: 2px;
+  user-select: none;
+}
+
+.vi-command-line__text {
+  color: var(--color-text);
+  white-space: pre;
+}
+
+.vi-command-line__cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  background-color: var(--color-text);
+  opacity: 0.7;
+  animation: vi-cursor-blink 1s step-end infinite;
+  vertical-align: text-bottom;
+}

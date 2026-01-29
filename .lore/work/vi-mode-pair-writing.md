@@ -152,10 +152,11 @@ Tasks:
 - Clear count after command or Esc
 - Unit tests for count accumulation and execution
 
-### 12. Command Mode UI
+### 12. Command Mode UI ✓
 **What**: `:` command input field and parsing
 **Delivers**: Can type ex commands
 **Depends on**: Chunk 3 (needs Command mode state)
+**Completed**: 2026-01-29
 
 Tasks:
 - Create `ViCommandLine.tsx` component
@@ -164,10 +165,11 @@ Tasks:
 - Focus management (focus input on enter, return on exit)
 - Add to `vi-mode.css`
 
-### 13. Ex Commands
+### 13. Ex Commands ✓
 **What**: `:w`, `:wq`, `:q`, `:q!` implementation
 **Delivers**: Can save and exit via commands
 **Depends on**: Chunk 12 (needs command input)
+**Completed**: 2026-01-29
 
 Tasks:
 - Parse command string in `useViMode`
@@ -178,10 +180,11 @@ Tasks:
 - Handle unknown commands (no-op or error indicator)
 - Unit tests for each command
 
-### 14. Integration
+### 14. Integration ✓
 **What**: Wire everything into `PairWritingEditor`
 **Delivers**: Full vi mode working in Pair Writing
 **Depends on**: All previous chunks
+**Completed**: 2026-01-29
 
 Tasks:
 - Integrate `useViMode` into `PairWritingEditor`
@@ -191,18 +194,20 @@ Tasks:
 - Gate on `viMode` config + `hasKeyboard`
 - Integration tests
 
-### 15. Polish and Edge Cases
+### 15. Polish and Edge Cases ✓
 **What**: Handle remaining edge cases from review
 **Delivers**: Robust implementation
 **Depends on**: Chunk 14
+**Completed**: 2026-01-29
 
 Tasks:
-- Esc in Normal mode cancels pending operator/count
-- Cursor boundary clamping (h at start, l at end)
-- `dd` on empty document
-- `p` with empty clipboard
-- Interaction with `isProcessingQuickAction` state
-- Manual testing on various content sizes
+- Esc in Normal mode cancels pending operator/count ✓
+- Cursor boundary clamping (h at start, l at end) - verified existing tests
+- `dd` on empty document - verified existing tests
+- `p` with empty clipboard - verified existing tests
+- Interaction with `isProcessingQuickAction` state ✓
+- ViCommandLine converted to display-only (focus stays on textarea) ✓
+- Tests added for Escape clearing pending state in Normal mode
 
 ## Suggested Order
 
@@ -217,10 +222,10 @@ Tasks:
 9. ~~**Chunk 9** (Delete) - First destructive command~~ ✓
 10. ~~**Chunk 10** (Yank/Put) - Copy/paste~~ ✓
 11. ~~**Chunk 11** (Numeric Prefixes) - Power user feature~~ ✓
-12. **Chunk 12** (Command Mode UI) - Needed for ex commands
-13. **Chunk 13** (Ex Commands) - Save/exit flow
-14. **Chunk 14** (Integration) - Wire it all together
-15. **Chunk 15** (Polish) - Edge cases and hardening
+12. ~~**Chunk 12** (Command Mode UI) - Needed for ex commands~~ ✓
+13. ~~**Chunk 13** (Ex Commands) - Save/exit flow~~ ✓
+14. ~~**Chunk 14** (Integration) - Wire it all together~~ ✓
+15. ~~**Chunk 15** (Polish) - Edge cases and hardening~~ ✓
 
 ## Release Points
 
@@ -233,4 +238,5 @@ Navigation and insert mode work. Can move around and type text.
 **Milestone C (Chunks 8-11)**: ✓ COMPLETE (2026-01-29)
 Full Normal mode editing. Delete, yank, put, undo, counts all work.
 
-**Milestone D (Chunks 12-15)**: Complete feature. Ex commands for save/exit, full integration, polished.
+**Milestone D (Chunks 12-15)**: ✓ COMPLETE (2026-01-29)
+Complete feature. Ex commands for save/exit, full integration, polished. Edge cases handled.

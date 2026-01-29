@@ -5,10 +5,11 @@ Plan: `.lore/plans/vi-mode-pair-writing.md`
 
 ## Chunks
 
-### 1. Configuration Layer
+### 1. Configuration Layer ✓
 **What**: Add `viMode` to VaultConfig and flow it through to frontend
 **Delivers**: Config toggle that can be read in PairWritingEditor (no behavior change yet)
 **Depends on**: Nothing
+**Completed**: 2026-01-29
 
 Tasks:
 - Add `viMode?: boolean` to `VaultConfig` interface (backend)
@@ -17,20 +18,22 @@ Tasks:
 - Flow through vault discovery to API response
 - Verify config is accessible in `PairWritingMode` component
 
-### 2. Keyboard Detection
+### 2. Keyboard Detection ✓
 **What**: Detect physical keyboard presence, gate vi mode on it
 **Delivers**: `useHasKeyboard` hook that returns boolean; vi mode disabled on touch-only
 **Depends on**: Nothing (can parallel with Chunk 1)
+**Completed**: 2026-01-29
 
 Tasks:
 - Create `useHasKeyboard.ts` hook using matchMedia + maxTouchPoints
 - Add tests for detection logic (mock matchMedia)
 - Export from hooks index
 
-### 3. Vi Mode State Machine (Core)
+### 3. Vi Mode State Machine (Core) ✓
 **What**: Mode state management (normal/insert/command) and transitions
 **Delivers**: `useViMode` hook with mode state, no commands yet
 **Depends on**: Nothing (can parallel)
+**Completed**: 2026-01-29
 
 Tasks:
 - Create `useViMode.ts` with mode enum and state
@@ -39,10 +42,11 @@ Tasks:
 - Add `enabled` option to bypass when vi mode off
 - Unit tests for state transitions
 
-### 4. Cursor Overlay System
+### 4. Cursor Overlay System ✓
 **What**: Block cursor rendering using mirror element technique
 **Delivers**: `useViCursor` hook + `ViCursor` component showing cursor position
 **Depends on**: Chunk 3 (needs mode to toggle cursor style)
+**Completed**: 2026-01-29
 
 Tasks:
 - Create `useViCursor.ts` with mirror element position calculation
@@ -52,10 +56,11 @@ Tasks:
 - Handle scroll synchronization
 - Unit tests for position calculation
 
-### 5. Mode Indicator UI
+### 5. Mode Indicator UI ✓
 **What**: Display current mode ("-- NORMAL --", "-- INSERT --", etc.)
 **Delivers**: `ViModeIndicator` component visible in editor
 **Depends on**: Chunk 3 (needs mode state)
+**Completed**: 2026-01-29
 
 Tasks:
 - Create `ViModeIndicator.tsx` component
@@ -195,11 +200,11 @@ Tasks:
 
 ## Suggested Order
 
-1. **Chunk 1** (Configuration) - Foundation, quick win
-2. **Chunk 2** (Keyboard Detection) - Can parallel with 1
-3. **Chunk 3** (State Machine) - Core architecture, can parallel
-4. **Chunk 4** (Cursor Overlay) - Visual feedback, depends on 3
-5. **Chunk 5** (Mode Indicator) - Quick UI win, depends on 3
+1. ~~**Chunk 1** (Configuration) - Foundation, quick win~~ ✓
+2. ~~**Chunk 2** (Keyboard Detection) - Can parallel with 1~~ ✓
+3. ~~**Chunk 3** (State Machine) - Core architecture, can parallel~~ ✓
+4. ~~**Chunk 4** (Cursor Overlay) - Visual feedback, depends on 3~~ ✓
+5. ~~**Chunk 5** (Mode Indicator) - Quick UI win, depends on 3~~ ✓
 6. **Chunk 6** (Basic Movement) - First real vi behavior
 7. **Chunk 7** (Insert Entry) - Can now edit text
 8. **Chunk 8** (Undo Stack) - Safety net before destructive commands
@@ -213,7 +218,8 @@ Tasks:
 
 ## Release Points
 
-**Milestone A (Chunks 1-5)**: Vi mode toggle works, shows mode indicator and block cursor. No commands yet, but visual infrastructure complete.
+**Milestone A (Chunks 1-5)**: ✓ COMPLETE (2026-01-29)
+Vi mode toggle works, shows mode indicator and block cursor. No commands yet, but visual infrastructure complete.
 
 **Milestone B (Chunks 6-7)**: Navigation and insert mode work. Can move around and type text.
 

@@ -128,7 +128,7 @@ http://YOUR_IP:5173
 
 ## Documentation
 
-- [System Overview](.lore/specs/_overview.md) — Architecture, design decisions, and feature specs
+- [System Overview](.lore/reference/_overview.md) — Architecture, design decisions, and feature reference
 - [Usage Guide](docs/usage/README.md) — How to use each tab (Ground, Capture, Think, Recall)
 
 ### Deployment

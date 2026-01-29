@@ -233,8 +233,8 @@ Passed to Claude SDK when creating session.
 | [Ground](./home-dashboard.md) | Recent discussions, prefill, debrief buttons |
 | [Capture](./capture.md) | Meeting stop → Think with `/expand-note` |
 | [Recall](./recall.md) | Tool reads files from vault |
-| [Extraction](../specs/_infrastructure/extraction.md) | Transcripts → memory |
-| [Configuration](../specs/_infrastructure/configuration.md) | discussionModel setting |
+| [Extraction](./_infrastructure/extraction.md) | Transcripts → memory |
+| [Configuration](./_infrastructure/configuration.md) | discussionModel setting |
 
 ## Notes
 

@@ -126,7 +126,7 @@ Each WebSocket connection maintains:
 ## Related
 
 - [Session Auto-Resume](./session-auto-resume.md) - How sessions are restored after reconnect
-- [Communication Layer](../specs/_infrastructure/communication-layer.md) - Protocol details
+- [Communication Layer](../reference/_infrastructure/communication-layer.md) - Protocol details
 - `frontend/src/hooks/useWebSocket.ts` - Client implementation
 - `backend/src/websocket-handler.ts` - Server implementation
 - `backend/src/handlers/types.ts:181-204` - ConnectionState interface

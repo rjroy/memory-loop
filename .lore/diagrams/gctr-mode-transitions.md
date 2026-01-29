@@ -33,6 +33,15 @@ stateDiagram-v2
         state "File Viewer" as Viewer
         state "Task List" as Tasks
         state "Search" as Search
+
+        state "Adjust Mode" as Adjust
+        state "Pair Writing" as PairWrite
+
+        Viewer --> Adjust: Edit button
+        Adjust --> Viewer: Save / Cancel
+
+        Viewer --> PairWrite: Pair Write button
+        PairWrite --> Viewer: Exit
     }
 
     %% Direct nav bar switches (bidirectional)
@@ -74,6 +83,8 @@ stateDiagram-v2
 | Ground | Click card source | Recall | `currentPath` set to source file |
 | Capture | End meeting | Think | `discussionPrefill` with `/expand-note {path}` |
 | Recall | "Think about" menu | Think | File path appended to localStorage draft |
+| Recall | Edit button | Adjust | `isAdjusting: true`, copies content to `adjustContent` |
+| Recall | Pair Write button | Pair Writing | `isPairWritingActive: true` |
 
 ## Key Insights
 
@@ -96,16 +107,29 @@ Mode switches don't clear state:
 
 This allows workflows like: Think → Recall (find a file) → Think (continue conversation with context).
 
+## Recall Sub-Modes
+
+Recall has two editing sub-modes that overlay the File Viewer:
+
+| Sub-Mode | Entry | Exit | Purpose |
+|----------|-------|------|---------|
+| **Adjust** | Edit button | Save or Cancel | Direct text editing with syntax highlighting |
+| **Pair Writing** | Pair Write button | Exit button | AI-assisted editing with Quick Actions (Tighten, Embellish, Polish, Correct) and Advisory Actions (Validate, Critique, Compare, Discuss) |
+
+Both sub-modes preserve the file tree and current path. Switching GCTR modes while in a sub-mode exits the sub-mode without saving.
+
 ## Not Shown
 
-- **Sub-mode transitions**: Recall has internal view modes (files/tasks) and search state
+- **View mode toggle**: Recall switches between files and tasks views
+- **Search state**: Recall's search overlay with file/content modes
 - **Meeting capture flow**: Complex state machine within Capture mode
-- **Pair Writing**: Enters a sub-mode within Recall, not a separate GCTR mode
 - **Vault switching**: Returns to vault selection, not a mode transition
 
 ## Related
 
 - [System Overview](../specs/_overview.md) - GCTR framework explanation
 - [Navigation Bar](../specs/navigation-bar.md) - Nav component spec
+- [Pair Writing](../specs/pair-writing.md) - AI-assisted editing spec
+- [Recall](../specs/recall.md) - File browser and viewer spec
 - `frontend/src/components/shared/ModeToggle.tsx` - Nav bar implementation
 - `frontend/src/contexts/session/types.ts:27` - AppMode type definition

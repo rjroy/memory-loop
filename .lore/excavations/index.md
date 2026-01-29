@@ -10,9 +10,11 @@
 | Vault Selection | [vault-selection.md](../specs/_infrastructure/vault-selection.md) | 2026-01-28 | Infrastructure | configuration, all tabs |
 | Extraction | [extraction.md](../specs/_infrastructure/extraction.md) | 2026-01-28 | Infrastructure | system-settings, think |
 | System Settings | [system-settings.md](../specs/_infrastructure/system-settings.md) | 2026-01-28 | Infrastructure | vault-selection, extraction, spaced-repetition |
+| Configuration | [configuration.md](../specs/_infrastructure/configuration.md) | 2026-01-28 | Infrastructure | vault-selection, inspiration, ground, think |
 | Ground | [home-dashboard.md](../specs/home-dashboard.md) | 2026-01-28 | Tab (container) | spaced-repetition, inspiration, capture, think, recall |
 | Spaced Repetition | [spaced-repetition.md](../specs/spaced-repetition.md) | 2026-01-28 | Sub-feature | ground, system-settings, recall |
 | Inspiration | [inspiration.md](../specs/inspiration.md) | 2026-01-28 | Sub-feature | ground, think, configuration |
+| Capture | [capture.md](../specs/capture.md) | 2026-01-28 | Tab | ground, think, recall |
 
 ## Discovered (Not Yet Documented)
 
@@ -23,7 +25,7 @@
 | ~~Vault Selection~~ | | | ✓ Done |
 | ~~Extraction~~ | | | ✓ Done |
 | ~~System Settings~~ | | | ✓ Done |
-| **Configuration** | ConfigEditorDialog, .memory-loop.json | `backend/src/vault-config.ts`, `frontend/src/components/vault/ConfigEditorDialog.tsx` | Medium (per-vault settings) |
+| ~~Configuration~~ | | | ✓ Done |
 
 ### Sub-features (from Ground)
 
@@ -36,7 +38,7 @@
 
 | Tab | Mode | Entry Point | Priority |
 |-----|------|-------------|----------|
-| **Capture** | note | ModeToggle, mode="note" | Medium |
+| ~~Capture~~ | | | ✓ Done |
 | **Think** | discussion | ModeToggle, mode="discussion" | Medium |
 | **Recall** | browse | ModeToggle, mode="browse" | Medium |
 

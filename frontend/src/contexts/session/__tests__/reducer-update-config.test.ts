@@ -29,6 +29,7 @@ const mockVault: VaultInfo = {
   badges: [],
   order: 1,
   cardsEnabled: false, // Start with false
+  viMode: false,
 };
 
 describe("UPDATE_VAULT_CONFIG action", () => {

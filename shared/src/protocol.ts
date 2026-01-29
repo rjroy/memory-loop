@@ -68,6 +68,7 @@ export const EditableVaultConfigSchema = z.object({
   badges: z.array(EditableBadgeSchema).max(5).optional(),
   order: z.number().int().min(1).optional(),
   cardsEnabled: z.boolean().optional(),
+  viMode: z.boolean().optional(),
 });
 
 // =============================================================================
@@ -98,6 +99,7 @@ export const VaultInfoSchema = z.object({
   badges: z.array(BadgeSchema),
   order: z.number(), // Can be Infinity for unset vaults
   cardsEnabled: z.boolean(),
+  viMode: z.boolean(),
 });
 
 // =============================================================================

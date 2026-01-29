@@ -265,6 +265,7 @@ describe("useWebSocket", () => {
             badges: [],
             order: 999999,
             cardsEnabled: true,
+      viMode: false,
           },
         ],
       };

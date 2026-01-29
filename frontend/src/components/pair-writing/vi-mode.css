@@ -1,0 +1,75 @@
+/**
+ * Vi Mode Styles
+ *
+ * Styles for vi mode UI elements: block cursor overlay, mode indicator,
+ * and command line.
+ *
+ * @see .lore/plans/vi-mode-pair-writing.md (TD-10)
+ */
+
+/* Hide native caret in normal mode */
+.pair-writing-editor__textarea--vi-normal {
+  caret-color: transparent;
+}
+
+/* Hide native caret in command mode (cursor stays visible) */
+.pair-writing-editor__textarea--vi-command {
+  caret-color: transparent;
+}
+
+/* Block cursor overlay */
+.vi-cursor {
+  position: absolute;
+  pointer-events: none;
+  background-color: var(--color-text, #e0e0e0);
+  opacity: 0.7;
+  width: 0.6em;
+  animation: vi-cursor-blink 1s step-end infinite;
+  z-index: 5;
+}
+
+/* Blink animation for block cursor */
+@keyframes vi-cursor-blink {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Disable blink when textarea is not focused */
+.pair-writing-editor:not(:focus-within) .vi-cursor {
+  animation: none;
+  opacity: 0.4;
+}
+
+/* ============================================
+   Mode Indicator
+
+   Displays current mode at bottom-left of editor.
+   Vim-style appearance: monospace, bold, subtle.
+   ============================================ */
+
+.vi-mode-indicator {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary);
+  pointer-events: none;
+  user-select: none;
+  z-index: 5;
+}
+
+/* Mode-specific styling for visual distinction */
+.vi-mode-indicator[data-mode="insert"] {
+  color: var(--color-success);
+}
+
+.vi-mode-indicator[data-mode="command"] {
+  color: var(--color-accent-quartary);
+}

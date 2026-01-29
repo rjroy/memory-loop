@@ -150,6 +150,13 @@ export interface VaultConfig {
    * Default: true
    */
   cardsEnabled?: boolean;
+
+  /**
+   * Whether vi mode is enabled for the Pair Writing editor.
+   * When true, the editor uses vi-style keybindings.
+   * Default: false
+   */
+  viMode?: boolean;
 }
 
 /**
@@ -224,6 +231,12 @@ export const DEFAULT_ORDER = 999999;
  * When true (default), the vault participates in spaced repetition card discovery.
  */
 export const DEFAULT_CARDS_ENABLED = true;
+
+/**
+ * Default value for vi mode in Pair Writing editor.
+ * When false (default), the editor uses standard keybindings.
+ */
+export const DEFAULT_VI_MODE = false;
 
 /**
  * Valid badge color names.
@@ -335,6 +348,11 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
     // Validate cardsEnabled (must be a boolean)
     if (typeof obj.cardsEnabled === "boolean") {
       config.cardsEnabled = obj.cardsEnabled;
+    }
+
+    // Validate viMode (must be a boolean)
+    if (typeof obj.viMode === "boolean") {
+      config.viMode = obj.viMode;
     }
 
     // Validate badges array
@@ -570,6 +588,16 @@ export function resolveCardsEnabled(config: VaultConfig): boolean {
 }
 
 /**
+ * Resolves whether vi mode is enabled for Pair Writing editor.
+ *
+ * @param config - Vault configuration
+ * @returns true if vi mode is enabled (default: false)
+ */
+export function resolveViMode(config: VaultConfig): boolean {
+  return config.viMode ?? DEFAULT_VI_MODE;
+}
+
+/**
  * Saves pinned assets to the vault configuration file.
  * Preserves existing configuration fields while updating pinnedAssets.
  *
@@ -624,7 +652,8 @@ function isAllDefaults(config: EditableVaultConfig): boolean {
     config.recentDiscussions === undefined &&
     (config.badges === undefined || config.badges.length === 0) &&
     config.order === undefined &&
-    config.cardsEnabled === undefined
+    config.cardsEnabled === undefined &&
+    config.viMode === undefined
   );
 }
 
@@ -706,6 +735,9 @@ export async function saveVaultConfig(
     }
     if (editableConfig.cardsEnabled !== undefined) {
       mergedConfig.cardsEnabled = editableConfig.cardsEnabled;
+    }
+    if (editableConfig.viMode !== undefined) {
+      mergedConfig.viMode = editableConfig.viMode;
     }
 
     // Write merged config back to file

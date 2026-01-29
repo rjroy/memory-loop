@@ -4,6 +4,9 @@
 
 Accepted
 
+**Date:** 2026-01-16
+**Authors:** RJ Roy
+
 ## Context
 
 Memory Loop lacked test coverage tracking and CI integration. Additionally, a critical bug was discovered where the backend test script only ran 21 of 44 test files due to a shell glob pattern that missed nested directories.

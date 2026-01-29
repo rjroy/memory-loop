@@ -1,6 +1,6 @@
 # Using Memory Loop
 
-Memory Loop is organized around four tabs, each designed for a specific mode of interaction with your Obsidian vault.
+Memory Loop is organized around four modes, each designed for a specific type of interaction with your Obsidian vault.
 
 
 ## The Four Tabs
@@ -10,7 +10,7 @@ Memory Loop is organized around four tabs, each designed for a specific mode of 
 | [Ground](./ground.md) | 🪨 | Home dashboard | Starting your session, checking goals, accessing recent activity |
 | [Capture](./capture.md) | 🪶 | Quick note entry | Capturing thoughts, running meeting sessions |
 | [Think](./think.md) | ✨ | AI conversation | Exploring ideas, running commands, analyzing notes |
-| [Recall](./recall.md) | 🪞 | File browsing | Reading notes, searching, editing, reviewing tasks |
+| [Recall](./recall/) | 🪞 | File browsing | Reading notes, searching, editing, reviewing tasks |
 
 ## Quick Start
 
@@ -62,9 +62,8 @@ Each tab maintains its state when you switch away. Your draft messages, scroll p
 - [Ground Tab](./ground.md): Dashboard, debriefs, inspiration, goals, recent activity
 - [Capture Tab](./capture.md): Quick note entry, draft preservation, error handling
 - [Think Tab](./think.md): AI chat, slash commands, tool usage, sessions
-- [Recall Tab](./recall.md): File tree, search, viewers, editing, tasks
+- [Recall Tab](./recall/): File tree, search, viewers, editing, tasks
 
 ## Related Documentation
 
-- [Widgets](../widgets/README.md): Configure computed widgets for Ground and Recall
 - [Deployment](../deployment/systemd.md): Self-hosting setup

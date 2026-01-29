@@ -48,7 +48,19 @@ Auto-resume     Show vault list
 - **Select vault**: Click to activate and enter the app
 - **Auto-resume**: Page refresh restores previous vault and session
 - **Create vault**: Add new vault via dialog (creates directory + CLAUDE.md)
-- **Configure vault**: Edit settings via gear icon (title, badges, paths, etc.)
+- **Configure vault**: Edit per-vault settings (title, badges, paths, model)
+
+## Two Settings Dialogs (Important Distinction)
+
+The app has two different gear buttons that open different dialogs:
+
+| Button | Dialog | Scope | Contents |
+|--------|--------|-------|----------|
+| Gear on vault card | ConfigEditorDialog | Per-vault | Title, subtitle, badges, paths, model, inspiration settings |
+| Gear in app header | SettingsDialog | System/session | Memory Editor, Extraction Prompt, Card Generator |
+
+**ConfigEditorDialog** edits `.memory-loop.json` in the vault directory.
+**SettingsDialog** edits session-level settings and vault metadata files (memory.md, extraction prompt).
 
 ## Entry Points
 
@@ -184,7 +196,8 @@ All fields optional:
 
 | Feature | Relationship |
 |---------|-------------|
-| [Configuration](./configuration.md) | Vault config editing |
+| [Configuration](./configuration.md) | Per-vault config (.memory-loop.json) via ConfigEditorDialog |
+| [System Settings](./system-settings.md) | Memory/Prompt/Cards via SettingsDialog |
 | [Ground](../home-dashboard.md) | First tab after selection |
 | All tabs | Require vault to be selected |
 

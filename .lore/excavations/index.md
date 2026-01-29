@@ -8,7 +8,9 @@
 | Feature | Spec | Excavated | Type | Connected To |
 |---------|------|-----------|------|--------------|
 | Vault Selection | [vault-selection.md](../specs/_infrastructure/vault-selection.md) | 2026-01-28 | Infrastructure | configuration, all tabs |
+| Extraction | [extraction.md](../specs/_infrastructure/extraction.md) | 2026-01-28 | Infrastructure | system-settings, think |
 | Ground | [home-dashboard.md](../specs/home-dashboard.md) | 2026-01-28 | Tab (container) | spaced-repetition, inspiration, capture, think, recall |
+| Spaced Repetition | [spaced-repetition.md](../specs/spaced-repetition.md) | 2026-01-28 | Sub-feature | ground, system-settings, recall |
 
 ## Discovered (Not Yet Documented)
 
@@ -16,15 +18,16 @@
 
 | Feature | Entry Point | Files | Priority |
 |---------|-------------|-------|----------|
-| ~~Vault Selection~~ | ~~VaultSelect component, /api/vaults~~ | | ✓ Done |
-| **Configuration** | .memory-loop.json, /api/config | `backend/src/vault-config.ts`, `backend/src/routes/config.ts` | High (shapes behavior) |
-| **Extraction** | Post-session processing | `backend/src/extraction/` (fact-extractor, memory-writer, transcript-reader, extraction-manager) | High (core knowledge capture) |
+| ~~Vault Selection~~ | | | ✓ Done |
+| ~~Extraction~~ | | | ✓ Done |
+| **Configuration** | ConfigEditorDialog, .memory-loop.json | `backend/src/vault-config.ts`, `frontend/src/components/vault/ConfigEditorDialog.tsx` | Medium (per-vault settings) |
+| **System Settings** | SettingsDialog (gear in header) | `frontend/src/components/vault/SettingsDialog.tsx` | Medium (memory editor, prompt, cards) |
 
 ### Sub-features (from Ground)
 
 | Feature | Discovered From | Entry Point | Priority |
 |---------|-----------------|-------------|----------|
-| Spaced Repetition | ground | SpacedRepetitionWidget, /api/cards/* | High (complex state machine) |
+| ~~Spaced Repetition~~ | | | ✓ Done |
 | Inspiration | ground | InspirationCard, /api/inspiration | Medium |
 
 ### Top-Level Tabs

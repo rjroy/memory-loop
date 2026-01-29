@@ -202,25 +202,6 @@ CSV files render as tables for easy reading.
 
 Unsupported file types show a download button to save the file locally.
 
-## Recall Widgets
-
-When viewing a file that matches a widget's source pattern, contextual widgets appear in a collapsible panel below the viewer.
-
-[ img: Recall widgets panel expanded ]
-
-These widgets show data related to the current file, such as:
-- Similarity scores to other items
-- Aggregated statistics for the collection
-- Editable fields for frontmatter updates
-
-See the [Widgets documentation](../widgets/README.md) for configuration details.
-
-### Editing via Widgets
-
-Some widgets support inline editing. For example, a rating widget might show a slider to adjust a file's rating directly without opening the markdown editor.
-
-[ img: Widget with editable slider ]
-
 ## Mobile Navigation
 
 On mobile, the file tree is hidden by default to maximize viewer space.

@@ -68,10 +68,11 @@ Tasks:
 - Show/hide based on vi mode enabled
 - Add to `vi-mode.css`
 
-### 6. Basic Movement Commands
+### 6. Basic Movement Commands ✓
 **What**: `h`, `j`, `k`, `l`, `0`, `$` cursor movement
 **Delivers**: Navigation works in Normal mode
 **Depends on**: Chunks 3, 4 (need mode + cursor)
+**Completed**: 2026-01-29
 
 Tasks:
 - Add command dispatch to `useViMode`
@@ -81,10 +82,11 @@ Tasks:
 - Handle document boundaries (clamp, don't wrap)
 - Unit tests for each movement command
 
-### 7. Insert Mode Entry Commands
+### 7. Insert Mode Entry Commands ✓
 **What**: `i`, `a`, `A`, `o`, `O` to enter Insert mode
 **Delivers**: Can enter Insert mode at various positions
 **Depends on**: Chunk 6 (builds on cursor manipulation)
+**Completed**: 2026-01-29
 
 Tasks:
 - `i`: enter Insert at cursor
@@ -205,8 +207,8 @@ Tasks:
 3. ~~**Chunk 3** (State Machine) - Core architecture, can parallel~~ ✓
 4. ~~**Chunk 4** (Cursor Overlay) - Visual feedback, depends on 3~~ ✓
 5. ~~**Chunk 5** (Mode Indicator) - Quick UI win, depends on 3~~ ✓
-6. **Chunk 6** (Basic Movement) - First real vi behavior
-7. **Chunk 7** (Insert Entry) - Can now edit text
+6. ~~**Chunk 6** (Basic Movement) - First real vi behavior~~ ✓
+7. ~~**Chunk 7** (Insert Entry) - Can now edit text~~ ✓
 8. **Chunk 8** (Undo Stack) - Safety net before destructive commands
 9. **Chunk 9** (Delete) - First destructive command
 10. **Chunk 10** (Yank/Put) - Copy/paste
@@ -221,7 +223,8 @@ Tasks:
 **Milestone A (Chunks 1-5)**: ✓ COMPLETE (2026-01-29)
 Vi mode toggle works, shows mode indicator and block cursor. No commands yet, but visual infrastructure complete.
 
-**Milestone B (Chunks 6-7)**: Navigation and insert mode work. Can move around and type text.
+**Milestone B (Chunks 6-7)**: ✓ COMPLETE (2026-01-29)
+Navigation and insert mode work. Can move around and type text.
 
 **Milestone C (Chunks 8-11)**: Full Normal mode editing. Delete, yank, put, undo, counts all work.
 

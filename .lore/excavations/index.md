@@ -15,6 +15,9 @@
 | Spaced Repetition | [spaced-repetition.md](../specs/spaced-repetition.md) | 2026-01-28 | Sub-feature | ground, system-settings, recall |
 | Inspiration | [inspiration.md](../specs/inspiration.md) | 2026-01-28 | Sub-feature | ground, think, configuration |
 | Capture | [capture.md](../specs/capture.md) | 2026-01-28 | Tab | ground, think, recall |
+| Think | [think.md](../specs/think.md) | 2026-01-28 | Tab | ground, capture, recall, extraction, configuration |
+| Recall | [recall.md](../specs/recall.md) | 2026-01-28 | Tab | ground, spaced-repetition, think, capture |
+| Pair Writing | [pair-writing.md](../specs/pair-writing.md) | 2026-01-28 | Sub-feature | recall, think |
 
 ## Discovered (Not Yet Documented)
 
@@ -39,8 +42,8 @@
 | Tab | Mode | Entry Point | Priority |
 |-----|------|-------------|----------|
 | ~~Capture~~ | | | ✓ Done |
-| **Think** | discussion | ModeToggle, mode="discussion" | Medium |
-| **Recall** | browse | ModeToggle, mode="browse" | Medium |
+| ~~Think~~ | | | ✓ Done |
+| ~~Recall~~ | | | ✓ Done |
 
 ## Unexplored Entry Points
 

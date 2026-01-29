@@ -1,6 +1,6 @@
 # Using Memory Loop
 
-Memory Loop is organized around four tabs, each designed for a specific mode of interaction with your Obsidian vault.
+Memory Loop is organized around four modes, each designed for a specific type of interaction with your Obsidian vault.
 
 
 ## The Four Tabs

@@ -32,12 +32,18 @@ Frequently accessed folders can be pinned. Pinned items appear at the top of the
 
 ### Context Menu
 
-Long-press (mobile) or right-click (desktop) a file to see context actions:
+Long-press (mobile) or right-click (desktop) a file or folder to see context actions:
 
-| Action | Description |
-|--------|-------------|
-| Think about | Opens Think with file path pre-filled for AI discussion |
-| Delete | Removes the file (requires confirmation) |
+| Action | Applies to | Description |
+|--------|-----------|-------------|
+| Pin / Unpin | Files & Directories | Add or remove from pinned assets at top of tree |
+| Think about | All | Opens Think with file path pre-filled for AI discussion |
+| Rename | Files & Directories | Change the name while preserving location |
+| Move | Files & Directories | Relocate to a different folder in the vault |
+| Add Directory | Directories only | Create a new subfolder |
+| Create File | Directories only | Create a new file in this folder |
+| Archive | Specific directories | Move to archive location (only appears for PARA-aligned directories) |
+| Delete | Files & Directories | Remove permanently (requires confirmation) |
 
 [ img: Context menu on file ]
 
@@ -116,6 +122,55 @@ For markdown files, tap the **Adjust** button to enter edit mode.
 - Tap **Cancel** to discard changes
 
 Changes are saved directly to your vault. If the save fails, your changes are preserved so you can retry.
+
+### Pair Writing Mode
+
+For longer writing sessions, tap the **Pair Writing** button in the markdown viewer toolbar to enter a split-pane editing experience with AI assistance.
+
+[ img: Pair Writing split-pane view ]
+
+**Availability**: Pair Writing is designed for larger screens. The button is hidden on phones but visible on tablets and desktops where the split layout is practical.
+
+#### Layout
+
+The screen splits into two panes:
+- **Left pane**: Markdown editor with your document
+- **Right pane**: AI conversation for writing assistance
+
+Both panes share the same Think session, so conversation context persists if you exit and return.
+
+#### Quick Actions
+
+Quick action buttons apply specific transformations to selected text or the entire document:
+
+| Action | Effect |
+|--------|--------|
+| Tighten | Remove unnecessary words, make prose more concise |
+| Embellish | Add detail, expand descriptions, enrich language |
+| Correct | Fix grammar, spelling, and punctuation |
+| Polish | Light overall improvement without changing voice |
+
+Select text before tapping to transform just that selection. With no selection, the action applies to the full document.
+
+#### Advisory Actions
+
+Advisory actions don't modify your text directly. Instead, they provide feedback in the conversation pane:
+
+| Action | Purpose |
+|--------|---------|
+| Validate | Check claims, consistency, and accuracy |
+| Critique | Identify weaknesses and suggest improvements |
+| Compare | Compare current version against a snapshot |
+| Discuss | Open-ended conversation about the document |
+
+#### Snapshots
+
+Tap **Snapshot** to save the current document state. Use snapshots to:
+- Mark a "known good" version before major changes
+- Create comparison points for the Compare action
+- Track progress across editing sessions
+
+Snapshots are stored in the session and persist across tab switches.
 
 ### Images
 

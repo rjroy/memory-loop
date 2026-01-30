@@ -108,8 +108,8 @@ function copyTextareaStyles(
  * 1. Create off-screen div with identical styling to textarea
  * 2. Split content at cursor position
  * 3. Insert span marker between text nodes
- * 4. Measure span's getBoundingClientRect() for coordinates
- * 5. Adjust for textarea position and scroll offset
+ * 4. Measure span's position relative to the mirror
+ * 5. Account for textarea scroll offset
  */
 export function calculateCursorPosition(
   textarea: HTMLTextAreaElement,
@@ -144,13 +144,14 @@ export function calculateCursorPosition(
     }
     mirror.appendChild(cursorSpan);
 
-    // Get textarea's position
-    const textareaRect = textarea.getBoundingClientRect();
+    // Get positions - measure span relative to mirror, not viewport
+    const mirrorRect = mirror.getBoundingClientRect();
     const spanRect = cursorSpan.getBoundingClientRect();
 
-    // Calculate position relative to textarea, accounting for scroll
-    const top = spanRect.top - textareaRect.top + textarea.scrollTop;
-    const left = spanRect.left - textareaRect.left + textarea.scrollLeft;
+    // Calculate position relative to mirror (which has same styling as textarea)
+    // Then account for scroll offset
+    const top = spanRect.top - mirrorRect.top - textarea.scrollTop;
+    const left = spanRect.left - mirrorRect.left - textarea.scrollLeft;
 
     // Get line height from computed style for cursor height
     const computed = window.getComputedStyle(textarea);

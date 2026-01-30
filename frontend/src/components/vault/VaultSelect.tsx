@@ -722,6 +722,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
             badges: configEditorVault.badges,
             order: configEditorVault.order === Infinity ? undefined : configEditorVault.order,
             cardsEnabled: configEditorVault.cardsEnabled,
+            viMode: configEditorVault.viMode,
           }}
           onSave={handleConfigSave}
           onCancel={handleConfigCancel}

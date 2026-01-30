@@ -21,8 +21,8 @@
 .vi-cursor {
   position: absolute;
   pointer-events: none;
-  background-color: var(--color-text, #e0e0e0);
-  opacity: 0.7;
+  background-color: var(--color-accent-quartary, #d4a574);
+  opacity: 0.85;
   width: 0.6em;
   animation: vi-cursor-blink 1s step-end infinite;
   z-index: 5;
@@ -32,17 +32,17 @@
 @keyframes vi-cursor-blink {
   0%,
   100% {
-    opacity: 0.7;
+    opacity: 0.85;
   }
   50% {
-    opacity: 0;
+    opacity: 0.3;
   }
 }
 
 /* Disable blink when textarea is not focused */
 .pair-writing-editor:not(:focus-within) .vi-cursor {
   animation: none;
-  opacity: 0.4;
+  opacity: 0.5;
 }
 
 /* ============================================

@@ -55,6 +55,7 @@ export interface EditableVaultConfig {
   badges?: Badge[]; // max 5
   order?: number; // display order on vault selection screen
   cardsEnabled?: boolean; // whether spaced repetition card discovery is enabled
+  viMode?: boolean; // whether vi-style editing is enabled in Pair Writing
 }
 
 export interface ConfigEditorDialogProps {
@@ -87,6 +88,7 @@ function hasConfigChanged(
   if (initial.recentDiscussions !== current.recentDiscussions) return true;
   if (initial.order !== current.order) return true;
   if (initial.cardsEnabled !== current.cardsEnabled) return true;
+  if (initial.viMode !== current.viMode) return true;
 
   // Compare badges array
   const initialBadges = initial.badges ?? [];
@@ -342,6 +344,7 @@ export function ConfigEditorDialog({
   const recentCapturesId = useId();
   const recentDiscussionsId = useId();
   const cardsEnabledId = useId();
+  const viModeId = useId();
 
   // Form state - initialized from initialConfig
   const [formState, setFormState] = useState<EditableVaultConfig>(initialConfig);
@@ -774,6 +777,35 @@ export function ConfigEditorDialog({
                 </label>
                 <p className="config-editor__field-hint">
                   Scan notes in this vault to create spaced repetition flashcards.
+                </p>
+              </div>
+            </section>
+
+            {/* Editing Settings Section */}
+            <section className="config-editor__section">
+              <h3 className="config-editor__section-title">Editing</h3>
+              <p className="config-editor__section-description">
+                Configure the Pair Writing editing experience.
+              </p>
+
+              <div className="config-editor__checkbox-field">
+                <label className="config-editor__checkbox-label">
+                  <input
+                    id={viModeId}
+                    type="checkbox"
+                    className="config-editor__checkbox"
+                    checked={formState.viMode ?? false}
+                    onChange={(e) =>
+                      setFormState((prev) => ({
+                        ...prev,
+                        viMode: e.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Enable Vi Mode</span>
+                </label>
+                <p className="config-editor__field-hint">
+                  Use vi-style modal editing in Pair Writing. Requires a physical keyboard.
                 </p>
               </div>
             </section>

@@ -178,6 +178,44 @@ export function moveCursor(
   textarea.selectionEnd = clamped;
 }
 
+/**
+ * Scroll the textarea to ensure the cursor is visible.
+ *
+ * Uses a mirror element technique similar to cursor positioning to calculate
+ * where the cursor line is, then adjusts scrollTop if needed.
+ *
+ * @param textarea - The textarea element
+ */
+export function scrollCursorIntoView(textarea: HTMLTextAreaElement): void {
+  const pos = textarea.selectionStart;
+  const text = textarea.value;
+
+  // Get line info to find which line we're on
+  const lineInfo = getLineInfo(text, pos);
+
+  // Get computed line height
+  const computed = window.getComputedStyle(textarea);
+  const lineHeight = parseFloat(computed.lineHeight) || 20;
+  const paddingTop = parseFloat(computed.paddingTop) || 0;
+
+  // Calculate the top position of the cursor line
+  const cursorTop = paddingTop + lineInfo.lineNumber * lineHeight;
+  const cursorBottom = cursorTop + lineHeight;
+
+  // Get the visible area
+  const visibleTop = textarea.scrollTop;
+  const visibleBottom = visibleTop + textarea.clientHeight;
+
+  // Scroll if cursor is outside visible area
+  if (cursorTop < visibleTop) {
+    // Cursor is above visible area - scroll up
+    textarea.scrollTop = cursorTop;
+  } else if (cursorBottom > visibleBottom) {
+    // Cursor is below visible area - scroll down
+    textarea.scrollTop = cursorBottom - textarea.clientHeight;
+  }
+}
+
 export function useViMode(options: UseViModeOptions): UseViModeResult {
   const { enabled, textareaRef, onContentChange, onSave, onExit, onQuitWithUnsaved } = options;
 
@@ -524,6 +562,8 @@ function executeMovementCommand(
         const targetColumn = Math.min(currentLine.column, nextLineLength);
         moveCursor(textarea, nextLinePositions.lineStart + targetColumn);
       }
+      // Ensure cursor stays visible after vertical movement
+      scrollCursorIntoView(textarea);
       break;
     }
     case "k": {
@@ -549,6 +589,8 @@ function executeMovementCommand(
         const targetColumn = Math.min(currentLine.column, prevLineLength);
         moveCursor(textarea, prevLinePositions.lineStart + targetColumn);
       }
+      // Ensure cursor stays visible after vertical movement
+      scrollCursorIntoView(textarea);
       break;
     }
     case "0": {

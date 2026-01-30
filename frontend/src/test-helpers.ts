@@ -33,5 +33,7 @@ export function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     order: overrides.order ?? 999999,
     // Ensure cardsEnabled is always a boolean
     cardsEnabled: overrides.cardsEnabled ?? true,
+    // Ensure viMode is always a boolean
+    viMode: overrides.viMode ?? false,
   };
 }

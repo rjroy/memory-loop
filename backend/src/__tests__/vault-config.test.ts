@@ -20,6 +20,7 @@ import {
   DEFAULT_QUOTES_PER_WEEK,
   DEFAULT_DISCUSSION_MODEL,
   DEFAULT_CARDS_ENABLED,
+  DEFAULT_VI_MODE,
   VALID_DISCUSSION_MODELS,
   loadVaultConfig,
   loadSlashCommands,
@@ -37,6 +38,7 @@ import {
   resolvePinnedAssets,
   resolveDiscussionModel,
   resolveCardsEnabled,
+  resolveViMode,
   saveSlashCommands,
   savePinnedAssets,
   saveVaultConfig,
@@ -121,6 +123,12 @@ describe("vault-config", () => {
   describe("DEFAULT_CARDS_ENABLED", () => {
     test("exports expected default cards enabled value", () => {
       expect(DEFAULT_CARDS_ENABLED).toBe(true);
+    });
+  });
+
+  describe("DEFAULT_VI_MODE", () => {
+    test("exports expected default vi mode value", () => {
+      expect(DEFAULT_VI_MODE).toBe(false);
     });
   });
 
@@ -852,6 +860,84 @@ describe("vault-config", () => {
 
     test("returns false when cardsEnabled is false", () => {
       const result = resolveCardsEnabled({ cardsEnabled: false });
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("loadVaultConfig with viMode", () => {
+    test("loads config with viMode true", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ viMode: true })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.viMode).toBe(true);
+    });
+
+    test("loads config with viMode false", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ viMode: false })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.viMode).toBe(false);
+    });
+
+    test("ignores non-boolean viMode value", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ viMode: "true" })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.viMode).toBeUndefined();
+    });
+
+    test("ignores numeric viMode value", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ viMode: 1 })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.viMode).toBeUndefined();
+    });
+
+    test("loads viMode alongside other fields", async () => {
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({
+          contentRoot: "content",
+          viMode: true,
+        })
+      );
+
+      const config = await loadVaultConfig(testDir);
+      expect(config.contentRoot).toBe("content");
+      expect(config.viMode).toBe(true);
+    });
+  });
+
+  describe("resolveViMode", () => {
+    test("returns default (false) when viMode not configured", () => {
+      const result = resolveViMode({});
+      expect(result).toBe(false);
+    });
+
+    test("returns default (false) when viMode is undefined", () => {
+      const result = resolveViMode({ viMode: undefined });
+      expect(result).toBe(false);
+    });
+
+    test("returns true when viMode is true", () => {
+      const result = resolveViMode({ viMode: true });
+      expect(result).toBe(true);
+    });
+
+    test("returns false when viMode is false", () => {
+      const result = resolveViMode({ viMode: false });
       expect(result).toBe(false);
     });
   });
@@ -1776,6 +1862,61 @@ describe("vault-config", () => {
       const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
       const parsed = JSON.parse(content) as Record<string, unknown>;
       expect(parsed.cardsEnabled).toBe(true);
+      expect(parsed.title).toBe("Vault");
+    });
+
+    test("saves viMode field correctly", async () => {
+      const editableConfig: EditableVaultConfig = {
+        title: "Test Vault",
+        viMode: true,
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.title).toBe("Test Vault");
+      expect(parsed.viMode).toBe(true);
+    });
+
+    test("preserves viMode true when updating other fields", async () => {
+      // Create existing config with viMode
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ viMode: true })
+      );
+
+      const editableConfig: EditableVaultConfig = {
+        title: "New Title",
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.title).toBe("New Title");
+      expect(parsed.viMode).toBe(true);
+    });
+
+    test("updates viMode when explicitly set", async () => {
+      // Create existing config with viMode true
+      await writeFile(
+        join(testDir, CONFIG_FILE_NAME),
+        JSON.stringify({ viMode: true, title: "Vault" })
+      );
+
+      const editableConfig: EditableVaultConfig = {
+        viMode: false,
+      };
+      const result = await saveVaultConfig(testDir, editableConfig);
+
+      expect(result).toEqual({ success: true });
+
+      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      expect(parsed.viMode).toBe(false);
       expect(parsed.title).toBe("Vault");
     });
   });

@@ -69,6 +69,7 @@ const testVaults: VaultInfo[] = [
     badges: [{ text: "Primary", color: "blue" }],
     order: 1,
     cardsEnabled: true,
+      viMode: false,
   },
   {
     id: "vault-2",
@@ -87,6 +88,7 @@ const testVaults: VaultInfo[] = [
     badges: [],
     order: 2,
     cardsEnabled: true,
+      viMode: false,
   },
 ];
 
@@ -783,6 +785,7 @@ describe("VaultSelect", () => {
         badges: [],
         order: 999,
         cardsEnabled: true,
+      viMode: false,
       };
 
       wsInstances[0].simulateMessage({

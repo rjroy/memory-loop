@@ -50,6 +50,7 @@ export interface Badge {
  * @property badges - Custom badges configured in .memory-loop.json
  * @property order - Display order for vault selection (lower values first, Infinity for unset)
  * @property cardsEnabled - Whether spaced repetition card discovery is enabled (default: true)
+ * @property viMode - Whether vi mode is enabled for Pair Writing editor (default: false)
  */
 export interface VaultInfo {
   id: string;
@@ -72,6 +73,7 @@ export interface VaultInfo {
   badges: Badge[];
   order: number;
   cardsEnabled: boolean;
+  viMode: boolean;
 }
 
 /**

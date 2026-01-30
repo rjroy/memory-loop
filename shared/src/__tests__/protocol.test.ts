@@ -91,6 +91,7 @@ describe("VaultInfoSchema", () => {
       badges: [],
       order: 0,
       cardsEnabled: true,
+      viMode: false,
     };
 
     const result = VaultInfoSchema.parse(validVault);
@@ -573,6 +574,7 @@ describe("Server -> Client Messages", () => {
             badges: [],
             order: 1,
             cardsEnabled: true,
+            viMode: false,
           },
         ],
       };

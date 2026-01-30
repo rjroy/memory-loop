@@ -261,6 +261,7 @@ function MainContent(): React.ReactNode {
             badges: vault.badges,
             order: vault.order === Infinity ? undefined : vault.order,
             cardsEnabled: vault.cardsEnabled,
+            viMode: vault.viMode,
           }}
           onSave={handleConfigSave}
           onCancel={handleConfigCancel}

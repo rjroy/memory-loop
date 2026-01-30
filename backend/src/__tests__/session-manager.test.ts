@@ -70,6 +70,7 @@ function createMockVault(overrides: Partial<VaultInfo> = {}): VaultInfo {
     ...overrides,
     order: overrides.order ?? 999999,
     cardsEnabled: overrides.cardsEnabled ?? true,
+    viMode: overrides.viMode ?? false,
   };
 }
 

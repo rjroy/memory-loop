@@ -25,6 +25,7 @@ import {
   resolveBadges,
   resolveOrder,
   resolveCardsEnabled,
+  resolveViMode,
   type VaultConfig,
 } from "./vault-config";
 
@@ -343,6 +344,7 @@ export async function parseVault(
     badges: resolveBadges(config),
     order: resolveOrder(config),
     cardsEnabled: resolveCardsEnabled(config),
+    viMode: resolveViMode(config),
   };
 }
 

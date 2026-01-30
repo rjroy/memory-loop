@@ -195,6 +195,7 @@ describe("getMeetingsDirectory", () => {
       badges: [],
       order: 999999,
     cardsEnabled: true,
+      viMode: false,
     };
     const dir = getMeetingsDirectory(vault);
     expect(dir).toBe("/vaults/test/00_Inbox/meetings");
@@ -217,6 +218,7 @@ describe("getMeetingsDirectory", () => {
       badges: [],
       order: 999999,
     cardsEnabled: true,
+      viMode: false,
     };
     const dir = getMeetingsDirectory(vault);
     expect(dir).toBe("/vaults/custom/Custom/Inbox/meetings");
@@ -380,6 +382,7 @@ describe("startMeeting Integration", () => {
       badges: [],
       order: 999999,
     cardsEnabled: true,
+      viMode: false,
     };
   });
 
@@ -493,6 +496,7 @@ describe("captureToMeeting Integration", () => {
       badges: [],
       order: 999999,
     cardsEnabled: true,
+      viMode: false,
     };
 
     // Start a meeting to get active meeting state
@@ -619,6 +623,7 @@ describe("stopMeeting Integration", () => {
       badges: [],
       order: 999999,
     cardsEnabled: true,
+      viMode: false,
     };
   });
 
@@ -724,6 +729,7 @@ describe("Edge Cases", () => {
       badges: [],
       order: 999999,
     cardsEnabled: true,
+      viMode: false,
     };
   });
 

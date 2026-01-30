@@ -68,6 +68,7 @@ const testVault: VaultInfo = {
   badges: [],
   order: 999999,
     cardsEnabled: true,
+      viMode: false,
 };
 
 const mockDirectoryEntries: FileEntry[] = [

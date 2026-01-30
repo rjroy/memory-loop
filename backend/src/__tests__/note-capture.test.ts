@@ -581,6 +581,7 @@ describe("captureToDaily Integration", () => {
       badges: [],
       order: 999999,
     cardsEnabled: true,
+      viMode: false,
     };
   });
 
@@ -812,6 +813,7 @@ describe("Edge Cases", () => {
       badges: [],
       order: 999999,
     cardsEnabled: true,
+      viMode: false,
     };
   });
 

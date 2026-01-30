@@ -50,6 +50,7 @@ const testVault: VaultInfo = {
   badges: [],
   order: 999999,
     cardsEnabled: true,
+      viMode: false,
 };
 
 const testVault2: VaultInfo = {
@@ -68,6 +69,7 @@ const testVault2: VaultInfo = {
   badges: [],
   order: 999999,
     cardsEnabled: true,
+      viMode: false,
 };
 
 describe("SessionContext", () => {

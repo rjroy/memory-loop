@@ -86,7 +86,10 @@ export function PairWritingMode({
 }: PairWritingModeProps): React.ReactNode {
   void _assetBaseUrl; // Preserved for interface stability; Discussion handles its own asset resolution
   const { state, actions } = usePairWritingState();
-  const { addMessage } = useSession();
+  const { addMessage, vault } = useSession();
+
+  // Get vi mode setting from vault config
+  const viModeEnabled = vault?.viMode ?? false;
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [currentSelection, setCurrentSelection] = useState<SelectionContext | null>(null);
@@ -150,6 +153,24 @@ export function PairWritingMode({
       onExit();
     }
   }, [state.hasUnsavedChanges, actions, onExit]);
+
+  // Handle vi mode :q command with unsaved changes
+  // Shows the exit confirmation dialog just like clicking Exit button
+  const handleViQuitWithUnsaved = useCallback(() => {
+    if (state.hasUnsavedChanges) {
+      setShowExitConfirm(true);
+    } else {
+      // No unsaved changes, exit directly
+      actions.clearAll();
+      onExit();
+    }
+  }, [state.hasUnsavedChanges, actions, onExit]);
+
+  // Handle vi mode :q! command (force quit without saving)
+  const handleViForceExit = useCallback(() => {
+    actions.clearAll();
+    onExit();
+  }, [actions, onExit]);
 
   // Confirm exit with unsaved changes
   const handleConfirmExit = useCallback(() => {
@@ -264,6 +285,10 @@ export function PairWritingMode({
             hasSnapshot={state.snapshot !== null}
             snapshotContent={state.snapshot ?? undefined}
             openMenuTrigger={openMenuTrigger}
+            viModeEnabled={viModeEnabled}
+            onSave={handleSave}
+            onExit={handleViForceExit}
+            onQuitWithUnsaved={handleViQuitWithUnsaved}
           />
         </div>
 

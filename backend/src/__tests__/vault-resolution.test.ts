@@ -355,6 +355,7 @@ describe("getVaultFromContext", () => {
         badges: [],
         order: Infinity,
         cardsEnabled: true,
+      viMode: false,
       };
       c.set("vault", mockVault);
 

@@ -52,6 +52,7 @@ beforeEach(async () => {
     badges: [],
     order: 0,
     cardsEnabled: true,
+      viMode: false,
   };
   sentMessages = [];
   sentErrors = [];

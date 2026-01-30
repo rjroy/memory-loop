@@ -728,6 +728,7 @@ export function sessionReducer(
           badges: action.config.badges ?? state.vault.badges,
           order: action.config.order ?? state.vault.order,
           cardsEnabled: action.config.cardsEnabled ?? state.vault.cardsEnabled,
+          viMode: action.config.viMode ?? state.vault.viMode,
         },
       };
 

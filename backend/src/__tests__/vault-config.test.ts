@@ -5,10 +5,9 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { readFile } from "node:fs/promises";
 import {
   CONFIG_FILE_NAME,
   SLASH_COMMANDS_FILE,
@@ -47,6 +46,16 @@ import {
 } from "../vault-config";
 import type { SlashCommand, EditableVaultConfig } from "@memory-loop/shared";
 
+// Test helpers
+async function writeConfig(dir: string, data: unknown): Promise<void> {
+  await writeFile(join(dir, CONFIG_FILE_NAME), JSON.stringify(data));
+}
+
+async function readConfig(dir: string): Promise<Record<string, unknown>> {
+  const content = await readFile(join(dir, CONFIG_FILE_NAME), "utf-8");
+  return JSON.parse(content) as Record<string, unknown>;
+}
+
 describe("vault-config", () => {
   let testDir: string;
 
@@ -66,69 +75,19 @@ describe("vault-config", () => {
     }
   });
 
-  describe("CONFIG_FILE_NAME", () => {
-    test("exports expected config file name", () => {
+  describe("exported constants", () => {
+    test("exports expected default values", () => {
       expect(CONFIG_FILE_NAME).toBe(".memory-loop.json");
-    });
-  });
-
-  describe("DEFAULT_METADATA_PATH", () => {
-    test("exports expected default metadata path", () => {
       expect(DEFAULT_METADATA_PATH).toBe("06_Metadata/memory-loop");
-    });
-  });
-
-  describe("DEFAULT_PROJECT_PATH", () => {
-    test("exports expected default project path", () => {
       expect(DEFAULT_PROJECT_PATH).toBe("01_Projects");
-    });
-  });
-
-  describe("DEFAULT_AREA_PATH", () => {
-    test("exports expected default area path", () => {
       expect(DEFAULT_AREA_PATH).toBe("02_Areas");
-    });
-  });
-
-  describe("DEFAULT_PROMPTS_PER_GENERATION", () => {
-    test("exports expected default prompts per generation", () => {
       expect(DEFAULT_PROMPTS_PER_GENERATION).toBe(5);
-    });
-  });
-
-  describe("DEFAULT_MAX_POOL_SIZE", () => {
-    test("exports expected default max pool size", () => {
       expect(DEFAULT_MAX_POOL_SIZE).toBe(50);
-    });
-  });
-
-  describe("DEFAULT_QUOTES_PER_WEEK", () => {
-    test("exports expected default quotes per week", () => {
       expect(DEFAULT_QUOTES_PER_WEEK).toBe(1);
-    });
-  });
-
-  describe("DEFAULT_DISCUSSION_MODEL", () => {
-    test("exports expected default discussion model", () => {
       expect(DEFAULT_DISCUSSION_MODEL).toBe("opus");
-    });
-  });
-
-  describe("VALID_DISCUSSION_MODELS", () => {
-    test("exports expected valid model options", () => {
-      expect(VALID_DISCUSSION_MODELS).toEqual(["opus", "sonnet", "haiku"]);
-    });
-  });
-
-  describe("DEFAULT_CARDS_ENABLED", () => {
-    test("exports expected default cards enabled value", () => {
       expect(DEFAULT_CARDS_ENABLED).toBe(true);
-    });
-  });
-
-  describe("DEFAULT_VI_MODE", () => {
-    test("exports expected default vi mode value", () => {
       expect(DEFAULT_VI_MODE).toBe(false);
+      expect(VALID_DISCUSSION_MODELS).toEqual(["opus", "sonnet", "haiku"]);
     });
   });
 
@@ -143,225 +102,72 @@ describe("vault-config", () => {
         contentRoot: "content",
         inboxPath: "daily",
         metadataPath: "meta/memory-loop",
-      };
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify(configData)
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual(configData);
-    });
-
-    test("loads config with only contentRoot", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ contentRoot: "content" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({ contentRoot: "content" });
-    });
-
-    test("loads config with only inboxPath", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ inboxPath: "inbox" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({ inboxPath: "inbox" });
-    });
-
-    test("loads config with only metadataPath", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ metadataPath: "meta" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({ metadataPath: "meta" });
-    });
-
-    test("loads config with only title", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ title: "Custom Vault Title" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({ title: "Custom Vault Title" });
-    });
-
-    test("loads config with title and other fields", async () => {
-      const configData: VaultConfig = {
-        title: "My Vault",
-        contentRoot: "content",
-        inboxPath: "inbox",
-      };
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify(configData)
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual(configData);
-    });
-
-    test("ignores non-string title value", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ title: 123, contentRoot: "content" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({ contentRoot: "content" });
-      expect(config.title).toBeUndefined();
-    });
-
-    test("loads config with only subtitle", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ subtitle: "Personal Notes" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({ subtitle: "Personal Notes" });
-    });
-
-    test("loads config with title and subtitle", async () => {
-      const configData: VaultConfig = {
-        title: "My Vault",
-        subtitle: "Personal Notes",
-      };
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify(configData)
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual(configData);
-    });
-
-    test("ignores non-string subtitle value", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ subtitle: 123, contentRoot: "content" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({ contentRoot: "content" });
-      expect(config.subtitle).toBeUndefined();
-    });
-
-    test("loads config with only projectPath", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ projectPath: "projects" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({ projectPath: "projects" });
-    });
-
-    test("loads config with only areaPath", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ areaPath: "areas" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({ areaPath: "areas" });
-    });
-
-    test("loads config with all fields including projectPath and areaPath", async () => {
-      const configData: VaultConfig = {
-        contentRoot: "content",
-        inboxPath: "daily",
-        metadataPath: "meta/memory-loop",
         projectPath: "custom_projects",
         areaPath: "custom_areas",
       };
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify(configData)
-      );
+      await writeConfig(testDir, configData);
 
       const config = await loadVaultConfig(testDir);
       expect(config).toEqual(configData);
     });
 
-    test("ignores non-string values for known fields", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          contentRoot: 123,
-          inboxPath: null,
-          metadataPath: ["array"],
-        })
-      );
+    test.each([
+      ["contentRoot", { contentRoot: "content" }],
+      ["inboxPath", { inboxPath: "inbox" }],
+      ["metadataPath", { metadataPath: "meta" }],
+      ["title", { title: "Custom Vault Title" }],
+      ["subtitle", { subtitle: "Personal Notes" }],
+      ["projectPath", { projectPath: "projects" }],
+      ["areaPath", { areaPath: "areas" }],
+    ])("loads config with only %s", async (_fieldName, expected) => {
+      await writeConfig(testDir, expected);
 
       const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({});
+      expect(config).toEqual(expected);
     });
 
-    test("ignores non-string values for projectPath and areaPath", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          projectPath: 42,
-          areaPath: { nested: "object" },
-        })
-      );
+    test("loads config with title and subtitle", async () => {
+      const configData: VaultConfig = { title: "My Vault", subtitle: "Personal Notes" };
+      await writeConfig(testDir, configData);
+
+      const config = await loadVaultConfig(testDir);
+      expect(config).toEqual(configData);
+    });
+
+    test("ignores non-string values for string fields", async () => {
+      await writeConfig(testDir, {
+        contentRoot: 123,
+        inboxPath: null,
+        metadataPath: ["array"],
+        title: 456,
+        subtitle: { obj: true },
+        projectPath: 42,
+        areaPath: { nested: "object" },
+      });
 
       const config = await loadVaultConfig(testDir);
       expect(config).toEqual({});
     });
 
     test("ignores unknown fields", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          contentRoot: "content",
-          unknownField: "value",
-          anotherUnknown: 42,
-        })
-      );
+      await writeConfig(testDir, {
+        contentRoot: "content",
+        unknownField: "value",
+        anotherUnknown: 42,
+      });
 
       const config = await loadVaultConfig(testDir);
       expect(config).toEqual({ contentRoot: "content" });
     });
 
-    test("returns empty object for invalid JSON", async () => {
-      await writeFile(join(testDir, CONFIG_FILE_NAME), "{ invalid json }");
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({});
-    });
-
-    test("returns empty object for non-object JSON (array)", async () => {
-      await writeFile(join(testDir, CONFIG_FILE_NAME), '["array"]');
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({});
-    });
-
-    test("returns empty object for non-object JSON (string)", async () => {
-      await writeFile(join(testDir, CONFIG_FILE_NAME), '"string"');
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({});
-    });
-
-    test("returns empty object for non-object JSON (null)", async () => {
-      await writeFile(join(testDir, CONFIG_FILE_NAME), "null");
-
-      const config = await loadVaultConfig(testDir);
-      expect(config).toEqual({});
-    });
-
-    test("returns empty object for empty JSON object", async () => {
-      await writeFile(join(testDir, CONFIG_FILE_NAME), "{}");
+    test.each([
+      ["invalid JSON", "{ invalid json }"],
+      ["array", '["array"]'],
+      ["string", '"string"'],
+      ["null", "null"],
+      ["empty object", "{}"],
+    ])("returns empty object for %s", async (_desc, content) => {
+      await writeFile(join(testDir, CONFIG_FILE_NAME), content);
 
       const config = await loadVaultConfig(testDir);
       expect(config).toEqual({});
@@ -379,566 +185,370 @@ describe("vault-config", () => {
       const config = await loadVaultConfig(testDir);
       expect(config).toEqual({ contentRoot: "content", inboxPath: "inbox" });
     });
+
+    describe("generation settings", () => {
+      test("loads numeric generation settings", async () => {
+        await writeConfig(testDir, {
+          promptsPerGeneration: 7,
+          maxPoolSize: 75,
+          quotesPerWeek: 2,
+        });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.promptsPerGeneration).toBe(7);
+        expect(config.maxPoolSize).toBe(75);
+        expect(config.quotesPerWeek).toBe(2);
+      });
+
+      test("ignores non-numeric generation settings", async () => {
+        await writeConfig(testDir, {
+          promptsPerGeneration: "five",
+          maxPoolSize: null,
+          quotesPerWeek: [],
+        });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.promptsPerGeneration).toBeUndefined();
+        expect(config.maxPoolSize).toBeUndefined();
+        expect(config.quotesPerWeek).toBeUndefined();
+      });
+
+      test("ignores zero or negative generation settings", async () => {
+        await writeConfig(testDir, {
+          promptsPerGeneration: 0,
+          maxPoolSize: -5,
+          quotesPerWeek: -1,
+        });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.promptsPerGeneration).toBeUndefined();
+        expect(config.maxPoolSize).toBeUndefined();
+        expect(config.quotesPerWeek).toBeUndefined();
+      });
+
+      test("floors decimal values for generation settings", async () => {
+        await writeConfig(testDir, {
+          promptsPerGeneration: 5.7,
+          maxPoolSize: 50.9,
+          quotesPerWeek: 2.3,
+        });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.promptsPerGeneration).toBe(5);
+        expect(config.maxPoolSize).toBe(50);
+        expect(config.quotesPerWeek).toBe(2);
+      });
+    });
+
+    describe("discussionModel", () => {
+      test.each(["opus", "sonnet", "haiku"] as const)(
+        "loads valid discussionModel %s",
+        async (model) => {
+          await writeConfig(testDir, { discussionModel: model });
+
+          const config = await loadVaultConfig(testDir);
+          expect(config.discussionModel).toBe(model);
+        }
+      );
+
+      test("ignores invalid discussionModel value", async () => {
+        await writeConfig(testDir, { discussionModel: "invalid-model" });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.discussionModel).toBeUndefined();
+      });
+
+      test("ignores non-string discussionModel value", async () => {
+        await writeConfig(testDir, { discussionModel: 123 });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.discussionModel).toBeUndefined();
+      });
+    });
+
+    describe("boolean fields (cardsEnabled, viMode)", () => {
+      test.each([
+        ["cardsEnabled", true],
+        ["cardsEnabled", false],
+        ["viMode", true],
+        ["viMode", false],
+      ])("loads %s when set to %s", async (field, value) => {
+        await writeConfig(testDir, { [field]: value });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config[field as keyof VaultConfig]).toBe(value);
+      });
+
+      test.each([
+        ["cardsEnabled", "true"],
+        ["cardsEnabled", 1],
+        ["viMode", "true"],
+        ["viMode", 1],
+      ])("ignores non-boolean %s value %s", async (field, value) => {
+        await writeConfig(testDir, { [field]: value });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config[field as keyof VaultConfig]).toBeUndefined();
+      });
+    });
+
+    describe("badges", () => {
+      test("loads config with valid badges array", async () => {
+        const badges = [
+          { text: "Work", color: "blue" as const },
+          { text: "Personal", color: "green" as const },
+        ];
+        await writeConfig(testDir, { badges });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.badges).toEqual(badges);
+      });
+
+      test("loads config with all valid badge colors", async () => {
+        const badges = [
+          { text: "Black", color: "black" as const },
+          { text: "Purple", color: "purple" as const },
+          { text: "Red", color: "red" as const },
+          { text: "Cyan", color: "cyan" as const },
+          { text: "Orange", color: "orange" as const },
+          { text: "Blue", color: "blue" as const },
+          { text: "Green", color: "green" as const },
+          { text: "Yellow", color: "yellow" as const },
+        ];
+        await writeConfig(testDir, { badges });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.badges).toEqual(badges);
+      });
+
+      test("filters out invalid badges", async () => {
+        await writeConfig(testDir, {
+          badges: [
+            { text: "Valid", color: "blue" },
+            { text: "Invalid Color", color: "pink" },
+            { color: "red" }, // missing text
+            { text: "", color: "green" }, // empty text
+            { text: "No Color" }, // missing color
+            null,
+            "string",
+            42,
+            { text: "Also Valid", color: "red" },
+          ],
+        });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.badges).toEqual([
+          { text: "Valid", color: "blue" },
+          { text: "Also Valid", color: "red" },
+        ]);
+      });
+
+      test("returns undefined badges when not an array", async () => {
+        await writeConfig(testDir, { badges: "not an array" });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.badges).toBeUndefined();
+      });
+
+      test("returns empty array when badges is empty array", async () => {
+        await writeConfig(testDir, { badges: [] });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.badges).toEqual([]);
+      });
+    });
+
+    describe("pinnedAssets", () => {
+      test("loads config with valid pinnedAssets array", async () => {
+        const pinnedAssets = ["folder1", "folder2/subfolder", "notes/daily.md"];
+        await writeConfig(testDir, { pinnedAssets });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.pinnedAssets).toEqual(pinnedAssets);
+      });
+
+      test("filters out non-string pinnedAssets entries", async () => {
+        await writeConfig(testDir, {
+          pinnedAssets: ["valid/path", null, 42, { nested: "object" }, "another/valid", ""],
+        });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.pinnedAssets).toEqual(["valid/path", "another/valid"]);
+      });
+
+      test("returns undefined pinnedAssets when not an array", async () => {
+        await writeConfig(testDir, { pinnedAssets: "not an array" });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.pinnedAssets).toBeUndefined();
+      });
+
+      test("returns empty array when pinnedAssets is empty array", async () => {
+        await writeConfig(testDir, { pinnedAssets: [] });
+
+        const config = await loadVaultConfig(testDir);
+        expect(config.pinnedAssets).toEqual([]);
+      });
+    });
   });
 
   describe("resolveContentRoot", () => {
     test("returns vault path when no contentRoot configured", () => {
-      const result = resolveContentRoot("/vault/path", {});
-      expect(result).toBe("/vault/path");
-    });
-
-    test("returns vault path when contentRoot is undefined", () => {
-      const result = resolveContentRoot("/vault/path", { contentRoot: undefined });
-      expect(result).toBe("/vault/path");
+      expect(resolveContentRoot("/vault/path", {})).toBe("/vault/path");
+      expect(resolveContentRoot("/vault/path", { contentRoot: undefined })).toBe("/vault/path");
+      expect(resolveContentRoot("/vault/path", { contentRoot: "" })).toBe("/vault/path");
     });
 
     test("joins contentRoot to vault path", () => {
-      const result = resolveContentRoot("/vault/path", { contentRoot: "content" });
-      expect(result).toBe("/vault/path/content");
+      expect(resolveContentRoot("/vault/path", { contentRoot: "content" })).toBe(
+        "/vault/path/content"
+      );
+      expect(resolveContentRoot("/vault/path", { contentRoot: "src/content" })).toBe(
+        "/vault/path/src/content"
+      );
     });
 
-    test("handles nested contentRoot paths", () => {
-      const result = resolveContentRoot("/vault/path", { contentRoot: "src/content" });
-      expect(result).toBe("/vault/path/src/content");
-    });
-
-    test("handles empty string contentRoot (same as vault path)", () => {
-      // Empty string is falsy, so returns vault path
-      const result = resolveContentRoot("/vault/path", { contentRoot: "" });
-      expect(result).toBe("/vault/path");
-    });
-
-    test("rejects path traversal with ..", () => {
-      const result = resolveContentRoot("/vault/path", { contentRoot: "../outside" });
-      expect(result).toBe("/vault/path");
-    });
-
-    test("rejects path traversal with nested ..", () => {
-      const result = resolveContentRoot("/vault/path", { contentRoot: "content/../../outside" });
-      expect(result).toBe("/vault/path");
-    });
-
-    test("rejects absolute path traversal", () => {
-      const result = resolveContentRoot("/vault/path", { contentRoot: "/etc/passwd" });
-      expect(result).toBe("/vault/path");
+    test("rejects path traversal attempts", () => {
+      expect(resolveContentRoot("/vault/path", { contentRoot: "../outside" })).toBe("/vault/path");
+      expect(resolveContentRoot("/vault/path", { contentRoot: "content/../../outside" })).toBe(
+        "/vault/path"
+      );
+      expect(resolveContentRoot("/vault/path", { contentRoot: "/etc/passwd" })).toBe("/vault/path");
     });
 
     test("allows paths that contain .. but resolve within vault", () => {
-      const result = resolveContentRoot("/vault/path", { contentRoot: "content/../other" });
-      expect(result).toBe("/vault/path/other");
+      expect(resolveContentRoot("/vault/path", { contentRoot: "content/../other" })).toBe(
+        "/vault/path/other"
+      );
     });
   });
 
-  describe("resolveMetadataPath", () => {
-    test("returns default when no metadataPath configured", () => {
-      const result = resolveMetadataPath({});
-      expect(result).toBe(DEFAULT_METADATA_PATH);
+  describe("path resolvers", () => {
+    test("resolveMetadataPath returns default or configured value", () => {
+      expect(resolveMetadataPath({})).toBe(DEFAULT_METADATA_PATH);
+      expect(resolveMetadataPath({ metadataPath: undefined })).toBe(DEFAULT_METADATA_PATH);
+      expect(resolveMetadataPath({ metadataPath: "meta" })).toBe("meta");
+      expect(resolveMetadataPath({ metadataPath: "" })).toBe("");
     });
 
-    test("returns default when metadataPath is undefined", () => {
-      const result = resolveMetadataPath({ metadataPath: undefined });
-      expect(result).toBe(DEFAULT_METADATA_PATH);
+    test("resolveGoalsPath appends goals.md to metadata path", () => {
+      expect(resolveGoalsPath({})).toBe("06_Metadata/memory-loop/goals.md");
+      expect(resolveGoalsPath({ metadataPath: "meta" })).toBe("meta/goals.md");
+      expect(resolveGoalsPath({ metadataPath: "deep/nested/meta" })).toBe(
+        "deep/nested/meta/goals.md"
+      );
     });
 
-    test("returns configured metadataPath", () => {
-      const result = resolveMetadataPath({ metadataPath: "meta" });
-      expect(result).toBe("meta");
+    test("resolveContextualPromptsPath appends contextual-prompts.md to metadata path", () => {
+      expect(resolveContextualPromptsPath({})).toBe(
+        "06_Metadata/memory-loop/contextual-prompts.md"
+      );
+      expect(resolveContextualPromptsPath({ metadataPath: "meta" })).toBe(
+        "meta/contextual-prompts.md"
+      );
     });
 
-    test("returns empty string when configured as empty", () => {
-      const result = resolveMetadataPath({ metadataPath: "" });
-      expect(result).toBe("");
+    test("resolveGeneralInspirationPath appends general-inspiration.md to metadata path", () => {
+      expect(resolveGeneralInspirationPath({})).toBe(
+        "06_Metadata/memory-loop/general-inspiration.md"
+      );
+      expect(resolveGeneralInspirationPath({ metadataPath: "meta" })).toBe(
+        "meta/general-inspiration.md"
+      );
+    });
+
+    test("resolveProjectPath returns default or configured value", () => {
+      expect(resolveProjectPath({})).toBe(DEFAULT_PROJECT_PATH);
+      expect(resolveProjectPath({ projectPath: undefined })).toBe(DEFAULT_PROJECT_PATH);
+      expect(resolveProjectPath({ projectPath: "custom_projects" })).toBe("custom_projects");
+      expect(resolveProjectPath({ projectPath: "" })).toBe("");
+      expect(resolveProjectPath({ projectPath: "work/projects" })).toBe("work/projects");
+    });
+
+    test("resolveAreaPath returns default or configured value", () => {
+      expect(resolveAreaPath({})).toBe(DEFAULT_AREA_PATH);
+      expect(resolveAreaPath({ areaPath: undefined })).toBe(DEFAULT_AREA_PATH);
+      expect(resolveAreaPath({ areaPath: "custom_areas" })).toBe("custom_areas");
+      expect(resolveAreaPath({ areaPath: "" })).toBe("");
+      expect(resolveAreaPath({ areaPath: "life/areas" })).toBe("life/areas");
     });
   });
 
-  describe("resolveGoalsPath", () => {
-    test("returns goals.md under default metadata path", () => {
-      const result = resolveGoalsPath({});
-      expect(result).toBe("06_Metadata/memory-loop/goals.md");
-    });
-
-    test("returns goals.md under custom metadata path", () => {
-      const result = resolveGoalsPath({ metadataPath: "meta" });
-      expect(result).toBe("meta/goals.md");
-    });
-
-    test("handles nested metadata paths", () => {
-      const result = resolveGoalsPath({ metadataPath: "deep/nested/meta" });
-      expect(result).toBe("deep/nested/meta/goals.md");
-    });
-  });
-
-  describe("resolveContextualPromptsPath", () => {
-    test("returns contextual-prompts.md under default metadata path", () => {
-      const result = resolveContextualPromptsPath({});
-      expect(result).toBe("06_Metadata/memory-loop/contextual-prompts.md");
-    });
-
-    test("returns contextual-prompts.md under custom metadata path", () => {
-      const result = resolveContextualPromptsPath({ metadataPath: "meta" });
-      expect(result).toBe("meta/contextual-prompts.md");
-    });
-  });
-
-  describe("resolveGeneralInspirationPath", () => {
-    test("returns general-inspiration.md under default metadata path", () => {
-      const result = resolveGeneralInspirationPath({});
-      expect(result).toBe("06_Metadata/memory-loop/general-inspiration.md");
-    });
-
-    test("returns general-inspiration.md under custom metadata path", () => {
-      const result = resolveGeneralInspirationPath({ metadataPath: "meta" });
-      expect(result).toBe("meta/general-inspiration.md");
-    });
-  });
-
-  describe("resolveProjectPath", () => {
-    test("returns default when no projectPath configured", () => {
-      const result = resolveProjectPath({});
-      expect(result).toBe(DEFAULT_PROJECT_PATH);
-    });
-
-    test("returns default when projectPath is undefined", () => {
-      const result = resolveProjectPath({ projectPath: undefined });
-      expect(result).toBe(DEFAULT_PROJECT_PATH);
-    });
-
-    test("returns configured projectPath", () => {
-      const result = resolveProjectPath({ projectPath: "custom_projects" });
-      expect(result).toBe("custom_projects");
-    });
-
-    test("returns empty string when configured as empty", () => {
-      const result = resolveProjectPath({ projectPath: "" });
-      expect(result).toBe("");
-    });
-
-    test("handles nested project paths", () => {
-      const result = resolveProjectPath({ projectPath: "work/projects" });
-      expect(result).toBe("work/projects");
-    });
-  });
-
-  describe("resolveAreaPath", () => {
-    test("returns default when no areaPath configured", () => {
-      const result = resolveAreaPath({});
-      expect(result).toBe(DEFAULT_AREA_PATH);
-    });
-
-    test("returns default when areaPath is undefined", () => {
-      const result = resolveAreaPath({ areaPath: undefined });
-      expect(result).toBe(DEFAULT_AREA_PATH);
-    });
-
-    test("returns configured areaPath", () => {
-      const result = resolveAreaPath({ areaPath: "custom_areas" });
-      expect(result).toBe("custom_areas");
-    });
-
-    test("returns empty string when configured as empty", () => {
-      const result = resolveAreaPath({ areaPath: "" });
-      expect(result).toBe("");
-    });
-
-    test("handles nested area paths", () => {
-      const result = resolveAreaPath({ areaPath: "life/areas" });
-      expect(result).toBe("life/areas");
-    });
-  });
-
-  describe("resolvePromptsPerGeneration", () => {
-    test("returns default when not configured", () => {
-      const result = resolvePromptsPerGeneration({});
-      expect(result).toBe(DEFAULT_PROMPTS_PER_GENERATION);
-    });
-
-    test("returns default when undefined", () => {
-      const result = resolvePromptsPerGeneration({ promptsPerGeneration: undefined });
-      expect(result).toBe(DEFAULT_PROMPTS_PER_GENERATION);
-    });
-
-    test("returns configured value", () => {
-      const result = resolvePromptsPerGeneration({ promptsPerGeneration: 10 });
-      expect(result).toBe(10);
-    });
-  });
-
-  describe("resolveMaxPoolSize", () => {
-    test("returns default when not configured", () => {
-      const result = resolveMaxPoolSize({});
-      expect(result).toBe(DEFAULT_MAX_POOL_SIZE);
-    });
-
-    test("returns default when undefined", () => {
-      const result = resolveMaxPoolSize({ maxPoolSize: undefined });
-      expect(result).toBe(DEFAULT_MAX_POOL_SIZE);
-    });
-
-    test("returns configured value", () => {
-      const result = resolveMaxPoolSize({ maxPoolSize: 100 });
-      expect(result).toBe(100);
-    });
-  });
-
-  describe("resolveQuotesPerWeek", () => {
-    test("returns default when not configured", () => {
-      const result = resolveQuotesPerWeek({});
-      expect(result).toBe(DEFAULT_QUOTES_PER_WEEK);
-    });
-
-    test("returns default when undefined", () => {
-      const result = resolveQuotesPerWeek({ quotesPerWeek: undefined });
-      expect(result).toBe(DEFAULT_QUOTES_PER_WEEK);
-    });
-
-    test("returns configured value", () => {
-      const result = resolveQuotesPerWeek({ quotesPerWeek: 3 });
-      expect(result).toBe(3);
-    });
-  });
-
-  describe("loadVaultConfig with generation settings", () => {
-    test("loads config with promptsPerGeneration", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ promptsPerGeneration: 10 })
+  describe("numeric resolvers", () => {
+    test("resolvePromptsPerGeneration returns default or configured value", () => {
+      expect(resolvePromptsPerGeneration({})).toBe(DEFAULT_PROMPTS_PER_GENERATION);
+      expect(resolvePromptsPerGeneration({ promptsPerGeneration: undefined })).toBe(
+        DEFAULT_PROMPTS_PER_GENERATION
       );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.promptsPerGeneration).toBe(10);
+      expect(resolvePromptsPerGeneration({ promptsPerGeneration: 10 })).toBe(10);
     });
 
-    test("loads config with maxPoolSize", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ maxPoolSize: 100 })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.maxPoolSize).toBe(100);
+    test("resolveMaxPoolSize returns default or configured value", () => {
+      expect(resolveMaxPoolSize({})).toBe(DEFAULT_MAX_POOL_SIZE);
+      expect(resolveMaxPoolSize({ maxPoolSize: undefined })).toBe(DEFAULT_MAX_POOL_SIZE);
+      expect(resolveMaxPoolSize({ maxPoolSize: 100 })).toBe(100);
     });
 
-    test("loads config with quotesPerWeek", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ quotesPerWeek: 3 })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.quotesPerWeek).toBe(3);
-    });
-
-    test("loads config with all generation settings", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          promptsPerGeneration: 7,
-          maxPoolSize: 75,
-          quotesPerWeek: 2,
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.promptsPerGeneration).toBe(7);
-      expect(config.maxPoolSize).toBe(75);
-      expect(config.quotesPerWeek).toBe(2);
-    });
-
-    test("ignores non-numeric generation settings", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          promptsPerGeneration: "five",
-          maxPoolSize: null,
-          quotesPerWeek: [],
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.promptsPerGeneration).toBeUndefined();
-      expect(config.maxPoolSize).toBeUndefined();
-      expect(config.quotesPerWeek).toBeUndefined();
-    });
-
-    test("ignores zero or negative generation settings", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          promptsPerGeneration: 0,
-          maxPoolSize: -5,
-          quotesPerWeek: -1,
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.promptsPerGeneration).toBeUndefined();
-      expect(config.maxPoolSize).toBeUndefined();
-      expect(config.quotesPerWeek).toBeUndefined();
-    });
-
-    test("floors decimal values for generation settings", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          promptsPerGeneration: 5.7,
-          maxPoolSize: 50.9,
-          quotesPerWeek: 2.3,
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.promptsPerGeneration).toBe(5);
-      expect(config.maxPoolSize).toBe(50);
-      expect(config.quotesPerWeek).toBe(2);
-    });
-  });
-
-  describe("loadVaultConfig with discussionModel", () => {
-    test("loads config with valid discussionModel opus", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ discussionModel: "opus" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.discussionModel).toBe("opus");
-    });
-
-    test("loads config with valid discussionModel sonnet", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ discussionModel: "sonnet" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.discussionModel).toBe("sonnet");
-    });
-
-    test("loads config with valid discussionModel haiku", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ discussionModel: "haiku" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.discussionModel).toBe("haiku");
-    });
-
-    test("ignores invalid discussionModel value", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ discussionModel: "invalid-model" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.discussionModel).toBeUndefined();
-    });
-
-    test("ignores non-string discussionModel value", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ discussionModel: 123 })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.discussionModel).toBeUndefined();
-    });
-
-    test("loads discussionModel alongside other fields", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          contentRoot: "content",
-          discussionModel: "sonnet",
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.contentRoot).toBe("content");
-      expect(config.discussionModel).toBe("sonnet");
+    test("resolveQuotesPerWeek returns default or configured value", () => {
+      expect(resolveQuotesPerWeek({})).toBe(DEFAULT_QUOTES_PER_WEEK);
+      expect(resolveQuotesPerWeek({ quotesPerWeek: undefined })).toBe(DEFAULT_QUOTES_PER_WEEK);
+      expect(resolveQuotesPerWeek({ quotesPerWeek: 3 })).toBe(3);
     });
   });
 
   describe("resolveDiscussionModel", () => {
-    test("returns default when discussionModel not configured", () => {
-      const result = resolveDiscussionModel({});
-      expect(result).toBe(DEFAULT_DISCUSSION_MODEL);
+    test("returns default when not configured", () => {
+      expect(resolveDiscussionModel({})).toBe(DEFAULT_DISCUSSION_MODEL);
+      expect(resolveDiscussionModel({ discussionModel: undefined })).toBe(DEFAULT_DISCUSSION_MODEL);
     });
 
-    test("returns default when discussionModel is undefined", () => {
-      const result = resolveDiscussionModel({ discussionModel: undefined });
-      expect(result).toBe(DEFAULT_DISCUSSION_MODEL);
-    });
-
-    test("returns configured discussionModel opus", () => {
-      const result = resolveDiscussionModel({ discussionModel: "opus" });
-      expect(result).toBe("opus");
-    });
-
-    test("returns configured discussionModel sonnet", () => {
-      const result = resolveDiscussionModel({ discussionModel: "sonnet" });
-      expect(result).toBe("sonnet");
-    });
-
-    test("returns configured discussionModel haiku", () => {
-      const result = resolveDiscussionModel({ discussionModel: "haiku" });
-      expect(result).toBe("haiku");
+    test.each(["opus", "sonnet", "haiku"] as const)("returns configured model %s", (model) => {
+      expect(resolveDiscussionModel({ discussionModel: model })).toBe(model);
     });
   });
 
-  describe("loadVaultConfig with cardsEnabled", () => {
-    test("loads config with cardsEnabled true", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ cardsEnabled: true })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.cardsEnabled).toBe(true);
+  describe("boolean resolvers", () => {
+    test("resolveCardsEnabled returns default or configured value", () => {
+      expect(resolveCardsEnabled({})).toBe(true);
+      expect(resolveCardsEnabled({ cardsEnabled: undefined })).toBe(true);
+      expect(resolveCardsEnabled({ cardsEnabled: true })).toBe(true);
+      expect(resolveCardsEnabled({ cardsEnabled: false })).toBe(false);
     });
 
-    test("loads config with cardsEnabled false", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ cardsEnabled: false })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.cardsEnabled).toBe(false);
-    });
-
-    test("ignores non-boolean cardsEnabled value", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ cardsEnabled: "true" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.cardsEnabled).toBeUndefined();
-    });
-
-    test("ignores numeric cardsEnabled value", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ cardsEnabled: 1 })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.cardsEnabled).toBeUndefined();
-    });
-
-    test("loads cardsEnabled alongside other fields", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          contentRoot: "content",
-          cardsEnabled: false,
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.contentRoot).toBe("content");
-      expect(config.cardsEnabled).toBe(false);
+    test("resolveViMode returns default or configured value", () => {
+      expect(resolveViMode({})).toBe(false);
+      expect(resolveViMode({ viMode: undefined })).toBe(false);
+      expect(resolveViMode({ viMode: true })).toBe(true);
+      expect(resolveViMode({ viMode: false })).toBe(false);
     });
   });
 
-  describe("resolveCardsEnabled", () => {
-    test("returns default (true) when cardsEnabled not configured", () => {
-      const result = resolveCardsEnabled({});
-      expect(result).toBe(true);
+  describe("resolveBadges", () => {
+    test("returns empty array when not configured", () => {
+      expect(resolveBadges({})).toEqual([]);
+      expect(resolveBadges({ badges: undefined })).toEqual([]);
+      expect(resolveBadges({ badges: [] })).toEqual([]);
     });
 
-    test("returns default (true) when cardsEnabled is undefined", () => {
-      const result = resolveCardsEnabled({ cardsEnabled: undefined });
-      expect(result).toBe(true);
-    });
-
-    test("returns true when cardsEnabled is true", () => {
-      const result = resolveCardsEnabled({ cardsEnabled: true });
-      expect(result).toBe(true);
-    });
-
-    test("returns false when cardsEnabled is false", () => {
-      const result = resolveCardsEnabled({ cardsEnabled: false });
-      expect(result).toBe(false);
+    test("returns configured badges", () => {
+      const badges = [
+        { text: "Work", color: "blue" as const },
+        { text: "Personal", color: "green" as const },
+      ];
+      expect(resolveBadges({ badges })).toEqual(badges);
     });
   });
 
-  describe("loadVaultConfig with viMode", () => {
-    test("loads config with viMode true", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ viMode: true })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.viMode).toBe(true);
+  describe("resolvePinnedAssets", () => {
+    test("returns empty array when not configured", () => {
+      expect(resolvePinnedAssets({})).toEqual([]);
+      expect(resolvePinnedAssets({ pinnedAssets: undefined })).toEqual([]);
+      expect(resolvePinnedAssets({ pinnedAssets: [] })).toEqual([]);
     });
 
-    test("loads config with viMode false", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ viMode: false })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.viMode).toBe(false);
-    });
-
-    test("ignores non-boolean viMode value", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ viMode: "true" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.viMode).toBeUndefined();
-    });
-
-    test("ignores numeric viMode value", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ viMode: 1 })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.viMode).toBeUndefined();
-    });
-
-    test("loads viMode alongside other fields", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          contentRoot: "content",
-          viMode: true,
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.contentRoot).toBe("content");
-      expect(config.viMode).toBe(true);
-    });
-  });
-
-  describe("resolveViMode", () => {
-    test("returns default (false) when viMode not configured", () => {
-      const result = resolveViMode({});
-      expect(result).toBe(false);
-    });
-
-    test("returns default (false) when viMode is undefined", () => {
-      const result = resolveViMode({ viMode: undefined });
-      expect(result).toBe(false);
-    });
-
-    test("returns true when viMode is true", () => {
-      const result = resolveViMode({ viMode: true });
-      expect(result).toBe(true);
-    });
-
-    test("returns false when viMode is false", () => {
-      const result = resolveViMode({ viMode: false });
-      expect(result).toBe(false);
+    test("returns configured pinnedAssets", () => {
+      const pinnedAssets = ["folder1", "folder2/subfolder"];
+      expect(resolvePinnedAssets({ pinnedAssets })).toEqual(pinnedAssets);
     });
   });
 
@@ -954,10 +564,7 @@ describe("vault-config", () => {
         { name: "/review", description: "Review code", argumentHint: "file" },
       ];
       await mkdir(join(testDir, ".memory-loop"), { recursive: true });
-      await writeFile(
-        join(testDir, SLASH_COMMANDS_FILE),
-        JSON.stringify(commands)
-      );
+      await writeFile(join(testDir, SLASH_COMMANDS_FILE), JSON.stringify(commands));
 
       const result = await loadSlashCommands(testDir);
       expect(result).toEqual(commands);
@@ -969,8 +576,8 @@ describe("vault-config", () => {
         join(testDir, SLASH_COMMANDS_FILE),
         JSON.stringify([
           { name: "/valid", description: "Valid command" },
-          { name: "/missing-desc" }, // Missing description
-          { description: "Missing name" }, // Missing name
+          { name: "/missing-desc" },
+          { description: "Missing name" },
           null,
           "not an object",
           42,
@@ -983,10 +590,7 @@ describe("vault-config", () => {
 
     test("returns undefined when cache is not an array", async () => {
       await mkdir(join(testDir, ".memory-loop"), { recursive: true });
-      await writeFile(
-        join(testDir, SLASH_COMMANDS_FILE),
-        JSON.stringify({ slashCommands: [] })
-      );
+      await writeFile(join(testDir, SLASH_COMMANDS_FILE), JSON.stringify({ slashCommands: [] }));
 
       const result = await loadSlashCommands(testDir);
       expect(result).toBeUndefined();
@@ -1013,10 +617,8 @@ describe("vault-config", () => {
 
       const result = await loadSlashCommands(testDir);
       expect(result).toHaveLength(3);
-      // null and empty string argumentHint should be omitted
       expect(result?.[0]).toEqual({ name: "/test", description: "Test command" });
       expect(result?.[1]).toEqual({ name: "/other", description: "Other command" });
-      // Valid string argumentHint should be preserved
       expect(result?.[2]).toEqual({ name: "/valid", description: "Valid hint", argumentHint: "file" });
     });
 
@@ -1031,19 +633,8 @@ describe("vault-config", () => {
 
   describe("saveSlashCommands", () => {
     test("creates cache file and directory when none exists", async () => {
-      const commands: SlashCommand[] = [
-        { name: "/commit", description: "Create a commit" },
-      ];
+      const commands: SlashCommand[] = [{ name: "/commit", description: "Create a commit" }];
 
-      await saveSlashCommands(testDir, commands);
-
-      const content = await readFile(join(testDir, SLASH_COMMANDS_FILE), "utf-8");
-      const parsed = JSON.parse(content) as SlashCommand[];
-      expect(parsed).toEqual(commands);
-    });
-
-    test("creates directory if it does not exist", async () => {
-      const commands: SlashCommand[] = [{ name: "/test", description: "Test" }];
       await saveSlashCommands(testDir, commands);
 
       const content = await readFile(join(testDir, SLASH_COMMANDS_FILE), "utf-8");
@@ -1052,7 +643,6 @@ describe("vault-config", () => {
     });
 
     test("updates existing cache file", async () => {
-      // Create existing cache
       await mkdir(join(testDir, ".memory-loop"), { recursive: true });
       await writeFile(
         join(testDir, SLASH_COMMANDS_FILE),
@@ -1076,21 +666,14 @@ describe("vault-config", () => {
     });
 
     test("does not affect main config file", async () => {
-      // Create existing main config
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ contentRoot: "content" })
-      );
+      await writeConfig(testDir, { contentRoot: "content" });
 
       const commands: SlashCommand[] = [{ name: "/test", description: "Test" }];
       await saveSlashCommands(testDir, commands);
 
-      // Main config should be unchanged
-      const mainContent = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const mainParsed = JSON.parse(mainContent) as VaultConfig;
+      const mainParsed = await readConfig(testDir);
       expect(mainParsed).toEqual({ contentRoot: "content" });
 
-      // Slash commands should be in separate file
       const cacheContent = await readFile(join(testDir, SLASH_COMMANDS_FILE), "utf-8");
       const cacheParsed = JSON.parse(cacheContent) as SlashCommand[];
       expect(cacheParsed).toEqual(commands);
@@ -1133,28 +716,38 @@ describe("vault-config", () => {
       expect(slashCommandsEqual(a, b)).toBe(true);
     });
 
-    test("returns false when names differ", () => {
-      const a: SlashCommand[] = [{ name: "/a", description: "Desc" }];
-      const b: SlashCommand[] = [{ name: "/b", description: "Desc" }];
-      expect(slashCommandsEqual(a, b)).toBe(false);
-    });
+    test("returns false when command properties differ", () => {
+      // Different names
+      expect(
+        slashCommandsEqual(
+          [{ name: "/a", description: "Desc" }],
+          [{ name: "/b", description: "Desc" }]
+        )
+      ).toBe(false);
 
-    test("returns false when descriptions differ", () => {
-      const a: SlashCommand[] = [{ name: "/test", description: "Desc A" }];
-      const b: SlashCommand[] = [{ name: "/test", description: "Desc B" }];
-      expect(slashCommandsEqual(a, b)).toBe(false);
-    });
+      // Different descriptions
+      expect(
+        slashCommandsEqual(
+          [{ name: "/test", description: "Desc A" }],
+          [{ name: "/test", description: "Desc B" }]
+        )
+      ).toBe(false);
 
-    test("returns false when argumentHints differ", () => {
-      const a: SlashCommand[] = [{ name: "/test", description: "Desc", argumentHint: "a" }];
-      const b: SlashCommand[] = [{ name: "/test", description: "Desc", argumentHint: "b" }];
-      expect(slashCommandsEqual(a, b)).toBe(false);
-    });
+      // Different argumentHints
+      expect(
+        slashCommandsEqual(
+          [{ name: "/test", description: "Desc", argumentHint: "a" }],
+          [{ name: "/test", description: "Desc", argumentHint: "b" }]
+        )
+      ).toBe(false);
 
-    test("returns false when one has argumentHint and other does not", () => {
-      const a: SlashCommand[] = [{ name: "/test", description: "Desc", argumentHint: "hint" }];
-      const b: SlashCommand[] = [{ name: "/test", description: "Desc" }];
-      expect(slashCommandsEqual(a, b)).toBe(false);
+      // One has argumentHint, other does not
+      expect(
+        slashCommandsEqual(
+          [{ name: "/test", description: "Desc", argumentHint: "hint" }],
+          [{ name: "/test", description: "Desc" }]
+        )
+      ).toBe(false);
     });
 
     test("returns false when order differs", () => {
@@ -1170,331 +763,42 @@ describe("vault-config", () => {
     });
   });
 
-  describe("loadVaultConfig with badges", () => {
-    test("loads config with valid badges array", async () => {
-      const badges = [
-        { text: "Work", color: "blue" as const },
-        { text: "Personal", color: "green" as const },
-      ];
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ badges })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.badges).toEqual(badges);
-    });
-
-    test("loads config with all valid badge colors", async () => {
-      const badges = [
-        { text: "Black", color: "black" as const },
-        { text: "Purple", color: "purple" as const },
-        { text: "Red", color: "red" as const },
-        { text: "Cyan", color: "cyan" as const },
-        { text: "Orange", color: "orange" as const },
-        { text: "Blue", color: "blue" as const },
-        { text: "Green", color: "green" as const },
-        { text: "Yellow", color: "yellow" as const },
-      ];
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ badges })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.badges).toEqual(badges);
-    });
-
-    test("filters out badges with invalid color", async () => {
-      const badges = [
-        { text: "Valid", color: "blue" },
-        { text: "Invalid", color: "pink" },
-        { text: "Also Valid", color: "red" },
-      ];
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ badges })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.badges).toEqual([
-        { text: "Valid", color: "blue" },
-        { text: "Also Valid", color: "red" },
-      ]);
-    });
-
-    test("filters out badges with missing text", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          badges: [
-            { text: "Valid", color: "blue" },
-            { color: "red" },
-            { text: "Also Valid", color: "green" },
-          ],
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.badges).toEqual([
-        { text: "Valid", color: "blue" },
-        { text: "Also Valid", color: "green" },
-      ]);
-    });
-
-    test("filters out badges with empty text", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          badges: [
-            { text: "Valid", color: "blue" },
-            { text: "", color: "red" },
-          ],
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.badges).toEqual([{ text: "Valid", color: "blue" }]);
-    });
-
-    test("filters out badges with missing color", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          badges: [
-            { text: "Valid", color: "blue" },
-            { text: "No Color" },
-          ],
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.badges).toEqual([{ text: "Valid", color: "blue" }]);
-    });
-
-    test("filters out non-object badge entries", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          badges: [
-            { text: "Valid", color: "blue" },
-            null,
-            "string",
-            42,
-            { text: "Also Valid", color: "red" },
-          ],
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.badges).toEqual([
-        { text: "Valid", color: "blue" },
-        { text: "Also Valid", color: "red" },
-      ]);
-    });
-
-    test("returns undefined badges when not an array", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ badges: "not an array" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.badges).toBeUndefined();
-    });
-
-    test("returns empty array when badges is empty array", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ badges: [] })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.badges).toEqual([]);
-    });
-
-    test("loads badges alongside other config fields", async () => {
-      const configData = {
-        title: "My Vault",
-        contentRoot: "content",
-        badges: [{ text: "Test", color: "purple" }],
-      };
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify(configData)
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.title).toBe("My Vault");
-      expect(config.contentRoot).toBe("content");
-      expect(config.badges).toEqual([{ text: "Test", color: "purple" }]);
-    });
-  });
-
-  describe("resolveBadges", () => {
-    test("returns empty array when badges not configured", () => {
-      const result = resolveBadges({});
-      expect(result).toEqual([]);
-    });
-
-    test("returns empty array when badges is undefined", () => {
-      const result = resolveBadges({ badges: undefined });
-      expect(result).toEqual([]);
-    });
-
-    test("returns configured badges", () => {
-      const badges = [
-        { text: "Work", color: "blue" as const },
-        { text: "Personal", color: "green" as const },
-      ];
-      const result = resolveBadges({ badges });
-      expect(result).toEqual(badges);
-    });
-
-    test("returns empty array when configured as empty", () => {
-      const result = resolveBadges({ badges: [] });
-      expect(result).toEqual([]);
-    });
-  });
-
-  describe("loadVaultConfig with pinnedAssets", () => {
-    test("loads config with valid pinnedAssets array", async () => {
-      const pinnedAssets = ["folder1", "folder2/subfolder", "notes/daily.md"];
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ pinnedAssets })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.pinnedAssets).toEqual(pinnedAssets);
-    });
-
-    test("loads config with pinnedAssets alongside other fields", async () => {
-      const configData = {
-        contentRoot: "content",
-        pinnedAssets: ["pinned/folder"],
-      };
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify(configData)
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.contentRoot).toBe("content");
-      expect(config.pinnedAssets).toEqual(["pinned/folder"]);
-    });
-
-    test("filters out non-string pinnedAssets entries", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          pinnedAssets: [
-            "valid/path",
-            null,
-            42,
-            { nested: "object" },
-            "another/valid",
-            "",
-          ],
-        })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.pinnedAssets).toEqual(["valid/path", "another/valid"]);
-    });
-
-    test("returns undefined pinnedAssets when not an array", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ pinnedAssets: "not an array" })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.pinnedAssets).toBeUndefined();
-    });
-
-    test("returns empty array when pinnedAssets is empty array", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ pinnedAssets: [] })
-      );
-
-      const config = await loadVaultConfig(testDir);
-      expect(config.pinnedAssets).toEqual([]);
-    });
-  });
-
-  describe("resolvePinnedAssets", () => {
-    test("returns empty array when pinnedAssets not configured", () => {
-      const result = resolvePinnedAssets({});
-      expect(result).toEqual([]);
-    });
-
-    test("returns empty array when pinnedAssets is undefined", () => {
-      const result = resolvePinnedAssets({ pinnedAssets: undefined });
-      expect(result).toEqual([]);
-    });
-
-    test("returns configured pinnedAssets", () => {
-      const pinnedAssets = ["folder1", "folder2/subfolder"];
-      const result = resolvePinnedAssets({ pinnedAssets });
-      expect(result).toEqual(pinnedAssets);
-    });
-
-    test("returns empty array when configured as empty", () => {
-      const result = resolvePinnedAssets({ pinnedAssets: [] });
-      expect(result).toEqual([]);
-    });
-  });
-
   describe("savePinnedAssets", () => {
     test("creates config file with pinnedAssets when none exists", async () => {
       const paths = ["folder1", "folder2/subfolder"];
 
       await savePinnedAssets(testDir, paths);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
+      const parsed = await readConfig(testDir);
       expect(parsed.pinnedAssets).toEqual(paths);
     });
 
     test("preserves existing config fields when saving pinnedAssets", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ contentRoot: "content", inboxPath: "inbox" })
-      );
+      await writeConfig(testDir, { contentRoot: "content", inboxPath: "inbox" });
 
       const paths = ["pinned/folder"];
       await savePinnedAssets(testDir, paths);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
+      const parsed = await readConfig(testDir);
       expect(parsed.contentRoot).toBe("content");
       expect(parsed.inboxPath).toBe("inbox");
       expect(parsed.pinnedAssets).toEqual(paths);
     });
 
     test("updates existing pinnedAssets", async () => {
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          pinnedAssets: ["old/path"],
-        })
-      );
+      await writeConfig(testDir, { pinnedAssets: ["old/path"] });
 
       const newPaths = ["new/path1", "new/path2"];
       await savePinnedAssets(testDir, newPaths);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
+      const parsed = await readConfig(testDir);
       expect(parsed.pinnedAssets).toEqual(newPaths);
     });
 
     test("saves empty array when no paths", async () => {
       await savePinnedAssets(testDir, []);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
+      const parsed = await readConfig(testDir);
       expect(parsed.pinnedAssets).toEqual([]);
     });
 
@@ -1504,15 +808,13 @@ describe("vault-config", () => {
       const paths = ["folder"];
       await savePinnedAssets(testDir, paths);
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as VaultConfig;
+      const parsed = await readConfig(testDir);
       expect(parsed.pinnedAssets).toEqual(paths);
     });
   });
 
   describe("saveVaultConfig", () => {
-    test("preserves non-editable fields (contentRoot, inboxPath, metadataPath, projectPath, areaPath, attachmentPath, pinnedAssets)", async () => {
-      // Create existing config with non-editable fields
+    test("preserves non-editable fields", async () => {
       const existingConfig = {
         contentRoot: "content",
         inboxPath: "inbox",
@@ -1522,12 +824,8 @@ describe("vault-config", () => {
         attachmentPath: "custom_attachments",
         pinnedAssets: ["pinned/folder", "pinned/file.md"],
       };
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify(existingConfig)
-      );
+      await writeConfig(testDir, existingConfig);
 
-      // Save editable config
       const editableConfig: EditableVaultConfig = {
         title: "New Title",
         discussionModel: "sonnet",
@@ -1536,9 +834,7 @@ describe("vault-config", () => {
 
       expect(result).toEqual({ success: true });
 
-      // Verify non-editable fields are preserved
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
+      const parsed = await readConfig(testDir);
       expect(parsed.contentRoot).toBe("content");
       expect(parsed.inboxPath).toBe("inbox");
       expect(parsed.metadataPath).toBe("meta/memory-loop");
@@ -1546,7 +842,6 @@ describe("vault-config", () => {
       expect(parsed.areaPath).toBe("custom_areas");
       expect(parsed.attachmentPath).toBe("custom_attachments");
       expect(parsed.pinnedAssets).toEqual(["pinned/folder", "pinned/file.md"]);
-      // And editable fields are updated
       expect(parsed.title).toBe("New Title");
       expect(parsed.discussionModel).toBe("sonnet");
     });
@@ -1560,20 +855,16 @@ describe("vault-config", () => {
 
       expect(result).toEqual({ success: true });
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
+      const parsed = await readConfig(testDir);
       expect(parsed.title).toBe("My Vault");
       expect(parsed.subtitle).toBe("Personal Notes");
     });
 
-    test("does NOT create file if all values are defaults (undefined or empty badges)", async () => {
-      // Empty editable config (all defaults)
-      const editableConfig: EditableVaultConfig = {};
-      const result = await saveVaultConfig(testDir, editableConfig);
+    test("does NOT create file if all values are defaults", async () => {
+      const result = await saveVaultConfig(testDir, {});
 
       expect(result).toEqual({ success: true });
 
-      // File should NOT exist
       const configPath = join(testDir, CONFIG_FILE_NAME);
       let fileExists = true;
       try {
@@ -1585,14 +876,10 @@ describe("vault-config", () => {
     });
 
     test("does NOT create file if only empty badges array provided", async () => {
-      const editableConfig: EditableVaultConfig = {
-        badges: [],
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
+      const result = await saveVaultConfig(testDir, { badges: [] });
 
       expect(result).toEqual({ success: true });
 
-      // File should NOT exist
       const configPath = join(testDir, CONFIG_FILE_NAME);
       let fileExists = true;
       try {
@@ -1604,20 +891,14 @@ describe("vault-config", () => {
     });
 
     test("merges only editable fields over existing config", async () => {
-      // Create existing config with mixed fields
-      const existingConfig = {
+      await writeConfig(testDir, {
         title: "Old Title",
         subtitle: "Old Subtitle",
         contentRoot: "content",
         discussionModel: "opus",
         promptsPerGeneration: 5,
-      };
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify(existingConfig)
-      );
+      });
 
-      // Save only title and badges
       const editableConfig: EditableVaultConfig = {
         title: "New Title",
         badges: [{ text: "Work", color: "blue" }],
@@ -1626,36 +907,20 @@ describe("vault-config", () => {
 
       expect(result).toEqual({ success: true });
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      // Updated fields
+      const parsed = await readConfig(testDir);
       expect(parsed.title).toBe("New Title");
       expect(parsed.badges).toEqual([{ text: "Work", color: "blue" }]);
-      // Unchanged editable fields (not provided, so original remains)
       expect(parsed.subtitle).toBe("Old Subtitle");
       expect(parsed.discussionModel).toBe("opus");
       expect(parsed.promptsPerGeneration).toBe(5);
-      // Non-editable field preserved
       expect(parsed.contentRoot).toBe("content");
     });
 
-    test("returns success true on successful write", async () => {
-      const editableConfig: EditableVaultConfig = {
-        title: "Test Vault",
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
-
-      expect(result).toEqual({ success: true });
-    });
-
     test("returns success false with error on write failure", async () => {
-      // Create a directory at the config path to cause a write failure
       const configPath = join(testDir, CONFIG_FILE_NAME);
       await mkdir(configPath, { recursive: true });
 
-      const editableConfig: EditableVaultConfig = {
-        title: "Test Vault",
-      };
+      const editableConfig: EditableVaultConfig = { title: "Test Vault" };
       const result = await saveVaultConfig(testDir, editableConfig);
 
       expect(result.success).toBe(false);
@@ -1665,23 +930,20 @@ describe("vault-config", () => {
       }
     });
 
-    test("handles malformed existing JSON gracefully by overwriting", async () => {
-      // Create invalid JSON
-      await writeFile(join(testDir, CONFIG_FILE_NAME), "{ invalid json }");
+    test.each([
+      ["malformed JSON", "{ invalid json }"],
+      ["array", '["array", "data"]'],
+      ["null", "null"],
+    ])("handles %s existing content by starting fresh", async (_desc, content) => {
+      await writeFile(join(testDir, CONFIG_FILE_NAME), content);
 
-      const editableConfig: EditableVaultConfig = {
-        title: "New Title",
-        discussionModel: "haiku",
-      };
+      const editableConfig: EditableVaultConfig = { title: "Fresh Start" };
       const result = await saveVaultConfig(testDir, editableConfig);
 
       expect(result).toEqual({ success: true });
 
-      // Should have overwritten with new config
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      expect(parsed.title).toBe("New Title");
-      expect(parsed.discussionModel).toBe("haiku");
+      const parsed = await readConfig(testDir);
+      expect(parsed.title).toBe("Fresh Start");
     });
 
     test("saves all editable fields correctly", async () => {
@@ -1703,8 +965,7 @@ describe("vault-config", () => {
 
       expect(result).toEqual({ success: true });
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
+      const parsed = await readConfig(testDir);
       expect(parsed.title).toBe("Complete Vault");
       expect(parsed.subtitle).toBe("All Fields");
       expect(parsed.discussionModel).toBe("sonnet");
@@ -1720,204 +981,89 @@ describe("vault-config", () => {
     });
 
     test("updates existing file when file exists even with all defaults", async () => {
-      // Create existing file with non-editable content
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ contentRoot: "content", title: "Old Title" })
-      );
+      await writeConfig(testDir, { contentRoot: "content", title: "Old Title" });
 
-      // Save empty editable config (all defaults)
-      const editableConfig: EditableVaultConfig = {};
-      const result = await saveVaultConfig(testDir, editableConfig);
+      const result = await saveVaultConfig(testDir, {});
 
       expect(result).toEqual({ success: true });
 
-      // File should still exist with original content preserved
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
+      const parsed = await readConfig(testDir);
       expect(parsed.contentRoot).toBe("content");
       expect(parsed.title).toBe("Old Title");
     });
 
-    test("handles non-object existing JSON by starting fresh", async () => {
-      // Create JSON array instead of object
-      await writeFile(join(testDir, CONFIG_FILE_NAME), '["array", "data"]');
-
-      const editableConfig: EditableVaultConfig = {
-        title: "Fresh Start",
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
-
-      expect(result).toEqual({ success: true });
-
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      expect(parsed.title).toBe("Fresh Start");
-    });
-
-    test("handles null JSON by starting fresh", async () => {
-      await writeFile(join(testDir, CONFIG_FILE_NAME), "null");
-
-      const editableConfig: EditableVaultConfig = {
-        subtitle: "After Null",
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
-
-      expect(result).toEqual({ success: true });
-
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      expect(parsed.subtitle).toBe("After Null");
-    });
-
     test("preserves unknown fields in existing config", async () => {
-      // Create existing config with an unknown field
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({
-          customField: "custom value",
-          anotherUnknown: 42,
-          title: "Old Title",
-        })
-      );
+      await writeConfig(testDir, {
+        customField: "custom value",
+        anotherUnknown: 42,
+        title: "Old Title",
+      });
 
-      const editableConfig: EditableVaultConfig = {
-        title: "New Title",
-      };
+      const editableConfig: EditableVaultConfig = { title: "New Title" };
       const result = await saveVaultConfig(testDir, editableConfig);
 
       expect(result).toEqual({ success: true });
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
+      const parsed = await readConfig(testDir);
       expect(parsed.title).toBe("New Title");
       expect(parsed.customField).toBe("custom value");
       expect(parsed.anotherUnknown).toBe(42);
     });
 
     test("writes pretty-printed JSON with trailing newline", async () => {
-      const editableConfig: EditableVaultConfig = {
-        title: "Test",
-      };
-      await saveVaultConfig(testDir, editableConfig);
+      await saveVaultConfig(testDir, { title: "Test" });
 
       const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      // Should be pretty-printed (contains newlines beyond just trailing)
       expect(content).toContain("\n");
-      // Should end with newline
       expect(content.endsWith("\n")).toBe(true);
-      // Should be valid JSON
       expect(() => JSON.parse(content) as unknown).not.toThrow();
     });
 
-    test("saves cardsEnabled field correctly", async () => {
-      const editableConfig: EditableVaultConfig = {
-        title: "Test Vault",
-        cardsEnabled: false,
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
+    describe("cardsEnabled and viMode persistence", () => {
+      test.each([
+        ["cardsEnabled", false],
+        ["viMode", true],
+      ])("saves %s field correctly", async (field, value) => {
+        const editableConfig: EditableVaultConfig = { title: "Test", [field]: value };
+        const result = await saveVaultConfig(testDir, editableConfig);
 
-      expect(result).toEqual({ success: true });
+        expect(result).toEqual({ success: true });
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      expect(parsed.title).toBe("Test Vault");
-      expect(parsed.cardsEnabled).toBe(false);
-    });
+        const parsed = await readConfig(testDir);
+        expect(parsed.title).toBe("Test");
+        expect(parsed[field]).toBe(value);
+      });
 
-    test("preserves cardsEnabled false when updating other fields", async () => {
-      // Create existing config with cardsEnabled
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ cardsEnabled: false })
-      );
+      test.each([
+        ["cardsEnabled", false],
+        ["viMode", true],
+      ])("preserves %s when updating other fields", async (field, value) => {
+        await writeConfig(testDir, { [field]: value });
 
-      const editableConfig: EditableVaultConfig = {
-        title: "New Title",
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
+        const result = await saveVaultConfig(testDir, { title: "New Title" });
 
-      expect(result).toEqual({ success: true });
+        expect(result).toEqual({ success: true });
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      expect(parsed.title).toBe("New Title");
-      expect(parsed.cardsEnabled).toBe(false);
-    });
+        const parsed = await readConfig(testDir);
+        expect(parsed.title).toBe("New Title");
+        expect(parsed[field]).toBe(value);
+      });
 
-    test("updates cardsEnabled when explicitly set", async () => {
-      // Create existing config with cardsEnabled false
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ cardsEnabled: false, title: "Vault" })
-      );
+      test.each([
+        ["cardsEnabled", false, true],
+        ["viMode", true, false],
+      ])("updates %s from %s to %s when explicitly set", async (field, initial, updated) => {
+        await writeConfig(testDir, { [field]: initial, title: "Vault" });
 
-      const editableConfig: EditableVaultConfig = {
-        cardsEnabled: true,
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
+        const editableConfig: EditableVaultConfig = { [field]: updated };
+        const result = await saveVaultConfig(testDir, editableConfig);
 
-      expect(result).toEqual({ success: true });
+        expect(result).toEqual({ success: true });
 
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      expect(parsed.cardsEnabled).toBe(true);
-      expect(parsed.title).toBe("Vault");
-    });
-
-    test("saves viMode field correctly", async () => {
-      const editableConfig: EditableVaultConfig = {
-        title: "Test Vault",
-        viMode: true,
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
-
-      expect(result).toEqual({ success: true });
-
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      expect(parsed.title).toBe("Test Vault");
-      expect(parsed.viMode).toBe(true);
-    });
-
-    test("preserves viMode true when updating other fields", async () => {
-      // Create existing config with viMode
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ viMode: true })
-      );
-
-      const editableConfig: EditableVaultConfig = {
-        title: "New Title",
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
-
-      expect(result).toEqual({ success: true });
-
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      expect(parsed.title).toBe("New Title");
-      expect(parsed.viMode).toBe(true);
-    });
-
-    test("updates viMode when explicitly set", async () => {
-      // Create existing config with viMode true
-      await writeFile(
-        join(testDir, CONFIG_FILE_NAME),
-        JSON.stringify({ viMode: true, title: "Vault" })
-      );
-
-      const editableConfig: EditableVaultConfig = {
-        viMode: false,
-      };
-      const result = await saveVaultConfig(testDir, editableConfig);
-
-      expect(result).toEqual({ success: true });
-
-      const content = await readFile(join(testDir, CONFIG_FILE_NAME), "utf-8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      expect(parsed.viMode).toBe(false);
-      expect(parsed.title).toBe("Vault");
+        const parsed = await readConfig(testDir);
+        expect(parsed[field]).toBe(updated);
+        expect(parsed.title).toBe("Vault");
+      });
     });
   });
 });

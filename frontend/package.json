@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "bun test",
-    "test:coverage": "bun test --coverage",
+    "test:coverage": "LOG_LEVEL=silent bun test --coverage 2>&1 | awk '/^-+\\|/{p=1} p'",
+    "test:coverage:full": "bun test --coverage",
     "test:lcov": "lcov --list coverage/lcov.info",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."

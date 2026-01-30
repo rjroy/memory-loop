@@ -9,7 +9,8 @@
     "start": "bun run src/index.ts",
     "test": "LOG_LEVEL=silent bun test",
     "test:unit": "bun run test",
-    "test:coverage": "LOG_LEVEL=silent bun test --coverage",
+    "test:coverage": "LOG_LEVEL=silent bun test --coverage 2>&1 | awk '/^-+\\|/{p=1} p'",
+    "test:coverage:full": "bun test --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },

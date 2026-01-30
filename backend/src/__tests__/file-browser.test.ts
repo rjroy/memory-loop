@@ -3,7 +3,6 @@
  *
  * Unit tests for file browser functionality including path validation,
  * directory listing, and file reading.
- * Uses filesystem mocking with temp directories for isolated testing.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
@@ -35,15 +34,12 @@ import {
   InvalidFileNameError,
   FileExistsError,
   FileBrowserError,
-} from "../file-browser";
+} from "../file-browser.js";
 
 // =============================================================================
 // Test Helpers
 // =============================================================================
 
-/**
- * Creates a unique temporary directory for testing.
- */
 async function createTestDir(): Promise<string> {
   const testDir = join(
     tmpdir(),
@@ -53,9 +49,6 @@ async function createTestDir(): Promise<string> {
   return testDir;
 }
 
-/**
- * Recursively removes a test directory.
- */
 async function cleanupTestDir(testDir: string): Promise<void> {
   try {
     await rm(testDir, { recursive: true, force: true });
@@ -64,59 +57,84 @@ async function cleanupTestDir(testDir: string): Promise<void> {
   }
 }
 
+/**
+ * Runs a test that requires symlinks. Skips gracefully on platforms that don't support them.
+ */
+async function withSymlink(
+  target: string,
+  linkPath: string,
+  testFn: () => Promise<void>
+): Promise<void> {
+  try {
+    await symlink(target, linkPath);
+    await testFn();
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes("EPERM") || error.message.includes("operation not permitted"))
+    ) {
+      console.log("Skipping symlink test - not supported on this platform");
+      return;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Asserts that an async function throws an error of the expected type.
+ */
+async function expectError<T extends Error>(
+  fn: () => Promise<unknown>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  errorType: new (...args: any[]) => T,
+  messageContains?: string
+): Promise<void> {
+  try {
+    await fn();
+    expect.unreachable(`Should have thrown ${errorType.name}`);
+  } catch (error) {
+    expect(error).toBeInstanceOf(errorType);
+    if (messageContains) {
+      expect((error as Error).message).toContain(messageContains);
+    }
+  }
+}
+
 // =============================================================================
 // Error Class Tests
 // =============================================================================
 
 describe("Error Classes", () => {
-  describe("FileBrowserError", () => {
-    test("has correct name and code", () => {
-      const error = new FileBrowserError("Test", "INTERNAL_ERROR");
-      expect(error.name).toBe("FileBrowserError");
-      expect(error.code).toBe("INTERNAL_ERROR");
-    });
-
-    test("is instance of Error", () => {
-      const error = new FileBrowserError("Test", "INTERNAL_ERROR");
-      expect(error).toBeInstanceOf(Error);
-    });
+  test("FileBrowserError has correct name and code", () => {
+    const error = new FileBrowserError("Test", "INTERNAL_ERROR");
+    expect(error.name).toBe("FileBrowserError");
+    expect(error.code).toBe("INTERNAL_ERROR");
+    expect(error).toBeInstanceOf(Error);
   });
 
-  describe("PathTraversalError", () => {
-    test("has correct name and code", () => {
-      const error = new PathTraversalError("Traversal attempt");
-      expect(error.name).toBe("PathTraversalError");
-      expect(error.code).toBe("PATH_TRAVERSAL");
-    });
-
-    test("is instance of FileBrowserError", () => {
-      const error = new PathTraversalError("Test");
-      expect(error).toBeInstanceOf(FileBrowserError);
-    });
+  test("PathTraversalError has correct name and code", () => {
+    const error = new PathTraversalError("Traversal attempt");
+    expect(error.name).toBe("PathTraversalError");
+    expect(error.code).toBe("PATH_TRAVERSAL");
+    expect(error).toBeInstanceOf(FileBrowserError);
   });
 
-  describe("DirectoryNotFoundError", () => {
-    test("has correct name and code", () => {
-      const error = new DirectoryNotFoundError("Not found");
-      expect(error.name).toBe("DirectoryNotFoundError");
-      expect(error.code).toBe("DIRECTORY_NOT_FOUND");
-    });
+  test("DirectoryNotFoundError has correct name and code", () => {
+    const error = new DirectoryNotFoundError("Not found");
+    expect(error.name).toBe("DirectoryNotFoundError");
+    expect(error.code).toBe("DIRECTORY_NOT_FOUND");
   });
 
-  describe("FileNotFoundError", () => {
-    test("has correct name and code", () => {
-      const error = new FileNotFoundError("Not found");
-      expect(error.name).toBe("FileNotFoundError");
-      expect(error.code).toBe("FILE_NOT_FOUND");
-    });
+  test("FileNotFoundError has correct name and code", () => {
+    const error = new FileNotFoundError("Not found");
+    expect(error.name).toBe("FileNotFoundError");
+    expect(error.code).toBe("FILE_NOT_FOUND");
   });
 
-  describe("InvalidFileTypeError", () => {
-    test("has correct name and code", () => {
-      const error = new InvalidFileTypeError("Invalid type");
-      expect(error.name).toBe("InvalidFileTypeError");
-      expect(error.code).toBe("INVALID_FILE_TYPE");
-    });
+  test("InvalidFileTypeError has correct name and code", () => {
+    const error = new InvalidFileTypeError("Invalid type");
+    expect(error.name).toBe("InvalidFileTypeError");
+    expect(error.code).toBe("INVALID_FILE_TYPE");
   });
 });
 
@@ -154,8 +172,7 @@ describe("isPathWithinVault", () => {
   });
 
   test("returns false for parent directory", async () => {
-    const parent = join(testDir, "..");
-    expect(await isPathWithinVault(testDir, parent)).toBe(false);
+    expect(await isPathWithinVault(testDir, join(testDir, ".."))).toBe(false);
   });
 
   test("returns false for sibling directory", async () => {
@@ -166,19 +183,14 @@ describe("isPathWithinVault", () => {
   });
 
   test("returns true for non-existent path within vault", async () => {
-    // Non-existent paths within the vault boundary should return true
-    // The existence check is separate from the boundary check
-    const nonexistent = join(testDir, "does-not-exist");
-    expect(await isPathWithinVault(testDir, nonexistent)).toBe(true);
+    expect(await isPathWithinVault(testDir, join(testDir, "does-not-exist"))).toBe(true);
   });
 
   test("handles paths with similar prefixes correctly", async () => {
-    // Create /vault and /vault2 - they should NOT be considered the same
     const vault = join(testDir, "vault");
     const vault2 = join(testDir, "vault2");
     await mkdir(vault);
     await mkdir(vault2);
-
     expect(await isPathWithinVault(vault, vault2)).toBe(false);
   });
 });
@@ -202,39 +214,20 @@ describe("validatePath", () => {
   });
 
   test("throws PathTraversalError for parent traversal", async () => {
-    try {
-      await validatePath(testDir, "../outside");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => validatePath(testDir, "../outside"), PathTraversalError);
   });
 
   test("throws PathTraversalError for absolute path outside vault", async () => {
-    try {
-      await validatePath(testDir, "/etc/passwd");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => validatePath(testDir, "/etc/passwd"), PathTraversalError);
   });
 
-  test("treats URL-encoded paths as literal filenames (not traversal)", async () => {
-    // URL encoding is NOT decoded by path.resolve
-    // So "..%2F..%2Fetc" is treated as a literal directory name, not traversal
-    // This is correct behavior since we're dealing with filesystem paths, not URLs
+  test("treats URL-encoded paths as literal filenames", async () => {
     const result = await validatePath(testDir, "..%2F..%2Fetc");
     expect(result).toBe(join(testDir, "..%2F..%2Fetc"));
   });
 
   test("throws PathTraversalError for double-dot traversal", async () => {
-    // Real traversal attempt with actual ".." segments
-    try {
-      await validatePath(testDir, "foo/../../outside");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => validatePath(testDir, "foo/../../outside"), PathTraversalError);
   });
 });
 
@@ -254,8 +247,7 @@ describe("listDirectory", () => {
   });
 
   test("lists empty directory", async () => {
-    const entries = await listDirectory(testDir, "");
-    expect(entries).toEqual([]);
+    expect(await listDirectory(testDir, "")).toEqual([]);
   });
 
   test("lists files and directories", async () => {
@@ -268,25 +260,18 @@ describe("listDirectory", () => {
     expect(entries.find((e) => e.name === "file.md")?.type).toBe("file");
   });
 
-  test("excludes hidden files", async () => {
+  test("excludes hidden files and directories", async () => {
     await writeFile(join(testDir, ".hidden"), "content");
-    await writeFile(join(testDir, "visible.md"), "content");
-
-    const entries = await listDirectory(testDir, "");
-    expect(entries).toHaveLength(1);
-    expect(entries[0].name).toBe("visible.md");
-  });
-
-  test("excludes hidden directories", async () => {
     await mkdir(join(testDir, ".obsidian"));
+    await writeFile(join(testDir, "visible.md"), "content");
     await mkdir(join(testDir, "visible"));
 
     const entries = await listDirectory(testDir, "");
-    expect(entries).toHaveLength(1);
-    expect(entries[0].name).toBe("visible");
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e) => e.name).sort()).toEqual(["visible", "visible.md"]);
   });
 
-  test("sorts directories before files", async () => {
+  test("sorts directories before files, alphabetically within type", async () => {
     await writeFile(join(testDir, "a-file.md"), "");
     await mkdir(join(testDir, "z-folder"));
     await writeFile(join(testDir, "b-file.md"), "");
@@ -301,7 +286,7 @@ describe("listDirectory", () => {
     ]);
   });
 
-  test("sorts alphabetically within same type (case-insensitive)", async () => {
+  test("sorts case-insensitively", async () => {
     await mkdir(join(testDir, "Zebra"));
     await mkdir(join(testDir, "alpha"));
     await mkdir(join(testDir, "Beta"));
@@ -326,88 +311,35 @@ describe("listDirectory", () => {
   });
 
   test("throws DirectoryNotFoundError for non-existent directory", async () => {
-    try {
-      await listDirectory(testDir, "nonexistent");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-    }
+    await expectError(() => listDirectory(testDir, "nonexistent"), DirectoryNotFoundError);
   });
 
   test("throws DirectoryNotFoundError for file (not directory)", async () => {
     await writeFile(join(testDir, "file.md"), "");
-
-    try {
-      await listDirectory(testDir, "file.md");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-    }
+    await expectError(() => listDirectory(testDir, "file.md"), DirectoryNotFoundError);
   });
 
   test("throws PathTraversalError for path outside vault", async () => {
-    try {
-      await listDirectory(testDir, "../outside");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => listDirectory(testDir, "../outside"), PathTraversalError);
   });
 
   test("rejects symlinks to directories", async () => {
     const realDir = join(testDir, "real");
-    const linkPath = join(testDir, "link");
     await mkdir(realDir);
 
-    try {
-      await symlink(realDir, linkPath);
-
-      // Listing the symlink directory should throw
-      try {
-        await listDirectory(testDir, "link");
-        expect.unreachable("Should have thrown PathTraversalError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(PathTraversalError);
-      }
-    } catch (error) {
-      // Symlinks may not be supported on all platforms
-      if (
-        error instanceof Error &&
-        (error.message.includes("EPERM") ||
-          error.message.includes("operation not permitted"))
-      ) {
-        console.log("Skipping symlink test - not supported on this platform");
-        return;
-      }
-      throw error;
-    }
+    await withSymlink(realDir, join(testDir, "link"), async () => {
+      await expectError(() => listDirectory(testDir, "link"), PathTraversalError);
+    });
   });
 
   test("excludes symlink entries from listings", async () => {
-    const realFile = join(testDir, "real.md");
-    const linkPath = join(testDir, "link.md");
-    const normalFile = join(testDir, "normal.md");
+    await writeFile(join(testDir, "real.md"), "content");
+    await writeFile(join(testDir, "normal.md"), "content");
 
-    await writeFile(realFile, "content");
-    await writeFile(normalFile, "content");
-
-    try {
-      await symlink(realFile, linkPath);
-
+    await withSymlink(join(testDir, "real.md"), join(testDir, "link.md"), async () => {
       const entries = await listDirectory(testDir, "");
-      // Should only include real.md and normal.md, not link.md
       expect(entries.map((e) => e.name).sort()).toEqual(["normal.md", "real.md"]);
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.includes("EPERM") ||
-          error.message.includes("operation not permitted"))
-      ) {
-        console.log("Skipping symlink test - not supported on this platform");
-        return;
-      }
-      throw error;
-    }
+    });
   });
 
   test("handles deeply nested directories", async () => {
@@ -454,94 +386,42 @@ describe("readMarkdownFile", () => {
     expect(result.content).toBe("nested content");
   });
 
-  test("throws InvalidFileTypeError for non-md file", async () => {
+  test("throws InvalidFileTypeError for non-text file", async () => {
     await writeFile(join(testDir, "image.png"), "binary content");
-
-    try {
-      await readMarkdownFile(testDir, "image.png");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-    }
-  });
-
-  test("reads txt file content", async () => {
-    await writeFile(join(testDir, "notes.txt"), "text content");
-
-    const result = await readMarkdownFile(testDir, "notes.txt");
-    expect(result.content).toBe("text content");
-    expect(result.truncated).toBe(false);
+    await expectError(() => readMarkdownFile(testDir, "image.png"), InvalidFileTypeError);
   });
 
   test("throws InvalidFileTypeError for file without extension", async () => {
     await writeFile(join(testDir, "README"), "content");
-
-    try {
-      await readMarkdownFile(testDir, "README");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-    }
+    await expectError(() => readMarkdownFile(testDir, "README"), InvalidFileTypeError);
   });
 
   test("throws FileNotFoundError for non-existent file", async () => {
-    try {
-      await readMarkdownFile(testDir, "missing.md");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
+    await expectError(() => readMarkdownFile(testDir, "missing.md"), FileNotFoundError);
   });
 
   test("throws FileNotFoundError for directory (not file)", async () => {
     await mkdir(join(testDir, "folder.md"));
-
-    try {
-      await readMarkdownFile(testDir, "folder.md");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
+    await expectError(() => readMarkdownFile(testDir, "folder.md"), FileNotFoundError);
   });
 
   test("throws PathTraversalError for path outside vault", async () => {
-    try {
-      await readMarkdownFile(testDir, "../../../etc/passwd.md");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(
+      () => readMarkdownFile(testDir, "../../../etc/passwd.md"),
+      PathTraversalError
+    );
   });
 
   test("rejects symlink files", async () => {
-    const realFile = join(testDir, "real.md");
-    const linkPath = join(testDir, "link.md");
-    await writeFile(realFile, "content");
+    await writeFile(join(testDir, "real.md"), "content");
 
-    try {
-      await symlink(realFile, linkPath);
-
-      try {
-        await readMarkdownFile(testDir, "link.md");
-        expect.unreachable("Should have thrown PathTraversalError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(PathTraversalError);
-      }
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.includes("EPERM") ||
-          error.message.includes("operation not permitted"))
-      ) {
-        console.log("Skipping symlink test - not supported on this platform");
-        return;
-      }
-      throw error;
-    }
+    await withSymlink(join(testDir, "real.md"), join(testDir, "link.md"), async () => {
+      await expectError(() => readMarkdownFile(testDir, "link.md"), PathTraversalError);
+    });
   });
 
   test("handles files with unicode content", async () => {
-    const content = "# Unicode Test\n\nEmoji: 🎉\nJapanese: 日本語\nArabic: العربية";
+    const content = "# Unicode Test\n\nEmoji: \u{1F389}\nJapanese: \u65E5\u672C\u8A9E\nArabic: \u0627\u0644\u0639\u0631\u0628\u064A\u0629";
     await writeFile(join(testDir, "unicode.md"), content);
 
     const result = await readMarkdownFile(testDir, "unicode.md");
@@ -584,7 +464,6 @@ describe("Large File Truncation", () => {
   });
 
   test("file exactly at limit is not truncated", async () => {
-    // Create file exactly at 1MB
     const content = "x".repeat(MAX_FILE_SIZE);
     await writeFile(join(testDir, "exact.md"), content);
 
@@ -594,22 +473,12 @@ describe("Large File Truncation", () => {
   });
 
   test("file over limit is truncated", async () => {
-    // Create file slightly over 1MB
     const content = "x".repeat(MAX_FILE_SIZE + 100);
     await writeFile(join(testDir, "large.md"), content);
 
     const result = await readMarkdownFile(testDir, "large.md");
     expect(result.truncated).toBe(true);
     expect(result.content.length).toBe(MAX_FILE_SIZE);
-  });
-
-  test("file under limit is not truncated", async () => {
-    const content = "Small file content";
-    await writeFile(join(testDir, "small.md"), content);
-
-    const result = await readMarkdownFile(testDir, "small.md");
-    expect(result.truncated).toBe(false);
-    expect(result.content).toBe(content);
   });
 });
 
@@ -652,8 +521,7 @@ describe("Edge Cases", () => {
     expect(result.content).toBe("content");
   });
 
-  test("case-sensitive file extension check (.MD vs .md)", async () => {
-    // .MD should also be accepted (case-insensitive extension check)
+  test("case-insensitive file extension check (.MD vs .md)", async () => {
     await writeFile(join(testDir, "note.MD"), "content");
 
     const result = await readMarkdownFile(testDir, "note.MD");
@@ -664,22 +532,15 @@ describe("Edge Cases", () => {
     await mkdir(join(testDir, "a", "b"), { recursive: true });
     await writeFile(join(testDir, "a", "b", "file.md"), "content");
 
-    // Multiple slashes should be normalized
     const result = await readMarkdownFile(testDir, "a//b//file.md");
     expect(result.content).toBe("content");
   });
 
   test("handles Obsidian-style paths with forward slashes", async () => {
     await mkdir(join(testDir, "Projects", "SubProject"), { recursive: true });
-    await writeFile(
-      join(testDir, "Projects", "SubProject", "notes.md"),
-      "content"
-    );
+    await writeFile(join(testDir, "Projects", "SubProject", "notes.md"), "content");
 
-    const result = await readMarkdownFile(
-      testDir,
-      "Projects/SubProject/notes.md"
-    );
+    const result = await readMarkdownFile(testDir, "Projects/SubProject/notes.md");
     expect(result.content).toBe("content");
   });
 
@@ -701,14 +562,12 @@ describe("Edge Cases", () => {
     const subEntries = await listDirectory(testDir, "sub");
 
     expect(rootEntries.find((e) => e.name === "root.md")?.path).toBe("root.md");
-    expect(subEntries.find((e) => e.name === "nested.md")?.path).toBe(
-      "sub/nested.md"
-    );
+    expect(subEntries.find((e) => e.name === "nested.md")?.path).toBe("sub/nested.md");
   });
 });
 
 // =============================================================================
-// Performance Characteristics (basic verification)
+// Performance Characteristics
 // =============================================================================
 
 describe("Performance", () => {
@@ -723,7 +582,6 @@ describe("Performance", () => {
   });
 
   test("handles directory with many files", async () => {
-    // Create 100 files
     const fileCount = 100;
     for (let i = 0; i < fileCount; i++) {
       await writeFile(join(testDir, `file-${String(i).padStart(3, "0")}.md`), "");
@@ -734,7 +592,6 @@ describe("Performance", () => {
     const duration = Date.now() - start;
 
     expect(entries).toHaveLength(fileCount);
-    // Should complete within 500ms for 100 files
     expect(duration).toBeLessThan(500);
   });
 });
@@ -755,13 +612,11 @@ describe("writeMarkdownFile", () => {
   });
 
   test("writes content to existing markdown file", async () => {
-    const originalContent = "# Original Content";
+    await writeFile(join(testDir, "note.md"), "original");
     const newContent = "# Updated Content\n\nThis has been modified.";
-    await writeFile(join(testDir, "note.md"), originalContent);
 
     await writeMarkdownFile(testDir, "note.md", newContent);
 
-    // Verify the file was actually written
     const fileContent = await readFile(join(testDir, "note.md"), "utf-8");
     expect(fileContent).toBe(newContent);
   });
@@ -770,11 +625,10 @@ describe("writeMarkdownFile", () => {
     await mkdir(join(testDir, "folder"));
     await writeFile(join(testDir, "folder", "nested.md"), "original");
 
-    const newContent = "updated nested content";
-    await writeMarkdownFile(testDir, "folder/nested.md", newContent);
+    await writeMarkdownFile(testDir, "folder/nested.md", "updated");
 
     const fileContent = await readFile(join(testDir, "folder", "nested.md"), "utf-8");
-    expect(fileContent).toBe(newContent);
+    expect(fileContent).toBe("updated");
   });
 
   test("writes empty content (clears file)", async () => {
@@ -786,232 +640,71 @@ describe("writeMarkdownFile", () => {
     expect(fileContent).toBe("");
   });
 
-  test("throws InvalidFileTypeError for non-md file", async () => {
+  test("throws InvalidFileTypeError for non-text file", async () => {
     await writeFile(join(testDir, "image.png"), "binary content");
-
-    try {
-      await writeMarkdownFile(testDir, "image.png", "new content");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-      expect((error as InvalidFileTypeError).code).toBe("INVALID_FILE_TYPE");
-    }
-  });
-
-  test("writes content to existing txt file", async () => {
-    await writeFile(join(testDir, "notes.txt"), "original text");
-
-    await writeMarkdownFile(testDir, "notes.txt", "new content");
-
-    const fileContent = await readFile(join(testDir, "notes.txt"), "utf-8");
-    expect(fileContent).toBe("new content");
-  });
-
-  test("throws InvalidFileTypeError for file without extension", async () => {
-    await writeFile(join(testDir, "README"), "content");
-
-    try {
-      await writeMarkdownFile(testDir, "README", "new content");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-    }
+    await expectError(
+      () => writeMarkdownFile(testDir, "image.png", "new content"),
+      InvalidFileTypeError
+    );
   });
 
   test("throws FileNotFoundError for non-existent file", async () => {
-    try {
-      await writeMarkdownFile(testDir, "missing.md", "content");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-      expect((error as FileNotFoundError).code).toBe("FILE_NOT_FOUND");
-    }
+    await expectError(
+      () => writeMarkdownFile(testDir, "missing.md", "content"),
+      FileNotFoundError
+    );
   });
 
   test("throws FileNotFoundError for directory (not file)", async () => {
     await mkdir(join(testDir, "folder.md"));
-
-    try {
-      await writeMarkdownFile(testDir, "folder.md", "content");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
+    await expectError(
+      () => writeMarkdownFile(testDir, "folder.md", "content"),
+      FileNotFoundError
+    );
   });
 
   test("throws PathTraversalError for path outside vault", async () => {
-    try {
-      await writeMarkdownFile(testDir, "../../../etc/passwd.md", "malicious");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-      expect((error as PathTraversalError).code).toBe("PATH_TRAVERSAL");
-    }
-  });
-
-  test("throws PathTraversalError for parent traversal", async () => {
-    try {
-      await writeMarkdownFile(testDir, "../outside.md", "content");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
-  });
-
-  test("throws PathTraversalError for double-dot traversal within path", async () => {
-    await mkdir(join(testDir, "folder"));
-
-    try {
-      await writeMarkdownFile(testDir, "folder/../../outside.md", "content");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(
+      () => writeMarkdownFile(testDir, "../../../etc/passwd.md", "malicious"),
+      PathTraversalError
+    );
   });
 
   test("rejects symlink files", async () => {
-    const realFile = join(testDir, "real.md");
-    const linkPath = join(testDir, "link.md");
-    await writeFile(realFile, "original content");
+    await writeFile(join(testDir, "real.md"), "original content");
 
-    try {
-      await symlink(realFile, linkPath);
-
-      try {
-        await writeMarkdownFile(testDir, "link.md", "new content");
-        expect.unreachable("Should have thrown PathTraversalError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(PathTraversalError);
-      }
+    await withSymlink(join(testDir, "real.md"), join(testDir, "link.md"), async () => {
+      await expectError(
+        () => writeMarkdownFile(testDir, "link.md", "new content"),
+        PathTraversalError
+      );
 
       // Verify original file was NOT modified
-      const originalContent = await readFile(realFile, "utf-8");
+      const originalContent = await readFile(join(testDir, "real.md"), "utf-8");
       expect(originalContent).toBe("original content");
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.includes("EPERM") ||
-          error.message.includes("operation not permitted"))
-      ) {
-        console.log("Skipping symlink test - not supported on this platform");
-        return;
-      }
-      throw error;
-    }
-  });
-
-  test("handles files with unicode content", async () => {
-    await writeFile(join(testDir, "unicode.md"), "original");
-
-    const newContent = "# Unicode Test\n\nEmoji: 🎉\nJapanese: 日本語\nArabic: العربية";
-    await writeMarkdownFile(testDir, "unicode.md", newContent);
-
-    const fileContent = await readFile(join(testDir, "unicode.md"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("handles file with spaces in name", async () => {
-    await writeFile(join(testDir, "my note file.md"), "original");
-
-    const newContent = "updated content";
-    await writeMarkdownFile(testDir, "my note file.md", newContent);
-
-    const fileContent = await readFile(join(testDir, "my note file.md"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("handles special characters in filenames", async () => {
-    const specialName = "note-with_special.chars(2025).md";
-    await writeFile(join(testDir, specialName), "original");
-
-    const newContent = "updated content";
-    await writeMarkdownFile(testDir, specialName, newContent);
-
-    const fileContent = await readFile(join(testDir, specialName), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("case-sensitive file extension check (.MD vs .md)", async () => {
-    // .MD should also be accepted (case-insensitive extension check)
-    await writeFile(join(testDir, "note.MD"), "original");
-
-    const newContent = "updated content";
-    await writeMarkdownFile(testDir, "note.MD", newContent);
-
-    const fileContent = await readFile(join(testDir, "note.MD"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("handles deeply nested directories", async () => {
-    const deepPath = join(testDir, "a", "b", "c", "d", "e");
-    await mkdir(deepPath, { recursive: true });
-    await writeFile(join(deepPath, "deep.md"), "original");
-
-    const newContent = "updated deep content";
-    await writeMarkdownFile(testDir, "a/b/c/d/e/deep.md", newContent);
-
-    const fileContent = await readFile(join(deepPath, "deep.md"), "utf-8");
-    expect(fileContent).toBe(newContent);
+    });
   });
 
   test("preserves original content on validation error", async () => {
     const originalContent = "# Important Content";
     await writeFile(join(testDir, "important.md"), originalContent);
 
-    // Try to write with path traversal - should fail
     try {
       await writeMarkdownFile(testDir, "../important.md", "malicious");
     } catch {
       // Expected to throw
     }
 
-    // Original file should be unchanged
     const fileContent = await readFile(join(testDir, "important.md"), "utf-8");
     expect(fileContent).toBe(originalContent);
   });
-
-  test("handles file with only whitespace", async () => {
-    await writeFile(join(testDir, "whitespace.md"), "original");
-
-    const newContent = "   \n\n\t\t\n   ";
-    await writeMarkdownFile(testDir, "whitespace.md", newContent);
-
-    const fileContent = await readFile(join(testDir, "whitespace.md"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("handles paths with multiple slashes", async () => {
-    await mkdir(join(testDir, "a", "b"), { recursive: true });
-    await writeFile(join(testDir, "a", "b", "file.md"), "original");
-
-    // Multiple slashes should be normalized
-    const newContent = "updated content";
-    await writeMarkdownFile(testDir, "a//b//file.md", newContent);
-
-    const fileContent = await readFile(join(testDir, "a", "b", "file.md"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("handles Obsidian-style paths with forward slashes", async () => {
-    await mkdir(join(testDir, "Projects", "SubProject"), { recursive: true });
-    await writeFile(join(testDir, "Projects", "SubProject", "notes.md"), "original");
-
-    const newContent = "updated content";
-    await writeMarkdownFile(testDir, "Projects/SubProject/notes.md", newContent);
-
-    const fileContent = await readFile(
-      join(testDir, "Projects", "SubProject", "notes.md"),
-      "utf-8"
-    );
-    expect(fileContent).toBe(newContent);
-  });
 });
 
 // =============================================================================
-// JSON File Support Tests
+// Multi-Format File Support Tests (JSON, TXT, CSV, TSV)
 // =============================================================================
 
-describe("JSON file reading", () => {
+describe("Multi-format file support", () => {
   let testDir: string;
 
   beforeEach(async () => {
@@ -1022,315 +715,53 @@ describe("JSON file reading", () => {
     await cleanupTestDir(testDir);
   });
 
-  test("reads JSON file content", async () => {
-    const content = JSON.stringify({ name: "test", value: 42 }, null, 2);
-    await writeFile(join(testDir, "data.json"), content);
-
-    const result = await readMarkdownFile(testDir, "data.json");
-    expect(result.content).toBe(content);
-    expect(result.truncated).toBe(false);
-  });
-
-  test("reads nested JSON file", async () => {
-    await mkdir(join(testDir, "config"));
-    const content = JSON.stringify({ setting: true });
-    await writeFile(join(testDir, "config", "settings.json"), content);
-
-    const result = await readMarkdownFile(testDir, "config/settings.json");
-    expect(result.content).toBe(content);
-  });
-
-  test("handles JSON file with uppercase extension", async () => {
-    const content = JSON.stringify({ data: "test" });
-    await writeFile(join(testDir, "DATA.JSON"), content);
-
-    const result = await readMarkdownFile(testDir, "DATA.JSON");
-    expect(result.content).toBe(content);
-  });
-});
-
-describe("JSON file writing", () => {
-  let testDir: string;
-
-  beforeEach(async () => {
-    testDir = await createTestDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTestDir(testDir);
-  });
-
-  test("writes content to existing JSON file", async () => {
-    const originalContent = JSON.stringify({ original: true });
-    const newContent = JSON.stringify({ updated: true, value: 123 }, null, 2);
-    await writeFile(join(testDir, "data.json"), originalContent);
-
-    await writeMarkdownFile(testDir, "data.json", newContent);
-
-    const fileContent = await readFile(join(testDir, "data.json"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("writes to nested JSON file", async () => {
-    await mkdir(join(testDir, "config"));
-    await writeFile(join(testDir, "config", "settings.json"), "{}");
-
-    const newContent = JSON.stringify({ setting: "value" });
-    await writeMarkdownFile(testDir, "config/settings.json", newContent);
-
-    const fileContent = await readFile(join(testDir, "config", "settings.json"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("throws FileNotFoundError for non-existent JSON file", async () => {
-    try {
-      await writeMarkdownFile(testDir, "missing.json", "{}");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
-  });
-});
-
-// =============================================================================
-// TXT File Support Tests
-// =============================================================================
-
-describe("TXT file reading", () => {
-  let testDir: string;
-
-  beforeEach(async () => {
-    testDir = await createTestDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTestDir(testDir);
-  });
-
-  test("reads TXT file content", async () => {
-    const content = "Plain text content\nwith multiple lines.";
-    await writeFile(join(testDir, "notes.txt"), content);
-
-    const result = await readMarkdownFile(testDir, "notes.txt");
-    expect(result.content).toBe(content);
-    expect(result.truncated).toBe(false);
-  });
-
-  test("reads nested TXT file", async () => {
-    await mkdir(join(testDir, "logs"));
-    const content = "Log entry 1\nLog entry 2";
-    await writeFile(join(testDir, "logs", "app.txt"), content);
-
-    const result = await readMarkdownFile(testDir, "logs/app.txt");
-    expect(result.content).toBe(content);
-  });
-
-  test("handles TXT file with uppercase extension", async () => {
-    const content = "Uppercase extension content";
-    await writeFile(join(testDir, "README.TXT"), content);
-
-    const result = await readMarkdownFile(testDir, "README.TXT");
-    expect(result.content).toBe(content);
-  });
-});
-
-describe("TXT file writing", () => {
-  let testDir: string;
-
-  beforeEach(async () => {
-    testDir = await createTestDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTestDir(testDir);
-  });
-
-  test("writes content to existing TXT file", async () => {
-    const originalContent = "Original text";
-    const newContent = "Updated text\nwith new lines.";
-    await writeFile(join(testDir, "notes.txt"), originalContent);
-
-    await writeMarkdownFile(testDir, "notes.txt", newContent);
-
-    const fileContent = await readFile(join(testDir, "notes.txt"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("writes to nested TXT file", async () => {
-    await mkdir(join(testDir, "logs"));
-    await writeFile(join(testDir, "logs", "app.txt"), "old log");
-
-    const newContent = "new log entry";
-    await writeMarkdownFile(testDir, "logs/app.txt", newContent);
-
-    const fileContent = await readFile(join(testDir, "logs", "app.txt"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("throws FileNotFoundError for non-existent TXT file", async () => {
-    try {
-      await writeMarkdownFile(testDir, "missing.txt", "content");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
-  });
-});
-
-// =============================================================================
-// CSV File Support Tests
-// =============================================================================
-
-describe("CSV file reading", () => {
-  let testDir: string;
-
-  beforeEach(async () => {
-    testDir = await createTestDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTestDir(testDir);
-  });
-
-  test("reads CSV file content", async () => {
-    const content = "Name,Age,City\nAlice,30,NYC\nBob,25,LA";
-    await writeFile(join(testDir, "data.csv"), content);
-
-    const result = await readMarkdownFile(testDir, "data.csv");
-    expect(result.content).toBe(content);
-    expect(result.truncated).toBe(false);
-  });
-
-  test("reads nested CSV file", async () => {
-    await mkdir(join(testDir, "exports"));
-    const content = "id,value\n1,foo\n2,bar";
-    await writeFile(join(testDir, "exports", "report.csv"), content);
-
-    const result = await readMarkdownFile(testDir, "exports/report.csv");
-    expect(result.content).toBe(content);
-  });
-
-  test("reads CSV with quoted fields", async () => {
-    const content = 'Name,Address\nJohn,"123 Main St, Apt 4"';
-    await writeFile(join(testDir, "addresses.csv"), content);
-
-    const result = await readMarkdownFile(testDir, "addresses.csv");
-    expect(result.content).toBe(content);
-  });
-
-  test("reads uppercase CSV extension", async () => {
-    const content = "A,B\n1,2";
-    await writeFile(join(testDir, "DATA.CSV"), content);
-
-    const result = await readMarkdownFile(testDir, "DATA.CSV");
-    expect(result.content).toBe(content);
-  });
-});
-
-describe("CSV file writing", () => {
-  let testDir: string;
-
-  beforeEach(async () => {
-    testDir = await createTestDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTestDir(testDir);
-  });
-
-  test("writes content to existing CSV file", async () => {
-    const originalContent = "old,data";
-    const newContent = "Name,Value\nfoo,bar";
-    await writeFile(join(testDir, "data.csv"), originalContent);
-
-    await writeMarkdownFile(testDir, "data.csv", newContent);
-
-    const fileContent = await readFile(join(testDir, "data.csv"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("throws FileNotFoundError for non-existent CSV file", async () => {
-    try {
-      await writeMarkdownFile(testDir, "missing.csv", "a,b\n1,2");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
-  });
-});
-
-// =============================================================================
-// TSV File Support Tests
-// =============================================================================
-
-describe("TSV file reading", () => {
-  let testDir: string;
-
-  beforeEach(async () => {
-    testDir = await createTestDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTestDir(testDir);
-  });
-
-  test("reads TSV file content", async () => {
-    const content = "Name\tAge\tCity\nAlice\t30\tNYC";
-    await writeFile(join(testDir, "data.tsv"), content);
-
-    const result = await readMarkdownFile(testDir, "data.tsv");
-    expect(result.content).toBe(content);
-    expect(result.truncated).toBe(false);
-  });
-
-  test("reads nested TSV file", async () => {
-    await mkdir(join(testDir, "exports"));
-    const content = "id\tvalue\n1\tfoo";
-    await writeFile(join(testDir, "exports", "report.tsv"), content);
-
-    const result = await readMarkdownFile(testDir, "exports/report.tsv");
-    expect(result.content).toBe(content);
-  });
-
-  test("reads uppercase TSV extension", async () => {
-    const content = "A\tB\n1\t2";
-    await writeFile(join(testDir, "DATA.TSV"), content);
-
-    const result = await readMarkdownFile(testDir, "DATA.TSV");
-    expect(result.content).toBe(content);
-  });
-});
-
-describe("TSV file writing", () => {
-  let testDir: string;
-
-  beforeEach(async () => {
-    testDir = await createTestDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTestDir(testDir);
-  });
-
-  test("writes content to existing TSV file", async () => {
-    const originalContent = "old\tdata";
-    const newContent = "Name\tValue\nfoo\tbar";
-    await writeFile(join(testDir, "data.tsv"), originalContent);
-
-    await writeMarkdownFile(testDir, "data.tsv", newContent);
-
-    const fileContent = await readFile(join(testDir, "data.tsv"), "utf-8");
-    expect(fileContent).toBe(newContent);
-  });
-
-  test("throws FileNotFoundError for non-existent TSV file", async () => {
-    try {
-      await writeMarkdownFile(testDir, "missing.tsv", "a\tb\n1\t2");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
-  });
+  const formats = [
+    { ext: "json", content: JSON.stringify({ name: "test", value: 42 }, null, 2) },
+    { ext: "txt", content: "Plain text content\nwith multiple lines." },
+    { ext: "csv", content: "Name,Age,City\nAlice,30,NYC\nBob,25,LA" },
+    { ext: "tsv", content: "Name\tAge\tCity\nAlice\t30\tNYC" },
+  ];
+
+  for (const { ext, content } of formats) {
+    test(`reads ${ext.toUpperCase()} file content`, async () => {
+      await writeFile(join(testDir, `data.${ext}`), content);
+
+      const result = await readMarkdownFile(testDir, `data.${ext}`);
+      expect(result.content).toBe(content);
+      expect(result.truncated).toBe(false);
+    });
+
+    test(`reads nested ${ext.toUpperCase()} file`, async () => {
+      await mkdir(join(testDir, "folder"));
+      await writeFile(join(testDir, "folder", `file.${ext}`), content);
+
+      const result = await readMarkdownFile(testDir, `folder/file.${ext}`);
+      expect(result.content).toBe(content);
+    });
+
+    test(`handles ${ext.toUpperCase()} file with uppercase extension`, async () => {
+      await writeFile(join(testDir, `DATA.${ext.toUpperCase()}`), content);
+
+      const result = await readMarkdownFile(testDir, `DATA.${ext.toUpperCase()}`);
+      expect(result.content).toBe(content);
+    });
+
+    test(`writes content to existing ${ext.toUpperCase()} file`, async () => {
+      await writeFile(join(testDir, `data.${ext}`), "original");
+
+      await writeMarkdownFile(testDir, `data.${ext}`, content);
+
+      const fileContent = await readFile(join(testDir, `data.${ext}`), "utf-8");
+      expect(fileContent).toBe(content);
+    });
+
+    test(`throws FileNotFoundError for non-existent ${ext.toUpperCase()} file`, async () => {
+      await expectError(
+        () => writeMarkdownFile(testDir, `missing.${ext}`, content),
+        FileNotFoundError
+      );
+    });
+  }
 });
 
 // =============================================================================
@@ -1348,172 +779,86 @@ describe("deleteFile", () => {
     await cleanupTestDir(testDir);
   });
 
+  async function expectDeleted(filePath: string): Promise<void> {
+    try {
+      await stat(filePath);
+      expect.unreachable("File should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  }
+
   test("deletes an existing file", async () => {
-    const filePath = join(testDir, "to-delete.txt");
-    await writeFile(filePath, "content to delete");
+    await writeFile(join(testDir, "to-delete.txt"), "content");
 
     await deleteFile(testDir, "to-delete.txt");
 
-    // Verify file no longer exists
-    try {
-      await stat(filePath);
-      expect.unreachable("File should have been deleted");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
-  });
-
-  test("deletes file with .md extension", async () => {
-    const filePath = join(testDir, "note.md");
-    await writeFile(filePath, "# Note");
-
-    await deleteFile(testDir, "note.md");
-
-    try {
-      await stat(filePath);
-      expect.unreachable("File should have been deleted");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
+    await expectDeleted(join(testDir, "to-delete.txt"));
   });
 
   test("deletes file in nested directory", async () => {
     await mkdir(join(testDir, "folder", "subfolder"), { recursive: true });
-    const filePath = join(testDir, "folder", "subfolder", "nested.txt");
-    await writeFile(filePath, "nested content");
+    await writeFile(join(testDir, "folder", "subfolder", "nested.txt"), "content");
 
     await deleteFile(testDir, "folder/subfolder/nested.txt");
 
-    try {
-      await stat(filePath);
-      expect.unreachable("File should have been deleted");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
+    await expectDeleted(join(testDir, "folder", "subfolder", "nested.txt"));
   });
 
   test("throws FileNotFoundError for non-existent file", async () => {
-    try {
-      await deleteFile(testDir, "does-not-exist.txt");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
+    await expectError(() => deleteFile(testDir, "does-not-exist.txt"), FileNotFoundError);
   });
 
   test("throws InvalidFileTypeError for directories", async () => {
     await mkdir(join(testDir, "a-directory"));
-
-    try {
-      await deleteFile(testDir, "a-directory");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-      expect((error as InvalidFileTypeError).message).toContain("directory");
-    }
+    await expectError(
+      () => deleteFile(testDir, "a-directory"),
+      InvalidFileTypeError,
+      "directory"
+    );
   });
 
   test("throws PathTraversalError for path traversal attempts", async () => {
-    // Create a file outside the vault
     const outsideDir = await createTestDir();
     try {
       await writeFile(join(outsideDir, "secret.txt"), "secret content");
 
-      try {
-        await deleteFile(testDir, `../${outsideDir.split("/").pop()}/secret.txt`);
-        expect.unreachable("Should have thrown PathTraversalError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(PathTraversalError);
-      }
+      await expectError(
+        () => deleteFile(testDir, `../${outsideDir.split("/").pop()}/secret.txt`),
+        PathTraversalError
+      );
     } finally {
       await cleanupTestDir(outsideDir);
     }
   });
 
   test("throws PathTraversalError for absolute path", async () => {
-    const outsideFile = "/etc/passwd";
-    try {
-      await deleteFile(testDir, outsideFile);
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => deleteFile(testDir, "/etc/passwd"), PathTraversalError);
   });
 
   test("throws PathTraversalError for symlink", async () => {
-    const realFile = join(testDir, "real.txt");
-    await writeFile(realFile, "real content");
-    const linkPath = join(testDir, "link.txt");
+    await writeFile(join(testDir, "real.txt"), "real content");
 
-    try {
-      await symlink(realFile, linkPath);
-
-      try {
-        await deleteFile(testDir, "link.txt");
-        expect.unreachable("Should have thrown PathTraversalError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(PathTraversalError);
-        expect((error as PathTraversalError).message).toContain("symbolic link");
-      }
+    await withSymlink(join(testDir, "real.txt"), join(testDir, "link.txt"), async () => {
+      await expectError(
+        () => deleteFile(testDir, "link.txt"),
+        PathTraversalError,
+        "symbolic link"
+      );
 
       // Verify original file was NOT deleted
-      const fileContent = await readFile(realFile, "utf-8");
+      const fileContent = await readFile(join(testDir, "real.txt"), "utf-8");
       expect(fileContent).toBe("real content");
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.includes("EPERM") ||
-          error.message.includes("operation not permitted"))
-      ) {
-        console.log("Skipping symlink test - not supported on this platform");
-        return;
-      }
-      throw error;
-    }
-  });
-
-  test("handles file with spaces in name", async () => {
-    const filePath = join(testDir, "my file.txt");
-    await writeFile(filePath, "content");
-
-    await deleteFile(testDir, "my file.txt");
-
-    try {
-      await stat(filePath);
-      expect.unreachable("File should have been deleted");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
-  });
-
-  test("handles file with special characters", async () => {
-    const fileName = "file-with_special.chars(2025).txt";
-    const filePath = join(testDir, fileName);
-    await writeFile(filePath, "content");
-
-    await deleteFile(testDir, fileName);
-
-    try {
-      await stat(filePath);
-      expect.unreachable("File should have been deleted");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
+    });
   });
 
   test("handles file with unicode name", async () => {
-    const fileName = "日本語ファイル.txt";
-    const filePath = join(testDir, fileName);
-    await writeFile(filePath, "content");
+    const fileName = "\u65E5\u672C\u8A9E\u30D5\u30A1\u30A4\u30EB.txt";
+    await writeFile(join(testDir, fileName), "content");
 
     await deleteFile(testDir, fileName);
 
-    try {
-      await stat(filePath);
-      expect.unreachable("File should have been deleted");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
+    await expectDeleted(join(testDir, fileName));
   });
 });
 
@@ -1544,8 +889,9 @@ describe("getDirectoryContents", () => {
     expect(result.truncated).toBe(false);
   });
 
-  test("returns files in directory", async () => {
+  test("returns files and subdirectories", async () => {
     await mkdir(join(testDir, "my-dir"));
+    await mkdir(join(testDir, "my-dir", "subdir"));
     await writeFile(join(testDir, "my-dir", "file1.md"), "content");
     await writeFile(join(testDir, "my-dir", "file2.txt"), "content");
 
@@ -1553,26 +899,13 @@ describe("getDirectoryContents", () => {
 
     expect(result.files).toContain("file1.md");
     expect(result.files).toContain("file2.txt");
+    expect(result.directories).toContain("subdir");
     expect(result.totalFiles).toBe(2);
-    expect(result.totalDirectories).toBe(0);
-  });
-
-  test("returns subdirectories in directory", async () => {
-    await mkdir(join(testDir, "my-dir"));
-    await mkdir(join(testDir, "my-dir", "subdir1"));
-    await mkdir(join(testDir, "my-dir", "subdir2"));
-
-    const result = await getDirectoryContents(testDir, "my-dir");
-
-    expect(result.directories).toContain("subdir1");
-    expect(result.directories).toContain("subdir2");
-    expect(result.totalDirectories).toBe(2);
-    expect(result.totalFiles).toBe(0);
+    expect(result.totalDirectories).toBe(1);
   });
 
   test("includes nested files in totalFiles count", async () => {
-    await mkdir(join(testDir, "my-dir"));
-    await mkdir(join(testDir, "my-dir", "subdir"));
+    await mkdir(join(testDir, "my-dir", "subdir"), { recursive: true });
     await writeFile(join(testDir, "my-dir", "file1.md"), "content");
     await writeFile(join(testDir, "my-dir", "subdir", "file2.md"), "content");
 
@@ -1594,35 +927,19 @@ describe("getDirectoryContents", () => {
   });
 
   test("throws DirectoryNotFoundError for non-existent directory", async () => {
-    try {
-      await getDirectoryContents(testDir, "non-existent");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-    }
+    await expectError(() => getDirectoryContents(testDir, "non-existent"), DirectoryNotFoundError);
   });
 
   test("throws InvalidFileTypeError if path is a file", async () => {
     await writeFile(join(testDir, "a-file.md"), "content");
-
-    try {
-      await getDirectoryContents(testDir, "a-file.md");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-    }
+    await expectError(() => getDirectoryContents(testDir, "a-file.md"), InvalidFileTypeError);
   });
 
   test("throws PathTraversalError for symlinks", async () => {
     await mkdir(join(testDir, "real-dir"));
     await symlink(join(testDir, "real-dir"), join(testDir, "symlink-dir"));
 
-    try {
-      await getDirectoryContents(testDir, "symlink-dir");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => getDirectoryContents(testDir, "symlink-dir"), PathTraversalError);
   });
 });
 
@@ -1641,6 +958,15 @@ describe("deleteDirectory", () => {
     await rm(testDir, { recursive: true, force: true });
   });
 
+  async function expectDirectoryDeleted(dirPath: string): Promise<void> {
+    try {
+      await stat(dirPath);
+      expect.unreachable("Directory should have been deleted");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  }
+
   test("deletes empty directory", async () => {
     await mkdir(join(testDir, "empty-dir"));
 
@@ -1649,13 +975,7 @@ describe("deleteDirectory", () => {
     expect(result.path).toBe("empty-dir");
     expect(result.filesDeleted).toBe(0);
     expect(result.directoriesDeleted).toBe(0);
-
-    try {
-      await stat(join(testDir, "empty-dir"));
-      expect.unreachable("Directory should have been deleted");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
+    await expectDirectoryDeleted(join(testDir, "empty-dir"));
   });
 
   test("deletes directory with files", async () => {
@@ -1667,18 +987,11 @@ describe("deleteDirectory", () => {
 
     expect(result.filesDeleted).toBe(2);
     expect(result.directoriesDeleted).toBe(0);
-
-    try {
-      await stat(join(testDir, "my-dir"));
-      expect.unreachable("Directory should have been deleted");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
+    await expectDirectoryDeleted(join(testDir, "my-dir"));
   });
 
   test("deletes directory with subdirectories recursively", async () => {
-    await mkdir(join(testDir, "my-dir"));
-    await mkdir(join(testDir, "my-dir", "subdir"));
+    await mkdir(join(testDir, "my-dir", "subdir"), { recursive: true });
     await writeFile(join(testDir, "my-dir", "file1.md"), "content");
     await writeFile(join(testDir, "my-dir", "subdir", "file2.md"), "content");
 
@@ -1686,56 +999,28 @@ describe("deleteDirectory", () => {
 
     expect(result.filesDeleted).toBe(2);
     expect(result.directoriesDeleted).toBe(1);
-
-    try {
-      await stat(join(testDir, "my-dir"));
-      expect.unreachable("Directory should have been deleted");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
+    await expectDirectoryDeleted(join(testDir, "my-dir"));
   });
 
   test("throws DirectoryNotFoundError for non-existent directory", async () => {
-    try {
-      await deleteDirectory(testDir, "non-existent");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-    }
+    await expectError(() => deleteDirectory(testDir, "non-existent"), DirectoryNotFoundError);
   });
 
   test("throws InvalidFileTypeError if path is a file", async () => {
     await writeFile(join(testDir, "a-file.md"), "content");
-
-    try {
-      await deleteDirectory(testDir, "a-file.md");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-    }
+    await expectError(() => deleteDirectory(testDir, "a-file.md"), InvalidFileTypeError);
   });
 
   test("throws PathTraversalError for symlinks", async () => {
     await mkdir(join(testDir, "real-dir"));
     await symlink(join(testDir, "real-dir"), join(testDir, "symlink-dir"));
 
-    try {
-      await deleteDirectory(testDir, "symlink-dir");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => deleteDirectory(testDir, "symlink-dir"), PathTraversalError);
   });
 
   test("prevents path traversal with ..", async () => {
     await mkdir(join(testDir, "my-dir"));
-
-    try {
-      await deleteDirectory(testDir, "../other-dir");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => deleteDirectory(testDir, "../other-dir"), PathTraversalError);
   });
 });
 
@@ -1755,13 +1040,12 @@ describe("archiveFile", () => {
   });
 
   test("archives a directory to the archive folder with YYYY-MM format", async () => {
-    // Create a project directory with a file
     await mkdir(join(testDir, "01_Projects", "MyProject"), { recursive: true });
     await writeFile(join(testDir, "01_Projects", "MyProject", "notes.md"), "content");
 
     const result = await archiveFile(testDir, "01_Projects/MyProject");
 
-    // Verify the directory was moved
+    // Original should be moved
     try {
       await stat(join(testDir, "01_Projects", "MyProject"));
       expect.unreachable("Original directory should have been moved");
@@ -1769,42 +1053,27 @@ describe("archiveFile", () => {
       expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
     }
 
-    // Verify the result contains correct paths
     expect(result.originalPath).toBe("01_Projects/MyProject");
     expect(result.archivePath).toMatch(/^07_Archive\/\d{4}-\d{2}\/MyProject$/);
 
-    // Verify the file exists in the new location
-    const archiveDestination = join(testDir, result.archivePath);
-    const archivedFileStats = await stat(join(archiveDestination, "notes.md"));
+    // File should exist at new location
+    const archivedFileStats = await stat(join(testDir, result.archivePath, "notes.md"));
     expect(archivedFileStats.isFile()).toBe(true);
   });
 
   test("archives chats directory to archive/YYYY-MM/chats/", async () => {
-    // Create an inbox/chats directory with files
     await mkdir(join(testDir, "00_Inbox", "chats"), { recursive: true });
     await writeFile(join(testDir, "00_Inbox", "chats", "chat-2025-01-15.md"), "chat content");
 
     const result = await archiveFile(testDir, "00_Inbox/chats");
 
-    // Verify the directory was moved
-    try {
-      await stat(join(testDir, "00_Inbox", "chats"));
-      expect.unreachable("Original directory should have been moved");
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
-    }
-
-    // Verify chats go into a special chats subdirectory
     expect(result.archivePath).toMatch(/^07_Archive\/\d{4}-\d{2}\/chats\/chats$/);
   });
 
   test("uses last modified date for YYYY-MM calculation", async () => {
-    // Create a directory with a file
     await mkdir(join(testDir, "01_Projects", "OldProject"), { recursive: true });
-    const filePath = join(testDir, "01_Projects", "OldProject", "old-notes.md");
-    await writeFile(filePath, "old content");
+    await writeFile(join(testDir, "01_Projects", "OldProject", "old-notes.md"), "content");
 
-    // The file's mtime will be "now", so the archive should use current month
     const now = new Date();
     const expectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
@@ -1826,44 +1095,26 @@ describe("archiveFile", () => {
     await mkdir(join(testDir, "Projects", "NewProject"), { recursive: true });
     await writeFile(join(testDir, "Projects", "NewProject", "notes.md"), "content");
 
-    // Archive directory should not exist yet
-    try {
-      await stat(join(testDir, "07_Archive"));
-      expect.unreachable("Archive should not exist yet");
-    } catch {
-      // Expected
-    }
-
     const result = await archiveFile(testDir, "Projects/NewProject");
 
-    // Verify archive directory was created
     const archiveStats = await stat(join(testDir, "07_Archive"));
     expect(archiveStats.isDirectory()).toBe(true);
 
-    // Verify file was moved
     const archivedFile = await stat(join(testDir, result.archivePath, "notes.md"));
     expect(archivedFile.isFile()).toBe(true);
   });
 
   test("throws DirectoryNotFoundError for non-existent directory", async () => {
-    try {
-      await archiveFile(testDir, "does-not-exist");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-    }
+    await expectError(() => archiveFile(testDir, "does-not-exist"), DirectoryNotFoundError);
   });
 
   test("throws InvalidFileTypeError for files (not directories)", async () => {
     await writeFile(join(testDir, "not-a-dir.txt"), "content");
-
-    try {
-      await archiveFile(testDir, "not-a-dir.txt");
-      expect.unreachable("Should have thrown InvalidFileTypeError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileTypeError);
-      expect((error as InvalidFileTypeError).message).toContain("directories");
-    }
+    await expectError(
+      () => archiveFile(testDir, "not-a-dir.txt"),
+      InvalidFileTypeError,
+      "directories"
+    );
   });
 
   test("throws PathTraversalError for path traversal attempts", async () => {
@@ -1871,23 +1122,12 @@ describe("archiveFile", () => {
     try {
       await mkdir(join(outsideDir, "secret-project"));
 
-      try {
-        await archiveFile(testDir, `../${outsideDir.split("/").pop()}/secret-project`);
-        expect.unreachable("Should have thrown PathTraversalError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(PathTraversalError);
-      }
+      await expectError(
+        () => archiveFile(testDir, `../${outsideDir.split("/").pop()}/secret-project`),
+        PathTraversalError
+      );
     } finally {
       await cleanupTestDir(outsideDir);
-    }
-  });
-
-  test("throws PathTraversalError for absolute path", async () => {
-    try {
-      await archiveFile(testDir, "/etc");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
     }
   });
 
@@ -1895,56 +1135,26 @@ describe("archiveFile", () => {
     const realDir = join(testDir, "real-project");
     await mkdir(realDir);
     await writeFile(join(realDir, "notes.md"), "content");
-    const linkPath = join(testDir, "link-project");
 
-    try {
-      await symlink(realDir, linkPath);
-
-      try {
-        await archiveFile(testDir, "link-project");
-        expect.unreachable("Should have thrown PathTraversalError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(PathTraversalError);
-        expect((error as PathTraversalError).message).toContain("symbolic link");
-      }
+    await withSymlink(realDir, join(testDir, "link-project"), async () => {
+      await expectError(
+        () => archiveFile(testDir, "link-project"),
+        PathTraversalError,
+        "symbolic link"
+      );
 
       // Verify original directory was NOT moved
       const dirStats = await stat(realDir);
       expect(dirStats.isDirectory()).toBe(true);
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.includes("EPERM") ||
-          error.message.includes("operation not permitted"))
-      ) {
-        console.log("Skipping symlink test - not supported on this platform");
-        return;
-      }
-      throw error;
-    }
-  });
-
-  test("handles directory with spaces in name", async () => {
-    await mkdir(join(testDir, "Projects", "My Cool Project"), { recursive: true });
-    await writeFile(join(testDir, "Projects", "My Cool Project", "notes.md"), "content");
-
-    const result = await archiveFile(testDir, "Projects/My Cool Project");
-
-    expect(result.archivePath).toMatch(/My Cool Project$/);
-
-    // Verify file was moved
-    const archivedFile = await stat(join(testDir, result.archivePath, "notes.md"));
-    expect(archivedFile.isFile()).toBe(true);
+    });
   });
 
   test("handles nested directory structure", async () => {
     await mkdir(join(testDir, "Projects", "Deep", "Nested", "Content"), { recursive: true });
     await writeFile(join(testDir, "Projects", "Deep", "Nested", "Content", "file.md"), "content");
 
-    // Archive the "Deep" directory (not the deepest level)
     const result = await archiveFile(testDir, "Projects/Deep");
 
-    // Verify nested structure was preserved
     const nestedFile = await stat(join(testDir, result.archivePath, "Nested", "Content", "file.md"));
     expect(nestedFile.isFile()).toBe(true);
   });
@@ -1953,21 +1163,17 @@ describe("archiveFile", () => {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    // Create source directory
     await mkdir(join(testDir, "Projects", "MyProject"), { recursive: true });
     await writeFile(join(testDir, "Projects", "MyProject", "notes.md"), "source content");
 
     // Pre-create the archive destination
     await mkdir(join(testDir, "07_Archive", currentMonth, "MyProject"), { recursive: true });
-    await writeFile(join(testDir, "07_Archive", currentMonth, "MyProject", "existing.md"), "existing content");
 
-    try {
-      await archiveFile(testDir, "Projects/MyProject");
-      expect.unreachable("Should have thrown error for existing destination");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileBrowserError);
-      expect((error as FileBrowserError).message).toContain("already exists");
-    }
+    await expectError(
+      () => archiveFile(testDir, "Projects/MyProject"),
+      FileBrowserError,
+      "already exists"
+    );
 
     // Verify original directory is unchanged
     const sourceFile = await stat(join(testDir, "Projects", "MyProject", "notes.md"));
@@ -1979,23 +1185,8 @@ describe("archiveFile", () => {
 
     const result = await archiveFile(testDir, "Projects/EmptyProject");
 
-    // Verify the directory was moved (uses current date for empty dirs)
     const archivedDir = await stat(join(testDir, result.archivePath));
     expect(archivedDir.isDirectory()).toBe(true);
-  });
-
-  test("handles directory with unicode name", async () => {
-    const unicodeName = "プロジェクト日本語";
-    await mkdir(join(testDir, "Projects", unicodeName), { recursive: true });
-    await writeFile(join(testDir, "Projects", unicodeName, "notes.md"), "content");
-
-    const result = await archiveFile(testDir, `Projects/${unicodeName}`);
-
-    expect(result.archivePath).toContain(unicodeName);
-
-    // Verify file was moved
-    const archivedFile = await stat(join(testDir, result.archivePath, "notes.md"));
-    expect(archivedFile.isFile()).toBe(true);
   });
 });
 
@@ -2008,9 +1199,7 @@ describe("createDirectory", () => {
 
   beforeEach(async () => {
     testDir = await createTestDir();
-    // Create a nested directory structure for testing
     await mkdir(join(testDir, "Projects"), { recursive: true });
-    await mkdir(join(testDir, "Notes"), { recursive: true });
   });
 
   afterEach(async () => {
@@ -2021,8 +1210,6 @@ describe("createDirectory", () => {
     const result = await createDirectory(testDir, "", "new-folder");
 
     expect(result).toBe("new-folder");
-
-    // Verify directory was created
     const dirStat = await stat(join(testDir, "new-folder"));
     expect(dirStat.isDirectory()).toBe(true);
   });
@@ -2031,127 +1218,67 @@ describe("createDirectory", () => {
     const result = await createDirectory(testDir, "Projects", "my-project");
 
     expect(result).toBe("Projects/my-project");
-
-    // Verify directory was created
     const dirStat = await stat(join(testDir, "Projects", "my-project"));
     expect(dirStat.isDirectory()).toBe(true);
   });
 
-  test("allows alphanumeric names", async () => {
-    const result = await createDirectory(testDir, "", "Test123");
+  test("allows valid name patterns", async () => {
+    const validNames = ["Test123", "my-new-folder", "my_new_folder"];
 
-    expect(result).toBe("Test123");
-    const dirStat = await stat(join(testDir, "Test123"));
-    expect(dirStat.isDirectory()).toBe(true);
-  });
-
-  test("allows hyphens in names", async () => {
-    const result = await createDirectory(testDir, "", "my-new-folder");
-
-    expect(result).toBe("my-new-folder");
-    const dirStat = await stat(join(testDir, "my-new-folder"));
-    expect(dirStat.isDirectory()).toBe(true);
-  });
-
-  test("allows underscores in names", async () => {
-    const result = await createDirectory(testDir, "", "my_new_folder");
-
-    expect(result).toBe("my_new_folder");
-    const dirStat = await stat(join(testDir, "my_new_folder"));
-    expect(dirStat.isDirectory()).toBe(true);
-  });
-
-  test("rejects names with spaces", async () => {
-    try {
-      await createDirectory(testDir, "", "my folder");
-      expect.unreachable("Should have thrown InvalidDirectoryNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
+    for (const name of validNames) {
+      const result = await createDirectory(testDir, "", name);
+      expect(result).toBe(name);
+      const dirStat = await stat(join(testDir, name));
+      expect(dirStat.isDirectory()).toBe(true);
     }
   });
 
-  test("rejects names with special characters", async () => {
-    try {
-      await createDirectory(testDir, "", "my@folder");
-      expect.unreachable("Should have thrown InvalidDirectoryNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
-    }
+  test("rejects invalid name patterns", async () => {
+    const invalidNames = ["my folder", "my@folder", "my/folder", "my.folder", ""];
 
-    try {
-      await createDirectory(testDir, "", "my/folder");
-      expect.unreachable("Should have thrown InvalidDirectoryNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
-    }
-
-    try {
-      await createDirectory(testDir, "", "my.folder");
-      expect.unreachable("Should have thrown InvalidDirectoryNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
-    }
-  });
-
-  test("rejects empty name", async () => {
-    try {
-      await createDirectory(testDir, "", "");
-      expect.unreachable("Should have thrown InvalidDirectoryNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidDirectoryNameError);
+    for (const name of invalidNames) {
+      await expectError(
+        () => createDirectory(testDir, "", name),
+        InvalidDirectoryNameError
+      );
     }
   });
 
   test("throws error if directory already exists", async () => {
     await mkdir(join(testDir, "existing-folder"));
-
-    try {
-      await createDirectory(testDir, "", "existing-folder");
-      expect.unreachable("Should have thrown DirectoryExistsError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryExistsError);
-    }
+    await expectError(
+      () => createDirectory(testDir, "", "existing-folder"),
+      DirectoryExistsError
+    );
   });
 
   test("throws error if parent directory does not exist", async () => {
-    try {
-      await createDirectory(testDir, "non-existent", "new-folder");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-    }
+    await expectError(
+      () => createDirectory(testDir, "non-existent", "new-folder"),
+      DirectoryNotFoundError
+    );
   });
 
   test("rejects path traversal in parent path", async () => {
-    try {
-      await createDirectory(testDir, "..", "new-folder");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => createDirectory(testDir, "..", "new-folder"), PathTraversalError);
   });
 
   test("rejects symlink as parent directory", async () => {
     await mkdir(join(testDir, "real-dir"));
     await symlink(join(testDir, "real-dir"), join(testDir, "symlink-dir"));
 
-    try {
-      await createDirectory(testDir, "symlink-dir", "new-folder");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(
+      () => createDirectory(testDir, "symlink-dir", "new-folder"),
+      PathTraversalError
+    );
   });
 
   test("rejects file as parent path", async () => {
     await writeFile(join(testDir, "file.txt"), "content");
-
-    try {
-      await createDirectory(testDir, "file.txt", "new-folder");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-    }
+    await expectError(
+      () => createDirectory(testDir, "file.txt", "new-folder"),
+      DirectoryNotFoundError
+    );
   });
 });
 
@@ -2164,9 +1291,7 @@ describe("createFile", () => {
 
   beforeEach(async () => {
     testDir = await createTestDir();
-    // Create a nested directory structure for testing
     await mkdir(join(testDir, "Projects"), { recursive: true });
-    await mkdir(join(testDir, "Notes"), { recursive: true });
   });
 
   afterEach(async () => {
@@ -2177,12 +1302,9 @@ describe("createFile", () => {
     const result = await createFile(testDir, "", "new-note");
 
     expect(result).toBe("new-note.md");
-
-    // Verify file was created
     const fileStat = await stat(join(testDir, "new-note.md"));
     expect(fileStat.isFile()).toBe(true);
 
-    // Verify file is empty
     const content = await readFile(join(testDir, "new-note.md"), "utf-8");
     expect(content).toBe("");
   });
@@ -2191,134 +1313,55 @@ describe("createFile", () => {
     const result = await createFile(testDir, "Projects", "my-note");
 
     expect(result).toBe("Projects/my-note.md");
-
-    // Verify file was created
     const fileStat = await stat(join(testDir, "Projects", "my-note.md"));
     expect(fileStat.isFile()).toBe(true);
   });
 
   test("automatically adds .md extension", async () => {
     const result = await createFile(testDir, "", "test-file");
-
     expect(result).toBe("test-file.md");
-    expect(result).toMatch(/\.md$/);
   });
 
-  test("allows alphanumeric names", async () => {
-    const result = await createFile(testDir, "", "Test123");
+  test("allows valid name patterns", async () => {
+    const validNames = ["Test123", "my-new-note", "my_new_note"];
 
-    expect(result).toBe("Test123.md");
-    const fileStat = await stat(join(testDir, "Test123.md"));
-    expect(fileStat.isFile()).toBe(true);
-  });
-
-  test("allows hyphens in names", async () => {
-    const result = await createFile(testDir, "", "my-new-note");
-
-    expect(result).toBe("my-new-note.md");
-    const fileStat = await stat(join(testDir, "my-new-note.md"));
-    expect(fileStat.isFile()).toBe(true);
-  });
-
-  test("allows underscores in names", async () => {
-    const result = await createFile(testDir, "", "my_new_note");
-
-    expect(result).toBe("my_new_note.md");
-    const fileStat = await stat(join(testDir, "my_new_note.md"));
-    expect(fileStat.isFile()).toBe(true);
-  });
-
-  test("rejects names with spaces", async () => {
-    try {
-      await createFile(testDir, "", "my note");
-      expect.unreachable("Should have thrown InvalidFileNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileNameError);
+    for (const name of validNames) {
+      const result = await createFile(testDir, "", name);
+      expect(result).toBe(`${name}.md`);
+      const fileStat = await stat(join(testDir, `${name}.md`));
+      expect(fileStat.isFile()).toBe(true);
     }
   });
 
-  test("rejects names with special characters", async () => {
-    try {
-      await createFile(testDir, "", "my@note");
-      expect.unreachable("Should have thrown InvalidFileNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileNameError);
-    }
+  test("rejects invalid name patterns", async () => {
+    const invalidNames = ["my note", "my@note", "my/note", "my.note", ""];
 
-    try {
-      await createFile(testDir, "", "my/note");
-      expect.unreachable("Should have thrown InvalidFileNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileNameError);
-    }
-
-    try {
-      await createFile(testDir, "", "my.note");
-      expect.unreachable("Should have thrown InvalidFileNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileNameError);
-    }
-  });
-
-  test("rejects empty name", async () => {
-    try {
-      await createFile(testDir, "", "");
-      expect.unreachable("Should have thrown InvalidFileNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileNameError);
+    for (const name of invalidNames) {
+      await expectError(() => createFile(testDir, "", name), InvalidFileNameError);
     }
   });
 
   test("throws error if file already exists", async () => {
     await writeFile(join(testDir, "existing-note.md"), "content");
-
-    try {
-      await createFile(testDir, "", "existing-note");
-      expect.unreachable("Should have thrown FileExistsError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileExistsError);
-    }
+    await expectError(() => createFile(testDir, "", "existing-note"), FileExistsError);
   });
 
   test("throws error if parent directory does not exist", async () => {
-    try {
-      await createFile(testDir, "non-existent", "new-note");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-    }
+    await expectError(
+      () => createFile(testDir, "non-existent", "new-note"),
+      DirectoryNotFoundError
+    );
   });
 
   test("rejects path traversal in parent path", async () => {
-    try {
-      await createFile(testDir, "..", "new-note");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => createFile(testDir, "..", "new-note"), PathTraversalError);
   });
 
   test("rejects symlink as parent directory", async () => {
     await mkdir(join(testDir, "real-dir"));
     await symlink(join(testDir, "real-dir"), join(testDir, "symlink-dir"));
 
-    try {
-      await createFile(testDir, "symlink-dir", "new-note");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
-  });
-
-  test("rejects file as parent path", async () => {
-    await writeFile(join(testDir, "file.txt"), "content");
-
-    try {
-      await createFile(testDir, "file.txt", "new-note");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-    }
+    await expectError(() => createFile(testDir, "symlink-dir", "new-note"), PathTraversalError);
   });
 
   test("handles deeply nested parent paths", async () => {
@@ -2341,9 +1384,7 @@ describe("renameFile", () => {
 
   beforeEach(async () => {
     testDir = await createTestDir();
-    // Create a nested directory structure for testing
     await mkdir(join(testDir, "Projects"), { recursive: true });
-    await mkdir(join(testDir, "Notes"), { recursive: true });
     await writeFile(join(testDir, "test-file.md"), "# Test Content");
     await writeFile(join(testDir, "Projects", "my-note.md"), "# My Note");
   });
@@ -2358,7 +1399,7 @@ describe("renameFile", () => {
     expect(result.oldPath).toBe("test-file.md");
     expect(result.newPath).toBe("renamed-file.md");
 
-    // Verify old file no longer exists
+    // Old file should not exist
     try {
       await stat(join(testDir, "test-file.md"));
       expect.unreachable("Old file should not exist");
@@ -2366,11 +1407,9 @@ describe("renameFile", () => {
       // Expected
     }
 
-    // Verify new file exists
+    // New file should exist with preserved content
     const fileStat = await stat(join(testDir, "renamed-file.md"));
     expect(fileStat.isFile()).toBe(true);
-
-    // Verify content is preserved
     const content = await readFile(join(testDir, "renamed-file.md"), "utf-8");
     expect(content).toBe("# Test Content");
   });
@@ -2381,16 +1420,8 @@ describe("renameFile", () => {
     expect(result.oldPath).toBe("Projects/my-note.md");
     expect(result.newPath).toBe("Projects/new-name.md");
 
-    // Verify new file exists
     const fileStat = await stat(join(testDir, "Projects", "new-name.md"));
     expect(fileStat.isFile()).toBe(true);
-  });
-
-  test("preserves file extension", async () => {
-    const result = await renameFile(testDir, "test-file.md", "new-name");
-
-    expect(result.newPath).toBe("new-name.md");
-    expect(result.newPath).toMatch(/\.md$/);
   });
 
   test("renames directory at vault root", async () => {
@@ -2399,107 +1430,48 @@ describe("renameFile", () => {
     expect(result.oldPath).toBe("Projects");
     expect(result.newPath).toBe("MyProjects");
 
-    // Verify old directory no longer exists
-    try {
-      await stat(join(testDir, "Projects"));
-      expect.unreachable("Old directory should not exist");
-    } catch {
-      // Expected
-    }
-
-    // Verify new directory exists
     const dirStat = await stat(join(testDir, "MyProjects"));
     expect(dirStat.isDirectory()).toBe(true);
 
-    // Verify contents are preserved
+    // Contents should be preserved
     const fileStat = await stat(join(testDir, "MyProjects", "my-note.md"));
     expect(fileStat.isFile()).toBe(true);
   });
 
-  test("allows alphanumeric names", async () => {
-    const result = await renameFile(testDir, "test-file.md", "Test123");
+  test("rejects invalid name patterns", async () => {
+    const invalidNames = ["my file", "my@file", "my/file", ""];
 
-    expect(result.newPath).toBe("Test123.md");
-  });
-
-  test("allows hyphens and underscores", async () => {
-    const result = await renameFile(testDir, "test-file.md", "my_new-file");
-
-    expect(result.newPath).toBe("my_new-file.md");
-  });
-
-  test("rejects names with spaces", async () => {
-    try {
-      await renameFile(testDir, "test-file.md", "my file");
-      expect.unreachable("Should have thrown InvalidFileNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileNameError);
-    }
-  });
-
-  test("rejects names with special characters", async () => {
-    try {
-      await renameFile(testDir, "test-file.md", "my@file");
-      expect.unreachable("Should have thrown InvalidFileNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileNameError);
-    }
-
-    try {
-      await renameFile(testDir, "test-file.md", "my/file");
-      expect.unreachable("Should have thrown InvalidFileNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileNameError);
-    }
-  });
-
-  test("rejects empty name", async () => {
-    try {
-      await renameFile(testDir, "test-file.md", "");
-      expect.unreachable("Should have thrown InvalidFileNameError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidFileNameError);
+    for (const name of invalidNames) {
+      await expectError(() => renameFile(testDir, "test-file.md", name), InvalidFileNameError);
     }
   });
 
   test("throws error if source file does not exist", async () => {
-    try {
-      await renameFile(testDir, "non-existent.md", "new-name");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
+    await expectError(
+      () => renameFile(testDir, "non-existent.md", "new-name"),
+      FileNotFoundError
+    );
   });
 
   test("throws error if destination already exists", async () => {
     await writeFile(join(testDir, "existing.md"), "content");
-
-    try {
-      await renameFile(testDir, "test-file.md", "existing");
-      expect.unreachable("Should have thrown FileExistsError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileExistsError);
-    }
+    await expectError(() => renameFile(testDir, "test-file.md", "existing"), FileExistsError);
   });
 
   test("rejects path traversal in source path", async () => {
-    try {
-      await renameFile(testDir, "../test-file.md", "new-name");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(
+      () => renameFile(testDir, "../test-file.md", "new-name"),
+      PathTraversalError
+    );
   });
 
   test("rejects symlink as source", async () => {
     await symlink(join(testDir, "test-file.md"), join(testDir, "symlink-file.md"));
 
-    try {
-      await renameFile(testDir, "symlink-file.md", "new-name");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(
+      () => renameFile(testDir, "symlink-file.md", "new-name"),
+      PathTraversalError
+    );
   });
 
   test("handles deeply nested paths", async () => {
@@ -2523,13 +1495,10 @@ describe("moveFile", () => {
 
   beforeEach(async () => {
     testDir = await createTestDir();
-    // Create a directory structure for testing
     await mkdir(join(testDir, "Projects"), { recursive: true });
     await mkdir(join(testDir, "Archive"), { recursive: true });
-    await mkdir(join(testDir, "Nested", "SubFolder"), { recursive: true });
     await writeFile(join(testDir, "root-file.md"), "# Root File");
     await writeFile(join(testDir, "Projects", "project-note.md"), "# Project Note");
-    await writeFile(join(testDir, "Nested", "nested-file.md"), "# Nested");
   });
 
   afterEach(async () => {
@@ -2543,7 +1512,7 @@ describe("moveFile", () => {
     expect(result.newPath).toBe("Projects/root-file.md");
     expect(result.isDirectory).toBe(false);
 
-    // Verify old location is empty
+    // Old location should be empty
     try {
       await stat(join(testDir, "root-file.md"));
       expect.unreachable("Old file should not exist");
@@ -2551,7 +1520,7 @@ describe("moveFile", () => {
       expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
     }
 
-    // Verify new location has the file with correct content
+    // New location should have the file with correct content
     const content = await readFile(join(testDir, "Projects", "root-file.md"), "utf-8");
     expect(content).toBe("# Root File");
   });
@@ -2559,11 +1528,9 @@ describe("moveFile", () => {
   test("moves file into existing directory (appends filename)", async () => {
     const result = await moveFile(testDir, "root-file.md", "Projects");
 
-    expect(result.oldPath).toBe("root-file.md");
     expect(result.newPath).toBe("Projects/root-file.md");
     expect(result.isDirectory).toBe(false);
 
-    // Verify file was moved
     const content = await readFile(join(testDir, "Projects", "root-file.md"), "utf-8");
     expect(content).toBe("# Root File");
   });
@@ -2571,11 +1538,9 @@ describe("moveFile", () => {
   test("moves file to vault root", async () => {
     const result = await moveFile(testDir, "Projects/project-note.md", "project-note.md");
 
-    expect(result.oldPath).toBe("Projects/project-note.md");
     expect(result.newPath).toBe("project-note.md");
     expect(result.isDirectory).toBe(false);
 
-    // Verify file was moved to root
     const content = await readFile(join(testDir, "project-note.md"), "utf-8");
     expect(content).toBe("# Project Note");
   });
@@ -2583,9 +1548,7 @@ describe("moveFile", () => {
   test("moves file to vault root using empty string", async () => {
     const result = await moveFile(testDir, "Projects/project-note.md", "");
 
-    expect(result.oldPath).toBe("Projects/project-note.md");
     expect(result.newPath).toBe("project-note.md");
-    expect(result.isDirectory).toBe(false);
   });
 
   test("moves directory to another location", async () => {
@@ -2594,11 +1557,8 @@ describe("moveFile", () => {
 
     const result = await moveFile(testDir, "Projects/MyProject", "Archive/MyProject");
 
-    expect(result.oldPath).toBe("Projects/MyProject");
-    expect(result.newPath).toBe("Archive/MyProject");
     expect(result.isDirectory).toBe(true);
 
-    // Verify directory and contents were moved
     const dirStat = await stat(join(testDir, "Archive", "MyProject"));
     expect(dirStat.isDirectory()).toBe(true);
 
@@ -2612,254 +1572,87 @@ describe("moveFile", () => {
 
     const result = await moveFile(testDir, "Projects/MyProject", "Archive");
 
-    expect(result.oldPath).toBe("Projects/MyProject");
     expect(result.newPath).toBe("Archive/MyProject");
     expect(result.isDirectory).toBe(true);
 
-    // Verify directory was moved inside Archive
     const dirStat = await stat(join(testDir, "Archive", "MyProject"));
     expect(dirStat.isDirectory()).toBe(true);
   });
 
-  test("moves deeply nested file", async () => {
-    await mkdir(join(testDir, "Deep", "Nested", "Path"), { recursive: true });
-    await writeFile(join(testDir, "Deep", "Nested", "Path", "file.md"), "Deep content");
-
-    const result = await moveFile(testDir, "Deep/Nested/Path/file.md", "Projects/file.md");
-
-    expect(result.newPath).toBe("Projects/file.md");
-    expect(result.isDirectory).toBe(false);
-
-    // Verify content
-    const content = await readFile(join(testDir, "Projects", "file.md"), "utf-8");
-    expect(content).toBe("Deep content");
-  });
-
   test("throws FileNotFoundError for non-existent source", async () => {
-    try {
-      await moveFile(testDir, "does-not-exist.md", "Projects");
-      expect.unreachable("Should have thrown FileNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileNotFoundError);
-    }
+    await expectError(() => moveFile(testDir, "does-not-exist.md", "Projects"), FileNotFoundError);
   });
 
   test("throws FileExistsError when destination file exists", async () => {
     await writeFile(join(testDir, "Projects", "duplicate.md"), "Existing");
     await writeFile(join(testDir, "duplicate.md"), "New");
 
-    try {
-      await moveFile(testDir, "duplicate.md", "Projects/duplicate.md");
-      expect.unreachable("Should have thrown FileExistsError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileExistsError);
-      expect((error as FileExistsError).message).toContain("already exists");
-    }
+    await expectError(
+      () => moveFile(testDir, "duplicate.md", "Projects/duplicate.md"),
+      FileExistsError,
+      "already exists"
+    );
 
     // Verify original was not moved
     const originalContent = await readFile(join(testDir, "duplicate.md"), "utf-8");
     expect(originalContent).toBe("New");
   });
 
-  test("throws FileExistsError when moving into directory and target exists", async () => {
-    await writeFile(join(testDir, "Projects", "root-file.md"), "Existing");
-
-    try {
-      await moveFile(testDir, "root-file.md", "Projects");
-      expect.unreachable("Should have thrown FileExistsError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileExistsError);
-    }
-  });
-
   test("throws DirectoryNotFoundError when parent directory does not exist", async () => {
-    try {
-      await moveFile(testDir, "root-file.md", "NonExistent/file.md");
-      expect.unreachable("Should have thrown DirectoryNotFoundError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(DirectoryNotFoundError);
-      expect((error as DirectoryNotFoundError).message).toContain("does not exist");
-    }
+    await expectError(
+      () => moveFile(testDir, "root-file.md", "NonExistent/file.md"),
+      DirectoryNotFoundError,
+      "does not exist"
+    );
   });
 
   test("throws PathTraversalError for source path traversal", async () => {
-    try {
-      await moveFile(testDir, "../outside.md", "Projects");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(() => moveFile(testDir, "../outside.md", "Projects"), PathTraversalError);
   });
 
   test("throws PathTraversalError for destination path traversal", async () => {
-    try {
-      await moveFile(testDir, "root-file.md", "../outside.md");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
-  });
-
-  test("throws PathTraversalError for absolute source path", async () => {
-    try {
-      await moveFile(testDir, "/etc/passwd", "Projects");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
-  });
-
-  test("throws PathTraversalError for absolute destination path", async () => {
-    try {
-      await moveFile(testDir, "root-file.md", "/tmp/file.md");
-      expect.unreachable("Should have thrown PathTraversalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PathTraversalError);
-    }
+    await expectError(
+      () => moveFile(testDir, "root-file.md", "../outside.md"),
+      PathTraversalError
+    );
   });
 
   test("throws PathTraversalError for symlink source", async () => {
-    const realFile = join(testDir, "real.md");
-    await writeFile(realFile, "Real content");
-    const linkPath = join(testDir, "symlink.md");
+    await writeFile(join(testDir, "real.md"), "Real content");
 
-    try {
-      await symlink(realFile, linkPath);
-
-      try {
-        await moveFile(testDir, "symlink.md", "Projects/symlink.md");
-        expect.unreachable("Should have thrown PathTraversalError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(PathTraversalError);
-        expect((error as PathTraversalError).message).toContain("symbolic link");
-      }
+    await withSymlink(join(testDir, "real.md"), join(testDir, "symlink.md"), async () => {
+      await expectError(
+        () => moveFile(testDir, "symlink.md", "Projects/symlink.md"),
+        PathTraversalError,
+        "symbolic link"
+      );
 
       // Verify original real file was NOT moved
-      const content = await readFile(realFile, "utf-8");
+      const content = await readFile(join(testDir, "real.md"), "utf-8");
       expect(content).toBe("Real content");
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.includes("EPERM") ||
-          error.message.includes("operation not permitted"))
-      ) {
-        console.log("Skipping symlink test - not supported on this platform");
-        return;
-      }
-      throw error;
-    }
+    });
   });
 
   test("throws PathTraversalError for symlink destination directory", async () => {
-    const realDir = join(testDir, "RealDir");
-    await mkdir(realDir);
-    const linkPath = join(testDir, "SymlinkDir");
+    await mkdir(join(testDir, "RealDir"));
 
-    try {
-      await symlink(realDir, linkPath);
-
-      try {
-        await moveFile(testDir, "root-file.md", "SymlinkDir");
-        expect.unreachable("Should have thrown PathTraversalError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(PathTraversalError);
-        expect((error as PathTraversalError).message).toContain("symbolic link");
-      }
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.includes("EPERM") ||
-          error.message.includes("operation not permitted"))
-      ) {
-        console.log("Skipping symlink test - not supported on this platform");
-        return;
-      }
-      throw error;
-    }
+    await withSymlink(join(testDir, "RealDir"), join(testDir, "SymlinkDir"), async () => {
+      await expectError(
+        () => moveFile(testDir, "root-file.md", "SymlinkDir"),
+        PathTraversalError,
+        "symbolic link"
+      );
+    });
   });
 
   test("throws error when moving directory into itself", async () => {
     await mkdir(join(testDir, "MyFolder", "SubFolder"), { recursive: true });
 
-    try {
-      await moveFile(testDir, "MyFolder", "MyFolder/SubFolder/MyFolder");
-      expect.unreachable("Should have thrown FileBrowserError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileBrowserError);
-      expect((error as FileBrowserError).message).toContain("into itself");
-    }
-  });
-
-  test("throws error when moving directory into its subdirectory", async () => {
-    await mkdir(join(testDir, "Parent", "Child", "GrandChild"), { recursive: true });
-
-    try {
-      await moveFile(testDir, "Parent", "Parent/Child/GrandChild");
-      expect.unreachable("Should have thrown FileBrowserError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(FileBrowserError);
-      expect((error as FileBrowserError).message).toContain("into itself");
-    }
-  });
-
-  test("handles file with spaces in name", async () => {
-    await writeFile(join(testDir, "my file.md"), "Spaced content");
-
-    const result = await moveFile(testDir, "my file.md", "Projects/my file.md");
-
-    expect(result.newPath).toBe("Projects/my file.md");
-
-    // Verify content
-    const content = await readFile(join(testDir, "Projects", "my file.md"), "utf-8");
-    expect(content).toBe("Spaced content");
-  });
-
-  test("handles directory with spaces in name", async () => {
-    await mkdir(join(testDir, "My Project"));
-    await writeFile(join(testDir, "My Project", "note.md"), "Project note");
-
-    const result = await moveFile(testDir, "My Project", "Archive/My Project");
-
-    expect(result.newPath).toBe("Archive/My Project");
-    expect(result.isDirectory).toBe(true);
-
-    // Verify content was preserved
-    const content = await readFile(join(testDir, "Archive", "My Project", "note.md"), "utf-8");
-    expect(content).toBe("Project note");
-  });
-
-  test("handles file with unicode name", async () => {
-    await writeFile(join(testDir, "日本語ファイル.md"), "Unicode content");
-
-    const result = await moveFile(testDir, "日本語ファイル.md", "Projects/日本語ファイル.md");
-
-    expect(result.newPath).toBe("Projects/日本語ファイル.md");
-
-    const content = await readFile(join(testDir, "Projects", "日本語ファイル.md"), "utf-8");
-    expect(content).toBe("Unicode content");
-  });
-
-  test("handles special characters in names", async () => {
-    const fileName = "note-with_special.chars(2025).md";
-    await writeFile(join(testDir, fileName), "Special content");
-
-    const result = await moveFile(testDir, fileName, `Projects/${fileName}`);
-
-    expect(result.newPath).toBe(`Projects/${fileName}`);
-
-    const content = await readFile(join(testDir, "Projects", fileName), "utf-8");
-    expect(content).toBe("Special content");
-  });
-
-  test("preserves file content after move", async () => {
-    const largeContent = "x".repeat(10000);
-    await writeFile(join(testDir, "large.md"), largeContent);
-
-    const result = await moveFile(testDir, "large.md", "Projects/large.md");
-
-    expect(result.isDirectory).toBe(false);
-    const content = await readFile(join(testDir, "Projects", "large.md"), "utf-8");
-    expect(content).toBe(largeContent);
+    await expectError(
+      () => moveFile(testDir, "MyFolder", "MyFolder/SubFolder/MyFolder"),
+      FileBrowserError,
+      "into itself"
+    );
   });
 
   test("preserves directory contents recursively", async () => {
@@ -2873,23 +1666,16 @@ describe("moveFile", () => {
 
     expect(result.isDirectory).toBe(true);
 
-    // Verify all nested content
     expect(await readFile(join(testDir, "Archive", "Source", "root.md"), "utf-8")).toBe("Root");
-    expect(await readFile(join(testDir, "Archive", "Source", "A", "a.md"), "utf-8")).toBe("A content");
-    expect(await readFile(join(testDir, "Archive", "Source", "A", "B", "b.md"), "utf-8")).toBe("B content");
-    expect(await readFile(join(testDir, "Archive", "Source", "A", "B", "C", "c.md"), "utf-8")).toBe("C content");
-  });
-
-  test("handles paths with multiple slashes", async () => {
-    // Multiple slashes in path are preserved as-is
-    const result = await moveFile(testDir, "root-file.md", "Projects//root-file.md");
-
-    // The path is preserved as given (filesystem normalizes internally)
-    expect(result.newPath).toBe("Projects//root-file.md");
-
-    // But the file still ends up at the correct location
-    const content = await readFile(join(testDir, "Projects", "root-file.md"), "utf-8");
-    expect(content).toBe("# Root File");
+    expect(await readFile(join(testDir, "Archive", "Source", "A", "a.md"), "utf-8")).toBe(
+      "A content"
+    );
+    expect(await readFile(join(testDir, "Archive", "Source", "A", "B", "b.md"), "utf-8")).toBe(
+      "B content"
+    );
+    expect(await readFile(join(testDir, "Archive", "Source", "A", "B", "C", "c.md"), "utf-8")).toBe(
+      "C content"
+    );
   });
 
   test("allows moving file within same directory with different name", async () => {

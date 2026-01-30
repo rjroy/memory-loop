@@ -27,7 +27,7 @@ import {
   afterEach,
   mock,
 } from "bun:test";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import type { ServerMessage, ClientMessage } from "@memory-loop/shared";
 import { PairWritingEditor } from "../PairWritingEditor";
 import type { EditorContextMenuProps } from "../../shared/EditorContextMenu";
@@ -198,7 +198,9 @@ describe("mode transitions", () => {
 
     // Press 'i' to enter insert mode
     const textarea = getTextarea();
-    fireEvent.keyDown(textarea, { key: "i" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "i" });
+    });
 
     // Should now show insert mode
     expect(screen.getByText("-- INSERT --")).toBeDefined();
@@ -212,11 +214,15 @@ describe("mode transitions", () => {
     const textarea = getTextarea();
 
     // Enter insert mode
-    fireEvent.keyDown(textarea, { key: "i" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "i" });
+    });
     expect(screen.getByText("-- INSERT --")).toBeDefined();
 
     // Press Escape to return to normal mode
-    fireEvent.keyDown(textarea, { key: "Escape" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "Escape" });
+    });
     expect(screen.getByText("-- NORMAL --")).toBeDefined();
   });
 
@@ -230,7 +236,9 @@ describe("mode transitions", () => {
 
     // Enter insert mode
     const textarea = getTextarea();
-    fireEvent.keyDown(textarea, { key: "i" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "i" });
+    });
 
     // Cursor should be hidden in insert mode
     expect(screen.queryByTestId("vi-cursor")).toBeNull();
@@ -244,10 +252,14 @@ describe("mode transitions", () => {
     const textarea = getTextarea();
 
     // Enter and exit insert mode
-    fireEvent.keyDown(textarea, { key: "i" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "i" });
+    });
     expect(screen.queryByTestId("vi-cursor")).toBeNull();
 
-    fireEvent.keyDown(textarea, { key: "Escape" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "Escape" });
+    });
     expect(screen.getByTestId("vi-cursor")).toBeDefined();
   });
 });
@@ -263,7 +275,9 @@ describe("command mode", () => {
     render(<PairWritingEditor {...props} viModeEnabled={true} />);
 
     const textarea = getTextarea();
-    fireEvent.keyDown(textarea, { key: ":" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: ":" });
+    });
 
     // Should show command mode indicator
     expect(screen.getByText(/-- COMMAND --/)).toBeDefined();
@@ -275,7 +289,9 @@ describe("command mode", () => {
     render(<PairWritingEditor {...props} viModeEnabled={true} />);
 
     const textarea = getTextarea();
-    fireEvent.keyDown(textarea, { key: ":" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: ":" });
+    });
 
     // Command line should be visible
     const commandLine = screen.getByTestId("vi-command-line");
@@ -299,11 +315,15 @@ describe("command mode", () => {
     const textarea = getTextarea();
 
     // Enter command mode
-    fireEvent.keyDown(textarea, { key: ":" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: ":" });
+    });
     expect(screen.getByTestId("vi-command-line")).toBeDefined();
 
     // Press Escape
-    fireEvent.keyDown(textarea, { key: "Escape" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "Escape" });
+    });
 
     // Should be back in normal mode, command line hidden
     expect(screen.queryByTestId("vi-command-line")).toBeNull();
@@ -324,9 +344,10 @@ describe("ex command callbacks", () => {
     const textarea = getTextarea();
 
     // Enter command mode and type :w<Enter>
-    fireEvent.keyDown(textarea, { key: ":" });
-    fireEvent.keyDown(textarea, { key: "w" });
-    fireEvent.keyDown(textarea, { key: "Enter" });
+    // Each keypress needs separate act() because state must update between
+    void act(() => fireEvent.keyDown(textarea, { key: ":" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "w" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "Enter" }));
 
     expect(props.onSave).toHaveBeenCalled();
   });
@@ -339,10 +360,10 @@ describe("ex command callbacks", () => {
     const textarea = getTextarea();
 
     // Enter command mode and type :wq<Enter>
-    fireEvent.keyDown(textarea, { key: ":" });
-    fireEvent.keyDown(textarea, { key: "w" });
-    fireEvent.keyDown(textarea, { key: "q" });
-    fireEvent.keyDown(textarea, { key: "Enter" });
+    void act(() => fireEvent.keyDown(textarea, { key: ":" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "w" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "q" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "Enter" }));
 
     expect(props.onSave).toHaveBeenCalled();
     expect(props.onExit).toHaveBeenCalled();
@@ -356,9 +377,9 @@ describe("ex command callbacks", () => {
     const textarea = getTextarea();
 
     // Enter command mode and type :q<Enter>
-    fireEvent.keyDown(textarea, { key: ":" });
-    fireEvent.keyDown(textarea, { key: "q" });
-    fireEvent.keyDown(textarea, { key: "Enter" });
+    void act(() => fireEvent.keyDown(textarea, { key: ":" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "q" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "Enter" }));
 
     expect(props.onQuitWithUnsaved).toHaveBeenCalled();
   });
@@ -371,10 +392,10 @@ describe("ex command callbacks", () => {
     const textarea = getTextarea();
 
     // Enter command mode and type :q!<Enter>
-    fireEvent.keyDown(textarea, { key: ":" });
-    fireEvent.keyDown(textarea, { key: "q" });
-    fireEvent.keyDown(textarea, { key: "!" });
-    fireEvent.keyDown(textarea, { key: "Enter" });
+    void act(() => fireEvent.keyDown(textarea, { key: ":" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "q" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "!" }));
+    void act(() => fireEvent.keyDown(textarea, { key: "Enter" }));
 
     expect(props.onExit).toHaveBeenCalled();
   });
@@ -393,11 +414,15 @@ describe("content change propagation", () => {
     const textarea = getTextarea();
 
     // Position cursor on first line
-    textarea.setSelectionRange(5, 5);
-    fireEvent.select(textarea);
+    act(() => {
+      textarea.setSelectionRange(5, 5);
+      fireEvent.select(textarea);
+    });
 
     // Press 'o' to open new line below
-    fireEvent.keyDown(textarea, { key: "o" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "o" });
+    });
 
     // Content should have been updated with new line
     expect(props.onContentChange).toHaveBeenCalled();
@@ -411,11 +436,15 @@ describe("content change propagation", () => {
     const textarea = getTextarea();
 
     // Position cursor at start
-    textarea.setSelectionRange(0, 0);
-    fireEvent.select(textarea);
+    act(() => {
+      textarea.setSelectionRange(0, 0);
+      fireEvent.select(textarea);
+    });
 
     // Press 'x' to delete character
-    fireEvent.keyDown(textarea, { key: "x" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "x" });
+    });
 
     // Content should have been updated
     expect(props.onContentChange).toHaveBeenCalled();
@@ -444,7 +473,9 @@ describe("CSS class application", () => {
     render(<PairWritingEditor {...props} viModeEnabled={true} />);
 
     const textarea = getTextarea();
-    fireEvent.keyDown(textarea, { key: "i" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "i" });
+    });
 
     expect(textarea.classList.contains("pair-writing-editor__textarea--vi-normal")).toBe(
       false
@@ -457,7 +488,9 @@ describe("CSS class application", () => {
     render(<PairWritingEditor {...props} viModeEnabled={true} />);
 
     const textarea = getTextarea();
-    fireEvent.keyDown(textarea, { key: ":" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: ":" });
+    });
 
     expect(textarea.classList.contains("pair-writing-editor__textarea--vi-command")).toBe(
       true
@@ -492,11 +525,15 @@ describe("movement commands update cursor", () => {
     const textarea = getTextarea();
 
     // Start at position 0
-    textarea.setSelectionRange(0, 0);
-    fireEvent.select(textarea);
+    act(() => {
+      textarea.setSelectionRange(0, 0);
+      fireEvent.select(textarea);
+    });
 
     // Move right with 'l'
-    fireEvent.keyDown(textarea, { key: "l" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "l" });
+    });
 
     // Cursor should have moved
     expect(textarea.selectionStart).toBe(1);
@@ -510,11 +547,15 @@ describe("movement commands update cursor", () => {
     const textarea = getTextarea();
 
     // Start at position 5
-    textarea.setSelectionRange(5, 5);
-    fireEvent.select(textarea);
+    act(() => {
+      textarea.setSelectionRange(5, 5);
+      fireEvent.select(textarea);
+    });
 
     // Move left with 'h'
-    fireEvent.keyDown(textarea, { key: "h" });
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "h" });
+    });
 
     // Cursor should have moved
     expect(textarea.selectionStart).toBe(4);
@@ -534,7 +575,9 @@ describe("normal input when vi mode disabled", () => {
     const textarea = getTextarea();
 
     // Type characters - they should be inserted normally
-    fireEvent.change(textarea, { target: { value: "Hello world\nSecond line\nThird linex" } });
+    act(() => {
+      fireEvent.change(textarea, { target: { value: "Hello world\nSecond line\nThird linex" } });
+    });
 
     // Content should be updated
     expect(textarea.value).toBe("Hello world\nSecond line\nThird linex");
@@ -551,7 +594,9 @@ describe("normal input when vi mode disabled", () => {
     const textarea = getTextarea();
 
     // Type characters - they should be inserted normally even with viModeEnabled
-    fireEvent.change(textarea, { target: { value: "Modified content" } });
+    act(() => {
+      fireEvent.change(textarea, { target: { value: "Modified content" } });
+    });
 
     expect(textarea.value).toBe("Modified content");
     expect(props.onContentChange).toHaveBeenCalledWith("Modified content");

@@ -32,9 +32,6 @@ describe("ViCommandLine - visibility", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -46,9 +43,6 @@ describe("ViCommandLine - visibility", () => {
       <ViCommandLine
         visible={false}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -60,9 +54,6 @@ describe("ViCommandLine - visibility", () => {
       <ViCommandLine
         visible={false}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -80,9 +71,6 @@ describe("ViCommandLine - colon prefix", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -94,9 +82,6 @@ describe("ViCommandLine - colon prefix", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -115,9 +100,6 @@ describe("ViCommandLine - command text display", () => {
       <ViCommandLine
         visible={true}
         value="wq"
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -129,9 +111,6 @@ describe("ViCommandLine - command text display", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -148,9 +127,6 @@ describe("ViCommandLine - command text display", () => {
       <ViCommandLine
         visible={true}
         value="w"
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -160,9 +136,6 @@ describe("ViCommandLine - command text display", () => {
       <ViCommandLine
         visible={true}
         value="wq"
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -180,9 +153,6 @@ describe("ViCommandLine - cursor indicator", () => {
       <ViCommandLine
         visible={true}
         value="w"
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -197,9 +167,6 @@ describe("ViCommandLine - cursor indicator", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -219,9 +186,6 @@ describe("ViCommandLine - accessibility", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -234,9 +198,6 @@ describe("ViCommandLine - accessibility", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -249,9 +210,6 @@ describe("ViCommandLine - accessibility", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -270,9 +228,6 @@ describe("ViCommandLine - CSS classes", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -285,9 +240,6 @@ describe("ViCommandLine - CSS classes", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -300,9 +252,6 @@ describe("ViCommandLine - CSS classes", () => {
       <ViCommandLine
         visible={true}
         value="w"
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
@@ -315,64 +264,11 @@ describe("ViCommandLine - CSS classes", () => {
       <ViCommandLine
         visible={true}
         value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
       />
     );
 
     const container = screen.getByTestId("vi-command-line");
     const cursor = container.querySelector(".vi-command-line__cursor");
     expect(cursor?.classList.contains("vi-command-line__cursor")).toBe(true);
-  });
-});
-
-// =============================================================================
-// Props API Tests (kept for compatibility)
-// =============================================================================
-
-describe("ViCommandLine - props API", () => {
-  it("accepts onSubmit prop (handled by useViMode)", () => {
-    // This test just verifies the prop is accepted without errors
-    // The actual submit logic is handled by useViMode through textarea keydown
-    render(
-      <ViCommandLine
-        visible={true}
-        value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
-      />
-    );
-
-    expect(screen.getByTestId("vi-command-line")).toBeDefined();
-  });
-
-  it("accepts onCancel prop (handled by useViMode)", () => {
-    render(
-      <ViCommandLine
-        visible={true}
-        value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
-      />
-    );
-
-    expect(screen.getByTestId("vi-command-line")).toBeDefined();
-  });
-
-  it("accepts onChange prop (handled by useViMode)", () => {
-    render(
-      <ViCommandLine
-        visible={true}
-        value=""
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        onChange={() => {}}
-      />
-    );
-
-    expect(screen.getByTestId("vi-command-line")).toBeDefined();
   });
 });

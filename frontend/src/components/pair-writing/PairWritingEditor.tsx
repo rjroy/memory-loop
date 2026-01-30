@@ -327,17 +327,6 @@ export function PairWritingEditor({
       <ViCommandLine
         visible={viEnabled && viMode === "command" && !isProcessingQuickAction}
         value={commandBuffer}
-        onSubmit={() => {
-          // Command execution is handled by useViMode internally
-          // The onSubmit here is called by the command line when Enter is pressed
-          // but useViMode's handleKeyDown already handles this
-        }}
-        onCancel={() => {
-          // Cancellation is handled by useViMode internally via Escape key
-        }}
-        onChange={() => {
-          // Value changes are handled by useViMode internally
-        }}
       />
 
       {isProcessingQuickAction && (

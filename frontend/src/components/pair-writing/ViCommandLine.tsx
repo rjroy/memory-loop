@@ -21,12 +21,6 @@ export interface ViCommandLineProps {
   visible: boolean;
   /** Current command buffer value (without the leading colon) */
   value: string;
-  /** Called when user submits the command (presses Enter) - handled by useViMode */
-  onSubmit: (command: string) => void;
-  /** Called when user cancels (presses Escape) - handled by useViMode */
-  onCancel: () => void;
-  /** Called when value changes (user types) - handled by useViMode */
-  onChange: (value: string) => void;
 }
 
 /**
@@ -37,9 +31,7 @@ export interface ViCommandLineProps {
  * focus; this is a pure display component.
  *
  * Key events are handled by useViMode through the textarea's onKeyDown,
- * which updates the command buffer. The props onSubmit, onCancel, and
- * onChange are kept for API compatibility but are not used (the actual
- * handling happens in useViMode's handleCommandModeKey).
+ * which updates the command buffer.
  *
  * @example
  * ```tsx
@@ -51,9 +43,6 @@ export interface ViCommandLineProps {
  *     <ViCommandLine
  *       visible={mode === "command"}
  *       value={commandBuffer}
- *       onSubmit={() => {}}
- *       onCancel={() => {}}
- *       onChange={() => {}}
  *     />
  *   </div>
  * );

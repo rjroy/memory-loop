@@ -99,6 +99,11 @@ export function PairWritingEditor({
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // Auto-focus textarea on mount so user can start typing immediately
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
   const { selection } = useTextSelection(textareaRef, content);
 
   // Vi mode integration

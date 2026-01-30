@@ -181,9 +181,9 @@ export function moveCursor(
 /**
  * Scroll the textarea to ensure the cursor is visible.
  *
- * Uses line-based calculation to determine cursor position, then adjusts
- * scrollTop if needed. Includes a margin so scrolling starts before the
- * cursor actually goes off-screen.
+ * Uses a mirror element technique to calculate the actual pixel position
+ * of the cursor, accounting for text wrapping. Then adjusts scrollTop
+ * if the cursor is outside the visible area.
  *
  * @param textarea - The textarea element
  */
@@ -191,32 +191,69 @@ export function scrollCursorIntoView(textarea: HTMLTextAreaElement): void {
   const pos = textarea.selectionStart;
   const text = textarea.value;
 
-  // Get line info to find which line we're on
-  const lineInfo = getLineInfo(text, pos);
-
-  // Get computed line height
+  // Get computed styles
   const computed = window.getComputedStyle(textarea);
   const lineHeight = parseFloat(computed.lineHeight) || 20;
-  const paddingTop = parseFloat(computed.paddingTop) || 0;
 
-  // Calculate the top position of the cursor line
-  const cursorTop = paddingTop + lineInfo.lineNumber * lineHeight;
-  const cursorBottom = cursorTop + lineHeight;
+  // Create mirror element to measure actual cursor position with wrapping
+  const mirror = document.createElement("div");
+  mirror.style.position = "absolute";
+  mirror.style.visibility = "hidden";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.wordWrap = "break-word";
+  mirror.style.overflow = "hidden";
+  mirror.style.left = "-9999px";
+  mirror.style.top = "-9999px";
 
-  // Get the visible area
-  const visibleTop = textarea.scrollTop;
-  const visibleBottom = visibleTop + textarea.clientHeight;
+  // Copy relevant styles from textarea
+  const stylesToCopy = [
+    "font-family", "font-size", "font-weight", "line-height",
+    "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
+    "border-width", "box-sizing", "width", "letter-spacing", "word-spacing"
+  ];
+  for (const prop of stylesToCopy) {
+    mirror.style.setProperty(prop, computed.getPropertyValue(prop));
+  }
 
-  // Margin to start scrolling before cursor goes off-screen
-  const scrollMargin = lineHeight * 3;
+  document.body.appendChild(mirror);
 
-  // Scroll if cursor is approaching edge of visible area
-  if (cursorTop < visibleTop + scrollMargin) {
-    // Cursor is approaching top - scroll to keep margin above cursor
-    textarea.scrollTop = Math.max(0, cursorTop - scrollMargin);
-  } else if (cursorBottom > visibleBottom) {
-    // Cursor is below visible area - scroll down
-    textarea.scrollTop = cursorBottom - textarea.clientHeight;
+  try {
+    // Insert text up to cursor with a marker span
+    const textBefore = text.substring(0, pos);
+    const cursorSpan = document.createElement("span");
+    cursorSpan.textContent = "\u00A0"; // Non-breaking space as marker
+
+    mirror.textContent = "";
+    if (textBefore) {
+      mirror.appendChild(document.createTextNode(textBefore));
+    }
+    mirror.appendChild(cursorSpan);
+
+    // Measure position relative to mirror
+    const mirrorRect = mirror.getBoundingClientRect();
+    const spanRect = cursorSpan.getBoundingClientRect();
+
+    // Cursor position relative to textarea content (not viewport)
+    const cursorTop = spanRect.top - mirrorRect.top;
+    const cursorBottom = cursorTop + lineHeight;
+
+    // Get the visible area
+    const visibleTop = textarea.scrollTop;
+    const visibleBottom = visibleTop + textarea.clientHeight;
+
+    // Margin to start scrolling before cursor goes off-screen
+    const scrollMargin = lineHeight * 2;
+
+    // Scroll if cursor is approaching edge of visible area
+    if (cursorTop < visibleTop + scrollMargin) {
+      // Cursor is approaching top - scroll to keep margin above cursor
+      textarea.scrollTop = Math.max(0, cursorTop - scrollMargin);
+    } else if (cursorBottom > visibleBottom - scrollMargin) {
+      // Cursor is approaching bottom - scroll to keep margin below cursor
+      textarea.scrollTop = cursorBottom - textarea.clientHeight + scrollMargin;
+    }
+  } finally {
+    document.body.removeChild(mirror);
   }
 }
 

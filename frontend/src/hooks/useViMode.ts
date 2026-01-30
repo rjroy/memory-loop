@@ -181,8 +181,9 @@ export function moveCursor(
 /**
  * Scroll the textarea to ensure the cursor is visible.
  *
- * Uses a mirror element technique similar to cursor positioning to calculate
- * where the cursor line is, then adjusts scrollTop if needed.
+ * Uses line-based calculation to determine cursor position, then adjusts
+ * scrollTop if needed. Includes a margin so scrolling starts before the
+ * cursor actually goes off-screen.
  *
  * @param textarea - The textarea element
  */
@@ -206,10 +207,13 @@ export function scrollCursorIntoView(textarea: HTMLTextAreaElement): void {
   const visibleTop = textarea.scrollTop;
   const visibleBottom = visibleTop + textarea.clientHeight;
 
-  // Scroll if cursor is outside visible area
-  if (cursorTop < visibleTop) {
-    // Cursor is above visible area - scroll up
-    textarea.scrollTop = cursorTop;
+  // Margin to start scrolling before cursor goes off-screen
+  const scrollMargin = lineHeight * 3;
+
+  // Scroll if cursor is approaching edge of visible area
+  if (cursorTop < visibleTop + scrollMargin) {
+    // Cursor is approaching top - scroll to keep margin above cursor
+    textarea.scrollTop = Math.max(0, cursorTop - scrollMargin);
   } else if (cursorBottom > visibleBottom) {
     // Cursor is below visible area - scroll down
     textarea.scrollTop = cursorBottom - textarea.clientHeight;

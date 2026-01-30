@@ -376,6 +376,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
                 badges: config.badges ?? v.badges,
                 order: config.order ?? v.order,
                 cardsEnabled: config.cardsEnabled ?? v.cardsEnabled,
+                viMode: config.viMode ?? v.viMode,
               }
             : v
         )

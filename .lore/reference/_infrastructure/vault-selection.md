@@ -1,3 +1,11 @@
+---
+title: Vault Selection Infrastructure
+date: 2026-01-28
+status: current
+tags: [vault, discovery, session, setup-wizard]
+modules: [vault-manager, vault-select, session-manager]
+---
+
 # Infrastructure: Vault Selection
 
 ## What It Does

@@ -1,3 +1,11 @@
+---
+title: Card Generator Infrastructure
+date: 2026-01-28
+status: current
+tags: [spaced-repetition, llm, scheduling, cost-control]
+modules: [card-generator, card-discovery-scheduler]
+---
+
 # Infrastructure: Card Generator
 
 ## What It Does

@@ -1,3 +1,11 @@
+---
+title: Communication Layer Infrastructure
+date: 2026-01-28
+status: current
+tags: [websocket, rest-api, protocol, streaming]
+modules: [websocket-handler, server, protocol]
+---
+
 # Infrastructure: Communication Layer
 
 ## What It Does

@@ -1,3 +1,11 @@
+---
+title: Ground (Home Dashboard) Feature
+date: 2026-01-28
+status: current
+tags: [ground, dashboard, widgets, gctr]
+modules: [home-view, goals-card, health-panel, recent-activity]
+---
+
 # Feature: Ground (Home Dashboard)
 
 ## What It Does

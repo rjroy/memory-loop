@@ -1,3 +1,11 @@
+---
+title: Spaced Repetition Feature
+date: 2026-01-28
+status: current
+tags: [spaced-repetition, sm2, flashcards, review]
+modules: [spaced-repetition-widget, card-manager, sm2-algorithm]
+---
+
 # Feature: Spaced Repetition
 
 ## What It Does

@@ -1,3 +1,11 @@
+---
+title: Extraction Pipeline Infrastructure
+date: 2026-01-28
+status: current
+tags: [extraction, memory, llm, batch-processing]
+modules: [extraction-manager, fact-extractor, memory-writer]
+---
+
 # Infrastructure: Extraction Pipeline
 
 ## What It Does

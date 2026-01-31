@@ -1,3 +1,10 @@
+---
+title: Excavation Index
+date: 2026-01-28
+status: current
+tags: [excavation, index, documentation]
+---
+
 # Excavation Index
 
 **Codebase**: Memory Loop

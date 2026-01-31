@@ -1,3 +1,11 @@
+---
+title: GCTR Mode Transitions
+date: 2026-01-28
+status: current
+tags: [architecture, navigation, state-machine, gctr]
+modules: [frontend-app, session-context]
+---
+
 # Diagram: GCTR Mode Transitions
 
 ## Context

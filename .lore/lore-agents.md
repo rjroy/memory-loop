@@ -1,3 +1,10 @@
+---
+title: Lore Agents Registry
+date: 2026-01-29
+status: current
+tags: [agents, registry, tooling]
+---
+
 # Lore Agents
 
 Specialized agents available for lore-development work in this project.

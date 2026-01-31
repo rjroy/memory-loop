@@ -1,3 +1,11 @@
+---
+title: WebSocket Connection Lifecycle
+date: 2026-01-28
+status: current
+tags: [architecture, websocket, connection, reconnect]
+modules: [websocket-handler, use-websocket]
+---
+
 # Diagram: WebSocket Connection Lifecycle
 
 ## Context

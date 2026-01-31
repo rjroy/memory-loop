@@ -1,3 +1,11 @@
+---
+title: Recall Feature
+date: 2026-01-28
+status: current
+tags: [recall, file-browser, markdown-viewer, search, gctr]
+modules: [browse-mode, file-tree, file-browser]
+---
+
 # Feature: Recall
 
 ## What It Does

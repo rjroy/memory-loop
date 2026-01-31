@@ -436,7 +436,8 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
 
     // On touch devices, Enter always adds a newline (no keyboard shortcut to submit)
     // On desktop, Enter submits and Shift+Enter adds a newline
-    if (e.key === "Enter" && !e.shiftKey && !isTouchDevice) {
+    // When submitting (draft mode), Enter adds newline to prevent premature submission
+    if (e.key === "Enter" && !e.shiftKey && !isTouchDevice && !isSubmitting) {
       e.preventDefault();
       handleSubmit(e);
     }
@@ -565,14 +566,13 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
           />
           <textarea
             ref={inputRef}
-            className={`discussion__input${isFocused ? " discussion__input--expanded" : ""}`}
+            className={`discussion__input${isFocused ? " discussion__input--expanded" : ""}${isSubmitting ? " discussion__input--draft" : ""}`}
             value={input}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder={argumentHintPlaceholder ?? "Explore. Challenge. Refine. Your vault awaits..."}
-            disabled={isSubmitting}
+            placeholder={argumentHintPlaceholder ?? (isSubmitting ? "Your thoughts take shape while the vault responds..." : "Explore. Challenge. Refine. Your vault awaits...")}
             rows={1}
             aria-label="Message input"
           />

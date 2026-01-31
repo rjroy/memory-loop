@@ -157,3 +157,7 @@ When making changes that affect user-facing behavior, update the relevant docs. 
 - Usage docs in `docs/usage/` when tab behavior changes
 - ADRs for significant architectural decisions
 - Reference docs in `.lore/reference/` when features are added or modified
+
+## Critical Lessons
+
+- Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: shared schema, backend config loading, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.

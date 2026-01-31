@@ -39,7 +39,7 @@ Added vi-style modal editing to Pair Writing mode. Implementation includes Norma
 
 1. **Visual components need visual testing**: Unit tests for cursor position calculation passed, but the actual cursor was invisible. For overlay/positioning code, add a manual test checkpoint before declaring the chunk complete.
 
-2. **Trace config changes end-to-end**: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: shared schema, backend config loading, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
+2. **Trace config changes end-to-end**: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: shared schema, backend config loading, frontend initialConfig props (multiple components), reducer cases, and post-save state updates. *(Graduated to project CLAUDE.md)*
 
 3. **Text wrapping breaks line math**: Any calculation involving "line N is at position Y pixels" needs to account for soft wrapping. Use the same measurement technique (mirror element) for both cursor rendering and scroll calculations.
 

@@ -1,3 +1,11 @@
+---
+title: Pair Writing Feature
+date: 2026-01-28
+status: current
+tags: [pair-writing, ai-editing, quick-actions, advisory-actions]
+modules: [pair-writing-mode, pair-writing-editor]
+---
+
 # Feature: Pair Writing
 
 ## What It Does

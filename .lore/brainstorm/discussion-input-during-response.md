@@ -1,6 +1,13 @@
-# Brainstorm: Allowing User Input During AI Response
+---
+title: Allowing User Input During AI Response
+date: 2026-01-28
+status: resolved
+tags: [ux, discussion, streaming, input-handling]
+modules: [frontend-discussion]
+resolution: Draft Mode implemented (PR #436, commit f57134a). Other ideas (full input, queue) not pursued.
+---
 
-**Status**: open
+# Brainstorm: Allowing User Input During AI Response
 
 ## Context
 

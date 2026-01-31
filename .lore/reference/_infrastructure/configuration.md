@@ -1,3 +1,11 @@
+---
+title: Configuration Infrastructure
+date: 2026-01-28
+status: current
+tags: [config, vault-settings, badges, per-vault]
+modules: [vault-config, config-editor-dialog]
+---
+
 # Infrastructure: Configuration
 
 ## What It Does

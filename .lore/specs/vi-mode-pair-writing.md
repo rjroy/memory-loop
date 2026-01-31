@@ -1,3 +1,12 @@
+---
+title: Vi Mode for Pair Writing
+date: 2026-01-29
+status: implemented
+tags: [vi-mode, pair-writing, modal-editing, keyboard, requirements]
+modules: [pair-writing-editor, use-vi-mode, vault-config]
+related: [.lore/research/vi-mode-implementation.md]
+---
+
 # Spec: Vi Mode for Pair Writing
 
 ## Overview

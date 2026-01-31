@@ -1,3 +1,11 @@
+---
+title: Inspiration Feature
+date: 2026-01-28
+status: current
+tags: [inspiration, prompts, quotes, llm-generation]
+modules: [inspiration-manager, inspiration-card]
+---
+
 # Feature: Inspiration
 
 ## What It Does

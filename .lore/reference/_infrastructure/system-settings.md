@@ -1,3 +1,11 @@
+---
+title: System Settings Infrastructure
+date: 2026-01-28
+status: current
+tags: [settings, memory-editor, extraction-prompt, card-generator]
+modules: [settings-dialog, memory-editor]
+---
+
 # Infrastructure: System Settings
 
 ## What It Does

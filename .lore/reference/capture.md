@@ -1,3 +1,11 @@
+---
+title: Capture Feature
+date: 2026-01-28
+status: current
+tags: [capture, daily-notes, meeting-mode, gctr]
+modules: [note-capture, meeting-capture]
+---
+
 # Feature: Capture
 
 ## What It Does

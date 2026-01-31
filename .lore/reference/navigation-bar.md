@@ -1,3 +1,11 @@
+---
+title: Navigation Bar Feature
+date: 2026-01-28
+status: current
+tags: [navigation, gctr, mode-toggle, ui]
+modules: [mode-toggle]
+---
+
 # Feature: Navigation Bar
 
 ## What It Does

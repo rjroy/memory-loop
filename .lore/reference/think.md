@@ -1,3 +1,11 @@
+---
+title: Think Feature
+date: 2026-01-28
+status: current
+tags: [think, ai-conversation, streaming, claude-sdk, gctr]
+modules: [discussion, session-manager, websocket-handler]
+---
+
 # Feature: Think
 
 ## What It Does

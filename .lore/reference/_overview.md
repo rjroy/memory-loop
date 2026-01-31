@@ -1,3 +1,11 @@
+---
+title: Memory Loop System Overview
+date: 2026-01-28
+status: current
+tags: [architecture, gctr, overview, onboarding]
+modules: [backend, frontend, shared]
+---
+
 # Memory Loop: System Overview
 
 ## What It Is

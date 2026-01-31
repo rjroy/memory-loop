@@ -1,3 +1,11 @@
+---
+title: Task List Feature
+date: 2026-01-28
+status: current
+tags: [tasks, checkbox, para, aggregation]
+modules: [task-list, task-manager]
+---
+
 # Feature: Task List
 
 ## What It Does

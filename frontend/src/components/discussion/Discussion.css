@@ -73,6 +73,19 @@
   cursor: not-allowed;
 }
 
+/* Draft mode - user can type while AI responds, but Enter won't send */
+.discussion__input--draft {
+  background: var(--color-accent-secondary-a10, oklch(from var(--color-accent-secondary) l c h / 0.10));
+  border-color: var(--color-accent-secondary-a30, oklch(from var(--color-accent-secondary) l c h / 0.30));
+}
+
+.discussion__input--draft:focus {
+  border-color: var(--color-accent-secondary-a50, oklch(from var(--color-accent-secondary) l c h / 0.50));
+  box-shadow:
+    0 0 20px var(--color-accent-secondary-a10, oklch(from var(--color-accent-secondary) l c h / 0.10)),
+    inset 0 1px 0 var(--color-white-a07);
+}
+
 /* Send button */
 .discussion__send {
   width: 44px;

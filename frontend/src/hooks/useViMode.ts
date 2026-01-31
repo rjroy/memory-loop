@@ -69,7 +69,7 @@ const INSERT_MODE_KEYS = new Set(["i", "a", "A", "o", "O"]);
 /**
  * Movement command keys handled in normal mode.
  */
-const MOVEMENT_KEYS = new Set(["h", "j", "k", "l", "0", "$", "w", "b"]);
+const MOVEMENT_KEYS = new Set(["h", "j", "k", "l", "0", "$", "w", "b", "^"]);
 
 /**
  * Information about the current line at a given cursor position.
@@ -656,6 +656,14 @@ function handleNormalModeKey(
     return;
   }
 
+  // Handle J command (join current line with next line)
+  if (key === "J" && textarea) {
+    e.preventDefault();
+    clearPendingCount();
+    executeJoinLines(textarea, onContentChange, pushUndoState);
+    return;
+  }
+
   // In normal mode, prevent default for all single-character keys to stop insertion
   // Allow modifier keys and navigation keys to work naturally
   if (key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -777,6 +785,18 @@ function executeMovementCommand(
       moveCursor(textarea, pos);
       break;
     }
+    case "^": {
+      // Move to first non-whitespace character on line (count is ignored)
+      const pos = textarea.selectionStart;
+      const currentLine = getLineInfo(text, pos);
+      // Find first non-whitespace character on the line
+      let targetPos = currentLine.lineStart;
+      while (targetPos < currentLine.lineEnd && /\s/.test(text[targetPos])) {
+        targetPos++;
+      }
+      moveCursor(textarea, targetPos);
+      break;
+    }
   }
 }
 
@@ -860,6 +880,67 @@ function executeDeleteToEndOfLine(
 
   // Cursor stays at current position
   moveCursor(textarea, pos);
+
+  // Notify parent of content change
+  onContentChange?.(newText);
+}
+
+/**
+ * Execute the 'J' command: join current line with next line.
+ *
+ * In vim, 'J' removes the newline at the end of the current line and joins
+ * it with the next line. A single space is inserted at the join point
+ * (unless the line ends with whitespace or the next line starts with ')').
+ * The cursor is positioned at the join point.
+ *
+ * @param textarea - The textarea element to manipulate
+ * @param onContentChange - Optional callback for content changes
+ * @param pushUndoState - Optional callback to push undo state before editing
+ */
+function executeJoinLines(
+  textarea: HTMLTextAreaElement,
+  onContentChange?: (content: string) => void,
+  pushUndoState?: () => void
+): void {
+  const text = textarea.value;
+  const pos = textarea.selectionStart;
+
+  const lineInfo = getLineInfo(text, pos);
+  const totalLines = getLineCount(text);
+
+  // Nothing to join if on the last line
+  if (lineInfo.lineNumber >= totalLines - 1) {
+    return;
+  }
+
+  // Push undo state before making changes
+  pushUndoState?.();
+
+  // Find the newline at the end of the current line
+  const newlinePos = lineInfo.lineEnd;
+
+  // Find where the next line's content starts (skip leading whitespace)
+  let nextLineContentStart = newlinePos + 1;
+  while (nextLineContentStart < text.length && /[ \t]/.test(text[nextLineContentStart])) {
+    nextLineContentStart++;
+  }
+
+  // Determine if we need to add a space at the join point
+  // Don't add space if current line ends with whitespace or next line starts with )
+  const currentLineEndsWithSpace = lineInfo.lineEnd > lineInfo.lineStart &&
+    /\s/.test(text[lineInfo.lineEnd - 1]);
+  const nextLineStartsWithParen = nextLineContentStart < text.length &&
+    text[nextLineContentStart] === ")";
+  const addSpace = !currentLineEndsWithSpace && !nextLineStartsWithParen;
+
+  // Build the new text: current line + optional space + next line content
+  const separator = addSpace ? " " : "";
+  const newText = text.slice(0, newlinePos) + separator + text.slice(nextLineContentStart);
+
+  textarea.value = newText;
+
+  // Position cursor at the join point
+  moveCursor(textarea, newlinePos);
 
   // Notify parent of content change
   onContentChange?.(newText);
@@ -1025,6 +1106,14 @@ function calculateMotionEnd(
     case "0": {
       const lineInfo = getLineInfo(text, startPos);
       return lineInfo.lineStart;
+    }
+    case "^": {
+      const lineInfo = getLineInfo(text, startPos);
+      let targetPos = lineInfo.lineStart;
+      while (targetPos < lineInfo.lineEnd && /\s/.test(text[targetPos])) {
+        targetPos++;
+      }
+      return targetPos;
     }
     case "h": {
       return Math.max(0, startPos - count);

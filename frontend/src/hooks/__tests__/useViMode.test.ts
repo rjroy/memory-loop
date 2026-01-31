@@ -26,6 +26,8 @@ import {
   getLinePositions,
   moveCursor,
   executeExCommand,
+  findNextWordStart,
+  findPrevWordStart,
 } from "../useViMode";
 
 // =============================================================================
@@ -1717,5 +1719,881 @@ describe("ex command execution via hook", () => {
       press(result, "!");
       press(result, "Enter");
     }).not.toThrow();
+  });
+});
+
+// =============================================================================
+// Word Boundary Helper Tests
+// =============================================================================
+
+describe("word boundary helpers", () => {
+  describe("findNextWordStart", () => {
+    it.each([
+      { text: "hello world", pos: 0, expected: 6 },
+      { text: "hello world", pos: 3, expected: 6 },
+      { text: "hello world", pos: 5, expected: 6 },
+      { text: "hello world", pos: 6, expected: 11 },
+      { text: "hello world", pos: 11, expected: 11 },
+    ])("finds next word from pos $pos in '$text'", ({ text, pos, expected }) => {
+      expect(findNextWordStart(text, pos)).toBe(expected);
+    });
+
+    it("handles punctuation as separate words", () => {
+      // "foo.bar" -> foo, ., bar are 3 words
+      expect(findNextWordStart("foo.bar", 0)).toBe(3); // foo -> .
+      expect(findNextWordStart("foo.bar", 3)).toBe(4); // . -> bar
+      expect(findNextWordStart("foo.bar", 4)).toBe(7); // bar -> end
+    });
+
+    it("skips multiple spaces", () => {
+      expect(findNextWordStart("hello   world", 0)).toBe(8);
+      expect(findNextWordStart("hello   world", 5)).toBe(8);
+    });
+
+    it("handles newlines as whitespace", () => {
+      expect(findNextWordStart("hello\nworld", 0)).toBe(6);
+      expect(findNextWordStart("hello\nworld", 5)).toBe(6);
+    });
+
+    it("moves across lines", () => {
+      expect(findNextWordStart("line1\nline2", 0)).toBe(6);
+    });
+
+    it("handles empty text", () => {
+      expect(findNextWordStart("", 0)).toBe(0);
+    });
+
+    it("handles position at end of text", () => {
+      expect(findNextWordStart("hello", 5)).toBe(5);
+    });
+
+    it("handles underscores as word characters", () => {
+      expect(findNextWordStart("foo_bar baz", 0)).toBe(8);
+    });
+
+    it("handles numbers as word characters", () => {
+      expect(findNextWordStart("foo123 bar", 0)).toBe(7);
+    });
+  });
+
+  describe("findPrevWordStart", () => {
+    it.each([
+      { text: "hello world", pos: 11, expected: 6 },
+      { text: "hello world", pos: 6, expected: 0 },
+      { text: "hello world", pos: 8, expected: 6 },
+      { text: "hello world", pos: 0, expected: 0 },
+    ])("finds prev word from pos $pos in '$text'", ({ text, pos, expected }) => {
+      expect(findPrevWordStart(text, pos)).toBe(expected);
+    });
+
+    it("handles punctuation as separate words", () => {
+      expect(findPrevWordStart("foo.bar", 7)).toBe(4); // bar -> .
+      expect(findPrevWordStart("foo.bar", 4)).toBe(3); // . -> foo
+      expect(findPrevWordStart("foo.bar", 3)).toBe(0); // foo -> start
+    });
+
+    it("skips multiple spaces", () => {
+      expect(findPrevWordStart("hello   world", 13)).toBe(8);
+      expect(findPrevWordStart("hello   world", 8)).toBe(0);
+    });
+
+    it("handles newlines as whitespace", () => {
+      expect(findPrevWordStart("hello\nworld", 11)).toBe(6);
+      expect(findPrevWordStart("hello\nworld", 6)).toBe(0);
+    });
+
+    it("handles empty text", () => {
+      expect(findPrevWordStart("", 0)).toBe(0);
+    });
+
+    it("handles position at start of text", () => {
+      expect(findPrevWordStart("hello", 0)).toBe(0);
+    });
+  });
+});
+
+// =============================================================================
+// Word Motion Command Tests
+// =============================================================================
+
+describe("word motion commands", () => {
+  let textarea: HTMLTextAreaElement;
+  let getOptions: (onContentChange?: (content: string) => void) => UseViModeOptions;
+  let setCursor: (pos: number) => void;
+
+  beforeEach(() => {
+    const setup = setupTextarea();
+    textarea = setup.textarea;
+    getOptions = setup.getOptions;
+    setCursor = setup.setCursor;
+  });
+
+  afterEach(() => {
+    textarea.remove();
+  });
+
+  describe("'w' command (word forward)", () => {
+    it("moves to start of next word", () => {
+      textarea.value = "hello world";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "w");
+
+      expect(textarea.selectionStart).toBe(6);
+    });
+
+    it("moves across punctuation", () => {
+      textarea.value = "foo.bar";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "w");
+      expect(textarea.selectionStart).toBe(3); // at .
+
+      press(result, "w");
+      expect(textarea.selectionStart).toBe(4); // at bar
+    });
+
+    it("moves across lines", () => {
+      textarea.value = "hello\nworld";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "w");
+
+      expect(textarea.selectionStart).toBe(6);
+    });
+
+    it("stops at end of text", () => {
+      textarea.value = "hello";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "w");
+
+      expect(textarea.selectionStart).toBe(5);
+    });
+
+    it("handles count (3w)", () => {
+      textarea.value = "one two three four";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "3");
+      press(result, "w");
+
+      expect(textarea.selectionStart).toBe(14); // at "four"
+    });
+  });
+
+  describe("'b' command (word backward)", () => {
+    it("moves to start of previous word", () => {
+      textarea.value = "hello world";
+      setCursor(11);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "b");
+
+      expect(textarea.selectionStart).toBe(6);
+    });
+
+    it("moves from within a word to start of that word", () => {
+      textarea.value = "hello world";
+      setCursor(8);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "b");
+
+      expect(textarea.selectionStart).toBe(6);
+    });
+
+    it("moves across punctuation", () => {
+      textarea.value = "foo.bar";
+      setCursor(7);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "b");
+      expect(textarea.selectionStart).toBe(4); // at bar start
+
+      press(result, "b");
+      expect(textarea.selectionStart).toBe(3); // at .
+
+      press(result, "b");
+      expect(textarea.selectionStart).toBe(0); // at foo
+    });
+
+    it("moves across lines", () => {
+      textarea.value = "hello\nworld";
+      setCursor(11);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "b");
+      expect(textarea.selectionStart).toBe(6);
+
+      press(result, "b");
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("stops at start of text", () => {
+      textarea.value = "hello";
+      setCursor(3);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "b");
+      expect(textarea.selectionStart).toBe(0);
+
+      press(result, "b");
+      expect(textarea.selectionStart).toBe(0);
+    });
+
+    it("handles count (2b)", () => {
+      textarea.value = "one two three four";
+      setCursor(18);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "2");
+      press(result, "b");
+
+      expect(textarea.selectionStart).toBe(8); // at "three"
+    });
+  });
+});
+
+// =============================================================================
+// Operator+Motion Command Tests
+// =============================================================================
+
+describe("operator+motion commands", () => {
+  let textarea: HTMLTextAreaElement;
+  let getOptions: (onContentChange?: (content: string) => void) => UseViModeOptions;
+  let setCursor: (pos: number) => void;
+
+  beforeEach(() => {
+    const setup = setupTextarea();
+    textarea = setup.textarea;
+    getOptions = setup.getOptions;
+    setCursor = setup.setCursor;
+  });
+
+  afterEach(() => {
+    textarea.remove();
+  });
+
+  describe("'dw' command (delete word)", () => {
+    it("deletes from cursor to start of next word", () => {
+      textarea.value = "hello world";
+      setCursor(0);
+
+      let capturedContent = "";
+      const { result } = renderHook(() =>
+        useViMode(getOptions((content) => { capturedContent = content; }))
+      );
+
+      press(result, "d");
+      expect(result.current.pendingOperator).toBe("d");
+
+      press(result, "w");
+      expect(textarea.value).toBe("world");
+      expect(capturedContent).toBe("world");
+      expect(result.current.pendingOperator).toBeNull();
+    });
+
+    it("deletes word including trailing space", () => {
+      textarea.value = "one two three";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "w");
+
+      expect(textarea.value).toBe("two three");
+    });
+
+    it("works with count (2dw)", () => {
+      textarea.value = "one two three four";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "2");
+      press(result, "d");
+      press(result, "w");
+
+      expect(textarea.value).toBe("three four");
+    });
+
+    it("at end of line, deletes to end", () => {
+      textarea.value = "hello\nworld";
+      setCursor(3);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "w");
+
+      expect(textarea.value).toBe("helworld");
+    });
+
+    it("pushes to undo stack", () => {
+      textarea.value = "hello world";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "w");
+
+      expect(result.current.undoStackSize).toBe(1);
+    });
+
+    it("can be undone", () => {
+      textarea.value = "hello world";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "w");
+      expect(textarea.value).toBe("world");
+
+      press(result, "u");
+      expect(textarea.value).toBe("hello world");
+    });
+  });
+
+  describe("'yw' command (yank word)", () => {
+    it("yanks from cursor to start of next word", () => {
+      textarea.value = "hello world";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "y");
+      press(result, "w");
+
+      expect(result.current.clipboard).toBe("hello ");
+      expect(textarea.value).toBe("hello world"); // unchanged
+    });
+
+    it("works with count (2yw)", () => {
+      textarea.value = "one two three four";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "2");
+      press(result, "y");
+      press(result, "w");
+
+      expect(result.current.clipboard).toBe("one two ");
+    });
+
+    it("does not push to undo stack", () => {
+      textarea.value = "hello world";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "y");
+      press(result, "w");
+
+      expect(result.current.undoStackSize).toBe(0);
+    });
+  });
+
+  describe("'db' command (delete backward word)", () => {
+    it("deletes from cursor back to start of previous word", () => {
+      textarea.value = "hello world";
+      setCursor(11);
+
+      let capturedContent = "";
+      const { result } = renderHook(() =>
+        useViMode(getOptions((content) => { capturedContent = content; }))
+      );
+
+      press(result, "d");
+      press(result, "b");
+
+      expect(textarea.value).toBe("hello ");
+      expect(capturedContent).toBe("hello ");
+    });
+
+    it("works with count (2db)", () => {
+      textarea.value = "one two three";
+      setCursor(13);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "2");
+      press(result, "d");
+      press(result, "b");
+
+      expect(textarea.value).toBe("one ");
+    });
+  });
+
+  describe("'yb' command (yank backward word)", () => {
+    it("yanks from cursor back to start of previous word", () => {
+      textarea.value = "hello world";
+      setCursor(11);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "y");
+      press(result, "b");
+
+      expect(result.current.clipboard).toBe("world");
+      expect(textarea.value).toBe("hello world"); // unchanged
+    });
+  });
+
+  describe("'d$' command (delete to end of line)", () => {
+    it("deletes from cursor to end of line", () => {
+      textarea.value = "hello world\nline 2";
+      setCursor(6);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "$");
+
+      expect(textarea.value).toBe("hello \nline 2");
+    });
+
+    it("does nothing if already at end of line", () => {
+      textarea.value = "hello\nworld";
+      setCursor(5);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "$");
+
+      expect(textarea.value).toBe("hello\nworld");
+      expect(result.current.undoStackSize).toBe(0);
+    });
+  });
+
+  describe("'y$' command (yank to end of line)", () => {
+    it("yanks from cursor to end of line", () => {
+      textarea.value = "hello world\nline 2";
+      setCursor(6);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "y");
+      press(result, "$");
+
+      expect(result.current.clipboard).toBe("world");
+      expect(textarea.value).toBe("hello world\nline 2");
+    });
+  });
+
+  describe("'d0' command (delete to start of line)", () => {
+    it("deletes from cursor to start of line", () => {
+      textarea.value = "hello world";
+      setCursor(6);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "0");
+
+      expect(textarea.value).toBe("world");
+    });
+
+    it("does nothing if already at start of line", () => {
+      textarea.value = "hello world";
+      setCursor(0);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "0");
+
+      expect(textarea.value).toBe("hello world");
+      expect(result.current.undoStackSize).toBe(0);
+    });
+  });
+
+  describe("'dh' and 'dl' commands", () => {
+    it("dh deletes character to the left", () => {
+      textarea.value = "hello";
+      setCursor(3);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "h");
+
+      expect(textarea.value).toBe("helo");
+    });
+
+    it("dl deletes character to the right", () => {
+      textarea.value = "hello";
+      setCursor(2);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "d");
+      press(result, "l");
+
+      expect(textarea.value).toBe("helo");
+    });
+
+    it("3dh deletes 3 characters to the left", () => {
+      textarea.value = "hello";
+      setCursor(5);
+
+      const { result } = renderHook(() => useViMode(getOptions()));
+      press(result, "3");
+      press(result, "d");
+      press(result, "h");
+
+      expect(textarea.value).toBe("he");
+    });
+  });
+});
+
+// =============================================================================
+// D Command Tests
+// =============================================================================
+
+describe("'D' command (delete to end of line)", () => {
+  let textarea: HTMLTextAreaElement;
+  let getOptions: (onContentChange?: (content: string) => void) => UseViModeOptions;
+  let setCursor: (pos: number) => void;
+
+  beforeEach(() => {
+    const setup = setupTextarea();
+    textarea = setup.textarea;
+    getOptions = setup.getOptions;
+    setCursor = setup.setCursor;
+  });
+
+  afterEach(() => {
+    textarea.remove();
+  });
+
+  it("deletes from cursor to end of line", () => {
+    textarea.value = "hello world";
+    setCursor(6);
+
+    let capturedContent = "";
+    const { result } = renderHook(() =>
+      useViMode(getOptions((content) => { capturedContent = content; }))
+    );
+
+    press(result, "D");
+
+    expect(textarea.value).toBe("hello ");
+    expect(capturedContent).toBe("hello ");
+    expect(textarea.selectionStart).toBe(6);
+  });
+
+  it("preserves newline when deleting on multi-line text", () => {
+    textarea.value = "hello world\nline 2";
+    setCursor(6);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "D");
+
+    expect(textarea.value).toBe("hello \nline 2");
+  });
+
+  it("does nothing if cursor is at end of line", () => {
+    textarea.value = "hello\nworld";
+    setCursor(5);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "D");
+
+    expect(textarea.value).toBe("hello\nworld");
+    expect(result.current.undoStackSize).toBe(0);
+  });
+
+  it("deletes entire content if single line and cursor at start", () => {
+    textarea.value = "hello";
+    setCursor(0);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "D");
+
+    expect(textarea.value).toBe("");
+  });
+
+  it("pushes to undo stack", () => {
+    textarea.value = "hello world";
+    setCursor(6);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "D");
+
+    expect(result.current.undoStackSize).toBe(1);
+  });
+
+  it("can be undone", () => {
+    textarea.value = "hello world";
+    setCursor(6);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "D");
+    expect(textarea.value).toBe("hello ");
+
+    press(result, "u");
+    expect(textarea.value).toBe("hello world");
+  });
+
+  it("clears pending count", () => {
+    textarea.value = "hello world";
+    setCursor(0);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "3");
+    expect(result.current.pendingCount).toBe(3);
+
+    press(result, "D");
+    expect(result.current.pendingCount).toBeNull();
+  });
+
+  it("prevents default", () => {
+    textarea.value = "hello world";
+    setCursor(6);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    const event = press(result, "D");
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+});
+
+// =============================================================================
+// ^ Command Tests (First Non-Whitespace)
+// =============================================================================
+
+describe("'^' command (first non-whitespace)", () => {
+  let textarea: HTMLTextAreaElement;
+  let getOptions: (onContentChange?: (content: string) => void) => UseViModeOptions;
+  let setCursor: (pos: number) => void;
+
+  beforeEach(() => {
+    const setup = setupTextarea();
+    textarea = setup.textarea;
+    getOptions = setup.getOptions;
+    setCursor = setup.setCursor;
+  });
+
+  afterEach(() => {
+    textarea.remove();
+  });
+
+  it("moves to first non-whitespace character", () => {
+    textarea.value = "   hello world";
+    setCursor(10);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "^");
+
+    expect(textarea.selectionStart).toBe(3); // at 'h'
+  });
+
+  it("stays at position if line has no leading whitespace", () => {
+    textarea.value = "hello world";
+    setCursor(6);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "^");
+
+    expect(textarea.selectionStart).toBe(0);
+  });
+
+  it("works with tabs", () => {
+    textarea.value = "\t\thello";
+    setCursor(5);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "^");
+
+    expect(textarea.selectionStart).toBe(2); // at 'h'
+  });
+
+  it("works on second line with indentation", () => {
+    textarea.value = "line 1\n    indented";
+    setCursor(15);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "^");
+
+    expect(textarea.selectionStart).toBe(11); // at 'i'
+  });
+
+  it("handles line that is all whitespace", () => {
+    textarea.value = "hello\n   \nworld";
+    setCursor(6);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "^");
+
+    // Moves to end of whitespace (which is end of line)
+    expect(textarea.selectionStart).toBe(9);
+  });
+
+  it("prevents default", () => {
+    textarea.value = "   hello";
+    setCursor(6);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    const event = press(result, "^");
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("works with d^ operator motion", () => {
+    textarea.value = "   hello world";
+    setCursor(10);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "d");
+    press(result, "^");
+
+    expect(textarea.value).toBe("   orld");
+  });
+});
+
+// =============================================================================
+// J Command Tests (Join Lines)
+// =============================================================================
+
+describe("'J' command (join lines)", () => {
+  let textarea: HTMLTextAreaElement;
+  let getOptions: (onContentChange?: (content: string) => void) => UseViModeOptions;
+  let setCursor: (pos: number) => void;
+
+  beforeEach(() => {
+    const setup = setupTextarea();
+    textarea = setup.textarea;
+    getOptions = setup.getOptions;
+    setCursor = setup.setCursor;
+  });
+
+  afterEach(() => {
+    textarea.remove();
+  });
+
+  it("joins current line with next line", () => {
+    textarea.value = "hello\nworld";
+    setCursor(2);
+
+    let capturedContent = "";
+    const { result } = renderHook(() =>
+      useViMode(getOptions((content) => { capturedContent = content; }))
+    );
+
+    press(result, "J");
+
+    expect(textarea.value).toBe("hello world");
+    expect(capturedContent).toBe("hello world");
+  });
+
+  it("adds a space at the join point", () => {
+    textarea.value = "foo\nbar";
+    setCursor(0);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "J");
+
+    expect(textarea.value).toBe("foo bar");
+  });
+
+  it("positions cursor at join point", () => {
+    textarea.value = "hello\nworld";
+    setCursor(0);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "J");
+
+    expect(textarea.selectionStart).toBe(5); // at the space
+  });
+
+  it("strips leading whitespace from next line", () => {
+    textarea.value = "hello\n    world";
+    setCursor(2);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "J");
+
+    expect(textarea.value).toBe("hello world");
+  });
+
+  it("does not add space if current line ends with whitespace", () => {
+    textarea.value = "hello \nworld";
+    setCursor(2);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "J");
+
+    expect(textarea.value).toBe("hello world");
+  });
+
+  it("does not add space if next line starts with )", () => {
+    textarea.value = "func(\n)";
+    setCursor(2);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "J");
+
+    expect(textarea.value).toBe("func()");
+  });
+
+  it("does nothing on last line", () => {
+    textarea.value = "only line";
+    setCursor(3);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "J");
+
+    expect(textarea.value).toBe("only line");
+    expect(result.current.undoStackSize).toBe(0);
+  });
+
+  it("pushes to undo stack", () => {
+    textarea.value = "hello\nworld";
+    setCursor(0);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "J");
+
+    expect(result.current.undoStackSize).toBe(1);
+  });
+
+  it("can be undone", () => {
+    textarea.value = "hello\nworld";
+    setCursor(0);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "J");
+    expect(textarea.value).toBe("hello world");
+
+    press(result, "u");
+    expect(textarea.value).toBe("hello\nworld");
+  });
+
+  it("works with multiple joins in sequence", () => {
+    textarea.value = "line1\nline2\nline3";
+    setCursor(0);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "J");
+    expect(textarea.value).toBe("line1 line2\nline3");
+
+    press(result, "J");
+    expect(textarea.value).toBe("line1 line2 line3");
+  });
+
+  it("prevents default", () => {
+    textarea.value = "hello\nworld";
+    setCursor(0);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    const event = press(result, "J");
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("clears pending count", () => {
+    textarea.value = "hello\nworld";
+    setCursor(0);
+
+    const { result } = renderHook(() => useViMode(getOptions()));
+    press(result, "3");
+    expect(result.current.pendingCount).toBe(3);
+
+    press(result, "J");
+    expect(result.current.pendingCount).toBeNull();
   });
 });

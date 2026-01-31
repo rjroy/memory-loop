@@ -69,7 +69,7 @@ const INSERT_MODE_KEYS = new Set(["i", "a", "A", "o", "O"]);
 /**
  * Movement command keys handled in normal mode.
  */
-const MOVEMENT_KEYS = new Set(["h", "j", "k", "l", "0", "$"]);
+const MOVEMENT_KEYS = new Set(["h", "j", "k", "l", "0", "$", "w", "b", "^"]);
 
 /**
  * Information about the current line at a given cursor position.
@@ -176,6 +176,92 @@ export function moveCursor(
   const clamped = Math.max(0, Math.min(newPosition, textarea.value.length));
   textarea.selectionStart = clamped;
   textarea.selectionEnd = clamped;
+}
+
+/**
+ * Character classification for word motion.
+ * Returns: 'word' for [a-zA-Z0-9_], 'space' for whitespace, 'punct' for punctuation
+ */
+function charClass(char: string): "word" | "space" | "punct" {
+  if (/[a-zA-Z0-9_]/.test(char)) return "word";
+  if (/\s/.test(char)) return "space";
+  return "punct";
+}
+
+/**
+ * Find the start of the next word from the given position.
+ *
+ * Vim's 'w' motion moves to the start of the next word:
+ * - A word is a sequence of word characters OR a sequence of punctuation
+ * - Whitespace separates words
+ * - From within a word, moves to start of next word
+ * - From whitespace, moves to start of next word
+ *
+ * @param text - The full text content
+ * @param position - Current cursor position
+ * @returns Position of next word start, or end of text if none
+ */
+export function findNextWordStart(text: string, position: number): number {
+  if (position >= text.length) return text.length;
+
+  let pos = position;
+  const startClass = charClass(text[pos]);
+
+  // Phase 1: Skip current word (chars of same class, non-space)
+  if (startClass !== "space") {
+    while (pos < text.length && charClass(text[pos]) === startClass) {
+      pos++;
+    }
+  }
+
+  // Phase 2: Skip whitespace
+  while (pos < text.length && charClass(text[pos]) === "space") {
+    pos++;
+  }
+
+  return pos;
+}
+
+/**
+ * Find the start of the previous word from the given position.
+ *
+ * Vim's 'b' motion moves to the start of the previous word:
+ * - From within a word, moves to start of that word (if not at start)
+ * - From whitespace, moves to start of previous word
+ * - From start of a word, moves to start of previous word
+ *
+ * @param text - The full text content
+ * @param position - Current cursor position
+ * @returns Position of previous word start, or 0 if none
+ */
+export function findPrevWordStart(text: string, position: number): number {
+  if (position <= 0) return 0;
+
+  let pos = position;
+
+  // Phase 1: Move back one position if we're at a word boundary
+  // This handles the case where cursor is at start of a word
+  if (pos > 0) {
+    pos--;
+  }
+
+  // Phase 2: Skip whitespace backwards
+  while (pos > 0 && charClass(text[pos]) === "space") {
+    pos--;
+  }
+
+  // If we landed on whitespace at position 0, that's our answer
+  if (pos === 0 && charClass(text[pos]) === "space") {
+    return 0;
+  }
+
+  // Phase 3: Skip current word backwards to find its start
+  const wordClass = charClass(text[pos]);
+  while (pos > 0 && charClass(text[pos - 1]) === wordClass) {
+    pos--;
+  }
+
+  return pos;
 }
 
 /**
@@ -483,6 +569,23 @@ function handleNormalModeKey(
     return;
   }
 
+  // Handle operator+motion combinations (dw, yw, db, yb, d$, d0, etc.)
+  if (pendingOperator && MOVEMENT_KEYS.has(key) && textarea) {
+    e.preventDefault();
+    executeOperatorMotion(
+      pendingOperator,
+      key,
+      textarea,
+      count,
+      onContentChange,
+      pushUndoState,
+      setClipboard
+    );
+    setPendingOperator?.(null);
+    clearPendingCount();
+    return;
+  }
+
   // Any other key clears the pending operator (unless it's a modifier key)
   // Note: pending count is cleared when commands execute, not here
   if (setPendingOperator && key.length === 1 && key !== "d" && key !== "y") {
@@ -542,6 +645,22 @@ function handleNormalModeKey(
     e.preventDefault();
     clearPendingCount();
     executeDeleteCharacter(textarea, onContentChange, pushUndoState, count);
+    return;
+  }
+
+  // Handle D command (delete to end of line, equivalent to d$)
+  if (key === "D" && textarea) {
+    e.preventDefault();
+    clearPendingCount();
+    executeDeleteToEndOfLine(textarea, onContentChange, pushUndoState);
+    return;
+  }
+
+  // Handle J command (join current line with next line)
+  if (key === "J" && textarea) {
+    e.preventDefault();
+    clearPendingCount();
+    executeJoinLines(textarea, onContentChange, pushUndoState);
     return;
   }
 
@@ -648,6 +767,36 @@ function executeMovementCommand(
       moveCursor(textarea, currentLine.lineEnd);
       break;
     }
+    case "w": {
+      // Move to start of next word, count times
+      let pos = textarea.selectionStart;
+      for (let i = 0; i < count; i++) {
+        pos = findNextWordStart(text, pos);
+      }
+      moveCursor(textarea, pos);
+      break;
+    }
+    case "b": {
+      // Move to start of previous word, count times
+      let pos = textarea.selectionStart;
+      for (let i = 0; i < count; i++) {
+        pos = findPrevWordStart(text, pos);
+      }
+      moveCursor(textarea, pos);
+      break;
+    }
+    case "^": {
+      // Move to first non-whitespace character on line (count is ignored)
+      const pos = textarea.selectionStart;
+      const currentLine = getLineInfo(text, pos);
+      // Find first non-whitespace character on the line
+      let targetPos = currentLine.lineStart;
+      while (targetPos < currentLine.lineEnd && /\s/.test(text[targetPos])) {
+        targetPos++;
+      }
+      moveCursor(textarea, targetPos);
+      break;
+    }
   }
 }
 
@@ -689,6 +838,109 @@ function executeDeleteCharacter(
 
   // Keep cursor at same position, but clamp if needed
   moveCursor(textarea, Math.min(pos, newText.length));
+
+  // Notify parent of content change
+  onContentChange?.(newText);
+}
+
+/**
+ * Execute the 'D' command: delete from cursor to end of line.
+ *
+ * In vim, 'D' deletes from the cursor to the end of the line without
+ * deleting the newline character itself. This is equivalent to 'd$'.
+ * After deletion, the cursor stays at the same position (which is now
+ * at the end of the remaining text on the line).
+ *
+ * @param textarea - The textarea element to manipulate
+ * @param onContentChange - Optional callback for content changes
+ * @param pushUndoState - Optional callback to push undo state before editing
+ */
+function executeDeleteToEndOfLine(
+  textarea: HTMLTextAreaElement,
+  onContentChange?: (content: string) => void,
+  pushUndoState?: () => void
+): void {
+  const text = textarea.value;
+  const pos = textarea.selectionStart;
+
+  // Get current line info to find end of line
+  const lineInfo = getLineInfo(text, pos);
+
+  // Nothing to delete if cursor is already at end of line
+  if (pos >= lineInfo.lineEnd) {
+    return;
+  }
+
+  // Push undo state before making changes
+  pushUndoState?.();
+
+  // Delete from cursor to end of line (not including newline)
+  const newText = text.slice(0, pos) + text.slice(lineInfo.lineEnd);
+  textarea.value = newText;
+
+  // Cursor stays at current position
+  moveCursor(textarea, pos);
+
+  // Notify parent of content change
+  onContentChange?.(newText);
+}
+
+/**
+ * Execute the 'J' command: join current line with next line.
+ *
+ * In vim, 'J' removes the newline at the end of the current line and joins
+ * it with the next line. A single space is inserted at the join point
+ * (unless the line ends with whitespace or the next line starts with ')').
+ * The cursor is positioned at the join point.
+ *
+ * @param textarea - The textarea element to manipulate
+ * @param onContentChange - Optional callback for content changes
+ * @param pushUndoState - Optional callback to push undo state before editing
+ */
+function executeJoinLines(
+  textarea: HTMLTextAreaElement,
+  onContentChange?: (content: string) => void,
+  pushUndoState?: () => void
+): void {
+  const text = textarea.value;
+  const pos = textarea.selectionStart;
+
+  const lineInfo = getLineInfo(text, pos);
+  const totalLines = getLineCount(text);
+
+  // Nothing to join if on the last line
+  if (lineInfo.lineNumber >= totalLines - 1) {
+    return;
+  }
+
+  // Push undo state before making changes
+  pushUndoState?.();
+
+  // Find the newline at the end of the current line
+  const newlinePos = lineInfo.lineEnd;
+
+  // Find where the next line's content starts (skip leading whitespace)
+  let nextLineContentStart = newlinePos + 1;
+  while (nextLineContentStart < text.length && /[ \t]/.test(text[nextLineContentStart])) {
+    nextLineContentStart++;
+  }
+
+  // Determine if we need to add a space at the join point
+  // Don't add space if current line ends with whitespace or next line starts with )
+  const currentLineEndsWithSpace = lineInfo.lineEnd > lineInfo.lineStart &&
+    /\s/.test(text[lineInfo.lineEnd - 1]);
+  const nextLineStartsWithParen = nextLineContentStart < text.length &&
+    text[nextLineContentStart] === ")";
+  const addSpace = !currentLineEndsWithSpace && !nextLineStartsWithParen;
+
+  // Build the new text: current line + optional space + next line content
+  const separator = addSpace ? " " : "";
+  const newText = text.slice(0, newlinePos) + separator + text.slice(nextLineContentStart);
+
+  textarea.value = newText;
+
+  // Position cursor at the join point
+  moveCursor(textarea, newlinePos);
 
   // Notify parent of content change
   onContentChange?.(newText);
@@ -812,6 +1064,126 @@ function executeYankLine(
 
   // Store in clipboard
   setClipboard?.(yankedContent);
+}
+
+/**
+ * Calculate the end position for a motion command.
+ *
+ * Given a starting position and motion key, calculates where the motion would end.
+ * Used by operator+motion combinations to determine the range of text to operate on.
+ *
+ * @param text - The full text content
+ * @param startPos - Starting cursor position
+ * @param motion - The motion key (w, b, $, 0, h, l)
+ * @param count - Number of times to repeat the motion
+ * @returns End position of the motion
+ */
+function calculateMotionEnd(
+  text: string,
+  startPos: number,
+  motion: string,
+  count: number
+): number {
+  switch (motion) {
+    case "w": {
+      let pos = startPos;
+      for (let i = 0; i < count; i++) {
+        pos = findNextWordStart(text, pos);
+      }
+      return pos;
+    }
+    case "b": {
+      let pos = startPos;
+      for (let i = 0; i < count; i++) {
+        pos = findPrevWordStart(text, pos);
+      }
+      return pos;
+    }
+    case "$": {
+      const lineInfo = getLineInfo(text, startPos);
+      return lineInfo.lineEnd;
+    }
+    case "0": {
+      const lineInfo = getLineInfo(text, startPos);
+      return lineInfo.lineStart;
+    }
+    case "^": {
+      const lineInfo = getLineInfo(text, startPos);
+      let targetPos = lineInfo.lineStart;
+      while (targetPos < lineInfo.lineEnd && /\s/.test(text[targetPos])) {
+        targetPos++;
+      }
+      return targetPos;
+    }
+    case "h": {
+      return Math.max(0, startPos - count);
+    }
+    case "l": {
+      return Math.min(text.length, startPos + count);
+    }
+    case "j":
+    case "k":
+      // Vertical motions are line-based, not character-based
+      // For operator+motion, these are more complex and not supported in this iteration
+      return startPos;
+    default:
+      return startPos;
+  }
+}
+
+/**
+ * Execute an operator+motion combination (dw, yw, db, yb, d$, etc.).
+ *
+ * Calculates the range from current position to where the motion would end,
+ * then performs the operation (delete or yank) on that range.
+ *
+ * For forward motions (w, l, $), the range is [start, end).
+ * For backward motions (b, h, 0), the range is [end, start).
+ *
+ * @param operator - The operator ('d' for delete, 'y' for yank)
+ * @param motion - The motion key
+ * @param textarea - The textarea element
+ * @param count - Number of times to repeat the motion
+ * @param onContentChange - Optional callback for content changes
+ * @param pushUndoState - Optional callback to push undo state before editing
+ * @param setClipboard - State setter for yank operations
+ */
+function executeOperatorMotion(
+  operator: "d" | "y",
+  motion: string,
+  textarea: HTMLTextAreaElement,
+  count: number,
+  onContentChange?: (content: string) => void,
+  pushUndoState?: () => void,
+  setClipboard?: React.Dispatch<React.SetStateAction<string | null>>
+): void {
+  const text = textarea.value;
+  const startPos = textarea.selectionStart;
+  const endPos = calculateMotionEnd(text, startPos, motion, count);
+
+  // Determine the actual range (start may be > end for backward motions)
+  const rangeStart = Math.min(startPos, endPos);
+  const rangeEnd = Math.max(startPos, endPos);
+
+  // Nothing to do if range is empty
+  if (rangeStart === rangeEnd) {
+    return;
+  }
+
+  // Extract the text in the range
+  const rangeText = text.slice(rangeStart, rangeEnd);
+
+  if (operator === "y") {
+    // Yank: copy to clipboard, don't modify text
+    setClipboard?.(rangeText);
+  } else {
+    // Delete: remove the range and update cursor
+    pushUndoState?.();
+    const newText = text.slice(0, rangeStart) + text.slice(rangeEnd);
+    textarea.value = newText;
+    moveCursor(textarea, rangeStart);
+    onContentChange?.(newText);
+  }
 }
 
 /**

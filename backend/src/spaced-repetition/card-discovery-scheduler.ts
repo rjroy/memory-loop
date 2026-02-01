@@ -32,6 +32,14 @@ import {
 import { createQACardGenerator } from "./card-generator.js";
 import { createCard, type VaultPathInfo } from "./card-manager.js";
 import { loadCardGeneratorConfig } from "./card-generator-config.js";
+import { loadAllCards } from "./card-storage.js";
+import {
+  checkAndHandleDuplicate,
+  createDedupContext,
+  createDedupStats,
+  type DedupContext,
+  type DedupStats,
+} from "./card-dedup.js";
 
 const log = createLogger("card-discovery-scheduler");
 
@@ -92,6 +100,10 @@ export interface DiscoveryStats {
   bytesProcessed: number;
   /** Number of permanent errors encountered */
   errors: number;
+  /** Number of duplicate candidates detected */
+  duplicatesDetected: number;
+  /** Number of duplicates archived */
+  duplicatesArchived: number;
 }
 
 /**
@@ -236,12 +248,16 @@ export async function discoverAllFiles(): Promise<FileToProcess[]> {
  * @param file - File to process
  * @param state - Current discovery state
  * @param stats - Stats to update
+ * @param dedupContext - Deduplication context for detecting duplicates
+ * @param dedupStats - Deduplication statistics
  * @returns Updated state (file marked as processed only on success)
  */
 async function processFile(
   file: FileToProcess,
   state: CardDiscoveryState,
-  stats: DiscoveryStats
+  stats: DiscoveryStats,
+  dedupContext: DedupContext,
+  dedupStats: DedupStats
 ): Promise<CardDiscoveryState> {
   // Read file content
   let content: string;
@@ -299,6 +315,14 @@ async function processFile(
 
   for (const card of result.cards) {
     try {
+      // Check for duplicates before creating the card
+      await checkAndHandleDuplicate(
+        card.question,
+        card.answer,
+        dedupContext,
+        dedupStats
+      );
+
       const createResult = await createCard(vaultPathInfo, {
         question: card.question,
         answer: card.answer,
@@ -306,6 +330,8 @@ async function processFile(
       });
       if (createResult.success) {
         stats.cardsCreated++;
+        // Add to newCards for self-dedup within this pass
+        dedupContext.newCards.push(createResult.data);
       } else {
         log.warn(`Failed to create card: ${createResult.error}`);
         stats.errors++;
@@ -341,6 +367,8 @@ export async function runDailyPass(getNow: () => Date = () => new Date()): Promi
     cardsCreated: 0,
     bytesProcessed: 0,
     errors: 0,
+    duplicatesDetected: 0,
+    duplicatesArchived: 0,
   };
 
   const now = getNow();
@@ -364,15 +392,56 @@ export async function runDailyPass(getNow: () => Date = () => new Date()): Promi
   // Load current state
   let state = await readDiscoveryState();
 
+  // Initialize deduplication context
+  // Load existing cards from all vaults being processed
+  const dedupStats = createDedupStats();
+  const vaultSet = new Map<string, VaultPathInfo>();
+  for (const file of recentFiles) {
+    vaultSet.set(file.vault.contentRoot, {
+      contentRoot: file.vault.contentRoot,
+      metadataPath: file.vault.metadataPath,
+    });
+  }
+
+  // Load all existing cards for dedup
+  const allExistingCards = [];
+  const firstVault = recentFiles[0]?.vault;
+  const dedupVaultPathInfo: VaultPathInfo = firstVault
+    ? { contentRoot: firstVault.contentRoot, metadataPath: firstVault.metadataPath }
+    : { contentRoot: "", metadataPath: "" };
+
+  for (const vaultInfo of vaultSet.values()) {
+    try {
+      const cards = await loadAllCards(vaultInfo);
+      allExistingCards.push(...cards);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.warn(`Failed to load existing cards from ${vaultInfo.contentRoot}: ${msg}`);
+    }
+  }
+  log.debug(`Loaded ${allExistingCards.length} existing cards for dedup`);
+
+  const dedupContext = createDedupContext(allExistingCards, dedupVaultPathInfo);
+
   // Process each file, saving state after each to prevent repeat work on crash
   for (const file of recentFiles) {
+    // Update dedup context vault path for this file
+    dedupContext.vaultPathInfo = {
+      contentRoot: file.vault.contentRoot,
+      metadataPath: file.vault.metadataPath,
+    };
+
     const prevState = state;
-    state = await processFile(file, state, stats);
+    state = await processFile(file, state, stats, dedupContext, dedupStats);
     // Save immediately if state changed (file was processed or marked)
     if (state !== prevState) {
       await writeDiscoveryState(state);
     }
   }
+
+  // Merge dedup stats into discovery stats
+  stats.duplicatesDetected = dedupStats.duplicatesDetected;
+  stats.duplicatesArchived = dedupStats.duplicatesArchived;
 
   // Determine if run was successful enough to mark as complete
   // If mostly retriable errors (e.g., rate limit), don't mark as complete so next run retries
@@ -386,12 +455,12 @@ export async function runDailyPass(getNow: () => Date = () => new Date()): Promi
       lastDailyRun: now.toISOString(),
     };
     log.info(
-      `Daily pass complete: ${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.filesSkipped} skipped, ${stats.filesRetriable} retriable, ${stats.errors} errors`
+      `Daily pass complete: ${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.filesSkipped} skipped, ${stats.filesRetriable} retriable, ${stats.errors} errors, ${stats.duplicatesArchived} duplicates archived`
     );
   } else {
     log.warn(
       `Daily pass incomplete (${stats.filesRetriable} retriable errors) - will retry next run. ` +
-      `${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.filesSkipped} skipped, ${stats.errors} permanent errors`
+      `${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.filesSkipped} skipped, ${stats.errors} permanent errors, ${stats.duplicatesArchived} duplicates archived`
     );
   }
 
@@ -421,6 +490,8 @@ export async function runWeeklyPass(
     cardsCreated: 0,
     bytesProcessed: 0,
     errors: 0,
+    duplicatesDetected: 0,
+    duplicatesArchived: 0,
   };
 
   log.info(`Starting weekly catch-up pass (limit: ${byteLimit} bytes)`);
@@ -471,6 +542,36 @@ export async function runWeeklyPass(
     return stats;
   }
 
+  // Initialize deduplication context
+  const dedupStats = createDedupStats();
+  const vaultSet = new Map<string, VaultPathInfo>();
+  for (const file of unprocessedFiles) {
+    vaultSet.set(file.vault.contentRoot, {
+      contentRoot: file.vault.contentRoot,
+      metadataPath: file.vault.metadataPath,
+    });
+  }
+
+  // Load all existing cards for dedup
+  const allExistingCards = [];
+  const firstVault = unprocessedFiles[0]?.vault;
+  const dedupVaultPathInfo: VaultPathInfo = firstVault
+    ? { contentRoot: firstVault.contentRoot, metadataPath: firstVault.metadataPath }
+    : { contentRoot: "", metadataPath: "" };
+
+  for (const vaultInfo of vaultSet.values()) {
+    try {
+      const cards = await loadAllCards(vaultInfo);
+      allExistingCards.push(...cards);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.warn(`Failed to load existing cards from ${vaultInfo.contentRoot}: ${msg}`);
+    }
+  }
+  log.debug(`Loaded ${allExistingCards.length} existing cards for dedup`);
+
+  const dedupContext = createDedupContext(allExistingCards, dedupVaultPathInfo);
+
   // Process files up to byte limit, saving state after each to prevent repeat work
   let bytesThisRun = 0;
   for (const file of unprocessedFiles) {
@@ -479,14 +580,24 @@ export async function runWeeklyPass(
       break;
     }
 
+    // Update dedup context vault path for this file
+    dedupContext.vaultPathInfo = {
+      contentRoot: file.vault.contentRoot,
+      metadataPath: file.vault.metadataPath,
+    };
+
     const prevState = state;
-    state = await processFile(file, state, stats);
+    state = await processFile(file, state, stats, dedupContext, dedupStats);
     bytesThisRun += file.size;
     // Save immediately if state changed (file was processed or marked)
     if (state !== prevState) {
       await writeDiscoveryState(state);
     }
   }
+
+  // Merge dedup stats into discovery stats
+  stats.duplicatesDetected = dedupStats.duplicatesDetected;
+  stats.duplicatesArchived = dedupStats.duplicatesArchived;
 
   // Determine if run was successful enough to mark as complete
   const totalAttempted = stats.filesProcessed + stats.filesSkipped + stats.filesRetriable + stats.errors;
@@ -505,12 +616,12 @@ export async function runWeeklyPass(
   if (runSuccessful) {
     state = { ...state, lastWeeklyRun: now.toISOString() };
     log.info(
-      `Weekly pass complete: ${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.filesRetriable} retriable, ${stats.errors} errors, ${stats.bytesProcessed} bytes`
+      `Weekly pass complete: ${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.filesRetriable} retriable, ${stats.errors} errors, ${stats.bytesProcessed} bytes, ${stats.duplicatesArchived} duplicates archived`
     );
   } else {
     log.warn(
       `Weekly pass incomplete (${stats.filesRetriable} retriable errors) - will retry. ` +
-      `${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.errors} permanent errors, ${stats.bytesProcessed} bytes`
+      `${stats.filesProcessed} processed, ${stats.cardsCreated} cards, ${stats.errors} permanent errors, ${stats.bytesProcessed} bytes, ${stats.duplicatesArchived} duplicates archived`
     );
   }
 

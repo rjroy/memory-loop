@@ -1044,3 +1044,145 @@ describe("integration", () => {
     mockGenerate.mockRestore();
   });
 });
+
+// =============================================================================
+// Deduplication Tests
+// =============================================================================
+
+describe("deduplication", () => {
+  it("includes dedup stats in discovery results", async () => {
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    await createMarkdownFile(vaultPath, "note.md", "# Test Note\nSome content here.");
+
+    const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
+      type: "qa",
+      generate: () => Promise.resolve({ success: true, cards: [] }),
+    }));
+
+    const getNow = () => new Date("2026-01-24T03:00:00Z");
+    const stats = await runDailyPass(getNow);
+
+    // Stats should include dedup fields
+    expect(stats.duplicatesDetected).toBeDefined();
+    expect(stats.duplicatesArchived).toBeDefined();
+    expect(stats.duplicatesDetected).toBe(0);
+    expect(stats.duplicatesArchived).toBe(0);
+
+    mockGenerate.mockRestore();
+  });
+
+  it("handles empty existing card set without error", async () => {
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    await createMarkdownFile(vaultPath, "note.md", "# Test\nFact: The sky is blue.");
+
+    const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
+      type: "qa",
+      generate: () => Promise.resolve({
+        success: true,
+        cards: [{ question: "What color is the sky?", answer: "Blue" }],
+      }),
+    }));
+
+    const mockCreateCard = spyOn(cardManager, "createCard").mockImplementation(() =>
+      Promise.resolve({
+        success: true as const,
+        data: {
+          metadata: {
+            id: "test-id",
+            type: "qa",
+            created_date: "2026-01-24",
+            last_reviewed: null,
+            next_review: "2026-01-24",
+            ease_factor: 2.5,
+            interval: 0,
+            repetitions: 0,
+          },
+          content: { question: "Q", answer: "A" },
+        },
+      })
+    );
+
+    const getNow = () => new Date("2026-01-24T03:00:00Z");
+    const stats = await runDailyPass(getNow);
+
+    // Should complete without error
+    expect(stats.cardsCreated).toBe(1);
+    expect(stats.duplicatesDetected).toBe(0);
+    expect(stats.duplicatesArchived).toBe(0);
+
+    mockGenerate.mockRestore();
+    mockCreateCard.mockRestore();
+  });
+
+  it("accumulates new cards for self-dedup within single file", async () => {
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    await createMarkdownFile(
+      vaultPath,
+      "multi-card.md",
+      "# Multi Card\nFact 1: Earth orbits Sun.\nFact 2: Moon orbits Earth."
+    );
+
+    let createdCardCount = 0;
+    const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
+      type: "qa",
+      generate: () => Promise.resolve({
+        success: true,
+        cards: [
+          { question: "What does Earth orbit?", answer: "The Sun" },
+          { question: "What does the Moon orbit?", answer: "The Earth" },
+        ],
+      }),
+    }));
+
+    const mockCreateCard = spyOn(cardManager, "createCard").mockImplementation(() => {
+      createdCardCount++;
+      return Promise.resolve({
+        success: true as const,
+        data: {
+          metadata: {
+            id: `test-id-${createdCardCount}`,
+            type: "qa",
+            created_date: "2026-01-24",
+            last_reviewed: null,
+            next_review: "2026-01-24",
+            ease_factor: 2.5,
+            interval: 0,
+            repetitions: 0,
+          },
+          content: { question: "Q", answer: "A" },
+        },
+      });
+    });
+
+    const getNow = () => new Date("2026-01-24T03:00:00Z");
+    const stats = await runDailyPass(getNow);
+
+    // Both cards should be created (they're not duplicates)
+    expect(stats.cardsCreated).toBe(2);
+    expect(createdCardCount).toBe(2);
+
+    mockGenerate.mockRestore();
+    mockCreateCard.mockRestore();
+  });
+
+  it("weekly pass also includes dedup stats", async () => {
+    const vaultPath = await createTestVault(join(testDir, "vaults"), "test-vault");
+    await createMarkdownFile(vaultPath, "note.md", "# Test Note\nSome content.");
+
+    const mockGenerate = spyOn(cardGenerator, "createQACardGenerator").mockImplementation(() => ({
+      type: "qa",
+      generate: () => Promise.resolve({ success: true, cards: [] }),
+    }));
+
+    const getNow = () => new Date("2026-01-24T03:00:00Z");
+    const stats = await runWeeklyPass(WEEKLY_CATCH_UP_LIMIT, getNow);
+
+    // Stats should include dedup fields
+    expect(stats.duplicatesDetected).toBeDefined();
+    expect(stats.duplicatesArchived).toBeDefined();
+    expect(stats.duplicatesDetected).toBe(0);
+    expect(stats.duplicatesArchived).toBe(0);
+
+    mockGenerate.mockRestore();
+  });
+});

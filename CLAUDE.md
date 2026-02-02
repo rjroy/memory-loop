@@ -88,6 +88,27 @@ LOG_LEVEL=silent            # Suppress logs (useful in tests)
 
 Each vault must contain a `CLAUDE.md` file at root to be discovered.
 
+## Service Operation
+
+When running as a systemd user service (`memory-loop.service`), check logs with:
+
+```bash
+journalctl --user -u memory-loop --since "1 hour ago"  # Recent logs
+journalctl --user -u memory-loop -f                    # Follow live
+journalctl --user -u memory-loop | grep -i error       # Search for errors
+```
+
+### Scheduled Tasks
+
+Two background processes run on a schedule (times are local):
+
+| Task | Default Time | Purpose |
+|------|--------------|---------|
+| Memory extraction | 3:00 AM | Extracts durable facts from chat transcripts |
+| Card discovery | 4:00 AM | Generates spaced repetition cards from modified files |
+
+Logs use module prefixes: `[extraction-manager]`, `[fact-extractor]`, `[card-discovery-scheduler]`, `[card-generator]`.
+
 ## Testing
 
 Uses Bun's built-in test runner. Tests are colocated under `__tests__/` directories.

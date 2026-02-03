@@ -28,7 +28,7 @@
 
 .ask-question {
   width: 100%;
-  max-width: 800px;
+  max-width: 560px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
@@ -299,8 +299,10 @@
 /* Minimized state - compact bar at bottom */
 .ask-question--minimized {
   position: fixed;
-  left: var(--spacing-md);
-  right: var(--spacing-md);
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - var(--spacing-md) * 2);
+  max-width: 800px;
   bottom: calc(var(--input-area-height, 80px) + var(--spacing-md));
   z-index: 200;
   display: flex;
@@ -344,8 +346,7 @@
 /* On mobile, position above the fixed input area */
 @media (max-width: 767px) {
   .ask-question--minimized {
-    left: var(--spacing-sm);
-    right: var(--spacing-sm);
+    width: calc(100% - var(--spacing-sm) * 2);
     bottom: calc(var(--input-area-height, 70px) + var(--spacing-sm));
   }
 }

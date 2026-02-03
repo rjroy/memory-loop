@@ -3,7 +3,7 @@ title: Daily Prep System Implementation Plan
 date: 2026-02-02
 status: executed
 tags: [skill-development, ui-component, rest-api, ground-tab]
-modules: [daily-prep-manager, session-actions-card, home-view, daily-prep-skill]
+modules: [daily-prep-manager, session-actions-card, home-view, daily-prep-skill, daily-debrief-command]
 related: [.lore/specs/daily-prep.md]
 ---
 
@@ -101,10 +101,7 @@ version: 0.1.0
    - Commitment (1-3 items, suggest not enforce)
    - Save (Write tool to {inboxPath}/daily-prep/YYYY-MM-DD.md)
 
-5. **Evening closure** - Document integration with /daily-debrief:
-   - Check for prep file existence
-   - Show commitment, collect assessments
-   - Update file with closure data
+5. **Evening integration note** - Document that `/daily-debrief` reads prep files for closure (actual implementation is Phase 4)
 
 **Validation checklist (from skill-development):**
 - [x] Frontmatter has name and description
@@ -116,7 +113,50 @@ version: 0.1.0
 
 ---
 
-### Phase 4: Integration
+### Phase 4: Daily Debrief Update
+
+**Critical for bookend system.** Without this, the evening closure flow doesn't exist.
+
+**Modify:**
+- `backend/src/commands/daily-debrief.md` - Add prep file detection and closure flow
+
+**Behavior change:**
+
+1. **First:** Check for today's prep file at `{inboxPath}/daily-prep/YYYY-MM-DD.md`
+2. **If prep exists:** Run closure flow
+   - Show morning commitment and energy/calendar context
+   - Collect assessment per item (Done / Partial / Blocked / Skipped)
+   - Allow freeform dialogue about what happened, blockers, pivots
+   - Update prep file with closure data (assessments, reflection, completed_at)
+3. **If no prep:** Run existing standard debrief unchanged
+
+**Assessment collection:**
+- Use AskUserQuestion for each commitment item
+- Options: Done, Partial, Blocked, Skipped
+- Allow optional note per item (for context on partial/blocked)
+
+**Closure data saved:**
+```yaml
+closure:
+  completed_at: "2026-02-02T17:30:00Z"
+  reflection: "Got pulled into TTS escalation..."
+commitment:
+  - text: "Review Roman's PR"
+    assessment: done
+  - text: "Auth ADR"
+    assessment: partial
+    note: "Started but didn't finish"
+```
+
+**Testing:**
+- Prep file exists → closure flow runs
+- No prep file → standard debrief runs
+- Assessments saved correctly to frontmatter
+- Reflection prose saved to markdown body
+
+---
+
+### Phase 5: Integration
 
 - End-to-end manual testing
 - Edge case handling (empty files, missing directories)
@@ -131,6 +171,8 @@ version: 0.1.0
 | Hook pattern | `frontend/src/hooks/useHome.ts` |
 | Skill reference | `backend/src/skills/vault-task-management/SKILL.md` |
 | Card pattern | `frontend/src/components/home/GoalsCard.tsx` |
+| Daily debrief command | `backend/src/commands/daily-debrief.md` |
+| Prep file format | `backend/src/skills/daily-prep/references/file-format.md` |
 
 ## Verification
 
@@ -144,6 +186,8 @@ bun run lint
 Manual verification:
 1. Ground tab shows correct button based on prep file existence
 2. `/daily-prep` creates file with correct format
-3. `/daily-debrief` detects prep and offers closure
-4. Commitment summary displays on Ground tab
-5. Mobile layout stacks, desktop side-by-side
+3. `/daily-debrief` detects prep and runs closure flow (collect assessments, save to file)
+4. `/daily-debrief` runs standard debrief when no prep file exists
+5. Closure data saved correctly (assessments in frontmatter, reflection in body)
+6. Commitment summary displays on Ground tab
+7. Mobile layout stacks, desktop side-by-side

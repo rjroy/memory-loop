@@ -19,6 +19,8 @@ export interface AskUserQuestionDialogProps {
   request: AskUserQuestionRequest | null;
   onSubmit: (answers: Record<string, string>) => void;
   onCancel: () => void;
+  /** Start in minimized state (default: false) */
+  initialMinimized?: boolean;
 }
 
 /**
@@ -78,16 +80,28 @@ export function AskUserQuestionDialog({
   request,
   onSubmit,
   onCancel,
+  initialMinimized = false,
 }: AskUserQuestionDialogProps): React.ReactNode {
   const titleId = useId();
   const [answers, setAnswers] = useState<Record<string, QuestionAnswer>>({});
+  const [isMinimized, setIsMinimized] = useState(initialMinimized);
 
   // Initialize answers when request changes
   useEffect(() => {
     if (request) {
       setAnswers(createInitialAnswers(request.questions));
+      // Reset to initial state when new request comes in
+      setIsMinimized(initialMinimized);
     }
-  }, [request]);
+  }, [request, initialMinimized]);
+
+  const handleMinimize = useCallback(() => {
+    setIsMinimized(true);
+  }, []);
+
+  const handleMaximize = useCallback(() => {
+    setIsMinimized(false);
+  }, []);
 
   const handleOptionChange = useCallback((
     question: string,
@@ -189,6 +203,44 @@ export function AskUserQuestionDialog({
     return answer && isQuestionAnswered(answer);
   });
 
+  // Minimized state: compact bar at bottom without backdrop
+  if (isMinimized) {
+    return (
+      <div
+        className="ask-question--minimized"
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby={titleId}
+      >
+        <span className="ask-question__icon ask-question__icon--small" aria-hidden="true">?</span>
+        <span id={titleId} className="ask-question__minimized-text">
+          Claude needs your input
+        </span>
+        <div className="ask-question__minimized-actions">
+          <button
+            type="button"
+            className="ask-question__btn ask-question__btn--icon"
+            onClick={handleMaximize}
+            aria-label="Expand dialog"
+            title="Expand dialog"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M3 3h4v1.5H4.5V8H3V3zm6 0h4v5h-1.5V4.5H9V3zM3 9h1.5v3.5H8V14H3V9zm9.5 0H14v5H9v-1.5h3.5V9z"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="ask-question__btn ask-question__btn--cancel ask-question__btn--small"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Full dialog with backdrop
   return (
     <div
       className="ask-question__backdrop"
@@ -206,6 +258,17 @@ export function AskUserQuestionDialog({
           <h2 id={titleId} className="ask-question__title">
             Claude needs your input
           </h2>
+          <button
+            type="button"
+            className="ask-question__btn ask-question__btn--icon ask-question__btn--minimize"
+            onClick={handleMinimize}
+            aria-label="Minimize dialog"
+            title="Minimize to review session"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M3 8h10v1.5H3z"/>
+            </svg>
+          </button>
         </div>
 
         <div className="ask-question__content">

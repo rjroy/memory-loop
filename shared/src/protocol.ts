@@ -486,8 +486,8 @@ export const AskUserQuestionOptionSchema = z.object({
 export const AskUserQuestionItemSchema = z.object({
   /** The full question text to display */
   question: z.string().min(1, "Question text is required"),
-  /** Short label for the question (max 12 chars) */
-  header: z.string().max(12, "Header must be 12 characters or less"),
+  /** Short label for the question */
+  header: z.string().min(1, "Header is required"),
   /** Available choices (2-4 options) */
   options: z.array(AskUserQuestionOptionSchema).min(2).max(4),
   /** If true, users can select multiple options */

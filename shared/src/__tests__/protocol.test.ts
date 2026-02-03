@@ -1182,20 +1182,6 @@ describe("AskUserQuestion Schemas", () => {
       expect(result.options).toHaveLength(2);
     });
 
-    test("rejects header longer than 12 characters", () => {
-      const longHeader = {
-        question: "Question?",
-        header: "VeryLongHeader",
-        options: [
-          { label: "A", description: "Option A" },
-          { label: "B", description: "Option B" },
-        ],
-        multiSelect: false,
-      };
-
-      expect(() => AskUserQuestionItemSchema.parse(longHeader)).toThrow(ZodError);
-    });
-
     test("rejects less than 2 options", () => {
       const tooFewOptions = {
         question: "Question?",

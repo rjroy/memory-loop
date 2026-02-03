@@ -212,7 +212,7 @@ describe("installCommands", () => {
     // Verify custom file was replaced with server version
     const content = await readFile(join(commandsDir, "daily-debrief.md"), "utf-8");
     expect(content).not.toBe(customContent);
-    expect(content).toContain("Quick focused conversation"); // Should have the real content
+    expect(content).toContain("Quick, focused conversation"); // Should have the real content
   });
 
   test("reports mixed installed and updated files", async () => {

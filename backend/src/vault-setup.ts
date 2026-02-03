@@ -8,7 +8,7 @@
  * 4. Write setup completion marker
  */
 
-import { copyFile, mkdir, readdir, readFile, writeFile, stat, chmod } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, writeFile, stat, chmod, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLogger } from "./logger";
@@ -135,7 +135,7 @@ function getCommandTemplatesDir(): string {
 
 /**
  * Installs command templates to the vault's .claude/commands/ directory.
- * Skips files that already exist (does not overwrite).
+ * Always overwrites existing files (server-owned, not user-customizable).
  *
  * @param vaultPath - Absolute path to the vault root
  * @returns Setup step result with list of installed commands
@@ -146,7 +146,7 @@ export async function installCommands(
   log.info(`Installing commands to ${vaultPath}`);
 
   const installed: string[] = [];
-  const skipped: string[] = [];
+  const updated: string[] = [];
   const errors: string[] = [];
 
   const templatesDir = getCommandTemplatesDir();
@@ -194,23 +194,24 @@ export async function installCommands(
     };
   }
 
-  // Copy each template
+  // Copy each template (always overwrite - server-owned files)
   for (const template of templates) {
     const srcPath = join(templatesDir, template);
     const destPath = join(destDir, template);
 
-    // Check if file already exists
-    if (await fileExists(destPath)) {
-      log.debug(`Skipping existing: ${template}`);
-      skipped.push(template);
-      continue;
-    }
+    // Track if this is an update vs new install
+    const existed = await fileExists(destPath);
 
     // Copy template
     try {
       await copyFile(srcPath, destPath);
-      log.info(`Installed: ${template}`);
-      installed.push(template);
+      if (existed) {
+        log.debug(`Updated: ${template}`);
+        updated.push(template);
+      } else {
+        log.info(`Installed: ${template}`);
+        installed.push(template);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log.warn(`Failed to install ${template}: ${message}`);
@@ -223,8 +224,8 @@ export async function installCommands(
   if (installed.length > 0) {
     parts.push(`Installed ${installed.length} command(s)`);
   }
-  if (skipped.length > 0) {
-    parts.push(`${skipped.length} already existed`);
+  if (updated.length > 0) {
+    parts.push(`Updated ${updated.length} command(s)`);
   }
 
   const resultMessage = parts.join(", ") || "No commands to install";
@@ -299,7 +300,7 @@ async function copyDirectoryRecursive(
 /**
  * Installs skill directories to the vault's .claude/skills/ directory.
  * Each skill is a directory containing SKILL.md and supporting files.
- * Skips skills that already exist (does not overwrite).
+ * Always overwrites existing skills (server-owned, not user-customizable).
  *
  * @param vaultPath - Absolute path to the vault root
  * @returns Setup step result with list of installed skills
@@ -310,7 +311,7 @@ export async function installSkills(
   log.info(`Installing skills to ${vaultPath}`);
 
   const installed: string[] = [];
-  const skipped: string[] = [];
+  const updated: string[] = [];
   const errors: string[] = [];
 
   const templatesDir = getSkillTemplatesDir();
@@ -358,23 +359,36 @@ export async function installSkills(
     };
   }
 
-  // Copy each skill directory
+  // Copy each skill directory (always overwrite - server-owned)
   for (const skillName of skillDirs) {
     const srcPath = join(templatesDir, skillName);
     const destPath = join(destDir, skillName);
 
-    // Check if skill already exists
-    if (await directoryExists(destPath)) {
-      log.debug(`Skipping existing skill: ${skillName}`);
-      skipped.push(skillName);
-      continue;
+    // Track if this is an update vs new install
+    const existed = await directoryExists(destPath);
+
+    // Remove existing skill directory to avoid orphan files
+    if (existed) {
+      try {
+        await rm(destPath, { recursive: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.warn(`Failed to remove existing skill ${skillName}: ${message}`);
+        errors.push(`${skillName}: failed to remove existing: ${message}`);
+        continue;
+      }
     }
 
     // Copy skill directory recursively
     try {
       await copyDirectoryRecursive(srcPath, destPath, vaultPath);
-      log.info(`Installed skill: ${skillName}`);
-      installed.push(skillName);
+      if (existed) {
+        log.debug(`Updated skill: ${skillName}`);
+        updated.push(skillName);
+      } else {
+        log.info(`Installed skill: ${skillName}`);
+        installed.push(skillName);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log.warn(`Failed to install skill ${skillName}: ${message}`);
@@ -387,8 +401,8 @@ export async function installSkills(
   if (installed.length > 0) {
     parts.push(`Installed ${installed.length} skill(s)`);
   }
-  if (skipped.length > 0) {
-    parts.push(`${skipped.length} already existed`);
+  if (updated.length > 0) {
+    parts.push(`Updated ${updated.length} skill(s)`);
   }
 
   const resultMessage = parts.join(", ") || "No skills to install";

@@ -50,6 +50,16 @@ export interface TaskToggledResponse {
 }
 
 /**
+ * Daily prep status response from the API.
+ */
+export interface DailyPrepStatusResponse {
+  exists: boolean;
+  commitment?: string[];
+  energy?: string;
+  calendar?: string;
+}
+
+/**
  * Return type for the useHome hook.
  */
 export interface UseHomeResult {
@@ -65,6 +75,8 @@ export interface UseHomeResult {
     lineNumber: number,
     newState?: string
   ) => Promise<TaskToggledResponse | null>;
+  /** Get daily prep status for today */
+  getDailyPrepStatus: () => Promise<DailyPrepStatusResponse | null>;
   /** Whether an operation is currently in progress */
   isLoading: boolean;
   /** Error message from the last failed operation */
@@ -265,11 +277,43 @@ export function useHome(
     [vaultId, api]
   );
 
+  /**
+   * Get daily prep status for today.
+   */
+  const getDailyPrepStatus = useCallback(async (): Promise<DailyPrepStatusResponse | null> => {
+    if (!vaultId) {
+      setError("No vault selected");
+      return null;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const result = await api.get<DailyPrepStatusResponse>(
+        vaultPath(vaultId, "daily-prep/today")
+      );
+      return result;
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to get daily prep status";
+      setError(message);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [vaultId, api]);
+
   return {
     getGoals,
     getInspiration,
     getTasks,
     toggleTask,
+    getDailyPrepStatus,
     isLoading,
     error,
     clearError,

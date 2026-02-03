@@ -14,91 +14,14 @@
   gap: var(--spacing-lg);
 }
 
-/* Session Context Card */
-.home-view__context-card {
+/* Context Row - Contains VaultInfoCard and SessionActionsCard */
+.home-view__context-row {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  padding: var(--spacing-lg);
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
-  backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--glass-shadow);
 }
 
-@supports not (backdrop-filter: blur(10px)) {
-  .home-view__context-card {
-    background-color: var(--color-surface);
-  }
-}
-
-.home-view__vault-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-}
-
-.home-view__vault-label {
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-secondary);
-}
-
-.home-view__vault-name {
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
-  margin: 0;
-}
-
-.home-view__vault-subtitle {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-/* Debrief Buttons */
-.home-view__debrief-buttons {
-  display: flex;
-  flex-direction: row;
-  gap: var(--spacing-sm);
-  flex-wrap: wrap;
-}
-
-.home-view__debrief-button {
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--gradient-secondary);
-  color: var(--color-bg);
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-  transition: background-color 0.15s ease, transform 0.1s ease;
-  white-space: nowrap;
-}
-
-.home-view__debrief-button:hover {
-  background: var(--gradient-secondary-hover);
-}
-
-.home-view__debrief-button:active {
-  transform: scale(0.98);
-}
-
-/* Actions Section (Sync button, etc.) */
-.home-view__actions {
-  display: flex;
-  flex-direction: row;
-  gap: var(--spacing-sm);
-  flex-wrap: wrap;
-  padding-top: var(--spacing-sm);
-  border-top: 1px solid var(--glass-border);
-}
-
-/* Tablet and up - buttons in column to the right */
+/* Tablet and up - side-by-side layout */
 @media (min-width: 768px) {
   .home-view {
     max-width: 1000px;
@@ -106,15 +29,20 @@
     padding: var(--spacing-lg);
   }
 
-  .home-view__context-card {
+  .home-view__context-row {
     flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
+    gap: var(--spacing-md);
   }
 
-  .home-view__debrief-buttons {
-    flex-direction: column;
-    align-items: flex-end;
+  /* VaultInfoCard takes ~40% width on desktop */
+  .home-view__context-row > :first-child {
+    flex: 0 0 auto;
+    min-width: 200px;
+  }
+
+  /* SessionActionsCard fills remaining space */
+  .home-view__context-row > :last-child {
+    flex: 1 1 auto;
   }
 }
 

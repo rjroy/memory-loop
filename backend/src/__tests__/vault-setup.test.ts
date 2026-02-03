@@ -186,35 +186,36 @@ describe("installCommands", () => {
     expect(files).toContain("weekly-synthesis.md");
   });
 
-  test("skips existing files", async () => {
+  test("updates existing files on second install", async () => {
     // First install
     const result1 = await installCommands(vaultPath);
     expect(result1.success).toBe(true);
     expect(result1.installed.length).toBeGreaterThan(0);
 
-    // Second install should skip all
+    // Second install should update all (server-owned files)
     const result2 = await installCommands(vaultPath);
     expect(result2.success).toBe(true);
-    expect(result2.installed.length).toBe(0);
-    expect(result2.message).toContain("already existed");
+    expect(result2.installed.length).toBe(0); // None are "new"
+    expect(result2.message).toContain("Updated");
   });
 
-  test("does not overwrite existing files with different content", async () => {
+  test("overwrites existing files with server version", async () => {
     // Create commands directory with a custom file
     const commandsDir = join(vaultPath, COMMANDS_DEST_PATH);
     await mkdir(commandsDir, { recursive: true });
-    const customContent = "# Custom daily-debrief content\n\nDo not overwrite me.";
+    const customContent = "# Custom daily-debrief content\n\nThis will be overwritten.";
     await writeFile(join(commandsDir, "daily-debrief.md"), customContent);
 
     // Run install
     await installCommands(vaultPath);
 
-    // Verify custom file was preserved
+    // Verify custom file was replaced with server version
     const content = await readFile(join(commandsDir, "daily-debrief.md"), "utf-8");
-    expect(content).toBe(customContent);
+    expect(content).not.toBe(customContent);
+    expect(content).toContain("Quick focused conversation"); // Should have the real content
   });
 
-  test("handles mixed existing and new files", async () => {
+  test("reports mixed installed and updated files", async () => {
     // Create commands directory with one existing file
     const commandsDir = join(vaultPath, COMMANDS_DEST_PATH);
     await mkdir(commandsDir, { recursive: true });
@@ -223,10 +224,11 @@ describe("installCommands", () => {
     const result = await installCommands(vaultPath);
 
     expect(result.success).toBe(true);
-    // Should install all except daily-debrief.md
+    // daily-debrief.md was updated, others were installed
     expect(result.installed).not.toContain("daily-debrief.md");
     expect(result.installed.length).toBeGreaterThan(0);
-    expect(result.message).toContain("already existed");
+    expect(result.message).toContain("Installed");
+    expect(result.message).toContain("Updated");
   });
 
   test("returns list of installed commands", async () => {
@@ -318,32 +320,33 @@ describe("installSkills", () => {
     expect(stats.mode & 0o100).toBeTruthy();
   });
 
-  test("skips existing skill directories", async () => {
+  test("updates existing skills on second install", async () => {
     // First install
     const result1 = await installSkills(vaultPath);
     expect(result1.success).toBe(true);
     expect(result1.installed.length).toBeGreaterThan(0);
 
-    // Second install should skip all
+    // Second install should update all (server-owned)
     const result2 = await installSkills(vaultPath);
     expect(result2.success).toBe(true);
-    expect(result2.installed.length).toBe(0);
-    expect(result2.message).toContain("already existed");
+    expect(result2.installed.length).toBe(0); // None are "new"
+    expect(result2.message).toContain("Updated");
   });
 
-  test("does not overwrite existing skill", async () => {
+  test("overwrites existing skill with server version", async () => {
     // Create skills directory with a custom file in the skill
     const skillDir = join(vaultPath, SKILLS_DEST_PATH, "vault-task-management");
     await mkdir(skillDir, { recursive: true });
-    const customContent = "# Custom SKILL.md content\n\nDo not overwrite me.";
+    const customContent = "# Custom SKILL.md content\n\nThis will be overwritten.";
     await writeFile(join(skillDir, "SKILL.md"), customContent);
 
     // Run install
     await installSkills(vaultPath);
 
-    // Verify custom file was preserved
+    // Verify custom file was replaced with server version
     const content = await readFile(join(skillDir, "SKILL.md"), "utf-8");
-    expect(content).toBe(customContent);
+    expect(content).not.toBe(customContent);
+    expect(content).toContain("vault"); // Should have the real content
   });
 
   test("returns list of installed skills", async () => {

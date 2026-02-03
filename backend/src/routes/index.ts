@@ -22,6 +22,7 @@ import { configRoutes } from "./config";
 import { memoryRoutes } from "./memory";
 import { sessionsRoutes } from "./sessions";
 import { cardRoutes } from "./cards";
+import { dailyPrepRoutes } from "./daily-prep";
 
 /**
  * Hono router for vault-scoped REST API routes.
@@ -70,5 +71,8 @@ vaultRoutes.route("/sessions", sessionsRoutes);
 
 // Spaced repetition card routes (TASK-004)
 vaultRoutes.route("/cards", cardRoutes);
+
+// Daily prep routes
+vaultRoutes.route("/daily-prep", dailyPrepRoutes);
 
 export { vaultRoutes };

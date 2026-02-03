@@ -1,0 +1,129 @@
+/**
+ * SessionActionsCard Component Styles
+ *
+ * Action buttons and commitment summary with glassmorphism styling.
+ */
+
+.session-actions-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow);
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .session-actions-card {
+    background-color: var(--color-surface);
+  }
+}
+
+/* Action Buttons */
+.session-actions-card__buttons {
+  display: flex;
+  flex-direction: row;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.session-actions-card__button {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--gradient-secondary);
+  color: var(--color-bg);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.session-actions-card__button:hover {
+  background: var(--gradient-secondary-hover);
+}
+
+.session-actions-card__button:active {
+  transform: scale(0.98);
+}
+
+/* Commitment Summary */
+.session-actions-card__commitment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--glass-border);
+}
+
+.session-actions-card__commitment-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-accent-secondary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.session-actions-card__commitment-list {
+  margin: 0;
+  padding-left: var(--spacing-md);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: var(--line-height-normal);
+}
+
+.session-actions-card__commitment-item {
+  margin-bottom: var(--spacing-xs);
+}
+
+.session-actions-card__commitment-item:last-child {
+  margin-bottom: 0;
+}
+
+/* Loading State */
+.session-actions-card__loading {
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--glass-border);
+}
+
+.session-actions-card__skeleton-line {
+  width: 60%;
+  height: 0.9em;
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--glass-border) 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: session-actions-shimmer 1.5s infinite;
+}
+
+@keyframes session-actions-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Mobile adjustments */
+@media (max-width: 767px) {
+  .session-actions-card {
+    backdrop-filter: blur(4px);
+  }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .session-actions-card__skeleton-line {
+    animation: none;
+    background: var(--glass-border);
+  }
+}

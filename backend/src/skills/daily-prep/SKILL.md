@@ -116,13 +116,44 @@ Use AskUserQuestion to confirm or allow the user to edit in their own words.
 
 ### 6. Save
 
-To complete the prep, use the Write tool to save the daily prep file:
+Use the Write tool to save the daily prep file.
 
 **Path:** `{inboxPath}/daily-prep/YYYY-MM-DD.md`
 
 Where `inboxPath` is the vault's configured inbox directory (usually `00_Inbox`).
 
-For file format details, see `references/file-format.md`.
+**Required format:** The file MUST have YAML frontmatter followed by markdown body:
+
+```yaml
+---
+date: YYYY-MM-DD
+energy: [user's response, lowercase: sharp/steady/low]
+calendar: [user's response, lowercase: clear/scattered/heavy]
+commitment:
+  - text: "[first commitment]"
+    assessment: null
+  - text: "[second commitment]"
+    assessment: null
+---
+```
+
+Then add the markdown body:
+
+```markdown
+# Daily Prep: YYYY-MM-DD
+
+## Morning
+
+**Energy**: [Title case]
+**Calendar**: [Title case]
+
+### What I'm Committing To
+
+1. [First commitment]
+2. [Second commitment]
+```
+
+For complete schema (evening closure, field definitions), see `references/file-format.md`.
 
 ## Evening Integration
 

@@ -23,6 +23,7 @@ import {
   isTlsEnabled,
   getHttpRedirectPort,
   createHttpRedirectServer,
+  getHealthCollector,
 } from "../server";
 import type { VaultInfo } from "@memory-loop/shared";
 
@@ -551,6 +552,219 @@ describe("Vaults endpoint", () => {
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe(
       "http://localhost:5173"
     );
+  });
+});
+
+describe("Vault creation endpoint", () => {
+  let testDir: string;
+  const originalVaultsDir = process.env.VAULTS_DIR;
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `server-vault-create-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(testDir, { recursive: true });
+    process.env.VAULTS_DIR = testDir;
+  });
+
+  afterEach(async () => {
+    if (originalVaultsDir === undefined) {
+      delete process.env.VAULTS_DIR;
+    } else {
+      process.env.VAULTS_DIR = originalVaultsDir;
+    }
+
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  it("POST /api/vaults creates a new vault", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/api/vaults", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "My New Vault" }),
+    });
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { vault: VaultInfo };
+    expect(json.vault).toBeDefined();
+    expect(json.vault.name).toBe("My New Vault");
+    expect(json.vault.hasClaudeMd).toBe(true);
+  });
+
+  it("POST /api/vaults returns 400 when title is missing", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/api/vaults", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: { code: string; message: string } };
+    expect(json.error.code).toBe("VALIDATION_ERROR");
+    expect(json.error.message).toBe("Title is required");
+  });
+
+  it("POST /api/vaults returns 400 when title is empty string", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/api/vaults", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "   " }),
+    });
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: { code: string; message: string } };
+    expect(json.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("POST /api/vaults returns 400 when title is not a string", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/api/vaults", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: 123 }),
+    });
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: { code: string; message: string } };
+    expect(json.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("POST /api/vaults creates vault with normalized directory name", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/api/vaults", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "My Special Vault!" }),
+    });
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { vault: VaultInfo };
+    // The vault ID should be normalized (lowercase, no special chars)
+    expect(json.vault.id).toMatch(/^[a-z0-9-]+$/);
+  });
+
+  it("POST /api/vaults includes CORS headers", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/api/vaults", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost:5173",
+      },
+      body: JSON.stringify({ title: "CORS Test Vault" }),
+    });
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:5173");
+  });
+});
+
+describe("Vault health endpoint", () => {
+  let testDir: string;
+  const originalVaultsDir = process.env.VAULTS_DIR;
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `server-health-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(testDir, { recursive: true });
+
+    // Create a test vault
+    const vaultDir = join(testDir, "test-vault");
+    await mkdir(vaultDir, { recursive: true });
+    await writeFile(join(vaultDir, "CLAUDE.md"), "# Test Vault");
+
+    process.env.VAULTS_DIR = testDir;
+  });
+
+  afterEach(async () => {
+    if (originalVaultsDir === undefined) {
+      delete process.env.VAULTS_DIR;
+    } else {
+      process.env.VAULTS_DIR = originalVaultsDir;
+    }
+
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  it("GET /api/vaults/:vaultId/health returns 200 with issues array", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/api/vaults/test-vault/health");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { issues: unknown[] };
+    expect(json.issues).toBeDefined();
+    expect(Array.isArray(json.issues)).toBe(true);
+  });
+
+  it("GET /api/vaults/:vaultId/health returns 404 for non-existent vault", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/api/vaults/nonexistent/health");
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(404);
+    const json = (await res.json()) as { error: { code: string; message: string } };
+    expect(json.error.code).toBe("VAULT_NOT_FOUND");
+  });
+
+  it("GET /api/vaults/:vaultId/health includes CORS headers", async () => {
+    const app = createApp();
+    const req = new Request("http://localhost/api/vaults/test-vault/health", {
+      headers: {
+        Origin: "http://localhost:5173",
+      },
+    });
+    const res = await app.fetch(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:5173");
+  });
+});
+
+describe("getHealthCollector", () => {
+  it("returns a health collector for a vault", () => {
+    const collector = getHealthCollector("test-vault-1");
+    expect(collector).toBeDefined();
+    expect(typeof collector.getIssues).toBe("function");
+    expect(typeof collector.report).toBe("function");
+  });
+
+  it("returns the same collector for the same vault ID", () => {
+    const collector1 = getHealthCollector("same-vault");
+    const collector2 = getHealthCollector("same-vault");
+    expect(collector1).toBe(collector2);
+  });
+
+  it("returns different collectors for different vault IDs", () => {
+    const collector1 = getHealthCollector("vault-a");
+    const collector2 = getHealthCollector("vault-b");
+    expect(collector1).not.toBe(collector2);
+  });
+
+  it("collector starts with empty issues", () => {
+    const collector = getHealthCollector("empty-vault");
+    const issues = collector.getIssues();
+    expect(issues).toEqual([]);
   });
 });
 

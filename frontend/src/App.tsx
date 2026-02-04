@@ -10,8 +10,8 @@
  * - Session management
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { SessionProvider, useSession, useServerMessageHandler } from "./contexts/SessionContext";
+import React, { useState, useEffect, useRef } from "react";
+import { SessionProvider, useSession } from "./contexts/SessionContext";
 import { VaultSelect } from "./components/vault";
 import { ModeToggle, ConfirmDialog, Toast, type ToastVariant } from "./components/shared";
 import { HomeView } from "./components/home";
@@ -20,7 +20,6 @@ import { Discussion } from "./components/discussion";
 import { BrowseMode } from "./components/browse";
 import { ConfigEditorDialog, type EditableVaultConfig } from "./components/vault";
 import { useHoliday } from "./hooks/useHoliday";
-import { useWebSocket } from "./hooks/useWebSocket";
 import { useMeetings } from "./hooks/useMeetings";
 import { useConfig } from "./hooks/useConfig";
 import "./App.css";
@@ -35,7 +34,6 @@ type DialogType = "changeVault" | null;
  */
 function MainContent(): React.ReactNode {
   const { mode, vault, clearVault, setMeetingState, updateVaultConfig } = useSession();
-  const handleServerMessage = useServerMessageHandler();
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
   // Toast state for success feedback (TASK-010)
@@ -45,58 +43,19 @@ function MainContent(): React.ReactNode {
   const holiday = useHoliday();
   // Mobile header collapse state
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(true);
-  // Session restoration tracking (for page refresh and WebSocket reconnection)
+  // Meeting state restoration tracking (once per vault)
   const hasRequestedMeetingStateRef = useRef(false);
-  const hasSentVaultSelectionRef = useRef(false);
 
-  // REST API hooks for meeting and config operations (migrated from WebSocket)
+  // REST API hooks for meeting and config operations
   const { getMeetingState } = useMeetings(vault?.id);
   const { updateConfig, isLoading: configSaving, error: configError } = useConfig(vault?.id);
 
-  // Re-establish vault context on WebSocket reconnection.
-  // After reconnect, the server has a fresh connection state and needs to know
-  // which vault we're using.
-  const handleReconnect = useCallback(() => {
-    hasSentVaultSelectionRef.current = false;
-    hasRequestedMeetingStateRef.current = false;
-  }, []);
-
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
-    onReconnect: handleReconnect,
-  });
-
-  // Process server messages through the session handler
+  // Request meeting state on vault selection to restore any active meeting.
+  // Runs once when vault changes (including initial mount after page refresh).
+  // Uses REST API. Fixes #377 where refreshing with an active meeting orphaned it.
   useEffect(() => {
-    if (lastMessage) {
-      handleServerMessage(lastMessage);
-    }
-  }, [lastMessage, handleServerMessage]);
-
-  // Re-send vault selection on WebSocket reconnect (server needs vault context)
-  useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      !hasSentVaultSelectionRef.current
-    ) {
-      sendMessage({ type: "select_vault", vaultId: vault.id });
-      hasSentVaultSelectionRef.current = true;
-    }
-  }, [connectionStatus, vault, sendMessage]);
-
-  // Request meeting state after vault selection to restore any active meeting.
-  // This runs on initial mount (page refresh) and after WebSocket reconnection.
-  // Uses REST API (migrated from WebSocket). Fixes #377 where refreshing with
-  // an active meeting orphaned it.
-  useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      hasSentVaultSelectionRef.current &&
-      !hasRequestedMeetingStateRef.current
-    ) {
+    if (vault && !hasRequestedMeetingStateRef.current) {
       hasRequestedMeetingStateRef.current = true;
-      // Use REST API to get meeting state
       void getMeetingState().then((state) => {
         if (state) {
           setMeetingState({
@@ -108,7 +67,14 @@ function MainContent(): React.ReactNode {
         }
       });
     }
-  }, [connectionStatus, vault, getMeetingState, setMeetingState]);
+  }, [vault, getMeetingState, setMeetingState]);
+
+  // Reset meeting state tracking when vault changes
+  useEffect(() => {
+    if (!vault) {
+      hasRequestedMeetingStateRef.current = false;
+    }
+  }, [vault]);
 
   // Use holiday-specific logo if available
   const logoSrc = holiday ? `/images/holiday/${holiday}-logo.webp` : "/images/logo.webp";

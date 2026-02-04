@@ -3,11 +3,12 @@
  *
  * Displays backend health issues (errors and warnings) in a collapsible panel.
  * Appears at the bottom of the Home/Ground view when issues exist.
+ * Uses REST API polling via useHealth hook.
  */
 
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect } from "react";
 import { useSession } from "../../contexts/SessionContext";
-import { useWebSocket } from "../../hooks/useWebSocket";
+import { useHealth } from "../../hooks/useHealth";
 import type { HealthIssue } from "@memory-loop/shared";
 import "./HealthPanel.css";
 
@@ -52,32 +53,18 @@ function getCategoryLabel(category: HealthIssue["category"]): string {
  * - Collapsed state shows "Issues (N)" with error/warning counts
  * - Expanded state shows list with severity indicators and dismiss buttons
  * - Touch-friendly with 44px tap targets
+ * - Uses REST API polling via useHealth hook
  */
 export function HealthPanel(): React.ReactNode {
-  const { health, vault, toggleHealthExpanded, dismissHealthIssue } = useSession();
-  const hasSentVaultSelectionRef = useRef(false);
+  const { health, vault, toggleHealthExpanded, setHealthIssues, dismissHealthIssue } = useSession();
+  const { issues: fetchedIssues, dismissIssue: dismissFromHook } = useHealth(vault?.id);
 
-  // Reset vault selection tracking on reconnect
-  const handleReconnect = useCallback(() => {
-    hasSentVaultSelectionRef.current = false;
-  }, []);
-
-  const { sendMessage, connectionStatus } = useWebSocket({
-    onReconnect: handleReconnect,
-  });
-
-  // Send vault selection when WebSocket connects.
-  // Each WebSocket connection has its own server-side state.
+  // Sync fetched issues to session context (only when a vault is selected)
   useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      vault &&
-      !hasSentVaultSelectionRef.current
-    ) {
-      sendMessage({ type: "select_vault", vaultId: vault.id });
-      hasSentVaultSelectionRef.current = true;
+    if (vault) {
+      setHealthIssues(fetchedIssues);
     }
-  }, [connectionStatus, vault, sendMessage]);
+  }, [vault, fetchedIssues, setHealthIssues]);
 
   const handleToggle = useCallback(() => {
     toggleHealthExpanded();
@@ -85,12 +72,12 @@ export function HealthPanel(): React.ReactNode {
 
   const handleDismiss = useCallback(
     (issueId: string) => {
-      // Update local state immediately
+      // Update local state immediately (optimistic)
       dismissHealthIssue(issueId);
-      // Send dismiss to server
-      sendMessage({ type: "dismiss_health_issue", issueId });
+      // Also dismiss in the hook state
+      dismissFromHook(issueId);
     },
-    [dismissHealthIssue, sendMessage]
+    [dismissHealthIssue, dismissFromHook]
   );
 
   // Don't render if no issues

@@ -2,6 +2,9 @@
  * Tests for HealthPanel component
  *
  * Tests rendering of health issues, expand/collapse behavior, and dismiss functionality.
+ * Note: HealthPanel uses REST API via useHealth hook, but tests pass initialHealthIssues
+ * to SessionProvider to avoid network calls. The useEffect in HealthPanel only syncs
+ * issues when a vault is selected, so tests with no vault work correctly.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -9,46 +12,7 @@ import { render, screen, cleanup, fireEvent, act } from "@testing-library/react"
 import type { ReactNode } from "react";
 import { HealthPanel } from "../HealthPanel";
 import { SessionProvider } from "../../../contexts/SessionContext";
-import type { HealthIssue, ClientMessage, ServerMessage, VaultInfo } from "@memory-loop/shared";
-
-// Mock WebSocket
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 3;
-
-  readyState = MockWebSocket.OPEN;
-  onopen: ((e: Event) => void) | null = null;
-  onclose: ((e: Event) => void) | null = null;
-  onmessage: ((e: MessageEvent) => void) | null = null;
-  onerror: ((e: Event) => void) | null = null;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  constructor(_url: string) {
-    wsInstances.push(this);
-    setTimeout(() => {
-      if (this.onopen) this.onopen(new Event("open"));
-    }, 0);
-  }
-
-  send(data: string): void {
-    sentMessages.push(JSON.parse(data) as ClientMessage);
-  }
-
-  close(): void {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-
-  simulateMessage(msg: ServerMessage): void {
-    if (this.onmessage) {
-      this.onmessage(new MessageEvent("message", { data: JSON.stringify(msg) }));
-    }
-  }
-}
-
-let wsInstances: MockWebSocket[] = [];
-let sentMessages: ClientMessage[] = [];
-const originalWebSocket = globalThis.WebSocket;
+import type { HealthIssue, VaultInfo } from "@memory-loop/shared";
 
 const testVault: VaultInfo = {
   id: "vault-1",
@@ -65,24 +29,19 @@ const testVault: VaultInfo = {
   quotesPerWeek: 1,
   badges: [],
   order: 999999,
-    cardsEnabled: true,
-      viMode: false,
+  cardsEnabled: true,
+  viMode: false,
 };
 
 beforeEach(() => {
-  wsInstances = [];
-  sentMessages = [];
   localStorage.clear();
   // Note: We intentionally do NOT set localStorage vault ID here.
   // Setting it would trigger SELECT_VAULT action which resets health state,
   // overwriting the initialHealthIssues we pass to SessionProvider.
-  // @ts-expect-error - mocking WebSocket
-  globalThis.WebSocket = MockWebSocket;
 });
 
 afterEach(() => {
   cleanup();
-  globalThis.WebSocket = originalWebSocket;
 });
 
 // Helper to create test issues
@@ -279,28 +238,24 @@ describe("HealthPanel", () => {
       expect(screen.queryByRole("button", { name: /Dismiss/ })).toBeNull();
     });
 
-    it("sends dismiss message on click", async () => {
+    it("removes issue from display on dismiss click", () => {
       render(<HealthPanel />, {
         wrapper: createTestWrapper(
-          [createTestIssue({ id: "dismiss-me", dismissible: true })],
+          [createTestIssue({ id: "dismiss-me", message: "Error to dismiss", dismissible: true })],
           true
         ),
       });
 
-      // Wait for WebSocket to connect
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 10));
-      });
+      // Verify the issue is displayed
+      expect(screen.getByText("Error to dismiss")).toBeDefined();
 
       const dismissButton = screen.getByRole("button", { name: /Dismiss/ });
       act(() => {
         fireEvent.click(dismissButton);
       });
 
-      // The dismiss_health_issue message should be sent
-      const dismissMessage = sentMessages.find((m) => m.type === "dismiss_health_issue");
-      expect(dismissMessage).toBeDefined();
-      expect((dismissMessage as { issueId: string }).issueId).toBe("dismiss-me");
+      // The issue should be removed from display (panel hides when no issues)
+      expect(screen.queryByText("Error to dismiss")).toBeNull();
     });
   });
 

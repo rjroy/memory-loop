@@ -243,36 +243,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   }, [lastMessage, selectedVaultId, sendMessage]);
 
   // Note: setup_complete message handling moved to REST API in handleSetupClick
-
-  // Handle vault_created response
-  useEffect(() => {
-    if (lastMessage?.type === "vault_created" && addVaultCreating) {
-      setAddVaultCreating(false);
-      setAddVaultDialogOpen(false);
-      setAddVaultError(null);
-
-      // Add the new vault to the list
-      const newVault = lastMessage.vault;
-      setVaults((prev) => [...prev, newVault]);
-
-      // Show success toast
-      setToastVariant("success");
-      setToastMessage(`Vault "${newVault.name}" created`);
-      setToastVisible(true);
-
-      console.log(`[VaultSelect] Vault created: ${newVault.id}`);
-    }
-  }, [lastMessage, addVaultCreating]);
-
-  // Handle error during vault creation
-  useEffect(() => {
-    if (lastMessage?.type === "error" && addVaultCreating) {
-      setAddVaultCreating(false);
-      setAddVaultError(lastMessage.message);
-      console.warn("[VaultSelect] Vault creation failed:", lastMessage.message);
-    }
-  }, [lastMessage, addVaultCreating]);
-
+  // Note: vault_created message handling moved to REST API in handleAddVaultConfirm
   // Note: config_updated message handling moved to REST API in handleConfigSave
 
   // Toast dismiss handler
@@ -408,20 +379,42 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
 
   // Handle Add Vault button click - open dialog
   function handleAddVaultClick() {
-    if (connectionStatus !== "connected") {
-      setError("Not connected to server. Please wait...");
-      return;
-    }
     setAddVaultError(null);
     setAddVaultDialogOpen(true);
   }
 
-  // Handle Add Vault dialog confirm - send create_vault message
-  function handleAddVaultConfirm(title: string) {
+  // Handle Add Vault dialog confirm - use REST API
+  async function handleAddVaultConfirm(title: string) {
     setAddVaultCreating(true);
     setAddVaultError(null);
     console.log(`[VaultSelect] Creating vault: ${title}`);
-    sendMessage({ type: "create_vault", title });
+
+    try {
+      interface CreateVaultResponse {
+        vault: VaultInfo;
+      }
+      const result = await api.post<CreateVaultResponse>("/api/vaults", { title });
+      const newVault = result.vault;
+
+      // Add the new vault to the list
+      setVaults((prev) => [...prev, newVault]);
+
+      // Show success toast
+      setToastVariant("success");
+      setToastMessage(`Vault "${newVault.name}" created`);
+      setToastVisible(true);
+
+      // Close dialog
+      setAddVaultDialogOpen(false);
+
+      console.log(`[VaultSelect] Vault created: ${newVault.id}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create vault";
+      setAddVaultError(message);
+      console.warn("[VaultSelect] Vault creation failed:", message);
+    } finally {
+      setAddVaultCreating(false);
+    }
   }
 
   // Handle Add Vault dialog cancel
@@ -742,7 +735,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       {/* Add Vault Dialog */}
       <AddVaultDialog
         isOpen={addVaultDialogOpen}
-        onConfirm={handleAddVaultConfirm}
+        onConfirm={(title) => void handleAddVaultConfirm(title)}
         onCancel={handleAddVaultCancel}
         isCreating={addVaultCreating}
         createError={addVaultError}

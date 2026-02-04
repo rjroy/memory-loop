@@ -16,9 +16,33 @@ import { serveStatic } from "hono/bun";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { join } from "node:path";
 import { lstat, readFile } from "node:fs/promises";
-import { discoverVaults, VaultsDirError } from "./vault-manager";
+import { discoverVaults, VaultsDirError, createVault, VaultCreationError, getVaultById } from "./vault-manager";
 import { createWebSocketHandler } from "./websocket-handler";
+import { createHealthCollector, type HealthCollector } from "./health-collector";
 import { isPathWithinVault } from "./file-browser";
+
+/**
+ * Vault-scoped health collector registry.
+ * Maps vaultId -> HealthCollector instance.
+ * Used by REST health endpoint; collectors are created on first access.
+ */
+const vaultHealthCollectors = new Map<string, HealthCollector>();
+
+/**
+ * Gets or creates a health collector for a vault.
+ * Called by REST endpoint and can be used by other modules to report issues.
+ *
+ * @param vaultId - The vault directory name (ID)
+ * @returns HealthCollector instance for the vault
+ */
+export function getHealthCollector(vaultId: string): HealthCollector {
+  let collector = vaultHealthCollectors.get(vaultId);
+  if (!collector) {
+    collector = createHealthCollector();
+    vaultHealthCollectors.set(vaultId, collector);
+  }
+  return collector;
+}
 import { getSessionForVault } from "./session-manager";
 import { uploadFile } from "./file-upload";
 import { serverLog as log } from "./logger";
@@ -236,6 +260,56 @@ export const createApp = () => {
       // Re-throw unexpected errors
       throw error;
     }
+  });
+
+  // Create vault endpoint
+  app.post("/api/vaults", async (c) => {
+    try {
+      const body: unknown = await c.req.json();
+      const title = typeof body === "object" && body !== null && "title" in body
+        ? (body as { title: unknown }).title
+        : undefined;
+
+      if (!title || typeof title !== "string" || title.trim().length === 0) {
+        return c.json(
+          { error: { code: "VALIDATION_ERROR", message: "Title is required" } },
+          400
+        );
+      }
+
+      const vault = await createVault(title);
+      log.info(`Created vault via REST: ${vault.id}`);
+      return c.json({ vault }, 201);
+    } catch (error) {
+      if (error instanceof VaultCreationError) {
+        return c.json(
+          { error: { code: "VALIDATION_ERROR", message: error.message } },
+          400
+        );
+      }
+      log.error("Failed to create vault:", error);
+      throw error;
+    }
+  });
+
+  // Vault health endpoint - returns health issues for a vault
+  app.get("/api/vaults/:vaultId/health", async (c) => {
+    const vaultId = c.req.param("vaultId");
+
+    // Verify vault exists
+    const vault = await getVaultById(vaultId);
+    if (!vault) {
+      return c.json(
+        { error: { code: "VAULT_NOT_FOUND", message: "Vault not found" } },
+        404
+      );
+    }
+
+    // Get issues from the vault's health collector
+    const collector = getHealthCollector(vaultId);
+    const issues = collector.getIssues();
+
+    return c.json({ issues });
   });
 
   // Session lookup endpoint - returns sessionId if a session exists for this vault

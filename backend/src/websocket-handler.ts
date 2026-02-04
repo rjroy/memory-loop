@@ -363,26 +363,6 @@ export class WebSocketHandler {
           toolName,
           input,
         });
-
-        const timeout = setTimeout(() => {
-          if (this.state.pendingPermissions.has(toolUseId)) {
-            this.state.pendingPermissions.delete(toolUseId);
-            log.warn(`Tool permission request timed out: ${toolUseId}`);
-            resolve(false);
-          }
-        }, 60000);
-
-        const originalResolve = resolve;
-        this.state.pendingPermissions.set(toolUseId, {
-          resolve: (allowed: boolean) => {
-            clearTimeout(timeout);
-            originalResolve(allowed);
-          },
-          reject: (error: Error) => {
-            clearTimeout(timeout);
-            reject(error);
-          },
-        });
       });
     };
   }
@@ -421,27 +401,6 @@ export class WebSocketHandler {
           type: "ask_user_question_request",
           toolUseId,
           questions,
-        });
-
-        const timeout = setTimeout(() => {
-          if (this.state.pendingAskUserQuestions.has(toolUseId)) {
-            this.state.pendingAskUserQuestions.delete(toolUseId);
-            log.warn(`AskUserQuestion request timed out: ${toolUseId}`);
-            reject(new Error("Request timed out"));
-          }
-        }, 300000); // 5 minute timeout for user questions
-
-        const originalResolve = resolve;
-        const originalReject = reject;
-        this.state.pendingAskUserQuestions.set(toolUseId, {
-          resolve: (answers: Record<string, string>) => {
-            clearTimeout(timeout);
-            originalResolve(answers);
-          },
-          reject: (error: Error) => {
-            clearTimeout(timeout);
-            originalReject(error);
-          },
         });
       });
     };

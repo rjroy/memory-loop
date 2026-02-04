@@ -789,6 +789,110 @@ describe("VaultSelect", () => {
         expect(screen.queryByLabelText("Vault Name")).toBeNull();
       });
     });
+
+    it("clears input when dialog is reopened after cancel", async () => {
+      render(<VaultSelect />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Add Vault")).toBeTruthy();
+      });
+
+      // Open dialog, enter text, cancel
+      const addCard = screen.getByText("Add Vault").closest("[role='option']")!;
+      fireEvent.click(addCard);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Vault Name")).toBeTruthy();
+      });
+
+      const input = screen.getByLabelText("Vault Name");
+      fireEvent.change(input, { target: { value: "Temporary Input" } });
+      expect((input as HTMLInputElement).value).toBe("Temporary Input");
+
+      fireEvent.click(screen.getByText("Cancel"));
+
+      await waitFor(() => {
+        expect(screen.queryByLabelText("Vault Name")).toBeNull();
+      });
+
+      // Reopen dialog - input should be cleared
+      fireEvent.click(addCard);
+
+      await waitFor(() => {
+        const newInput = screen.getByLabelText("Vault Name");
+        expect((newInput as HTMLInputElement).value).toBe("");
+      });
+    });
+
+    it("has Create button in the dialog", async () => {
+      render(<VaultSelect />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Add Vault")).toBeTruthy();
+      });
+
+      const addCard = screen.getByText("Add Vault").closest("[role='option']")!;
+      fireEvent.click(addCard);
+
+      await waitFor(() => {
+        const createButton = screen.getByRole("button", { name: "Create" });
+        expect(createButton).toBeTruthy();
+      });
+    });
+
+    it("has Cancel button in the dialog", async () => {
+      render(<VaultSelect />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Add Vault")).toBeTruthy();
+      });
+
+      const addCard = screen.getByText("Add Vault").closest("[role='option']")!;
+      fireEvent.click(addCard);
+
+      await waitFor(() => {
+        const cancelButton = screen.getByRole("button", { name: "Cancel" });
+        expect(cancelButton).toBeTruthy();
+      });
+    });
+
+    it("allows entering a vault name", async () => {
+      render(<VaultSelect />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Add Vault")).toBeTruthy();
+      });
+
+      const addCard = screen.getByText("Add Vault").closest("[role='option']")!;
+      fireEvent.click(addCard);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Vault Name")).toBeTruthy();
+      });
+
+      const input = screen.getByLabelText("Vault Name");
+      fireEvent.change(input, { target: { value: "My New Test Vault" } });
+
+      expect((input as HTMLInputElement).value).toBe("My New Test Vault");
+    });
+
+    it("shows dialog with input label", async () => {
+      render(<VaultSelect />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Add Vault")).toBeTruthy();
+      });
+
+      const addCard = screen.getByText("Add Vault").closest("[role='option']")!;
+      fireEvent.click(addCard);
+
+      await waitFor(() => {
+        // Dialog should have the Vault Name label
+        expect(screen.getByText("Vault Name")).toBeTruthy();
+        // And the instruction message
+        expect(screen.getByText(/Enter a name for your new vault/)).toBeTruthy();
+      });
+    });
   });
 
   // Note: Vault creation REST API tests removed because the API client

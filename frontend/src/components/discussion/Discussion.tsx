@@ -438,6 +438,15 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
     // On desktop, Enter submits and Shift+Enter adds a newline
     // When submitting (draft mode), Enter adds newline to prevent premature submission
     if (e.key === "Enter" && !e.shiftKey && !isTouchDevice && !isSubmitting) {
+      // Check for trailing backslash (line continuation, like Claude Code CLI)
+      // If input ends with `\` (as last non-whitespace char), remove it and add newline
+      const trimmedEnd = input.trimEnd();
+      if (trimmedEnd.endsWith("\\")) {
+        e.preventDefault();
+        setInput(trimmedEnd.slice(0, -1) + "\n");
+        return;
+      }
+
       e.preventDefault();
       handleSubmit(e);
     }

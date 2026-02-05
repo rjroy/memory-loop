@@ -74,6 +74,18 @@ export interface DeleteDirectoryResponse {
 }
 
 /**
+ * Response from GET /directories/:path/contents (directory contents preview)
+ */
+export interface DirectoryContentsResponse {
+  path: string;
+  files: string[];
+  directories: string[];
+  totalFiles: number;
+  totalDirectories: number;
+  truncated: boolean;
+}
+
+/**
  * Response from PATCH /files/* (rename/move file)
  */
 export interface RenameFileResponse {
@@ -117,6 +129,8 @@ export interface UseFileBrowserResult {
   createDirectory: (parentPath: string, name: string) => Promise<string>;
   /** Delete a directory and all its contents */
   deleteDirectory: (path: string) => Promise<DeleteDirectoryResponse>;
+  /** Get directory contents for deletion preview */
+  getDirectoryContents: (path: string) => Promise<DirectoryContentsResponse>;
   /** Rename a file or directory */
   renameFile: (path: string, newName: string) => Promise<RenameFileResponse>;
   /** Move a file or directory to a new location */
@@ -432,6 +446,43 @@ export function useFileBrowser(
   );
 
   /**
+   * Get directory contents for deletion preview.
+   * GET /api/vaults/:vaultId/directories/:path/contents
+   */
+  const getDirectoryContents = useCallback(
+    async (path: string): Promise<DirectoryContentsResponse> => {
+      if (!vaultId) {
+        const err = new ApiError(400, "VALIDATION_ERROR", "No vault selected");
+        setError(err);
+        throw err;
+      }
+
+      if (!path) {
+        const err = new ApiError(400, "VALIDATION_ERROR", "Directory path is required");
+        setError(err);
+        throw err;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const result = await api.get<DirectoryContentsResponse>(
+          vaultPath(vaultId, `directories/${encodeFilePath(path)}/contents`)
+        );
+        return result;
+      } catch (err) {
+        const apiError = err instanceof ApiError ? err : new ApiError(500, "INTERNAL_ERROR", String(err));
+        setError(apiError);
+        throw apiError;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [vaultId, api, encodeFilePath]
+  );
+
+  /**
    * Rename a file or directory.
    * PATCH /api/vaults/:vaultId/files/:path with { newName }
    */
@@ -527,6 +578,7 @@ export function useFileBrowser(
     createFile,
     createDirectory,
     deleteDirectory,
+    getDirectoryContents,
     renameFile,
     moveFile,
     isLoading,

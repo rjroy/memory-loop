@@ -40,8 +40,6 @@ export interface FileTreeProps {
   onGetDirectoryContents?: (path: string) => void;
   /** Directory contents for deletion preview (from parent state) */
   pendingDirectoryContents?: DirectoryContents | null;
-  /** Callback when a directory archive is requested */
-  onArchiveFile?: (path: string) => void;
   /** Callback when "Think about" is selected for a file */
   onThinkAbout?: (path: string) => void;
   /** Callback when pinned assets change (for server sync) */
@@ -328,27 +326,6 @@ function TrashIcon(): React.ReactNode {
 }
 
 /**
- * Archive icon for archive action.
- */
-function ArchiveIcon(): React.ReactNode {
-  return (
-    <svg
-      className="file-tree__icon-svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="2" y="3" width="20" height="5" rx="1" />
-      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-      <line x1="10" y1="12" x2="14" y2="12" />
-    </svg>
-  );
-}
-
-/**
  * Folder plus icon for "Add Directory" action.
  */
 function FolderPlusIcon(): React.ReactNode {
@@ -472,7 +449,7 @@ interface ContextMenuState {
  * - Touch-friendly with 44px minimum height targets
  * - Pinned folders for quick access
  */
-export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDeleteDirectory, onGetDirectoryContents, pendingDirectoryContents, onArchiveFile, onThinkAbout, onPinnedAssetsChange, onCreateDirectory, onCreateFile, onRenameFile, onMoveFile }: FileTreeProps): React.ReactNode {
+export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDeleteDirectory, onGetDirectoryContents, pendingDirectoryContents, onThinkAbout, onPinnedAssetsChange, onCreateDirectory, onCreateFile, onRenameFile, onMoveFile }: FileTreeProps): React.ReactNode {
   const { browser, toggleDirectory, setCurrentPath, pinFolder, unpinFolder } = useSession();
   const { currentPath, expandedDirs, directoryCache, isLoading, pinnedFolders } = browser;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -485,7 +462,6 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDelete
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null);
   const [pendingDeleteDirPath, setPendingDeleteDirPath] = useState<string | null>(null);
-  const [pendingArchivePath, setPendingArchivePath] = useState<string | null>(null);
   const [pendingCreateDirPath, setPendingCreateDirPath] = useState<string | null>(null);
   const [pendingCreateFilePath, setPendingCreateFilePath] = useState<string | null>(null);
   const [pendingRenamePath, setPendingRenamePath] = useState<string | null>(null);
@@ -665,22 +641,6 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDelete
     setPendingDeleteDirPath(null);
   }, []);
 
-  const handleArchiveClick = useCallback(() => {
-    setPendingArchivePath(contextMenu.path);
-    closeContextMenu();
-  }, [contextMenu.path, closeContextMenu]);
-
-  const handleConfirmArchive = useCallback(() => {
-    if (pendingArchivePath && onArchiveFile) {
-      onArchiveFile(pendingArchivePath);
-    }
-    setPendingArchivePath(null);
-  }, [pendingArchivePath, onArchiveFile]);
-
-  const handleCancelArchive = useCallback(() => {
-    setPendingArchivePath(null);
-  }, []);
-
   const handleCreateDirClick = useCallback(() => {
     setPendingCreateDirPath(contextMenu.path);
     closeContextMenu();
@@ -792,42 +752,6 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDelete
   }, [contextMenu.isOpen, closeContextMenu]);
 
   const isPinned = pinnedFolders.includes(contextMenu.path);
-
-  // Check if the selected directory is archivable
-  // Archivable directories are:
-  // 1. The "chats" directory under inbox (e.g., "00_Inbox/chats")
-  // 2. Direct children of projects folder (e.g., "01_Projects/MyProject")
-  // 3. Direct children of areas folder (e.g., "02_Areas/MyArea")
-  const isArchivable = (() => {
-    if (!contextMenu.isDirectory) return false;
-
-    const path = contextMenu.path;
-    const parts = path.split("/");
-
-    // Check for chats folder (e.g., "00_Inbox/chats" or "Inbox/chats")
-    if (parts.length >= 2) {
-      const dirName = parts[parts.length - 1].toLowerCase();
-      const parentName = parts[parts.length - 2].toLowerCase();
-      if (dirName === "chats" && (parentName.includes("inbox") || parentName === "00_inbox")) {
-        return true;
-      }
-    }
-
-    // Check for project or area directory (direct child of Projects/Areas folder)
-    if (parts.length === 2) {
-      const parentDir = parts[0].toLowerCase();
-      // Common project folder patterns
-      if (parentDir === "01_projects" || parentDir === "projects" || parentDir === "01-projects") {
-        return true;
-      }
-      // Common area folder patterns
-      if (parentDir === "02_areas" || parentDir === "areas" || parentDir === "02-areas") {
-        return true;
-      }
-    }
-
-    return false;
-  })();
 
   // Show loading state for root
   if (isLoading && rootEntries.length === 0) {
@@ -983,17 +907,6 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDelete
               <span>Create File</span>
             </button>
           )}
-          {isArchivable && onArchiveFile && (
-            <button
-              type="button"
-              className="file-tree__context-menu-item"
-              onClick={handleArchiveClick}
-              role="menuitem"
-            >
-              <ArchiveIcon />
-              <span>Archive</span>
-            </button>
-          )}
           {!contextMenu.isDirectory && onDeleteFile && (
             <button
               type="button"
@@ -1027,16 +940,6 @@ export function FileTree({ onFileSelect, onLoadDirectory, onDeleteFile, onDelete
         confirmLabel="Delete"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
-      />
-
-      {/* Archive confirmation dialog */}
-      <ConfirmDialog
-        isOpen={pendingArchivePath !== null}
-        title="Archive Directory?"
-        message={`Move "${pendingArchivePath?.split("/").pop() ?? ""}" to the archive folder? The directory will be organized by date in the archive.`}
-        confirmLabel="Archive"
-        onConfirm={handleConfirmArchive}
-        onCancel={handleCancelArchive}
       />
 
       {/* Delete directory confirmation dialog */}

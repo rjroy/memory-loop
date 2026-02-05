@@ -251,22 +251,31 @@ export function BrowseMode(): React.ReactNode {
   );
 
   // Handle directory contents request for delete preview (REST API)
-  // Note: This endpoint doesn't exist in REST yet, so we use a placeholder
   const handleGetDirectoryContents = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    (_path: string) => {
+    async (path: string) => {
       setPendingDirectoryContents(null);
-      // TODO: Add get_directory_contents REST endpoint if needed
-      // For now, we'll show empty contents which allows deletion
-      setPendingDirectoryContents({
-        files: [],
-        directories: [],
-        totalFiles: 0,
-        totalDirectories: 0,
-        truncated: false,
-      });
+      try {
+        const result = await fileBrowser.getDirectoryContents(path);
+        setPendingDirectoryContents({
+          files: result.files,
+          directories: result.directories,
+          totalFiles: result.totalFiles,
+          totalDirectories: result.totalDirectories,
+          truncated: result.truncated,
+        });
+      } catch (err) {
+        // On error, show empty contents so deletion can still proceed
+        setPendingDirectoryContents({
+          files: [],
+          directories: [],
+          totalFiles: 0,
+          totalDirectories: 0,
+          truncated: false,
+        });
+        console.warn("Failed to load directory contents preview:", err);
+      }
     },
-    []
+    [fileBrowser]
   );
 
   // Handle directory deletion from FileTree context menu (REST API)
@@ -283,27 +292,6 @@ export function BrowseMode(): React.ReactNode {
         setPendingDirectoryContents(null);
       } catch (err) {
         setFileError(err instanceof Error ? err.message : "Failed to delete directory");
-      }
-    },
-    [fileBrowser, browser.currentPath, setCurrentPath, setFileContent, refreshParentDirectory, setFileError]
-  );
-
-  // Handle directory archive from FileTree context menu
-  // Note: Archive functionality may need a separate REST endpoint
-  const handleArchiveFile = useCallback(
-    async (path: string) => {
-      // Archive typically moves file to an archive folder
-      // Using move operation to archive directory
-      const archivePath = `99_Archive/${path.split("/").pop()}`;
-      try {
-        await fileBrowser.moveFile(path, archivePath);
-        if (browser.currentPath === path || browser.currentPath.startsWith(path + "/")) {
-          setCurrentPath("");
-          setFileContent("", false);
-        }
-        await refreshParentDirectory(path);
-      } catch (err) {
-        setFileError(err instanceof Error ? err.message : "Failed to archive");
       }
     },
     [fileBrowser, browser.currentPath, setCurrentPath, setFileContent, refreshParentDirectory, setFileError]
@@ -759,7 +747,7 @@ export function BrowseMode(): React.ReactNode {
                 onRequestSnippets={handleRequestSnippets}
               />
             ) : viewMode === "files" ? (
-              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onDeleteDirectory={handleDeleteDirectory} onGetDirectoryContents={handleGetDirectoryContents} pendingDirectoryContents={pendingDirectoryContents} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
+              <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onDeleteDirectory={handleDeleteDirectory} onGetDirectoryContents={handleGetDirectoryContents} pendingDirectoryContents={pendingDirectoryContents} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
             ) : (
               <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
             )}
@@ -894,7 +882,7 @@ export function BrowseMode(): React.ReactNode {
                   onRequestSnippets={handleRequestSnippets}
                 />
               ) : viewMode === "files" ? (
-                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onDeleteDirectory={handleDeleteDirectory} onGetDirectoryContents={handleGetDirectoryContents} pendingDirectoryContents={pendingDirectoryContents} onArchiveFile={handleArchiveFile} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
+                <FileTree onFileSelect={handleFileSelect} onLoadDirectory={handleLoadDirectory} onDeleteFile={handleDeleteFile} onDeleteDirectory={handleDeleteDirectory} onGetDirectoryContents={handleGetDirectoryContents} pendingDirectoryContents={pendingDirectoryContents} onThinkAbout={handleThinkAbout} onPinnedAssetsChange={handlePinnedAssetsChange} onCreateDirectory={handleCreateDirectory} onCreateFile={handleCreateFile} onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />
               ) : (
                 <TaskList onToggleTask={handleToggleTask} onFileSelect={handleFileSelect} />
               )}

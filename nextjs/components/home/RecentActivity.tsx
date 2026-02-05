@@ -5,7 +5,7 @@
  * Provides quick actions: View in Browse for captures, Resume/Delete for discussions.
  *
  * Note: This component reads data from SessionContext. The parent component
- * is responsible for fetching the data via WebSocket.
+ * is responsible for fetching the data via REST API.
  */
 
 import React, { useCallback, useState } from "react";
@@ -51,7 +51,7 @@ export interface RecentActivityProps {
   onResumeDiscussion?: (sessionId: string) => void;
   /** Callback when user wants to view a capture in browse mode */
   onViewCapture?: (date: string) => void;
-  /** Callback when user confirms session deletion (parent handles WebSocket) */
+  /** Callback when user confirms session deletion */
   onDeleteSession?: (sessionId: string) => void;
 }
 

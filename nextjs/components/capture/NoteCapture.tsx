@@ -43,7 +43,7 @@ interface ToastState {
  * Note capture input with auto-growing textarea and submit button.
  *
  * - Auto-saves draft to localStorage on change
- * - Sends capture_note message via WebSocket
+ * - Sends capture_note message via REST API
  * - Shows toast notification on success/error
  * - Retries up to 3x on network failure
  * - Supports meeting mode for dedicated meeting notes
@@ -67,7 +67,7 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
 
   const { vault, meeting, setMeetingState, clearMeeting, setDiscussionPrefill, setMode, setRecentNotes, setRecentDiscussions } = useSession();
 
-  // REST API hooks (migrated from WebSocket)
+  // REST API hooks
   const { captureNote, getRecentActivity } = useCapture(vault?.id);
   const { startMeeting: startMeetingApi, stopMeeting: stopMeetingApi } = useMeetings(vault?.id);
 
@@ -98,8 +98,6 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
       localStorage.removeItem(STORAGE_KEY);
     }
   }, [content]);
-
-  // Note: WebSocket message handlers removed - using REST API directly in handlers
 
   // Focus meeting title input when prompt opens
   useEffect(() => {
@@ -302,7 +300,6 @@ export function NoteCapture({ onCaptured }: NoteCaptureProps): React.ReactNode {
     }
   }
 
-  // REST API doesn't require WebSocket connection
   const isDisabled = isSubmitting || !vault;
 
   // Determine placeholder text based on meeting state

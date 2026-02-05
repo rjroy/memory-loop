@@ -76,22 +76,19 @@ export async function POST(request: NextRequest) {
           streamController.enqueue(encodeSSE(event));
 
           // Close stream on terminal events
+          // response_end is the last event emitted by the controller, safe to close immediately
           if (
             event.type === "response_end" ||
             event.type === "error" ||
             event.type === "session_cleared"
           ) {
-            // Delay closing to allow any remaining events to flush
-            // SDK may still have events in flight when response_end is emitted
-            setTimeout(() => {
-              isClosing = true;
-              unsubscribe();
-              try {
-                streamController.close();
-              } catch {
-                // Already closed
-              }
-            }, 500);
+            isClosing = true;
+            unsubscribe();
+            try {
+              streamController.close();
+            } catch {
+              // Already closed
+            }
           }
         } catch (err) {
           // Stream may already be closed

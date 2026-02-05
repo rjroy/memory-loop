@@ -515,7 +515,7 @@ export function useSession(): SessionContextValue {
 
 /**
  * Hook to process incoming server messages and update session state.
- * Call this in a component that has access to both useWebSocket and useSession.
+ * Call this in a component that has access to useSession.
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
   const {

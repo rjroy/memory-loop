@@ -5,7 +5,7 @@
  * Provides typed request/response handling with consistent error formatting.
  *
  * Requirements:
- * - REQ-NF-3: Error format matches WebSocket error schema
+ * - REQ-NF-3: Consistent error format across REST and SSE
  * - Uses dependency injection for fetch (testable without mock.module)
  */
 

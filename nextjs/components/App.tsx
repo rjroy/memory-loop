@@ -208,7 +208,7 @@ function MainContent(): React.ReactNode {
       <main className="app-main">
         {mode === "home" && <HomeView />}
         {mode === "note" && <NoteCapture />}
-        {mode === "discussion" && <Discussion transport="sse" />}
+        {mode === "discussion" && <Discussion />}
         {mode === "browse" && <BrowseMode />}
       </main>
 

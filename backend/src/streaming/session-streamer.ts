@@ -2,7 +2,6 @@
  * Session Streamer
  *
  * Transforms SDK events into SessionEvents for the Active Session Controller.
- * Extracted from websocket-handler.ts streaming logic.
  */
 
 import type {
@@ -122,7 +121,26 @@ export async function streamSdkEvents(
         const assistantEvent = event as SDKAssistantMessage;
         const completeContent = extractAssistantContent(assistantEvent);
         if (completeContent) {
-          // Replace accumulated chunks with complete content
+          // Check if we need to emit the content
+          // This handles cases where stream_events didn't contain all the content
+          const streamedContent = responseChunks.join("");
+          if (completeContent !== streamedContent) {
+            // Emit only the portion not yet streamed
+            const remainingContent = completeContent.slice(streamedContent.length);
+            if (remainingContent) {
+              log.debug("Emitting remaining content from assistant event", {
+                streamedLength: streamedContent.length,
+                completeLength: completeContent.length,
+                remainingLength: remainingContent.length,
+              });
+              emitter.emit({
+                type: "response_chunk",
+                messageId,
+                content: remainingContent,
+              });
+            }
+          }
+          // Replace accumulated chunks with complete content for return value
           responseChunks.length = 0;
           responseChunks.push(completeContent);
         }

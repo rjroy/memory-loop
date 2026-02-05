@@ -2,7 +2,6 @@
  * useChat Hook
  *
  * Manages chat communication with the backend via SSE.
- * Replaces useWebSocket for AI conversation streaming.
  *
  * Features:
  * - Start new sessions

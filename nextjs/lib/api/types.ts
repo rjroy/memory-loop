@@ -2,14 +2,14 @@
  * REST API Types
  *
  * Shared types for frontend REST API client.
- * Error format matches WebSocket error schema and backend RestErrorResponse (REQ-NF-3).
+ * Error format matches backend RestErrorResponse (REQ-NF-3).
  */
 
 import type { ErrorCode } from "@memory-loop/shared";
 
 /**
  * REST API error response format.
- * Matches backend RestErrorResponse and WebSocket error message schema.
+ * Matches backend RestErrorResponse.
  */
 export interface ApiErrorResponse {
   error: {

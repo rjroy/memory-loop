@@ -30,7 +30,7 @@ export interface MarkdownViewerProps {
   onNavigate?: (path: string) => void;
   /** Base URL for vault assets (images) */
   assetBaseUrl?: string;
-  /** Callback to save file content in adjust mode (wired by parent to WebSocket) */
+  /** Callback to save file content in adjust mode */
   onSave?: (content: string) => void;
   /** Callback to open mobile file browser (only shown on mobile) */
   onMobileMenuClick?: () => void;

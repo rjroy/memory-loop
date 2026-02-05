@@ -305,9 +305,9 @@ Please ${action === "validate" ? "validate" : action === "critique" ? "critique"
           />
         </div>
 
-        {/* Right pane: Discussion (same session as Think tab, uses SSE) */}
+        {/* Right pane: Discussion (same session as Think tab) */}
         <div className="pair-writing-mode__conversation-pane">
-          <DiscussionComponent transport="sse" />
+          <DiscussionComponent />
         </div>
       </div>
 

@@ -406,7 +406,7 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
       // Clear any previous error
       setTasksError(null);
 
-      // Notify parent to send WebSocket message with both new and original state
+      // Notify parent with both new and original state
       // Parent returns false if unable to send (e.g., disconnected)
       const success = onToggleTask?.(filePath, lineNumber, newState, currentState) ?? true;
 
@@ -491,7 +491,7 @@ export function TaskList({ onToggleTask, onFileSelect }: TaskListProps): React.R
       // Clear any previous error
       setTasksError(null);
 
-      // Notify parent to send WebSocket message with both new and original state
+      // Notify parent with both new and original state
       onToggleTask?.(filePath, lineNumber, newState, currentState);
 
       // Close the menu

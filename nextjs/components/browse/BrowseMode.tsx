@@ -35,9 +35,6 @@ import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isTxtF
 // Note: FileSearchResult, ContentSearchResult types removed - now handled internally by REST API hooks
 import "./BrowseMode.css";
 
-/** Error codes that indicate save failure for adjust mode */
-const SAVE_ERROR_CODES = ["PATH_TRAVERSAL", "INVALID_FILE_TYPE", "FILE_NOT_FOUND", "INTERNAL_ERROR"] as const;
-
 /** Storage key for discussion draft (shared with Discussion component) */
 const DISCUSSION_DRAFT_STORAGE_KEY = "memory-loop-discussion-draft";
 

@@ -6,8 +6,6 @@
  * active-session-controller.test.ts. This file tests the transport layer.
  */
 
-/* eslint-disable @typescript-eslint/require-await */
-
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";

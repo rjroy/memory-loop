@@ -160,10 +160,8 @@ export function useHome(
    * Get inspiration (contextual prompt and quote).
    */
   const getInspiration = useCallback(async (): Promise<InspirationResponse | null> => {
-    console.log(`[useHome] getInspiration called, vaultId:`, vaultId);
     if (!vaultId) {
       setError("No vault selected");
-      console.log(`[useHome] No vaultId, returning null`);
       return null;
     }
 
@@ -171,13 +169,11 @@ export function useHome(
     setError(null);
 
     try {
-      const url = vaultPath(vaultId, "inspiration");
-      console.log(`[useHome] Fetching:`, url);
-      const result = await api.get<InspirationResponse>(url);
-      console.log(`[useHome] Result:`, result);
+      const result = await api.get<InspirationResponse>(
+        vaultPath(vaultId, "inspiration")
+      );
       return result;
     } catch (err) {
-      console.error(`[useHome] Error:`, err);
       const message =
         err instanceof ApiError
           ? err.message

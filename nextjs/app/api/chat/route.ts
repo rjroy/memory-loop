@@ -97,17 +97,17 @@ export async function POST(request: NextRequest) {
       });
 
       // Start or resume session
-      (async () => {
+      void (async () => {
         try {
           if (sessionId) {
             // Resume existing session
-            await controller.resumeSession(vaultPath!, sessionId, prompt);
+            await controller.resumeSession(vaultPath, sessionId, prompt);
           } else if (vaultId) {
             // Create new session with minimal vault info from request
             // Cast to VaultInfo - controller only uses id, path, name for session
             const vault = {
               id: vaultId,
-              path: vaultPath!,
+              path: vaultPath,
               name: vaultName ?? vaultId,
             } as import("@memory-loop/shared").VaultInfo;
             await controller.startSession(vault, prompt);

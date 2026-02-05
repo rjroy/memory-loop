@@ -4,7 +4,7 @@
  * Tests the REST-based card generator editor component.
  */
 
-import { describe, it, expect, afterEach, beforeEach, mock, spyOn } from "bun:test";
+import { describe, it, expect, afterEach, beforeEach, mock } from "bun:test";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { CardGeneratorEditor } from "../CardGeneratorEditor";
 

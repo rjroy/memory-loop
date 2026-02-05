@@ -8,7 +8,7 @@
 import { describe, it, expect } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
 import { useSearch } from "../useSearch.js";
-import type { FetchFn } from "../@/lib/api/types";
+import type { FetchFn } from "@/lib/api/types";
 
 /**
  * Creates a mock fetch function that returns a successful response.

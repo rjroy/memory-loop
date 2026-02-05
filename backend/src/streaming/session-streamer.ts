@@ -118,7 +118,7 @@ export async function streamSdkEvents(
       }
       case "assistant": {
         // Assistant event contains the complete message - use as authoritative source
-        const assistantEvent = event as SDKAssistantMessage;
+        const assistantEvent: SDKAssistantMessage = event;
         const completeContent = extractAssistantContent(assistantEvent);
         if (completeContent) {
           // Check if we need to emit the content

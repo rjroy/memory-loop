@@ -70,7 +70,6 @@ export function PairWritingEditor({
   initialContent,
   filePath,
   onContentChange,
-  onQuickActionComplete,
   onAdvisoryAction,
   onQuickAction,
   onSelectionChange,
@@ -86,8 +85,6 @@ export function PairWritingEditor({
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [isProcessingQuickAction, setIsProcessingQuickAction] = useState(false);
-  const [quickActionMessageId, setQuickActionMessageId] = useState<string | null>(null);
-
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Auto-focus textarea on mount so user can start typing immediately
@@ -230,7 +227,6 @@ export function PairWritingEditor({
       if (!currentSelection) return;
 
       setIsProcessingQuickAction(true);
-      setQuickActionMessageId(null);
 
       // Delegate to parent to handle quick action via SSE chat
       onQuickAction?.(action, currentSelection);

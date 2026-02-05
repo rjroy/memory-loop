@@ -234,7 +234,6 @@ function handleSetMessages(
   state: SessionState,
   protocolMessages: ConversationMessageProtocol[]
 ): SessionState {
-  console.log(`[Session] Setting messages from server: ${protocolMessages.length}`);
   return {
     ...state,
     messages: protocolMessages.map((msg) => ({

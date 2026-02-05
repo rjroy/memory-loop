@@ -54,7 +54,7 @@ export async function GET() {
 export async function PUT(request: Request) {
   let body: { content?: string };
   try {
-    body = await request.json();
+    body = (await request.json()) as { content?: string };
   } catch {
     return NextResponse.json(
       { error: { code: "VALIDATION_ERROR", message: "Invalid JSON in request body" } },

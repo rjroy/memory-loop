@@ -175,10 +175,8 @@ export function useCapture(
    * Get recent activity (captures + discussions).
    */
   const getRecentActivity = useCallback(async (): Promise<RecentActivity | null> => {
-    console.log(`[useCapture] getRecentActivity called, vaultId:`, vaultId);
     if (!vaultId) {
       setError("No vault selected");
-      console.log(`[useCapture] No vaultId, returning null`);
       return null;
     }
 
@@ -186,13 +184,11 @@ export function useCapture(
     setError(null);
 
     try {
-      const url = vaultPath(vaultId, "recent-activity");
-      console.log(`[useCapture] Fetching:`, url);
-      const result = await api.get<RecentActivity>(url);
-      console.log(`[useCapture] Result:`, result);
+      const result = await api.get<RecentActivity>(
+        vaultPath(vaultId, "recent-activity")
+      );
       return result;
     } catch (err) {
-      console.error(`[useCapture] Error:`, err);
       const message =
         err instanceof ApiError
           ? err.message

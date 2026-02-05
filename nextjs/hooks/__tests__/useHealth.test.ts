@@ -8,7 +8,7 @@
 import { describe, it, expect } from "bun:test";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useHealth } from "../useHealth.js";
-import type { FetchFn } from "../@/lib/api/types";
+import type { FetchFn } from "@/lib/api/types";
 import type { HealthIssue } from "@memory-loop/shared";
 
 /**

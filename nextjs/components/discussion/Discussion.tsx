@@ -47,7 +47,6 @@ export function Discussion(): React.ReactNode {
   const {
     vault,
     messages,
-    sessionId,
     addMessage,
     startNewSession,
     discussionPrefill,

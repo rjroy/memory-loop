@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
   // Transpile workspace packages
   transpilePackages: ["@memory-loop/shared", "@memory-loop/backend"],
   // Configure webpack to resolve .js extensions to .ts in backend
-  webpack: (config) => {
+  webpack: (config: { resolve: { extensionAlias?: Record<string, string[]> } }) => {
     config.resolve.extensionAlias = {
       ".js": [".ts", ".tsx", ".js"],
     };

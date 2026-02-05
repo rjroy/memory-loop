@@ -11,12 +11,10 @@ Memory Loop is a mobile-friendly web interface for interacting with Obsidian vau
 ```bash
 # Development
 bun install              # Install all workspace dependencies
-bun run dev              # Start both backend (:3000) and frontend (:5173)
-bun run --cwd backend dev   # Backend only (watch mode)
-bun run --cwd frontend dev  # Frontend only
+bun run --cwd nextjs dev # Start Next.js dev server (:3000)
 
 # Testing
-bun run test             # Run all tests (backend -> frontend -> shared)
+bun run test             # Run all tests (backend -> nextjs -> shared)
 bun run test:coverage    # Generate coverage reports
 bun run --cwd backend test  # Backend tests only
 LOG_LEVEL=silent bun run --cwd backend test  # Suppress logs during tests
@@ -26,8 +24,8 @@ bun run typecheck        # TypeScript checking (all workspaces)
 bun run lint             # ESLint (all workspaces)
 
 # Production
-bun run build            # Build frontend, typecheck backend
-./scripts/launch.sh      # Run backend from TypeScript source (required for Agent SDK)
+bun run --cwd nextjs build  # Build Next.js
+./scripts/launch.sh         # Build and start Next.js in production
 ```
 
 ## Architecture
@@ -35,37 +33,40 @@ bun run build            # Build frontend, typecheck backend
 Bun monorepo with three workspaces:
 
 ```
-backend/   # Hono server + Claude Agent SDK
-frontend/  # React 19 + Vite SPA
-shared/    # Zod schemas for WebSocket protocol
+nextjs/    # Next.js 15 App Router (UI + API routes + SSE streaming)
+backend/   # Library: Claude Agent SDK, vault operations, schedulers
+shared/    # Zod schemas and TypeScript types
 ```
 
 ### Communication
 
-Two channels between frontend and backend:
-- **REST API** for stateless operations (file CRUD, search, config, cards)
-- **WebSocket** for streaming (AI responses, tool execution, session state)
+- **REST API** (Next.js API routes) for stateless operations (file CRUD, search, config, cards)
+- **SSE** (Server-Sent Events) for AI chat streaming via POST `/api/chat`
 
-Both use Zod-validated message schemas. The protocol source of truth is `shared/src/protocol.ts`.
+The frontend sends a prompt via REST, then reads the SSE stream for incremental responses. Stop/permission/answer requests are separate REST calls alongside the stream.
 
 ### Key Backend Modules
 
+Backend is a library consumed by Next.js API routes. It contains domain logic but no HTTP server of its own (the Hono server in `server.ts` is legacy, retained only for its WebSocket handler).
+
 | File | Purpose |
 |------|---------|
-| `server.ts` | Hono app setup, routes, static asset serving |
-| `websocket-handler.ts` | WebSocket upgrade, message dispatch, streaming |
 | `session-manager.ts` | Claude Agent SDK session create/resume/save |
+| `streaming/session-streamer.ts` | Transforms SDK events into SessionEvents |
 | `vault-manager.ts` | Vault discovery from VAULTS_DIR |
 | `note-capture.ts` | Writes to daily notes (00_Inbox/YYYY-MM-DD.md) |
 | `file-browser.ts` | Read-only markdown browsing with security checks |
 
-### Key Frontend Modules
+### Key Next.js Modules
 
 | File | Purpose |
 |------|---------|
-| `App.tsx` | Shell, mode routing, vault selection gate |
+| `app/layout.tsx` | Root layout |
+| `app/page.tsx` | Main SPA entry (client component) |
+| `app/api/chat/route.ts` | SSE chat endpoint |
+| `lib/controller.ts` | Active Session Controller (SDK orchestration) |
 | `contexts/SessionContext.tsx` | Global state via useReducer |
-| `hooks/useWebSocket.ts` | WebSocket client with auto-reconnect |
+| `hooks/useChat.ts` | SSE chat client |
 
 ### Mode Mapping
 
@@ -80,7 +81,7 @@ Both use Zod-validated message schemas. The protocol source of truth is `shared/
 
 ```bash
 VAULTS_DIR=/path/to/vaults  # Directory containing vaults (default: ./vaults)
-PORT=3000                   # Backend port
+PORT=3000                   # Server port
 HOST=0.0.0.0                # Bind address
 MOCK_SDK=true               # Disable real Anthropic API calls for testing
 LOG_LEVEL=silent            # Suppress logs (useful in tests)
@@ -100,7 +101,7 @@ journalctl --user -u memory-loop | grep -i error       # Search for errors
 
 ### Scheduled Tasks
 
-Two background processes run on a schedule (times are local):
+Two background processes run via Next.js instrumentation (`nextjs/instrumentation.ts`), started once on server boot:
 
 | Task | Default Time | Purpose |
 |------|--------------|---------|
@@ -151,7 +152,7 @@ afterEach(() => {
 
 ### SDK Provider Pattern
 
-The Claude Agent SDK uses a centralized provider (`backend/src/sdk-provider.ts`) to prevent accidental API calls in tests. Only `backend/src/index.ts` calls `initializeSdkProvider()`. All other modules use `getSdkQuery()`, which throws `SdkNotInitializedError` if not initialized.
+The Claude Agent SDK uses a centralized provider (`backend/src/sdk-provider.ts`) to prevent accidental API calls in tests. In the Next.js app, `nextjs/lib/controller.ts` calls `initializeSdkProvider()` lazily on first use. All other modules use `getSdkQuery()`, which throws `SdkNotInitializedError` if not initialized.
 
 In tests, use `configureSdkForTesting(mockFn)` to inject a mock:
 

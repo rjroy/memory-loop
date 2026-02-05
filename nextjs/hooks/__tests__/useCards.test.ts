@@ -8,7 +8,7 @@
 import { describe, it, expect } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
 import { useCards } from "../useCards.js";
-import type { FetchFn } from "../@/lib/api/types";
+import type { FetchFn } from "@/lib/api/types";
 import type {
   DueCard,
   CardDetail,

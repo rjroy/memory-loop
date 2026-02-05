@@ -2,7 +2,7 @@
 #
 # Memory Loop Launch Script
 #
-# Builds the frontend, then starts the backend server.
+# Builds and starts the Next.js application.
 # Logs all output to a log file; only errors go to stdout.
 #
 # Usage: ./scripts/launch.sh
@@ -48,20 +48,15 @@ log "Starting Memory Loop..."
 log "VAULTS_DIR: $VAULTS_DIR"
 log "Project root: $PROJECT_ROOT"
 
-# Build frontend
-log "Building frontend..."
-cd "$PROJECT_ROOT/frontend"
+# Build Next.js
+log "Building Next.js..."
+cd "$PROJECT_ROOT/nextjs"
 if ! bun run build >> "$LOG_FILE" 2>&1; then
-    log_error "Frontend build failed. Check $LOG_FILE for details."
+    log_error "Next.js build failed. Check $LOG_FILE for details."
     exit 1
 fi
-log "Frontend build complete"
+log "Next.js build complete"
 
-# Start backend
-log "Starting backend server..."
-cd "$PROJECT_ROOT/backend"
-
-# Run backend, redirect stdout to log
-# prevent SIGHUP from killing the server
-exec nohup bun run start 2>&1 >> "$LOG_FILE" &
-
+# Start Next.js
+log "Starting Next.js server..."
+exec bun run start >> "$LOG_FILE" 2>&1

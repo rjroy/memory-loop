@@ -10,7 +10,7 @@ import { isGenerationRunning } from "@memory-loop/backend/spaced-repetition/card
 /**
  * GET - Returns current generation status
  */
-export async function GET() {
+export function GET() {
   try {
     const running = isGenerationRunning();
 

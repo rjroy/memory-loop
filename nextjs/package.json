@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "eslint .",
     "test": "bun test",
     "test:coverage": "LOG_LEVEL=silent bun test --coverage 2>&1 | awk '/^-+\\|/{p=1} p'",
     "typecheck": "tsc --noEmit"

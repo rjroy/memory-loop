@@ -8,9 +8,7 @@
 import { describe, it, expect } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
 import { useFileBrowser } from "../useFileBrowser.js";
-import type { FetchFn } from "../@/lib/api/types";
-
-/* eslint-disable @typescript-eslint/require-await */
+import type { FetchFn } from "@/lib/api/types";
 
 // =============================================================================
 // Test Utilities

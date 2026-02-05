@@ -11,18 +11,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { ClientMessage, ServerMessage } from "@memory-loop/shared";
 import "./CardGeneratorEditor.css";
-
-/**
- * Props for the CardGeneratorEditor component.
- */
-export interface CardGeneratorEditorProps {
-  /** Function to send WebSocket messages */
-  sendMessage: (message: ClientMessage) => void;
-  /** Last received server message (for handling responses) */
-  lastMessage: ServerMessage | null;
-}
 
 /**
  * Format bytes as human-readable string.
@@ -38,10 +27,7 @@ function formatBytes(bytes: number): string {
  *
  * Provides an interface for configuring the card generator.
  */
-export function CardGeneratorEditor({
-  sendMessage,
-  lastMessage,
-}: CardGeneratorEditorProps): React.ReactNode {
+export function CardGeneratorEditor(): React.ReactNode {
   // Requirements state
   const [requirements, setRequirements] = useState("");
   const [originalRequirements, setOriginalRequirements] = useState("");
@@ -54,12 +40,9 @@ export function CardGeneratorEditor({
 
   // UI state
   const [isLoading, setIsLoading] = useState(true);
-  const [pendingSaves, setPendingSaves] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Derived saving state
-  const isSaving = pendingSaves > 0;
 
   // Generation status state
   const [generationStatus, setGenerationStatus] = useState<
@@ -75,85 +58,40 @@ export function CardGeneratorEditor({
   const hasConfigChanges = weeklyByteLimit !== originalByteLimit;
   const hasChanges = hasRequirementsChanges || hasConfigChanges;
 
-  // Request config on mount
+  // Load config on mount
   useEffect(() => {
-    if (!hasRequestedRef.current) {
-      hasRequestedRef.current = true;
-      sendMessage({ type: "get_card_generator_config" });
+    if (hasRequestedRef.current) return;
+    hasRequestedRef.current = true;
+
+    async function loadConfig() {
+      try {
+        const response = await fetch("/api/config/card-generator");
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const data = await response.json() as {
+          requirements: string;
+          isOverride: boolean;
+          weeklyByteLimit: number;
+          weeklyBytesUsed: number;
+        };
+        setRequirements(data.requirements);
+        setOriginalRequirements(data.requirements);
+        setIsOverride(data.isOverride);
+        setWeeklyByteLimit(data.weeklyByteLimit);
+        setOriginalByteLimit(data.weeklyByteLimit);
+        setWeeklyBytesUsed(data.weeklyBytesUsed);
+        setIsLoading(false);
+        setError(null);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to load config";
+        setError(message);
+        setIsLoading(false);
+      }
     }
-  }, [sendMessage]);
 
-  // Ref to track current state for save callbacks
-  const requirementsRef = useRef(requirements);
-  requirementsRef.current = requirements;
-  const byteLimitRef = useRef(weeklyByteLimit);
-  byteLimitRef.current = weeklyByteLimit;
-
-  // Handle server messages
-  useEffect(() => {
-    if (!lastMessage) return;
-
-    if (lastMessage.type === "card_generator_config_content") {
-      setRequirements(lastMessage.requirements);
-      setOriginalRequirements(lastMessage.requirements);
-      setIsOverride(lastMessage.isOverride);
-      setWeeklyByteLimit(lastMessage.weeklyByteLimit);
-      setOriginalByteLimit(lastMessage.weeklyByteLimit);
-      setWeeklyBytesUsed(lastMessage.weeklyBytesUsed);
-      setIsLoading(false);
-      setError(null);
-    } else if (lastMessage.type === "card_generator_requirements_saved") {
-      setPendingSaves((prev) => Math.max(0, prev - 1));
-      if (lastMessage.success) {
-        setOriginalRequirements(requirementsRef.current);
-        setIsOverride(lastMessage.isOverride);
-        setError(null);
-      } else {
-        setError(lastMessage.error ?? "Failed to save requirements");
-      }
-    } else if (lastMessage.type === "card_generator_config_saved") {
-      setPendingSaves((prev) => Math.max(0, prev - 1));
-      if (lastMessage.success) {
-        setOriginalByteLimit(byteLimitRef.current);
-        setError(null);
-      } else {
-        setError(lastMessage.error ?? "Failed to save config");
-      }
-    } else if (lastMessage.type === "card_generator_requirements_reset") {
-      setIsResetting(false);
-      if (lastMessage.success) {
-        setRequirements(lastMessage.content);
-        setOriginalRequirements(lastMessage.content);
-        setIsOverride(false);
-        setError(null);
-      } else {
-        setError(lastMessage.error ?? "Failed to reset requirements");
-      }
-    } else if (lastMessage.type === "card_generation_status") {
-      setGenerationStatus(lastMessage.status);
-      setGenerationMessage(lastMessage.message ?? null);
-      if (lastMessage.status === "error" && lastMessage.error) {
-        setError(lastMessage.error);
-      }
-      // Update bytes used on completion
-      if (lastMessage.status === "complete" && lastMessage.bytesProcessed !== undefined) {
-        const bytesProcessed = lastMessage.bytesProcessed;
-        setWeeklyBytesUsed((prev) => prev + bytesProcessed);
-      }
-      // Clear success message after a delay
-      if (lastMessage.status === "complete") {
-        setTimeout(() => {
-          setGenerationStatus("idle");
-          setGenerationMessage(null);
-        }, 5000);
-      }
-    } else if (lastMessage.type === "error") {
-      setIsLoading(false);
-      setPendingSaves(0);
-      setIsResetting(false);
-      setError(lastMessage.message);
-    }
-  }, [lastMessage]);
+    void loadConfig();
+  }, []);
 
   // Handle requirements change
   const handleRequirementsChange = useCallback(
@@ -175,36 +113,78 @@ export function CardGeneratorEditor({
   );
 
   // Handle save
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (isSaving || isResetting) return;
+    setIsSaving(true);
     setError(null);
 
-    let savesStarted = 0;
+    try {
+      const body: { requirements?: string; weeklyByteLimit?: number } = {};
+      if (hasRequirementsChanges) {
+        body.requirements = requirements;
+      }
+      if (hasConfigChanges) {
+        body.weeklyByteLimit = weeklyByteLimit;
+      }
 
-    // Save requirements if changed
-    if (hasRequirementsChanges) {
-      sendMessage({ type: "save_card_generator_requirements", content: requirements });
-      savesStarted++;
-    }
+      const response = await fetch("/api/config/card-generator", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json() as {
+        success: boolean;
+        requirements: string;
+        isOverride: boolean;
+        weeklyByteLimit: number;
+        weeklyBytesUsed: number;
+        error?: string;
+      };
 
-    // Save config if changed
-    if (hasConfigChanges) {
-      sendMessage({ type: "save_card_generator_config", weeklyByteLimit });
-      savesStarted++;
+      if (data.success) {
+        setOriginalRequirements(data.requirements);
+        setIsOverride(data.isOverride);
+        setOriginalByteLimit(data.weeklyByteLimit);
+        setWeeklyBytesUsed(data.weeklyBytesUsed);
+        setError(null);
+      } else {
+        setError(data.error ?? "Failed to save config");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save config";
+      setError(message);
+    } finally {
+      setIsSaving(false);
     }
-
-    if (savesStarted > 0) {
-      setPendingSaves(savesStarted);
-    }
-  }, [sendMessage, requirements, weeklyByteLimit, hasRequirementsChanges, hasConfigChanges, isSaving, isResetting]);
+  }, [requirements, weeklyByteLimit, hasRequirementsChanges, hasConfigChanges, isSaving, isResetting]);
 
   // Handle reset requirements to default
-  const handleResetRequirements = useCallback(() => {
+  const handleResetRequirements = useCallback(async () => {
     if (isSaving || isResetting) return;
     setIsResetting(true);
     setError(null);
-    sendMessage({ type: "reset_card_generator_requirements" });
-  }, [sendMessage, isSaving, isResetting]);
+
+    try {
+      const response = await fetch("/api/config/card-generator/requirements", {
+        method: "DELETE",
+      });
+      const data = await response.json() as { success: boolean; content: string; error?: string };
+
+      if (data.success) {
+        setRequirements(data.content);
+        setOriginalRequirements(data.content);
+        setIsOverride(false);
+        setError(null);
+      } else {
+        setError(data.error ?? "Failed to reset requirements");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to reset requirements";
+      setError(message);
+    } finally {
+      setIsResetting(false);
+    }
+  }, [isSaving, isResetting]);
 
   // Handle discard changes (revert to original)
   const handleDiscard = useCallback(() => {
@@ -214,12 +194,51 @@ export function CardGeneratorEditor({
   }, [originalRequirements, originalByteLimit]);
 
   // Handle run generation
-  const handleRunGeneration = useCallback(() => {
+  const handleRunGeneration = useCallback(async () => {
     if (generationStatus === "running") return;
     setError(null);
-    setGenerationMessage(null);
-    sendMessage({ type: "trigger_card_generation" });
-  }, [sendMessage, generationStatus]);
+    setGenerationMessage("Starting card generation...");
+    setGenerationStatus("running");
+
+    try {
+      const response = await fetch("/api/config/card-generator/trigger", {
+        method: "POST",
+      });
+      const data = await response.json() as {
+        status: "running" | "complete" | "error";
+        message?: string;
+        error?: string;
+        filesProcessed?: number;
+        cardsCreated?: number;
+        bytesProcessed?: number;
+      };
+
+      setGenerationStatus(data.status);
+      setGenerationMessage(data.message ?? null);
+
+      if (data.status === "error" && data.error) {
+        setError(data.error);
+      }
+
+      // Update bytes used on completion
+      if (data.status === "complete" && data.bytesProcessed !== undefined) {
+        setWeeklyBytesUsed((prev) => prev + data.bytesProcessed!);
+      }
+
+      // Clear success message after a delay
+      if (data.status === "complete") {
+        setTimeout(() => {
+          setGenerationStatus("idle");
+          setGenerationMessage(null);
+        }, 5000);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Generation failed";
+      setError(message);
+      setGenerationStatus("error");
+      setGenerationMessage("Generation failed unexpectedly");
+    }
+  }, [generationStatus]);
 
   // Calculate usage percentage
   const usagePercent = Math.min(100, Math.round((100 * weeklyBytesUsed) / weeklyByteLimit));
@@ -311,7 +330,7 @@ export function CardGeneratorEditor({
           <button
             type="button"
             className={`card-generator-editor__btn card-generator-editor__btn--run${generationStatus === "running" ? " card-generator-editor__btn--loading" : ""}`}
-            onClick={handleRunGeneration}
+            onClick={() => void handleRunGeneration()}
             disabled={generationStatus === "running" || isLoading || remainingBytes <= 0}
             aria-busy={generationStatus === "running"}
           >
@@ -346,7 +365,7 @@ export function CardGeneratorEditor({
           <button
             type="button"
             className="card-generator-editor__btn card-generator-editor__btn--reset"
-            onClick={handleResetRequirements}
+            onClick={() => void handleResetRequirements()}
             disabled={isSaving || isResetting}
           >
             {isResetting ? "Resetting..." : "Reset to Default"}
@@ -363,7 +382,7 @@ export function CardGeneratorEditor({
         <button
           type="button"
           className={`card-generator-editor__btn card-generator-editor__btn--save${isSaving ? " card-generator-editor__btn--loading" : ""}`}
-          onClick={handleSave}
+          onClick={() => void handleSave()}
           disabled={!hasChanges || isSaving || isResetting}
         >
           {isSaving ? "Saving..." : "Save"}

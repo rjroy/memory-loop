@@ -1,177 +1,224 @@
 /**
  * CardGeneratorEditor Component Tests
+ *
+ * Tests the REST-based card generator editor component.
  */
 
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect, afterEach, beforeEach, mock, spyOn } from "bun:test";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
-import type { ServerMessage, ClientMessage } from "@memory-loop/shared";
 import { CardGeneratorEditor } from "../CardGeneratorEditor";
 
 describe("CardGeneratorEditor", () => {
-  afterEach(() => {
-    cleanup();
+  // Store original fetch
+  let originalFetch: typeof global.fetch;
+
+  // Mock fetch responses
+  let mockFetch: ReturnType<typeof mock>;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    mockFetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            requirements: "Default requirements",
+            isOverride: false,
+            weeklyByteLimit: 512000,
+            weeklyBytesUsed: 0,
+          }),
+      } as Response)
+    );
+    global.fetch = mockFetch;
   });
 
-  // Helper to create mock sendMessage
-  const createMockSendMessage = () => {
-    const messages: ClientMessage[] = [];
-    return {
-      sendMessage: (msg: ClientMessage) => {
-        messages.push(msg);
-      },
-      messages,
-    };
+  afterEach(() => {
+    cleanup();
+    global.fetch = originalFetch;
+  });
+
+  // Helper to set up fetch mock with specific response
+  const setupFetchMock = (response: Record<string, unknown>) => {
+    mockFetch.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(response),
+      } as Response)
+    );
   };
 
   describe("initial state", () => {
     it("shows loading state initially", () => {
-      const { sendMessage } = createMockSendMessage();
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={null} />);
+      // Don't resolve fetch immediately
+      mockFetch.mockImplementation(() => new Promise(() => {}));
+      render(<CardGeneratorEditor />);
 
       expect(screen.getByText("Loading configuration...")).not.toBeNull();
     });
 
-    it("sends get_card_generator_config request on mount", () => {
-      const { sendMessage, messages } = createMockSendMessage();
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={null} />);
+    it("calls fetch to load config on mount", async () => {
+      setupFetchMock({
+        requirements: "Test requirements",
+        isOverride: false,
+        weeklyByteLimit: 512000,
+        weeklyBytesUsed: 0,
+      });
 
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual({ type: "get_card_generator_config" });
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(mockFetch).toHaveBeenCalled();
+      });
+
+      const calls = mockFetch.mock.calls;
+      expect(calls[0][0]).toBe("/api/config/card-generator");
     });
   });
 
   describe("when config is loaded", () => {
-    it("displays requirements in textarea", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("displays requirements in textarea", async () => {
+      setupFetchMock({
         requirements: "Focus on key facts...",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
-      expect(textarea.value).toBe("Focus on key facts...");
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
+        expect(textarea.value).toBe("Focus on key facts...");
+      });
     });
 
-    it("shows Default badge when using default requirements", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("shows Default badge when using default requirements", async () => {
+      setupFetchMock({
         requirements: "Default requirements",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      expect(screen.getByText("Default")).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Default")).not.toBeNull();
+      });
     });
 
-    it("shows Custom badge when using override", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("shows Custom badge when using override", async () => {
+      setupFetchMock({
         requirements: "Custom requirements",
         isOverride: true,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      expect(screen.getByText("Custom")).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Custom")).not.toBeNull();
+      });
     });
 
-    it("shows correct path for default requirements", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("shows correct path for default requirements", async () => {
+      setupFetchMock({
         requirements: "Default requirements",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      expect(screen.getByText("Built-in default requirements")).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Built-in default requirements")).not.toBeNull();
+      });
     });
 
-    it("shows correct path for override requirements", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("shows correct path for override requirements", async () => {
+      setupFetchMock({
         requirements: "Custom requirements",
         isOverride: true,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      expect(screen.getByText("~/.config/memory-loop/card-generator-requirements.md")).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("~/.config/memory-loop/card-generator-requirements.md")
+        ).not.toBeNull();
+      });
     });
 
-    it("displays weekly byte limit value", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("displays weekly byte limit value", async () => {
+      setupFetchMock({
         requirements: "Requirements",
         isOverride: false,
         weeklyByteLimit: 1048576, // 1MB
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      // Look for the formatted byte value (1 MB)
-      expect(screen.getByText("1.0 MB")).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByText("1.0 MB")).not.toBeNull();
+      });
     });
 
-    it("displays usage percentage", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("displays usage percentage", async () => {
+      setupFetchMock({
         requirements: "Requirements",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 256000, // 50%
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      expect(screen.getByText(/50%/)).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/50%/)).not.toBeNull();
+      });
     });
   });
 
   describe("editing requirements", () => {
     it("updates content when typing", async () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+      setupFetchMock({
         requirements: "Initial content",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
+
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("textbox")).not.toBeNull();
+      });
 
       const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
       fireEvent.change(textarea, { target: { value: "Updated content" } });
 
-      await waitFor(() => {
-        expect(textarea.value).toBe("Updated content");
-      });
+      expect(textarea.value).toBe("Updated content");
     });
 
     it("enables Save button when content changes", async () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+      setupFetchMock({
         requirements: "Initial",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
+
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("textbox")).not.toBeNull();
+      });
 
       // Save button should be disabled initially
       const saveButton = screen.getByRole("button", { name: /save/i });
@@ -182,350 +229,386 @@ describe("CardGeneratorEditor", () => {
       fireEvent.change(textarea, { target: { value: "Changed" } });
 
       // Save button should be enabled
-      await waitFor(() => {
-        expect(saveButton.hasAttribute("disabled")).toBe(false);
-      });
+      expect(saveButton.hasAttribute("disabled")).toBe(false);
     });
 
     it("discards changes when Discard button is clicked", async () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+      setupFetchMock({
         requirements: "Original content",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
+
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("textbox")).not.toBeNull();
+      });
 
       // Edit content
       const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
       fireEvent.change(textarea, { target: { value: "Changed content" } });
-
-      await waitFor(() => {
-        expect(textarea.value).toBe("Changed content");
-      });
+      expect(textarea.value).toBe("Changed content");
 
       // Click discard
       const discardButton = screen.getByRole("button", { name: /discard/i });
       fireEvent.click(discardButton);
 
-      await waitFor(() => {
-        expect(textarea.value).toBe("Original content");
-      });
+      expect(textarea.value).toBe("Original content");
     });
   });
 
   describe("saving", () => {
-    it("sends save_card_generator_requirements message when Save is clicked", async () => {
-      const { sendMessage, messages } = createMockSendMessage();
-      const loadMessage: ServerMessage = {
-        type: "card_generator_config_content",
+    it("calls PUT endpoint when Save is clicked", async () => {
+      setupFetchMock({
         requirements: "Initial",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={loadMessage} />);
+      });
 
-      // Clear initial get_card_generator_config message
-      messages.length = 0;
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("textbox")).not.toBeNull();
+      });
+
+      // Clear initial fetch calls
+      mockFetch.mockClear();
+
+      // Set up response for save
+      mockFetch.mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              requirements: "New content",
+              isOverride: true,
+              weeklyByteLimit: 512000,
+              weeklyBytesUsed: 0,
+            }),
+        } as Response)
+      );
 
       // Edit content
       const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
       fireEvent.change(textarea, { target: { value: "New content" } });
 
-      await waitFor(() => {
-        const saveButton = screen.getByRole("button", { name: /save/i });
-        expect(saveButton.hasAttribute("disabled")).toBe(false);
-      });
-
       // Click save
       const saveButton = screen.getByRole("button", { name: /save/i });
       fireEvent.click(saveButton);
 
-      // Should send requirements save message
-      expect(messages.some(m => m.type === "save_card_generator_requirements")).toBe(true);
+      await waitFor(() => {
+        expect(mockFetch).toHaveBeenCalled();
+      });
+
+      const calls = mockFetch.mock.calls;
+      expect(calls[0][0]).toBe("/api/config/card-generator");
+      expect(calls[0][1]?.method).toBe("PUT");
     });
 
     it("shows 'Saving...' while save is in progress", async () => {
-      const { sendMessage, messages } = createMockSendMessage();
-      const loadMessage: ServerMessage = {
-        type: "card_generator_config_content",
+      setupFetchMock({
         requirements: "Initial",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={loadMessage} />);
+      });
 
-      messages.length = 0;
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("textbox")).not.toBeNull();
+      });
+
+      // Make save hang
+      mockFetch.mockImplementation(() => new Promise(() => {}));
 
       // Edit content
       const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
       fireEvent.change(textarea, { target: { value: "New content" } });
 
-      await waitFor(() => {
-        const saveButton = screen.getByRole("button", { name: /save/i });
-        expect(saveButton.hasAttribute("disabled")).toBe(false);
-      });
-
       // Click save
       const saveButton = screen.getByRole("button", { name: /save/i });
       fireEvent.click(saveButton);
 
-      expect(screen.getByText("Saving...")).not.toBeNull();
+      await waitFor(() => {
+        expect(screen.getByText("Saving...")).not.toBeNull();
+      });
     });
 
-    it("shows error on save failure", () => {
-      const { sendMessage } = createMockSendMessage();
-      const errorMessage: ServerMessage = {
-        type: "card_generator_requirements_saved",
-        success: false,
+    it("shows error on save failure", async () => {
+      setupFetchMock({
+        requirements: "Initial",
         isOverride: false,
-        error: "Permission denied",
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={errorMessage} />);
+        weeklyByteLimit: 512000,
+        weeklyBytesUsed: 0,
+      });
 
-      expect(screen.getByRole("alert")).not.toBeNull();
-      expect(screen.getByText("Permission denied")).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("textbox")).not.toBeNull();
+      });
+
+      // Set up failure response
+      mockFetch.mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: false,
+              error: "Permission denied",
+            }),
+        } as Response)
+      );
+
+      // Edit and save
+      const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
+      fireEvent.change(textarea, { target: { value: "New content" } });
+      const saveButton = screen.getByRole("button", { name: /save/i });
+      fireEvent.click(saveButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).not.toBeNull();
+        expect(screen.getByText("Permission denied")).not.toBeNull();
+      });
     });
   });
 
   describe("reset to default", () => {
-    it("shows Reset to Default button when using override", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("shows Reset to Default button when using override", async () => {
+      setupFetchMock({
         requirements: "Custom requirements",
         isOverride: true,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      expect(screen.getByRole("button", { name: /reset to default/i })).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /reset to default/i })).not.toBeNull();
+      });
     });
 
-    it("does not show Reset to Default button when using default", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("does not show Reset to Default button when using default", async () => {
+      setupFetchMock({
         requirements: "Default requirements",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
+
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("textbox")).not.toBeNull();
+      });
 
       expect(screen.queryByRole("button", { name: /reset to default/i })).toBeNull();
     });
 
-    it("sends reset_card_generator_requirements message when Reset is clicked", () => {
-      const { sendMessage, messages } = createMockSendMessage();
-      const loadMessage: ServerMessage = {
-        type: "card_generator_config_content",
+    it("calls DELETE endpoint when Reset is clicked", async () => {
+      setupFetchMock({
         requirements: "Custom requirements",
         isOverride: true,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={loadMessage} />);
+      });
 
-      // Clear initial message
-      messages.length = 0;
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /reset to default/i })).not.toBeNull();
+      });
+
+      // Clear initial fetch
+      mockFetch.mockClear();
+
+      // Set up response for reset
+      mockFetch.mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              content: "Default requirements content",
+            }),
+        } as Response)
+      );
 
       // Click reset
       const resetButton = screen.getByRole("button", { name: /reset to default/i });
       fireEvent.click(resetButton);
 
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual({ type: "reset_card_generator_requirements" });
+      await waitFor(() => {
+        expect(mockFetch).toHaveBeenCalled();
+      });
+
+      const calls = mockFetch.mock.calls;
+      expect(calls[0][0]).toBe("/api/config/card-generator/requirements");
+      expect(calls[0][1]?.method).toBe("DELETE");
     });
 
-    it("updates content after successful reset", () => {
-      const { sendMessage } = createMockSendMessage();
-      // First load with override
-      const loadMessage: ServerMessage = {
-        type: "card_generator_config_content",
+    it("updates content after successful reset", async () => {
+      setupFetchMock({
         requirements: "Custom requirements",
         isOverride: true,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      const { rerender } = render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={loadMessage} />);
+      });
 
-      // Then send reset
-      const resetMessage: ServerMessage = {
-        type: "card_generator_requirements_reset",
-        success: true,
-        content: "Default requirements content",
-      };
-      rerender(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={resetMessage} />);
+      render(<CardGeneratorEditor />);
 
-      const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
-      expect(textarea.value).toBe("Default requirements content");
-    });
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /reset to default/i })).not.toBeNull();
+      });
 
-    it("shows Default badge after successful reset", () => {
-      const { sendMessage } = createMockSendMessage();
-      // First load with override
-      const loadMessage: ServerMessage = {
-        type: "card_generator_config_content",
-        requirements: "Custom requirements",
-        isOverride: true,
-        weeklyByteLimit: 512000,
-        weeklyBytesUsed: 0,
-      };
-      const { rerender } = render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={loadMessage} />);
+      // Set up response for reset
+      mockFetch.mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              content: "Default requirements content",
+            }),
+        } as Response)
+      );
 
-      // Then send reset
-      const resetMessage: ServerMessage = {
-        type: "card_generator_requirements_reset",
-        success: true,
-        content: "Default requirements content",
-      };
-      rerender(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={resetMessage} />);
+      // Click reset
+      const resetButton = screen.getByRole("button", { name: /reset to default/i });
+      fireEvent.click(resetButton);
 
-      expect(screen.getByText("Default")).not.toBeNull();
+      await waitFor(() => {
+        const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
+        expect(textarea.value).toBe("Default requirements content");
+      });
     });
   });
 
   describe("generation trigger", () => {
-    it("shows Run Generator button", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("shows Run Generator button", async () => {
+      setupFetchMock({
         requirements: "Requirements content",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      expect(screen.getByRole("button", { name: /run generator/i })).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /run generator/i })).not.toBeNull();
+      });
     });
 
-    it("sends trigger_card_generation message when Run Generator is clicked", () => {
-      const { sendMessage, messages } = createMockSendMessage();
-      const loadMessage: ServerMessage = {
-        type: "card_generator_config_content",
+    it("calls trigger endpoint when Run Generator is clicked", async () => {
+      setupFetchMock({
         requirements: "Requirements content",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 0,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={loadMessage} />);
+      });
 
-      // Clear initial message
-      messages.length = 0;
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /run generator/i })).not.toBeNull();
+      });
+
+      // Clear initial fetch
+      mockFetch.mockClear();
+
+      // Set up response for trigger
+      mockFetch.mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: "complete",
+              message: "Processed 3 files",
+            }),
+        } as Response)
+      );
 
       // Click Run Generator
       const runButton = screen.getByRole("button", { name: /run generator/i });
       fireEvent.click(runButton);
 
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual({ type: "trigger_card_generation" });
+      await waitFor(() => {
+        expect(mockFetch).toHaveBeenCalled();
+      });
+
+      const calls = mockFetch.mock.calls;
+      expect(calls[0][0]).toBe("/api/config/card-generator/trigger");
+      expect(calls[0][1]?.method).toBe("POST");
     });
 
-    it("shows 'Running...' while generation is in progress", () => {
-      const { sendMessage } = createMockSendMessage();
-      const statusMessage: ServerMessage = {
-        type: "card_generation_status",
-        status: "running",
-        message: "Starting card generation...",
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
-
-      expect(screen.getByText("Running...")).not.toBeNull();
-    });
-
-    it("disables Run Generator button while running", () => {
-      const { sendMessage } = createMockSendMessage();
-      const statusMessage: ServerMessage = {
-        type: "card_generation_status",
-        status: "running",
-        message: "Processing files...",
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
-
-      const runButton = screen.getByRole("button", { name: /running/i });
-      expect(runButton.hasAttribute("disabled")).toBe(true);
-    });
-
-    it("shows generation status message", () => {
-      const { sendMessage } = createMockSendMessage();
-      const statusMessage: ServerMessage = {
-        type: "card_generation_status",
-        status: "running",
-        message: "Processing 5 files...",
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
-
-      expect(screen.getByRole("status")).not.toBeNull();
-      expect(screen.getByText("Processing 5 files...")).not.toBeNull();
-    });
-
-    it("shows completion message on success", () => {
-      const { sendMessage } = createMockSendMessage();
-      const statusMessage: ServerMessage = {
-        type: "card_generation_status",
-        status: "complete",
-        message: "Processed 3 files, created 10 cards",
-        filesProcessed: 3,
-        cardsCreated: 10,
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
-
-      expect(screen.getByText("Processed 3 files, created 10 cards")).not.toBeNull();
-    });
-
-    it("shows error on generation failure", () => {
-      const { sendMessage } = createMockSendMessage();
-      const statusMessage: ServerMessage = {
-        type: "card_generation_status",
-        status: "error",
-        message: "Generation failed",
-        error: "Weekly byte limit reached",
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={statusMessage} />);
-
-      expect(screen.getByRole("alert")).not.toBeNull();
-      expect(screen.getByText("Weekly byte limit reached")).not.toBeNull();
-    });
-
-    it("disables Run Generator when byte limit is reached", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
-        requirements: "Requirements",
+    it("shows 'Running...' while generation is in progress", async () => {
+      setupFetchMock({
+        requirements: "Requirements content",
         isOverride: false,
         weeklyByteLimit: 512000,
-        weeklyBytesUsed: 512000, // 100% used
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+        weeklyBytesUsed: 0,
+      });
 
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /run generator/i })).not.toBeNull();
+      });
+
+      // Make trigger hang
+      mockFetch.mockImplementation(() => new Promise(() => {}));
+
+      // Click Run Generator
       const runButton = screen.getByRole("button", { name: /run generator/i });
-      expect(runButton.hasAttribute("disabled")).toBe(true);
+      fireEvent.click(runButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("Running...")).not.toBeNull();
+      });
     });
 
-    it("shows warning when byte limit is reached", () => {
-      const { sendMessage } = createMockSendMessage();
-      const message: ServerMessage = {
-        type: "card_generator_config_content",
+    it("disables Run Generator when byte limit is reached", async () => {
+      setupFetchMock({
         requirements: "Requirements",
         isOverride: false,
         weeklyByteLimit: 512000,
         weeklyBytesUsed: 512000, // 100% used
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={message} />);
+      });
 
-      expect(screen.getByText(/weekly byte limit reached/i)).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        const runButton = screen.getByRole("button", { name: /run generator/i });
+        expect(runButton.hasAttribute("disabled")).toBe(true);
+      });
+    });
+
+    it("shows warning when byte limit is reached", async () => {
+      setupFetchMock({
+        requirements: "Requirements",
+        isOverride: false,
+        weeklyByteLimit: 512000,
+        weeklyBytesUsed: 512000, // 100% used
+      });
+
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/weekly byte limit reached/i)).not.toBeNull();
+      });
     });
 
     it("button is disabled while loading config", () => {
-      const { sendMessage } = createMockSendMessage();
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={null} />);
+      // Don't resolve fetch immediately
+      mockFetch.mockImplementation(() => new Promise(() => {}));
+      render(<CardGeneratorEditor />);
 
       // During loading, button should be disabled
       const runButton = screen.getByRole("button", { name: /run generator/i });
@@ -534,17 +617,20 @@ describe("CardGeneratorEditor", () => {
   });
 
   describe("error handling", () => {
-    it("shows error message on error response", () => {
-      const { sendMessage } = createMockSendMessage();
-      const errorMessage: ServerMessage = {
-        type: "error",
-        code: "INTERNAL_ERROR",
-        message: "Failed to read card generator config",
-      };
-      render(<CardGeneratorEditor sendMessage={sendMessage} lastMessage={errorMessage} />);
+    it("shows error message on fetch failure", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve({
+          ok: false,
+          status: 500,
+          statusText: "Internal Server Error",
+        } as Response)
+      );
 
-      expect(screen.getByRole("alert")).not.toBeNull();
-      expect(screen.getByText("Failed to read card generator config")).not.toBeNull();
+      render(<CardGeneratorEditor />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).not.toBeNull();
+      });
     });
   });
 });

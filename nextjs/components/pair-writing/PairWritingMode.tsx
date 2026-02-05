@@ -8,7 +8,7 @@
  * Hidden on phones via CSS media query; visible on iPad and desktop (REQ-F-10).
  *
  * The right pane IS the Discussion tab: same conversation history, same session,
- * same WebSocket connection. Quick Actions and Advisory Actions appear in the
+ * uses SSE for streaming. Quick Actions and Advisory Actions appear in the
  * Discussion conversation, and responses stream through the same channel.
  *
  * @see .sdd/plans/memory-loop/2026-01-20-pair-writing-mode-plan.md TD-5, TD-6, TD-9
@@ -16,8 +16,8 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { ClientMessage, ServerMessage } from "@memory-loop/shared";
 import { useSession } from "../../contexts/SessionContext";
+import { useChat } from "../../hooks/useChat";
 import { usePairWritingState } from "../../hooks/usePairWritingState";
 import { PairWritingToolbar } from "./PairWritingToolbar";
 import { PairWritingEditor } from "./PairWritingEditor";
@@ -25,7 +25,6 @@ import { Discussion } from "../discussion/Discussion";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
 import type { AdvisoryActionType, QuickActionType } from "../shared/EditorContextMenu";
 import { type SelectionContext } from "../../hooks/useTextSelection";
-import type { ConnectionStatus } from "../../hooks/useWebSocket";
 import "./PairWritingMode.css";
 
 /**
@@ -42,12 +41,6 @@ export interface PairWritingModeProps {
   onExit: () => void;
   /** Called to save content to disk */
   onSave: (content: string) => void;
-  /** Function to send WebSocket messages (shared with Discussion) */
-  sendMessage: (message: ClientMessage) => void;
-  /** Last received server message (shared with Discussion) */
-  lastMessage: ServerMessage | null;
-  /** Current WebSocket connection status (shared with Discussion) */
-  connectionStatus: ConnectionStatus;
   /** Called when Quick Action completes and file should be reloaded */
   onQuickActionComplete?: (path: string) => void;
   // Dependency injection for testing (avoids mock.module pollution)
@@ -77,16 +70,16 @@ export function PairWritingMode({
   assetBaseUrl: _assetBaseUrl,
   onExit,
   onSave,
-  sendMessage,
-  lastMessage,
-  connectionStatus,
   onQuickActionComplete,
   EditorComponent = PairWritingEditor,
   DiscussionComponent = Discussion,
 }: PairWritingModeProps): React.ReactNode {
   void _assetBaseUrl; // Preserved for interface stability; Discussion handles its own asset resolution
   const { state, actions } = usePairWritingState();
-  const { addMessage, vault } = useSession();
+  const { vault } = useSession();
+
+  // Use chat hook for sending quick/advisory actions via SSE
+  const { sendMessage: sendChatMessage } = useChat(vault);
 
   // Get vi mode setting from vault config
   const viModeEnabled = vault?.viMode ?? false;
@@ -203,53 +196,75 @@ export function PairWritingMode({
   );
 
   // Handle Quick Action from editor
-  // Adds user message to SessionContext so it appears in the Discussion
+  // Sends formatted message via SSE chat to trigger AI response
   const handleQuickAction = useCallback(
     (action: QuickActionType, selection: SelectionContext) => {
-      // Add user message showing what they selected to the shared conversation
-      const userMessage = `[${action.charAt(0).toUpperCase() + action.slice(1)}] "${selection.text}"`;
-      addMessage({ role: "user", content: userMessage });
+      // Format the action as a chat message the AI can understand
+      const actionLabel = action.charAt(0).toUpperCase() + action.slice(1);
+      const message = `[Quick Action: ${actionLabel}]
 
-      // Send quick action request to backend
-      sendMessage({
-        type: "quick_action_request",
-        action,
-        selection: selection.text,
-        contextBefore: selection.contextBefore,
-        contextAfter: selection.contextAfter,
-        filePath,
-        selectionStartLine: selection.startLine,
-        selectionEndLine: selection.endLine,
-        totalLines: selection.totalLines,
-      });
+File: ${filePath}
+Lines ${selection.startLine}-${selection.endLine} of ${selection.totalLines}
+
+Selected text:
+\`\`\`
+${selection.text}
+\`\`\`
+
+Context before:
+\`\`\`
+${selection.contextBefore}
+\`\`\`
+
+Context after:
+\`\`\`
+${selection.contextAfter}
+\`\`\`
+
+Please ${action} the selected text.`;
+
+      // Send via SSE chat
+      void sendChatMessage(message);
     },
-    [addMessage, sendMessage, filePath]
+    [sendChatMessage, filePath]
   );
 
   // Handle Advisory Action from editor (REQ-F-15)
-  // Adds user message to SessionContext so it appears in the Discussion
+  // Sends formatted message via SSE chat to trigger AI response
   const handleAdvisoryAction = useCallback(
     (action: AdvisoryActionType, selection: SelectionContext) => {
-      // Add user message showing what they selected to the shared conversation
-      const userMessage = `[${action.charAt(0).toUpperCase() + action.slice(1)}] "${selection.text}"`;
-      addMessage({ role: "user", content: userMessage });
+      // Format the action as a chat message the AI can understand
+      const actionLabel = action.charAt(0).toUpperCase() + action.slice(1);
+      const snapshotContext = action === "compare" && state.snapshot
+        ? `\n\nSnapshot for comparison:\n\`\`\`\n${state.snapshot}\n\`\`\``
+        : "";
 
-      // Send advisory action request to backend
-      // Backend routes through existing session, response appears in Discussion
-      sendMessage({
-        type: "advisory_action_request",
-        action,
-        selection: selection.text,
-        contextBefore: selection.contextBefore,
-        contextAfter: selection.contextAfter,
-        filePath,
-        selectionStartLine: selection.startLine,
-        selectionEndLine: selection.endLine,
-        totalLines: selection.totalLines,
-        snapshotSelection: action === "compare" ? state.snapshot ?? undefined : undefined,
-      });
+      const message = `[Advisory Action: ${actionLabel}]
+
+File: ${filePath}
+Lines ${selection.startLine}-${selection.endLine} of ${selection.totalLines}
+
+Selected text:
+\`\`\`
+${selection.text}
+\`\`\`
+
+Context before:
+\`\`\`
+${selection.contextBefore}
+\`\`\`
+
+Context after:
+\`\`\`
+${selection.contextAfter}
+\`\`\`${snapshotContext}
+
+Please ${action === "validate" ? "validate" : action === "critique" ? "critique" : action === "compare" ? "compare" : "discuss"} the selected text.`;
+
+      // Send via SSE chat
+      void sendChatMessage(message);
     },
-    [addMessage, sendMessage, filePath, state.snapshot]
+    [sendChatMessage, filePath, state.snapshot]
   );
 
   return (
@@ -275,8 +290,6 @@ export function PairWritingMode({
           <EditorComponent
             initialContent={initialContent}
             filePath={filePath}
-            sendMessage={sendMessage}
-            lastMessage={lastMessage}
             onContentChange={handleContentChange}
             onQuickActionComplete={handleQuickActionComplete}
             onQuickAction={handleQuickAction}
@@ -292,13 +305,9 @@ export function PairWritingMode({
           />
         </div>
 
-        {/* Right pane: Discussion (same session as Think tab) */}
+        {/* Right pane: Discussion (same session as Think tab, uses SSE) */}
         <div className="pair-writing-mode__conversation-pane">
-          <DiscussionComponent
-            sendMessage={sendMessage}
-            connectionStatus={connectionStatus}
-            lastMessage={lastMessage}
-          />
+          <DiscussionComponent transport="sse" />
         </div>
       </div>
 

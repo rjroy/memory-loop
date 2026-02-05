@@ -3,16 +3,15 @@
  *
  * Displays available vaults for the user to select.
  * Handles loading state, empty state, and vault selection.
- * Uses API to check for existing sessions before connecting.
+ * Uses REST API for session initialization.
  */
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
 // REST API calls in async handlers
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import type { VaultInfo, ServerMessage, EditableVaultConfig } from "@memory-loop/shared";
+import type { VaultInfo, EditableVaultConfig, SlashCommand, ConversationMessage } from "@memory-loop/shared";
 import { useSession, STORAGE_KEY_VAULT } from "../../contexts/SessionContext";
-import { useWebSocket } from "../../hooks/useWebSocket";
 import { createApiClient, vaultPath } from "@/lib/api/client";
 import { Toast, type ToastVariant } from "../shared/Toast";
 import { ConfigEditorDialog } from "./ConfigEditorDialog";
@@ -37,13 +36,28 @@ export interface VaultSelectProps {
 type LoadingState = "loading" | "loaded" | "error";
 
 /**
+ * Response from session initialization API.
+ */
+interface SessionInitResponse {
+  sessionId: string;
+  vaultId: string;
+  messages: ConversationMessage[];
+  createdAt?: string;
+  slashCommands?: SlashCommand[];
+  config?: {
+    discussionModel?: string;
+    viMode?: boolean;
+  };
+}
+
+/**
  * Vault selection screen component.
  *
  * Fetches vaults from /api/vaults on mount and displays them as cards.
  * When a vault is selected:
- * 1. Checks /api/sessions/:vaultId for existing session
- * 2. Sends resume_session or select_vault accordingly
- * 3. Server sends session_ready with messages if resuming
+ * 1. Calls POST /api/vaults/:vaultId/sessions
+ * 2. Receives session data (messages if resuming, slash commands, config)
+ * 3. Updates context and notifies parent
  */
 export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   const [vaults, setVaults] = useState<VaultInfo[]>([]);
@@ -72,47 +86,10 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   // Settings dialog state (TASK-010)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
 
-  // Dedicated message state for Settings dialog editors to avoid race conditions
-  // (MemoryEditor now uses REST API, ExtractionPromptEditor and CardGeneratorEditor use WebSocket)
-  const [extractionPromptMessage, setExtractionPromptMessage] = useState<ServerMessage | null>(null);
-  const [cardGeneratorMessage, setCardGeneratorMessage] = useState<ServerMessage | null>(null);
-
-  const { selectVault, vault: currentVault, setSlashCommands } = useSession();
+  const { selectVault, vault: currentVault, setSlashCommands, setSessionId, setMessages } = useSession();
 
   // API client for REST operations (setup, config)
   const api = useMemo(() => createApiClient(), []);
-
-  // Route messages to appropriate handlers - onMessage fires for every message
-  const handleWebSocketMessage = useCallback((message: ServerMessage) => {
-    // Route extraction prompt messages to ExtractionPromptEditor
-    if (
-      message.type === "extraction_prompt_content" ||
-      message.type === "extraction_prompt_saved" ||
-      message.type === "extraction_prompt_reset" ||
-      message.type === "extraction_status"
-    ) {
-      setExtractionPromptMessage(message);
-    }
-    // Route card generator messages to CardGeneratorEditor
-    if (
-      message.type === "card_generator_config_content" ||
-      message.type === "card_generator_requirements_saved" ||
-      message.type === "card_generator_config_saved" ||
-      message.type === "card_generator_requirements_reset" ||
-      message.type === "card_generation_status"
-    ) {
-      setCardGeneratorMessage(message);
-    }
-    // Error messages go to both editors (they filter internally)
-    if (message.type === "error") {
-      setExtractionPromptMessage(message);
-      setCardGeneratorMessage(message);
-    }
-  }, []);
-
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
-    onMessage: handleWebSocketMessage,
-  });
 
   // Track whether we've attempted auto-resume from localStorage
   const hasAttemptedAutoResumeRef = useRef(false);
@@ -149,25 +126,55 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     void fetchVaults();
   }, []);
 
-  // Handle vault selection from WebSocket vault_list message
-  useEffect(() => {
-    if (lastMessage?.type === "vault_list") {
-      // Server sent vault list on connection open - use it if we don't have vaults yet
-      if (vaults.length === 0 && lastMessage.vaults.length > 0) {
-        setVaults(lastMessage.vaults);
-        setLoadingState("loaded");
+  // Initialize session via REST API
+  const initializeSession = useCallback(async (vault: VaultInfo, sessionIdToResume?: string) => {
+    console.log(`[VaultSelect] Initializing session for vault: ${vault.id}`);
+
+    try {
+      const response = await fetch(`/api/vaults/${vault.id}/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: sessionIdToResume ? JSON.stringify({ sessionId: sessionIdToResume }) : undefined,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json() as { error?: string; message?: string };
+        throw new Error(errorData.message ?? `HTTP ${response.status}`);
       }
+
+      const data = await response.json() as SessionInitResponse;
+
+      // Update session context
+      selectVault(vault);
+      if (data.sessionId) {
+        setSessionId(data.sessionId);
+      }
+      if (data.messages && data.messages.length > 0) {
+        setMessages(data.messages);
+      }
+      if (data.slashCommands) {
+        setSlashCommands(data.slashCommands);
+      }
+
+      setSelectedVaultId(null);
+      onReady?.();
+
+      console.log(`[VaultSelect] Session initialized: ${data.sessionId || "(new)"}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to initialize session";
+      setError(message);
+      setSelectedVaultId(null);
+      console.error("[VaultSelect] Session initialization failed:", err);
     }
-  }, [lastMessage, vaults.length]);
+  }, [selectVault, setSessionId, setMessages, setSlashCommands, onReady]);
 
   // Auto-resume session from localStorage on page refresh
   useEffect(() => {
     // Only attempt once per component mount
     if (hasAttemptedAutoResumeRef.current) return;
 
-    // Wait until vaults are loaded and connection is ready
+    // Wait until vaults are loaded
     if (loadingState !== "loaded" || vaults.length === 0) return;
-    if (connectionStatus !== "connected") return;
 
     // Check for persisted vault ID
     const persistedVaultId = localStorage.getItem(STORAGE_KEY_VAULT);
@@ -181,70 +188,9 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     hasAttemptedAutoResumeRef.current = true;
     console.log(`[VaultSelect] Auto-resuming vault: ${vault.id}`);
 
-    // Trigger the same flow as handleVaultClick
     setSelectedVaultId(vault.id);
-
-    // Check for existing session and resume/create
-    void (async () => {
-      try {
-        const response = await fetch(`/api/sessions/${vault.id}`);
-        if (!response.ok) {
-          console.warn(`[VaultSelect] Session check failed with status ${response.status}, starting fresh`);
-          sendMessage({ type: "select_vault", vaultId: vault.id });
-          return;
-        }
-        const data = (await response.json()) as { sessionId: string | null };
-
-        if (data.sessionId) {
-          console.log(`[VaultSelect] Auto-resuming session: ${data.sessionId.slice(0, 8)}...`);
-          sendMessage({ type: "resume_session", sessionId: data.sessionId });
-        } else {
-          console.log(`[VaultSelect] Starting new session for auto-resumed vault: ${vault.id}`);
-          sendMessage({ type: "select_vault", vaultId: vault.id });
-        }
-      } catch (err) {
-        console.warn("[VaultSelect] Failed to check session during auto-resume:", err);
-        sendMessage({ type: "select_vault", vaultId: vault.id });
-      }
-    })();
-  }, [loadingState, vaults.length, connectionStatus, sendMessage]);
-
-  // Handle session ready message
-  // Note: useServerMessageHandler handles sessionId and messages from session_ready
-  useEffect(() => {
-    if (lastMessage?.type === "session_ready" && selectedVaultId) {
-      const vault = vaults.find((v) => v.id === selectedVaultId);
-      if (!vault) return;
-
-      // Session is ready - update context and notify parent
-      selectVault(vault);
-      // Set slash commands from the session_ready message (after selectVault clears them)
-      if (lastMessage.slashCommands) {
-        setSlashCommands(lastMessage.slashCommands);
-      }
-      setSelectedVaultId(null);
-      onReady?.();
-    }
-  }, [lastMessage, selectedVaultId, vaults, selectVault, setSlashCommands, onReady]);
-
-  // Handle errors during vault selection
-  useEffect(() => {
-    if (lastMessage?.type === "error" && selectedVaultId) {
-      // If resume failed (SESSION_NOT_FOUND), start fresh
-      if (lastMessage.code === "SESSION_NOT_FOUND") {
-        // Send select_vault to start a new session
-        sendMessage({ type: "select_vault", vaultId: selectedVaultId });
-      } else {
-        // Other error - show to user
-        setError(lastMessage.message);
-        setSelectedVaultId(null);
-      }
-    }
-  }, [lastMessage, selectedVaultId, sendMessage]);
-
-  // Note: setup_complete message handling moved to REST API in handleSetupClick
-  // Note: vault_created message handling moved to REST API in handleAddVaultConfirm
-  // Note: config_updated message handling moved to REST API in handleConfigSave
+    void initializeSession(vault);
+  }, [loadingState, vaults, initializeSession]);
 
   // Toast dismiss handler
   const handleToastDismiss = useCallback(() => {
@@ -425,41 +371,17 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
     }
   }
 
-  // Handle vault card click - check for existing session via API
+  // Handle vault card click - initialize session via REST API
   async function handleVaultClick(vault: VaultInfo) {
-    if (connectionStatus !== "connected") {
-      setError("Not connected to server. Please wait...");
+    if (selectedVaultId !== null) {
+      // Already selecting a vault, ignore
       return;
     }
 
     setSelectedVaultId(vault.id);
     setError(null);
 
-    try {
-      // Check if server has an existing session for this vault
-      const response = await fetch(`/api/sessions/${vault.id}`);
-      if (!response.ok) {
-        // Non-2xx status - fall back to starting a new session
-        console.warn(`[VaultSelect] Session check failed with status ${response.status}, starting fresh`);
-        sendMessage({ type: "select_vault", vaultId: vault.id });
-        return;
-      }
-      const data = (await response.json()) as { sessionId: string | null };
-
-      if (data.sessionId) {
-        // Resume existing session - server will send messages
-        console.log(`[VaultSelect] Resuming session: ${data.sessionId.slice(0, 8)}...`);
-        sendMessage({ type: "resume_session", sessionId: data.sessionId });
-      } else {
-        // No existing session - start new
-        console.log(`[VaultSelect] Starting new session for vault: ${vault.id}`);
-        sendMessage({ type: "select_vault", vaultId: vault.id });
-      }
-    } catch (err) {
-      // API error - fall back to select_vault
-      console.warn("[VaultSelect] Failed to check session, starting fresh:", err);
-      sendMessage({ type: "select_vault", vaultId: vault.id });
-    }
+    await initializeSession(vault);
   }
 
   // Render loading state
@@ -550,21 +472,6 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
             </svg>
           </button>
         </div>
-        <p className="vault-select__connection-status">
-          {connectionStatus === "connected" ? (
-            <span className="vault-select__status vault-select__status--connected">
-              Connected
-            </span>
-          ) : connectionStatus === "connecting" ? (
-            <span className="vault-select__status vault-select__status--connecting">
-              Connecting...
-            </span>
-          ) : (
-            <span className="vault-select__status vault-select__status--disconnected">
-              Disconnected
-            </span>
-          )}
-        </p>
       </header>
 
       {error && (
@@ -741,23 +648,13 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         createError={addVaultError}
       />
 
-      {/* Settings Dialog (TASK-010, TASK-011, TASK-012) */}
+      {/* Settings Dialog (TASK-010, TASK-011, TASK-012) - now using REST-based editors */}
       <SettingsDialog
         isOpen={settingsDialogOpen}
         onClose={() => setSettingsDialogOpen(false)}
         memoryEditorContent={<MemoryEditor />}
-        promptEditorContent={
-          <ExtractionPromptEditor
-            sendMessage={sendMessage}
-            lastMessage={extractionPromptMessage}
-          />
-        }
-        cardGeneratorContent={
-          <CardGeneratorEditor
-            sendMessage={sendMessage}
-            lastMessage={cardGeneratorMessage}
-          />
-        }
+        promptEditorContent={<ExtractionPromptEditor />}
+        cardGeneratorContent={<CardGeneratorEditor />}
       />
     </div>
   );

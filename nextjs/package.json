@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev",
     "build": "next build",
-    "start": "next start -p 3000",
+    "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "bun test",
     "test:coverage": "LOG_LEVEL=silent bun test --coverage 2>&1 | awk '/^-+\\|/{p=1} p'",

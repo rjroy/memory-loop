@@ -19,17 +19,6 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Proxy WebSocket to backend (required until WebSocket handler is migrated)
-  // All REST API routes have been migrated to Next.js API routes
-  async rewrites() {
-    return [
-      // WebSocket proxy for streaming AI responses
-      {
-        source: "/ws",
-        destination: "http://localhost:3000/ws",
-      },
-    ];
-  },
 };
 
 export default nextConfig;

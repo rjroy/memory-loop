@@ -155,7 +155,7 @@ export function useChat(
       onStreamStartRef.current?.();
 
       try {
-        // Build request body
+        // Build request body - always include vault info
         const body = sessionId
           ? {
               // Resume session
@@ -164,8 +164,10 @@ export function useChat(
               prompt: text,
             }
           : {
-              // New session
+              // New session - include full vault info
               vaultId: vault.id,
+              vaultPath: vault.path,
+              vaultName: vault.name,
               prompt: text,
             };
 

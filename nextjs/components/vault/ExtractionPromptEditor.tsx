@@ -14,18 +14,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { ClientMessage, ServerMessage } from "@memory-loop/shared";
 import "./ExtractionPromptEditor.css";
-
-/**
- * Props for the ExtractionPromptEditor component.
- */
-export interface ExtractionPromptEditorProps {
-  /** Function to send WebSocket messages */
-  sendMessage: (message: ClientMessage) => void;
-  /** Last received server message (for handling responses) */
-  lastMessage: ServerMessage | null;
-}
 
 /**
  * ExtractionPromptEditor Component
@@ -33,10 +22,7 @@ export interface ExtractionPromptEditorProps {
  * Provides an interface for viewing and editing the extraction prompt.
  * Shows whether the user has a custom override or is using the default.
  */
-export function ExtractionPromptEditor({
-  sendMessage,
-  lastMessage,
-}: ExtractionPromptEditorProps): React.ReactNode {
+export function ExtractionPromptEditor(): React.ReactNode {
   // State
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
@@ -58,69 +44,32 @@ export function ExtractionPromptEditor({
   // Calculate if there are unsaved changes
   const hasChanges = content !== originalContent;
 
-  // Request extraction prompt on mount
+  // Load extraction prompt on mount
   useEffect(() => {
-    if (!hasRequestedRef.current) {
-      hasRequestedRef.current = true;
-      sendMessage({ type: "get_extraction_prompt" });
-    }
-  }, [sendMessage]);
+    if (hasRequestedRef.current) return;
+    hasRequestedRef.current = true;
 
-  // Ref to track current content for save/reset callbacks
-  const contentRef = useRef(content);
-  contentRef.current = content;
-
-  // Handle server messages
-  useEffect(() => {
-    if (!lastMessage) return;
-
-    if (lastMessage.type === "extraction_prompt_content") {
-      setContent(lastMessage.content);
-      setOriginalContent(lastMessage.content);
-      setIsOverride(lastMessage.isOverride);
-      setIsLoading(false);
-      setError(null);
-    } else if (lastMessage.type === "extraction_prompt_saved") {
-      setIsSaving(false);
-      if (lastMessage.success) {
-        // Update original content to match current content
-        setOriginalContent(contentRef.current);
-        setIsOverride(lastMessage.isOverride);
-        setError(null);
-      } else {
-        setError(lastMessage.error ?? "Failed to save extraction prompt");
-      }
-    } else if (lastMessage.type === "extraction_prompt_reset") {
-      setIsResetting(false);
-      if (lastMessage.success) {
-        setContent(lastMessage.content);
-        setOriginalContent(lastMessage.content);
-        setIsOverride(false);
+    async function loadPrompt() {
+      try {
+        const response = await fetch("/api/config/extraction-prompt");
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const data = await response.json() as { content: string; isOverride: boolean };
+        setContent(data.content);
+        setOriginalContent(data.content);
+        setIsOverride(data.isOverride);
         setIsLoading(false);
         setError(null);
-      } else {
-        setError(lastMessage.error ?? "Failed to reset extraction prompt");
-      }
-    } else if (lastMessage.type === "error") {
-      setIsLoading(false);
-      setIsSaving(false);
-      setIsResetting(false);
-      setError(lastMessage.message);
-    } else if (lastMessage.type === "extraction_status") {
-      setExtractionStatus(lastMessage.status);
-      setExtractionMessage(lastMessage.message ?? null);
-      if (lastMessage.status === "error" && lastMessage.error) {
-        setError(lastMessage.error);
-      }
-      // Clear success message after a delay
-      if (lastMessage.status === "complete") {
-        setTimeout(() => {
-          setExtractionStatus("idle");
-          setExtractionMessage(null);
-        }, 5000);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to load extraction prompt";
+        setError(message);
+        setIsLoading(false);
       }
     }
-  }, [lastMessage]);
+
+    void loadPrompt();
+  }, []);
 
   // Handle content change
   const handleChange = useCallback(
@@ -132,20 +81,61 @@ export function ExtractionPromptEditor({
   );
 
   // Handle save
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (isSaving || isResetting) return;
     setIsSaving(true);
     setError(null);
-    sendMessage({ type: "save_extraction_prompt", content });
-  }, [sendMessage, content, isSaving, isResetting]);
+
+    try {
+      const response = await fetch("/api/config/extraction-prompt", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const data = await response.json() as { success: boolean; isOverride: boolean; error?: string };
+
+      if (data.success) {
+        setOriginalContent(content);
+        setIsOverride(data.isOverride);
+        setError(null);
+      } else {
+        setError(data.error ?? "Failed to save extraction prompt");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save extraction prompt";
+      setError(message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [content, isSaving, isResetting]);
 
   // Handle reset to default
-  const handleReset = useCallback(() => {
+  const handleReset = useCallback(async () => {
     if (isSaving || isResetting) return;
     setIsResetting(true);
     setError(null);
-    sendMessage({ type: "reset_extraction_prompt" });
-  }, [sendMessage, isSaving, isResetting]);
+
+    try {
+      const response = await fetch("/api/config/extraction-prompt", {
+        method: "DELETE",
+      });
+      const data = await response.json() as { success: boolean; content: string; error?: string };
+
+      if (data.success) {
+        setContent(data.content);
+        setOriginalContent(data.content);
+        setIsOverride(false);
+        setError(null);
+      } else {
+        setError(data.error ?? "Failed to reset extraction prompt");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to reset extraction prompt";
+      setError(message);
+    } finally {
+      setIsResetting(false);
+    }
+  }, [isSaving, isResetting]);
 
   // Handle discard changes (revert to original)
   const handleDiscard = useCallback(() => {
@@ -154,12 +144,44 @@ export function ExtractionPromptEditor({
   }, [originalContent]);
 
   // Handle run extraction
-  const handleRunExtraction = useCallback(() => {
+  const handleRunExtraction = useCallback(async () => {
     if (extractionStatus === "running") return;
     setError(null);
-    setExtractionMessage(null);
-    sendMessage({ type: "trigger_extraction" });
-  }, [sendMessage, extractionStatus]);
+    setExtractionMessage("Starting extraction...");
+    setExtractionStatus("running");
+
+    try {
+      const response = await fetch("/api/config/extraction-prompt/trigger", {
+        method: "POST",
+      });
+      const data = await response.json() as {
+        status: "running" | "complete" | "error";
+        message?: string;
+        error?: string;
+        transcriptsProcessed?: number;
+      };
+
+      setExtractionStatus(data.status);
+      setExtractionMessage(data.message ?? null);
+
+      if (data.status === "error" && data.error) {
+        setError(data.error);
+      }
+
+      // Clear success message after a delay
+      if (data.status === "complete") {
+        setTimeout(() => {
+          setExtractionStatus("idle");
+          setExtractionMessage(null);
+        }, 5000);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Extraction failed";
+      setError(message);
+      setExtractionStatus("error");
+      setExtractionMessage("Extraction failed unexpectedly");
+    }
+  }, [extractionStatus]);
 
   return (
     <div className="prompt-editor">
@@ -218,7 +240,7 @@ export function ExtractionPromptEditor({
           <button
             type="button"
             className={`prompt-editor__btn prompt-editor__btn--extract${extractionStatus === "running" ? " prompt-editor__btn--loading" : ""}`}
-            onClick={handleRunExtraction}
+            onClick={() => void handleRunExtraction()}
             disabled={extractionStatus === "running" || isLoading}
             aria-busy={extractionStatus === "running"}
           >
@@ -248,7 +270,7 @@ export function ExtractionPromptEditor({
           <button
             type="button"
             className="prompt-editor__btn prompt-editor__btn--reset"
-            onClick={handleReset}
+            onClick={() => void handleReset()}
             disabled={isSaving || isResetting}
           >
             {isResetting ? "Resetting..." : "Reset to Default"}
@@ -265,7 +287,7 @@ export function ExtractionPromptEditor({
         <button
           type="button"
           className={`prompt-editor__btn prompt-editor__btn--save${isSaving ? " prompt-editor__btn--loading" : ""}`}
-          onClick={handleSave}
+          onClick={() => void handleSave()}
           disabled={!hasChanges || isSaving || isResetting}
         >
           {isSaving ? "Saving..." : "Save"}

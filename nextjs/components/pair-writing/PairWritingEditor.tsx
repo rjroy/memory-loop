@@ -15,11 +15,6 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import type {
-  ClientMessage,
-  ServerMessage,
-  QuickActionType as QuickActionTypeProtocol,
-} from "@memory-loop/shared";
 import {
   EditorContextMenu,
   getMenuPositionFromEvent,
@@ -43,8 +38,6 @@ import "./vi-mode.css";
 export interface PairWritingEditorProps {
   initialContent: string;
   filePath: string;
-  sendMessage: (message: ClientMessage) => void;
-  lastMessage: ServerMessage | null;
   onContentChange?: (content: string) => void;
   onQuickActionComplete?: (path: string) => void;
   onAdvisoryAction?: (
@@ -76,8 +69,6 @@ export interface PairWritingEditorProps {
 export function PairWritingEditor({
   initialContent,
   filePath,
-  sendMessage,
-  lastMessage,
   onContentChange,
   onQuickActionComplete,
   onAdvisoryAction,
@@ -184,28 +175,6 @@ export function PairWritingEditor({
     setContent(initialContent);
   }, [initialContent]);
 
-  // Process Quick Action response messages
-  useEffect(() => {
-    if (!lastMessage || !isProcessingQuickAction) return;
-
-    switch (lastMessage.type) {
-      case "response_start":
-        setQuickActionMessageId(lastMessage.messageId);
-        break;
-
-      case "response_end":
-        setIsProcessingQuickAction(false);
-        setQuickActionMessageId(null);
-        onQuickActionComplete?.(filePathRef.current);
-        break;
-
-      case "error":
-        setIsProcessingQuickAction(false);
-        setQuickActionMessageId(null);
-        break;
-    }
-  }, [lastMessage, isProcessingQuickAction, quickActionMessageId, onQuickActionComplete]);
-
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newContent = e.target.value;
@@ -263,25 +232,10 @@ export function PairWritingEditor({
       setIsProcessingQuickAction(true);
       setQuickActionMessageId(null);
 
-      // If parent provides onQuickAction, delegate to it (allows adding to session)
-      if (onQuickAction) {
-        onQuickAction(action, currentSelection);
-      } else {
-        // Fallback: send message directly (for standalone usage)
-        sendMessage({
-          type: "quick_action_request",
-          action: action as QuickActionTypeProtocol,
-          selection: currentSelection.text,
-          contextBefore: currentSelection.contextBefore,
-          contextAfter: currentSelection.contextAfter,
-          filePath: filePathRef.current,
-          selectionStartLine: currentSelection.startLine,
-          selectionEndLine: currentSelection.endLine,
-          totalLines: currentSelection.totalLines,
-        });
-      }
+      // Delegate to parent to handle quick action via SSE chat
+      onQuickAction?.(action, currentSelection);
     },
-    [closeContextMenu, sendMessage, onQuickAction]
+    [closeContextMenu, onQuickAction]
   );
 
   const handleAdvisoryAction = useCallback(

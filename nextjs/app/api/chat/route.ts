@@ -21,6 +21,7 @@ import { encodeSSE, SSE_HEADERS } from "@/lib/sse";
 const ChatRequestSchema = z.object({
   vaultId: z.string().optional(),
   vaultPath: z.string().optional(),
+  vaultName: z.string().optional(),
   sessionId: z.string().optional(),
   prompt: z.string().min(1, "Prompt is required"),
 });
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { vaultId, vaultPath, sessionId, prompt } = result.data;
+  const { vaultId, vaultPath, vaultName, sessionId, prompt } = result.data;
 
   // Validate we have enough info to start/resume
   if (!sessionId && !vaultId) {
@@ -52,9 +53,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (sessionId && !vaultPath) {
+  if (!vaultPath) {
     return Response.json(
-      { error: "vaultPath is required when resuming a session" },
+      { error: "vaultPath is required" },
       { status: 400 }
     );
   }
@@ -90,29 +91,17 @@ export async function POST(request: NextRequest) {
       // Start or resume session
       (async () => {
         try {
-          if (sessionId && vaultPath) {
+          if (sessionId) {
             // Resume existing session
-            await controller.resumeSession(vaultPath, sessionId, prompt);
+            await controller.resumeSession(vaultPath!, sessionId, prompt);
           } else if (vaultId) {
-            // Create new session
-            // For new session, we need vault info - fetch from backend
-            const vaultResponse = await fetch(
-              `http://localhost:3000/api/vaults/${vaultId}`
-            );
-            if (!vaultResponse.ok) {
-              streamController.enqueue(
-                encodeSSE({
-                  type: "error",
-                  code: "VAULT_NOT_FOUND",
-                  message: `Vault "${vaultId}" not found`,
-                })
-              );
-              unsubscribe();
-              streamController.close();
-              return;
-            }
-
-            const vault = await vaultResponse.json();
+            // Create new session with minimal vault info from request
+            // Cast to VaultInfo - controller only uses id, path, name for session
+            const vault = {
+              id: vaultId,
+              path: vaultPath!,
+              name: vaultName ?? vaultId,
+            } as import("@memory-loop/shared").VaultInfo;
             await controller.startSession(vault, prompt);
           }
         } catch (err) {

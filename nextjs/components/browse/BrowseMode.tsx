@@ -10,9 +10,8 @@
 // This is safe because we handle errors within the async functions.
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useSession, useServerMessageHandler } from "../../contexts/SessionContext";
+import { useSession } from "../../contexts/SessionContext";
 import type { BrowseViewMode, SearchMode } from "../../contexts/SessionContext";
-import { useWebSocket } from "../../hooks/useWebSocket";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { useSearch } from "../../hooks/useSearch";
 import { useHome } from "../../hooks/useHome";
@@ -60,7 +59,7 @@ export function BrowseMode(): React.ReactNode {
 
   const { browser, vault, cacheDirectory, clearDirectoryCache, setCurrentPath, setFileContent, setFileError, setFileLoading, startSave, saveSuccess, saveError, setViewMode, setTasks, setTasksLoading, setTasksError, updateTask, setSearchActive, setSearchMode, setSearchQuery, setSearchResults, setSearchLoading, toggleResultExpanded, setSnippets, clearSearch, setMode, setPinnedAssets } = useSession();
 
-  // REST API hooks (migrated from WebSocket)
+  // REST API hooks for file operations
   const fileBrowser = useFileBrowser(vault?.id);
   const searchApi = useSearch(vault?.id);
   const homeApi = useHome(vault?.id);
@@ -71,7 +70,7 @@ export function BrowseMode(): React.ReactNode {
 
   const { viewMode } = browser;
 
-  // Track saving state in a ref to avoid stale closures in WebSocket message handler
+  // Track saving state in a ref to avoid stale closures
   const isSavingRef = useRef(browser.isSaving);
   isSavingRef.current = browser.isSaving;
 
@@ -94,47 +93,8 @@ export function BrowseMode(): React.ReactNode {
     };
   }, [isPairWritingActive]);
 
-  // Hook to handle session-level messages (widgets, etc.)
-  const handleServerMessage = useServerMessageHandler();
-
-  // Streaming message types that Discussion handles when PairWritingMode is active
-  const STREAMING_MESSAGE_TYPES = new Set([
-    "response_start",
-    "response_chunk",
-    "response_end",
-    "tool_start",
-    "tool_input",
-    "tool_end",
-  ]);
-
-  // Handle incoming messages - route to server message handler for session-level processing
-  // Skip streaming messages when PairWritingMode is active (Discussion handles those)
-  const handleMessage = useCallback(
-    (message: import("@memory-loop/shared").ServerMessage) => {
-      // When PairWritingMode is active, Discussion handles streaming messages
-      // via its shared connection. Skip them here to avoid double processing.
-      if (isPairWritingActiveRef.current && STREAMING_MESSAGE_TYPES.has(message.type)) {
-        return;
-      }
-      handleServerMessage(message);
-    },
-    [handleServerMessage]
-  );
-
-  const { sendMessage, lastMessage, connectionStatus } = useWebSocket({
-    onMessage: handleMessage,
-  });
-
   // Destructure search state for convenience
   const { search } = browser;
-
-  // Clear search state on WebSocket disconnect (REQ-F-26 error handling)
-  // This ensures stale search results aren't shown when connection is lost
-  useEffect(() => {
-    if (connectionStatus === "disconnected" && search.isActive) {
-      clearSearch();
-    }
-  }, [connectionStatus, search.isActive, clearSearch]);
 
   // Load root directory when vault is selected, if not cached (uses REST API)
   const { listDirectory } = fileBrowser;
@@ -242,39 +202,6 @@ export function BrowseMode(): React.ReactNode {
       hasAutoLoadedRef.current = null;
     }
   }, [vault, browser.currentPath, browser.currentFileContent, browser.fileError, browser.isLoading, fileBrowser, setFileLoading, setFileContent, setFileError]);
-
-  // Handle WebSocket error messages (file operations use REST, errors come via WebSocket for PairWritingMode)
-  useEffect(() => {
-    if (!lastMessage) return;
-
-    if (lastMessage.type === "error") {
-      // Check if this is a save error (while in adjust mode)
-      // Use ref to get current saving state, avoiding stale closure issue
-      if (isSavingRef.current && SAVE_ERROR_CODES.includes(lastMessage.code as typeof SAVE_ERROR_CODES[number])) {
-        // Save failed - preserve content and show error (REQ-F-15)
-        saveError(lastMessage.message);
-      } else if (
-        lastMessage.code === "FILE_NOT_FOUND" ||
-        lastMessage.code === "DIRECTORY_NOT_FOUND" ||
-        lastMessage.code === "INVALID_FILE_TYPE"
-      ) {
-        // Check if this is a task toggle error - rollback optimistic update
-        if (pendingTaskTogglesRef.current.size > 0) {
-          // Rollback all pending task toggles and show error (REQ-F-24)
-          for (const [taskKey, originalState] of pendingTaskTogglesRef.current) {
-            const [filePath, lineNumberStr] = taskKey.split(":");
-            const lineNumber = parseInt(lineNumberStr, 10);
-            updateTask(filePath, lineNumber, originalState);
-          }
-          pendingTaskTogglesRef.current.clear();
-          setTasksError(lastMessage.message);
-        } else {
-          setFileError(lastMessage.message);
-        }
-      }
-      setFileLoading(false);
-    }
-  }, [lastMessage, saveError, setFileError, setFileLoading, updateTask, setTasksError]);
 
   // Helper to refresh parent directory after file operations
   const refreshParentDirectory = useCallback(
@@ -870,9 +797,6 @@ export function BrowseMode(): React.ReactNode {
               assetBaseUrl={assetBaseUrl}
               onExit={handleExitPairWriting}
               onSave={handleSave}
-              sendMessage={sendMessage}
-              lastMessage={lastMessage}
-              connectionStatus={connectionStatus}
               onQuickActionComplete={handleNavigate}
             />
           ) : isImageFile(browser.currentPath) ? (

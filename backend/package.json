@@ -24,7 +24,11 @@
     "./middleware": "./src/middleware/vault-resolution.ts",
     "./reference-updater": "./src/reference-updater.ts",
     "./task-manager": "./src/task-manager.ts",
-    "./extraction/memory-writer": "./src/extraction/memory-writer.ts"
+    "./extraction/memory-writer": "./src/extraction/memory-writer.ts",
+    "./extraction/fact-extractor": "./src/extraction/fact-extractor.ts",
+    "./extraction/extraction-manager": "./src/extraction/extraction-manager.ts",
+    "./spaced-repetition/card-generator-config": "./src/spaced-repetition/card-generator-config.ts",
+    "./spaced-repetition/card-discovery-scheduler": "./src/spaced-repetition/card-discovery-scheduler.ts"
   },
   "scripts": {
     "dev": "NODE_ENV=development bun run --watch src/index.ts",

@@ -3,6 +3,11 @@
  *
  * Singleton controller for the Next.js server.
  * Manages the live SDK connection and emits streaming events.
+ *
+ * Uses globalThis to survive module reloading in Next.js dev mode.
+ * Without this, webpack HMR resets module-level variables, causing
+ * the controller to lose session state mid-stream (e.g., the /answer
+ * route gets a fresh controller while the SSE stream runs on the old one).
  */
 
 // Import from backend's streaming module via workspace package
@@ -19,9 +24,11 @@ import { initializeSdkProvider } from "@memory-loop/backend/sdk-provider";
 // Re-export types for use in route handlers
 export type { SessionEvent, SessionState, PendingPrompt, PromptResponse };
 
-// Singleton instance
-let controller: ActiveSessionController | null = null;
-let sdkInitialized = false;
+// Attach singleton to globalThis so it survives Next.js dev mode module reloading
+const globalForController = globalThis as unknown as {
+  __memoryLoopController?: ActiveSessionController;
+  __memoryLoopSdkInitialized?: boolean;
+};
 
 /**
  * Gets the singleton Active Session Controller.
@@ -29,23 +36,23 @@ let sdkInitialized = false;
  */
 export function getController(): ActiveSessionController {
   // Initialize SDK on first access (server-side singleton)
-  if (!sdkInitialized) {
+  if (!globalForController.__memoryLoopSdkInitialized) {
     initializeSdkProvider();
-    sdkInitialized = true;
+    globalForController.__memoryLoopSdkInitialized = true;
   }
 
-  if (!controller) {
-    controller = createActiveSessionController();
+  if (!globalForController.__memoryLoopController) {
+    globalForController.__memoryLoopController = createActiveSessionController();
   }
-  return controller;
+  return globalForController.__memoryLoopController;
 }
 
 /**
  * Resets the controller (for testing).
  */
 export function resetController(): void {
-  if (controller) {
-    void controller.clearSession();
+  if (globalForController.__memoryLoopController) {
+    void globalForController.__memoryLoopController.clearSession();
   }
-  controller = null;
+  globalForController.__memoryLoopController = undefined;
 }

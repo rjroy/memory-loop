@@ -226,7 +226,34 @@ export function useChat(
                 onErrorRef.current?.(errorMessage);
               }
 
-              // Forward all events to callback
+              // Translate prompt_pending events to the ServerMessage types
+              // the frontend components expect
+              if (event.type === "prompt_pending") {
+                const prompt = event.prompt as {
+                  id: string;
+                  type: string;
+                  toolName?: string;
+                  input?: unknown;
+                  questions?: unknown[];
+                };
+                if (prompt.type === "tool_permission") {
+                  onEventRef.current?.({
+                    type: "tool_permission_request",
+                    toolUseId: prompt.id,
+                    toolName: prompt.toolName ?? "",
+                    input: prompt.input,
+                  } as unknown as ServerMessage);
+                } else if (prompt.type === "ask_user_question") {
+                  onEventRef.current?.({
+                    type: "ask_user_question_request",
+                    toolUseId: prompt.id,
+                    questions: prompt.questions ?? [],
+                  } as unknown as ServerMessage);
+                }
+                continue;
+              }
+
+              // Forward all other events to callback
               onEventRef.current?.(event as unknown as ServerMessage);
             }
           }

@@ -1,234 +1,304 @@
 ---
-title: WebSocket Handler Integration with ActiveSessionController
+title: Consolidate to Single Next.js Application
 date: 2026-02-05
 status: complete
-tags: [migration, websocket, streaming, refactor]
-modules: [websocket-handler, streaming]
+tags: [migration, next-js, consolidation, maintainability]
+modules: [nextjs, backend]
 related:
-  - .lore/specs/session-viewport-separation.md
   - .lore/brainstorm/next-js-migration.md
 ---
 
-# Plan: WebSocket Handler Integration
-
-## Context
-
-Phase 1.1 of the Next.js migration is complete:
-- `backend/src/streaming/` module created with `ActiveSessionController`, `SessionStreamer`, types
-- Next.js SSE endpoints working (`nextjs/app/api/chat/`)
-- Frontend `useChat` hook implemented with `transport="sse"` option
-
-This plan completes Phase 1.2: Update WebSocket handler to use the new streaming module.
+# Plan: Consolidate to Single Next.js Application
 
 ## Goal
 
-Make `websocket-handler.ts` consume `ActiveSessionController` instead of owning streaming logic directly. The handler becomes a thin transport layer while the controller owns AI state (REQ-6 from session-viewport spec).
+One codebase, one build, one server.
 
-## Current State
+- All React UI in `nextjs/app/`
+- All API routes in `nextjs/app/api/`
+- Business logic in `backend/` as importable modules (no HTTP server)
+- Delete `frontend/` workspace entirely
+- Single `bun run build`, single `bun run start`
 
-**WebSocket handler owns:**
-- `this.state.activeQuery` (SDK connection)
-- `this.state.pendingPermissions` / `this.state.pendingAskUserQuestions` (pending prompts)
-- `this.state.cumulativeTokens`, `contextWindow`, `activeModel` (streaming state)
-- Streaming loop (`streamEvents()`, `handleStreamEvent()`, etc.)
-- Message persistence (calls `appendMessage()`)
+## Why
 
-**ActiveSessionController already has:**
-- `startSession()` / `resumeSession()` - creates SDK connection
-- `subscribe()` - emits `SessionEvent` to subscribers
-- `respondToPrompt()` - resolves pending permissions/questions
-- `clearSession()` - aborts and cleans up
-- `getState()` - returns current session state
-- All streaming logic via `streamSdkEvents()`
+- **Maintainability**: One place to look, one set of conventions
+- **Simpler deployment**: One build artifact, one process
+- **Next.js conventions**: File-based routing, standard patterns, ecosystem compatibility
+- **No custom WebSocket handling**: SSE is simpler and native to HTTP
 
-## Event Type Mapping
+---
 
-The controller emits `SessionEvent` types; WebSocket sends `ServerMessage` types:
+## Current Structure
 
-| SessionEvent | ServerMessage | Notes |
-|--------------|---------------|-------|
-| `session_ready` | `session_ready` | Same |
-| `response_start` | `response_start` | Same |
-| `response_chunk` | `response_chunk` | Same |
-| `response_end` | `response_end` | Same |
-| `tool_start` | `tool_start` | Same |
-| `tool_input` | `tool_input` | Same |
-| `tool_end` | `tool_end` | Same |
-| `error` | `error` | Same |
-| `prompt_pending` (tool_permission) | `tool_permission_request` | Map prompt fields |
-| `prompt_pending` (ask_user_question) | `ask_user_question_request` | Map prompt fields |
-| `prompt_resolved` | N/A | Internal bookkeeping |
-| `session_cleared` | N/A | Internal bookkeeping |
-
-## Implementation Steps
-
-### Step 1: Add Controller Subscription
-
-In `handleDiscussionMessage()` (lines 664-798):
-
-**Before:**
-```typescript
-const queryResult = await (sessionId ? resumeSession(...) : createSession(...));
-this.state.activeQuery = queryResult;
-await this.streamEvents(queryResult, messageId, ws);
+```
+memory-loop/
+├── backend/          # Hono server + business logic
+├── frontend/         # Vite SPA (React)
+├── nextjs/           # Partial Next.js (SSE only)
+└── shared/           # Zod schemas
 ```
 
-**After:**
-```typescript
-const controller = getActiveSessionController();
-const unsubscribe = controller.subscribe((event) => {
-  this.handleControllerEvent(event, ws);
-});
+## Target Structure
 
-try {
-  if (sessionId) {
-    await controller.resumeSession(vault.path, sessionId, prompt);
-  } else {
-    await controller.startSession(vault, prompt);
+```
+memory-loop/
+├── nextjs/           # THE app (UI + API)
+│   ├── app/          # Pages and API routes
+│   ├── components/   # React components (from frontend)
+│   ├── hooks/        # React hooks (from frontend)
+│   ├── contexts/     # React contexts (from frontend)
+│   └── lib/          # Utilities
+├── backend/          # Business logic library (no server)
+│   └── src/          # vault-manager, file-browser, etc.
+└── shared/           # Zod schemas (unchanged)
+```
+
+---
+
+## Phase 1: Move React Components to Next.js
+
+### 1A: Set up Next.js app structure
+
+Create directories:
+- `nextjs/components/` - UI components
+- `nextjs/hooks/` - React hooks
+- `nextjs/contexts/` - State management
+- `nextjs/styles/` - CSS files
+
+### 1B: Move shared components
+
+From `frontend/src/components/shared/`:
+- ConversationPane, ConfirmDialog, ErrorBoundary, LoadingSpinner, etc.
+
+### 1C: Move contexts
+
+From `frontend/src/contexts/`:
+- SessionContext → `nextjs/contexts/SessionContext.tsx`
+
+### 1D: Move hooks
+
+From `frontend/src/hooks/`:
+- useChat (keep, this is SSE)
+- useConfig, useApi, etc.
+- Delete useWebSocket (not needed)
+
+### 1E: Create pages
+
+Convert modes to Next.js pages:
+
+| Current | Next.js Page |
+|---------|--------------|
+| HomeView | `app/page.tsx` or `app/(modes)/ground/page.tsx` |
+| NoteCapture | `app/(modes)/capture/page.tsx` |
+| Discussion | `app/(modes)/think/page.tsx` |
+| BrowseMode | `app/(modes)/recall/page.tsx` |
+
+### 1F: Create layout
+
+`app/layout.tsx`:
+- Vault selection gate
+- Mode navigation
+- Session provider
+
+**Checkpoint:** UI renders in Next.js, API still proxied to Hono
+
+---
+
+## Phase 2: Move REST Endpoints to Next.js
+
+### 2A: Vaults (required first)
+
+| Endpoint | Next.js Route |
+|----------|---------------|
+| GET /api/vaults | `app/api/vaults/route.ts` |
+| POST /api/vaults | `app/api/vaults/route.ts` |
+| GET /api/health | `app/api/health/route.ts` |
+
+### 2B: Vault-scoped routes
+
+Create `app/api/vaults/[vaultId]/` with:
+- `files/route.ts` and `files/[...path]/route.ts`
+- `capture/route.ts`
+- `search/*/route.ts`
+- `config/route.ts`
+- `cards/*/route.ts`
+- etc.
+
+Each route imports business logic from `@memory-loop/backend`:
+```typescript
+import { discoverVaults } from "@memory-loop/backend/vault-manager";
+```
+
+### 2C: SSE routes (already done)
+
+- `app/api/chat/route.ts` - exists
+- `app/api/chat/[sessionId]/*/route.ts` - exists
+
+**Checkpoint:** All API routes work in Next.js, Hono server not needed
+
+---
+
+## Phase 3: Cleanup
+
+### 3A: Delete frontend workspace
+
+- Remove `frontend/` directory
+- Remove from `package.json` workspaces
+- Remove frontend scripts from root
+
+### 3B: Remove Hono server from backend
+
+- Delete `backend/src/server.ts`
+- Delete `backend/src/routes/`
+- Delete `backend/src/websocket-handler.ts`
+- Delete `backend/src/index.ts` (entry point)
+- Keep all business logic modules
+
+### 3C: Update backend package.json
+
+Backend becomes a pure library:
+```json
+{
+  "name": "@memory-loop/backend",
+  "exports": {
+    "./vault-manager": "./src/vault-manager.ts",
+    "./file-browser": "./src/file-browser.ts",
+    "./streaming": "./src/streaming/index.ts",
+    // ... etc
   }
-} finally {
-  unsubscribe();
 }
 ```
 
-### Step 2: Create Event Mapper
+### 3D: Update scripts
 
-New method `handleControllerEvent()`:
-
-```typescript
-private handleControllerEvent(event: SessionEvent, ws: ServerWebSocket<unknown>): void {
-  switch (event.type) {
-    case "session_ready":
-    case "response_start":
-    case "response_chunk":
-    case "response_end":
-    case "tool_start":
-    case "tool_input":
-    case "tool_end":
-    case "error":
-      // Direct passthrough - types match
-      this.send(ws, event as unknown as ServerMessage);
-      break;
-
-    case "prompt_pending":
-      if (event.prompt.type === "tool_permission") {
-        this.send(ws, {
-          type: "tool_permission_request",
-          toolUseId: event.prompt.id,
-          toolName: event.prompt.toolName!,
-          input: event.prompt.input,
-        });
-      } else if (event.prompt.type === "ask_user_question") {
-        this.send(ws, {
-          type: "ask_user_question_request",
-          toolUseId: event.prompt.id,
-          questions: event.prompt.questions!,
-        });
-      }
-      break;
-
-    // prompt_resolved, session_cleared - no WebSocket message needed
+Root `package.json`:
+```json
+{
+  "scripts": {
+    "dev": "bun run --cwd nextjs dev",
+    "build": "bun run --cwd nextjs build",
+    "start": "bun run --cwd nextjs start",
+    "test": "bun run --cwd backend test && bun run --cwd nextjs test"
   }
 }
 ```
 
-### Step 3: Update Permission/Question Response Handlers
+### 3E: Update deployment
 
-**Current:** Resolve from `this.state.pendingPermissions`
+- `scripts/launch.sh` → starts Next.js
+- systemd service → runs Next.js
 
-**New:** Call `controller.respondToPrompt()`
+**Checkpoint:** Single app, single server, old code deleted
 
-```typescript
-private async handleToolPermissionResponse(payload: ToolPermissionResponsePayload): Promise<void> {
-  const controller = getActiveSessionController();
-  controller.respondToPrompt(payload.toolUseId, {
-    type: "tool_permission",
-    allowed: payload.allowed,
-  });
-}
+---
 
-private async handleAskUserQuestionResponse(payload: AskUserQuestionResponsePayload): Promise<void> {
-  const controller = getActiveSessionController();
-  controller.respondToPrompt(payload.toolUseId, {
-    type: "ask_user_question",
-    answers: payload.answers,
-  });
-}
-```
+## Files to Move
 
-### Step 4: Update Abort Handler
+### From frontend/src/components/
 
-**Current:** Calls `this.state.activeQuery?.interrupt()`
+| Source | Destination |
+|--------|-------------|
+| `shared/*` | `nextjs/components/shared/` |
+| `discussion/*` | `nextjs/components/discussion/` |
+| `home/*` | `nextjs/components/home/` |
+| `browse/*` | `nextjs/components/browse/` |
+| `note/*` | `nextjs/components/note/` |
+| `App.tsx` | Split into `app/layout.tsx` + pages |
 
-**New:** Calls `controller.clearSession()`
+### From frontend/src/hooks/
 
-```typescript
-private async handleAbort(): Promise<void> {
-  const controller = getActiveSessionController();
-  await controller.clearSession();
-}
-```
+| Source | Destination |
+|--------|-------------|
+| `useChat.ts` | `nextjs/hooks/useChat.ts` |
+| `useConfig.ts` | `nextjs/hooks/useConfig.ts` |
+| `useApi.ts` | `nextjs/hooks/useApi.ts` |
+| `useWebSocket.ts` | DELETE |
 
-### Step 5: Remove Redundant Code
+### From frontend/src/contexts/
 
-After integration, remove from `websocket-handler.ts`:
-- `streamEvents()` method (~80 lines)
-- `handleStreamEvent()` method (~125 lines)
-- `handleResultEvent()` method (~130 lines)
-- `handleUserEvent()` method (~30 lines)
-- `summarizeEvent()` method (~35 lines)
-- `createToolPermissionCallback()` method (~20 lines)
-- `createAskUserQuestionCallback()` method (~20 lines)
-- State fields: `activeQuery`, `pendingPermissions`, `pendingAskUserQuestions`, `cumulativeTokens`, `contextWindow`, `activeModel`
+| Source | Destination |
+|--------|-------------|
+| `SessionContext.tsx` | `nextjs/contexts/SessionContext.tsx` |
 
-**Total reduction:** ~440 lines
+---
 
-### Step 6: Update Connection State
+## API Routes to Create
 
-Simplify `ConnectionState` interface:
-```typescript
-interface ConnectionState {
-  currentVault: VaultInfo | null;
-  currentSessionId: string | null;
-  // Remove: activeQuery, pendingPermissions, pendingAskUserQuestions,
-  //         cumulativeTokens, contextWindow, activeModel
-  healthCollector: HealthEventCollector | null;
-  activeMeeting: string | null;
-}
-```
+54 endpoints grouped:
 
-## Files Modified
+| Group | Count | Priority |
+|-------|-------|----------|
+| Vaults | 3 | HIGH - app won't boot without |
+| Files | 10 | HIGH - core functionality |
+| Capture | 3 | MEDIUM |
+| Dashboard | 4 | MEDIUM |
+| Search | 3 | MEDIUM |
+| Config | 5 | MEDIUM |
+| Sessions | 4 | MEDIUM |
+| Cards | 5 | LOW |
+| Assets | 2 | LOW |
+| Memory | 2 | LOW |
 
-| File | Changes |
-|------|---------|
-| `backend/src/websocket-handler.ts` | Subscribe to controller, map events, remove streaming |
-| `backend/src/streaming/types.ts` | Ensure `PendingPrompt` has all needed fields |
+(Detailed endpoint list in previous version of plan)
 
-## What Stays in WebSocket Handler
-
-- Connection lifecycle (`onOpen`, `onClose`)
-- Message routing (`routeMessage`)
-- Vault selection (`handleSelectVault`)
-- Mock mode handler (already separate)
-- Session resume flow coordination
-- Slash commands caching (vault-scoped)
-- Health collection (non-AI feature)
+---
 
 ## Verification
 
-1. **Unit tests:** Existing `websocket-handler.test.ts` should pass unchanged
-2. **Manual test:** Discussion mode works with streaming, permissions, questions
-3. **Context usage:** Verify token tracking still accurate
-4. **Abort:** Verify stop button cancels streaming
+After Phase 1:
+- [ ] Next.js renders all pages
+- [ ] Navigation works between modes
+- [ ] Session state persists across pages
 
-## Risks
+After Phase 2:
+- [ ] All REST endpoints work
+- [ ] Chat streaming works (SSE)
+- [ ] File operations work
+- [ ] No calls to port 3000 (old Hono)
 
-| Risk | Mitigation |
-|------|-----------|
-| Singleton controller vs multiple WS connections | Only one active session anyway (spec REQ-4) |
-| Event timing race conditions | Controller emits synchronously in subscriber loop |
-| Missing event types | Comprehensive mapping in handleControllerEvent |
+After Phase 3:
+- [ ] `bun run dev` starts single server
+- [ ] `bun run build && bun run start` works
+- [ ] `bun run test` passes
+- [ ] `frontend/` directory gone
+- [ ] No WebSocket code anywhere
 
-## Rollback
+---
 
-If issues arise, revert the single commit. The controller module exists independently and doesn't break existing code.
+## Execution Order
+
+```
+Phase 1A-1D (setup, move components)
+    ↓
+Phase 1E-1F (create pages, layout)
+    ↓
+Phase 2A (vaults API) ─── verify app boots
+    ↓
+Phase 2B (remaining APIs)
+    ↓
+Phase 3 (delete old code)
+```
+
+---
+
+## What Stays vs Goes
+
+| Keep | Delete |
+|------|--------|
+| `backend/src/vault-manager.ts` | `backend/src/server.ts` |
+| `backend/src/file-browser.ts` | `backend/src/routes/*` |
+| `backend/src/session-manager.ts` | `backend/src/websocket-handler.ts` |
+| `backend/src/streaming/*` | `frontend/*` (move first) |
+| `shared/*` | `frontend/src/hooks/useWebSocket.ts` |
+
+---
+
+## Estimate
+
+| Phase | Hours |
+|-------|-------|
+| 1: Move React to Next.js | 8-12 |
+| 2: Move REST to Next.js | 10-15 |
+| 3: Cleanup | 2-4 |
+| **Total** | **20-31 hours** |

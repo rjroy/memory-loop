@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import "@/styles/index.scss";
+import "@/styles/holidays.scss";
 
 export const metadata: Metadata = {
   title: "Memory Loop",

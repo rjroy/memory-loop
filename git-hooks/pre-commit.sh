@@ -60,11 +60,11 @@ if ! run_quiet "unit tests" bun run test:unit; then
 fi
 
 #
-# Frontend checks
+# Next.js checks
 #
-echo -e "${YELLOW}Frontend${NC}"
+echo -e "${YELLOW}Next.js${NC}"
 
-cd "$REPO_ROOT/frontend"
+cd "$REPO_ROOT/nextjs"
 
 if ! run_quiet "typecheck" bun run typecheck; then
     FAILED=1
@@ -74,7 +74,7 @@ if ! run_quiet "lint" bun run lint; then
     FAILED=1
 fi
 
-if ! run_quiet "unit tests" bun run test; then
+if ! run_quiet "build" bun run build; then
     FAILED=1
 fi
 

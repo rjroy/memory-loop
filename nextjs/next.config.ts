@@ -19,20 +19,11 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Proxy API requests to the backend during development
-  // In production, the Next.js app will be the primary server
+  // Proxy WebSocket to backend (required until WebSocket handler is migrated)
+  // All REST API routes have been migrated to Next.js API routes
   async rewrites() {
     return [
-      // Proxy to existing Hono backend for non-chat routes
-      {
-        source: "/api/vaults/:path*",
-        destination: "http://localhost:3000/api/vaults/:path*",
-      },
-      {
-        source: "/api/sessions/:path*",
-        destination: "http://localhost:3000/api/sessions/:path*",
-      },
-      // WebSocket proxy for backward compatibility
+      // WebSocket proxy for streaming AI responses
       {
         source: "/ws",
         destination: "http://localhost:3000/ws",

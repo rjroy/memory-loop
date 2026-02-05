@@ -3,14 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["backend", "frontend", "shared", "nextjs"],
+  "workspaces": ["backend", "shared", "nextjs"],
   "scripts": {
-    "dev": "bun run --filter '*' dev",
-    "build": "bun run --filter '*' build",
+    "dev": "bun run --cwd nextjs dev",
+    "build": "bun run --cwd nextjs build",
+    "start": "bun run --cwd nextjs start",
+    "dev:all": "bun run --filter '*' dev",
     "lint": "bun run --filter '*' lint",
-    "test": "bun run --cwd backend test && bun run --cwd frontend test && bun run --cwd shared test",
-    "test:coverage": "bun run --cwd backend test:coverage && bun run --cwd frontend test:coverage && bun run --cwd shared test:coverage",
-    "test:lcov": "bun run --cwd backend test:lcov && bun run --cwd frontend test:lcov && bun run --cwd shared test:lcov",
+    "test": "bun run --cwd backend test && bun run --cwd shared test",
+    "test:coverage": "bun run --cwd backend test:coverage && bun run --cwd shared test:coverage",
+    "test:lcov": "bun run --cwd backend test:lcov && bun run --cwd shared test:lcov",
     "typecheck": "bun run --filter '*' typecheck"
   },
   "devDependencies": {

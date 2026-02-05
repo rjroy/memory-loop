@@ -5,7 +5,26 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./streaming": "./src/streaming/index.ts"
+    "./streaming": "./src/streaming/index.ts",
+    "./vault-manager": "./src/vault-manager.ts",
+    "./file-browser": "./src/file-browser.ts",
+    "./note-capture": "./src/note-capture.ts",
+    "./session-manager": "./src/session-manager.ts",
+    "./health-collector": "./src/health-collector.ts",
+    "./search-index": "./src/search/search-index.ts",
+    "./search-cache": "./src/search-cache.ts",
+    "./file-upload": "./src/file-upload.ts",
+    "./meeting-capture": "./src/meeting-capture.ts",
+    "./meeting-store": "./src/meeting-store.ts",
+    "./daily-prep-manager": "./src/daily-prep-manager.ts",
+    "./inspiration-manager": "./src/inspiration-manager.ts",
+    "./vault-config": "./src/vault-config.ts",
+    "./handlers": "./src/handlers/index.ts",
+    "./spaced-repetition": "./src/spaced-repetition/index.ts",
+    "./middleware": "./src/middleware/vault-resolution.ts",
+    "./reference-updater": "./src/reference-updater.ts",
+    "./task-manager": "./src/task-manager.ts",
+    "./extraction/memory-writer": "./src/extraction/memory-writer.ts"
   },
   "scripts": {
     "dev": "NODE_ENV=development bun run --watch src/index.ts",

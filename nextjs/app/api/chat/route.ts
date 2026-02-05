@@ -62,37 +62,42 @@ export async function POST(request: NextRequest) {
 
   const controller = getController();
 
+  // Shared cleanup function - called on terminal events or client disconnect
+  let unsubscribe: (() => void) | null = null;
+  let isClosing = false;
+
+  function cleanup() {
+    if (isClosing) return;
+    isClosing = true;
+    unsubscribe?.();
+  }
+
   // Create SSE stream
   const stream = new ReadableStream({
     start(streamController) {
-      let isClosing = false;
-
       // Subscribe to controller events
-      const unsubscribe = controller.subscribe((event: SessionEvent) => {
-        // Skip events if we're already closing
+      unsubscribe = controller.subscribe((event: SessionEvent) => {
         if (isClosing) return;
 
         try {
           streamController.enqueue(encodeSSE(event));
 
           // Close stream on terminal events
-          // response_end is the last event emitted by the controller, safe to close immediately
           if (
             event.type === "response_end" ||
             event.type === "error" ||
             event.type === "session_cleared"
           ) {
-            isClosing = true;
-            unsubscribe();
+            cleanup();
             try {
               streamController.close();
             } catch {
               // Already closed
             }
           }
-        } catch (err) {
-          // Stream may already be closed
-          console.error("Failed to write to stream:", err);
+        } catch {
+          // Stream closed by client (tab switch, navigation, etc.)
+          cleanup();
         }
       });
 
@@ -113,18 +118,28 @@ export async function POST(request: NextRequest) {
             await controller.startSession(vault, prompt);
           }
         } catch (err) {
+          if (isClosing) return;
           console.error("Session error:", err);
-          streamController.enqueue(
-            encodeSSE({
-              type: "error",
-              code: "SDK_ERROR",
-              message: err instanceof Error ? err.message : "Session failed",
-            })
-          );
-          unsubscribe();
-          streamController.close();
+          try {
+            streamController.enqueue(
+              encodeSSE({
+                type: "error",
+                code: "SDK_ERROR",
+                message: err instanceof Error ? err.message : "Session failed",
+              })
+            );
+            streamController.close();
+          } catch {
+            // Stream already closed
+          }
+          cleanup();
         }
       })();
+    },
+
+    // Called when the client disconnects (tab switch, navigation, abort)
+    cancel() {
+      cleanup();
     },
   });
 

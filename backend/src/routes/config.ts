@@ -6,7 +6,6 @@
  * - PUT /pinned-assets - Set pinned asset paths (REQ-F-30)
  * - PATCH /config - Update vault config (REQ-F-31)
  * - POST /setup - Setup vault (REQ-F-32)
- * - DELETE /health/:issue - Dismiss health issue (REQ-F-34)
  *
  * Note: POST /api/vaults (create vault, REQ-F-33) is not vault-scoped
  * and is registered directly in server.ts.
@@ -129,33 +128,6 @@ configRoutes.post("/setup", async (c) => {
     const message = error instanceof Error ? error.message : "Failed to setup vault";
     return jsonError(c, 500, "INTERNAL_ERROR", message);
   }
-});
-
-/**
- * DELETE /health-issues/:issueId - Dismiss a health issue
- *
- * Note: Health issues are per-WebSocket session (HealthCollector instances).
- * This REST endpoint acknowledges the dismiss request but health state
- * is managed by the WebSocket session that runs health checks.
- *
- * In practice, clients should dismiss via WebSocket for immediate effect.
- * This endpoint exists for API completeness (REQ-F-34).
- */
-configRoutes.delete("/health-issues/:issueId", (c) => {
-  const vault = getVaultFromContext(c);
-  const issueId = c.req.param("issueId");
-  log.info(`DELETE /health-issues/${issueId} for vault ${vault.id}`);
-
-  if (!issueId) {
-    return jsonError(c, 400, "VALIDATION_ERROR", "Issue ID is required");
-  }
-
-  // Note: Health collectors are per-WebSocket session, so we can't dismiss
-  // from REST directly. The client should use WebSocket for health management.
-  // We return success to acknowledge the request.
-  log.info(`Health issue dismiss acknowledged (WebSocket manages actual state): ${issueId}`);
-
-  return c.json({ success: true, issueId, note: "Dismiss via WebSocket for immediate effect" });
 });
 
 export { configRoutes };

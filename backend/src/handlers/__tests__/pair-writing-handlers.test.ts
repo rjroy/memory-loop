@@ -66,7 +66,7 @@ beforeEach(async () => {
     activeModel: null,
     cumulativeTokens: 0,
     contextWindow: null,
-    healthCollector: null,
+
     activeMeeting: null,
   };
 });

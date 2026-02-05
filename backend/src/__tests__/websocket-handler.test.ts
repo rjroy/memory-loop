@@ -181,7 +181,7 @@ describe("WebSocket Handler", () => {
       const state = createConnectionState();
       expect(state.currentVault).toBeNull();
       expect(state.currentSessionId).toBeNull();
-      expect(state.healthCollector).toBeNull();
+
       expect(state.activeMeeting).toBeNull();
     });
   });

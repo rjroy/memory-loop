@@ -8,7 +8,7 @@ import type { MeetingState } from "@memory-loop/shared";
 import type {
   BrowserState,
   SearchState,
-  HealthState,
+
   SessionState,
 } from "./types.js";
 import { loadPersistedViewMode } from "./storage.js";
@@ -26,16 +26,6 @@ export function createInitialSearchState(): SearchState {
     isLoading: false,
     expandedPaths: new Set(),
     snippetsCache: new Map(),
-  };
-}
-
-/**
- * Creates initial health state.
- */
-export function createInitialHealthState(): HealthState {
-  return {
-    issues: [],
-    isExpanded: false,
   };
 }
 
@@ -84,7 +74,7 @@ export function createInitialSessionState(): SessionState {
     mode: "home",
     messages: [],
     browser: createInitialBrowserState(),
-    health: createInitialHealthState(),
+
     recentNotes: [],
     recentDiscussions: [],
     goals: null,

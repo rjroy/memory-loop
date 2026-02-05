@@ -6,7 +6,6 @@
  * - PATCH vault config (REQ-F-31)
  * - POST setup vault (REQ-F-32)
  * - POST create vault (REQ-F-33)
- * - DELETE dismiss health issue (REQ-F-34)
  *
  * These handlers wrap existing vault-config functions for REST endpoints.
  */

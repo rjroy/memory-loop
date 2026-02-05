@@ -4,10 +4,10 @@
  * Called once on server startup. Initializes background schedulers
  * that were previously started in backend/src/index.ts.
  *
- * Uses require() instead of import() because @memory-loop/backend is in
- * transpilePackages, which causes webpack to follow import() chains and
- * fail on Node.js-only modules like child_process (used by cron).
- * require() with a variable path is opaque to webpack's static analysis.
+ * Uses dynamic import() with webpackIgnore comments because
+ * @memory-loop/backend is in transpilePackages, which causes webpack
+ * to follow import chains and fail on Node.js-only modules like
+ * child_process (used by cron).
  */
 
 export async function register() {
@@ -19,19 +19,16 @@ export async function register() {
     return;
   }
 
-  // Use require() to bypass webpack's static analysis of transpiled packages.
-  // Webpack traces dynamic import() through transpilePackages and fails on
-  // cron's child_process require. Variable path prevents webpack from resolving.
-  const extractionPath = "@memory-loop/backend/extraction/extraction-manager";
-  const cardDiscoveryPath =
-    "@memory-loop/backend/spaced-repetition/card-discovery-scheduler";
+  // Dynamic import bypasses webpack's static analysis of transpiled packages.
+  // Webpack traces static imports through transpilePackages and fails on
+  // cron's child_process dependency.
 
   // Extraction scheduler: daily at configured time (default: 3am)
   try {
-    const { startScheduler, getCronSchedule } = require(extractionPath) as {
-      startScheduler: () => Promise<boolean>;
-      getCronSchedule: () => string;
-    };
+    const { startScheduler, getCronSchedule } = await import(
+      /* webpackIgnore: true */
+      "@memory-loop/backend/extraction/extraction-manager"
+    );
     const started = await startScheduler();
     if (started) {
       console.log(
@@ -50,13 +47,10 @@ export async function register() {
   // Card discovery scheduler: daily at configured time (default: 4am)
   try {
     const { startScheduler: startCardDiscoveryScheduler, getDiscoveryHourFromEnv } =
-      require(cardDiscoveryPath) as {
-        startScheduler: (opts: {
-          discoveryHour: number;
-          catchUpOnStartup: boolean;
-        }) => Promise<void>;
-        getDiscoveryHourFromEnv: () => number;
-      };
+      await import(
+        /* webpackIgnore: true */
+        "@memory-loop/backend/spaced-repetition/card-discovery-scheduler"
+      );
     await startCardDiscoveryScheduler({
       discoveryHour: getDiscoveryHourFromEnv(),
       catchUpOnStartup: true,

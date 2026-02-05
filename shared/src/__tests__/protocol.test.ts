@@ -21,7 +21,7 @@ import {
   PingMessageSchema,
   ToolPermissionResponseMessageSchema,
   AskUserQuestionResponseMessageSchema,
-  DismissHealthIssueMessageSchema,
+
   // Server message schemas
   ServerMessageSchema,
   VaultListMessageSchema,
@@ -36,11 +36,7 @@ import {
   PongMessageSchema,
   ToolPermissionRequestMessageSchema,
   AskUserQuestionRequestMessageSchema,
-  // Health schemas
-  HealthSeveritySchema,
-  HealthCategorySchema,
-  HealthIssueSchema,
-  HealthReportMessageSchema,
+
   // AskUserQuestion schemas
   AskUserQuestionOptionSchema,
   AskUserQuestionItemSchema,
@@ -498,18 +494,6 @@ describe("Client -> Server Messages", () => {
     });
   });
 
-  describe("DismissHealthIssueMessageSchema", () => {
-    test("accepts valid dismiss message", () => {
-      const validMessage = {
-        type: "dismiss_health_issue",
-        issueId: "issue-123",
-      };
-
-      const result = DismissHealthIssueMessageSchema.parse(validMessage);
-      expect(result.issueId).toBe("issue-123");
-    });
-  });
-
   describe("ClientMessageSchema (discriminated union)", () => {
     test("parses select_vault message", () => {
       const message = {
@@ -786,55 +770,6 @@ describe("Server -> Client Messages", () => {
     });
   });
 
-  describe("Health schemas", () => {
-    test("HealthSeveritySchema accepts valid values", () => {
-      expect(HealthSeveritySchema.parse("error")).toBe("error");
-      expect(HealthSeveritySchema.parse("warning")).toBe("warning");
-    });
-
-    test("HealthCategorySchema accepts valid values", () => {
-      expect(HealthCategorySchema.parse("vault_config")).toBe("vault_config");
-      expect(HealthCategorySchema.parse("file_watcher")).toBe("file_watcher");
-      expect(HealthCategorySchema.parse("cache")).toBe("cache");
-      expect(HealthCategorySchema.parse("general")).toBe("general");
-    });
-
-    test("HealthIssueSchema accepts valid issue", () => {
-      const validIssue = {
-        id: "issue-123",
-        severity: "error",
-        category: "vault_config",
-        message: "Configuration file is invalid",
-        details: "JSON parse error at line 5",
-        timestamp: "2024-01-15T10:00:00.000Z",
-        dismissible: true,
-      };
-
-      const result = HealthIssueSchema.parse(validIssue);
-      expect(result.id).toBe("issue-123");
-      expect(result.severity).toBe("error");
-    });
-
-    test("HealthReportMessageSchema accepts valid report", () => {
-      const validReport = {
-        type: "health_report",
-        issues: [
-          {
-            id: "issue-1",
-            severity: "warning",
-            category: "cache",
-            message: "Cache rebuild required",
-            timestamp: "2024-01-15T10:00:00.000Z",
-            dismissible: true,
-          },
-        ],
-      };
-
-      const result = HealthReportMessageSchema.parse(validReport);
-      expect(result.issues).toHaveLength(1);
-    });
-  });
-
   describe("ServerMessageSchema (discriminated union)", () => {
     test("parses vault_list message", () => {
       const message = {
@@ -1094,7 +1029,7 @@ describe("Edge Cases", () => {
       { type: "ping" },
       { type: "tool_permission_response", toolUseId: "test", allowed: true },
       { type: "ask_user_question_response", toolUseId: "test", answers: {} },
-      { type: "dismiss_health_issue", issueId: "test" },
+
     ];
 
     messageTypes.forEach((msg) => {
@@ -1118,7 +1053,7 @@ describe("Edge Cases", () => {
       { type: "ask_user_question_request", toolUseId: "test", questions: [
         { question: "q", header: "h", options: [{ label: "a", description: "" }, { label: "b", description: "" }], multiSelect: false }
       ]},
-      { type: "health_report", issues: [] },
+
     ];
 
     messageTypes.forEach((msg) => {

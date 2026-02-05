@@ -16,7 +16,7 @@ import type {
   ContextSnippet,
   VaultInfo,
   ConversationMessageProtocol,
-  HealthIssue,
+
   MeetingState,
   EditableVaultConfig,
 } from "@memory-loop/shared";
@@ -56,16 +56,6 @@ export interface SearchState {
   expandedPaths: Set<string>;
   /** Snippets for expanded content results, keyed by path */
   snippetsCache: Map<string, ContextSnippet[]>;
-}
-
-/**
- * Health state for backend health reporting.
- */
-export interface HealthState {
-  /** Current health issues from backend */
-  issues: HealthIssue[];
-  /** Whether the health panel is expanded */
-  isExpanded: boolean;
 }
 
 /**
@@ -155,8 +145,7 @@ export interface SessionState {
   messages: ConversationMessage[];
   /** Browser state for file browsing mode */
   browser: BrowserState;
-  /** Health state for backend health reporting */
-  health: HealthState;
+
   /** Recent captured notes for note mode */
   recentNotes: RecentNoteEntry[];
   /** Recent discussion sessions for note mode */
@@ -292,13 +281,6 @@ export interface SessionActions {
   setSnippets: (path: string, snippets: ContextSnippet[]) => void;
   /** Clear search and return to file tree */
   clearSearch: () => void;
-  // Health actions
-  /** Set health issues from server */
-  setHealthIssues: (issues: HealthIssue[]) => void;
-  /** Toggle health panel expanded state */
-  toggleHealthExpanded: () => void;
-  /** Dismiss a health issue (also sends to server) */
-  dismissHealthIssue: (issueId: string) => void;
   // Meeting actions
   /** Set meeting state from server meeting_state/meeting_started messages */
   setMeetingState: (state: MeetingState) => void;

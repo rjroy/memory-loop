@@ -507,16 +507,6 @@ export const AskUserQuestionResponseMessageSchema = z.object({
 });
 
 /**
- * Client requests to dismiss a health issue.
- * Dismissed issues won't reappear until vault is reselected.
- */
-export const DismissHealthIssueMessageSchema = z.object({
-  type: z.literal("dismiss_health_issue"),
-  /** ID of the issue to dismiss */
-  issueId: z.string().min(1, "Issue ID is required"),
-});
-
-/**
  * Client requests to create a new vault.
  * The title will be converted to a safe directory name.
  */
@@ -709,7 +699,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   PingMessageSchema,
   ToolPermissionResponseMessageSchema,
   AskUserQuestionResponseMessageSchema,
-  DismissHealthIssueMessageSchema,
+
   // Pair Writing Mode
   QuickActionRequestMessageSchema,
   AdvisoryActionRequestMessageSchema,
@@ -847,57 +837,6 @@ export const AskUserQuestionRequestMessageSchema = z.object({
   toolUseId: z.string().min(1, "Tool use ID is required"),
   /** Array of questions to present to the user (1-4 questions) */
   questions: z.array(AskUserQuestionItemSchema).min(1).max(4),
-});
-
-// =============================================================================
-// Health Reporting Schemas
-// =============================================================================
-
-/**
- * Severity level for health issues.
- * - error: Blocking issues that prevent functionality
- * - warning: Degraded functionality (partial success)
- */
-export const HealthSeveritySchema = z.enum(["error", "warning"]);
-
-/**
- * Category for health issues, used for grouping and filtering.
- */
-export const HealthCategorySchema = z.enum([
-  "vault_config",    // .memory-loop.json issues
-  "file_watcher",    // File watcher issues
-  "cache",           // Cache failures
-  "general",         // Other issues
-]);
-
-/**
- * Individual health issue reported by the backend.
- */
-export const HealthIssueSchema = z.object({
-  /** Unique identifier for dismissal */
-  id: z.string().min(1, "Issue ID is required"),
-  /** Severity level */
-  severity: HealthSeveritySchema,
-  /** Issue category */
-  category: HealthCategorySchema,
-  /** Human-readable error message */
-  message: z.string().min(1, "Message is required"),
-  /** Technical details (file path, stack trace, etc.) */
-  details: z.string().optional(),
-  /** When the issue was reported (ISO 8601) */
-  timestamp: z.string().min(1, "Timestamp is required"),
-  /** Whether user can dismiss this issue */
-  dismissible: z.boolean(),
-});
-
-/**
- * Server sends health report with all current issues.
- * Sent on vault selection and when issues change.
- */
-export const HealthReportMessageSchema = z.object({
-  type: z.literal("health_report"),
-  /** Array of current health issues */
-  issues: z.array(HealthIssueSchema),
 });
 
 /**
@@ -1089,7 +1028,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   PongMessageSchema,
   ToolPermissionRequestMessageSchema,
   AskUserQuestionRequestMessageSchema,
-  HealthReportMessageSchema,
+
   // Memory Extraction
   ExtractionPromptContentMessageSchema,
   ExtractionPromptSavedMessageSchema,
@@ -1134,12 +1073,6 @@ export type FileSearchResult = z.infer<typeof FileSearchResultSchema>;
 export type ContentSearchResult = z.infer<typeof ContentSearchResultSchema>;
 export type ContextSnippet = z.infer<typeof ContextSnippetSchema>;
 
-// Health types
-export type HealthSeverity = z.infer<typeof HealthSeveritySchema>;
-export type HealthCategory = z.infer<typeof HealthCategorySchema>;
-export type HealthIssue = z.infer<typeof HealthIssueSchema>;
-export type HealthReportMessage = z.infer<typeof HealthReportMessageSchema>;
-
 // Badge types
 export type Badge = z.infer<typeof BadgeSchema>;
 export type BadgeColor = z.infer<typeof BadgeColorSchema>;
@@ -1176,7 +1109,7 @@ export type ToolPermissionResponseMessage = z.infer<typeof ToolPermissionRespons
 export type AskUserQuestionOption = z.infer<typeof AskUserQuestionOptionSchema>;
 export type AskUserQuestionItem = z.infer<typeof AskUserQuestionItemSchema>;
 export type AskUserQuestionResponseMessage = z.infer<typeof AskUserQuestionResponseMessageSchema>;
-export type DismissHealthIssueMessage = z.infer<typeof DismissHealthIssueMessageSchema>;
+
 // Pair Writing Mode types
 export type QuickActionType = z.infer<typeof QuickActionTypeSchema>;
 export type AdvisoryActionType = z.infer<typeof AdvisoryActionTypeSchema>;

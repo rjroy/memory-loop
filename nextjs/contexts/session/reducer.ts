@@ -16,7 +16,7 @@ import type {
   VaultInfo,
   ConversationMessageProtocol,
   ToolInvocation,
-  HealthIssue,
+
   MeetingState,
   EditableVaultConfig,
 } from "@memory-loop/shared";
@@ -32,7 +32,7 @@ import type {
 } from "./types.js";
 import {
   createInitialBrowserState,
-  createInitialHealthState,
+
   createInitialSearchState,
   generateMessageId,
 } from "./initial-state.js";
@@ -94,10 +94,6 @@ export type SessionAction =
   | { type: "TOGGLE_RESULT_EXPANDED"; path: string }
   | { type: "SET_SNIPPETS"; path: string; snippets: ContextSnippet[] }
   | { type: "CLEAR_SEARCH" }
-  // Health actions
-  | { type: "SET_HEALTH_ISSUES"; issues: HealthIssue[] }
-  | { type: "TOGGLE_HEALTH_EXPANDED" }
-  | { type: "DISMISS_HEALTH_ISSUE"; issueId: string }
   // Meeting actions
   | { type: "SET_MEETING_STATE"; state: MeetingState }
   | { type: "CLEAR_MEETING" }
@@ -170,7 +166,6 @@ function handleSelectVault(state: SessionState, vault: VaultInfo): SessionState 
     sessionId: null,
     messages: [],
     browser: createInitialBrowserState(),
-    health: createInitialHealthState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,
@@ -188,7 +183,6 @@ function handleClearVault(state: SessionState): SessionState {
     sessionId: null,
     messages: [],
     browser: createInitialBrowserState(),
-    health: createInitialHealthState(),
     recentNotes: [],
     recentDiscussions: [],
     goals: null,
@@ -672,28 +666,6 @@ export function sessionReducer(
 
     case "CLEAR_SEARCH":
       return updateBrowser(state, { search: createInitialSearchState() });
-
-    // Health actions
-    case "SET_HEALTH_ISSUES":
-      return {
-        ...state,
-        health: { ...state.health, issues: action.issues },
-      };
-
-    case "TOGGLE_HEALTH_EXPANDED":
-      return {
-        ...state,
-        health: { ...state.health, isExpanded: !state.health.isExpanded },
-      };
-
-    case "DISMISS_HEALTH_ISSUE":
-      return {
-        ...state,
-        health: {
-          ...state.health,
-          issues: state.health.issues.filter((i) => i.id !== action.issueId),
-        },
-      };
 
     // Meeting actions
     case "SET_MEETING_STATE":

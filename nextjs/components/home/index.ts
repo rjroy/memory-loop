@@ -8,5 +8,5 @@ export { SessionActionsCard, getSessionButtons, type DailyPrepStatus } from "./S
 export { GoalsCard } from "./GoalsCard";
 export { InspirationCard, type InspirationCardProps } from "./InspirationCard";
 export { RecentActivity } from "./RecentActivity";
-export { HealthPanel } from "./HealthPanel";
+
 export { SpacedRepetitionWidget } from "./SpacedRepetitionWidget";

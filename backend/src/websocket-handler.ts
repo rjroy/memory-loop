@@ -32,7 +32,7 @@ import {
   loadSlashCommands as defaultLoadSlashCommands,
 } from "./vault-config.js";
 import { runVaultSetup as defaultRunVaultSetup, type SetupResult } from "./vault-setup.js";
-import { createHealthCollector, type HealthCollector } from "./health-collector.js";
+
 import type { ActiveMeeting } from "./meeting-capture.js";
 
 // Import handler types and utilities
@@ -108,8 +108,7 @@ export interface ConnectionState {
   currentVault: VaultInfo | null;
   /** Current session ID (null if no session active) */
   currentSessionId: string | null;
-  /** Health collector for tracking backend issues (null if no vault selected) */
-  healthCollector: HealthCollector | null;
+
   /** Active meeting session (null if no meeting in progress) */
   activeMeeting: ActiveMeeting | null;
 }
@@ -121,7 +120,7 @@ export function createConnectionState(): ConnectionState {
   return {
     currentVault: null,
     currentSessionId: null,
-    healthCollector: null,
+
     activeMeeting: null,
   };
 }
@@ -500,11 +499,6 @@ export class WebSocketHandler {
         this.send(ws, { type: "pong" });
         break;
 
-      // Health issue dismiss (kept for WebSocket-based health reporting)
-      case "dismiss_health_issue":
-        this.state.healthCollector?.dismiss(message.issueId);
-        break;
-
       // Extraction prompt handlers (not yet migrated to REST)
       case "get_extraction_prompt":
         await handleGetExtractionPrompt(ctx);
@@ -582,11 +576,6 @@ export class WebSocketHandler {
 
       log.info(`Vault found: ${vault.name} at ${vault.path}`);
 
-      // Clear health collector (will be recreated below)
-      if (this.state.healthCollector) {
-        this.state.healthCollector.clear();
-        this.state.healthCollector = null;
-      }
       // Clear active meeting (vault switch ends any in-progress meeting)
       this.state.activeMeeting = null;
 
@@ -594,12 +583,6 @@ export class WebSocketHandler {
       this.state.currentVault = vault;
       this.state.currentSessionId = null;
       // Note: searchIndex is now managed by REST API routes, not WebSocket
-
-      // Create health collector and subscribe to changes
-      this.state.healthCollector = createHealthCollector();
-      this.state.healthCollector.subscribe((issues) => {
-        this.send(ws, { type: "health_report", issues });
-      });
 
       const cachedCommands = await this.deps.loadSlashCommands(vault.path);
 

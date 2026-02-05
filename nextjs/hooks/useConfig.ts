@@ -8,7 +8,6 @@
  * - REQ-F-30: Set pinned assets via PUT /api/vaults/:vaultId/pinned-assets
  * - REQ-F-31: Update vault config via PATCH /api/vaults/:vaultId/config
  * - REQ-F-32: Setup vault via POST /api/vaults/:vaultId/setup
- * - REQ-F-34: Dismiss health issue via DELETE /api/vaults/:vaultId/health-issues/:id
  */
 
 import { useState, useCallback, useMemo } from "react";
@@ -43,15 +42,6 @@ export interface SetupResponse {
 }
 
 /**
- * Response from DELETE /health-issues/:id.
- */
-export interface DismissHealthIssueResponse {
-  success: boolean;
-  issueId: string;
-  note?: string;
-}
-
-/**
  * Return type for the useConfig hook.
  */
 export interface UseConfigResult {
@@ -63,8 +53,7 @@ export interface UseConfigResult {
   updateConfig: (config: EditableVaultConfig) => Promise<boolean>;
   /** Setup vault (create directories, install commands) */
   setupVault: () => Promise<SetupResponse | null>;
-  /** Dismiss a health issue */
-  dismissHealthIssue: (issueId: string) => Promise<boolean>;
+
   /** Whether an operation is currently in progress */
   isLoading: boolean;
   /** Error message from the last failed operation */
@@ -249,51 +238,12 @@ export function useConfig(
     }
   }, [vaultId, api]);
 
-  /**
-   * Dismiss a health issue.
-   */
-  const dismissHealthIssue = useCallback(
-    async (issueId: string): Promise<boolean> => {
-      if (!vaultId) {
-        setError("No vault selected");
-        return false;
-      }
-
-      if (!issueId) {
-        setError("Issue ID is required");
-        return false;
-      }
-
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        await api.delete<DismissHealthIssueResponse>(
-          vaultPath(vaultId, `health-issues/${encodeURIComponent(issueId)}`)
-        );
-        return true;
-      } catch (err) {
-        const message =
-          err instanceof ApiError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : "Failed to dismiss health issue";
-        setError(message);
-        return false;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [vaultId, api]
-  );
-
   return {
     getPinnedAssets,
     setPinnedAssets,
     updateConfig,
     setupVault,
-    dismissHealthIssue,
+
     isLoading,
     error,
     clearError,

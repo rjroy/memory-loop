@@ -22,7 +22,7 @@ import { RecentActivity } from "./RecentActivity";
 import { GoalsCard } from "./GoalsCard";
 import { InspirationCard } from "./InspirationCard";
 import { SpacedRepetitionWidget } from "./SpacedRepetitionWidget";
-import { HealthPanel } from "./HealthPanel";
+
 import type { InspirationItem } from "@memory-loop/shared";
 import "./HomeView.css";
 
@@ -190,9 +190,6 @@ export function HomeView(): React.ReactNode {
 
       {/* Recent Activity */}
       <RecentActivity isLoading={activityLoading} onDeleteSession={handleDeleteSession} />
-
-      {/* Health Issues */}
-      <HealthPanel />
     </div>
   );
 }

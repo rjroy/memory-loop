@@ -16,7 +16,7 @@ import type {
 } from "@memory-loop/shared";
 import type { SessionQueryResult } from "../session-manager.js";
 import type { SearchIndexManager } from "../search/search-index.js";
-import type { HealthCollector } from "../health-collector.js";
+
 import type { ActiveMeeting } from "../meeting-capture.js";
 import type { VaultConfig } from "../vault-config.js";
 import type { ArchiveResult, RenameResult, MoveResult, DirectoryContentsResult, DeleteDirectoryResult } from "../file-browser.js";
@@ -197,8 +197,7 @@ export interface ConnectionState {
   cumulativeTokens: number;
   /** Context window size for the active model (null if not yet known) */
   contextWindow: number | null;
-  /** Health collector for tracking backend issues (null if no vault selected) */
-  healthCollector: HealthCollector | null;
+
   /** Active meeting session (null if no meeting in progress) */
   activeMeeting: ActiveMeeting | null;
 }
@@ -313,7 +312,7 @@ export function createConnectionState(): ConnectionState {
     activeModel: null,
     cumulativeTokens: 0,
     contextWindow: null,
-    healthCollector: null,
+
     activeMeeting: null,
   };
 }

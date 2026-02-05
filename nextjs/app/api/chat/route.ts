@@ -65,8 +65,13 @@ export async function POST(request: NextRequest) {
   // Create SSE stream
   const stream = new ReadableStream({
     start(streamController) {
+      let isClosing = false;
+
       // Subscribe to controller events
       const unsubscribe = controller.subscribe((event: SessionEvent) => {
+        // Skip events if we're already closing
+        if (isClosing) return;
+
         try {
           streamController.enqueue(encodeSSE(event));
 
@@ -76,11 +81,17 @@ export async function POST(request: NextRequest) {
             event.type === "error" ||
             event.type === "session_cleared"
           ) {
-            // Small delay to ensure client receives the event before close
+            // Delay closing to allow any remaining events to flush
+            // SDK may still have events in flight when response_end is emitted
             setTimeout(() => {
+              isClosing = true;
               unsubscribe();
-              streamController.close();
-            }, 100);
+              try {
+                streamController.close();
+              } catch {
+                // Already closed
+              }
+            }, 500);
           }
         } catch (err) {
           // Stream may already be closed

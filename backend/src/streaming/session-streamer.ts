@@ -121,7 +121,12 @@ export async function streamSdkEvents(
         if (usage !== undefined) {
           contextUsage = usage;
         }
-        break;
+        // Result is the terminal event - break to avoid errors from SDK process exit
+        return {
+          content: responseChunks.join(""),
+          toolInvocations: Array.from(toolsMap.values()),
+          contextUsage,
+        };
       }
       case "user": {
         handleUserEvent(event, emitter, toolsMap);

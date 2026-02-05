@@ -1,7 +1,7 @@
 ---
 title: Card Deduplication
 date: 2026-01-31
-status: approved
+status: implemented
 tags: [spaced-repetition, deduplication, similarity, cards]
 modules: [card-discovery-scheduler, card-manager, card-storage]
 related: [.lore/reference/spaced-repetition.md, .lore/reference/_infrastructure/card-generator.md]

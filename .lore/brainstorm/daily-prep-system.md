@@ -1,7 +1,7 @@
 ---
 title: Daily Prep System - Bookend Planning
 date: 2026-02-02
-status: open
+status: resolved
 tags: [daily-planning, bookend, energy, commitment, ground-tab, gctr]
 modules: [home-view, task-list]
 related: [.lore/reference/home-dashboard.md, .lore/reference/task-list.md]

@@ -2,38 +2,18 @@
  * WebSocket Message Handler
  *
  * Manages WebSocket connection state and routes incoming messages
- * to appropriate handlers. Streams Claude Agent SDK responses to clients.
+ * to appropriate handlers. Delegates AI streaming to ActiveSessionController.
  */
 
 import type {
   ServerMessage,
   ClientMessage,
   ErrorCode,
-  StoredToolInvocation,
   SlashCommand,
   VaultInfo,
 } from "@memory-loop/shared";
-import type {
-  SDKMessage,
-  SDKPartialAssistantMessage,
-  SDKResultMessage,
-  SDKUserMessage,
-  SDKSystemMessage,
-  SDKCompactBoundaryMessage,
-  ModelUsage,
-} from "@anthropic-ai/claude-agent-sdk";
-
-/**
- * Type alias for raw stream events from the SDK.
- * Not directly exported, so we extract it from the parent message type.
- */
-type RawStreamEvent = SDKPartialAssistantMessage["event"];
-
-/**
- * Stream events that have content (excludes error events).
- * Used after error check to avoid ESLint unsafe-* errors.
- */
-type ContentStreamEvent = Exclude<RawStreamEvent, { type: "error" }>;
+import type { SessionEvent, PendingPrompt } from "./streaming/types.js";
+import { getActiveSessionController } from "./streaming/active-session-controller.js";
 
 import { safeParseClientMessage } from "@memory-loop/shared";
 import {
@@ -43,27 +23,23 @@ import {
   VaultCreationError,
 } from "./vault-manager.js";
 import {
-  createSession as defaultCreateSession,
-  resumeSession as defaultResumeSession,
   loadSession as defaultLoadSession,
-  appendMessage as defaultAppendMessage,
-  SessionError,
-  type SessionQueryResult,
-  type ToolPermissionCallback,
-  type AskUserQuestionCallback,
-  type AskUserQuestionItem,
   type SessionMetadata,
-  type ConversationMessage,
 } from "./session-manager.js";
 import { isMockMode, generateMockResponse, createMockSession } from "./mock-sdk.js";
 import { wsLog as log } from "./logger.js";
 import {
   loadSlashCommands as defaultLoadSlashCommands,
-  saveSlashCommands as defaultSaveSlashCommands,
-  slashCommandsEqual,
 } from "./vault-config.js";
 import { runVaultSetup as defaultRunVaultSetup, type SetupResult } from "./vault-setup.js";
-import { createHealthCollector } from "./health-collector.js";
+import { createHealthCollector, type HealthCollector } from "./health-collector.js";
+import type { ActiveMeeting } from "./meeting-capture.js";
+
+// Import handler types and utilities
+import {
+  type WebSocketLike,
+  type HandlerContext,
+} from "./handlers/types.js";
 
 // =============================================================================
 // Dependency Injection Types
@@ -73,9 +49,10 @@ import { createHealthCollector } from "./health-collector.js";
  * Dependencies for WebSocketHandler (injectable for testing).
  * All functions default to their real implementations.
  *
- * After REST API migration, this interface only contains dependencies needed for:
+ * After REST API migration and ActiveSessionController integration, this interface
+ * only contains dependencies needed for:
  * - Vault discovery and creation (for WebSocket session establishment)
- * - AI conversation streaming (Claude Agent SDK)
+ * - Session metadata loading (for resume_session validation)
  * - Slash commands caching
  */
 export interface WebSocketHandlerDependencies {
@@ -84,28 +61,15 @@ export interface WebSocketHandlerDependencies {
   getVaultById?: (id: string) => Promise<VaultInfo | null>;
   createVault?: (title: string) => Promise<VaultInfo>;
 
-  // Session manager (for AI conversation)
-  createSession?: typeof defaultCreateSession;
-  resumeSession?: typeof defaultResumeSession;
+  // Session manager (for session validation on resume)
   loadSession?: (vaultPath: string, sessionId: string) => Promise<SessionMetadata | null>;
-  appendMessage?: (vaultPath: string, sessionId: string, message: ConversationMessage) => Promise<void>;
 
   // Slash commands (cached for session_ready responses)
   loadSlashCommands?: (vaultPath: string) => Promise<SlashCommand[] | undefined>;
-  saveSlashCommands?: (vaultPath: string, commands: SlashCommand[]) => Promise<void>;
 
   // Vault setup (called during create_vault)
   runVaultSetup?: (vaultId: string) => Promise<SetupResult>;
 }
-
-// Import handler types and utilities
-import {
-  type WebSocketLike,
-  type ConnectionState,
-  type HandlerContext,
-  createConnectionState,
-  generateMessageId,
-} from "./handlers/types.js";
 
 // Extraction prompt handlers (not yet migrated to REST)
 import {
@@ -131,43 +95,46 @@ import {
   handleGetCardGenerationStatus,
 } from "./handlers/card-generator-handlers.js";
 
+// =============================================================================
+// Simplified Connection State
+// =============================================================================
+
+/**
+ * Connection state for a WebSocket client.
+ * Simplified after ActiveSessionController integration - streaming state now lives in controller.
+ */
+export interface ConnectionState {
+  /** Currently selected vault (null if none selected) */
+  currentVault: VaultInfo | null;
+  /** Current session ID (null if no session active) */
+  currentSessionId: string | null;
+  /** Health collector for tracking backend issues (null if no vault selected) */
+  healthCollector: HealthCollector | null;
+  /** Active meeting session (null if no meeting in progress) */
+  activeMeeting: ActiveMeeting | null;
+}
+
+/**
+ * Creates initial connection state for a new WebSocket connection.
+ */
+export function createConnectionState(): ConnectionState {
+  return {
+    currentVault: null,
+    currentSessionId: null,
+    healthCollector: null,
+    activeMeeting: null,
+  };
+}
+
+/**
+ * Generates a unique message ID for response streaming.
+ */
+export function generateMessageId(): string {
+  return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
 // Re-export types for external consumers
-export type { WebSocketLike, ConnectionState };
-export { createConnectionState, generateMessageId };
-
-/**
- * Result from streaming SDK events.
- * Contains accumulated response text, tool invocations, and usage stats for persistence.
- */
-interface StreamingResult {
-  content: string;
-  toolInvocations: StoredToolInvocation[];
-  contextUsage?: number;
-}
-
-/**
- * Tracks state for a content block during streaming.
- * Used to accumulate tool input JSON across multiple delta events.
- */
-interface ContentBlockState {
-  type: "text" | "tool_use";
-  toolUseId?: string;
-  toolName?: string;
-  inputJsonChunks?: string[];
-}
-
-/**
- * Maps SessionError codes to protocol ErrorCodes.
- * STORAGE_ERROR is mapped to INTERNAL_ERROR since it's not in the protocol.
- */
-function mapSessionErrorCode(
-  code: "SESSION_NOT_FOUND" | "SESSION_INVALID" | "SDK_ERROR" | "STORAGE_ERROR"
-): ErrorCode {
-  if (code === "STORAGE_ERROR") {
-    return "INTERNAL_ERROR";
-  }
-  return code;
-}
+export type { WebSocketLike };
 
 /**
  * Sanitizes slash commands to ensure argumentHint is either a valid string or omitted.
@@ -199,6 +166,10 @@ function sanitizeSlashCommands(commands: SlashCommand[] | undefined): SlashComma
 export class WebSocketHandler {
   private state: ConnectionState;
   private readonly deps: Required<WebSocketHandlerDependencies>;
+  /** Unsubscribe function for controller events (null if not subscribed) */
+  private controllerUnsubscribe: (() => void) | null = null;
+  /** WebSocket reference for sending controller events (set during subscription) */
+  private activeWs: WebSocketLike | null = null;
 
   constructor(deps: WebSocketHandlerDependencies = {}) {
     this.state = createConnectionState();
@@ -206,12 +177,8 @@ export class WebSocketHandler {
       discoverVaults: deps.discoverVaults ?? defaultDiscoverVaults,
       getVaultById: deps.getVaultById ?? defaultGetVaultById,
       createVault: deps.createVault ?? defaultCreateVault,
-      createSession: deps.createSession ?? defaultCreateSession,
-      resumeSession: deps.resumeSession ?? defaultResumeSession,
       loadSession: deps.loadSession ?? defaultLoadSession,
-      appendMessage: deps.appendMessage ?? defaultAppendMessage,
       loadSlashCommands: deps.loadSlashCommands ?? defaultLoadSlashCommands,
-      saveSlashCommands: deps.saveSlashCommands ?? defaultSaveSlashCommands,
       runVaultSetup: deps.runVaultSetup ?? defaultRunVaultSetup,
     };
   }
@@ -246,27 +213,21 @@ export class WebSocketHandler {
   /**
    * Creates a handler context for extracted handlers.
    *
-   * After REST API migration, only extraction prompt and pair writing handlers
-   * use this context. The deps object provides minimal functions needed:
-   * - createSession: Used by pair writing when no session exists
-   *
-   * Other deps are provided as stubs that throw errors (they should not be called
-   * since those handlers have been migrated to REST).
+   * After REST API migration and ActiveSessionController integration, only
+   * extraction prompt and pair writing handlers use this context.
+   * All deps are stubs that throw errors (the handlers that used them have
+   * been migrated to REST or the controller).
    */
   private createContext(ws: WebSocketLike): HandlerContext {
     const notImplemented = () => {
-      throw new Error("Handler migrated to REST API");
+      throw new Error("Handler migrated to REST API or ActiveSessionController");
     };
 
-    // Minimal deps for remaining WebSocket handlers
-    // Pair writing only uses createSession from deps; other fields are stubs
+    // All deps are stubs - real functionality is in REST API or controller
     const minimalDeps = {
-      // Used by pair writing handlers
-      createSession: this.deps.createSession,
-      resumeSession: this.deps.resumeSession,
-      appendMessage: this.deps.appendMessage,
-
-      // Stubs for unused deps (handlers using these have been migrated to REST)
+      createSession: notImplemented,
+      resumeSession: notImplemented,
+      appendMessage: notImplemented,
       captureToDaily: notImplemented,
       getRecentNotes: notImplemented,
       listDirectory: notImplemented,
@@ -289,7 +250,7 @@ export class WebSocketHandler {
     };
 
     return {
-      state: this.state,
+      state: this.state as unknown as import("./handlers/types.js").ConnectionState,
       send: (message: ServerMessage) => this.send(ws, message),
       sendError: (code: ErrorCode, message: string) => this.sendError(ws, code, message),
       // Cast to expected type - stubs throw if called (indicates bug)
@@ -298,126 +259,128 @@ export class WebSocketHandler {
   }
 
   /**
-   * Fetches slash commands from a session with graceful error handling.
-   * Returns empty array if the SDK call fails or returns empty.
+   * Subscribes to controller events and maps them to WebSocket messages.
+   * Called when starting a discussion message.
    */
-  private async fetchSlashCommands(
-    queryResult: SessionQueryResult
-  ): Promise<SlashCommand[]> {
-    try {
-      log.info("Fetching slash commands from SDK...");
-      const sdkCommands = await queryResult.supportedCommands();
+  private subscribeToController(ws: WebSocketLike): void {
+    // Clean up any existing subscription
+    if (this.controllerUnsubscribe) {
+      this.controllerUnsubscribe();
+    }
 
-      if (sdkCommands.length === 0) {
-        log.info("SDK returned no slash commands");
-        return [];
-      }
+    this.activeWs = ws;
+    const controller = getActiveSessionController();
+    this.controllerUnsubscribe = controller.subscribe((event: SessionEvent) => {
+      this.handleControllerEvent(event);
+    });
+  }
 
-      const commands: SlashCommand[] = sdkCommands.map((cmd) => ({
-        name: cmd.name.startsWith("/") ? cmd.name : `/${cmd.name}`,
-        description: cmd.description,
-        argumentHint: cmd.argumentHint || undefined,
-      }));
+  /**
+   * Unsubscribes from controller events.
+   */
+  private unsubscribeFromController(): void {
+    if (this.controllerUnsubscribe) {
+      this.controllerUnsubscribe();
+      this.controllerUnsubscribe = null;
+    }
+    this.activeWs = null;
+  }
 
-      log.info(`Fetched ${commands.length} slash commands`);
+  /**
+   * Maps controller events to WebSocket messages.
+   * This is the core of the transport layer - controller owns state,
+   * this handler just translates events to the WebSocket protocol.
+   */
+  private handleControllerEvent(event: SessionEvent): void {
+    const ws = this.activeWs;
+    if (!ws || ws.readyState !== 1) {
+      log.debug("WebSocket closed, ignoring controller event", { type: event.type });
+      return;
+    }
 
-      // Update cache if commands changed
-      if (this.state.currentVault) {
-        try {
-          const cachedCommands = await this.deps.loadSlashCommands(this.state.currentVault.path);
-          if (!slashCommandsEqual(cachedCommands, commands)) {
-            log.info("Slash commands changed, updating cache");
-            await this.deps.saveSlashCommands(this.state.currentVault.path, commands);
-          }
-        } catch (cacheError) {
-          log.warn("Failed to update slash commands cache, continuing", cacheError);
-        }
-      }
+    switch (event.type) {
+      // Direct passthrough - types match ServerMessage
+      case "session_ready":
+        // Update local state when controller emits session_ready
+        this.state.currentSessionId = event.sessionId;
+        this.send(ws, {
+          type: "session_ready",
+          sessionId: event.sessionId,
+          vaultId: event.vaultId,
+          createdAt: event.createdAt,
+          // Note: slashCommands are fetched by controller but not exposed yet
+        });
+        break;
 
-      return commands;
-    } catch (error) {
-      log.warn("Failed to fetch slash commands from SDK, continuing without commands", error);
-      return [];
+      case "response_start":
+      case "response_chunk":
+      case "response_end":
+      case "tool_start":
+      case "tool_input":
+      case "tool_end":
+      case "error":
+        // These event types match ServerMessage directly
+        this.send(ws, event as ServerMessage);
+        break;
+
+      case "prompt_pending":
+        // Map prompt_pending to specific request types
+        this.handlePromptPending(ws, event.prompt);
+        break;
+
+      // Internal events - no WebSocket message needed
+      case "prompt_resolved":
+      case "prompt_response_rejected":
+      case "session_cleared":
+        log.debug(`Internal controller event: ${event.type}`);
+        break;
     }
   }
 
   /**
-   * Creates a tool permission callback that sends requests to the frontend
-   * and waits for user response.
+   * Maps a pending prompt to the appropriate WebSocket request message.
    */
-  private createToolPermissionCallback(ws: WebSocketLike): ToolPermissionCallback {
-    return async (toolUseId: string, toolName: string, input: unknown): Promise<boolean> => {
-      log.info(`Requesting tool permission: ${toolName} (${toolUseId})`);
-
-      if (ws.readyState !== 1) {
-        log.warn("Connection closed, denying tool permission");
-        return false;
-      }
-
-      return new Promise((resolve, reject) => {
-        this.state.pendingPermissions.set(toolUseId, { resolve, reject });
-
-        this.send(ws, {
-          type: "tool_permission_request",
-          toolUseId,
-          toolName,
-          input,
-        });
+  private handlePromptPending(ws: WebSocketLike, prompt: PendingPrompt): void {
+    if (prompt.type === "tool_permission") {
+      this.send(ws, {
+        type: "tool_permission_request",
+        toolUseId: prompt.id,
+        toolName: prompt.toolName!,
+        input: prompt.input,
       });
-    };
+    } else if (prompt.type === "ask_user_question") {
+      this.send(ws, {
+        type: "ask_user_question_request",
+        toolUseId: prompt.id,
+        questions: prompt.questions!,
+      });
+    }
   }
 
   /**
    * Handles a tool permission response from the frontend.
+   * Forwards to the controller which manages pending prompts.
    */
   private handleToolPermissionResponse(toolUseId: string, allowed: boolean): void {
-    const pending = this.state.pendingPermissions.get(toolUseId);
-    if (pending) {
-      log.info(`Tool permission response received: ${toolUseId} -> ${allowed ? "allowed" : "denied"}`);
-      this.state.pendingPermissions.delete(toolUseId);
-      pending.resolve(allowed);
-    } else {
-      log.warn(`Received permission response for unknown request: ${toolUseId}`);
-    }
-  }
-
-  /**
-   * Creates an AskUserQuestion callback that sends requests to the frontend
-   * and waits for user answers.
-   */
-  private createAskUserQuestionCallback(ws: WebSocketLike): AskUserQuestionCallback {
-    return async (toolUseId: string, questions: AskUserQuestionItem[]): Promise<Record<string, string>> => {
-      log.info(`Requesting user input via AskUserQuestion: ${toolUseId}`);
-
-      if (ws.readyState !== 1) {
-        log.warn("Connection closed, rejecting AskUserQuestion");
-        throw new Error("Connection closed");
-      }
-
-      return new Promise((resolve, reject) => {
-        this.state.pendingAskUserQuestions.set(toolUseId, { resolve, reject });
-
-        this.send(ws, {
-          type: "ask_user_question_request",
-          toolUseId,
-          questions,
-        });
-      });
-    };
+    log.info(`Tool permission response: ${toolUseId} -> ${allowed ? "allowed" : "denied"}`);
+    const controller = getActiveSessionController();
+    controller.respondToPrompt(toolUseId, {
+      type: "tool_permission",
+      allowed,
+    });
   }
 
   /**
    * Handles an AskUserQuestion response from the frontend.
+   * Forwards to the controller which manages pending prompts.
    */
   private handleAskUserQuestionResponse(toolUseId: string, answers: Record<string, string>): void {
-    const pending = this.state.pendingAskUserQuestions.get(toolUseId);
-    if (pending) {
-      log.info(`AskUserQuestion response received: ${toolUseId}`);
-      this.state.pendingAskUserQuestions.delete(toolUseId);
-      pending.resolve(answers);
-    } else {
-      log.warn(`Received AskUserQuestion response for unknown request: ${toolUseId}`);
-    }
+    log.info(`AskUserQuestion response: ${toolUseId}`);
+    const controller = getActiveSessionController();
+    controller.respondToPrompt(toolUseId, {
+      type: "ask_user_question",
+      answers,
+    });
   }
 
   /**
@@ -440,19 +403,19 @@ export class WebSocketHandler {
 
   /**
    * Handles the connection close event.
-   * Cleans up any active queries.
+   * Cleans up subscriptions and session state.
    */
   async onClose(): Promise<void> {
     log.info("Connection closed, cleaning up...");
 
-    if (this.state.activeQuery) {
-      log.info("Interrupting active query");
-      try {
-        await this.state.activeQuery.interrupt();
-      } catch {
-        // Ignore interrupt errors on close
-      }
-      this.state.activeQuery = null;
+    // Unsubscribe from controller events
+    this.unsubscribeFromController();
+
+    // Clear the active session in the controller
+    const controller = getActiveSessionController();
+    if (controller.isStreaming()) {
+      log.info("Clearing active session in controller");
+      await controller.clearSession();
     }
 
     this.state = createConnectionState();
@@ -630,7 +593,6 @@ export class WebSocketHandler {
       // Update state
       this.state.currentVault = vault;
       this.state.currentSessionId = null;
-      this.state.activeQuery = null;
       // Note: searchIndex is now managed by REST API routes, not WebSocket
 
       // Create health collector and subscribe to changes
@@ -659,7 +621,7 @@ export class WebSocketHandler {
 
   /**
    * Handles discussion_message.
-   * Queries the Claude Agent SDK and streams responses to the client.
+   * Delegates to ActiveSessionController for SDK streaming.
    */
   private async handleDiscussionMessage(
     ws: WebSocketLike,
@@ -682,118 +644,37 @@ export class WebSocketHandler {
       return;
     }
 
-    if (this.state.activeQuery) {
-      log.info("Aborting previous query");
-      try {
-        await this.state.activeQuery.interrupt();
-      } catch {
-        // Ignore interrupt errors
-      }
-      this.state.activeQuery = null;
+    const controller = getActiveSessionController();
+
+    // Clear any existing session if controller is streaming
+    if (controller.isStreaming()) {
+      log.info("Clearing previous streaming session");
+      await controller.clearSession();
     }
 
-    const messageId = generateMessageId();
-    // Track total turn duration (includes session setup, streaming, and tool execution).
-    // This measures the user's wait time from sending a message to receiving the full response.
-    const queryStartTime = Date.now();
-    log.info(`Starting query with messageId: ${messageId}`);
+    // Subscribe to controller events
+    this.subscribeToController(ws);
 
     try {
-      let queryResult: SessionQueryResult;
-      let isNewSession = false;
-      const requestToolPermission = this.createToolPermissionCallback(ws);
-      const askUserQuestion = this.createAskUserQuestionCallback(ws);
-
       if (this.state.currentSessionId) {
-        log.info(`Resuming session: ${this.state.currentSessionId}`);
-        queryResult = await this.deps.resumeSession(
+        log.info(`Resuming session via controller: ${this.state.currentSessionId}`);
+        await controller.resumeSession(
           this.state.currentVault.path,
           this.state.currentSessionId,
-          text,
-          undefined,
-          requestToolPermission,
-          askUserQuestion
+          text
         );
       } else {
-        log.info("Creating new session");
-        queryResult = await this.deps.createSession(
-          this.state.currentVault,
-          text,
-          undefined,
-          requestToolPermission,
-          askUserQuestion
-        );
-        isNewSession = true;
-      }
-
-      log.info(`Session ${isNewSession ? "created" : "resumed"}: ${queryResult.sessionId}`);
-
-      this.state.activeQuery = queryResult;
-      this.state.currentSessionId = queryResult.sessionId;
-
-      if (isNewSession) {
-        // Reset cumulative tokens for new session
-        this.state.cumulativeTokens = 0;
-        this.state.contextWindow = null;
-        log.info(`Sending session_ready with new sessionId: ${queryResult.sessionId}`);
-        const slashCommands = await this.fetchSlashCommands(queryResult);
-        this.send(ws, {
-          type: "session_ready",
-          sessionId: queryResult.sessionId,
-          vaultId: this.state.currentVault.id,
-          createdAt: new Date().toISOString(),
-          slashCommands: sanitizeSlashCommands(slashCommands),
-        });
-      }
-
-      const userMessageId = generateMessageId();
-      await this.deps.appendMessage(this.state.currentVault.path, queryResult.sessionId, {
-        id: userMessageId,
-        role: "user",
-        content: text,
-        timestamp: new Date().toISOString(),
-      });
-
-      this.send(ws, { type: "response_start", messageId });
-
-      log.info("Streaming SDK events...");
-      const streamResult = await this.streamEvents(ws, messageId, queryResult);
-
-      const durationMs = Date.now() - queryStartTime;
-      log.info(`Query completed in ${durationMs}ms`);
-
-      this.send(ws, {
-        type: "response_end",
-        messageId,
-        contextUsage: streamResult.contextUsage,
-        durationMs,
-      });
-
-      if (streamResult.content.length > 0 || streamResult.toolInvocations.length > 0) {
-        await this.deps.appendMessage(this.state.currentVault.path, queryResult.sessionId, {
-          id: messageId,
-          role: "assistant",
-          content: streamResult.content,
-          timestamp: new Date().toISOString(),
-          toolInvocations: streamResult.toolInvocations.length > 0 ? streamResult.toolInvocations : undefined,
-          contextUsage: streamResult.contextUsage,
-          durationMs,
-        });
+        log.info("Creating new session via controller");
+        await controller.startSession(this.state.currentVault, text);
+        // session_ready will be emitted by controller, which updates state.currentSessionId
       }
 
       log.info("Discussion complete");
-      this.state.activeQuery = null;
     } catch (error) {
       log.error("Discussion failed", error);
-      this.state.activeQuery = null;
-
-      if (error instanceof SessionError) {
-        this.sendError(ws, mapSessionErrorCode(error.code), error.message);
-      } else {
-        const message =
-          error instanceof Error ? error.message : "SDK query failed";
-        this.sendError(ws, "SDK_ERROR", message);
-      }
+      const message =
+        error instanceof Error ? error.message : "SDK query failed";
+      this.sendError(ws, "SDK_ERROR", message);
     }
   }
 
@@ -885,19 +766,13 @@ export class WebSocketHandler {
       return;
     }
 
-    if (this.state.activeQuery) {
-      try {
-        await this.state.activeQuery.interrupt();
-      } catch {
-        // Ignore interrupt errors
-      }
-      this.state.activeQuery = null;
+    // Clear any active session in the controller
+    const controller = getActiveSessionController();
+    if (controller.isStreaming()) {
+      await controller.clearSession();
     }
 
     this.state.currentSessionId = null;
-    // Reset cumulative tokens when session is cleared
-    this.state.cumulativeTokens = 0;
-    this.state.contextWindow = null;
 
     const cachedCommands = await this.deps.loadSlashCommands(this.state.currentVault.path);
 
@@ -957,447 +832,17 @@ export class WebSocketHandler {
 
   /**
    * Handles abort message.
+   * Delegates to the controller to clear the active session.
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async handleAbort(ws: WebSocketLike): Promise<void> {
-    if (this.state.activeQuery) {
-      try {
-        await this.state.activeQuery.interrupt();
-      } catch (error) {
-        console.warn("Failed to abort query:", error);
-      }
-      this.state.activeQuery = null;
+    const controller = getActiveSessionController();
+    if (controller.isStreaming()) {
+      log.info("Aborting active session");
+      await controller.clearSession();
     }
   }
 
-  // ===========================================================================
-  // SDK Streaming (kept in main file due to complexity and tight coupling)
-  // ===========================================================================
-
-  /**
-   * Streams SDK events to the client.
-   * Maps SDK event types to WebSocket protocol messages.
-   */
-  private async streamEvents(
-    ws: WebSocketLike,
-    messageId: string,
-    queryResult: SessionQueryResult
-  ): Promise<StreamingResult> {
-    const responseChunks: string[] = [];
-    const toolsMap = new Map<string, StoredToolInvocation>();
-    const contentBlocks = new Map<number, ContentBlockState>();
-    let contextUsage: number | undefined;
-
-    for await (const event of queryResult.events) {
-      if (ws.readyState !== 1) {
-        log.debug("Connection closed during streaming, stopping");
-        for (const tool of toolsMap.values()) {
-          if (tool.status === "running") {
-            tool.status = "complete";
-            tool.output = "[Connection closed before tool completed]";
-          }
-        }
-        break;
-      }
-
-      log.debug(`SDK event: ${event.type}`, this.summarizeEvent(event));
-
-      switch (event.type) {
-        case "stream_event": {
-          const text = this.handleStreamEvent(ws, messageId, event, toolsMap, contentBlocks);
-          if (text) {
-            responseChunks.push(text);
-          }
-          break;
-        }
-        case "result": {
-          const usage = this.handleResultEvent(ws, event, toolsMap);
-          if (usage !== undefined) {
-            contextUsage = usage;
-          }
-          break;
-        }
-        case "user": {
-          this.handleUserEvent(ws, event, toolsMap);
-          break;
-        }
-        case "system": {
-          // SDKCompactBoundaryMessage also has type: 'system', check for it first
-          const maybeCompact = event as SDKCompactBoundaryMessage;
-          if (maybeCompact.subtype === "compact_boundary" && maybeCompact.compact_metadata) {
-            // Handle compact_boundary events (adjusts cumulative token count)
-            // Compact reduces context by summarizing conversation history
-            const preTokens = maybeCompact.compact_metadata.pre_tokens;
-            // After compact, context is reduced. We estimate post-compact size
-            // as roughly 30% of pre-compact (summaries are typically much shorter).
-            // The next result event will provide accurate usage, but this gives
-            // a reasonable estimate for intermediate display.
-            const estimatedPostCompact = Math.round(preTokens * 0.3);
-            log.info(
-              `Compact boundary: pre_tokens=${preTokens}, ` +
-              `trigger=${maybeCompact.compact_metadata.trigger}, ` +
-              `resetting cumulative from ${this.state.cumulativeTokens} to ~${estimatedPostCompact}`
-            );
-            this.state.cumulativeTokens = estimatedPostCompact;
-            break;
-          }
-
-          // Handle init events (sets active model)
-          const systemEvent = event as SDKSystemMessage;
-          if (systemEvent.subtype === "init" && systemEvent.model) {
-            this.state.activeModel = systemEvent.model;
-            log.info(`Active model: ${systemEvent.model}`);
-          }
-          break;
-        }
-      }
-    }
-
-    return {
-      content: responseChunks.join(""),
-      toolInvocations: Array.from(toolsMap.values()),
-      contextUsage,
-    };
-  }
-
-  /**
-   * Creates a summary of an SDK event for logging.
-   */
-  private summarizeEvent(event: SDKMessage): Record<string, unknown> {
-    const summary: Record<string, unknown> = { type: event.type };
-
-    if (event.type === "stream_event") {
-      const rawStreamEvent = event.event;
-
-      // Defensive check: SDK may send error events not in ContentStreamEvent type
-      if ((rawStreamEvent.type as string) === "error") {
-        summary.streamType = "error";
-        return summary;
-      }
-
-      const streamEvent = rawStreamEvent as ContentStreamEvent;
-      summary.streamType = streamEvent.type;
-
-      if ("index" in streamEvent && typeof streamEvent.index === "number") {
-        summary.index = streamEvent.index;
-      }
-
-      if (streamEvent.type === "content_block_start") {
-        const cb = streamEvent.content_block;
-        summary.contentBlock = {
-          type: cb.type,
-          id: "id" in cb ? cb.id : undefined,
-          name: "name" in cb ? cb.name : undefined,
-        };
-      }
-
-      if (streamEvent.type === "content_block_delta") {
-        summary.deltaType = streamEvent.delta.type;
-      }
-    }
-
-    return summary;
-  }
-
-  /**
-   * Handles streaming events containing deltas and content block lifecycle.
-   */
-  private handleStreamEvent(
-    ws: WebSocketLike,
-    messageId: string,
-    event: SDKPartialAssistantMessage,
-    toolsMap: Map<string, StoredToolInvocation>,
-    contentBlocks: Map<number, ContentBlockState>
-  ): string {
-    const rawStreamEvent = event.event;
-
-    // Defensive check: SDK may send error events not in ContentStreamEvent type
-    if ((rawStreamEvent.type as string) === "error") {
-      // Extract error details from SDK stream event
-      const errorEvent = rawStreamEvent as unknown as { type: "error"; error: { type?: string; message?: string } };
-      const errorMessage = errorEvent.error?.message ?? errorEvent.error?.type ?? "Unknown SDK error during streaming";
-
-      log.warn("Stream error event received", { error: errorEvent.error });
-
-      // Send error to frontend so user sees what went wrong
-      this.send(ws, {
-        type: "error",
-        code: "SDK_ERROR",
-        message: errorMessage,
-      });
-
-      return "";
-    }
-
-    const streamEvent = rawStreamEvent as ContentStreamEvent;
-
-    if (streamEvent.type === "content_block_start") {
-      const { index: blockIndex, content_block: contentBlock } = streamEvent;
-
-      if (contentBlock.type === "tool_use") {
-        const { id: toolUseId, name: toolName } = contentBlock;
-
-        log.info(`Tool started: ${toolName} (${toolUseId})`);
-
-        contentBlocks.set(blockIndex, {
-          type: "tool_use",
-          toolUseId,
-          toolName,
-          inputJsonChunks: [],
-        });
-
-        this.send(ws, {
-          type: "tool_start",
-          toolName,
-          toolUseId,
-        });
-
-        toolsMap.set(toolUseId, {
-          toolUseId,
-          toolName,
-          status: "running",
-        });
-      } else if (contentBlock.type === "text") {
-        contentBlocks.set(blockIndex, { type: "text" });
-
-        // If tools have been used, add a paragraph break before continuing text
-        // to prevent "...got saved.Looks solid!" running together
-        if (toolsMap.size > 0) {
-          return "\n\n";
-        }
-      }
-
-      return "";
-    }
-
-    if (streamEvent.type === "content_block_delta") {
-      const { index: blockIndex, delta } = streamEvent;
-
-      if (delta.type === "text_delta") {
-        const { text } = delta;
-        this.send(ws, {
-          type: "response_chunk",
-          messageId,
-          content: text,
-        });
-        return text;
-      }
-
-      if (delta.type === "input_json_delta") {
-        const { partial_json: partialJson } = delta;
-        const block = contentBlocks.get(blockIndex);
-        if (partialJson && block?.type === "tool_use" && block.inputJsonChunks) {
-          block.inputJsonChunks.push(partialJson);
-        }
-      }
-
-      return "";
-    }
-
-    if (streamEvent.type === "content_block_stop") {
-      const { index: blockIndex } = streamEvent;
-      const block = contentBlocks.get(blockIndex);
-
-      if (block?.type === "tool_use" && block.toolUseId && block.inputJsonChunks) {
-        const jsonStr = block.inputJsonChunks.join("");
-        try {
-          const input: unknown = jsonStr ? JSON.parse(jsonStr) : {};
-
-          log.debug(`Tool input complete for ${block.toolName}`, { inputLength: jsonStr.length });
-
-          this.send(ws, {
-            type: "tool_input",
-            toolUseId: block.toolUseId,
-            input,
-          });
-
-          const tracked = toolsMap.get(block.toolUseId);
-          if (tracked) {
-            tracked.input = input;
-          }
-        } catch (err) {
-          log.warn(`Failed to parse tool input JSON for ${block.toolUseId}`, { jsonStr, err });
-        }
-      }
-
-      contentBlocks.delete(blockIndex);
-      return "";
-    }
-
-    return "";
-  }
-
-  /**
-   * Handles result events containing tool usage and context statistics.
-   */
-  private handleResultEvent(
-    ws: WebSocketLike,
-    event: SDKResultMessage,
-    toolsMap: Map<string, StoredToolInvocation>
-  ): number | undefined {
-    // Check for error results and surface them to frontend
-    if (event.subtype !== "success") {
-      const errorEvent = event as {
-        subtype: string;
-        errors?: string[];
-        is_error?: boolean;
-      };
-
-      // Build a user-friendly error message
-      let errorMessage: string;
-      if (errorEvent.errors && errorEvent.errors.length > 0) {
-        errorMessage = errorEvent.errors.join("; ");
-      } else {
-        // Fallback to subtype-based messages
-        switch (errorEvent.subtype) {
-          case "error_max_turns":
-            errorMessage = "Conversation reached maximum turns limit.";
-            break;
-          case "error_max_budget_usd":
-            errorMessage = "Conversation exceeded budget limit.";
-            break;
-          case "error_max_structured_output_retries":
-            errorMessage = "Failed to generate structured output after maximum retries.";
-            break;
-          case "error_during_execution":
-          default:
-            errorMessage = "An error occurred during execution.";
-        }
-      }
-
-      log.warn(`SDK result error: ${errorEvent.subtype}`, { errors: errorEvent.errors });
-
-      this.send(ws, {
-        type: "error",
-        code: "SDK_ERROR",
-        message: errorMessage,
-      });
-    }
-
-    const { usage, modelUsage } = event;
-
-    let contextUsage: number | undefined;
-    if (usage && modelUsage) {
-      // Note: cache tokens are subsets of input_tokens, don't double-count them
-      const inputTokens = usage.input_tokens ?? 0;
-      const outputTokens = usage.output_tokens ?? 0;
-      const turnTokens = inputTokens + outputTokens;
-
-      // Accumulate tokens across all turns in the session
-      this.state.cumulativeTokens += turnTokens;
-
-      const modelNames = Object.keys(modelUsage);
-      const modelName = this.state.activeModel ?? modelNames[0];
-      if (modelName && modelUsage[modelName]) {
-        const modelStats: ModelUsage = modelUsage[modelName];
-        const contextWindow = modelStats.contextWindow;
-        if (contextWindow && contextWindow > 0) {
-          // Store context window for use after compacts
-          this.state.contextWindow = contextWindow;
-
-          // Calculate percentage from cumulative tokens
-          contextUsage = Math.round((100 * this.state.cumulativeTokens) / contextWindow);
-          contextUsage = Math.max(0, Math.min(100, contextUsage));
-          log.debug(
-            `Context usage: ${this.state.cumulativeTokens}/${contextWindow} = ${contextUsage}% ` +
-            `(turn: +${turnTokens}, model: ${modelName})`
-          );
-        }
-      }
-    }
-
-    const rawEvent = event as unknown as { result?: { content?: unknown[] } };
-    const result = rawEvent.result;
-    if (!result || !Array.isArray(result.content)) return contextUsage;
-
-    for (const block of result.content) {
-      if (typeof block !== "object" || block === null || !("type" in block)) continue;
-      const typedBlock = block as {
-        type: string;
-        name?: string;
-        id?: string;
-        input?: unknown;
-        tool_use_id?: string;
-        content?: unknown;
-      };
-
-      if (typedBlock.type === "tool_use" && typedBlock.name && typedBlock.id) {
-        const existing = toolsMap.get(typedBlock.id);
-        if (!existing) {
-          log.debug(`Tool ${typedBlock.name} (${typedBlock.id}) tracked from result event (fallback)`);
-          toolsMap.set(typedBlock.id, {
-            toolUseId: typedBlock.id,
-            toolName: typedBlock.name,
-            status: "running",
-            input: typedBlock.input,
-          });
-          this.send(ws, {
-            type: "tool_start",
-            toolName: typedBlock.name,
-            toolUseId: typedBlock.id,
-          });
-          if (typedBlock.input !== undefined) {
-            this.send(ws, {
-              type: "tool_input",
-              toolUseId: typedBlock.id,
-              input: typedBlock.input,
-            });
-          }
-        } else if (!existing.input && typedBlock.input !== undefined) {
-          existing.input = typedBlock.input;
-        }
-      } else if (typedBlock.type === "tool_result" && typedBlock.tool_use_id) {
-        log.info(`Tool completed: ${typedBlock.tool_use_id}`);
-        this.send(ws, {
-          type: "tool_end",
-          toolUseId: typedBlock.tool_use_id,
-          output: typedBlock.content ?? null,
-        });
-        const tracked = toolsMap.get(typedBlock.tool_use_id);
-        if (tracked) {
-          tracked.output = typedBlock.content ?? null;
-          tracked.status = "complete";
-        }
-      }
-    }
-
-    return contextUsage;
-  }
-
-  /**
-   * Handles user events containing tool results.
-   */
-  private handleUserEvent(
-    ws: WebSocketLike,
-    event: SDKUserMessage,
-    toolsMap: Map<string, StoredToolInvocation>
-  ): void {
-    const { message } = event;
-    const content = message.content;
-    if (!Array.isArray(content)) return;
-
-    for (const block of content) {
-      if (typeof block !== "object" || block === null || !("type" in block)) continue;
-
-      if (block.type === "tool_result" && "tool_use_id" in block) {
-        const toolUseId = block.tool_use_id;
-        const output = "content" in block ? block.content : null;
-
-        log.info(`Tool completed (from user event): ${toolUseId}`);
-        this.send(ws, {
-          type: "tool_end",
-          toolUseId,
-          output: output ?? null,
-        });
-
-        const tracked = toolsMap.get(toolUseId);
-        if (tracked) {
-          tracked.output = output ?? null;
-          tracked.status = "complete";
-        }
-      }
-    }
-  }
 }
 
 /**

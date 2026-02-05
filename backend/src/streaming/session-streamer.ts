@@ -7,6 +7,7 @@
 
 import type {
   SDKMessage,
+  SDKAssistantMessage,
   SDKPartialAssistantMessage,
   SDKResultMessage,
   SDKUserMessage,
@@ -116,12 +117,23 @@ export async function streamSdkEvents(
         }
         break;
       }
+      case "assistant": {
+        // Assistant event contains the complete message - use as authoritative source
+        const assistantEvent = event as SDKAssistantMessage;
+        const completeContent = extractAssistantContent(assistantEvent);
+        if (completeContent) {
+          // Replace accumulated chunks with complete content
+          responseChunks.length = 0;
+          responseChunks.push(completeContent);
+        }
+        break;
+      }
       case "result": {
         const usage = handleResultEvent(event, emitter, toolsMap, state);
         if (usage !== undefined) {
           contextUsage = usage;
         }
-        // Result is the terminal event - break to avoid errors from SDK process exit
+        // Result is the terminal event - return immediately
         return {
           content: responseChunks.join(""),
           toolInvocations: Array.from(toolsMap.values()),
@@ -525,4 +537,21 @@ function handleSystemEvent(event: SDKMessage, state: StreamerState): void {
     state.activeModel = systemEvent.model;
     log.info(`Active model: ${systemEvent.model}`);
   }
+}
+
+/**
+ * Extracts text content from an assistant message.
+ * The assistant event contains the complete BetaMessage with all content blocks.
+ */
+function extractAssistantContent(event: SDKAssistantMessage): string {
+  const { message } = event;
+  if (!message || !message.content) return "";
+
+  const textParts: string[] = [];
+  for (const block of message.content) {
+    if (block.type === "text" && block.text) {
+      textParts.push(block.text);
+    }
+  }
+  return textParts.join("");
 }

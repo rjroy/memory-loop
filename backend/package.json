@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./streaming": "./src/streaming/index.ts"
+  },
   "scripts": {
     "dev": "NODE_ENV=development bun run --watch src/index.ts",
     "build": "tsc --noEmit",

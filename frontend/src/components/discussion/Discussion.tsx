@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { ServerMessage, SlashCommand, ClientMessage } from "@memory-loop/shared";
 import { useWebSocket, type ConnectionStatus } from "../../hooks/useWebSocket";
+import { useChat } from "../../hooks/useChat";
 import { useSession, useServerMessageHandler } from "../../contexts/SessionContext";
 import { ConversationPane, DiscussionEmptyState } from "../shared/ConversationPane";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
@@ -20,11 +21,20 @@ import "./Discussion.css";
 const STORAGE_KEY = "memory-loop-discussion-draft";
 
 /**
+ * Transport method for Discussion communication.
+ * - "websocket": Use WebSocket connection (default, legacy)
+ * - "sse": Use SSE via useChat hook (new, for Next.js migration)
+ */
+export type DiscussionTransport = "websocket" | "sse";
+
+/**
  * Props for the Discussion component.
  * All props are optional to maintain backward compatibility.
  * When provided, Discussion uses the shared WebSocket connection instead of creating its own.
  */
 export interface DiscussionProps {
+  /** Transport method: "websocket" (default) or "sse" */
+  transport?: DiscussionTransport;
   /** Function to send WebSocket messages (shared connection) */
   sendMessage?: (message: ClientMessage) => void;
   /** Current connection status (shared connection) */
@@ -95,13 +105,19 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
     return () => query.removeEventListener("change", handler);
   }, []);
 
-  // Check if we're using a shared connection (all three props provided)
-  const isSharedConnection = props.sendMessage !== undefined &&
+  // Determine transport method
+  const transport = props.transport ?? "websocket";
+  const isSSE = transport === "sse";
+
+  // Check if we're using a shared WebSocket connection (all three props provided)
+  const isSharedConnection = !isSSE &&
+    props.sendMessage !== undefined &&
     props.connectionStatus !== undefined &&
     props.lastMessage !== undefined;
 
   // Callback to re-send vault selection on WebSocket reconnect
   const handleReconnect = useCallback(() => {
+    if (isSSE) return; // SSE doesn't need reconnect handling
     hasSentVaultSelectionRef.current = false;
     // Reset submitting state - any in-flight request was interrupted
     setIsSubmitting(false);
@@ -109,7 +125,7 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
     setPendingPermission(null);
     // Call external onReconnect if provided
     props.onReconnect?.();
-  }, [props.onReconnect]);
+  }, [isSSE, props.onReconnect]);
 
   const handleServerMessage = useServerMessageHandler();
 
@@ -170,9 +186,20 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
     [handleServerMessage, addToolToLastMessage, updateToolInput, completeToolInvocation]
   );
 
-  // Use internal WebSocket only when not using shared connection
+  // SSE transport via useChat hook
+  const chat = useChat(
+    isSSE ? vault : null, // Only activate when using SSE transport
+    {
+      onEvent: handleMessage,
+      onStreamStart: () => setIsSubmitting(true),
+      onStreamEnd: () => setIsSubmitting(false),
+      onError: () => setIsSubmitting(false),
+    }
+  );
+
+  // WebSocket transport - use internal WebSocket only when not using shared connection
   const internalWs = useWebSocket(
-    isSharedConnection
+    isSSE || isSharedConnection
       ? {} // Minimal config when not using (connection still created but not used)
       : {
           onReconnect: handleReconnect,
@@ -180,24 +207,84 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
         }
   );
 
-  // Select between shared and internal connection
+  // Unified interface that works for both transports
+  // For SSE: wrap sendMessage to add user message and call chat.sendMessage
+  // For WebSocket: use existing sendMessage function
+  const sendChatMessage = useCallback(
+    async (text: string) => {
+      if (isSSE) {
+        addMessage({ role: "user", content: text });
+        await chat.sendMessage(text);
+      } else {
+        const wsMessage = isSharedConnection ? props.sendMessage! : internalWs.sendMessage;
+        addMessage({ role: "user", content: text });
+        wsMessage({ type: "discussion_message", text });
+      }
+    },
+    [isSSE, chat, isSharedConnection, props.sendMessage, internalWs.sendMessage, addMessage]
+  );
+
+  // Unified abort function
+  const abortChat = useCallback(async () => {
+    if (isSSE) {
+      await chat.abort();
+    } else {
+      const wsMessage = isSharedConnection ? props.sendMessage! : internalWs.sendMessage;
+      wsMessage({ type: "abort" });
+    }
+    setIsSubmitting(false);
+  }, [isSSE, chat, isSharedConnection, props.sendMessage, internalWs.sendMessage]);
+
+  // Unified permission resolution
+  const resolvePermission = useCallback(
+    async (toolUseId: string, allowed: boolean) => {
+      if (isSSE) {
+        await chat.resolvePermission(toolUseId, allowed);
+      } else {
+        const wsMessage = isSharedConnection ? props.sendMessage! : internalWs.sendMessage;
+        wsMessage({ type: "tool_permission_response", toolUseId, allowed });
+      }
+    },
+    [isSSE, chat, isSharedConnection, props.sendMessage, internalWs.sendMessage]
+  );
+
+  // Unified question resolution
+  const resolveQuestion = useCallback(
+    async (toolUseId: string, answers: Record<string, string>) => {
+      if (isSSE) {
+        await chat.resolveQuestion(toolUseId, answers);
+      } else {
+        const wsMessage = isSharedConnection ? props.sendMessage! : internalWs.sendMessage;
+        wsMessage({ type: "ask_user_question_response", toolUseId, answers });
+      }
+    },
+    [isSSE, chat, isSharedConnection, props.sendMessage, internalWs.sendMessage]
+  );
+
+  // Select between shared and internal WebSocket connection (only for WebSocket transport)
   const sendMessage = isSharedConnection ? props.sendMessage! : internalWs.sendMessage;
-  const connectionStatus = isSharedConnection ? props.connectionStatus! : internalWs.connectionStatus;
+  const connectionStatus = isSSE
+    ? (chat.isStreaming ? "connected" : "connected") // SSE is always "connected" when idle or streaming
+    : (isSharedConnection ? props.connectionStatus! : internalWs.connectionStatus);
   const lastMessage = isSharedConnection ? props.lastMessage! : internalWs.lastMessage;
 
-  // Process messages from shared connection via useEffect on lastMessage
-  // (internal connection uses onMessage callback instead)
+  // Process messages from shared WebSocket connection via useEffect on lastMessage
+  // (internal connection uses onMessage callback instead, SSE uses onEvent callback)
   const lastProcessedMessageRef = useRef<ServerMessage | null>(null);
   useEffect(() => {
-    if (isSharedConnection && lastMessage && lastMessage !== lastProcessedMessageRef.current) {
+    if (!isSSE && isSharedConnection && lastMessage && lastMessage !== lastProcessedMessageRef.current) {
       lastProcessedMessageRef.current = lastMessage;
       handleMessage(lastMessage);
     }
-  }, [isSharedConnection, lastMessage, handleMessage]);
+  }, [isSSE, isSharedConnection, lastMessage, handleMessage]);
 
   // Send vault selection when WebSocket connects (initial or reconnect)
   // Sessions are stored per-vault, so we must select vault before resuming any session.
+  // Note: SSE transport handles vault selection via request body, so this effect is skipped.
   useEffect(() => {
+    // Skip for SSE transport - useChat includes vaultId in POST request
+    if (isSSE) return;
+
     if (
       connectionStatus === "connected" &&
       vault &&
@@ -255,10 +342,17 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
         }
       })();
     }
-  }, [connectionStatus, vault, sessionId, pendingSessionId, wantsNewSession, sendMessage]);
+  }, [isSSE, connectionStatus, vault, sessionId, pendingSessionId, wantsNewSession, sendMessage]);
 
   // Detect when sessionId is cleared (user clicked "New" button) and notify backend
+  // Note: SSE transport handles new sessions via useChat - just send next message without sessionId
   useEffect(() => {
+    // Skip for SSE transport - useChat handles session management
+    if (isSSE) {
+      prevSessionIdRef.current = sessionId;
+      return;
+    }
+
     // Only send new_session if we had a session before and now it's null
     if (
       prevSessionIdRef.current !== null &&
@@ -275,10 +369,14 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
     }
     // Always update the ref to track current sessionId
     prevSessionIdRef.current = sessionId;
-  }, [sessionId, vault, connectionStatus, sendMessage]);
+  }, [isSSE, sessionId, vault, connectionStatus, sendMessage]);
 
   // Handle errors during resume - fall back to select_vault
+  // Note: SSE transport handles session errors via useChat's lastError state
   useEffect(() => {
+    // Skip for SSE transport
+    if (isSSE) return;
+
     if (lastMessage?.type === "error" && lastMessage.code === "SESSION_NOT_FOUND" && vault) {
       // Session no longer exists on server, clear stale state and start fresh
       console.log("[Discussion] Session not found, starting fresh");
@@ -287,10 +385,14 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
       pendingResumeRef.current = null;
       sendMessage({ type: "select_vault", vaultId: vault.id });
     }
-  }, [lastMessage, vault, sendMessage, startNewSession, setPendingSessionId]);
+  }, [isSSE, lastMessage, vault, sendMessage, startNewSession, setPendingSessionId]);
 
   // After vault is selected (session_ready with empty sessionId), send resume_session if needed
+  // Note: SSE transport doesn't use this flow - sessions are created/resumed per-request
   useEffect(() => {
+    // Skip for SSE transport
+    if (isSSE) return;
+
     if (
       lastMessage?.type === "session_ready" &&
       !lastMessage.sessionId && // Empty sessionId means vault selected, no session yet
@@ -302,7 +404,7 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
       console.log(`[Discussion] Vault selected, now resuming session: ${resumeId.slice(0, 8)}...`);
       sendMessage({ type: "resume_session", sessionId: resumeId });
     }
-  }, [lastMessage, connectionStatus, sendMessage]);
+  }, [isSSE, lastMessage, connectionStatus, sendMessage]);
 
   // Load prefill or draft on mount - prefill takes precedence over localStorage draft
   // Using a ref to capture the initial prefill value avoids needing to suppress exhaustive-deps
@@ -406,22 +508,13 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
     if (connectionStatus !== "connected") return;
     if (!vault) return;
 
-    // Add user message to history
-    addMessage({
-      role: "user",
-      content: trimmedInput,
-    });
-
-    // Send to server
-    sendMessage({
-      type: "discussion_message",
-      text: trimmedInput,
-    });
-
-    // Clear input and localStorage
+    // Clear input and localStorage first to prevent double-submit
     setInput("");
     localStorage.removeItem(STORAGE_KEY);
     setIsSubmitting(true);
+
+    // Send message via unified interface (adds user message and sends to server)
+    void sendChatMessage(trimmedInput);
 
     // Blur input to collapse it back to single row
     inputRef.current?.blur();
@@ -454,8 +547,7 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
 
   function handleAbort() {
     if (!isSubmitting) return;
-    sendMessage({ type: "abort" });
-    setIsSubmitting(false);
+    void abortChat();
   }
 
   /**
@@ -495,33 +587,21 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
 
   function handleAllowTool() {
     if (pendingPermission) {
-      sendMessage({
-        type: "tool_permission_response",
-        toolUseId: pendingPermission.toolUseId,
-        allowed: true,
-      });
+      void resolvePermission(pendingPermission.toolUseId, true);
       setPendingPermission(null);
     }
   }
 
   function handleDenyTool() {
     if (pendingPermission) {
-      sendMessage({
-        type: "tool_permission_response",
-        toolUseId: pendingPermission.toolUseId,
-        allowed: false,
-      });
+      void resolvePermission(pendingPermission.toolUseId, false);
       setPendingPermission(null);
     }
   }
 
   function handleQuestionSubmit(answers: Record<string, string>) {
     if (pendingQuestion) {
-      sendMessage({
-        type: "ask_user_question_response",
-        toolUseId: pendingQuestion.toolUseId,
-        answers,
-      });
+      void resolveQuestion(pendingQuestion.toolUseId, answers);
       setPendingQuestion(null);
     }
   }
@@ -529,11 +609,7 @@ export function Discussion(props: DiscussionProps = {}): React.ReactNode {
   function handleQuestionCancel() {
     // Canceling sends an empty answers object, which the backend will reject
     if (pendingQuestion) {
-      sendMessage({
-        type: "ask_user_question_response",
-        toolUseId: pendingQuestion.toolUseId,
-        answers: {},
-      });
+      void resolveQuestion(pendingQuestion.toolUseId, {});
       setPendingQuestion(null);
     }
   }

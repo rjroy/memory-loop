@@ -31,5 +31,13 @@ export default tseslint.config(
       "**/*.test.tsx",
     ],
     ...tseslint.configs.disableTypeChecked,
+  },
+  // instrumentation.ts uses require() with variable paths to prevent webpack
+  // from following the import chain into cron's child_process dependency
+  {
+    files: ["instrumentation.ts"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
   }
 );

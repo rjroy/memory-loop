@@ -71,8 +71,7 @@ export function createActiveSessionController(): IActiveSessionController {
   // Subscribers
   const subscribers = new Set<SessionEventCallback>();
 
-  // Slash commands cache
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- will be exposed in getState() when WebSocket handler is updated
+  // Slash commands cache (sent to client in session_ready)
   let slashCommands: SlashCommand[] = [];
 
   /**
@@ -181,29 +180,40 @@ export function createActiveSessionController(): IActiveSessionController {
     abortController = new AbortController();
 
     try {
+      // Fetch slash commands for both new and resumed sessions
+      try {
+        const sdkCommands = await result.supportedCommands();
+        slashCommands = sdkCommands.map((cmd) => ({
+          name: cmd.name.startsWith("/") ? cmd.name : `/${cmd.name}`,
+          description: cmd.description,
+          argumentHint: cmd.argumentHint || undefined,
+        }));
+      } catch (err) {
+        log.warn("Failed to fetch slash commands", err);
+        slashCommands = [];
+      }
+
       if (isNewSession) {
         // Reset cumulative tokens for new session
         streamerState.cumulativeTokens = 0;
         streamerState.contextWindow = null;
-
-        // Fetch slash commands
-        try {
-          const sdkCommands = await result.supportedCommands();
-          slashCommands = sdkCommands.map((cmd) => ({
-            name: cmd.name.startsWith("/") ? cmd.name : `/${cmd.name}`,
-            description: cmd.description,
-            argumentHint: cmd.argumentHint || undefined,
-          }));
-        } catch (err) {
-          log.warn("Failed to fetch slash commands", err);
-          slashCommands = [];
-        }
 
         emit({
           type: "session_ready",
           sessionId: result.sessionId,
           vaultId: vault.id,
           createdAt: new Date().toISOString(),
+          slashCommands,
+        });
+      } else {
+        // Resume: send session_ready with previous messages so the UI
+        // can restore conversation history before streaming the new response
+        emit({
+          type: "session_ready",
+          sessionId: result.sessionId,
+          vaultId: vault.id,
+          messages: result.previousMessages,
+          slashCommands,
         });
       }
 

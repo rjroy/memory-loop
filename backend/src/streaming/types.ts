@@ -5,7 +5,7 @@
  * Based on the spec in .lore/design/active-session-controller.md
  */
 
-import type { VaultInfo, AskUserQuestionItem } from "@memory-loop/shared";
+import type { VaultInfo, AskUserQuestionItem, ConversationMessage, SlashCommand } from "@memory-loop/shared";
 
 // =============================================================================
 // Session Events (emitted to subscribers)
@@ -36,7 +36,14 @@ export type SessionEvent =
     }
   | { type: "error"; code: string; message: string }
   | { type: "session_cleared" }
-  | { type: "session_ready"; sessionId: string; vaultId: string; createdAt?: string };
+  | {
+      type: "session_ready";
+      sessionId: string;
+      vaultId: string;
+      createdAt?: string;
+      messages?: ConversationMessage[];
+      slashCommands?: SlashCommand[];
+    };
 
 // =============================================================================
 // Pending Prompts

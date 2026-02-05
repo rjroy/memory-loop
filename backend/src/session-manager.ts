@@ -618,6 +618,8 @@ export interface SessionQueryResult {
   interrupt: () => Promise<void>;
   /** Function to fetch supported slash commands */
   supportedCommands: () => Promise<SDKSlashCommand[]>;
+  /** Conversation history from prior turns (populated on resume) */
+  previousMessages?: ConversationMessage[];
 }
 
 /**
@@ -971,12 +973,13 @@ export async function resumeSession(
     metadata.lastActiveAt = new Date().toISOString();
     await saveSession(metadata);
 
-    // Return wrapped result
+    // Return wrapped result with previous messages for session_ready
     return {
       sessionId: resumedId,
       events: wrapGenerator(firstEvent, queryResult),
       interrupt: () => queryResult.interrupt(),
       supportedCommands: () => queryResult.supportedCommands(),
+      previousMessages: metadata.messages,
     };
   } catch (error) {
     log.error("Failed to resume session", error);

@@ -1,7 +1,7 @@
 ---
 title: Fix file search with non-empty contentRoot
 date: 2026-02-06
-status: draft
+status: executed
 tags: [bug, search, content-root, api-routes]
 modules: [search-handlers, search-routes]
 related: [.lore/reference/_infrastructure/configuration.md, .lore/reference/recall.md]

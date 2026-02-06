@@ -25,8 +25,8 @@ jobs:
       - name: Run backend tests with coverage
         run: bun run --cwd backend test:coverage
 
-      - name: Run frontend tests with coverage
-        run: bun run --cwd frontend test:coverage
+      - name: Run nextjs tests with coverage
+        run: bun run --cwd nextjs test:coverage
 
       - name: Run shared tests with coverage
         run: bun run --cwd shared test:coverage
@@ -40,13 +40,13 @@ jobs:
           flags: backend
           fail_ci_if_error: true
 
-      - name: Upload frontend coverage
+      - name: Upload nextjs coverage
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: rjroy/memory-loop
-          files: ./frontend/coverage/lcov.info
-          flags: frontend
+          files: ./nextjs/coverage/lcov.info
+          flags: nextjs
           fail_ci_if_error: true
 
       - name: Upload shared coverage

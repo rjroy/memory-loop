@@ -6,8 +6,7 @@
  * - searchContentRest: Full-text content search
  * - getSnippetsRest: Context snippets for a file matching a query
  *
- * Note: WebSocket search handlers have been removed. Search operations
- * are now REST-only via routes/search.ts.
+ * Used by Next.js API routes for search operations.
  */
 
 import { serverLog as log } from "../logger.js";

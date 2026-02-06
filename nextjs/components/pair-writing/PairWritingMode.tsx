@@ -1,0 +1,325 @@
+/**
+ * PairWritingMode Component
+ *
+ * Split-screen container for desktop pair writing with AI assistance.
+ * Left pane: PairWritingEditor for document editing with Quick Actions
+ * Right pane: Discussion component (same session as Think tab)
+ *
+ * Hidden on phones via CSS media query; visible on iPad and desktop (REQ-F-10).
+ *
+ * The right pane IS the Discussion tab: same conversation history, same session,
+ * uses SSE for streaming. Quick Actions and Advisory Actions appear in the
+ * Discussion conversation, and responses stream through the same channel.
+ *
+ * @see .sdd/plans/memory-loop/2026-01-20-pair-writing-mode-plan.md TD-5, TD-6, TD-9
+ * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-10, REQ-F-11, REQ-F-14, REQ-F-30
+ */
+
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useSession } from "../../contexts/SessionContext";
+import { usePairWritingState } from "../../hooks/usePairWritingState";
+import { PairWritingToolbar } from "./PairWritingToolbar";
+import { PairWritingEditor } from "./PairWritingEditor";
+import { Discussion, type DiscussionProps, type SendMessageFn } from "../discussion/Discussion";
+import { ConfirmDialog } from "../shared/ConfirmDialog";
+import type { AdvisoryActionType, QuickActionType } from "../shared/EditorContextMenu";
+import { type SelectionContext } from "../../hooks/useTextSelection";
+import "./PairWritingMode.css";
+
+/**
+ * Props for PairWritingMode component.
+ */
+export interface PairWritingModeProps {
+  /** File path being edited (relative to vault content root) */
+  filePath: string;
+  /** Initial file content */
+  content: string;
+  /** Base URL for vault assets (images) */
+  assetBaseUrl: string;
+  /** Called when exiting Pair Writing mode */
+  onExit: () => void;
+  /** Called to save content to disk */
+  onSave: (content: string) => void;
+  /** Called when Quick Action completes and file should be reloaded */
+  onQuickActionComplete?: (path: string) => void;
+  // Dependency injection for testing (avoids mock.module pollution)
+  /** Editor component to render (defaults to PairWritingEditor) */
+  EditorComponent?: typeof PairWritingEditor;
+  /** Discussion component to render (defaults to Discussion) */
+  DiscussionComponent?: React.ComponentType<DiscussionProps>;
+}
+
+/**
+ * Split-screen Pair Writing Mode for desktop.
+ *
+ * Features:
+ * - 50/50 split layout with editor and Discussion (REQ-F-11)
+ * - Toolbar with Snapshot, Save, Exit buttons (REQ-F-14, REQ-F-23, REQ-F-29)
+ * - Exit confirmation when unsaved manual edits exist (REQ-F-30)
+ * - Hidden on phones via CSS media query; visible on iPad and desktop (REQ-F-10)
+ * - Discussion in right pane is the same session as Think tab
+ *
+ * State management for editor (content, snapshot, unsaved changes) is handled
+ * by usePairWritingState hook. Conversation state is managed by SessionContext
+ * and displayed by the embedded Discussion component.
+ */
+export function PairWritingMode({
+  filePath,
+  content: initialContent,
+  assetBaseUrl: _assetBaseUrl,
+  onExit,
+  onSave,
+  onQuickActionComplete,
+  EditorComponent = PairWritingEditor,
+  DiscussionComponent = Discussion,
+}: PairWritingModeProps): React.ReactNode {
+  void _assetBaseUrl; // Preserved for interface stability; Discussion handles its own asset resolution
+  const { state, actions } = usePairWritingState();
+  const { vault } = useSession();
+
+  // Ref to Discussion's sendChatMessage, wired up via sendMessageRef prop.
+  // Actions route through Discussion's pipeline so messages appear in conversation.
+  const sendMessageRef = useRef<SendMessageFn | null>(null);
+
+  // Get vi mode setting from vault config
+  const viModeEnabled = vault?.viMode ?? false;
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [currentSelection, setCurrentSelection] = useState<SelectionContext | null>(null);
+  const [openMenuTrigger, setOpenMenuTrigger] = useState(0);
+
+  // Track previous initialContent to detect external changes (not local edits)
+  const prevInitialContent = useRef(initialContent);
+
+  // Activate pair writing mode on mount (if not already active)
+  useEffect(() => {
+    if (!state.isActive) {
+      actions.activate(initialContent);
+    }
+  }, [state.isActive, actions, initialContent]);
+
+  // Update content when initialContent prop changes from parent (e.g., after Quick Action reload)
+  // Only triggers when the PARENT changes the content, not when user makes local edits
+  useEffect(() => {
+    if (state.isActive && initialContent !== prevInitialContent.current) {
+      // Content was reloaded from disk (e.g., after Quick Action)
+      actions.reloadContent(initialContent);
+      prevInitialContent.current = initialContent;
+    }
+  }, [initialContent, state.isActive, actions]);
+
+  // Handle selection changes from editor
+  const handleSelectionChange = useCallback((selection: SelectionContext | null) => {
+    setCurrentSelection(selection);
+  }, []);
+
+  // Handle Actions button click (opens context menu in editor)
+  const handleShowActions = useCallback(() => {
+    setOpenMenuTrigger((prev) => prev + 1);
+  }, []);
+
+  // Handle snapshot button (REQ-F-23)
+  // Captures the currently selected text, not the entire file
+  const handleSnapshot = useCallback(() => {
+    if (currentSelection?.text) {
+      actions.takeSnapshot(currentSelection.text);
+    }
+  }, [actions, currentSelection]);
+
+  // Handle save button (REQ-F-29)
+  const handleSave = useCallback(() => {
+    setIsSaving(true);
+    // Use the onSave prop to save content
+    onSave(state.content);
+    // Save completion is tracked via the parent component
+    // For now, assume save is synchronous from our perspective
+    setIsSaving(false);
+    actions.markSaved();
+  }, [onSave, state.content, actions]);
+
+  // Handle exit button (REQ-F-14, REQ-F-30)
+  const handleExitClick = useCallback(() => {
+    if (state.hasUnsavedChanges) {
+      setShowExitConfirm(true);
+    } else {
+      actions.clearAll();
+      onExit();
+    }
+  }, [state.hasUnsavedChanges, actions, onExit]);
+
+  // Handle vi mode :q command with unsaved changes
+  // Shows the exit confirmation dialog just like clicking Exit button
+  const handleViQuitWithUnsaved = useCallback(() => {
+    if (state.hasUnsavedChanges) {
+      setShowExitConfirm(true);
+    } else {
+      // No unsaved changes, exit directly
+      actions.clearAll();
+      onExit();
+    }
+  }, [state.hasUnsavedChanges, actions, onExit]);
+
+  // Handle vi mode :q! command (force quit without saving)
+  const handleViForceExit = useCallback(() => {
+    actions.clearAll();
+    onExit();
+  }, [actions, onExit]);
+
+  // Confirm exit with unsaved changes
+  const handleConfirmExit = useCallback(() => {
+    setShowExitConfirm(false);
+    actions.clearAll();
+    onExit();
+  }, [actions, onExit]);
+
+  // Cancel exit
+  const handleCancelExit = useCallback(() => {
+    setShowExitConfirm(false);
+  }, []);
+
+  // Handle content change from editor
+  const handleContentChange = useCallback(
+    (newContent: string) => {
+      actions.setContent(newContent);
+    },
+    [actions]
+  );
+
+  // Handle Quick Action completion (reload content from disk)
+  const handleQuickActionComplete = useCallback(
+    (path: string) => {
+      // The file was updated by Claude's Edit tool
+      // Parent component should reload the file
+      onQuickActionComplete?.(path);
+    },
+    [onQuickActionComplete]
+  );
+
+  // Handle Quick Action from editor
+  // Sends formatted message via SSE chat to trigger AI response
+  const handleQuickAction = useCallback(
+    (action: QuickActionType, selection: SelectionContext) => {
+      // Format the action as a chat message the AI can understand
+      const actionLabel = action.charAt(0).toUpperCase() + action.slice(1);
+      const message = `[Quick Action: ${actionLabel}]
+
+File: ${filePath}
+Lines ${selection.startLine}-${selection.endLine} of ${selection.totalLines}
+
+Selected text:
+\`\`\`
+${selection.text}
+\`\`\`
+
+Context before:
+\`\`\`
+${selection.contextBefore}
+\`\`\`
+
+Context after:
+\`\`\`
+${selection.contextAfter}
+\`\`\`
+
+Please ${action} the selected text.`;
+
+      // Send through Discussion's chat pipeline so it appears in conversation
+      void sendMessageRef.current?.(message);
+    },
+    [filePath]
+  );
+
+  // Handle Advisory Action from editor (REQ-F-15)
+  // Sends formatted message via SSE chat to trigger AI response
+  const handleAdvisoryAction = useCallback(
+    (action: AdvisoryActionType, selection: SelectionContext) => {
+      // Format the action as a chat message the AI can understand
+      const actionLabel = action.charAt(0).toUpperCase() + action.slice(1);
+      const snapshotContext = action === "compare" && state.snapshot
+        ? `\n\nSnapshot for comparison:\n\`\`\`\n${state.snapshot}\n\`\`\``
+        : "";
+
+      const message = `[Advisory Action: ${actionLabel}]
+
+File: ${filePath}
+Lines ${selection.startLine}-${selection.endLine} of ${selection.totalLines}
+
+Selected text:
+\`\`\`
+${selection.text}
+\`\`\`
+
+Context before:
+\`\`\`
+${selection.contextBefore}
+\`\`\`
+
+Context after:
+\`\`\`
+${selection.contextAfter}
+\`\`\`${snapshotContext}
+
+Please ${action === "validate" ? "validate" : action === "critique" ? "critique" : action === "compare" ? "compare" : "discuss"} the selected text.`;
+
+      // Send through Discussion's chat pipeline so it appears in conversation
+      void sendMessageRef.current?.(message);
+    },
+    [filePath, state.snapshot]
+  );
+
+  return (
+    <div className="pair-writing-mode">
+      {/* Toolbar (REQ-F-14) */}
+      <PairWritingToolbar
+        hasUnsavedChanges={state.hasUnsavedChanges}
+        hasSnapshot={state.snapshot !== null}
+        hasSelection={currentSelection !== null}
+        isSaving={isSaving}
+        onSnapshot={handleSnapshot}
+        onSave={handleSave}
+        onExit={handleExitClick}
+        onShowActions={handleShowActions}
+        filePath={filePath}
+        snapshotContent={state.snapshot ?? undefined}
+      />
+
+      {/* Split-screen content (REQ-F-11, TD-6) */}
+      <div className="pair-writing-mode__content">
+        {/* Left pane: Editor (REQ-F-12) */}
+        <div className="pair-writing-mode__editor-pane">
+          <EditorComponent
+            initialContent={initialContent}
+            filePath={filePath}
+            onContentChange={handleContentChange}
+            onQuickActionComplete={handleQuickActionComplete}
+            onQuickAction={handleQuickAction}
+            onAdvisoryAction={handleAdvisoryAction}
+            onSelectionChange={handleSelectionChange}
+            hasSnapshot={state.snapshot !== null}
+            snapshotContent={state.snapshot ?? undefined}
+            openMenuTrigger={openMenuTrigger}
+            viModeEnabled={viModeEnabled}
+            onSave={handleSave}
+            onExit={handleViForceExit}
+            onQuitWithUnsaved={handleViQuitWithUnsaved}
+          />
+        </div>
+
+        {/* Right pane: Discussion (same session as Think tab) */}
+        <div className="pair-writing-mode__conversation-pane">
+          <DiscussionComponent sendMessageRef={sendMessageRef} />
+        </div>
+      </div>
+
+      {/* Exit confirmation dialog (REQ-F-30) */}
+      <ConfirmDialog
+        isOpen={showExitConfirm}
+        title="Unsaved Changes"
+        message="You have unsaved manual edits. Are you sure you want to exit Pair Writing mode? Your changes will be lost."
+        confirmLabel="Exit Without Saving"
+        onConfirm={handleConfirmExit}
+        onCancel={handleCancelExit}
+      />
+    </div>
+  );
+}

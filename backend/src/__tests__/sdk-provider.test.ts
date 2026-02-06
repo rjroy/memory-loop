@@ -57,9 +57,9 @@ describe("getSdkQuery", () => {
 });
 
 describe("initializeSdkProvider", () => {
-  test("throws if called twice", () => {
+  test("is idempotent (safe to call multiple times)", () => {
     initializeSdkProvider();
-    expect(() => initializeSdkProvider()).toThrow("already initialized");
+    expect(() => initializeSdkProvider()).not.toThrow();
   });
 
   test("allows getSdkQuery after initialization", () => {

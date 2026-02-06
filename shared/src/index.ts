@@ -42,12 +42,7 @@ export {
   FileSearchResultSchema,
   ContentSearchResultSchema,
   ContextSnippetSchema,
-  // Health schemas
-  HealthSeveritySchema,
-  HealthCategorySchema,
-  HealthIssueSchema,
-  HealthReportMessageSchema,
-  DismissHealthIssueMessageSchema,
+
   // Meeting state schema (used by REST API)
   MeetingStateSchema,
   // Spaced repetition card schemas (used by REST API)
@@ -110,12 +105,7 @@ export type {
   FileSearchResult,
   ContentSearchResult,
   ContextSnippet,
-  // Health types
-  HealthSeverity,
-  HealthCategory,
-  HealthIssue,
-  HealthReportMessage,
-  DismissHealthIssueMessage,
+
   // Meeting types (used by REST API)
   MeetingState,
   // Spaced repetition card types (used by REST API)

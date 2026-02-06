@@ -2,11 +2,8 @@
  * Meeting Store
  *
  * Global in-memory storage for active meetings, keyed by vault ID.
- * This allows meeting state to persist across WebSocket reconnections.
- *
- * When a user switches tabs, their WebSocket connection may close and reopen.
- * Without global storage, the meeting state would be lost with the connection.
- * This store maintains meeting state per-vault so it can be restored.
+ * This allows meeting state to persist across requests.
+ * Meeting state is maintained per-vault so it survives connection interruptions.
  */
 
 import type { ActiveMeeting } from "./meeting-capture.js";

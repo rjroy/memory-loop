@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-02-06
+
+### Added
+
+**Vi Mode for Pair Writing**
+- Vi-style modal editing with Normal, Insert, and Visual modes (#433)
+- Word motions (w, b, e) and operators (d, c, y) for efficient text navigation (#438)
+- Typing allowed in Discussion input during AI response (#436)
+
+**Card Generator Settings**
+- Configurable card generation limits and manual trigger from Settings tab (#426)
+- Card deduplication during discovery prevents duplicate flashcards (#441)
+
+**Daily Prep System**
+- Morning commitment planning flow for structured daily preparation (#443)
+- Evening closure flow added to daily debrief command (#447)
+
+**Discussion Input**
+- Backslash line continuation for multi-line input without submitting (#456)
+
+### Changed
+
+**Next.js Migration**
+- Frontend migrated from Vite+Hono SPA to Next.js 15 App Router (#458)
+- Backend and shared workspaces collapsed into single Next.js application (#461)
+- WebSocket replaced with SSE for AI chat streaming (#452)
+- REST API routes replace WebSocket for stateless operations
+- Technical stack: React 19 + Next.js replaces React 19 + Vite + Hono
+
+### Fixed
+
+- Card generation quality improved by switching from Haiku to Sonnet (#429)
+- Card generation requirements clarified for question criteria (#427)
+- AskUserQuestion dialog sizing corrected for modal vs minimized states (#444)
+- AskUserQuestion header character limit removed (#450)
+- Permission and AskUserQuestion arbitrary timeouts removed (#451)
+- Server-owned commands and skills always overwritten during vault setup (#446)
+- Daily-prep frontmatter template inlined to prevent save failures (#454)
+- webpackIgnore replaced with serverExternalPackages for scheduler imports (#459)
+- Flaky test fixed and test output cleaned up (#463)
+
+### Documentation
+
+- All documentation updated for Next.js/SSE migration (#460)
+- Architecture specs excavated and aligned (#430)
+- Service operation section added to CLAUDE.md (#442)
+- Lore documents updated with YAML frontmatter (#437)
+
 ## [1.4.0] - 2026-01-26
 
 ### Added

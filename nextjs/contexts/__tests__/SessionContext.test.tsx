@@ -347,6 +347,64 @@ describe("SessionContext", () => {
       expect(result.current.session.messages[1].toolInvocations![1].output).toBe("Success");
     });
 
+    it("does not overwrite locally-added messages on session_ready resume", () => {
+      const { result } = useTestSessionWithHandler();
+
+      // Simulate user sending a message (adds to local state immediately)
+      act(() => {
+        result.current.session.addMessage({ role: "user", content: "new message" });
+      });
+
+      expect(result.current.session.messages).toHaveLength(1);
+      expect(result.current.session.messages[0].content).toBe("new message");
+
+      // Backend responds with session_ready containing stale history
+      // (doesn't include the just-sent user message)
+      const serverMessages = [
+        { id: "msg-old-1", role: "user" as const, content: "old message", timestamp: "2025-01-01T12:00:00Z" },
+        { id: "msg-old-2", role: "assistant" as const, content: "old reply", timestamp: "2025-01-01T12:00:01Z" },
+      ];
+
+      act(() => {
+        result.current.handler({
+          type: "session_ready",
+          sessionId: "resumed-session",
+          vaultId: "vault-1",
+          messages: serverMessages,
+        });
+      });
+
+      // Local user message should be preserved, not replaced by server history
+      expect(result.current.session.messages).toHaveLength(1);
+      expect(result.current.session.messages[0].content).toBe("new message");
+    });
+
+    it("restores server history when local messages are empty (initial resume)", () => {
+      const { result } = useTestSessionWithHandler();
+
+      // No local messages yet
+      expect(result.current.session.messages).toHaveLength(0);
+
+      const serverMessages = [
+        { id: "msg-1", role: "user" as const, content: "previous message", timestamp: "2025-01-01T12:00:00Z" },
+        { id: "msg-2", role: "assistant" as const, content: "previous reply", timestamp: "2025-01-01T12:00:01Z" },
+      ];
+
+      act(() => {
+        result.current.handler({
+          type: "session_ready",
+          sessionId: "resumed-session",
+          vaultId: "vault-1",
+          messages: serverMessages,
+        });
+      });
+
+      // Server history should be applied
+      expect(result.current.session.messages).toHaveLength(2);
+      expect(result.current.session.messages[0].content).toBe("previous message");
+      expect(result.current.session.messages[1].content).toBe("previous reply");
+    });
+
     it("handles streaming response lifecycle", () => {
       const { result } = useTestSessionWithHandler();
 

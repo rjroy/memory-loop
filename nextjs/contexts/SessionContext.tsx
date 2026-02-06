@@ -525,7 +525,11 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           if (message.createdAt) {
             setSessionStartTime(new Date(message.createdAt));
           }
-          if (message.messages && message.messages.length > 0) {
+          // Only restore server history when local state is empty (fresh
+          // session load). If messages already exist locally, the user just
+          // sent one and the server history is stale (it doesn't include
+          // the in-flight user message yet). Replacing would wipe it out.
+          if (message.messages && message.messages.length > 0 && messagesRef.current.length === 0) {
             setMessages(message.messages);
           }
           setSlashCommands(message.slashCommands ?? []);

@@ -124,7 +124,7 @@ Uses Bun's built-in test runner. Tests are colocated under `__tests__/` director
 
 ```bash
 bun run --cwd nextjs test lib/__tests__/specific-file.test.ts  # Single file
-./git-hooks/pre-commit.sh  # Full suite (runs sequentially)
+./.git-hooks/pre-commit.sh  # Full suite (runs sequentially)
 ```
 
 ### Constraints
@@ -185,4 +185,4 @@ When making changes that affect user-facing behavior, update the relevant docs. 
 ## Critical Lessons
 
 - Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: schema definition in `lib/schemas/`, config loading in `lib/vault-config.ts`, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
-- Validate the dev server, not just the production build. Turbopack (dev) and webpack (build) resolve modules differently. `serverExternalPackages` works for webpack but not turbopack. `webpackIgnore` comments on dynamic imports are the correct fix for instrumentation files that import modules with Node.js built-in dependencies.
+- Validate the dev server, not just the production build. Turbopack (dev) and webpack (build) resolve modules differently. `serverExternalPackages` in next.config.ts marks packages (like `cron`) as external so webpack leaves them as runtime requires. Do not use `webpackIgnore` on dynamic imports in instrumentation files, as it prevents webpack from resolving `@/` path aliases, causing runtime failures.

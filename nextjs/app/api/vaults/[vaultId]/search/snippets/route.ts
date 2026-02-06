@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return jsonError("VALIDATION_ERROR", "Query parameter 'q' is required");
   }
 
-  const snippets = await getSnippetsRest(vault.id, vault.path, path, query);
+  const snippets = await getSnippetsRest(vault.id, vault.contentRoot, path, query);
 
   return NextResponse.json({
     path,

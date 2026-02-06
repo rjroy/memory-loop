@@ -44,7 +44,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     limit = parsed;
   }
 
-  const result = await searchContentRest(vault.id, vault.path, query, limit);
+  const result = await searchContentRest(vault.id, vault.contentRoot, query, limit);
 
   return NextResponse.json({
     results: result.results,

@@ -11,6 +11,10 @@
 #
 # Logs:
 #   journalctl --user -u memory-loop -f
+#
+# TLS:
+#   Next.js does not handle TLS directly. Use a reverse proxy (nginx, caddy)
+#   for HTTPS termination. See docs/deployment/https-setup.md.
 
 [Unit]
 Description=Memory Loop - Obsidian vault interface
@@ -30,14 +34,10 @@ Restart=on-failure
 RestartSec=5
 
 # Environment - edit these for your setup
+Environment=NODE_ENV=production
 Environment=VAULTS_DIR=/path/to/your/vaults
 Environment=PORT=3000
-Environment=HOST=0.0.0.0
-
-# HTTPS/TLS - uncomment and set paths to enable HTTPS
-#Environment=TLS_CERT=/path/to/certificate.pem
-#Environment=TLS_KEY=/path/to/private-key.pem
-#Environment=TLS_PASSPHRASE=your-passphrase-if-needed
+Environment=HOSTNAME=0.0.0.0
 
 # Uncomment if bun is not in default PATH
 #Environment=PATH=/home/YOUR_USER/.bun/bin:/usr/local/bin:/usr/bin:/bin

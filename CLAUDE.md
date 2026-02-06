@@ -82,7 +82,7 @@ Backend is a library consumed by Next.js API routes. It contains domain logic bu
 ```bash
 VAULTS_DIR=/path/to/vaults  # Directory containing vaults (default: ./vaults)
 PORT=3000                   # Server port
-HOST=0.0.0.0                # Bind address
+HOSTNAME=0.0.0.0            # Bind address (Next.js uses HOSTNAME, not HOST)
 MOCK_SDK=true               # Disable real Anthropic API calls for testing
 LOG_LEVEL=silent            # Suppress logs (useful in tests)
 ```

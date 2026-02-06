@@ -17,11 +17,10 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useSession } from "../../contexts/SessionContext";
-import { useChat } from "../../hooks/useChat";
 import { usePairWritingState } from "../../hooks/usePairWritingState";
 import { PairWritingToolbar } from "./PairWritingToolbar";
 import { PairWritingEditor } from "./PairWritingEditor";
-import { Discussion } from "../discussion/Discussion";
+import { Discussion, type DiscussionProps, type SendMessageFn } from "../discussion/Discussion";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
 import type { AdvisoryActionType, QuickActionType } from "../shared/EditorContextMenu";
 import { type SelectionContext } from "../../hooks/useTextSelection";
@@ -47,7 +46,7 @@ export interface PairWritingModeProps {
   /** Editor component to render (defaults to PairWritingEditor) */
   EditorComponent?: typeof PairWritingEditor;
   /** Discussion component to render (defaults to Discussion) */
-  DiscussionComponent?: typeof Discussion;
+  DiscussionComponent?: React.ComponentType<DiscussionProps>;
 }
 
 /**
@@ -78,8 +77,9 @@ export function PairWritingMode({
   const { state, actions } = usePairWritingState();
   const { vault } = useSession();
 
-  // Use chat hook for sending quick/advisory actions via SSE
-  const { sendMessage: sendChatMessage } = useChat(vault);
+  // Ref to Discussion's sendChatMessage, wired up via sendMessageRef prop.
+  // Actions route through Discussion's pipeline so messages appear in conversation.
+  const sendMessageRef = useRef<SendMessageFn | null>(null);
 
   // Get vi mode setting from vault config
   const viModeEnabled = vault?.viMode ?? false;
@@ -223,10 +223,10 @@ ${selection.contextAfter}
 
 Please ${action} the selected text.`;
 
-      // Send via SSE chat
-      void sendChatMessage(message);
+      // Send through Discussion's chat pipeline so it appears in conversation
+      void sendMessageRef.current?.(message);
     },
-    [sendChatMessage, filePath]
+    [filePath]
   );
 
   // Handle Advisory Action from editor (REQ-F-15)
@@ -261,10 +261,10 @@ ${selection.contextAfter}
 
 Please ${action === "validate" ? "validate" : action === "critique" ? "critique" : action === "compare" ? "compare" : "discuss"} the selected text.`;
 
-      // Send via SSE chat
-      void sendChatMessage(message);
+      // Send through Discussion's chat pipeline so it appears in conversation
+      void sendMessageRef.current?.(message);
     },
-    [sendChatMessage, filePath, state.snapshot]
+    [filePath, state.snapshot]
   );
 
   return (
@@ -307,7 +307,7 @@ Please ${action === "validate" ? "validate" : action === "critique" ? "critique"
 
         {/* Right pane: Discussion (same session as Think tab) */}
         <div className="pair-writing-mode__conversation-pane">
-          <DiscussionComponent />
+          <DiscussionComponent sendMessageRef={sendMessageRef} />
         </div>
       </div>
 

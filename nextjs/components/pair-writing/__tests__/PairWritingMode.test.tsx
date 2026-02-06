@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import { PairWritingMode } from "../PairWritingMode";
 import { SessionProvider } from "../../../contexts/SessionContext";
 import type { PairWritingEditorProps } from "../PairWritingEditor";
+import type { DiscussionProps } from "../../discussion/Discussion";
 import type { SelectionContext } from "../../../hooks/useTextSelection";
 
 // Mock selection used across mock editors
@@ -33,7 +34,24 @@ function MockEditor(props: PairWritingEditorProps) {
   return <div data-testid="pair-writing-editor">PairWritingEditor</div>;
 }
 
-function MockDiscussion() {
+// Track messages sent through the sendMessageRef pipeline
+let mockSentMessages: string[] = [];
+
+function MockDiscussion({ sendMessageRef }: DiscussionProps) {
+  // Wire up the ref so PairWritingMode can send messages through it
+  useEffect(() => {
+    if (sendMessageRef) {
+      sendMessageRef.current = async (text: string) => {
+        mockSentMessages.push(text);
+      };
+    }
+    return () => {
+      if (sendMessageRef) {
+        sendMessageRef.current = null;
+      }
+    };
+  }, [sendMessageRef]);
+
   return (
     <div data-testid="discussion" aria-label="Pair Writing conversation">
       <div className="pair-writing-conversation__empty">
@@ -86,7 +104,7 @@ function MockEditorWithCallbacks(props: PairWritingEditorProps) {
   );
 }
 
-// Mock fetch for useChat (PairWritingMode now uses useChat internally)
+// Mock fetch for session initialization (VaultSelect still triggers fetches)
 const mockFetch = mock(() => Promise.resolve(new Response()));
 const originalFetch = globalThis.fetch;
 
@@ -97,7 +115,7 @@ function createSSEResponse(events: Array<{ type: string; [key: string]: unknown 
   });
 }
 
-// Test vault for useChat to work (PairWritingMode gets vault from SessionContext)
+// Test vault for SessionContext (PairWritingMode gets vault from SessionContext)
 const testVault: import("@memory-loop/shared").VaultInfo = {
   id: "test-vault",
   name: "Test Vault",
@@ -126,6 +144,7 @@ beforeEach(() => {
   localStorage.clear();
   // Pre-select vault via localStorage so SessionProvider picks it up
   localStorage.setItem("memory-loop:vaultId", "test-vault");
+  mockSentMessages = [];
   mockFetch.mockReset();
   // Default: return an SSE response that completes immediately
   mockFetch.mockImplementation(() =>
@@ -352,7 +371,7 @@ describe("Quick Action handling", () => {
     cleanup();
   });
 
-  it("sends chat message via fetch when Quick Action is triggered", async () => {
+  it("sends message through Discussion's sendMessageRef when Quick Action is triggered", async () => {
     render(
       <PairWritingMode {...propsWithCallbacks} />,
       { wrapper: TestWrapper }
@@ -361,17 +380,13 @@ describe("Quick Action handling", () => {
     // Trigger the quick action via mock editor
     fireEvent.click(screen.getByTestId("trigger-quick-action"));
 
-    // useChat sends via fetch POST /api/chat
+    // Message should route through Discussion's sendMessageRef
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalled();
+      expect(mockSentMessages.length).toBe(1);
     });
 
-    // Verify the message was sent to the chat endpoint
-    const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/api/chat");
-    const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
-    expect(body.prompt).toContain("Quick Action: Tighten");
-    expect(body.prompt).toContain("test selection");
+    expect(mockSentMessages[0]).toContain("Quick Action: Tighten");
+    expect(mockSentMessages[0]).toContain("test selection");
   });
 
   it("sends formatted Quick Action with selection context", async () => {
@@ -383,16 +398,14 @@ describe("Quick Action handling", () => {
     fireEvent.click(screen.getByTestId("trigger-quick-action"));
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalled();
+      expect(mockSentMessages.length).toBe(1);
     });
 
-    const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
-    const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
-    const prompt = body.prompt as string;
-    expect(prompt).toContain("File: notes/test-document.md");
-    expect(prompt).toContain("Lines 5-5 of 10");
-    expect(prompt).toContain("before ");
-    expect(prompt).toContain(" after");
+    const message = mockSentMessages[0];
+    expect(message).toContain("File: notes/test-document.md");
+    expect(message).toContain("Lines 5-5 of 10");
+    expect(message).toContain("before ");
+    expect(message).toContain(" after");
   });
 });
 
@@ -411,7 +424,7 @@ describe("Advisory Action handling", () => {
     cleanup();
   });
 
-  it("sends advisory chat message via fetch when Advisory Action is triggered", async () => {
+  it("sends message through Discussion's sendMessageRef when Advisory Action is triggered", async () => {
     render(
       <PairWritingMode {...propsWithCallbacks} />,
       { wrapper: TestWrapper }
@@ -420,16 +433,13 @@ describe("Advisory Action handling", () => {
     // Trigger the advisory action via mock editor
     fireEvent.click(screen.getByTestId("trigger-advisory-action"));
 
-    // useChat sends via fetch POST /api/chat
+    // Message should route through Discussion's sendMessageRef
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalled();
+      expect(mockSentMessages.length).toBe(1);
     });
 
-    const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/api/chat");
-    const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
-    expect(body.prompt).toContain("Advisory Action: Validate");
-    expect(body.prompt).toContain("test selection");
+    expect(mockSentMessages[0]).toContain("Advisory Action: Validate");
+    expect(mockSentMessages[0]).toContain("test selection");
   });
 
   it("sends formatted Advisory Action with selection context", async () => {
@@ -441,15 +451,13 @@ describe("Advisory Action handling", () => {
     fireEvent.click(screen.getByTestId("trigger-advisory-action"));
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalled();
+      expect(mockSentMessages.length).toBe(1);
     });
 
-    const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
-    const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
-    const prompt = body.prompt as string;
-    expect(prompt).toContain("File: notes/test-document.md");
-    expect(prompt).toContain("Lines 5-5 of 10");
-    expect(prompt).toContain("validate");
+    const message = mockSentMessages[0];
+    expect(message).toContain("File: notes/test-document.md");
+    expect(message).toContain("Lines 5-5 of 10");
+    expect(message).toContain("validate");
   });
 });
 

@@ -1,82 +1,91 @@
-# Plan: Remove Hono and WebSocket
+# Plan: Fix PairWriting Actions Not Appearing in Discussion
 
-## Context
+## Bug
 
-The migration from Hono to Next.js is functionally complete. The frontend uses REST+SSE exclusively (pair writing uses `sendChatMessage` over SSE, not WebSocket). The entire Hono/WebSocket layer is dead code: nothing imports it, nothing connects to it.
+When a user triggers a Quick Action or Advisory Action in PairWriting mode, the message doesn't appear in the Discussion panel, and neither does the AI response. The session gets created but nothing is visible.
 
-## What gets deleted
+## Root Cause
 
-### WebSocket layer
-- `backend/src/websocket-handler.ts` (~839 lines, message router)
-- `backend/src/__tests__/websocket-handler.test.ts`
+PairWritingMode and Discussion each create their own `useChat(vault)` instance. Two separate SSE connections, two separate session IDs.
 
-### Hono server entry point
-- `backend/src/index.ts` (Bun.serve, scheduler startup - schedulers already run via Next.js instrumentation)
-- `backend/src/server.ts` (Hono app, TLS config, WebSocket upgrade, server config)
-- `backend/src/__tests__/server.test.ts`
+- **PairWritingMode** (line 82): `useChat(vault)` with NO `onEvent` handler. Responses go nowhere.
+- **Discussion** (line 145): `useChat(vault, { onEvent: handleMessage })` with full event pipeline.
 
-### Hono routes (entire directory, all replaced by Next.js API routes)
-- `backend/src/routes/` (11 files: index, capture, cards, config, daily-prep, files, home, meetings, memory, search, sessions)
+When PairWritingMode sends a message, it also never calls `addMessage()`, so the user message doesn't appear in SessionContext either.
 
-### Hono middleware (entire directory, unused by Next.js)
-- `backend/src/middleware/vault-resolution.ts`
-- `backend/src/middleware/error-handler.ts`
-- `backend/src/__tests__/error-handler.test.ts`
+## Fix: `sendMessageRef` prop on Discussion
 
-### WebSocket-only handlers
-- `backend/src/handlers/pair-writing-handlers.ts` (frontend sends pair writing via SSE chat, not WebSocket)
-- `backend/src/handlers/memory-handlers.ts` (duplicated by `nextjs/app/api/config/extraction-prompt/route.ts`)
-- `backend/src/handlers/card-generator-handlers.ts` (duplicated by `nextjs/app/api/config/card-generator/route.ts`)
-- `backend/src/handlers/types.ts` (WebSocket types: `WebSocketLike`, `ConnectionState`, `HandlerContext`, etc.)
-- `backend/src/handlers/__tests__/card-generator-handlers.test.ts`
-- `backend/src/handlers/__tests__/pair-writing-handlers.test.ts`
+Add an optional ref prop to Discussion. PairWritingMode passes a ref, Discussion assigns its `sendChatMessage` to it. PairWritingMode routes actions through the ref instead of its own useChat.
 
-**Total: ~25 files deleted**
+This works because Discussion's `sendChatMessage` already calls both `addMessage()` AND `chat.sendMessage()`, so user message + SSE response both flow through Discussion's pipeline.
 
-## What gets modified
+## Files Modified
 
-### `backend/src/handlers/index.ts`
-Strip to only export what Next.js uses:
-- Keep: search-handlers exports (`searchFilesRest`, `searchContentRest`, `getSnippetsRest`)
-- Keep: config-handlers exports (`handleUpdateVaultConfig`, `handleSetupVault`, `handleCreateVault`, pinned assets, error types)
-- Remove: all WebSocket type exports, pair-writing handler exports, memory handler exports
+### 1. `nextjs/components/discussion/Discussion.tsx`
 
-### `backend/package.json`
-- Remove `"hono": "^4.6.0"` from dependencies
-- Remove `"."` export entry (pointed to deleted `index.ts`)
-- Remove `"./middleware"` export entry
-- Remove `"./health-collector"` export entry (unused)
-- Remove/update `dev` and `start` scripts (they launched the Hono server)
+- Add `SendMessageFn` type and `DiscussionProps` interface with optional `sendMessageRef`
+- Change signature from `Discussion()` to `Discussion({ sendMessageRef }: DiscussionProps)`
+- Add `useEffect` after `sendChatMessage` definition (after line 159) to assign/cleanup the ref:
 
-### `CLAUDE.md`
-- Remove "the Hono server in server.ts is legacy, retained only for its WebSocket handler" note
-- Remove WebSocket references from architecture description
+```typescript
+useEffect(() => {
+  if (sendMessageRef) {
+    sendMessageRef.current = sendChatMessage;
+  }
+  return () => {
+    if (sendMessageRef) {
+      sendMessageRef.current = null;
+    }
+  };
+}, [sendMessageRef, sendChatMessage]);
+```
 
-## What is NOT touched
+### 2. `nextjs/components/discussion/index.ts`
 
-All domain logic modules stay exactly as they are. Next.js imports these directly:
-- vault-manager, session-manager, file-browser, note-capture
-- streaming/ (ActiveSessionController, SessionStreamer, types)
-- sdk-provider, vault-config, search modules
-- spaced-repetition/, extraction/
-- meeting-capture, meeting-store, task-manager, etc.
-- handlers/search-handlers.ts, handlers/config-handlers.ts
+- Export `type DiscussionProps` and `type SendMessageFn` from Discussion
 
-## Execution order
+### 3. `nextjs/components/pair-writing/PairWritingMode.tsx`
 
-1. Delete all files listed above
-2. Update `handlers/index.ts` (remove dead exports)
-3. Update `backend/package.json` (remove hono dep, dead exports, dead scripts)
-4. Run `bun install` to update lockfile
-5. Update `CLAUDE.md`
-6. Run full test suite to verify nothing breaks
-7. Commit
+- Remove `import { useChat }` (line 20) and the `useChat(vault)` call (line 82)
+- Import `type { SendMessageFn }` from Discussion
+- Create ref: `const sendMessageRef = useRef<SendMessageFn | null>(null)`
+- In `handleQuickAction` and `handleAdvisoryAction`, replace `void sendChatMessage(message)` with `void sendMessageRef.current?.(message)`
+- Remove `sendChatMessage` from dependency arrays of both callbacks
+- Pass ref to Discussion: `<DiscussionComponent sendMessageRef={sendMessageRef} />`
+- Update `DiscussionComponent` prop type from `typeof Discussion` to `React.ComponentType<DiscussionProps>`
+
+### 4. `nextjs/components/pair-writing/__tests__/PairWritingMode.test.tsx`
+
+- Update `MockDiscussion` to accept and wire up `sendMessageRef` prop
+- Add `mockSentMessages` array to track messages, reset in `beforeEach`
+- Change Quick/Advisory action tests from checking `mockFetch.mock.calls` to checking `mockSentMessages` content
+- The fetch mock setup can stay (VaultSelect may still trigger fetches) but action assertions change
+
+### 5. `nextjs/components/discussion/__tests__/Discussion.test.tsx`
+
+Add test block for `sendMessageRef`:
+- Ref gets assigned after mount
+- Message sent through ref appears in conversation
+- Ref nulled on unmount
+- Standalone mode (no ref) still works
+
+## Edge Cases
+
+**Discussion not mounted yet**: `sendMessageRef.current` starts null. Action handlers guard with `?.` operator. In practice impossible because Discussion is a child of PairWritingMode and the user must interact with the editor before any action fires.
+
+**`sendChatMessage` changes across renders**: The `useEffect` re-assigns the ref whenever `sendChatMessage` changes. Ref always points to latest version.
+
+## Execution Order
+
+1. Update Discussion.tsx (add props, ref wiring)
+2. Update Discussion barrel export
+3. Update PairWritingMode.tsx (remove useChat, add ref, route through it)
+4. Update PairWritingMode tests
+5. Add Discussion sendMessageRef tests
+6. Run full test suite
 
 ## Verification
 
-- `bun run --cwd backend typecheck` passes (no dangling imports)
-- `bun run --cwd backend test` passes (deleted tests won't run, remaining tests unaffected)
-- `bun run --cwd nextjs build` passes (no imports from deleted modules)
-- `bun run test` from root passes
-- `grep -r "hono" backend/src/` returns nothing
-- `grep -r "websocket\|WebSocket" backend/src/` returns nothing (except possibly comments)
+- `bun run --cwd nextjs test` passes
+- Quick/Advisory action messages appear in Discussion conversation (verified by test)
+- Discussion works standalone without ref (verified by existing tests still passing)

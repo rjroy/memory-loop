@@ -7,8 +7,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
-import React, { useEffect, type ReactNode } from "react";
-import { Discussion } from "../Discussion";
+import React, { useEffect, createRef, type ReactNode } from "react";
+import { Discussion, type SendMessageFn } from "../Discussion";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
 import type { VaultInfo, SlashCommand } from "@memory-loop/shared";
 
@@ -793,6 +793,84 @@ describe("Discussion", () => {
 
       // Should not have sent any fetch requests
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("sendMessageRef", () => {
+  it("assigns sendChatMessage to the ref after mount", async () => {
+    const ref = createRef<SendMessageFn | null>() as React.MutableRefObject<SendMessageFn | null>;
+    ref.current = null;
+
+    render(<Discussion sendMessageRef={ref} />, { wrapper: TestWrapper });
+
+    await waitFor(() => {
+      expect(ref.current).not.toBeNull();
+      expect(typeof ref.current).toBe("function");
+    });
+  });
+
+  it("message sent through ref appears in conversation", async () => {
+    mockFetchWithResponse("AI response");
+
+    const ref = createRef<SendMessageFn | null>() as React.MutableRefObject<SendMessageFn | null>;
+    ref.current = null;
+
+    render(<Discussion sendMessageRef={ref} />, { wrapper: TestWrapper });
+
+    // Wait for ref to be assigned
+    await waitFor(() => {
+      expect(ref.current).not.toBeNull();
+    });
+
+    // Send message through the ref
+    await act(async () => {
+      await ref.current!("Hello from PairWritingMode");
+    });
+
+    // User message should appear in conversation
+    await waitFor(() => {
+      expect(screen.getByText("Hello from PairWritingMode")).toBeDefined();
+    });
+
+    // AI response should also appear (streamed via SSE)
+    await waitFor(() => {
+      expect(screen.getByText("AI response")).toBeDefined();
+    });
+  });
+
+  it("nulls the ref on unmount", async () => {
+    const ref = createRef<SendMessageFn | null>() as React.MutableRefObject<SendMessageFn | null>;
+    ref.current = null;
+
+    const { unmount } = render(<Discussion sendMessageRef={ref} />, { wrapper: TestWrapper });
+
+    await waitFor(() => {
+      expect(ref.current).not.toBeNull();
+    });
+
+    unmount();
+
+    expect(ref.current).toBeNull();
+  });
+
+  it("works standalone without ref (existing behavior unchanged)", async () => {
+    mockFetchWithResponse("Response text");
+
+    render(<Discussion />, { wrapper: TestWrapper });
+
+    const input = screen.getByRole("textbox");
+    const button = screen.getByRole("button", { name: /send/i });
+
+    fireEvent.change(input, { target: { value: "Standalone message" } });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByText("Standalone message")).toBeDefined();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Response text")).toBeDefined();
     });
   });
 });

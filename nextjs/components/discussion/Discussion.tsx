@@ -5,7 +5,7 @@
  * Features message history, streaming responses, and slash command detection.
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, type MutableRefObject } from "react";
 import type { ServerMessage, SlashCommand } from "@memory-loop/shared";
 import { useChat } from "../../hooks/useChat";
 import { useSession, useServerMessageHandler } from "../../contexts/SessionContext";
@@ -19,6 +19,19 @@ import "./Discussion.css";
 
 const STORAGE_KEY = "memory-loop-discussion-draft";
 
+/** Function signature for sending a chat message through Discussion's pipeline. */
+export type SendMessageFn = (text: string) => Promise<void>;
+
+/** Props for the Discussion component. */
+export interface DiscussionProps {
+  /**
+   * Optional ref that receives Discussion's sendChatMessage function.
+   * Used by PairWritingMode to route Quick/Advisory actions through
+   * Discussion's chat pipeline instead of creating a separate useChat instance.
+   */
+  sendMessageRef?: MutableRefObject<SendMessageFn | null>;
+}
+
 /**
  * Chat interface for vault-contextualized AI discussions.
  *
@@ -31,7 +44,7 @@ const STORAGE_KEY = "memory-loop-discussion-draft";
  *
  * Communication uses SSE via the useChat hook.
  */
-export function Discussion(): React.ReactNode {
+export function Discussion({ sendMessageRef }: DiscussionProps = {}): React.ReactNode {
   const [input, setInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -157,6 +170,18 @@ export function Discussion(): React.ReactNode {
     },
     [chat, addMessage]
   );
+
+  // Expose sendChatMessage to parent via ref (used by PairWritingMode)
+  useEffect(() => {
+    if (sendMessageRef) {
+      sendMessageRef.current = sendChatMessage;
+    }
+    return () => {
+      if (sendMessageRef) {
+        sendMessageRef.current = null;
+      }
+    };
+  }, [sendMessageRef, sendChatMessage]);
 
   const abortChat = useCallback(async () => {
     await chat.abort();

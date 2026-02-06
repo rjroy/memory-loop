@@ -10,7 +10,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 import React, { type ReactNode } from "react";
 import { BrowseMode } from "../BrowseMode";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
-import type { VaultInfo, FileEntry } from "@memory-loop/shared";
+import type { VaultInfo, FileEntry } from "@/lib/schemas";
 const originalFetch = globalThis.fetch;
 const originalMatchMedia = globalThis.matchMedia;
 

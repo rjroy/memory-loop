@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { sessionReducer } from "../reducer";
 import { createInitialSessionState } from "../initial-state";
 import type { SessionState } from "../types";
-import type { VaultInfo } from "@memory-loop/shared";
+import type { VaultInfo } from "@/lib/schemas";
 
 const initialSessionState = createInitialSessionState();
 

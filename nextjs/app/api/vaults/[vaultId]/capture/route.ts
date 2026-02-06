@@ -7,9 +7,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { captureToDaily, NoteCaptureError } from "@memory-loop/backend/note-capture";
-import { captureToMeeting, MeetingCaptureError } from "@memory-loop/backend/meeting-capture";
-import { getActiveMeeting, incrementMeetingEntryCount } from "@memory-loop/backend/meeting-store";
+import { captureToDaily, NoteCaptureError } from "@/lib/note-capture";
+import { captureToMeeting, MeetingCaptureError } from "@/lib/meeting-capture";
+import { getActiveMeeting, incrementMeetingEntryCount } from "@/lib/meeting-store";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

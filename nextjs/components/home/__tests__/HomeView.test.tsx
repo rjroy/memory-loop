@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { HomeView } from "../HomeView";
 import { getSessionButtons, type DailyPrepStatus, type DebriefButton } from "../SessionActionsCard";
 import { SessionProvider } from "../../../contexts/SessionContext";
-import type { VaultInfo } from "@memory-loop/shared";
+import type { VaultInfo } from "@/lib/schemas";
 
 // Clean up after each test
 beforeEach(() => {

@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getRecentNotes } from "@memory-loop/backend/note-capture";
+import { getRecentNotes } from "@/lib/note-capture";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

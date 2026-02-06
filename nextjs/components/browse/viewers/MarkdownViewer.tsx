@@ -11,10 +11,9 @@ import {
   useState,
   useEffect,
   type ReactNode,
-  type ComponentProps,
   type KeyboardEvent,
 } from "react";
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
 import yaml from "js-yaml";
@@ -272,10 +271,10 @@ function FrontmatterTable({
 function createMarkdownComponents(
   assetBaseUrl: string,
   onWikiLinkClick: (target: string) => void
-) {
+): Components {
   return {
     // Handle links - external links get target="_blank", wiki-links are handled in text
-    a: ({ href, children, ...props }: ComponentProps<"a">) => {
+    a: ({ href, children, ...props }) => {
       const isExternal = href?.startsWith("http://") || href?.startsWith("https://");
 
       if (isExternal) {
@@ -300,7 +299,7 @@ function createMarkdownComponents(
     },
 
     // Handle images - prepend asset base URL for relative paths
-    img: ({ src, alt, ...props }: ComponentProps<"img">) => {
+    img: ({ src, alt, ...props }) => {
       const srcString = typeof src === "string" ? src : undefined;
       const isRelative =
         srcString &&
@@ -313,32 +312,32 @@ function createMarkdownComponents(
     },
 
     // Handle paragraphs - parse wiki-links
-    p: ({ children, ...props }: ComponentProps<"p">) => (
+    p: ({ children, ...props }) => (
       <p {...props}>{processChildren(children, onWikiLinkClick)}</p>
     ),
 
     // Handle list items - parse wiki-links
-    li: ({ children, ...props }: ComponentProps<"li">) => (
+    li: ({ children, ...props }) => (
       <li {...props}>{processChildren(children, onWikiLinkClick)}</li>
     ),
 
     // Handle headings - parse wiki-links
-    h1: ({ children, ...props }: ComponentProps<"h1">) => (
+    h1: ({ children, ...props }) => (
       <h1 {...props}>{processChildren(children, onWikiLinkClick)}</h1>
     ),
-    h2: ({ children, ...props }: ComponentProps<"h2">) => (
+    h2: ({ children, ...props }) => (
       <h2 {...props}>{processChildren(children, onWikiLinkClick)}</h2>
     ),
-    h3: ({ children, ...props }: ComponentProps<"h3">) => (
+    h3: ({ children, ...props }) => (
       <h3 {...props}>{processChildren(children, onWikiLinkClick)}</h3>
     ),
-    h4: ({ children, ...props }: ComponentProps<"h4">) => (
+    h4: ({ children, ...props }) => (
       <h4 {...props}>{processChildren(children, onWikiLinkClick)}</h4>
     ),
-    h5: ({ children, ...props }: ComponentProps<"h5">) => (
+    h5: ({ children, ...props }) => (
       <h5 {...props}>{processChildren(children, onWikiLinkClick)}</h5>
     ),
-    h6: ({ children, ...props }: ComponentProps<"h6">) => (
+    h6: ({ children, ...props }) => (
       <h6 {...props}>{processChildren(children, onWikiLinkClick)}</h6>
     ),
   };

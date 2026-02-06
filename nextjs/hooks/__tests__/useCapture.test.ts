@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
-import { useCapture } from "../useCapture.js";
+import { useCapture } from "../useCapture";
 import type { FetchFn } from "@/lib/api/types";
 
 /**

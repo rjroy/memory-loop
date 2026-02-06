@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getDailyPrepStatus } from "@memory-loop/backend/daily-prep-manager";
+import { getDailyPrepStatus } from "@/lib/daily-prep-manager";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

@@ -10,7 +10,7 @@ import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-libra
 import React, { useEffect, createRef, type ReactNode } from "react";
 import { Discussion, type SendMessageFn } from "../Discussion";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
-import type { VaultInfo, SlashCommand } from "@memory-loop/shared";
+import type { VaultInfo, SlashCommand } from "@/lib/schemas";
 
 // =============================================================================
 // Mock Fetch + SSE Helpers

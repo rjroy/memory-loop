@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getSessionForVault } from "@memory-loop/backend/session-manager";
+import { getSessionForVault } from "@/lib/session-manager";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { isGenerationRunning } from "@memory-loop/backend/spaced-repetition/card-discovery-scheduler";
+import { isGenerationRunning } from "@/lib/spaced-repetition/card-discovery-scheduler";
 
 /**
  * GET - Returns current generation status

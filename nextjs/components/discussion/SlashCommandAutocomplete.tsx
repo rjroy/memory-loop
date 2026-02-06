@@ -12,7 +12,7 @@
  */
 
 import React, { useEffect, useRef, useMemo, useId, useCallback } from "react";
-import type { SlashCommand } from "@memory-loop/shared";
+import type { SlashCommand } from "@/lib/schemas";
 import "./SlashCommandAutocomplete.css";
 
 export interface SlashCommandAutocompleteProps {

@@ -17,7 +17,7 @@ import remarkGfm from "remark-gfm";
 import { useSession } from "../../contexts/SessionContext";
 import { useCards } from "../../hooks/useCards";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
-import type { DueCard, CardDetail, ReviewResponse } from "@memory-loop/shared";
+import type { DueCard, CardDetail, ReviewResponse } from "@/lib/schemas";
 import type { FetchFn } from "@/lib/api/types";
 import "./SpacedRepetitionWidget.css";
 

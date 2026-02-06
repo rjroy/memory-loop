@@ -4,14 +4,14 @@
  * Creates default state objects for browser, search, widgets, and session.
  */
 
-import type { MeetingState } from "@memory-loop/shared";
+import type { MeetingState } from "@/lib/schemas";
 import type {
   BrowserState,
   SearchState,
 
   SessionState,
-} from "./types.js";
-import { loadPersistedViewMode } from "./storage.js";
+} from "./types";
+import { loadPersistedViewMode } from "./storage";
 
 /**
  * Creates initial search state.

@@ -4,7 +4,7 @@
  * Handles vault ID, browser path, pinned folders, and view mode persistence.
  */
 
-import type { BrowseViewMode } from "./types.js";
+import type { BrowseViewMode } from "./types";
 
 export const STORAGE_KEY_VAULT = "memory-loop:vaultId";
 const STORAGE_KEY_BROWSER_PATH = "memory-loop:browserPath";

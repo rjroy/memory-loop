@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
               id: vaultId,
               path: vaultPath,
               name: vaultName ?? vaultId,
-            } as import("@memory-loop/shared").VaultInfo;
+            } as import("@/lib/schemas").VaultInfo;
             await controller.startSession(vault, prompt);
           }
         } catch (err) {

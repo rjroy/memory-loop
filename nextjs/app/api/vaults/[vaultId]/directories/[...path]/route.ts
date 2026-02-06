@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse } from "@/lib/vault-helpers";
-import { deleteDirectory, getDirectoryContents } from "@memory-loop/backend/file-browser";
+import { deleteDirectory, getDirectoryContents } from "@/lib/file-browser";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; path: string[] }>;

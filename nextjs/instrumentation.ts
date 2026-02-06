@@ -4,10 +4,10 @@
  * Called once on server startup. Initializes background schedulers
  * that were previously started in backend/src/index.ts.
  *
- * Uses dynamic import() so scheduler code only loads when actually
- * needed (production server runtime, not during build or in edge).
- * The cron package is in serverExternalPackages (next.config.ts)
- * so webpack skips bundling it.
+ * Import paths use webpackIgnore comments so the bundler skips
+ * tracing into them. These modules use Node.js builtins
+ * (child_process via cron, node:crypto) that turbopack can't
+ * resolve during dev compilation.
  */
 
 export async function register() {
@@ -19,14 +19,10 @@ export async function register() {
     return;
   }
 
-  // Dynamic import bypasses webpack's static analysis of transpiled packages.
-  // Webpack traces static imports through transpilePackages and fails on
-  // cron's child_process dependency.
-
   // Extraction scheduler: daily at configured time (default: 3am)
   try {
     const { startScheduler, getCronSchedule } = await import(
-      "@memory-loop/backend/extraction/extraction-manager"
+      /* webpackIgnore: true */ "@/lib/extraction/extraction-manager"
     );
     const started = await startScheduler();
     if (started) {
@@ -47,7 +43,7 @@ export async function register() {
   try {
     const { startScheduler: startCardDiscoveryScheduler, getDiscoveryHourFromEnv } =
       await import(
-        "@memory-loop/backend/spaced-repetition/card-discovery-scheduler"
+        /* webpackIgnore: true */ "@/lib/spaced-repetition/card-discovery-scheduler"
       );
     await startCardDiscoveryScheduler({
       discoveryHour: getDiscoveryHourFromEnv(),

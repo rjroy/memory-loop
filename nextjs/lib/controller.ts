@@ -18,8 +18,8 @@ import {
   type SessionState,
   type PendingPrompt,
   type PromptResponse,
-} from "@memory-loop/backend/streaming";
-import { initializeSdkProvider } from "@memory-loop/backend/sdk-provider";
+} from "@/lib/streaming";
+import { initializeSdkProvider } from "@/lib/sdk-provider";
 
 // Re-export types for use in route handlers
 export type { SessionEvent, SessionState, PendingPrompt, PromptResponse };

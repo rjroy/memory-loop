@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { handleUpdateVaultConfig } from "@memory-loop/backend/handlers";
+import { handleUpdateVaultConfig } from "@/lib/handlers";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

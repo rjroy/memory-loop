@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
-import { useCards } from "../useCards.js";
+import { useCards } from "../useCards";
 import type { FetchFn } from "@/lib/api/types";
 import type {
   DueCard,
@@ -16,7 +16,7 @@ import type {
   ReviewResult,
   DueCardsResponse,
   ArchiveResponse,
-} from "@memory-loop/shared";
+} from "@/lib/schemas";
 
 /**
  * Creates a mock fetch function that returns a successful response.

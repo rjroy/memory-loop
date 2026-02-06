@@ -12,7 +12,7 @@ import {
   handleGetPinnedAssets,
   handleSetPinnedAssets,
   ConfigValidationError,
-} from "@memory-loop/backend/handlers";
+} from "@/lib/handlers";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

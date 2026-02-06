@@ -13,7 +13,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { createApiClient, vaultPath, ApiError } from "@/lib/api/client";
-import type { TaskEntry, InspirationItem } from "@memory-loop/shared";
+import type { TaskEntry, InspirationItem } from "@/lib/schemas";
 import type { FetchFn } from "@/lib/api/types";
 
 /**

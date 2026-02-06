@@ -8,8 +8,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getAllTasks, toggleTask } from "@memory-loop/backend/task-manager";
-import { loadVaultConfig } from "@memory-loop/backend/vault-config";
+import { getAllTasks, toggleTask } from "@/lib/task-manager";
+import { loadVaultConfig } from "@/lib/vault-config";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

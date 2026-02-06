@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useCallback, useRef, useState, useEffect } from "react";
-import type { TaskEntry, TaskCategory } from "@memory-loop/shared";
+import type { TaskEntry, TaskCategory } from "@/lib/schemas";
 import { useSession } from "../../contexts/SessionContext";
 import "./TaskList.css";
 

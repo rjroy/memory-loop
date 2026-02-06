@@ -28,7 +28,7 @@ import {
   mock,
 } from "bun:test";
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
-import type { ServerMessage, ClientMessage } from "@memory-loop/shared";
+import type { ServerMessage, ClientMessage } from "@/lib/schemas";
 import { PairWritingEditor } from "../PairWritingEditor";
 import type { EditorContextMenuProps } from "../../shared/EditorContextMenu";
 

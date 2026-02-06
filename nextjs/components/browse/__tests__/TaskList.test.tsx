@@ -9,7 +9,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { useEffect } from "react";
 import { TaskList } from "../TaskList";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
-import type { TaskEntry } from "@memory-loop/shared";
+import type { TaskEntry } from "@/lib/schemas";
 
 // Clear localStorage and cleanup DOM before/after each test
 beforeEach(() => {

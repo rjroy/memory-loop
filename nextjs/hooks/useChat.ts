@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { ServerMessage, VaultInfo } from "@memory-loop/shared";
+import type { ServerMessage, VaultInfo } from "@/lib/schemas";
 
 /**
  * Streaming state for the chat hook.

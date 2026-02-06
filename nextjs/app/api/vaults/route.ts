@@ -11,7 +11,7 @@ import {
   VaultsDirError,
   createVault,
   VaultCreationError,
-} from "@memory-loop/backend/vault-manager";
+} from "@/lib/vault-manager";
 
 /**
  * GET /api/vaults

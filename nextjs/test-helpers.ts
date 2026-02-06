@@ -4,7 +4,7 @@
  * Common utilities for creating mock objects in nextjs tests.
  */
 
-import type { VaultInfo } from "@memory-loop/shared";
+import type { VaultInfo } from "@/lib/schemas";
 
 /**
  * Creates a mock VaultInfo object with sensible defaults.

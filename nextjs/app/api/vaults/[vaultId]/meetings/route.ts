@@ -7,8 +7,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { startMeeting } from "@memory-loop/backend/meeting-capture";
-import { getActiveMeeting, setActiveMeeting } from "@memory-loop/backend/meeting-store";
+import { startMeeting } from "@/lib/meeting-capture";
+import { getActiveMeeting, setActiveMeeting } from "@/lib/meeting-store";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

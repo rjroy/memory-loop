@@ -9,7 +9,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
 import { MoveDialog } from "../MoveDialog";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
-import type { FileEntry } from "@memory-loop/shared";
+import type { FileEntry } from "@/lib/schemas";
 
 // Test data
 const rootDirs: FileEntry[] = [

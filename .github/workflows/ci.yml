@@ -22,38 +22,15 @@ jobs:
 
       - run: bun run lint
 
-      - name: Run backend tests with coverage
-        run: bun run --cwd backend test:coverage
+      - name: Run tests with coverage
+        run: bun run test:coverage
 
-      - name: Run nextjs tests with coverage
-        run: bun run --cwd nextjs test:coverage
+      - run: bun run build
 
-      - name: Run shared tests with coverage
-        run: bun run --cwd shared test:coverage
-
-      - name: Upload backend coverage
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: rjroy/memory-loop
-          files: ./backend/coverage/lcov.info
-          flags: backend
-          fail_ci_if_error: true
-
-      - name: Upload nextjs coverage
+      - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: rjroy/memory-loop
           files: ./nextjs/coverage/lcov.info
-          flags: nextjs
-          fail_ci_if_error: true
-
-      - name: Upload shared coverage
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: rjroy/memory-loop
-          files: ./shared/coverage/lcov.info
-          flags: shared
           fail_ci_if_error: true

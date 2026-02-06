@@ -11,7 +11,7 @@
 import React, { useCallback, useState } from "react";
 import { useSession } from "../../contexts/SessionContext";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
-import type { RecentNoteEntry, RecentDiscussionEntry, ConversationMessage, SlashCommand } from "@memory-loop/shared";
+import type { RecentNoteEntry, RecentDiscussionEntry, ConversationMessage, SlashCommand } from "@/lib/schemas";
 import "./RecentActivity.css";
 
 /**

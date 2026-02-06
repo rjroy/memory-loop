@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Pre-commit hook: Run linting and unit tests for all projects.
+# Pre-commit hook: Run linting and unit tests.
 # Does NOT run integration or e2e tests.
 #
 # Install: ln -sf ../../git-hooks/pre-commit.sh .git/hooks/pre-commit
@@ -40,28 +40,6 @@ run_quiet() {
     fi
 }
 
-#
-# Backend checks
-#
-echo -e "${YELLOW}Backend${NC}"
-
-cd "$REPO_ROOT/backend"
-
-if ! run_quiet "typecheck" bun run typecheck; then
-    FAILED=1
-fi
-
-if ! run_quiet "lint" bun run lint; then
-    FAILED=1
-fi
-
-if ! run_quiet "unit tests" bun run test:unit; then
-    FAILED=1
-fi
-
-#
-# Next.js checks
-#
 echo -e "${YELLOW}Next.js${NC}"
 
 cd "$REPO_ROOT/nextjs"
@@ -74,28 +52,12 @@ if ! run_quiet "lint" bun run lint; then
     FAILED=1
 fi
 
-if ! run_quiet "build" bun run build; then
+if ! run_quiet "unit tests" bun run test; then
     FAILED=1
 fi
 
-#
-# Shared checks (if applicable)
-#
-if [ -f "$REPO_ROOT/shared/package.json" ]; then
-    echo -e "${YELLOW}Shared${NC}"
-    cd "$REPO_ROOT/shared"
-
-    if grep -q '"typecheck"' package.json 2>/dev/null; then
-        if ! run_quiet "typecheck" bun run typecheck; then
-            FAILED=1
-        fi
-    fi
-
-    if grep -q '"lint"' package.json 2>/dev/null; then
-        if ! run_quiet "lint" bun run lint; then
-            FAILED=1
-        fi
-    fi
+if ! run_quiet "build" bun run build; then
+    FAILED=1
 fi
 
 #

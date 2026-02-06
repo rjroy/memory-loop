@@ -11,7 +11,7 @@ import React from "react";
 import { FileAttachButton } from "../FileAttachButton";
 import { SessionProvider } from "../../../contexts/SessionContext";
 import { createMockVault } from "../../../test-helpers";
-import type { VaultInfo } from "@memory-loop/shared";
+import type { VaultInfo } from "@/lib/schemas";
 
 // Store original fetch
 const originalFetch = globalThis.fetch;

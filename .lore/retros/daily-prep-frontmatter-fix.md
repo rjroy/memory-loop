@@ -2,7 +2,7 @@
 title: Passive references fail under context degradation
 date: 2026-02-04
 status: complete
-tags: [skill-authoring, context-degradation, progressive-disclosure, bug-fix]
+tags: [skill-development, context-degradation, progressive-disclosure, bug-fix]
 modules: [daily-prep-skill]
 related: [.lore/specs/daily-prep.md, .lore/retros/daily-prep-system.md]
 ---

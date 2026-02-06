@@ -4,7 +4,7 @@ date: 2026-02-03
 status: draft
 tags: [architecture, websocket, session-management, separation-of-concerns, refactor]
 modules: [websocket-handler, session-manager, active-session-controller]
-related: [.lore/brainstorm/session-viewport-separation.md]
+related: [.lore/_archive/session-viewport-separation-brainstorm.md]
 ---
 
 # Spec: Session Viewport Separation
@@ -84,5 +84,5 @@ Three distinct components with clear ownership:
 ## Context
 
 - [Brainstorm: Session and Viewport Separation](/.lore/brainstorm/session-viewport-separation.md)
-- [Diagram: WebSocket Connection Lifecycle](/.lore/diagrams/websocket-connection-lifecycle.md)
-- [Reference: Communication Layer](/.lore/reference/_infrastructure/communication-layer.md)
+- [Diagram: WebSocket Connection Lifecycle](/.lore/_archive/websocket-connection-lifecycle.md) (archived - WebSocket replaced by SSE)
+- [Reference: Communication Layer](/.lore/_archive/communication-layer.md) (archived - WebSocket replaced by SSE)

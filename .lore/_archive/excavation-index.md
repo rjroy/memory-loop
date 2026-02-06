@@ -1,7 +1,7 @@
 ---
 title: Excavation Index
 date: 2026-01-28
-status: current
+status: outdated
 tags: [excavation, index, documentation]
 ---
 

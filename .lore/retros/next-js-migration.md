@@ -4,7 +4,7 @@ date: 2026-02-05
 status: complete
 tags: [architecture, refactor, next-js, sse, websocket, state-management, race-condition]
 modules: [session-context, discussion, pair-writing, active-session-controller, useChat]
-related: [.lore/brainstorm/next-js-migration.md, .lore/plans/vectorized-hopping-pinwheel.md]
+related: [.lore/brainstorm/next-js-migration.md, .lore/plans/nextjs-consolidation.md]
 ---
 
 # Retro: Next.js Migration
@@ -25,7 +25,7 @@ Migrated Memory Loop from Vite SPA + Hono backend to Next.js 15 App Router. Repl
 
 - **Dual useChat instances weren't caught during migration.** PairWritingMode kept its own `useChat(vault)` call when Discussion already had one. The migration focused on "does each component render" but didn't verify that actions from one component appeared in another's conversation. Integration-level testing (component A triggers action, component B shows result) would have caught this during migration rather than in production.
 - **session_ready race condition was a design flaw, not a migration artifact.** The pattern of "backend sends history, then appends user message" creates an inherent race. This existed conceptually in the WebSocket version too, it just wasn't triggered because WebSocket message ordering was different. The fix (only apply server history when local state is empty) is correct but brittle. The real fix would be for the backend to not send stale history on a message-bearing request.
-- **Plan file got reused for a different purpose.** `concurrent-imagining-flurry.md` was originally the Hono removal plan, then got overwritten with the PairWriting fix plan. Plan files should be immutable records of what was planned. New plans need new files.
+- **Plan file got reused for a different purpose.** `pairwriting-discussion-fix.md` (originally `concurrent-imagining-flurry.md`) was originally the Hono removal plan, then got overwritten with the PairWriting fix plan. Plan files should be immutable records of what was planned. New plans need new files.
 
 ## Lessons Learned
 
@@ -37,5 +37,5 @@ Migrated Memory Loop from Vite SPA + Hono backend to Next.js 15 App Router. Repl
 ## Artifacts
 
 - `.lore/brainstorm/next-js-migration.md` - Original architecture analysis
-- `.lore/plans/vectorized-hopping-pinwheel.md` - Migration execution plan
+- `.lore/plans/nextjs-consolidation.md` - Migration execution plan
 - PR #458 - The complete migration PR

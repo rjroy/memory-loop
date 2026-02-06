@@ -1,7 +1,7 @@
 ---
 title: Session and viewport separation
 date: 2026-02-03
-status: open
+status: parked
 tags: [architecture, websocket, session-management, separation-of-concerns]
 modules: [websocket-handler, session-manager]
 ---

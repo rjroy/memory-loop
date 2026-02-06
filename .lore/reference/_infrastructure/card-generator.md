@@ -218,20 +218,21 @@ Both checked before starting any pass. Cleared on completion (even on error).
 | `backend/src/spaced-repetition/card-discovery-scheduler.ts` | Scheduling passes |
 | `backend/src/spaced-repetition/card-generator-config.ts` | Config management |
 | `backend/src/spaced-repetition/card-manager.ts` | Card file CRUD |
-| `backend/src/handlers/card-generator-handlers.ts` | WebSocket message handlers |
-| `frontend/src/components/settings/CardGeneratorEditor.tsx` | Config UI |
+| `nextjs/app/api/config/card-generator/route.ts` | REST API: get/save config |
+| `nextjs/app/api/config/card-generator/trigger/route.ts` | REST API: manual trigger |
+| `nextjs/app/api/config/card-generator/status/route.ts` | REST API: generation status |
+| `nextjs/app/api/config/card-generator/requirements/route.ts` | REST API: reset requirements |
+| `nextjs/components/vault/CardGeneratorEditor.tsx` | Config UI |
 
-### WebSocket Messages
+### REST API
 
-| Message | Purpose |
-|---------|---------|
-| `get_card_generator_config` | Load config + requirements + usage |
-| `save_card_generator_requirements` | Save requirements override |
-| `save_card_generator_config` | Save byte limit |
-| `reset_card_generator_requirements` | Delete override, restore default |
-| `trigger_card_generation` | Start manual pass |
-| `get_card_generation_status` | Check progress |
-| `card_generation_status` | Progress updates (server → client) |
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/config/card-generator` | Load config + requirements + usage |
+| PUT | `/api/config/card-generator` | Save requirements and/or byte limit |
+| DELETE | `/api/config/card-generator/requirements` | Delete override, restore default |
+| POST | `/api/config/card-generator/trigger` | Start manual pass |
+| GET | `/api/config/card-generator/status` | Check generation progress |
 
 ## Startup Behavior
 

@@ -4,7 +4,7 @@ date: 2026-01-29
 status: implemented
 tags: [vi-mode, pair-writing, modal-editing, keyboard, requirements]
 modules: [pair-writing-editor, use-vi-mode, vault-config]
-related: [.lore/research/vi-mode-implementation.md]
+related: [.lore/_archive/vi-mode-implementation.md]
 ---
 
 # Spec: Vi Mode for Pair Writing
@@ -70,5 +70,5 @@ Add vi-style modal editing to Pair Writing mode. When enabled via vault configur
 
 ## Context
 
-- Research: `.lore/research/vi-mode-implementation.md`
+- Research: `.lore/_archive/vi-mode-implementation.md`
 - Issue: #394

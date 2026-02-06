@@ -4,7 +4,7 @@ date: 2026-01-29
 status: executed
 tags: [vi-mode, pair-writing, modal-editing, keyboard]
 modules: [pair-writing-editor, use-vi-mode]
-related: [.lore/specs/vi-mode-pair-writing.md, .lore/research/vi-mode-implementation.md]
+related: [.lore/specs/vi-mode-pair-writing.md, .lore/_archive/vi-mode-implementation.md]
 ---
 
 # Plan: Vi Mode for Pair Writing
@@ -12,7 +12,7 @@ related: [.lore/specs/vi-mode-pair-writing.md, .lore/research/vi-mode-implementa
 ## Context
 
 - **Spec**: `.lore/specs/vi-mode-pair-writing.md`
-- **Research**: `.lore/research/vi-mode-implementation.md`
+- **Research**: `.lore/_archive/vi-mode-implementation.md`
 - **Integration target**: `PairWritingMode.tsx` and `PairWritingEditor.tsx`
 
 ## Approach

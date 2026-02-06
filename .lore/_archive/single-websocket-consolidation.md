@@ -1,10 +1,10 @@
 ---
 title: Single WebSocket Consolidation
 date: 2026-02-03
-status: implemented
+status: superseded
 tags: [websocket, architecture, rest-api, migration]
 modules: [websocket-handler, app, discussion, session-context]
-related: [.lore/specs/session-viewport-separation.md, .lore/reference/_infrastructure/communication-layer.md]
+related: [.lore/_archive/session-viewport-separation-spec.md, .lore/_archive/communication-layer.md]
 ---
 
 # Design: Single WebSocket Consolidation

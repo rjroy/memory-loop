@@ -153,13 +153,13 @@ Multi-layer defense:
 
 | File | Role |
 |------|------|
-| `frontend/src/components/browse/BrowseMode.tsx` | Main container |
-| `frontend/src/components/browse/FileTree.tsx` | Directory tree |
-| `frontend/src/components/browse/SearchHeader.tsx` | Search input |
-| `frontend/src/components/browse/SearchResults.tsx` | Search results |
-| `frontend/src/components/browse/viewers/MarkdownViewer.tsx` | Markdown rendering |
-| `frontend/src/hooks/useFileBrowser.ts` | REST client |
-| `frontend/src/hooks/useSearch.ts` | Search REST client |
+| `nextjs/components/browse/BrowseMode.tsx` | Main container |
+| `nextjs/components/browse/FileTree.tsx` | Directory tree |
+| `nextjs/components/browse/SearchHeader.tsx` | Search input |
+| `nextjs/components/browse/SearchResults.tsx` | Search results |
+| `nextjs/components/browse/viewers/MarkdownViewer.tsx` | Markdown rendering |
+| `nextjs/hooks/useFileBrowser.ts` | REST client |
+| `nextjs/hooks/useSearch.ts` | Search REST client |
 | `backend/src/routes/files.ts` | File REST endpoints |
 | `backend/src/file-browser.ts` | Core file operations |
 | `backend/src/search/search-index.ts` | Search implementation |

@@ -37,7 +37,7 @@ Transcripts         Claude SDK           Global Memory
 
 ### Manual
 - **Settings Dialog** → Extraction Prompt tab → "Run Extraction" button
-- Sends `trigger_extraction` WebSocket message
+- Calls `POST /api/config/extraction-prompt/trigger`
 - Same pipeline as scheduled, just user-initiated
 
 ## Pipeline Steps
@@ -166,25 +166,27 @@ Users can directly edit `~/.claude/rules/memory.md`:
 
 | File | Role |
 |------|------|
-| `backend/src/index.ts` | Scheduler initialization on startup |
+| `nextjs/instrumentation.ts` | Scheduler initialization on startup |
 | `backend/src/extraction/extraction-manager.ts` | Pipeline orchestration, scheduling |
 | `backend/src/extraction/fact-extractor.ts` | Claude SDK interaction, prompt building |
 | `backend/src/extraction/memory-writer.ts` | Sandbox ops, size enforcement, atomic writes |
 | `backend/src/extraction/extraction-state.ts` | State persistence, checksum tracking |
 | `backend/src/extraction/transcript-reader.ts` | Transcript discovery, frontmatter parsing |
-| `backend/src/handlers/memory-handlers.ts` | WebSocket handlers for manual trigger |
+| `nextjs/app/api/config/extraction-prompt/route.ts` | REST API: get/save/reset prompt |
+| `nextjs/app/api/config/extraction-prompt/trigger/route.ts` | REST API: manual trigger |
+| `nextjs/app/api/config/memory/route.ts` | REST API: get/save memory.md |
 | `backend/src/prompts/durable-facts.md` | Default extraction prompt |
 
-### WebSocket Messages
+### REST API
 
-| Message | Direction | Purpose |
-|---------|-----------|---------|
-| `trigger_extraction` | Client → Server | Manual extraction run |
-| `extraction_status` | Server → Client | Progress/completion/error updates |
-| `get_extraction_prompt` | Client → Server | Load current prompt |
-| `extraction_prompt_content` | Server → Client | Return prompt content |
-| `save_extraction_prompt` | Client → Server | Save custom prompt |
-| `reset_extraction_prompt` | Client → Server | Delete override, use default |
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/config/extraction-prompt` | Load current prompt + override status |
+| PUT | `/api/config/extraction-prompt` | Save custom prompt |
+| DELETE | `/api/config/extraction-prompt` | Delete override, use default |
+| POST | `/api/config/extraction-prompt/trigger` | Manual extraction run |
+| GET | `/api/config/memory` | Load memory.md content |
+| PUT | `/api/config/memory` | Save memory.md content |
 
 ### Configuration (Environment)
 

@@ -74,13 +74,10 @@ The app has two different gear buttons that open different dialogs:
 
 | Entry | Type | Handler |
 |-------|------|---------|
-| App mount (no vault) | Frontend | `App.tsx` → `AppShell` renders `VaultSelect` |
-| GET /api/vaults | REST | `backend/src/server.ts:228` |
-| GET /api/sessions/:vaultId | REST | `backend/src/server.ts:242` |
-| POST /api/vaults/:id/setup | REST | `backend/src/routes/config.ts:114` |
-| select_vault | WebSocket | `backend/src/websocket-handler.ts` |
-| resume_session | WebSocket | `backend/src/websocket-handler.ts` |
-| create_vault | WebSocket | `backend/src/websocket-handler.ts` |
+| App mount (no vault) | Frontend | `app/page.tsx` → `AppShell` renders `VaultSelect` |
+| GET /api/vaults | REST | `nextjs/app/api/vaults/route.ts` |
+| GET /api/sessions/:vaultId | REST | `nextjs/app/api/sessions/[vaultId]/route.ts` |
+| POST /api/vaults/:id/setup | REST | `nextjs/app/api/vaults/[vaultId]/setup/route.ts` |
 
 ## Implementation
 
@@ -88,16 +85,16 @@ The app has two different gear buttons that open different dialogs:
 
 | File | Role |
 |------|------|
-| `frontend/src/App.tsx` | AppShell decides VaultSelect vs MainContent |
-| `frontend/src/components/vault/VaultSelect.tsx` | Main selection UI, auto-resume logic |
-| `frontend/src/components/vault/AddVaultDialog.tsx` | New vault creation dialog |
-| `frontend/src/components/vault/ConfigEditorDialog.tsx` | Settings editor |
-| `frontend/src/contexts/SessionContext.tsx` | Stores selected vault, handles session_ready |
-| `frontend/src/contexts/session/storage.ts` | localStorage persistence |
+| `nextjs/app/page.tsx` | AppShell decides VaultSelect vs MainContent |
+| `nextjs/components/vault/VaultSelect.tsx` | Main selection UI, auto-resume logic |
+| `nextjs/components/vault/AddVaultDialog.tsx` | New vault creation dialog |
+| `nextjs/components/vault/ConfigEditorDialog.tsx` | Settings editor |
+| `nextjs/contexts/SessionContext.tsx` | Stores selected vault, session state |
+| `nextjs/contexts/session/storage.ts` | localStorage persistence |
+| `nextjs/lib/controller.ts` | Active Session Controller (SDK orchestration) |
 | `backend/src/vault-manager.ts` | Discovery, parsing, creation |
 | `backend/src/vault-config.ts` | .memory-loop.json handling |
 | `backend/src/session-manager.ts` | Session lifecycle |
-| `backend/src/websocket-handler.ts` | Message routing |
 
 ### Vault Discovery
 
@@ -150,29 +147,24 @@ Client                          Server
    │  { sessionId: "..." | null }  │
    │<──────────────────────────────│
    │                               │
-   │  WS: select_vault/resume      │
+   │  POST /api/chat               │
+   │  (vaultId, sessionId, prompt) │
    │──────────────────────────────>│
    │                               │
-   │  WS: session_ready            │
-   │  (sessionId, messages,        │
-   │   slashCommands)              │
+   │  SSE stream (events)          │
    │<──────────────────────────────│
 ```
 
-Sessions are stored in-memory on the server. They survive WebSocket disconnect/reconnect but not server restart.
+Sessions are stored in-memory on the server via the Active Session Controller singleton. They survive page refresh (restored from localStorage + session API) but not server restart.
 
 ### Auto-Resume
 
 On VaultSelect mount:
-1. Check WebSocket connected
-2. Load `memory-loop.vault` from localStorage
-3. Find vault in discovered list
-4. Trigger normal selection flow (check session → resume or create)
+1. Load `memory-loop.vault` from localStorage
+2. Find vault in discovered list
+3. Call `GET /api/sessions/:vaultId` to check for existing session
+4. Set vault + session in SessionContext
 5. Track attempt to prevent loops
-
-### Reconnection Handling
-
-When WebSocket reconnects after disconnect, MainContent re-sends `select_vault` to restore server-side context. The vault info is already in SessionContext from localStorage.
 
 ## Configuration (.memory-loop.json)
 
@@ -212,7 +204,7 @@ All fields optional:
 
 ## Diagrams
 
-- [Session Auto-Resume Flow](../../diagrams/session-auto-resume.md) - How vault selection triggers session lookup and establishment
+- [Session Auto-Resume Flow](../../_archive/session-auto-resume.md) - How vault selection triggers session lookup and establishment (archived, pre-migration)
 
 ## Setup Wizard
 
@@ -287,6 +279,6 @@ Setup is idempotent:
 
 - Vault ID is the directory name (sanitized for URL safety)
 - Creating a vault converts title to safe directory name: "My Vault!" → "my-vault"
-- Session persists server-side by vaultId, not WebSocket connection
+- Session persists server-side by vaultId via Active Session Controller singleton
 - The `setup-complete` marker controls badge display and button text
 - Health issues can block vault readiness (shown in HealthPanel)

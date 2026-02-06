@@ -1,7 +1,7 @@
 ---
 title: Consolidate to Single Next.js Application
 date: 2026-02-05
-status: complete
+status: executed
 tags: [migration, next-js, consolidation, maintainability]
 modules: [nextjs, backend]
 related:

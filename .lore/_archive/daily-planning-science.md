@@ -2,7 +2,7 @@
 title: Science of Daily Planning and Morning Rituals
 date: 2026-02-02
 status: archived
-tags: [daily-planning, productivity, psychology, behavioral-economics, energy-management]
+tags: [daily-planning, productivity, psychology, behavioral-economics, energy]
 related: [.lore/brainstorm/daily-prep-system.md]
 ---
 

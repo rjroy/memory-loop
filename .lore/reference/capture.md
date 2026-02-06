@@ -107,9 +107,9 @@ attendees: []
 
 | File | Role |
 |------|------|
-| `frontend/src/components/capture/NoteCapture.tsx` | Main UI component |
-| `frontend/src/hooks/useCapture.ts` | REST API client |
-| `frontend/src/hooks/useMeetings.ts` | Meeting operations |
+| `nextjs/components/capture/NoteCapture.tsx` | Main UI component |
+| `nextjs/hooks/useCapture.ts` | REST API client |
+| `nextjs/hooks/useMeetings.ts` | Meeting operations |
 | `backend/src/note-capture.ts` | Daily note logic |
 | `backend/src/meeting-capture.ts` | Meeting note logic |
 | `backend/src/routes/capture.ts` | Capture endpoint |
@@ -186,6 +186,6 @@ Captures appear in the Recent Activity section on Ground:
 
 - No file upload in Capture (exists elsewhere but not integrated here)
 - No voice input/speech-to-text
-- Meeting state stored server-side, survives WebSocket reconnects
+- Meeting state stored server-side, survives browser refresh
 - Section-based appending keeps captures separate from other daily note content
 - Auto-growing textarea (starts at 3 rows) for better mobile UX

@@ -1,3 +1,11 @@
+---
+title: "Next.js test coverage to 80%+"
+date: 2026-02-05
+status: executed
+tags: [testing, coverage, next-js, dom-environment, websocket-cleanup]
+modules: [nextjs]
+---
+
 # Plan: Next.js Test Coverage to 80%+
 
 ## Current State

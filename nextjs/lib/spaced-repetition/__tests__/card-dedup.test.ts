@@ -34,7 +34,7 @@ import * as cardStorage from "../card-storage";
  */
 function createMockSdk(response: string): QueryFunction {
   return (() => {
-    // eslint-disable-next-line @typescript-eslint/require-await
+     
     async function* mockGenerator() {
       yield {
         type: "assistant",
@@ -52,7 +52,7 @@ function createMockSdk(response: string): QueryFunction {
  */
 function createErrorMockSdk(error: Error): QueryFunction {
   return (() => {
-    // eslint-disable-next-line require-yield, @typescript-eslint/require-await
+    // eslint-disable-next-line require-yield
     async function* mockGenerator(): AsyncGenerator<{ type: string }> {
       throw error;
     }
@@ -66,7 +66,7 @@ function createErrorMockSdk(error: Error): QueryFunction {
 function createCountingMockSdk(response: string, counter: { count: number }): QueryFunction {
   return (() => {
     counter.count++;
-    // eslint-disable-next-line @typescript-eslint/require-await
+     
     async function* mockGenerator() {
       yield {
         type: "assistant",

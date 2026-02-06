@@ -34,7 +34,7 @@ import {
 function createMockSdk(response: string): QueryFunction {
   return (() => {
     // Create an async generator that yields an assistant event
-    // eslint-disable-next-line @typescript-eslint/require-await
+     
     async function* mockGenerator() {
       yield {
         type: "assistant",
@@ -56,7 +56,7 @@ function createMockSdk(response: string): QueryFunction {
 function createErrorMockSdk(error: Error): QueryFunction {
   return (() => {
     // Generator that throws immediately - no yield needed since error is thrown first
-    // eslint-disable-next-line require-yield, @typescript-eslint/require-await
+    // eslint-disable-next-line require-yield
     async function* mockGenerator(): AsyncGenerator<{ type: string }> {
       throw error;
     }
@@ -78,7 +78,7 @@ function createCapturingMockSdk(
   return ((args: { prompt: string; options: unknown }) => {
     capturedCalls.push({ prompt: args.prompt, options: args.options });
 
-    // eslint-disable-next-line @typescript-eslint/require-await
+     
     async function* mockGenerator() {
       yield {
         type: "assistant",
@@ -350,7 +350,7 @@ describe("QACardGenerator", () => {
       let sdkCalled = false;
       const mockSdk = (() => {
         sdkCalled = true;
-        // eslint-disable-next-line @typescript-eslint/require-await
+         
         return (async function* () {
           yield { type: "never" };
         })();

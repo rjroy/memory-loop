@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor, act } from "@testing-library/react";
 import { SessionProvider } from "../../../contexts/SessionContext";
 import { SpacedRepetitionWidget } from "../SpacedRepetitionWidget";
 import type { FetchFn } from "../../../api/types";
@@ -640,6 +640,11 @@ describe("SpacedRepetitionWidget", () => {
       await waitFor(() => {
         expect(screen.getByText("Good")).toBeDefined();
       });
+
+      // Flush effects so the useEffect keyboard listener is attached.
+      // Without this, the keyDown can fire before the listener is registered
+      // under heavy concurrent test load.
+      await act(async () => {});
 
       // Simulate keyboard shortcut
       fireEvent.keyDown(window, { key: "3" });

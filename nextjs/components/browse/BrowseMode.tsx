@@ -32,8 +32,11 @@ import { SearchResults } from "./SearchResults";
 import { PairWritingMode } from "../pair-writing/PairWritingMode";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
 import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isTxtFile, isCsvFile, hasSupportedViewer } from "@/lib/utils/file-types";
+import { createLogger } from "@/lib/logger";
 // Note: FileSearchResult, ContentSearchResult types removed - now handled internally by REST API hooks
 import "./BrowseMode.css";
+
+const log = createLogger("BrowseMode");
 
 /** Storage key for discussion draft (shared with Discussion component) */
 const DISCUSSION_DRAFT_STORAGE_KEY = "memory-loop-discussion-draft";
@@ -210,7 +213,7 @@ export function BrowseMode(): React.ReactNode {
         const listing = await fileBrowser.listDirectory(parentPath);
         cacheDirectory(listing.path, listing.entries);
       } catch (err) {
-        console.warn("Failed to refresh parent directory:", err);
+        log.warn("Failed to refresh parent directory", err);
       }
     },
     [fileBrowser, cacheDirectory]
@@ -272,7 +275,7 @@ export function BrowseMode(): React.ReactNode {
           totalDirectories: 0,
           truncated: false,
         });
-        console.warn("Failed to load directory contents preview:", err);
+        log.warn("Failed to load directory contents preview", err);
       }
     },
     [fileBrowser]
@@ -464,7 +467,7 @@ export function BrowseMode(): React.ReactNode {
       try {
         await configApi.setPinnedAssets(paths);
       } catch (err) {
-        console.warn("Failed to save pinned assets:", err);
+        log.warn("Failed to save pinned assets", err);
       }
     },
     [configApi]
@@ -574,7 +577,7 @@ export function BrowseMode(): React.ReactNode {
             }
           }
         } catch (err) {
-          console.warn("Search failed:", err);
+          log.warn("Search failed", err);
         } finally {
           setSearchLoading(false);
         }
@@ -602,7 +605,7 @@ export function BrowseMode(): React.ReactNode {
             }
           }
         } catch (err) {
-          console.warn("Search failed:", err);
+          log.warn("Search failed", err);
         } finally {
           setSearchLoading(false);
         }
@@ -633,7 +636,7 @@ export function BrowseMode(): React.ReactNode {
           setSnippets(path, snippets);
         }
       } catch (err) {
-        console.warn("Failed to get snippets:", err);
+        log.warn("Failed to get snippets", err);
       }
     },
     [search.query, searchApi, setSnippets]

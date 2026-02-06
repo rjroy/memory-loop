@@ -12,6 +12,9 @@ import {
   createVault,
   VaultCreationError,
 } from "@/lib/vault-manager";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("api/vaults");
 
 /**
  * GET /api/vaults
@@ -54,7 +57,7 @@ export async function POST(request: Request) {
     }
 
     const vault = await createVault(title);
-    console.log(`[api/vaults] Created vault: ${vault.id}`);
+    log.info(`Created vault: ${vault.id}`);
     return NextResponse.json({ vault }, { status: 201 });
   } catch (error) {
     if (error instanceof VaultCreationError) {
@@ -63,7 +66,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    console.error("[api/vaults] Failed to create vault:", error);
+    log.error("Failed to create vault", error);
     throw error;
   }
 }

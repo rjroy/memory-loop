@@ -13,7 +13,10 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import type { VaultInfo, EditableVaultConfig, SlashCommand, ConversationMessage } from "@/lib/schemas";
 import { useSession, STORAGE_KEY_VAULT } from "../../contexts/SessionContext";
 import { createApiClient, vaultPath } from "@/lib/api/client";
+import { createLogger } from "@/lib/logger";
 import { Toast, type ToastVariant } from "../shared/Toast";
+
+const log = createLogger("VaultSelect");
 import { ConfigEditorDialog } from "./ConfigEditorDialog";
 import { AddVaultDialog } from "./AddVaultDialog";
 import { SettingsDialog } from "./SettingsDialog";
@@ -128,7 +131,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
 
   // Initialize session via REST API
   const initializeSession = useCallback(async (vault: VaultInfo, sessionIdToResume?: string) => {
-    console.log(`[VaultSelect] Initializing session for vault: ${vault.id}`);
+    log.info(`Initializing session for vault: ${vault.id}`);
 
     try {
       const response = await fetch(`/api/vaults/${vault.id}/sessions`, {
@@ -159,12 +162,12 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       setSelectedVaultId(null);
       onReady?.();
 
-      console.log(`[VaultSelect] Session initialized: ${data.sessionId || "(new)"}`);
+      log.info(`Session initialized: ${data.sessionId || "(new)"}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to initialize session";
       setError(message);
       setSelectedVaultId(null);
-      console.error("[VaultSelect] Session initialization failed:", err);
+      log.error("Session initialization failed:", err);
     }
   }, [selectVault, setSessionId, setMessages, setSlashCommands, onReady]);
 
@@ -186,7 +189,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
 
     // Mark as attempted and trigger auto-resume
     hasAttemptedAutoResumeRef.current = true;
-    console.log(`[VaultSelect] Auto-resuming vault: ${vault.id}`);
+    log.info(`Auto-resuming vault: ${vault.id}`);
 
     setSelectedVaultId(vault.id);
     void initializeSession(vault);
@@ -201,7 +204,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   async function handleSetupClick(vault: VaultInfo) {
     setSetupVaultId(vault.id);
     setError(null);
-    console.log(`[VaultSelect] Starting setup for vault: ${vault.id}`);
+    log.info(`Starting setup for vault: ${vault.id}`);
 
     try {
       interface SetupResponse {
@@ -225,7 +228,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         setToastVariant("success");
         setToastMessage(summaryText);
         setToastVisible(true);
-        console.log(`[VaultSelect] Setup complete for vault: ${vault.id}`);
+        log.info(`Setup complete for vault: ${vault.id}`);
       } else {
         // Setup failed - show error toast
         const errorMessages = result.summary
@@ -235,14 +238,14 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
         setToastVariant("error");
         setToastMessage(errorMessages);
         setToastVisible(true);
-        console.warn(`[VaultSelect] Setup failed for vault: ${vault.id}`);
+        log.warn(`Setup failed for vault: ${vault.id}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to setup vault";
       setToastVariant("error");
       setToastMessage(message);
       setToastVisible(true);
-      console.warn(`[VaultSelect] Setup error for vault: ${vault.id}`, err);
+      log.warn(`Setup error for vault: ${vault.id}`, err);
     } finally {
       setSetupVaultId(null);
     }
@@ -262,7 +265,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
 
     setConfigSaving(true);
     setConfigSaveError(null);
-    console.log(`[VaultSelect] Saving config for vault: ${configEditorVault.id}`, config);
+    log.info(`Saving config for vault: ${configEditorVault.id}`, config);
 
     try {
       interface ConfigUpdateResponse {
@@ -307,11 +310,11 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       // Close dialog
       setConfigEditorOpen(false);
       setConfigEditorVault(null);
-      console.log("[VaultSelect] Config saved successfully");
+      log.info("Config saved successfully");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save settings";
       setConfigSaveError(message);
-      console.warn("[VaultSelect] Config save failed:", message);
+      log.warn("Config save failed", message);
     } finally {
       setConfigSaving(false);
     }
@@ -333,7 +336,7 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
   async function handleAddVaultConfirm(title: string) {
     setAddVaultCreating(true);
     setAddVaultError(null);
-    console.log(`[VaultSelect] Creating vault: ${title}`);
+    log.info(`Creating vault: ${title}`);
 
     try {
       interface CreateVaultResponse {
@@ -353,11 +356,11 @@ export function VaultSelect({ onReady }: VaultSelectProps): React.ReactNode {
       // Close dialog
       setAddVaultDialogOpen(false);
 
-      console.log(`[VaultSelect] Vault created: ${newVault.id}`);
+      log.info(`Vault created: ${newVault.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create vault";
       setAddVaultError(message);
-      console.warn("[VaultSelect] Vault creation failed:", message);
+      log.warn("Vault creation failed", message);
     } finally {
       setAddVaultCreating(false);
     }

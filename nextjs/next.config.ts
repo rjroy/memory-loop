@@ -20,6 +20,8 @@ const nextConfig: NextConfig = {
   },
   // Transpile workspace packages
   transpilePackages: ["@memory-loop/shared", "@memory-loop/backend"],
+  // Keep cron as a runtime dependency (uses child_process, can't be bundled)
+  serverExternalPackages: ["cron"],
   // Configure webpack to resolve .js extensions to .ts in backend
   webpack: (config: { resolve: { extensionAlias?: Record<string, string[]> } }) => {
     config.resolve.extensionAlias = {

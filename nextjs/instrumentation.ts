@@ -4,10 +4,10 @@
  * Called once on server startup. Initializes background schedulers
  * that were previously started in backend/src/index.ts.
  *
- * Uses dynamic import() with webpackIgnore comments because
- * @memory-loop/backend is in transpilePackages, which causes webpack
- * to follow import chains and fail on Node.js-only modules like
- * child_process (used by cron).
+ * Uses dynamic import() so scheduler code only loads when actually
+ * needed (production server runtime, not during build or in edge).
+ * The cron package is in serverExternalPackages (next.config.ts)
+ * so webpack skips bundling it.
  */
 
 export async function register() {
@@ -26,7 +26,6 @@ export async function register() {
   // Extraction scheduler: daily at configured time (default: 3am)
   try {
     const { startScheduler, getCronSchedule } = await import(
-      /* webpackIgnore: true */
       "@memory-loop/backend/extraction/extraction-manager"
     );
     const started = await startScheduler();
@@ -48,7 +47,6 @@ export async function register() {
   try {
     const { startScheduler: startCardDiscoveryScheduler, getDiscoveryHourFromEnv } =
       await import(
-        /* webpackIgnore: true */
         "@memory-loop/backend/spaced-repetition/card-discovery-scheduler"
       );
     await startCardDiscoveryScheduler({

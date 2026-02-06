@@ -9,7 +9,7 @@ tags: [agents, registry, tooling]
 
 Specialized agents available for lore-development work in this project.
 
-Last updated: 2026-02-05
+Last updated: 2026-02-06
 
 ## Discovery
 
@@ -25,6 +25,7 @@ Last updated: 2026-02-05
 |-------|---------|-------------|
 | `lore-development:spec-reviewer` | Fresh-context spec review for clarity issues | After completing a spec, when requirements feel ambiguous |
 | `lore-development:design-reviewer` | Fresh-context design review for weak decisions | After completing a design, when technical approach feels uncertain |
+| `lore-development:plan-reviewer` | Fresh-context plan review for spec coverage gaps | After completing a plan, checking step feasibility and scope discipline |
 | `lore-development:fresh-lore` | Fresh-context analysis from outside accumulated context | When too deep in the weeds to think clearly, need a second opinion |
 
 ## Architecture

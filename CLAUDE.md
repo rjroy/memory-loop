@@ -60,6 +60,7 @@ Domain logic lives in `nextjs/lib/`. These modules are imported by API routes an
 | `lib/vault-manager.ts` | Vault discovery from VAULTS_DIR |
 | `lib/note-capture.ts` | Writes to daily notes (00_Inbox/YYYY-MM-DD.md) |
 | `lib/file-browser.ts` | Read-only markdown browsing with security checks |
+| `lib/scheduler-bootstrap.ts` | Isolates scheduler startup from instrumentation.ts (turbopack can't trace into it) |
 
 ### Key Application Modules
 
@@ -93,6 +94,8 @@ LOG_LEVEL=silent            # Suppress logs (useful in tests)
 
 Each vault must contain a `CLAUDE.md` file at root to be discovered.
 
+**Vault paths:** `vault.path` is the vault root (for config, sessions). `vault.contentRoot` is the content directory (for files, search, cards). Use `contentRoot` for all content operations.
+
 ## Service Operation
 
 When running as a systemd user service (`memory-loop.service`), check logs with:
@@ -124,7 +127,7 @@ Uses Bun's built-in test runner. Tests are colocated under `__tests__/` director
 
 ```bash
 bun run --cwd nextjs test lib/__tests__/specific-file.test.ts  # Single file
-./git-hooks/pre-commit.sh  # Full suite (runs sequentially)
+./.git-hooks/pre-commit.sh  # Full suite (runs sequentially)
 ```
 
 ### Constraints
@@ -185,4 +188,4 @@ When making changes that affect user-facing behavior, update the relevant docs. 
 ## Critical Lessons
 
 - Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: schema definition in `lib/schemas/`, config loading in `lib/vault-config.ts`, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
-- Validate the dev server, not just the production build. Turbopack (dev) and webpack (build) resolve modules differently. `serverExternalPackages` works for webpack but not turbopack. `webpackIgnore` comments on dynamic imports are the correct fix for instrumentation files that import modules with Node.js built-in dependencies.
+- Turbopack (dev) and webpack (build) handle imports differently. `serverExternalPackages` only works for webpack; turbopack still traces into those packages. Never use `webpackIgnore` on dynamic imports (it prevents `@/` alias resolution at runtime). To hide production-only imports from turbopack, use `if (NODE_ENV === "production") { await import(...) }` — turbopack dead-code-eliminates this branch. Early returns after `NODE_ENV === "development"` checks do NOT prevent tracing. Always test both `bun run --cwd nextjs dev` and `bun run --cwd nextjs build` when touching instrumentation.

@@ -241,6 +241,7 @@ ${transcriptList}
 3. Extract durable facts according to the categories above
 4. Merge new facts with existing content
 5. Write the updated memory file
+6. **Validate:** Re-read the file you just wrote and run it through the validation checklist below. Fix any violations and write the corrected file.
 
 ### Output Format
 
@@ -269,6 +270,11 @@ You are updating an existing memory file, not creating a new one. The file has a
 - **Compress** verbose entries into concise statements
 - **Consolidate** related facts rather than listing separately
 - **Remove** facts that no longer provide actionable context (outdated projects, superseded preferences, trivia that doesn't affect assistance)
+- **Distill, don't accumulate.** When a new transcript adds detail to an existing topic, update the existing entry. Do not append a second entry about the same topic. Two entries about the same thing means one should be deleted and the other refined.
+
+**Tactical vs. durable:** Project status (blockers, deadlines, action items, "by Monday") is transient. Extract the underlying pattern, preference, or relationship, not the status update. "TTS project blocked on EGSM retry mechanism" is tactical. "Owns TTS accessibility with March regulatory deadline" is durable context.
+
+**People entries:** Name, role, and working relationship are durable. Current task assignments and coaching session dates are not. "Roman: rushes to help, skips estimation. Coach with timeboxed spikes." is useful. A paragraph of coaching history with dates is a journal.
 
 The goal is a lean, high-signal file. When in doubt, shorter is better. A 200-line file of dense, useful context beats a 2000-line file of comprehensive biography.
 
@@ -282,6 +288,17 @@ The goal is a lean, high-signal file. When in doubt, shorter is better. A 200-li
 - Any information that looks like it should be kept secret
 
 If a transcript contains sensitive information, extract the context around it (what the user was working on) without the sensitive values themselves.
+
+### Validation Checklist (Step 6)
+
+After writing the memory file, re-read it completely and check each entry against these criteria. If any entry fails, remove or rewrite it, then save the corrected file.
+
+1. **Additive test:** Each entry must earn its place. Ask: what does this add that the rest of the file doesn't already provide? If you can't answer concretely, remove it.
+2. **No duplicates:** Search for topics that appear more than once. Consolidate into a single entry.
+3. **No tactical status:** Remove specific dates, blockers, action items, and deadlines. These belong in a task tracker. If the underlying fact matters, restate it without the tactical detail.
+4. **Compression check:** Can any entry be said in fewer words without losing meaning? Rewrite it shorter.
+5. **People check:** For any person mentioned, keep only: name, role/relationship, and working style that affects collaboration. Remove task assignments, coaching session dates, and status updates.
+6. **Proportionality:** The file should reflect the weight of what matters, not the volume of what was discussed. A topic that came up once but is deeply important deserves a line. A topic discussed at length that adds nothing doesn't deserve space.
 `;
 }
 

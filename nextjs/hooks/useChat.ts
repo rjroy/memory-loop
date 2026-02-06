@@ -54,6 +54,8 @@ export interface UseChatResult {
 export interface UseChatOptions {
   /** API base URL (defaults to /api) */
   apiBase?: string;
+  /** Initial session ID for resuming a previous session */
+  initialSessionId?: string | null;
   /** Callback for each received event */
   onEvent?: (event: ServerMessage) => void;
   /** Callback when streaming starts */
@@ -106,12 +108,12 @@ export function useChat(
   vault: VaultInfo | null,
   options: UseChatOptions = {}
 ): UseChatResult {
-  const { apiBase = "/api", onEvent, onStreamStart, onStreamEnd, onError } =
+  const { apiBase = "/api", initialSessionId, onEvent, onStreamStart, onStreamEnd, onError } =
     options;
 
   // State
   const [streamingState, setStreamingState] = useState<ChatStreamingState>("idle");
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(initialSessionId ?? null);
   const [lastError, setLastError] = useState<string | null>(null);
 
   // Refs for cleanup
@@ -385,10 +387,13 @@ export function useChat(
   );
 
   /**
-   * Clear session on vault change.
+   * Clear session on vault change (but not on initial mount).
    */
+  const prevVaultIdRef = useRef(vault?.id);
   useEffect(() => {
-    // Reset session when vault changes
+    if (prevVaultIdRef.current === vault?.id) return;
+    prevVaultIdRef.current = vault?.id;
+
     setSessionId(null);
     setLastError(null);
     setStreamingState("idle");

@@ -5,6 +5,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { ensureSdk } from "@/lib/controller";
 import {
   runExtraction,
   isExtractionRunning,
@@ -14,6 +15,8 @@ import {
  * POST - Triggers manual extraction run
  */
 export async function POST() {
+  ensureSdk();
+
   // Check if extraction is already running
   if (isExtractionRunning()) {
     return NextResponse.json({

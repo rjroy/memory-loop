@@ -6,6 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
+import { ensureSdk } from "@/lib/controller";
 import {
   handleSetupVault,
   ConfigValidationError,
@@ -25,6 +26,8 @@ export async function POST(_request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
   const vault = await getVaultOrError(vaultId);
   if (isErrorResponse(vault)) return vault;
+
+  ensureSdk();
 
   try {
     const result = await handleSetupVault(vault.id);

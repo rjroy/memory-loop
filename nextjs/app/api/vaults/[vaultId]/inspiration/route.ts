@@ -6,6 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse } from "@/lib/vault-helpers";
+import { ensureSdk } from "@/lib/controller";
 import { getInspiration } from "@memory-loop/backend/inspiration-manager";
 
 interface RouteParams {
@@ -23,6 +24,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
   const vault = await getVaultOrError(vaultId);
   if (isErrorResponse(vault)) return vault;
+
+  ensureSdk();
 
   try {
     const result = await getInspiration(vault);

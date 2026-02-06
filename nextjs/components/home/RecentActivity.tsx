@@ -11,7 +11,7 @@
 import React, { useCallback, useState } from "react";
 import { useSession } from "../../contexts/SessionContext";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
-import type { RecentNoteEntry, RecentDiscussionEntry } from "@memory-loop/shared";
+import type { RecentNoteEntry, RecentDiscussionEntry, ConversationMessage, SlashCommand } from "@memory-loop/shared";
 import "./RecentActivity.css";
 
 /**
@@ -77,6 +77,9 @@ export function RecentActivity({
     sessionId,
     setMode,
     setCurrentPath,
+    setSessionId,
+    setMessages,
+    setSlashCommands,
     setPendingSessionId,
   } = useSession();
 
@@ -99,19 +102,55 @@ export function RecentActivity({
     [onViewCapture, setCurrentPath, setMode, vault?.inboxPath]
   );
 
-  // Handle resume discussion click
+  // Handle resume discussion click - load session messages via REST, then switch to discussion
   const handleResumeDiscussion = useCallback(
-    (sessionId: string) => {
+    (resumeSessionId: string) => {
       if (onResumeDiscussion) {
-        onResumeDiscussion(sessionId);
-      } else {
-        // Set pending session ID so Discussion can send resume_session when it mounts
-        // This avoids a race condition where Discussion would send its own session management
-        setPendingSessionId(sessionId);
-        setMode("discussion");
+        onResumeDiscussion(resumeSessionId);
+        return;
       }
+
+      if (!vault?.id) return;
+
+      // Load session data from the same endpoint VaultSelect uses
+      void (async () => {
+        try {
+          const response = await fetch(`/api/vaults/${vault.id}/sessions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: resumeSessionId }),
+          });
+
+          if (!response.ok) {
+            console.error("[RecentActivity] Failed to load session:", response.status);
+            return;
+          }
+
+          const data = await response.json() as {
+            sessionId: string;
+            messages: ConversationMessage[];
+            slashCommands?: SlashCommand[];
+          };
+
+          // Populate context with session data (same as VaultSelect.initializeSession)
+          if (data.sessionId) {
+            setSessionId(data.sessionId);
+            setPendingSessionId(data.sessionId);
+          }
+          if (data.messages?.length > 0) {
+            setMessages(data.messages);
+          }
+          if (data.slashCommands) {
+            setSlashCommands(data.slashCommands);
+          }
+
+          setMode("discussion");
+        } catch (err) {
+          console.error("[RecentActivity] Failed to resume session:", err);
+        }
+      })();
     },
-    [onResumeDiscussion, setPendingSessionId, setMode]
+    [onResumeDiscussion, vault?.id, setSessionId, setMessages, setSlashCommands, setPendingSessionId, setMode]
   );
 
   // Handle delete button click - show confirmation dialog

@@ -32,13 +32,12 @@ export class SdkNotInitializedError extends Error {
 }
 
 /**
- * Initialize with real SDK (call once at server startup).
- * Throws if already initialized to prevent accidental re-initialization.
+ * Initialize with real SDK. Idempotent: safe to call multiple times.
+ * In Next.js, multiple API routes may need the SDK before the chat
+ * controller is first accessed, so this must not throw on re-init.
  */
 export function initializeSdkProvider(): void {
-  if (_initialized) {
-    throw new Error("SDK provider already initialized");
-  }
+  if (_initialized) return;
   _queryFn = query;
   _initialized = true;
 }

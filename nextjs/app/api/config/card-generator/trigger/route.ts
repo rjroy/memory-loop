@@ -5,12 +5,15 @@
  */
 
 import { NextResponse } from "next/server";
+import { ensureSdk } from "@/lib/controller";
 import { triggerManualGeneration } from "@memory-loop/backend/spaced-repetition/card-discovery-scheduler";
 
 /**
  * POST - Triggers manual card generation using remaining weekly budget
  */
 export async function POST() {
+  ensureSdk();
+
   try {
     const result = await triggerManualGeneration();
 

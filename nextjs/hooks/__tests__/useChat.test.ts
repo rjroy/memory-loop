@@ -456,6 +456,52 @@ describe("useChat", () => {
     });
   });
 
+  describe("initialSessionId", () => {
+    it("initializes with provided session ID for resume", () => {
+      const { result } = renderHook(() =>
+        useChat(testVault, { initialSessionId: "sess_resume_123" })
+      );
+
+      expect(result.current.sessionId).toBe("sess_resume_123");
+    });
+
+    it("sends sessionId in first message when initialSessionId is set", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          createSSEResponse([
+            { type: "session_ready", sessionId: "sess_resume_123", vaultId: "test-vault", messages: [] },
+            { type: "response_start", messageId: "msg_1" },
+            { type: "response_end", messageId: "msg_1", durationMs: 100 },
+          ])
+        )
+      );
+
+      const { result } = renderHook(() =>
+        useChat(testVault, { initialSessionId: "sess_resume_123" })
+      );
+
+      await act(async () => {
+        await result.current.sendMessage("Continue our conversation");
+      });
+
+      const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+      expect(body.sessionId).toBe("sess_resume_123");
+      expect(body.vaultPath).toBe("/path/to/vault");
+      expect(body.prompt).toBe("Continue our conversation");
+      // Should NOT have vaultId (resume path, not new session path)
+      expect(body.vaultId).toBeUndefined();
+    });
+
+    it("ignores null initialSessionId", () => {
+      const { result } = renderHook(() =>
+        useChat(testVault, { initialSessionId: null })
+      );
+
+      expect(result.current.sessionId).toBeNull();
+    });
+  });
+
   describe("vault change", () => {
     it("resets session when vault changes", async () => {
       // Set up session first

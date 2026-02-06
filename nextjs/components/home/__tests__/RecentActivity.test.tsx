@@ -5,11 +5,13 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { RecentActivity } from "../RecentActivity";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
 import type { VaultInfo, RecentNoteEntry, RecentDiscussionEntry } from "@memory-loop/shared";
+
+import { useEffect } from "react";
 
 // Helper component to capture context state changes
 let capturedMode: string | null = null;
@@ -19,6 +21,20 @@ function ContextCapture(): null {
   const { mode, pendingSessionId } = useSession();
   capturedMode = mode;
   capturedPendingSessionId = pendingSessionId;
+  return null;
+}
+
+/**
+ * Injects discussions into context after vault selection completes.
+ * SELECT_VAULT resets recentDiscussions, so we must inject after.
+ */
+function DiscussionInjector({ discussions }: { discussions: RecentDiscussionEntry[] }): null {
+  const { vault, setRecentDiscussions } = useSession();
+  useEffect(() => {
+    if (vault) {
+      setRecentDiscussions(discussions);
+    }
+  }, [vault, discussions, setRecentDiscussions]);
   return null;
 }
 
@@ -73,6 +89,9 @@ function createTestWrapper(
   };
 }
 
+const originalFetch = globalThis.fetch;
+const mockFetch = mock(() => Promise.resolve(new Response()));
+
 beforeEach(() => {
   localStorage.clear();
   // Reset captured context values
@@ -80,10 +99,13 @@ beforeEach(() => {
   capturedPendingSessionId = null;
   // Don't pre-select vault for these tests - we want to test RecentActivity
   // rendering with data, not vault selection behavior
+  mockFetch.mockReset();
+  globalThis.fetch = mockFetch as unknown as typeof fetch;
 });
 
 afterEach(() => {
   cleanup();
+  globalThis.fetch = originalFetch;
 });
 
 describe("RecentActivity", () => {
@@ -232,17 +254,63 @@ describe("RecentActivity", () => {
       expect(onResumeDiscussion).toHaveBeenCalledWith("session-1");
     });
 
-    it("sets pendingSessionId and mode when no custom handler", () => {
-      render(<RecentActivity />, {
-        wrapper: createTestWrapper([], mockDiscussions, true),
+    it("loads session via REST and switches to discussion mode when no custom handler", async () => {
+      // Mock the session init endpoint to return session data
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              sessionId: "session-1",
+              vaultId: "vault-1",
+              messages: [
+                { id: "msg-1", role: "user", content: "Hello", timestamp: "2025-01-15T09:00:00Z" },
+              ],
+              slashCommands: [],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        )
+      );
+
+      // Persist vault ID so SessionProvider auto-selects it.
+      // SELECT_VAULT resets recentDiscussions, so we inject them
+      // after vault selection via DiscussionInjector.
+      localStorage.setItem("memory-loop:vaultId", "vault-1");
+
+      function Wrapper({ children }: { children: ReactNode }) {
+        return (
+          <SessionProvider initialVaults={[testVault]}>
+            <DiscussionInjector discussions={mockDiscussions} />
+            <ContextCapture />
+            {children}
+          </SessionProvider>
+        );
+      }
+
+      render(<RecentActivity />, { wrapper: Wrapper });
+
+      // Wait for discussions to be injected after vault selection
+      await waitFor(() => {
+        expect(screen.getAllByRole("button", { name: /resume discussion/i })).toHaveLength(2);
       });
 
       const resumeButtons = screen.getAllByRole("button", { name: /resume discussion/i });
       fireEvent.click(resumeButtons[0]);
 
-      // Verify context state was updated
+      // Wait for async fetch to complete and context to update
+      await waitFor(() => {
+        expect(capturedMode).toBe("discussion");
+      });
+
+      // Verify the session init endpoint was called with the session ID
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      expect(call[0]).toBe("/api/vaults/vault-1/sessions");
+      const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+      expect(body.sessionId).toBe("session-1");
+
+      // pendingSessionId is set so useChat can use it for resume
       expect(capturedPendingSessionId).toBe("session-1");
-      expect(capturedMode).toBe("discussion");
     });
   });
 

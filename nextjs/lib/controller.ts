@@ -27,19 +27,24 @@ export type { SessionEvent, SessionState, PendingPrompt, PromptResponse };
 // Attach singleton to globalThis so it survives Next.js dev mode module reloading
 const globalForController = globalThis as unknown as {
   __memoryLoopController?: ActiveSessionController;
-  __memoryLoopSdkInitialized?: boolean;
 };
+
+/**
+ * Ensures the SDK provider is initialized.
+ * Idempotent: safe to call from any API route.
+ * Call this in routes that use backend modules requiring the SDK
+ * (inspiration, card generation, vault setup, etc.).
+ */
+export function ensureSdk(): void {
+  initializeSdkProvider();
+}
 
 /**
  * Gets the singleton Active Session Controller.
  * Initializes the SDK on first call.
  */
 export function getController(): ActiveSessionController {
-  // Initialize SDK on first access (server-side singleton)
-  if (!globalForController.__memoryLoopSdkInitialized) {
-    initializeSdkProvider();
-    globalForController.__memoryLoopSdkInitialized = true;
-  }
+  ensureSdk();
 
   if (!globalForController.__memoryLoopController) {
     globalForController.__memoryLoopController = createActiveSessionController();

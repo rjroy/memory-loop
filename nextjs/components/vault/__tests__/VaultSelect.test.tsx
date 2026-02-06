@@ -10,7 +10,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { VaultSelect } from "../VaultSelect";
 import { SessionProvider, STORAGE_KEY_VAULT } from "../../../contexts/SessionContext";
-import type { VaultInfo } from "@memory-loop/shared";
+import type { VaultInfo } from "@/lib/schemas";
 
 const originalFetch = globalThis.fetch;
 

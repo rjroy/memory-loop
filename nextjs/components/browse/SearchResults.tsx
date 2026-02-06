@@ -10,7 +10,7 @@ import type {
   FileSearchResult,
   ContentSearchResult,
   ContextSnippet,
-} from "@memory-loop/shared";
+} from "@/lib/schemas";
 import type { SearchMode } from "../../contexts/SessionContext";
 import "./SearchResults.css";
 

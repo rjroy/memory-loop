@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { createApiClient, vaultPath, ApiError, isApiErrorResponse } from "../client.js";
-import type { ApiErrorResponse } from "../types.js";
+import { createApiClient, vaultPath, ApiError, isApiErrorResponse } from "../client";
+import type { ApiErrorResponse } from "../types";
 
 /**
  * Type for a mock fetch function.

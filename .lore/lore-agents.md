@@ -57,7 +57,7 @@ Last updated: 2026-02-05
 ## Project-Specific Notes
 
 - **Testing is mandatory**: Always consult `pr-review-toolkit:pr-test-analyzer` before marking work complete
-- **Schema changes**: When modifying `shared/src/types.ts`, use `pr-review-toolkit:type-design-analyzer` to review Zod schema design
+- **Schema changes**: When modifying `lib/schemas/types.ts`, use `pr-review-toolkit:type-design-analyzer` to review Zod schema design
 - **SSE streaming**: Consult `silent-failure-hunter` for any changes to SSE chat endpoint or error handling paths
 - **SDK integration**: The Claude Agent SDK provider pattern requires careful review; use `code-reviewer` for any `sdk-provider.ts` changes
-- **Monorepo context**: Three workspaces (backend, nextjs, shared). Backend is a library consumed by Next.js API routes. No standalone server.
+- **Single workspace**: All code lives in `nextjs/`. Domain logic in `lib/`, schemas in `lib/schemas/`.

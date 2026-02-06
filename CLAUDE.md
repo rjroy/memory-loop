@@ -10,18 +10,18 @@ Memory Loop is a mobile-friendly web interface for interacting with Obsidian vau
 
 ```bash
 # Development
-bun install              # Install all workspace dependencies
+bun install              # Install dependencies
 bun run --cwd nextjs dev # Start Next.js dev server (:3000)
 
 # Testing
-bun run test             # Run all tests (backend -> nextjs -> shared)
-bun run test:coverage    # Generate coverage reports
-bun run --cwd backend test  # Backend tests only
-LOG_LEVEL=silent bun run --cwd backend test  # Suppress logs during tests
+bun run test             # Run all tests
+bun run test:coverage    # Generate coverage report
+bun run --cwd nextjs test lib/__tests__/specific-file.test.ts  # Single file
+LOG_LEVEL=silent bun run --cwd nextjs test  # Suppress logs during tests
 
 # Quality
-bun run typecheck        # TypeScript checking (all workspaces)
-bun run lint             # ESLint (all workspaces)
+bun run typecheck        # TypeScript checking
+bun run lint             # ESLint
 
 # Production
 bun run --cwd nextjs build  # Build Next.js
@@ -30,12 +30,16 @@ bun run --cwd nextjs build  # Build Next.js
 
 ## Architecture
 
-Bun monorepo with three workspaces:
+Next.js 15 App Router application. Domain logic lives in `lib/`, UI in `components/`, `hooks/`, and `contexts/`.
 
 ```
-nextjs/    # Next.js 15 App Router (UI + API routes + SSE streaming)
-backend/   # Library: Claude Agent SDK, vault operations, schedulers
-shared/    # Zod schemas and TypeScript types
+nextjs/
+  app/           # Pages and API routes
+  components/    # React components
+  hooks/         # React hooks
+  contexts/      # State management
+  lib/           # Domain logic, schemas, utilities
+  lib/schemas/   # Zod schemas and TypeScript types
 ```
 
 ### Communication
@@ -45,19 +49,19 @@ shared/    # Zod schemas and TypeScript types
 
 The frontend sends a prompt via REST, then reads the SSE stream for incremental responses. Stop/permission/answer requests are separate REST calls alongside the stream.
 
-### Key Backend Modules
+### Key Domain Modules
 
-Backend is a library consumed by Next.js API routes. It contains domain logic but no HTTP server of its own.
+Domain logic lives in `nextjs/lib/`. These modules are imported by API routes and contain no HTTP server of their own.
 
 | File | Purpose |
 |------|---------|
-| `session-manager.ts` | Claude Agent SDK session create/resume/save |
-| `streaming/session-streamer.ts` | Transforms SDK events into SessionEvents |
-| `vault-manager.ts` | Vault discovery from VAULTS_DIR |
-| `note-capture.ts` | Writes to daily notes (00_Inbox/YYYY-MM-DD.md) |
-| `file-browser.ts` | Read-only markdown browsing with security checks |
+| `lib/session-manager.ts` | Claude Agent SDK session create/resume/save |
+| `lib/streaming/session-streamer.ts` | Transforms SDK events into SessionEvents |
+| `lib/vault-manager.ts` | Vault discovery from VAULTS_DIR |
+| `lib/note-capture.ts` | Writes to daily notes (00_Inbox/YYYY-MM-DD.md) |
+| `lib/file-browser.ts` | Read-only markdown browsing with security checks |
 
-### Key Next.js Modules
+### Key Application Modules
 
 | File | Purpose |
 |------|---------|
@@ -119,11 +123,9 @@ Uses Bun's built-in test runner. Tests are colocated under `__tests__/` director
 **Tests cannot run in parallel.** Running multiple test suites simultaneously causes flaky failures due to filesystem contention and shared resource access. Always run tests sequentially:
 
 ```bash
-bun run --cwd backend test src/__tests__/specific-file.test.ts  # Single file
+bun run --cwd nextjs test lib/__tests__/specific-file.test.ts  # Single file
 ./git-hooks/pre-commit.sh  # Full suite (runs sequentially)
 ```
-
-Do not run `bun run test` from root expecting parallel execution to work.
 
 ### Constraints
 
@@ -152,12 +154,12 @@ afterEach(() => {
 
 ### SDK Provider Pattern
 
-The Claude Agent SDK uses a centralized provider (`backend/src/sdk-provider.ts`) to prevent accidental API calls in tests. In the Next.js app, `nextjs/lib/controller.ts` calls `initializeSdkProvider()` lazily on first use. All other modules use `getSdkQuery()`, which throws `SdkNotInitializedError` if not initialized.
+The Claude Agent SDK uses a centralized provider (`lib/sdk-provider.ts`) to prevent accidental API calls in tests. In the app, `lib/controller.ts` calls `initializeSdkProvider()` lazily on first use. All other modules use `getSdkQuery()`, which throws `SdkNotInitializedError` if not initialized.
 
 In tests, use `configureSdkForTesting(mockFn)` to inject a mock:
 
 ```typescript
-import { configureSdkForTesting } from "../sdk-provider.js";
+import { configureSdkForTesting } from "../sdk-provider";
 
 let cleanup: () => void;
 beforeEach(() => { cleanup = configureSdkForTesting(mockQueryFn); });
@@ -182,4 +184,4 @@ When making changes that affect user-facing behavior, update the relevant docs. 
 
 ## Critical Lessons
 
-- Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: shared schema, backend config loading, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
+- Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: schema definition in `lib/schemas/`, config loading in `lib/vault-config.ts`, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.

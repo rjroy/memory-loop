@@ -23,7 +23,7 @@ import { GoalsCard } from "./GoalsCard";
 import { InspirationCard } from "./InspirationCard";
 import { SpacedRepetitionWidget } from "./SpacedRepetitionWidget";
 
-import type { InspirationItem } from "@memory-loop/shared";
+import type { InspirationItem } from "@/lib/schemas";
 import "./HomeView.css";
 
 /**

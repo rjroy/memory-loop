@@ -5,8 +5,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { getVaultById } from "@memory-loop/backend/vault-manager";
-import type { VaultInfo } from "@memory-loop/shared";
+import { getVaultById } from "@/lib/vault-manager";
+import type { VaultInfo } from "@/lib/schemas";
 
 /**
  * Gets a vault by ID and returns it, or returns an error response.

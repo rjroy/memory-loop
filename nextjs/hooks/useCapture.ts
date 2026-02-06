@@ -12,7 +12,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { createApiClient, vaultPath, ApiError } from "@/lib/api/client";
-import type { RecentNoteEntry, RecentDiscussionEntry } from "@memory-loop/shared";
+import type { RecentNoteEntry, RecentDiscussionEntry } from "@/lib/schemas";
 import type { FetchFn } from "@/lib/api/types";
 
 /**

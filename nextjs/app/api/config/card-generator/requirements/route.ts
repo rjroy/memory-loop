@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import {
   deleteRequirementsOverride,
   getDefaultRequirements,
-} from "@memory-loop/backend/spaced-repetition/card-generator-config";
+} from "@/lib/spaced-repetition/card-generator-config";
 
 /**
  * DELETE - Removes user override and returns default requirements

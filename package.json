@@ -3,16 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["backend", "shared", "nextjs"],
   "scripts": {
     "dev": "bun run --cwd nextjs dev",
     "build": "bun run --cwd nextjs build",
     "start": "bun run --cwd nextjs start",
-    "dev:all": "bun run --filter '*' dev",
-    "lint": "bun run --filter '*' lint",
-    "test": "bun run --cwd backend test && bun run --cwd nextjs test && bun run --cwd shared test",
-    "test:coverage": "bun run --cwd backend test:coverage && bun run --cwd nextjs test:coverage && bun run --cwd shared test:coverage",
-    "typecheck": "bun run --filter '*' typecheck"
+    "lint": "bun run --cwd nextjs lint",
+    "test": "bun run --cwd nextjs test",
+    "test:coverage": "bun run --cwd nextjs test:coverage",
+    "typecheck": "bun run --cwd nextjs typecheck"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

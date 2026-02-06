@@ -9,7 +9,7 @@ import { ensureSdk } from "@/lib/controller";
 import {
   runExtraction,
   isExtractionRunning,
-} from "@memory-loop/backend/extraction/extraction-manager";
+} from "@/lib/extraction/extraction-manager";
 
 /**
  * POST - Triggers manual extraction run

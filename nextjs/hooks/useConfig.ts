@@ -13,7 +13,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { createApiClient, vaultPath, ApiError } from "@/lib/api/client";
 import type { FetchFn } from "@/lib/api/types";
-import type { EditableVaultConfig } from "@memory-loop/shared";
+import type { EditableVaultConfig } from "@/lib/schemas";
 
 /**
  * Response from GET/PUT /pinned-assets.

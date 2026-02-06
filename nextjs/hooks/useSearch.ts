@@ -12,7 +12,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { createApiClient, vaultPath, ApiError } from "@/lib/api/client";
-import type { FileSearchResult, ContentSearchResult, ContextSnippet } from "@memory-loop/shared";
+import type { FileSearchResult, ContentSearchResult, ContextSnippet } from "@/lib/schemas";
 import type { FetchFn } from "@/lib/api/types";
 
 /**

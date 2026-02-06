@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { submitReview, isValidResponse } from "@memory-loop/backend/spaced-repetition";
+import { submitReview, isValidResponse } from "@/lib/spaced-repetition";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; cardId: string }>;

@@ -9,7 +9,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { InspirationCard } from "../InspirationCard";
 import { SessionProvider } from "../../../contexts/SessionContext";
-import type { VaultInfo, InspirationItem } from "@memory-loop/shared";
+import type { VaultInfo, InspirationItem } from "@/lib/schemas";
 
 // Test data
 const testVault: VaultInfo = {

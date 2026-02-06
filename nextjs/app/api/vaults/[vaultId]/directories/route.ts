@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { createDirectory } from "@memory-loop/backend/file-browser";
+import { createDirectory } from "@/lib/file-browser";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

@@ -12,7 +12,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { createApiClient, vaultPath, ApiError } from "@/lib/api/client";
 import type { FetchFn } from "@/lib/api/types";
-import type { FileEntry } from "@memory-loop/shared";
+import type { FileEntry } from "@/lib/schemas";
 
 // =============================================================================
 // Response Types (matching backend route responses)

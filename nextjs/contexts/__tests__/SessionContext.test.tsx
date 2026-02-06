@@ -12,7 +12,7 @@ import {
   useSession,
   useServerMessageHandler,
 } from "../SessionContext";
-import type { VaultInfo, TaskEntry } from "@memory-loop/shared";
+import type { VaultInfo, TaskEntry } from "@/lib/schemas";
 
 beforeEach(() => {
   localStorage.clear();

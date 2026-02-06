@@ -15,8 +15,8 @@ import {
   readMemoryFile,
   writeMemoryFile,
   getMemoryFilePath,
-} from "@memory-loop/backend/extraction/memory-writer";
-import { fileExists } from "@memory-loop/backend/vault-manager";
+} from "@/lib/extraction/memory-writer";
+import { fileExists } from "@/lib/vault-manager";
 
 /**
  * GET /api/config/memory

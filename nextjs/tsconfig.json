@@ -24,9 +24,7 @@
       "@/hooks/*": ["./hooks/*"],
       "@/contexts/*": ["./contexts/*"],
       "@/lib/*": ["./lib/*"],
-      "@/styles/*": ["./styles/*"],
-      "@memory-loop/shared": ["../shared/src/index.ts"],
-      "@memory-loop/backend/*": ["../backend/src/*"]
+      "@/styles/*": ["./styles/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

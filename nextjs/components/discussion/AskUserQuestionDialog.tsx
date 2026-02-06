@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useId, useCallback, useEffect } from "react";
-import type { AskUserQuestionItem, AskUserQuestionOption } from "@memory-loop/shared";
+import type { AskUserQuestionItem, AskUserQuestionOption } from "@/lib/schemas";
 import "./AskUserQuestionDialog.css";
 
 export interface AskUserQuestionRequest {

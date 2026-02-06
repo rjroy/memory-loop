@@ -12,10 +12,10 @@
  */
 
 import { NextResponse } from "next/server";
-import { getVaultById } from "@memory-loop/backend/vault-manager";
-import { loadSession, getSessionForVault } from "@memory-loop/backend/session-manager";
-import { loadSlashCommands, loadVaultConfig } from "@memory-loop/backend/vault-config";
-import type { SlashCommand } from "@memory-loop/shared";
+import { getVaultById } from "@/lib/vault-manager";
+import { loadSession, getSessionForVault } from "@/lib/session-manager";
+import { loadSlashCommands, loadVaultConfig } from "@/lib/vault-config";
+import type { SlashCommand } from "@/lib/schemas";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

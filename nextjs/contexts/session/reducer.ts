@@ -19,7 +19,7 @@ import type {
 
   MeetingState,
   EditableVaultConfig,
-} from "@memory-loop/shared";
+} from "@/lib/schemas";
 
 import type {
   SessionState,
@@ -29,13 +29,13 @@ import type {
   AppMode,
   BrowseViewMode,
   SearchMode,
-} from "./types.js";
+} from "./types";
 import {
   createInitialBrowserState,
 
   createInitialSearchState,
   generateMessageId,
-} from "./initial-state.js";
+} from "./initial-state";
 
 /**
  * Action types for reducer.

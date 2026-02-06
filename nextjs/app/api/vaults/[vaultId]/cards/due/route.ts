@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getDueCards } from "@memory-loop/backend/spaced-repetition";
+import { getDueCards } from "@/lib/spaced-repetition";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

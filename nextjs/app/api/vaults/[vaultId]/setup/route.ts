@@ -11,7 +11,7 @@ import {
   handleSetupVault,
   ConfigValidationError,
   VaultNotFoundError,
-} from "@memory-loop/backend/handlers";
+} from "@/lib/handlers";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

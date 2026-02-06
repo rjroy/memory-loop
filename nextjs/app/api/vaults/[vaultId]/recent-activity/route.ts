@@ -6,13 +6,13 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getRecentNotes } from "@memory-loop/backend/note-capture";
-import { getRecentSessions } from "@memory-loop/backend/session-manager";
+import { getRecentNotes } from "@/lib/note-capture";
+import { getRecentSessions } from "@/lib/session-manager";
 import {
   loadVaultConfig,
   resolveRecentCaptures,
   resolveRecentDiscussions,
-} from "@memory-loop/backend/vault-config";
+} from "@/lib/vault-config";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

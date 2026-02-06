@@ -10,8 +10,8 @@ import {
   saveCardGeneratorConfig,
   loadRequirements,
   saveRequirementsOverride,
-} from "@memory-loop/backend/spaced-repetition/card-generator-config";
-import { getWeeklyUsage } from "@memory-loop/backend/spaced-repetition/card-discovery-scheduler";
+} from "@/lib/spaced-repetition/card-generator-config";
+import { getWeeklyUsage } from "@/lib/spaced-repetition/card-discovery-scheduler";
 
 /**
  * GET - Returns card generator config with requirements, override status, and byte limits

@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { deleteSession, validateSessionId, SessionError } from "@memory-loop/backend/session-manager";
+import { deleteSession, validateSessionId, SessionError } from "@/lib/session-manager";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; sessionId: string }>;

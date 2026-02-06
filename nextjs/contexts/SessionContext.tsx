@@ -29,7 +29,7 @@ import type {
 
   MeetingState,
   EditableVaultConfig,
-} from "@memory-loop/shared";
+} from "@/lib/schemas";
 
 import {
   type AppMode,
@@ -45,7 +45,7 @@ import {
   persistVaultId,
   persistBrowserPath,
   persistViewMode,
-} from "./session/index.js";
+} from "./session/index";
 
 // Re-export types for consumers
 export type {
@@ -60,8 +60,8 @@ export type {
   SessionState,
   SessionActions,
   SessionContextValue,
-} from "./session/types.js";
-export { STORAGE_KEY_VAULT } from "./session/storage.js";
+} from "./session/types";
+export { STORAGE_KEY_VAULT } from "./session/storage";
 
 /**
  * Session context instance.

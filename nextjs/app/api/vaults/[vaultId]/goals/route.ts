@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getVaultGoals } from "@memory-loop/backend/vault-manager";
+import { getVaultGoals } from "@/lib/vault-manager";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

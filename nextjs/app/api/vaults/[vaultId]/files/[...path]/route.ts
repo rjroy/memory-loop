@@ -16,8 +16,8 @@ import {
   deleteFile,
   renameFile,
   moveFile,
-} from "@memory-loop/backend/file-browser";
-import { updateReferences } from "@memory-loop/backend/reference-updater";
+} from "@/lib/file-browser";
+import { updateReferences } from "@/lib/reference-updater";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; path: string[] }>;

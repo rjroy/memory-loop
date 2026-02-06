@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse } from "@/lib/vault-helpers";
 import { ensureSdk } from "@/lib/controller";
-import { getInspiration } from "@memory-loop/backend/inspiration-manager";
+import { getInspiration } from "@/lib/inspiration-manager";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

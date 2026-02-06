@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { FileEntry } from "@memory-loop/shared";
+import type { FileEntry } from "@/lib/schemas";
 import { useSession } from "../../contexts/SessionContext";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
 import { InputDialog } from "../shared/InputDialog";

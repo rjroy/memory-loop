@@ -9,7 +9,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { RecentActivity } from "../RecentActivity";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
-import type { VaultInfo, RecentNoteEntry, RecentDiscussionEntry } from "@memory-loop/shared";
+import type { VaultInfo, RecentNoteEntry, RecentDiscussionEntry } from "@/lib/schemas";
 
 import { useEffect } from "react";
 

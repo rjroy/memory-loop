@@ -7,8 +7,8 @@
 
 import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { stopMeeting, toMeetingState } from "@memory-loop/backend/meeting-capture";
-import { getActiveMeeting, clearActiveMeeting } from "@memory-loop/backend/meeting-store";
+import { stopMeeting, toMeetingState } from "@/lib/meeting-capture";
+import { getActiveMeeting, clearActiveMeeting } from "@/lib/meeting-store";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

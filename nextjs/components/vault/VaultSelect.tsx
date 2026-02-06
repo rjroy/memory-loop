@@ -10,7 +10,7 @@
 // REST API calls in async handlers
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import type { VaultInfo, EditableVaultConfig, SlashCommand, ConversationMessage } from "@memory-loop/shared";
+import type { VaultInfo, EditableVaultConfig, SlashCommand, ConversationMessage } from "@/lib/schemas";
 import { useSession, STORAGE_KEY_VAULT } from "../../contexts/SessionContext";
 import { createApiClient, vaultPath } from "@/lib/api/client";
 import { Toast, type ToastVariant } from "../shared/Toast";

@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, type MutableRefObject } from "react";
-import type { ServerMessage, SlashCommand } from "@memory-loop/shared";
+import type { ServerMessage, SlashCommand } from "@/lib/schemas";
 import { useChat } from "../../hooks/useChat";
 import { useSession, useServerMessageHandler } from "../../contexts/SessionContext";
 import { ConversationPane, DiscussionEmptyState } from "../shared/ConversationPane";

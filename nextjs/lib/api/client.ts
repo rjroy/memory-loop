@@ -9,14 +9,14 @@
  * - Uses dependency injection for fetch (testable without mock.module)
  */
 
-import type { ErrorCode } from "@memory-loop/shared";
+import type { ErrorCode } from "@/lib/schemas";
 import {
   ApiError,
   isApiErrorResponse,
   type ApiRequestOptions,
   type ApiClientConfig,
   type FetchFn,
-} from "./types.js";
+} from "./types";
 
 /**
  * Default fetch function, bound to globalThis.
@@ -244,7 +244,7 @@ export function vaultPath(vaultId: string, path: string): string {
 /**
  * Re-export types for convenience.
  */
-export { ApiError, isApiErrorResponse } from "./types.js";
+export { ApiError, isApiErrorResponse } from "./types";
 export type {
   ApiErrorResponse,
   ApiRequestOptions,
@@ -252,4 +252,4 @@ export type {
   ApiResult,
   EmptyResponse,
   FetchFn,
-} from "./types.js";
+} from "./types";

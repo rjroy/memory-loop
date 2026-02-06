@@ -7,7 +7,7 @@
 
 import React, { useCallback } from "react";
 import { useSession } from "../../contexts/SessionContext";
-import type { InspirationItem } from "@memory-loop/shared";
+import type { InspirationItem } from "@/lib/schemas";
 import "./InspirationCard.css";
 
 /**

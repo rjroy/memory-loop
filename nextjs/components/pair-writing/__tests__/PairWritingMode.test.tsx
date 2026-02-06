@@ -116,7 +116,7 @@ function createSSEResponse(events: Array<{ type: string; [key: string]: unknown 
 }
 
 // Test vault for SessionContext (PairWritingMode gets vault from SessionContext)
-const testVault: import("@memory-loop/shared").VaultInfo = {
+const testVault: import("@/lib/schemas").VaultInfo = {
   id: "test-vault",
   name: "Test Vault",
   path: "/test/vault",

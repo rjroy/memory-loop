@@ -10,7 +10,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { NoteCapture } from "../NoteCapture";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
-import type { VaultInfo } from "@memory-loop/shared";
+import type { VaultInfo } from "@/lib/schemas";
 
 const testVault: VaultInfo = {
   id: "vault-1",

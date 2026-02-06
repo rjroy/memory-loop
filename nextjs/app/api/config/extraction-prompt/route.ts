@@ -13,7 +13,7 @@ import {
   loadExtractionPrompt,
   hasPromptOverride,
   USER_PROMPT_PATH,
-} from "@memory-loop/backend/extraction/fact-extractor";
+} from "@/lib/extraction/fact-extractor";
 
 /**
  * GET - Returns extraction prompt content and override status

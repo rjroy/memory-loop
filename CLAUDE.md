@@ -185,3 +185,4 @@ When making changes that affect user-facing behavior, update the relevant docs. 
 ## Critical Lessons
 
 - Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: schema definition in `lib/schemas/`, config loading in `lib/vault-config.ts`, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
+- Validate the dev server, not just the production build. Turbopack (dev) and webpack (build) resolve modules differently. `serverExternalPackages` works for webpack but not turbopack. `webpackIgnore` comments on dynamic imports are the correct fix for instrumentation files that import modules with Node.js built-in dependencies.

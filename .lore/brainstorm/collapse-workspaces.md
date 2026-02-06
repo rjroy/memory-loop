@@ -1,7 +1,7 @@
 ---
 title: Collapse backend and shared workspaces into Next.js
 date: 2026-02-05
-status: open
+status: resolved
 tags: [architecture, refactor, next-js, monorepo, simplification]
 modules: [backend, shared, nextjs]
 related: [.lore/brainstorm/next-js-migration.md, .lore/retros/next-js-migration.md]

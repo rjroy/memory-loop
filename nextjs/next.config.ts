@@ -1,6 +1,18 @@
 import type { NextConfig } from "next";
+import { execSync } from "child_process";
+
+function getGitCommitHash(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    return "unknown";
+  }
+}
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: getGitCommitHash(),
+  },
   // Enable experimental features for server components
   experimental: {
     // Allow importing from workspace packages

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-02-06
+
+### Fixed
+
+- Search routes passed `vault.path` instead of `vault.contentRoot`, returning wrong path prefixes for vaults with content subdirectories (#465)
+- Scheduler imports silently failed in production due to `webpackIgnore` breaking `@/` alias resolution; replaced with bootstrap module pattern (#465)
+
+### Changed
+
+- Memory extraction prompt adds a validation pass that re-reads the output and prunes against a 6-point checklist (#466)
+- Merge criteria sharpened with tactical vs. durable distinction and additive framing to reduce accumulation (#466)
+
 ## [2.0.0] - 2026-02-06
 
 ### Added

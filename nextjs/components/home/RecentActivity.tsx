@@ -12,7 +12,10 @@ import React, { useCallback, useState } from "react";
 import { useSession } from "../../contexts/SessionContext";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
 import type { RecentNoteEntry, RecentDiscussionEntry, ConversationMessage, SlashCommand } from "@/lib/schemas";
+import { createLogger } from "@/lib/logger";
 import "./RecentActivity.css";
+
+const log = createLogger("RecentActivity");
 
 /**
  * Formats a Date as YYYY-MM-DD in local timezone.
@@ -122,7 +125,7 @@ export function RecentActivity({
           });
 
           if (!response.ok) {
-            console.error("[RecentActivity] Failed to load session:", response.status);
+            log.error("Failed to load session", response.status);
             return;
           }
 
@@ -146,7 +149,7 @@ export function RecentActivity({
 
           setMode("discussion");
         } catch (err) {
-          console.error("[RecentActivity] Failed to resume session:", err);
+          log.error("Failed to resume session", err);
         }
       })();
     },

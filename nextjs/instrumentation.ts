@@ -14,8 +14,13 @@ export async function register() {
   // Only run schedulers on the server, not during build or edge runtime
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  const { createLogger } = await import(
+    /* webpackIgnore: true */ "@/lib/logger"
+  );
+  const log = createLogger("instrumentation");
+
   if (process.env.NODE_ENV === "development") {
-    console.log("[instrumentation] Schedulers disabled in development mode");
+    log.info("Schedulers disabled in development mode");
     return;
   }
 
@@ -26,17 +31,12 @@ export async function register() {
     );
     const started = await startScheduler();
     if (started) {
-      console.log(
-        `[instrumentation] Extraction scheduler started: ${getCronSchedule()}`
-      );
+      log.info(`Extraction scheduler started: ${getCronSchedule()}`);
     } else {
-      console.warn("[instrumentation] Extraction scheduler failed to start");
+      log.warn("Extraction scheduler failed to start");
     }
   } catch (error: unknown) {
-    console.error(
-      "[instrumentation] Failed to start extraction scheduler:",
-      error
-    );
+    log.error("Failed to start extraction scheduler", error);
   }
 
   // Card discovery scheduler: daily at configured time (default: 4am)
@@ -49,13 +49,8 @@ export async function register() {
       discoveryHour: getDiscoveryHourFromEnv(),
       catchUpOnStartup: true,
     });
-    console.log(
-      `[instrumentation] Card discovery scheduler started (daily at ${getDiscoveryHourFromEnv()}:00)`
-    );
+    log.info(`Card discovery scheduler started (daily at ${getDiscoveryHourFromEnv()}:00)`);
   } catch (error: unknown) {
-    console.error(
-      "[instrumentation] Failed to start card discovery scheduler:",
-      error
-    );
+    log.error("Failed to start card discovery scheduler", error);
   }
 }

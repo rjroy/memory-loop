@@ -17,6 +17,9 @@ import { dirname, join } from "node:path";
 import type { VaultInfo } from "@/lib/schemas";
 import { DEFAULT_MAX_POOL_SIZE } from "./vault-config";
 import { getSdkQuery, type QueryFunction } from "./sdk-provider";
+import { createLogger } from "./logger";
+
+const log = createLogger("inspiration-manager");
 
 // =============================================================================
 // File Path Constants
@@ -953,7 +956,7 @@ export async function generateContextualPrompts(
     return parseAIResponse(response);
   } catch (error) {
     // Log error but return empty (graceful handling per REQ-NF-3)
-    console.error("[inspiration-manager] Failed to generate contextual prompts:", error);
+    log.error("Failed to generate contextual prompts", error);
     return [];
   }
 }
@@ -998,7 +1001,7 @@ export async function generateWeekendPrompts(
     const response = await collectResponse(queryResult);
     return parseAIResponse(response);
   } catch (error) {
-    console.error("[inspiration-manager] Failed to generate weekend prompts:", error);
+    log.error("Failed to generate weekend prompts", error);
     return [];
   }
 }
@@ -1047,7 +1050,7 @@ export async function generateInspirationQuote(
     return items.slice(0, count);
   } catch (error) {
     // Log error but return empty (graceful handling per REQ-NF-3)
-    console.error("[inspiration-manager] Failed to generate inspiration quote:", error);
+    log.error("Failed to generate inspiration quote", error);
     return [];
   }
 }
@@ -1166,7 +1169,7 @@ export async function getInspiration(vault: VaultInfo): Promise<InspirationResul
     try {
       context = await gatherDayContext(vault, today);
     } catch (error) {
-      console.error("[inspiration-manager] Failed to gather context:", error);
+      log.error("Failed to gather context", error);
     }
   }
 
@@ -1193,7 +1196,7 @@ export async function getInspiration(vault: VaultInfo): Promise<InspirationResul
       }
     } catch (error) {
       // Generation failure doesn't block response (REQ-NF-3)
-      console.error("[inspiration-manager] Contextual generation failed:", error);
+      log.error("Contextual generation failed", error);
     }
   }
 
@@ -1207,7 +1210,7 @@ export async function getInspiration(vault: VaultInfo): Promise<InspirationResul
       }
     } catch (error) {
       // Generation failure doesn't block response (REQ-NF-3)
-      console.error("[inspiration-manager] Quote generation failed:", error);
+      log.error("Quote generation failed", error);
     }
   }
 

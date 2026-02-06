@@ -28,5 +28,19 @@
       }
     }
   },
-  "plansDirectory": ".lore/plans"
+  "plansDirectory": ".lore/plans",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun install",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
 }

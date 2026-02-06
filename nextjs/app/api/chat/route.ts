@@ -16,6 +16,9 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getController, type SessionEvent } from "@/lib/controller";
 import { encodeSSE, SSE_HEADERS } from "@/lib/sse";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("api/chat");
 
 // Request schema
 const ChatRequestSchema = z.object({
@@ -119,7 +122,7 @@ export async function POST(request: NextRequest) {
           }
         } catch (err) {
           if (isClosing) return;
-          console.error("Session error:", err);
+          log.error("Session error", err);
           try {
             streamController.enqueue(
               encodeSSE({

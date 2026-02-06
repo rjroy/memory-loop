@@ -24,7 +24,10 @@ import { ConfigEditorDialog, type EditableVaultConfig } from "@/components/vault
 import { useHoliday } from "@/hooks/useHoliday";
 import { useMeetings } from "@/hooks/useMeetings";
 import { useConfig } from "@/hooks/useConfig";
+import { createLogger } from "@/lib/logger";
 import "@/styles/App.css";
+
+const log = createLogger("App");
 
 /**
  * Dialog types for confirmation.
@@ -100,7 +103,7 @@ function MainContent(): React.ReactNode {
   async function handleConfigSave(config: EditableVaultConfig) {
     if (!vault) return;
 
-    console.log(`[App] Saving config for vault: ${vault.id}`, config);
+    log.info(`Saving config for vault: ${vault.id}`);
     const success = await updateConfig(config);
 
     if (success) {
@@ -114,10 +117,10 @@ function MainContent(): React.ReactNode {
 
       // Close dialog
       setConfigEditorOpen(false);
-      console.log("[App] Config saved successfully");
+      log.info("Config saved successfully");
     } else {
       // Error is already set by the hook
-      console.warn("[App] Config save failed:", configError);
+      log.warn("Config save failed", configError);
     }
   }
 

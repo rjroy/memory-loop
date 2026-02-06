@@ -21,6 +21,7 @@ import type {
   EditableVaultConfig,
 } from "@/lib/schemas";
 
+import { createLogger } from "@/lib/logger";
 import type {
   SessionState,
   ConversationMessage,
@@ -30,6 +31,8 @@ import type {
   BrowseViewMode,
   SearchMode,
 } from "./types";
+
+const log = createLogger("SessionReducer");
 import {
   createInitialBrowserState,
 
@@ -204,9 +207,7 @@ function handleUpdateLastMessage(
   const lastMessage = messages[messages.length - 1];
 
   if (lastMessage.role !== "assistant") {
-    console.warn(
-      "[SessionContext] UPDATE_LAST_MESSAGE ignored: last message is not an assistant message"
-    );
+    log.warn("UPDATE_LAST_MESSAGE ignored: last message is not an assistant message");
     return state;
   }
 
@@ -275,9 +276,7 @@ function handleAddToolToLastMessage(
       toolInvocations: [...(lastMessage.toolInvocations ?? []), newTool],
     };
   } else {
-    console.warn(
-      `[SessionContext] ADD_TOOL_TO_LAST_MESSAGE: no streaming assistant message, creating one for tool ${toolUseId}`
-    );
+    log.warn(`ADD_TOOL_TO_LAST_MESSAGE: no streaming assistant message, creating one for tool ${toolUseId}`);
     const placeholderMessage: ConversationMessage = {
       id: generateMessageId(),
       role: "assistant",
@@ -301,9 +300,7 @@ function handleUpdateToolInput(
   const foundMessageIndex = findMessageWithTool(messages, toolUseId);
 
   if (foundMessageIndex === -1) {
-    console.warn(
-      `[SessionContext] UPDATE_TOOL_INPUT: tool ${toolUseId} not found, queueing update`
-    );
+    log.warn(`UPDATE_TOOL_INPUT: tool ${toolUseId} not found, queueing update`);
     const pendingToolUpdates = new Map(state.pendingToolUpdates);
     const existing = pendingToolUpdates.get(toolUseId) ?? {};
     pendingToolUpdates.set(toolUseId, { ...existing, input });

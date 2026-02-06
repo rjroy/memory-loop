@@ -13,6 +13,9 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { ServerMessage, VaultInfo } from "@/lib/schemas";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useChat");
 
 /**
  * Streaming state for the chat hook.
@@ -89,7 +92,7 @@ function parseSSE(chunk: string): SSEEvent[] {
         const event = JSON.parse(json) as SSEEvent;
         events.push(event);
       } catch {
-        console.warn("Failed to parse SSE event:", line);
+        log.warn("Failed to parse SSE event", line);
       }
     }
   }
@@ -324,7 +327,7 @@ export function useChat(
   const resolvePermission = useCallback(
     async (toolUseId: string, allowed: boolean): Promise<void> => {
       if (!sessionId) {
-        console.warn("Cannot resolve permission: no session");
+        log.warn("Cannot resolve permission: no session");
         return;
       }
 
@@ -340,13 +343,10 @@ export function useChat(
 
         if (!response.ok) {
           const errorBody = (await response.json().catch(() => ({}))) as { error?: string };
-          console.error(
-            "Permission resolution failed:",
-            errorBody.error ?? response.status
-          );
+          log.error("Permission resolution failed", errorBody.error ?? response.status);
         }
       } catch (err) {
-        console.error("Failed to resolve permission:", err);
+        log.error("Failed to resolve permission", err);
       }
     },
     [sessionId, apiBase]
@@ -358,7 +358,7 @@ export function useChat(
   const resolveQuestion = useCallback(
     async (toolUseId: string, answers: Record<string, string>): Promise<void> => {
       if (!sessionId) {
-        console.warn("Cannot resolve question: no session");
+        log.warn("Cannot resolve question: no session");
         return;
       }
 
@@ -374,13 +374,10 @@ export function useChat(
 
         if (!response.ok) {
           const errorBody = (await response.json().catch(() => ({}))) as { error?: string };
-          console.error(
-            "Question resolution failed:",
-            errorBody.error ?? response.status
-          );
+          log.error("Question resolution failed", errorBody.error ?? response.status);
         }
       } catch (err) {
-        console.error("Failed to resolve question:", err);
+        log.error("Failed to resolve question", err);
       }
     },
     [sessionId, apiBase]

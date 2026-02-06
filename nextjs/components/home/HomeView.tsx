@@ -24,7 +24,10 @@ import { InspirationCard } from "./InspirationCard";
 import { SpacedRepetitionWidget } from "./SpacedRepetitionWidget";
 
 import type { InspirationItem } from "@/lib/schemas";
+import { createLogger } from "@/lib/logger";
 import "./HomeView.css";
+
+const log = createLogger("HomeView");
 
 /**
  * Home view with session context and recent activity.
@@ -41,7 +44,7 @@ export function HomeView(): React.ReactNode {
     removeDiscussion,
   } = useSession();
 
-  console.log(`[HomeView] Render - vault:`, vault?.id, `vault object:`, vault);
+  log.debug(`Render - vault: ${vault?.id}`);
 
   // REST API hooks
   const { getRecentActivity } = useCapture(vault?.id);
@@ -78,14 +81,13 @@ export function HomeView(): React.ReactNode {
 
   // Load data via REST API when vault.id changes
   useEffect(() => {
-    console.log(`[HomeView] Effect triggered - vault?.id:`, vault?.id);
+    log.debug(`Effect triggered - vault?.id: ${vault?.id}`);
     if (!vault?.id) {
-      console.log(`[HomeView] No vault.id, skipping data load`);
+      log.debug("No vault.id, skipping data load");
       return;
     }
 
-    const vaultId = vault.id;
-    console.log(`[HomeView] Loading data for vault: ${vaultId}`);
+    log.debug(`Loading data for vault: ${vault.id}`);
 
     // Reset loading states for new vault
     setActivityLoading(true);
@@ -96,7 +98,7 @@ export function HomeView(): React.ReactNode {
     // Load recent activity
     getRecentActivity()
       .then((activity) => {
-        console.log(`[HomeView] Recent activity loaded:`, activity);
+        log.debug("Recent activity loaded");
         if (activity) {
           setRecentNotes(activity.captures);
           setRecentDiscussions(activity.discussions);
@@ -104,7 +106,7 @@ export function HomeView(): React.ReactNode {
         setActivityLoading(false);
       })
       .catch((err) => {
-        console.error(`[HomeView] Failed to load activity:`, err);
+        log.error("Failed to load activity", err);
         setActivityLoading(false);
       });
 
@@ -112,14 +114,14 @@ export function HomeView(): React.ReactNode {
     if (vault.goalsPath) {
       getGoals()
         .then((content) => {
-          console.log(`[HomeView] Goals loaded:`, content?.slice(0, 50));
+          log.debug("Goals loaded");
           if (content !== null) {
             setGoals(content);
           }
           setGoalsLoading(false);
         })
         .catch((err) => {
-          console.error(`[HomeView] Failed to load goals:`, err);
+          log.error("Failed to load goals", err);
           setGoalsLoading(false);
         });
     } else {
@@ -129,7 +131,7 @@ export function HomeView(): React.ReactNode {
     // Load inspiration
     getInspiration()
       .then((result) => {
-        console.log(`[HomeView] Inspiration loaded:`, result);
+        log.debug("Inspiration loaded");
         if (result) {
           setInspirationContextual(result.contextual);
           setInspirationQuote(result.quote);
@@ -137,19 +139,19 @@ export function HomeView(): React.ReactNode {
         setInspirationLoading(false);
       })
       .catch((err) => {
-        console.error(`[HomeView] Failed to load inspiration:`, err);
+        log.error("Failed to load inspiration", err);
         setInspirationLoading(false);
       });
 
     // Load daily prep status
     getDailyPrepStatus()
       .then((status) => {
-        console.log(`[HomeView] Daily prep status loaded:`, status);
+        log.debug("Daily prep status loaded");
         setDailyPrepStatus(status);
         setDailyPrepLoading(false);
       })
       .catch((err) => {
-        console.error(`[HomeView] Failed to load daily prep status:`, err);
+        log.error("Failed to load daily prep status", err);
         setDailyPrepLoading(false);
       });
   }, [

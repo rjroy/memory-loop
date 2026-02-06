@@ -1,7 +1,7 @@
 ---
 title: Session Auto-Resume Flow
 date: 2026-01-28
-status: current
+status: outdated
 tags: [architecture, session, websocket, rest-api]
 modules: [session-manager, vault-select]
 ---

@@ -4,7 +4,7 @@ date: 2026-02-04
 status: complete
 tags: [websocket, rest-api, testing, refactor, architecture]
 modules: [websocket-handler, health-panel, vault-select, app]
-related: [.lore/design/single-websocket-consolidation.md]
+related: [.lore/_archive/single-websocket-consolidation.md]
 ---
 
 # Retro: Single WebSocket Consolidation
@@ -33,6 +33,6 @@ Migrated non-streaming operations from WebSocket to REST API, leaving only Discu
 
 ## Artifacts
 
-- Design: `.lore/design/single-websocket-consolidation.md`
+- Design: `.lore/_archive/single-websocket-consolidation.md`
 - PR: #452
 - Commits: `befb0c0` (implementation), `dc8ba6d` (tests)

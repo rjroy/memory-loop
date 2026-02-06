@@ -2,9 +2,9 @@
 title: Emergent requirements in daily prep implementation
 date: 2026-02-02
 status: complete
-tags: [skill-development, ui-component, iterative-design, lore-workflow]
+tags: [skill-development, ui, iterative-design, lore-workflow]
 modules: [daily-prep-manager, session-actions-card, ask-user-question-dialog, home-view]
-related: [.lore/brainstorm/daily-prep-system.md, .lore/research/daily-planning-science.md, .lore/specs/daily-prep.md, .lore/plans/daily-prep-system.md]
+related: [.lore/brainstorm/daily-prep-system.md, .lore/_archive/daily-planning-science.md, .lore/specs/daily-prep.md, .lore/plans/daily-prep-system.md]
 ---
 
 # Retro: Daily Prep System (#443)
@@ -50,6 +50,6 @@ Built a skill-based bookend planning system for morning commitment and evening r
 - Issue/PR: #443
 - Plan: `.lore/plans/daily-prep-system.md`
 - Brainstorm: `.lore/brainstorm/daily-prep-system.md`
-- Research: `.lore/research/daily-planning-science.md`
+- Research: `.lore/_archive/daily-planning-science.md`
 - Spec: `.lore/specs/daily-prep.md`
 - Skill: `backend/src/skills/daily-prep/SKILL.md`

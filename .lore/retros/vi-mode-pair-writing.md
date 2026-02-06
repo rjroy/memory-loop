@@ -51,7 +51,7 @@ Added vi-style modal editing to Pair Writing mode. Implementation includes Norma
 
 - Spec: `.lore/specs/vi-mode-pair-writing.md`
 - Plan: `.lore/plans/vi-mode-pair-writing.md`
-- Work breakdown: `.lore/work/vi-mode-pair-writing.md`
-- Research: `.lore/research/vi-mode-implementation.md`
+- Work breakdown: `.lore/_archive/vi-mode-pair-writing-work.md`
+- Research: `.lore/_archive/vi-mode-implementation.md`
 - Issue: #394
 - PR: #433

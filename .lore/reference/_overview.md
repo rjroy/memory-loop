@@ -45,12 +45,12 @@ See [Navigation Bar](./navigation-bar.md) for implementation details and [GCTR M
 ### Monorepo Structure
 
 ```
-backend/     # Hono server + Claude Agent SDK
-frontend/    # React 19 + Vite SPA
-shared/      # Zod schemas for type-safe messages
+nextjs/      # Next.js 15 App Router (UI + API routes + SSE streaming)
+backend/     # Library: Claude Agent SDK, vault operations, schedulers
+shared/      # Zod schemas and TypeScript types
 ```
 
-The backend runs from TypeScript source (no build step). The frontend builds to static files served by the backend.
+The backend is a library consumed by Next.js API routes. It contains domain logic but no HTTP server of its own. Next.js handles both serving the UI and exposing REST/SSE endpoints.
 
 ### Communication
 
@@ -58,12 +58,12 @@ Two channels connect frontend and backend:
 
 | Channel | Used For |
 |---------|----------|
-| **REST API** | Stateless operations: file CRUD, search, config, cards |
-| **WebSocket** | Streaming: AI responses, tool execution display, session state |
+| **REST API** (Next.js API routes) | Stateless operations: file CRUD, search, config, cards |
+| **SSE** (Server-Sent Events) | AI chat streaming via POST `/api/chat` |
 
-This split is deliberate. REST handles most operations cleanly. WebSocket handles the cases where you need real-time feedback (watching Claude think) or bidirectional communication (session establishment).
+The frontend sends a prompt via REST, then reads the SSE stream for incremental responses. Stop, permission, and answer requests are separate REST calls alongside the stream. All session management (select vault, resume, new session) is REST.
 
-See [Communication Layer](./_infrastructure/communication-layer.md) for protocol details.
+See [Communication Layer](../_archive/communication-layer.md) for historical protocol details (archived, pre-migration).
 
 ### Vaults
 
@@ -79,7 +79,7 @@ See [Vault Selection](./_infrastructure/vault-selection.md) and [Configuration](
 
 1. **This document** - You're reading it
 2. **[Navigation Bar](./navigation-bar.md)** - The GCTR framework in code
-3. **[Communication Layer](./_infrastructure/communication-layer.md)** - How frontend/backend talk
+3. **[Communication Layer](../_archive/communication-layer.md)** - How frontend/backend talked (archived, pre-migration)
 
 ### The Four Modes
 
@@ -150,4 +150,4 @@ The excavation is ongoing. Gaps include:
 - **Search** - File and content search in Recall
 - **Holiday Themes** - Seasonal visual variations
 
-Check [excavations/index.md](../excavations/index.md) for current status.
+Check [excavation index](../_archive/excavation-index.md) for historical status (archived).

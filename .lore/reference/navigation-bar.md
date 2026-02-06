@@ -36,8 +36,8 @@ This vocabulary teaches the practice while using the app. The sigils (🪨🪶�
 
 | Entry | Type | Handler |
 |-------|------|---------|
-| Always visible in header | Component | `frontend/src/components/shared/ModeToggle.tsx` |
-| Mode state | Context | `frontend/src/contexts/SessionContext.tsx` |
+| Always visible in header | Component | `nextjs/components/shared/ModeToggle.tsx` |
+| Mode state | Context | `nextjs/contexts/SessionContext.tsx` |
 
 ## Implementation
 
@@ -45,11 +45,11 @@ This vocabulary teaches the practice while using the app. The sigils (🪨🪶�
 
 | File | Role |
 |------|------|
-| `frontend/src/components/shared/ModeToggle.tsx` | Component rendering and click handling |
-| `frontend/src/components/shared/ModeToggle.css` | Styles: glass morphism, selected state, sigil treatment |
-| `frontend/src/contexts/SessionContext.tsx` | Mode state via `useReducer` pattern |
-| `frontend/src/contexts/session/types.ts` | `AppMode` type definition |
-| `frontend/src/App.tsx` | Renders `ModeToggle` in header, conditionally renders mode views |
+| `nextjs/components/shared/ModeToggle.tsx` | Component rendering and click handling |
+| `nextjs/components/shared/ModeToggle.css` | Styles: glass morphism, selected state, sigil treatment |
+| `nextjs/contexts/SessionContext.tsx` | Mode state via `useReducer` pattern |
+| `nextjs/contexts/session/types.ts` | `AppMode` type definition |
+| `nextjs/app/page.tsx` | Renders `ModeToggle` in header, conditionally renders mode views |
 
 ### Data
 

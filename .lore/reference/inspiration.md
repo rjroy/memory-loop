@@ -151,8 +151,8 @@ Older items are pruned when pool exceeds `maxPoolSize`.
 |------|------|
 | `backend/src/inspiration-manager.ts` | Generation, parsing, selection |
 | `backend/src/routes/home.ts` | REST endpoint |
-| `frontend/src/components/home/InspirationCard.tsx` | Display component |
-| `frontend/src/hooks/useHome.ts` | API client |
+| `nextjs/components/home/InspirationCard.tsx` | Display component |
+| `nextjs/hooks/useHome.ts` | API client |
 
 ### API
 

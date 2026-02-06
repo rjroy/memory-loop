@@ -199,8 +199,8 @@ Cards you struggle with get lower ease factors and shorter intervals.
 
 | File | Role |
 |------|------|
-| `frontend/src/components/home/SpacedRepetitionWidget.tsx` | Review UI (558 lines) |
-| `frontend/src/hooks/useCards.ts` | REST API client |
+| `nextjs/components/home/SpacedRepetitionWidget.tsx` | Review UI (558 lines) |
+| `nextjs/hooks/useCards.ts` | REST API client |
 | `backend/src/spaced-repetition/card-generator.ts` | LLM extraction |
 | `backend/src/spaced-repetition/sm2-algorithm.ts` | Interval calculation |
 | `backend/src/spaced-repetition/card-storage.ts` | File I/O, parsing |

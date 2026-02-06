@@ -110,49 +110,19 @@ This means Quick/Advisory Actions are visible in your conversation history along
 
 | File | Role |
 |------|------|
-| `frontend/src/components/pair-writing/PairWritingMode.tsx` | Main container |
-| `frontend/src/components/pair-writing/PairWritingEditor.tsx` | Text editor |
-| `frontend/src/components/pair-writing/PairWritingToolbar.tsx` | Controls |
-| `frontend/src/components/shared/EditorContextMenu.tsx` | Action menu |
-| `frontend/src/hooks/usePairWritingState.ts` | State (content, snapshot) |
-| `frontend/src/hooks/useTextSelection.ts` | Selection with context |
-| `backend/src/handlers/pair-writing-handlers.ts` | Action handlers |
+| `nextjs/components/pair-writing/PairWritingMode.tsx` | Main container |
+| `nextjs/components/pair-writing/PairWritingEditor.tsx` | Text editor |
+| `nextjs/components/pair-writing/PairWritingToolbar.tsx` | Controls |
+| `nextjs/components/shared/EditorContextMenu.tsx` | Action menu |
+| `nextjs/hooks/usePairWritingState.ts` | State (content, snapshot) |
+| `nextjs/hooks/useTextSelection.ts` | Selection with context |
 | `backend/src/pair-writing-prompts.ts` | Prompt templates |
 
-### WebSocket Messages
+### Action Delivery
 
-**Client → Server**:
+Actions are formatted as chat messages and sent through the regular SSE chat stream (POST `/api/chat`). The component formats the action type, selected text, and surrounding context into a structured prompt, then sends it via `sendMessageRef`. Claude responds through the same SSE stream used for normal conversations.
 
-```typescript
-// Quick Action (Tighten, Embellish, Correct, Polish)
-{
-  type: "quick_action_request",
-  action: "tighten" | "embellish" | "correct" | "polish",
-  selection: string,
-  contextBefore: string,
-  contextAfter: string,
-  filePath: string,
-  selectionStartLine: number,
-  selectionEndLine: number,
-  totalLines: number
-}
-
-// Advisory Action (Validate, Critique, Compare, Discuss)
-{
-  type: "advisory_action_request",
-  action: "validate" | "critique" | "compare" | "discuss",
-  selection: string,
-  contextBefore: string,
-  contextAfter: string,
-  filePath: string,
-  selectionStartLine: number,
-  selectionEndLine: number,
-  totalLines: number,
-  snapshotSelection?: string  // Only for "compare"
-}
-```
-
-**Server → Client**: Standard streaming messages (response_start, response_chunk, tool_start, etc.)
+**Server → Client**: Standard SSE streaming events (response_start, response_chunk, tool_start, etc.)
 
 ### SDK Configuration
 

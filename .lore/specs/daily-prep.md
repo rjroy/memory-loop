@@ -2,9 +2,9 @@
 title: Daily Prep System
 date: 2026-02-02
 status: implemented
-tags: [daily-planning, bookend, energy, commitment, ground-tab, skill]
+tags: [daily-planning, bookend, energy, commitment, ground-tab, skill-development]
 modules: [home-view, vault-info-card, session-actions-card, daily-prep-skill, daily-debrief-skill, routes-daily-prep]
-related: [.lore/brainstorm/daily-prep-system.md, .lore/research/daily-planning-science.md]
+related: [.lore/brainstorm/daily-prep-system.md, .lore/_archive/daily-planning-science.md]
 ---
 
 # Spec: Daily Prep System

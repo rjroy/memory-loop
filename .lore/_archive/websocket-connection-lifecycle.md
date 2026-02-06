@@ -1,7 +1,7 @@
 ---
 title: WebSocket Connection Lifecycle
 date: 2026-01-28
-status: current
+status: outdated
 tags: [architecture, websocket, connection, reconnect]
 modules: [websocket-handler, use-websocket]
 ---

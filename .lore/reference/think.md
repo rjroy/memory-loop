@@ -3,7 +3,7 @@ title: Think Feature
 date: 2026-01-28
 status: current
 tags: [think, ai-conversation, streaming, claude-sdk, gctr]
-modules: [discussion, session-manager, websocket-handler]
+modules: [discussion, session-manager, active-session-controller]
 ---
 
 # Feature: Think
@@ -42,38 +42,37 @@ Think is the AI conversation interface. Chat with Claude about your vault, ask q
 ```
 User types message
       ↓
-Frontend: addMessage(user), send WebSocket
+Frontend: addMessage(user), POST /api/chat
       ↓
-Backend: create/resume session with Claude SDK
+Controller: create/resume session with Claude SDK
       ↓
 Claude SDK: generates response
       ↓
-Backend: streams events via WebSocket
+Controller: streams SessionEvents via SSE
       ↓
-Frontend: renders incrementally
+Frontend (useChat): renders incrementally
       ↓
-Backend: saves to session metadata + transcript
+Controller: saves to session metadata + transcript
 ```
 
-## WebSocket Protocol
+## SSE Streaming Protocol
 
-### Client → Server
+The frontend sends a prompt via `POST /api/chat` with vaultId, optional sessionId, and the prompt text. The response is an SSE stream of typed events.
 
-| Message | Purpose |
-|---------|---------|
-| `select_vault` | Associate connection with vault |
-| `resume_session` | Continue existing conversation |
-| `new_session` | Start fresh (clears context) |
-| `discussion_message` | Send user message to Claude |
-| `abort` | Stop current response |
-| `tool_permission_response` | Allow/deny tool execution |
-| `ask_user_question_response` | Answer Claude's questions |
+### REST Endpoints
 
-### Server → Client
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/chat` | Send message, receive SSE stream |
+| POST | `/api/chat/{sessionId}/abort` | Stop current response |
+| POST | `/api/chat/{sessionId}/permission/{toolUseId}` | Allow/deny tool execution |
+| POST | `/api/chat/{sessionId}/answer/{toolUseId}` | Answer Claude's questions |
+| GET | `/api/sessions/{vaultId}` | Resume: get latest session info |
 
-| Message | Purpose |
-|---------|---------|
-| `session_ready` | Session established, includes history if resuming |
+### SSE Event Types (Server → Client)
+
+| Event | Purpose |
+|-------|---------|
 | `response_start` | Claude started responding |
 | `response_chunk` | Incremental text content |
 | `response_end` | Response complete, includes context usage |
@@ -167,19 +166,19 @@ Click to expand and see full input/output:
 ### Permission Dialogs
 
 Some tools require approval:
-1. Backend sends `tool_permission_request`
+1. SSE stream emits `tool_permission_request` event
 2. Modal shows tool name and parameters
 3. User clicks Allow or Deny
-4. Frontend sends `tool_permission_response`
-5. Backend continues or aborts
+4. Frontend calls `POST /api/chat/{sessionId}/permission/{toolUseId}`
+5. Controller continues or aborts
 
 ### AskUserQuestion
 
 Claude can ask structured questions:
-1. Backend sends `ask_user_question_request` (1-4 questions)
+1. SSE stream emits `ask_user_question_request` event (1-4 questions)
 2. Each question has options (2-4 choices)
 3. User selects answers
-4. Frontend sends `ask_user_question_response`
+4. Frontend calls `POST /api/chat/{sessionId}/answer/{toolUseId}`
 
 ## Model Selection
 
@@ -213,15 +212,17 @@ Passed to Claude SDK when creating session.
 
 | File | Role |
 |------|------|
-| `frontend/src/components/discussion/Discussion.tsx` | Main UI |
-| `frontend/src/components/discussion/ConversationPane.tsx` | Message display |
-| `frontend/src/components/discussion/SlashCommandAutocomplete.tsx` | Command popup |
-| `frontend/src/components/discussion/ToolDisplay.tsx` | Tool invocation cards |
-| `frontend/src/components/discussion/FileAttachButton.tsx` | Attachment UI |
-| `backend/src/websocket-handler.ts` | Message routing, streaming |
+| `nextjs/components/discussion/Discussion.tsx` | Main UI |
+| `nextjs/components/discussion/MessageBubble.tsx` | Message display |
+| `nextjs/components/discussion/SlashCommandAutocomplete.tsx` | Command popup |
+| `nextjs/components/discussion/ToolDisplay.tsx` | Tool invocation cards |
+| `nextjs/components/discussion/FileAttachButton.tsx` | Attachment UI |
+| `nextjs/hooks/useChat.ts` | SSE chat client |
+| `nextjs/lib/controller.ts` | Active Session Controller (SDK orchestration) |
+| `nextjs/app/api/chat/route.ts` | SSE chat endpoint |
 | `backend/src/session-manager.ts` | Session CRUD, SDK integration |
 | `backend/src/transcript-manager.ts` | Transcript file writing |
-| `shared/src/protocol.ts` | Zod schemas for all messages |
+| `shared/src/types.ts` | Zod schemas |
 
 ### Claude SDK Integration
 

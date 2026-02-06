@@ -2,7 +2,7 @@
 title: Match dialog display area to page context
 date: 2026-02-02
 status: complete
-tags: [css, ui, responsive, dialog, communication]
+tags: [css, ui, responsive, dialog]
 modules: [ask-user-question-dialog]
 ---
 

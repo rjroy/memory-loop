@@ -130,12 +130,12 @@ Badges are colored chips displayed on vault cards.
 
 | File | Role |
 |------|------|
-| `frontend/src/components/vault/ConfigEditorDialog.tsx` | Edit dialog UI |
-| `frontend/src/components/vault/VaultSelect.tsx` | Opens dialog, handles save |
+| `nextjs/components/vault/ConfigEditorDialog.tsx` | Edit dialog UI |
+| `nextjs/components/vault/VaultSelect.tsx` | Opens dialog, handles save |
 | `backend/src/routes/config.ts` | REST endpoint |
 | `backend/src/handlers/config-handlers.ts` | Update handler |
 | `backend/src/vault-config.ts` | Load/save/defaults |
-| `shared/src/protocol.ts` | Zod schemas |
+| `shared/src/types.ts` | Zod schemas |
 
 ### API
 

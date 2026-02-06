@@ -152,13 +152,13 @@ Count only considers `[x]` as "completed" for numerator.
 
 | File | Role |
 |------|------|
-| `frontend/src/components/browse/TaskList.tsx` | Main component (672 lines) |
-| `frontend/src/components/browse/TaskList.css` | Styling |
-| `frontend/src/components/browse/BrowseMode.tsx` | Container, view toggle |
-| `frontend/src/hooks/useHome.ts` | REST client (`getTasks`, `toggleTask`) |
+| `nextjs/components/browse/TaskList.tsx` | Main component (672 lines) |
+| `nextjs/components/browse/TaskList.css` | Styling |
+| `nextjs/components/browse/BrowseMode.tsx` | Container, view toggle |
+| `nextjs/hooks/useHome.ts` | REST client (`getTasks`, `toggleTask`) |
 | `backend/src/task-manager.ts` | Task discovery and parsing |
 | `backend/src/routes/home.ts` | REST endpoints |
-| `shared/src/protocol.ts` | `TaskEntry`, `TaskCategory` schemas |
+| `shared/src/types.ts` | `TaskEntry`, `TaskCategory` schemas |
 
 ### REST API
 

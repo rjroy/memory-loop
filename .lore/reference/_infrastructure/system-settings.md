@@ -63,16 +63,14 @@ Customize the prompt used by the nightly extraction pipeline to identify durable
 - **Reset to Default**: Deletes override, reverts to built-in prompt
 - **Run Extraction**: Manual trigger for testing
 
-### API (WebSocket)
+### API (REST)
 
-| Message | Direction | Purpose |
-|---------|-----------|---------|
-| `get_extraction_prompt` | → Server | Load current prompt |
-| `extraction_prompt_content` | ← Server | Return content + isOverride |
-| `save_extraction_prompt` | → Server | Save custom prompt |
-| `reset_extraction_prompt` | → Server | Delete override |
-| `trigger_extraction` | → Server | Run extraction now |
-| `extraction_status` | ← Server | Progress/completion updates |
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/config/extraction-prompt` | Load current prompt + isOverride |
+| PUT | `/api/config/extraction-prompt` | Save custom prompt |
+| DELETE | `/api/config/extraction-prompt` | Delete override, restore default |
+| POST | `/api/config/extraction-prompt/trigger` | Run extraction now |
 
 ### Storage
 - **Default**: Built into code (`backend/src/prompts/durable-facts.md`)
@@ -89,17 +87,15 @@ Configure flashcard generation from vault notes.
 - **Usage bar**: Shows bytes processed this week vs limit
 - **Run Generator**: Manual trigger (disabled if weekly limit reached)
 
-### API (WebSocket)
+### API (REST)
 
-| Message | Direction | Purpose |
-|---------|-----------|---------|
-| `get_card_generator_config` | → Server | Load requirements + config + usage |
-| `card_generator_config_content` | ← Server | Return all settings |
-| `save_card_generator_requirements` | → Server | Save custom requirements |
-| `save_card_generator_config` | → Server | Save byte limit |
-| `reset_card_generator_requirements` | → Server | Delete override |
-| `trigger_card_generation` | → Server | Run generation now |
-| `card_generation_status` | ← Server | Progress with filesProcessed, cardsCreated |
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/config/card-generator` | Load requirements + config + usage |
+| PUT | `/api/config/card-generator` | Save requirements and/or byte limit |
+| DELETE | `/api/config/card-generator/requirements` | Delete override, restore default |
+| POST | `/api/config/card-generator/trigger` | Run generation now |
+| GET | `/api/config/card-generator/status` | Check generation progress |
 
 ### Storage
 - **Default requirements**: Built into code
@@ -112,22 +108,18 @@ Configure flashcard generation from vault notes.
 
 | File | Role |
 |------|------|
-| `frontend/src/components/vault/SettingsDialog.tsx` | Dialog shell with tabs |
-| `frontend/src/components/vault/MemoryEditor.tsx` | Memory tab content |
-| `frontend/src/components/vault/ExtractionPromptEditor.tsx` | Extraction tab content |
-| `frontend/src/components/vault/CardGeneratorEditor.tsx` | Card Generator tab content |
-| `frontend/src/hooks/useMemory.ts` | REST client for memory |
-| `backend/src/routes/memory.ts` | Memory REST endpoints |
-| `backend/src/handlers/memory-handlers.ts` | Extraction WebSocket handlers |
-| `backend/src/handlers/card-generator-handlers.ts` | Card Generator WebSocket handlers |
+| `nextjs/components/vault/SettingsDialog.tsx` | Dialog shell with tabs |
+| `nextjs/components/vault/MemoryEditor.tsx` | Memory tab content |
+| `nextjs/components/vault/ExtractionPromptEditor.tsx` | Extraction tab content |
+| `nextjs/components/vault/CardGeneratorEditor.tsx` | Card Generator tab content |
+| `nextjs/hooks/useMemory.ts` | REST client for memory |
+| `nextjs/app/api/config/memory/route.ts` | Memory REST endpoints |
+| `nextjs/app/api/config/extraction-prompt/route.ts` | Extraction REST endpoints |
+| `nextjs/app/api/config/card-generator/route.ts` | Card Generator REST endpoints |
 
 ### Communication Pattern
 
-| Tab | Protocol | Reason |
-|-----|----------|--------|
-| Memory Editor | REST | Simple CRUD, no streaming |
-| Extraction Prompt | WebSocket | Manual trigger streams status updates |
-| Card Generator | WebSocket | Manual trigger streams progress |
+All three tabs use REST. Manual triggers (extraction, card generation) return results synchronously in the response rather than streaming progress.
 
 ### Override Pattern
 
@@ -149,11 +141,11 @@ Both Extraction Prompt and Card Generator use the same pattern:
    - User edits content
    - Clicks Save → PUT to server
 5. User clicks "Extraction Prompt" tab
-   - Sends get_extraction_prompt via WebSocket
+   - Fetches prompt via GET /api/config/extraction-prompt
    - Shows current prompt with Custom/Default badge
    - Can edit, save, reset, or trigger manual run
 6. User clicks "Card Generator" tab
-   - Sends get_card_generator_config via WebSocket
+   - Fetches config via GET /api/config/card-generator
    - Shows requirements + byte limit slider + usage bar
    - Can edit requirements, adjust limit, or trigger manual generation
 7. Clicks X or outside dialog to close
@@ -173,4 +165,4 @@ Both Extraction Prompt and Card Generator use the same pattern:
 - Memory.md is read by Claude at conversation start (context injection)
 - Manual triggers are for testing; normal operation is scheduled (3am extraction, 4am cards)
 - Status updates auto-clear after 5 seconds on success
-- VaultSelect routes WebSocket messages to correct editor via message type filtering
+- Each editor tab manages its own REST calls independently

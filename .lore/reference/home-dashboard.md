@@ -27,8 +27,8 @@ This is a **container feature**. It orchestrates widgets from several sub-featur
 
 | Entry | Type | Handler |
 |-------|------|---------|
-| Mode = "home" | Frontend routing | `frontend/src/App.tsx:243` |
-| Tab click | UI | `frontend/src/components/shared/ModeToggle.tsx` |
+| Mode = "home" | Frontend routing | `nextjs/app/page.tsx` |
+| Tab click | UI | `nextjs/components/shared/ModeToggle.tsx` |
 | GET /api/vaults/:id/goals | REST | `backend/src/routes/home.ts:84` |
 | GET /api/vaults/:id/inspiration | REST | `backend/src/routes/home.ts:108` |
 | GET /api/vaults/:id/tasks | REST | `backend/src/routes/home.ts:146` |
@@ -41,13 +41,16 @@ This is a **container feature**. It orchestrates widgets from several sub-featur
 
 | File | Role | Lines |
 |------|------|-------|
-| `frontend/src/components/home/HomeView.tsx` | Main orchestrator | 282 |
-| `frontend/src/components/home/GoalsCard.tsx` | Goals markdown display | 70 |
-| `frontend/src/components/home/HealthPanel.tsx` | Backend issues display | 172 |
-| `frontend/src/components/home/RecentActivity.tsx` | Captures and discussions | 328 |
-| `frontend/src/hooks/useHome.ts` | Goals, inspiration, tasks API | - |
-| `frontend/src/hooks/useCapture.ts` | Recent activity fetching | - |
-| `frontend/src/hooks/useSessions.ts` | Session operations | - |
+| `nextjs/components/home/HomeView.tsx` | Main orchestrator | - |
+| `nextjs/components/home/GoalsCard.tsx` | Goals markdown display | - |
+| `nextjs/components/home/RecentActivity.tsx` | Captures and discussions | - |
+| `nextjs/components/home/InspirationCard.tsx` | Daily prompts and quotes | - |
+| `nextjs/components/home/SpacedRepetitionWidget.tsx` | Card review queue | - |
+| `nextjs/components/home/SessionActionsCard.tsx` | Debrief buttons | - |
+| `nextjs/components/home/VaultInfoCard.tsx` | Vault name and info | - |
+| `nextjs/hooks/useHome.ts` | Goals, inspiration, tasks API | - |
+| `nextjs/hooks/useCapture.ts` | Recent activity fetching | - |
+| `nextjs/hooks/useSessions.ts` | Session operations | - |
 | `backend/src/routes/home.ts` | REST endpoints | 236 |
 | `backend/src/vault-manager.ts` | Goals file reading | - |
 
@@ -84,28 +87,6 @@ This is a **container feature**. It orchestrates widgets from several sub-featur
 | View capture | Browse | Daily note file path |
 | Resume discussion | Discussion | Restores session by ID |
 
-## Health Panel
-
-Displays backend health issues (file watcher failures, config problems, etc.).
-
-### Issue Display
-
-Issues appear in a collapsible panel with:
-- Issue severity icon
-- Description text
-- Dismiss button
-
-### Dismissal
-
-Health issues are managed per-WebSocket session. Two dismissal paths:
-
-| Channel | Endpoint | Effect |
-|---------|----------|--------|
-| WebSocket | `dismiss_health_issue` message | Immediate removal from session state |
-| REST | `DELETE /health-issues/:issueId` | Acknowledged but requires WebSocket for actual removal |
-
-The REST endpoint exists for API completeness but returns a note: "Dismiss via WebSocket for immediate effect."
-
 ## Connected Features
 
 | Feature | Relationship | Spec |
@@ -118,7 +99,7 @@ The REST endpoint exists for API completeness but returns a note: "Dismiss via W
 
 ## Notes
 
-- Home loads data via REST API on mount, not WebSocket (migrated in TASK-010/011)
+- Home loads all data via REST API on mount
 - Error handling uses graceful degradation for inspiration (fallback quote on failure)
 - SpacedRepetitionWidget is the most complex component (558 lines) and warrants its own spec
 - Recent Activity fetches on mount but doesn't auto-refresh; data can become stale

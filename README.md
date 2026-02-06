@@ -54,7 +54,7 @@ cp .env.example .env
 bun run dev
 ```
 
-Open <http://localhost:5173> in your browser.
+Open <http://localhost:3000> in your browser.
 
 ## Configuration
 
@@ -62,8 +62,8 @@ Open <http://localhost:5173> in your browser.
 
 ```bash
 VAULTS_DIR=/path/to/vaults  # Optional: defaults to ./vaults at project root
-PORT=3000                   # Backend port (default: 3000)
-HOST=0.0.0.0                # Bind address (default: 0.0.0.0)
+PORT=3000                   # Server port (default: 3000)
+HOSTNAME=0.0.0.0            # Bind address (default: 0.0.0.0)
 MOCK_SDK=true               # Test without API calls
 ```
 
@@ -98,21 +98,19 @@ All paths are relative to the vault root. Path traversal outside the vault is re
 ## Commands
 
 ```bash
-bun run dev        # Start dev servers (backend + frontend)
-bun run build      # Build for production
-bun run test       # Run tests
-bun run typecheck  # TypeScript checking
-bun run lint       # ESLint
+bun run --cwd nextjs dev   # Start Next.js dev server (:3000)
+bun run --cwd nextjs build # Build for production
+bun run test               # Run all tests (sequential)
+bun run typecheck          # TypeScript checking
+bun run lint               # ESLint
 ```
 
 ### Production
 
 ```bash
-bun run build
+bun run --cwd nextjs build
 ./scripts/launch.sh
 ```
-
-The backend runs from TypeScript source (not bundled) because Claude Agent SDK requires it.
 
 ## Network Access
 
@@ -123,7 +121,7 @@ Access from other devices on your network:
 hostname -I | awk '{print $1}'
 
 # Access from phone/tablet
-http://YOUR_IP:5173
+http://YOUR_IP:3000
 ```
 
 ## Documentation
@@ -140,12 +138,12 @@ http://YOUR_IP:5173
 
 ```
 memory-loop/
-├── backend/        # Hono server + Claude Agent SDK
-├── frontend/       # React 19 + Vite
-└── shared/         # Zod schemas for type-safe messages
+├── nextjs/         # Next.js 15 App Router (UI + API routes + SSE streaming)
+├── backend/        # Library: Claude Agent SDK, vault operations, schedulers
+└── shared/         # Zod schemas and TypeScript types
 ```
 
-Two communication channels: REST API for stateless operations (file CRUD, search, config) and WebSocket for streaming (AI responses, tool execution, session state). Both use Zod-validated message schemas.
+REST API (Next.js API routes) for stateless operations (file CRUD, search, config) and SSE for AI chat streaming. Backend is a library consumed by the API routes, not a standalone server.
 
 ## License
 

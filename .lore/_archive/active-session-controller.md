@@ -1,10 +1,10 @@
 ---
 title: Active Session Controller interface
 date: 2026-02-03
-status: draft
+status: implemented
 tags: [architecture, interface-design, session-management, pub-sub]
 modules: [active-session-controller, websocket-handler, session-manager]
-related: [.lore/specs/session-viewport-separation.md]
+related: [.lore/_archive/session-viewport-separation-spec.md]
 ---
 
 # Design: Active Session Controller Interface
@@ -13,7 +13,7 @@ related: [.lore/specs/session-viewport-separation.md]
 
 Design the interface for Active Session Controller - the new component that owns the live SDK connection and lets viewports (WebSocket connections) subscribe/unsubscribe.
 
-See [Spec: session-viewport-separation](.lore/specs/session-viewport-separation.md) for requirements.
+See [Spec: session-viewport-separation](.lore/_archive/session-viewport-separation-spec.md) for requirements.
 
 ## Constraints
 

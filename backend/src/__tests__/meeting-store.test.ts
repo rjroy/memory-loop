@@ -318,7 +318,7 @@ describe("Meeting Lifecycle", () => {
     expect(hasActiveMeeting(vaultId)).toBe(false);
   });
 
-  test("simulates WebSocket reconnection scenario", () => {
+  test("simulates reconnection scenario", () => {
     const vaultId = "reconnection-test";
 
     // First connection starts meeting

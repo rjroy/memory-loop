@@ -47,7 +47,7 @@ The frontend sends a prompt via REST, then reads the SSE stream for incremental 
 
 ### Key Backend Modules
 
-Backend is a library consumed by Next.js API routes. It contains domain logic but no HTTP server of its own (the Hono server in `server.ts` is legacy, retained only for its WebSocket handler).
+Backend is a library consumed by Next.js API routes. It contains domain logic but no HTTP server of its own.
 
 | File | Purpose |
 |------|---------|

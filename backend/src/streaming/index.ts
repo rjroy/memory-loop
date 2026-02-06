@@ -1,8 +1,8 @@
 /**
  * Streaming Module
  *
- * Transport-agnostic session management and SDK event streaming.
- * Both WebSocket and SSE handlers use this module.
+ * Session management and SDK event streaming.
+ * Used by Next.js SSE chat endpoint.
  */
 
 // Types

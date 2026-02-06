@@ -51,7 +51,7 @@ export function createActiveSessionController(): IActiveSessionController {
   // Session state
   let currentSessionId: string | null = null;
   let currentVaultId: string | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- will be exposed in getState() when WebSocket handler is updated
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- retained for future getState() exposure
   let currentVaultPath: string | null = null;
   let queryResult: SessionQueryResult | null = null;
   let isStreamingActive = false;

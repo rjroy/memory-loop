@@ -13,7 +13,7 @@ import type { VaultInfo, AskUserQuestionItem, ConversationMessage, SlashCommand 
 
 /**
  * Events emitted by the Active Session Controller.
- * Subscribers receive these to update UI or transport (WebSocket/SSE).
+ * Subscribers receive these to update UI via SSE transport.
  */
 export type SessionEvent =
   | { type: "response_start"; messageId: string }

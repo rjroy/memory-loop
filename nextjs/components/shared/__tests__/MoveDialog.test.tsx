@@ -11,32 +11,6 @@ import { MoveDialog } from "../MoveDialog";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
 import type { FileEntry } from "@memory-loop/shared";
 
-// Mock WebSocket
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 3;
-
-  readyState = MockWebSocket.OPEN;
-  onopen: ((e: Event) => void) | null = null;
-  onclose: ((e: Event) => void) | null = null;
-  onmessage: ((e: MessageEvent) => void) | null = null;
-  onerror: ((e: Event) => void) | null = null;
-
-  constructor(public url: string) {
-    setTimeout(() => {
-      if (this.onopen) this.onopen(new Event("open"));
-    }, 0);
-  }
-
-  send(): void {}
-  close(): void {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-}
-
-const originalWebSocket = globalThis.WebSocket;
-
 // Test data
 const rootDirs: FileEntry[] = [
   { name: "Archive", type: "directory", path: "Archive" },
@@ -83,13 +57,10 @@ function CachePopulator({
 
 beforeEach(() => {
   localStorage.clear();
-  // @ts-expect-error - mocking WebSocket
-  globalThis.WebSocket = MockWebSocket;
 });
 
 afterEach(() => {
   cleanup();
-  globalThis.WebSocket = originalWebSocket;
 });
 
 describe("MoveDialog", () => {

@@ -1,118 +1,171 @@
-# Plan: Clean Up Next.js Migration
+# Plan: Next.js Test Coverage to 80%+
 
-The Hono-to-Next.js and WebSocket-to-SSE migration is functionally complete. What remains is configuration debt and dead code that's blocking the pre-commit hook and hiding real issues. This plan works from the outside in: fix the tooling first (so we can see what's actually broken), then remove dead code, then fix functional issues exposed along the way.
+## Current State
 
-## Phase 1: Fix ESLint + TypeScript Config (unblock pre-commit)
+- **Backend**: 82.52% lines (OK)
+- **Shared**: 100% lines (OK)
+- **Next.js**: 1718/1939 tests failing, many files at 0% coverage
 
-The ~15,000 lint errors are almost entirely configuration problems, not code bugs. Fix these first so the pre-commit hook becomes useful again.
+## Root Cause Analysis
 
-### 1a. Create `nextjs/eslint.config.mjs`
+Three distinct failure categories, in order of impact:
 
-No ESLint config exists in the nextjs workspace. ESLint falls back to the root config, which doesn't ignore `.next/` build output. Create a proper config that:
-- Extends root config
-- Ignores `.next/` directory
-- Ignores `**/__tests__/**` from type-checked rules (test files can't resolve `bun:test` through projectService)
+### 1. Missing DOM Environment (ALL 1718 failures)
 
-**File:** `nextjs/eslint.config.mjs` (new)
+`@happy-dom/global-registrator` is installed but never configured. No `bunfig.toml` exists in the nextjs workspace. Every test using `@testing-library/react` fails with `ReferenceError: document is not defined`.
 
-### 1b. Fix `nextjs/tsconfig.json` for test files
+### 2. Stale WebSocket Mocks (~10 test files)
 
-The `bun:test` module can't be resolved because `nextjs/tsconfig.json` doesn't include `bun-types`. Two fixes:
-- Add `"types": ["bun-types"]` to compilerOptions (the package is already in devDependencies)
-- Exclude `**/__tests__/**` from the main tsconfig include (tests don't need to be part of the typecheck that Next.js runs)
+Production code migrated from WebSocket to SSE. 10 test files still mock WebSocket:
+- **Passive** (7 files): Mock WebSocket defensively but don't depend on it. Tests will pass once DOM works. Just dead code to clean up.
+- **Active** (3 files): Tests await `wsInstances`, call `ws.simulateMessage()`. Will fail after DOM fix because components no longer create WebSocket connections.
 
-**File:** `nextjs/tsconfig.json` (edit)
+### 3. Missing Test Files (39 API routes, 4 hooks, reducer gaps, utilities)
 
-### 1c. Fix the one real backend lint error
-
-`backend/src/streaming/session-streamer.ts:121` has an unnecessary type assertion flagged by eslint. Remove the `as SDKAssistantMessage` cast.
-
-**File:** `backend/src/streaming/session-streamer.ts` (edit)
-
-### 1d. Update `nextjs/package.json` lint script
-
-The current lint script uses `--ext .ts,.tsx` which is the old eslint format. With flat config, this flag doesn't apply. Update to just `eslint .`.
-
-**File:** `nextjs/package.json` (edit)
-
-### Verification
-
-Run `./git-hooks/pre-commit.sh` and confirm backend + nextjs pass typecheck and lint. Expect some remaining real errors in test files (props mismatches, missing test-helpers), which we'll handle separately.
+Files with no test coverage at all. These are the long tail.
 
 ---
 
-## Phase 2: Remove Dead Code
+## Execution Plan
 
-### 2a. Remove Hono REST routes from `backend/src/server.ts`
+### Phase 1: DOM Environment Setup
 
-All REST routes (lines ~246-463) have been replicated in Next.js API routes. Strip them. Keep only:
-- The WebSocket `/ws` upgrade handler (still referenced by `backend/src/index.ts`)
-- Static config (port, host, TLS) since it's used by `index.ts`
-- The health collector if still needed
+**Create 2 files:**
 
-This is a big file reduction. The WebSocket handler itself stays for now (it's dead code from the Next.js perspective, but removing it is a separate concern from removing the duplicated REST routes).
+1. `nextjs/test-setup.ts`
+   ```typescript
+   import { GlobalRegistrator } from "@happy-dom/global-registrator";
+   GlobalRegistrator.register();
+   ```
 
-**File:** `backend/src/server.ts` (edit)
+2. `nextjs/bunfig.toml`
+   ```toml
+   [test]
+   preload = ["./test-setup.ts"]
+   ```
 
-### 2b. Move schedulers to Next.js instrumentation
+**Verify**: Run `bun run --cwd nextjs test` and count passing tests. Expect ~1500+ to pass.
 
-The backend `index.ts` starts two schedulers (extraction at 3am, card discovery at 4am). These won't run when Next.js is the only process. Move them:
+**Estimated coverage after**: ~75-80% (depends on how many WebSocket-dependent tests fail)
 
-1. Create `nextjs/instrumentation.ts` with a `register()` export. Next.js calls this once on server startup. Port the scheduler init logic from `backend/src/index.ts` (lines 56-89).
-2. Enable instrumentation in `next.config.ts` if needed (Next.js 15 may have it on by default).
-3. SDK initialization is already handled lazily in `nextjs/lib/controller.ts`, so no conflict.
+### Phase 2: Clean Stale WebSocket Mocks (7 files)
 
-**Files:** `nextjs/instrumentation.ts` (new), `nextjs/next.config.ts` (edit if needed)
+Remove dead MockWebSocket class, `globalThis.WebSocket` overrides, and beforeEach/afterEach WebSocket setup from files that don't depend on it:
 
-### 2c. Update `scripts/launch.sh`
+1. `components/shared/__tests__/ModeToggle.test.tsx`
+2. `components/shared/__tests__/MoveDialog.test.tsx`
+3. `components/browse/__tests__/FileTree.test.tsx`
+4. `components/browse/viewers/__tests__/CsvViewer.test.tsx`
+5. `components/browse/viewers/__tests__/JsonViewer.test.tsx`
+6. `components/browse/viewers/__tests__/MarkdownViewer.test.tsx`
+7. `components/browse/viewers/__tests__/TxtViewer.test.tsx`
 
-With schedulers in Next.js, launch.sh becomes simple:
-1. Build Next.js: `bun run --cwd nextjs build`
-2. Start Next.js: `exec bun run --cwd nextjs start`
+**Pattern**: These files all have the same ~20-line MockWebSocket boilerplate + beforeEach/afterEach globalThis swap. Remove all of it. Tests should already pass from Phase 1; this is cleanup.
 
-The backend Hono server is no longer needed in production.
+**Verify**: Tests still pass after cleanup.
 
-**File:** `scripts/launch.sh` (edit)
+### Phase 3: Rewrite WebSocket-Dependent Tests for SSE (3 files)
 
-### 2d. Update systemd service if referenced
+These tests actively wait for WebSocket instances and simulate messages. They need substantive rewrites:
 
-Check if `memory-loop.service` needs updating to start Next.js instead of the backend.
+1. **`components/discussion/__tests__/Discussion.test.tsx`** (1352 lines)
+   - Discussion now uses `useChat` hook (SSE via fetch)
+   - Replace MockWebSocket + wsInstances + simulateMessage with mock fetch returning SSE streams
+   - Reference `hooks/__tests__/useChat.test.ts` for SSE mock patterns (createSSEResponse helper already exists there)
+   - Focus areas: message display, streaming, tool/permission/question dialogs, draft persistence, slash commands
 
-### 2e. Clean up stale WebSocket comments
+2. **`components/browse/__tests__/BrowseMode.test.tsx`** (1177 lines)
+   - BrowseMode uses REST API hooks (useFileBrowser, useSearch)
+   - No SSE needed. Just remove WebSocket mocks and fix any assertions about wsInstances
+   - The test already has `createMockFetch()`. Remove WebSocket infrastructure, keep fetch mocking
 
-Remove misleading "still uses WebSocket" comments from:
-- `nextjs/app/api/vaults/[vaultId]/health-issues/[issueId]/route.ts`
-- `nextjs/app/api/vaults/[vaultId]/sessions/route.ts`
+3. **`components/vault/__tests__/VaultSelect.test.tsx`** (1096 lines)
+   - VaultSelect uses REST (vault listing via fetch)
+   - Remove WebSocket mocks. Fix assertions about wsInstances and ws.simulateMessage for vault_list
+   - Replace WebSocket vault_list simulation with mock fetch responses
 
-**Files:** 2 route files (edit)
+**Test helpers to add to `nextjs/test-helpers.ts`:**
+- `createSSEResponse(events)` (extract from useChat.test.ts pattern)
+- `TestWrapper` component with SessionProvider for common wrapping
 
----
+**Verify**: All 3 test files pass. Run full suite, check coverage.
 
-## Phase 3: Fix Remaining Functional Issues
+**Estimated coverage after Phase 3**: ~80-85%
 
-After Phase 1-2, run the pre-commit hook again. Whatever real errors remain (test prop mismatches, missing imports) get fixed here. These will be visible once the config noise is cleared.
+### Phase 4: Session Reducer Tests (if needed for 80%)
 
-### 3a. Fix test files with broken imports
+`contexts/session/reducer.ts` is 709 lines with only config update actions tested (81 lines in `reducer-update-config.test.ts`).
 
-- Missing `test-helpers` module referenced by `FileAttachButton.test.tsx`
-- Bad path `../@/lib/api/types` in `useCapture.test.ts`
-- Props mismatches in tests where components were refactored but tests weren't updated
+**Create**: `contexts/session/__tests__/reducer.test.ts` covering major action types:
+- Vault actions: SELECT_VAULT, CLEAR_VAULT
+- Session actions: SET_SESSION_ID, SET_MODE, START_NEW_SESSION
+- Message actions: ADD_MESSAGE, UPDATE_LAST_MESSAGE, CLEAR_MESSAGES
+- Browser actions: SET_CURRENT_PATH, SET_FILE_CONTENT, SET_VIEW_MODE
+- Tool actions: ADD_TOOL_TO_LAST_MESSAGE, COMPLETE_TOOL_INVOCATION
+- Task/meeting/home actions
 
-These get fixed based on what the linter and typecheck actually report after Phase 1.
+These are pure reducer tests (no DOM, no rendering). Fast and high value.
 
-### 3b. Remove debug console.log statements
+**Estimated coverage after Phase 4**: ~85%
 
-Multiple hooks have debug logging (`[useHome]`, `[useCapture]`, `[Session]`). Remove or gate behind a debug flag.
+### Phase 5: Remaining Gaps (only if still below 80%)
 
-### 3c. Update CLAUDE.md
+Prioritized by coverage impact:
 
-The project CLAUDE.md still describes three workspaces (backend/frontend/shared) and WebSocket protocol. Update to reflect the actual architecture: backend (library), nextjs (app), shared (types).
+1. **Untested hooks** (4 new test files):
+   - `hooks/__tests__/useConfig.test.ts`
+   - `hooks/__tests__/useMeetings.test.ts`
+   - `hooks/__tests__/useMemory.test.ts`
+   - `hooks/__tests__/useSessions.test.ts`
+
+2. **Session utilities** (2 new test files):
+   - `contexts/session/__tests__/storage.test.ts`
+   - `contexts/session/__tests__/initial-state.test.ts`
+
+3. **Library utilities** (3 new test files):
+   - `lib/__tests__/sse.test.ts`
+   - `lib/__tests__/vault-helpers.test.ts`
+   - `lib/__tests__/controller.test.ts`
+
+4. **Untested components** (4 new test files):
+   - `components/__tests__/App.test.tsx`
+   - `components/home/__tests__/SessionActionsCard.test.tsx`
+   - `components/home/__tests__/VaultInfoCard.test.tsx`
+   - `components/pair-writing/__tests__/ViCursor.test.tsx`
+
+5. **API route tests** (last resort, probably not needed):
+   - 39 routes, all thin wrappers around backend functions already tested at 82.52%
+   - Low ROI, skip unless needed
+
+### Cleanup (alongside any phase)
+
+- Remove duplicate test file: `lib/utils/file-types.test.ts` (keep `lib/utils/__tests__/file-types.test.ts`)
+- Remove stale `./health-collector` export from `backend/package.json` line 13
 
 ---
 
 ## Verification
 
-1. `./git-hooks/pre-commit.sh` passes (typecheck, lint, build for all workspaces)
-2. `bun run --cwd nextjs dev` starts without errors
-3. Discussion mode loads and can send a message (SSE stream works)
-4. No WebSocket connection attempts visible in browser devtools
+After each phase:
+1. `bun run --cwd nextjs test` (all tests pass)
+2. `bun run --cwd nextjs test:coverage` (check line coverage)
+3. `bun run typecheck` (no type errors)
+
+Final verification:
+1. `bun run test` (all workspaces pass)
+2. Coverage >= 80% across all workspaces
+3. `bun run build` (Next.js build succeeds)
+
+---
+
+## Milestone Targets
+
+| Phase | Effort | Expected Coverage |
+|-------|--------|-------------------|
+| 1: DOM setup | 15 min | ~75-80% |
+| 2: Clean WS mocks | 30 min | ~75-80% (cleanup only) |
+| 3: Rewrite WS tests | 3-4 hours | ~80-85% |
+| 4: Reducer tests | 1-2 hours | ~85% |
+| 5: Remaining gaps | As needed | ~88-90% |
+
+**Target 80% should be achievable by end of Phase 3, with Phase 4 as insurance.**

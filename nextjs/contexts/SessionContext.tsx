@@ -83,7 +83,6 @@ export interface SessionProviderProps {
   initialGoals?: string | null;
   /** Optional initial session ID (for testing) */
   initialSessionId?: string | null;
-
 }
 
 // ----------------------------------------------------------------------------

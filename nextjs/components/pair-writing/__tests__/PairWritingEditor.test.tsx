@@ -17,13 +17,13 @@
 
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import type { ServerMessage, ClientMessage } from "@memory-loop/shared";
 import { PairWritingEditor } from "../PairWritingEditor";
 import type {
   EditorContextMenuProps,
   QuickActionType,
   AdvisoryActionType,
 } from "../../shared/EditorContextMenu";
+import type { SelectionContext } from "../../../hooks/useTextSelection";
 
 // =============================================================================
 // Mock Components - Injected via props (no mock.module)
@@ -64,11 +64,10 @@ function createDefaultProps() {
   return {
     initialContent: "# Test Document\n\nThis is test content.\n\nMore content here.",
     filePath: "notes/test-file.md",
-    sendMessage: mock<(message: ClientMessage) => void>(() => {}),
-    lastMessage: null as ServerMessage | null,
+    onQuickAction: mock<(action: QuickActionType, selection: SelectionContext) => void>(() => {}),
     onContentChange: mock<(content: string) => void>(() => {}),
     onQuickActionComplete: mock<(path: string) => void>(() => {}),
-    onAdvisoryAction: mock(() => {}),
+    onAdvisoryAction: mock<(action: AdvisoryActionType, selection: SelectionContext) => void>(() => {}),
     hasSnapshot: false,
     // Inject mock component to avoid mock.module pollution
     ContextMenuComponent: MockContextMenu,
@@ -298,7 +297,7 @@ describe("PairWritingEditor - context menu", () => {
 // =============================================================================
 
 describe("PairWritingEditor - Quick Action flow", () => {
-  it("sends quick_action_request when Quick Action selected (REQ-F-4)", () => {
+  it("calls onQuickAction when Quick Action selected (REQ-F-4)", () => {
     const props = createDefaultProps();
     render(<PairWritingEditor {...props} />);
 
@@ -308,12 +307,10 @@ describe("PairWritingEditor - Quick Action flow", () => {
     fireEvent.contextMenu(textarea);
     fireEvent.click(screen.getByTestId("action-tighten"));
 
-    expect(props.sendMessage).toHaveBeenCalledWith(
+    expect(props.onQuickAction).toHaveBeenCalledWith(
+      "tighten",
       expect.objectContaining({
-        type: "quick_action_request",
-        action: "tighten",
-        selection: "This is test content",
-        filePath: "notes/test-file.md",
+        text: "This is test content",
       })
     );
   });
@@ -380,113 +377,7 @@ describe("PairWritingEditor - Quick Action flow", () => {
       capturedOnAction("tighten");
     }
 
-    expect(props.sendMessage).not.toHaveBeenCalled();
-  });
-});
-
-// =============================================================================
-// Quick Action Response Handling Tests (REQ-F-8)
-// =============================================================================
-
-describe("PairWritingEditor - Quick Action response handling", () => {
-  it("tracks message ID from response_start", () => {
-    const props = createDefaultProps();
-    const { rerender } = render(<PairWritingEditor {...props} />);
-
-    // Trigger Quick Action
-    const textarea = getTextarea();
-    simulateTextSelection(textarea, 18, 37);
-    fireEvent.contextMenu(textarea);
-    fireEvent.click(screen.getByTestId("action-tighten"));
-
-    // Simulate response_start
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{
-          type: "response_start",
-          messageId: "msg_123",
-        }}
-      />
-    );
-
-    // Processing should still be active
-    expect(screen.getByText("Applying changes...")).toBeDefined();
-  });
-
-  it("calls onQuickActionComplete on response_end (REQ-F-8)", () => {
-    const props = createDefaultProps();
-    const { rerender } = render(<PairWritingEditor {...props} />);
-
-    // Trigger Quick Action
-    const textarea = getTextarea();
-    simulateTextSelection(textarea, 18, 37);
-    fireEvent.contextMenu(textarea);
-    fireEvent.click(screen.getByTestId("action-tighten"));
-
-    // Simulate response flow
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_start", messageId: "msg_123" }}
-      />
-    );
-
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_chunk", messageId: "msg_123", content: "OK" }}
-      />
-    );
-
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_end", messageId: "msg_123" }}
-      />
-    );
-
-    expect(props.onQuickActionComplete).toHaveBeenCalledWith("notes/test-file.md");
-  });
-
-  it("clears processing state on response_end", () => {
-    const props = createDefaultProps();
-    const { rerender } = render(<PairWritingEditor {...props} />);
-
-    // Trigger Quick Action
-    const textarea = getTextarea();
-    simulateTextSelection(textarea, 18, 37);
-    fireEvent.contextMenu(textarea);
-    fireEvent.click(screen.getByTestId("action-tighten"));
-
-    expect(textarea.disabled).toBe(true);
-
-    // Simulate response flow
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_start", messageId: "msg_123" }}
-      />
-    );
-
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_chunk", messageId: "msg_123", content: "OK" }}
-      />
-    );
-
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{ type: "response_end", messageId: "msg_123" }}
-      />
-    );
-
-    // Get fresh reference after rerender
-    const textareaAfter = getTextarea();
-    expect(textareaAfter.disabled).toBe(false);
-    expect(document.querySelector(".pair-writing-editor--processing")).toBeNull();
+    expect(props.onQuickAction).not.toHaveBeenCalled();
   });
 });
 
@@ -495,51 +386,11 @@ describe("PairWritingEditor - Quick Action response handling", () => {
 // =============================================================================
 
 describe("PairWritingEditor - error handling", () => {
-  it("clears processing state on error message", () => {
+  it("does not enter processing state without Quick Action", () => {
     const props = createDefaultProps();
-    const { rerender } = render(<PairWritingEditor {...props} />);
+    render(<PairWritingEditor {...props} />);
 
-    // Trigger Quick Action
-    const textarea = getTextarea();
-    simulateTextSelection(textarea, 18, 37);
-    fireEvent.contextMenu(textarea);
-    fireEvent.click(screen.getByTestId("action-tighten"));
-
-    expect(textarea.disabled).toBe(true);
-
-    // Simulate error
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{
-          type: "error",
-          code: "SDK_ERROR",
-          message: "Something went wrong",
-        }}
-      />
-    );
-
-    const textareaAfter = getTextarea();
-    expect(textareaAfter.disabled).toBe(false);
-  });
-
-  it("ignores messages when not processing Quick Action", () => {
-    const props = createDefaultProps();
-    const { rerender } = render(<PairWritingEditor {...props} />);
-
-    // Simulate response without having triggered a Quick Action
-    rerender(
-      <PairWritingEditor
-        {...props}
-        lastMessage={{
-          type: "response_chunk",
-          messageId: "msg_123",
-          content: "Random chunk",
-        }}
-      />
-    );
-
-    // Should not enter processing state
+    // Without triggering a Quick Action, processing state should not be active
     expect(document.querySelector(".pair-writing-editor--processing")).toBeNull();
   });
 });
@@ -632,7 +483,7 @@ describe("PairWritingEditor - Quick Action types", () => {
   ];
 
   for (const action of actions) {
-    it(`sends correct action type for ${action}`, () => {
+    it(`calls onQuickAction with correct action type for ${action}`, () => {
       const props = createDefaultProps();
       render(<PairWritingEditor {...props} />);
 
@@ -645,10 +496,10 @@ describe("PairWritingEditor - Quick Action types", () => {
         capturedOnAction(action);
       }
 
-      expect(props.sendMessage).toHaveBeenCalledWith(
+      expect(props.onQuickAction).toHaveBeenCalledWith(
+        action,
         expect.objectContaining({
-          type: "quick_action_request",
-          action: action,
+          text: expect.any(String),
         })
       );
     });

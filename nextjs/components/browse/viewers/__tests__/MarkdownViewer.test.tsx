@@ -11,32 +11,6 @@ import { useEffect, type ReactNode } from "react";
 import { MarkdownViewer } from "../MarkdownViewer";
 import { SessionProvider, useSession } from "../../../../contexts/SessionContext";
 
-// Mock WebSocket
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 3;
-
-  readyState = MockWebSocket.OPEN;
-  onopen: ((e: Event) => void) | null = null;
-  onclose: ((e: Event) => void) | null = null;
-  onmessage: ((e: MessageEvent) => void) | null = null;
-  onerror: ((e: Event) => void) | null = null;
-
-  constructor(public url: string) {
-    setTimeout(() => {
-      if (this.onopen) this.onopen(new Event("open"));
-    }, 0);
-  }
-
-  send(): void {}
-  close(): void {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-}
-
-const originalWebSocket = globalThis.WebSocket;
-
 // Custom wrapper that pre-populates browser state
 interface BrowserStateConfig {
   currentPath?: string;
@@ -105,13 +79,10 @@ function StatePopulator({
 
 beforeEach(() => {
   localStorage.clear();
-  // @ts-expect-error - mocking WebSocket
-  globalThis.WebSocket = MockWebSocket;
 });
 
 afterEach(() => {
   cleanup();
-  globalThis.WebSocket = originalWebSocket;
 });
 
 describe("MarkdownViewer", () => {

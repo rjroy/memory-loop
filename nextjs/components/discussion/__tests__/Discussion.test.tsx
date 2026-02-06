@@ -2,53 +2,34 @@
  * Tests for Discussion component
  *
  * Tests message display, submission, streaming, and slash commands.
+ * Uses mock fetch for SSE transport (no WebSocket).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
-import React, { type ReactNode } from "react";
+import React, { useEffect, type ReactNode } from "react";
 import { Discussion } from "../Discussion";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
-import type { ServerMessage, ClientMessage, VaultInfo } from "@memory-loop/shared";
+import type { VaultInfo, SlashCommand } from "@memory-loop/shared";
 
-// Mock WebSocket
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 3;
+// =============================================================================
+// Mock Fetch + SSE Helpers
+// =============================================================================
 
-  readyState = MockWebSocket.OPEN;
-  onopen: ((e: Event) => void) | null = null;
-  onclose: ((e: Event) => void) | null = null;
-  onmessage: ((e: MessageEvent) => void) | null = null;
-  onerror: ((e: Event) => void) | null = null;
-
-  constructor(public url: string) {
-    wsInstances.push(this);
-    setTimeout(() => {
-      if (this.onopen) this.onopen(new Event("open"));
-    }, 0);
-  }
-
-  send(data: string): void {
-    sentMessages.push(JSON.parse(data) as ClientMessage);
-  }
-
-  close(): void {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-
-  simulateMessage(msg: ServerMessage): void {
-    if (this.onmessage) {
-      this.onmessage(new MessageEvent("message", { data: JSON.stringify(msg) }));
-    }
-  }
-}
-
-let wsInstances: MockWebSocket[] = [];
-let sentMessages: ClientMessage[] = [];
-const originalWebSocket = globalThis.WebSocket;
+const mockFetch = mock(() => Promise.resolve(new Response()));
+const originalFetch = globalThis.fetch;
 const originalMatchMedia = globalThis.matchMedia;
+
+/**
+ * Creates a mock SSE response with the given events.
+ * Matches the format expected by useChat's SSE parser.
+ */
+function createSSEResponse(events: Array<{ type: string; [key: string]: unknown }>): Response {
+  const body = events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+  return new Response(body, {
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
 
 // Mock matchMedia for touch device detection
 function createMatchMediaMock(matches: boolean) {
@@ -63,6 +44,10 @@ function createMatchMediaMock(matches: boolean) {
     dispatchEvent: () => true,
   });
 }
+
+// =============================================================================
+// Test Fixtures
+// =============================================================================
 
 const testVault: VaultInfo = {
   id: "vault-1",
@@ -79,8 +64,8 @@ const testVault: VaultInfo = {
   quotesPerWeek: 1,
   badges: [],
   order: 999999,
-    cardsEnabled: true,
-      viMode: false,
+  cardsEnabled: true,
+  viMode: false,
 };
 
 function TestWrapper({ children }: { children: ReactNode }) {
@@ -91,146 +76,119 @@ function TestWrapper({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Helper wrapper that provides slash commands via SessionContext.
+ * Slash commands arrive via session_ready SSE event in production;
+ * for tests we inject them after vault selection completes.
+ *
+ * SELECT_VAULT resets slashCommands to [], so we must set them
+ * after the vault selection useEffect fires (which is triggered by
+ * initialVaults + localStorage).
+ */
+function SlashCommandWrapper({
+  children,
+  commands,
+}: {
+  children: ReactNode;
+  commands: SlashCommand[];
+}) {
+  return (
+    <SessionProvider initialVaults={[testVault]}>
+      <SlashCommandInjector commands={commands} />
+      {children}
+    </SessionProvider>
+  );
+}
+
+function SlashCommandInjector({ commands }: { commands: SlashCommand[] }) {
+  const { vault, setSlashCommands } = useSession();
+  // Set slash commands once vault is selected (SELECT_VAULT resets them)
+  useEffect(() => {
+    if (vault) {
+      setSlashCommands(commands);
+    }
+  }, [vault]);
+  return null;
+}
+
+/**
+ * Sets up mock fetch to return an SSE response that creates a session
+ * and streams a response with the given content.
+ */
+function mockFetchWithResponse(content: string) {
+  mockFetch.mockImplementation(() =>
+    Promise.resolve(
+      createSSEResponse([
+        { type: "session_ready", sessionId: "sess-1", vaultId: "vault-1" },
+        { type: "response_start", messageId: "msg-1" },
+        { type: "response_chunk", messageId: "msg-1", content },
+        { type: "response_end", messageId: "msg-1", durationMs: 100 },
+      ])
+    )
+  );
+}
+
+/**
+ * Sets up mock fetch to return a basic session-only response (no content).
+ */
+function mockFetchWithSession() {
+  mockFetch.mockImplementation(() =>
+    Promise.resolve(
+      createSSEResponse([
+        { type: "session_ready", sessionId: "sess-1", vaultId: "vault-1" },
+        { type: "response_end", messageId: "msg-1", durationMs: 100 },
+      ])
+    )
+  );
+}
+
+// =============================================================================
+// Setup / Teardown
+// =============================================================================
+
 beforeEach(() => {
-  wsInstances = [];
-  sentMessages = [];
+  mockFetch.mockReset();
   localStorage.clear();
 
   // Pre-select vault via localStorage
   localStorage.setItem("memory-loop:vaultId", "vault-1");
 
-  // @ts-expect-error - mocking WebSocket
-  globalThis.WebSocket = MockWebSocket;
+  globalThis.fetch = mockFetch as unknown as typeof fetch;
 
   // Default to desktop (non-touch) for tests
   globalThis.matchMedia = createMatchMediaMock(false);
+
+  // Default mock: return empty SSE response
+  mockFetchWithSession();
 });
 
 afterEach(() => {
   cleanup();
-  globalThis.WebSocket = originalWebSocket;
+  globalThis.fetch = originalFetch;
   globalThis.matchMedia = originalMatchMedia;
 });
 
+// =============================================================================
+// Tests
+// =============================================================================
+
 describe("Discussion", () => {
-  describe("vault selection", () => {
-    it("sends select_vault on WebSocket connect", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Wait for the select_vault message to be sent
-      await waitFor(() => {
-        expect(sentMessages).toContainEqual({
-          type: "select_vault",
-          vaultId: "vault-1",
-        });
-      });
-    });
-
-    it("sends select_vault with correct vault ID", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Verify the select_vault message has the correct vault ID
-      await waitFor(() => {
-        const vaultSelections = sentMessages.filter(
-          (m) => m.type === "select_vault"
-        );
-        expect(vaultSelections.length).toBe(1);
-        expect(vaultSelections[0]).toEqual({
-          type: "select_vault",
-          vaultId: "vault-1",
-        });
-      });
-    });
-  });
-
-  describe("new session", () => {
-    it("sends new_session when sessionId is cleared", async () => {
-      // Create a wrapper that can trigger startNewSession
-      let triggerNewSession: (() => void) | null = null;
-      let triggerSetSessionId: ((id: string) => void) | null = null;
-
-      function NewSessionTrigger() {
-        const { startNewSession, setSessionId } = useSession();
-        triggerNewSession = startNewSession;
-        triggerSetSessionId = setSessionId;
-        return null;
-      }
-
-      function TestWrapperWithTrigger({ children }: { children: ReactNode }) {
-        return (
-          <SessionProvider initialVaults={[testVault]}>
-            <NewSessionTrigger />
-            {children}
-          </SessionProvider>
-        );
-      }
-
-      render(<Discussion />, { wrapper: TestWrapperWithTrigger });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Set up initial sessionId
-      act(() => {
-        triggerSetSessionId!("existing-session-123");
-      });
-
-      // Clear messages from initial connection
-      sentMessages.length = 0;
-
-      // Now trigger startNewSession
-      expect(triggerNewSession).not.toBeNull();
-      act(() => {
-        triggerNewSession!();
-      });
-
-      // Should send new_session message to backend
-      await waitFor(() => {
-        const newSessionMessages = sentMessages.filter(
-          (m) => m.type === "new_session"
-        );
-        expect(newSessionMessages.length).toBe(1);
-      });
-    });
-  });
-
   describe("rendering", () => {
-    it("renders input field and send button", async () => {
+    it("renders input field and send button", () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       expect(screen.getByRole("textbox")).toBeDefined();
       expect(screen.getByRole("button", { name: /send/i })).toBeDefined();
     });
 
-    it("shows empty state when no messages", async () => {
+    it("shows empty state when no messages", () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       expect(screen.getByText(/start a conversation/i)).toBeDefined();
     });
 
-    it("has proper accessibility attributes", async () => {
+    it("has proper accessibility attributes", () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       expect(screen.getByRole("list", { name: /conversation/i })).toBeDefined();
       expect(screen.getByRole("textbox", { name: /message input/i })).toBeDefined();
@@ -238,12 +196,8 @@ describe("Discussion", () => {
   });
 
   describe("message submission", () => {
-    it("sends discussion_message on submit", async () => {
+    it("sends message via fetch POST on submit", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       const input = screen.getByRole("textbox");
       const button = screen.getByRole("button", { name: /send/i });
@@ -252,19 +206,20 @@ describe("Discussion", () => {
       fireEvent.click(button);
 
       await waitFor(() => {
-        expect(sentMessages).toContainEqual({
-          type: "discussion_message",
-          text: "Hello Claude",
-        });
+        expect(mockFetch).toHaveBeenCalled();
       });
+
+      const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      expect(call[0]).toBe("/api/chat");
+      expect(call[1].method).toBe("POST");
+
+      const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+      expect(body.prompt).toBe("Hello Claude");
+      expect(body.vaultId).toBe("vault-1");
     });
 
     it("adds user message to conversation", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       const input = screen.getByRole("textbox");
       const button = screen.getByRole("button", { name: /send/i });
@@ -278,107 +233,23 @@ describe("Discussion", () => {
     });
 
     it("shows streaming response from server", async () => {
+      mockFetchWithResponse("Hi there!");
+
       render(<Discussion />, { wrapper: TestWrapper });
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const ws = wsInstances[wsInstances.length - 1];
-
-      // User sends a message
       const input = screen.getByRole("textbox");
       const button = screen.getByRole("button", { name: /send/i });
 
       fireEvent.change(input, { target: { value: "Hello" } });
       fireEvent.click(button);
 
-      await waitFor(() => {
-        expect(screen.getByText("Hello")).toBeDefined();
-      });
-
-      // Server starts streaming response
-      act(() => {
-        ws.simulateMessage({ type: "response_start", messageId: "msg-1" });
-      });
-
-      // Streaming cursor should appear (assistant message with isStreaming: true)
-      await waitFor(() => {
-        const cursor = screen.queryByAltText("Typing");
-        expect(cursor).not.toBeNull();
-      });
-
-      // Server sends a chunk
-      act(() => {
-        ws.simulateMessage({ type: "response_chunk", messageId: "msg-1", content: "Hi there!" });
-      });
-
-      // Content should appear
       await waitFor(() => {
         expect(screen.getByText("Hi there!")).toBeDefined();
-      });
-
-      // Server ends response
-      act(() => {
-        ws.simulateMessage({ type: "response_end", messageId: "msg-1" });
-      });
-
-      // Cursor should disappear
-      await waitFor(() => {
-        const cursor = screen.queryByAltText("Typing");
-        expect(cursor).toBeNull();
-      });
-    });
-
-    it("handles response_chunk without response_start (race condition fix)", async () => {
-      // This tests the fix for when chunks arrive without a preceding response_start,
-      // which can happen when clicking "New" during an active response
-      render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const ws = wsInstances[wsInstances.length - 1];
-
-      // User sends a message
-      const input = screen.getByRole("textbox");
-      const button = screen.getByRole("button", { name: /send/i });
-
-      fireEvent.change(input, { target: { value: "Hello" } });
-      fireEvent.click(button);
-
-      await waitFor(() => {
-        expect(screen.getByText("Hello")).toBeDefined();
-      });
-
-      // Server sends chunk directly WITHOUT response_start (simulates race condition)
-      act(() => {
-        ws.simulateMessage({ type: "response_chunk", messageId: "msg-1", content: "Response without start" });
-      });
-
-      // Content should still appear (fix creates assistant message automatically)
-      await waitFor(() => {
-        expect(screen.getByText("Response without start")).toBeDefined();
-      });
-
-      // Server ends response
-      act(() => {
-        ws.simulateMessage({ type: "response_end", messageId: "msg-1" });
-      });
-
-      // Content should remain visible after response ends
-      await waitFor(() => {
-        expect(screen.getByText("Response without start")).toBeDefined();
       });
     });
 
     it("clears input after submission", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       const input = screen.getByRole("textbox");
       const button = screen.getByRole("button", { name: /send/i });
@@ -392,12 +263,7 @@ describe("Discussion", () => {
     });
 
     it("submits on Enter key on desktop", async () => {
-      // Default mock is desktop (non-touch)
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       const input = screen.getByRole("textbox");
 
@@ -405,60 +271,43 @@ describe("Discussion", () => {
       fireEvent.keyDown(input, { key: "Enter" });
 
       await waitFor(() => {
-        expect(sentMessages).toContainEqual({
-          type: "discussion_message",
-          text: "Hello Claude",
-        });
+        expect(mockFetch).toHaveBeenCalled();
       });
+
+      const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+      expect(body.prompt).toBe("Hello Claude");
     });
 
-    it("does not submit on Enter key on touch devices", async () => {
+    it("does not submit on Enter key on touch devices", () => {
       // Mock touch device
       globalThis.matchMedia = createMatchMediaMock(true);
 
       render(<Discussion />, { wrapper: TestWrapper });
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
       const input = screen.getByRole("textbox");
 
       fireEvent.change(input, { target: { value: "Hello Claude" } });
       fireEvent.keyDown(input, { key: "Enter" });
 
-      // Should not have sent discussion_message - only select_vault
-      const discussionMessages = sentMessages.filter(
-        (m) => m.type === "discussion_message"
-      );
-      expect(discussionMessages.length).toBe(0);
+      // Should not have called fetch
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it("does not submit on Shift+Enter", async () => {
+    it("does not submit on Shift+Enter", () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       const input = screen.getByRole("textbox");
 
       fireEvent.change(input, { target: { value: "Hello" } });
       fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
 
-      // Should not have sent any discussion_message (select_vault is expected on connect)
-      const discussionMessages = sentMessages.filter(
-        (m) => m.type === "discussion_message"
-      );
-      expect(discussionMessages.length).toBe(0);
+      // Should not have called fetch
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it("disables button when input is empty", async () => {
+    it("disables button when input is empty", () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       const button = screen.getByRole("button", { name: /send/i });
       expect(button.hasAttribute("disabled")).toBe(true);
@@ -466,112 +315,69 @@ describe("Discussion", () => {
   });
 
   describe("slash command autocomplete", () => {
+    const testCommands: SlashCommand[] = [
+      { name: "/help", description: "Show help" },
+      { name: "/commit", description: "Create a commit" },
+    ];
+
     it("shows autocomplete popup when typing slash command and commands are available", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Simulate session_ready with slash commands
-      const ws = wsInstances[0];
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "test-session",
-          vaultId: "vault-1",
-          slashCommands: [
-            { name: "/help", description: "Show help" },
-            { name: "/commit", description: "Create a commit" },
-          ],
-        });
-      });
+      render(
+        <SlashCommandWrapper commands={testCommands}>
+          <Discussion />
+        </SlashCommandWrapper>
+      );
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "/he" } });
 
       await waitFor(() => {
-        // The autocomplete popup has role="listbox"
         expect(screen.getByRole("listbox")).toBeDefined();
-        // Should show the matching command
         expect(screen.getByText("/help")).toBeDefined();
       });
     });
 
     it("does not show autocomplete for regular messages", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      render(
+        <SlashCommandWrapper commands={testCommands}>
+          <Discussion />
+        </SlashCommandWrapper>
+      );
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Simulate session_ready with slash commands
-      const ws = wsInstances[0];
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "test-session",
-          vaultId: "vault-1",
-          slashCommands: [
-            { name: "/help", description: "Show help" },
-          ],
-        });
-      });
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "Hello" } });
 
-      // No listbox should be present for regular messages
       expect(screen.queryByRole("listbox")).toBeNull();
     });
 
     it("does not show autocomplete when no commands are available", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      render(
+        <SlashCommandWrapper commands={[]}>
+          <Discussion />
+        </SlashCommandWrapper>
+      );
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Session ready without slash commands
-      const ws = wsInstances[0];
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "test-session",
-          vaultId: "vault-1",
-          slashCommands: [],
-        });
-      });
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "/help" } });
 
-      // No listbox should be present when no commands exist
       expect(screen.queryByRole("listbox")).toBeNull();
     });
 
     it("hides autocomplete after space is typed (indicating arguments)", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      const commands: SlashCommand[] = [
+        { name: "/commit", description: "Create a commit", argumentHint: "<message>" },
+      ];
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      render(
+        <SlashCommandWrapper commands={commands}>
+          <Discussion />
+        </SlashCommandWrapper>
+      );
 
-      const ws = wsInstances[0];
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "test-session",
-          vaultId: "vault-1",
-          slashCommands: [
-            { name: "/commit", description: "Create a commit", argumentHint: "<message>" },
-          ],
-        });
-      });
 
       const input = screen.getByRole("textbox");
 
-      // First type the command prefix
       act(() => {
         fireEvent.change(input, { target: { value: "/com" } });
       });
@@ -580,39 +386,28 @@ describe("Discussion", () => {
         expect(screen.getByRole("listbox")).toBeDefined();
       });
 
-      // Now type a space to indicate we're entering arguments
       act(() => {
         fireEvent.change(input, { target: { value: "/commit " } });
       });
 
-      // Autocomplete should be hidden synchronously when space is added
-      // The state update should cause immediate re-render hiding the listbox
       expect(screen.queryByRole("listbox")).toBeNull();
     });
 
     it("selects command with Enter key and replaces input", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      const commands: SlashCommand[] = [
+        { name: "/commit", description: "Create a commit", argumentHint: "<message>" },
+        { name: "/clear", description: "Clear history" },
+      ];
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      render(
+        <SlashCommandWrapper commands={commands}>
+          <Discussion />
+        </SlashCommandWrapper>
+      );
 
-      const ws = wsInstances[0];
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "test-session",
-          vaultId: "vault-1",
-          slashCommands: [
-            { name: "/commit", description: "Create a commit", argumentHint: "<message>" },
-            { name: "/clear", description: "Clear history" },
-          ],
-        });
-      });
 
       const input = screen.getByRole("textbox");
 
-      // Type filter prefix
       act(() => {
         fireEvent.change(input, { target: { value: "/com" } });
       });
@@ -621,42 +416,31 @@ describe("Discussion", () => {
         expect(screen.getByRole("listbox")).toBeDefined();
       });
 
-      // Press Enter to select the highlighted command
       act(() => {
         fireEvent.keyDown(input, { key: "Enter" });
       });
 
-      // Input should be replaced with full command + space
       await waitFor(() => {
         expect((input as HTMLTextAreaElement).value).toBe("/commit ");
       });
 
-      // Autocomplete should be hidden after selection
       expect(screen.queryByRole("listbox")).toBeNull();
     });
 
     it("shows argumentHint as placeholder after command selection", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      const commands: SlashCommand[] = [
+        { name: "/commit", description: "Create a commit", argumentHint: "<message>" },
+      ];
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      render(
+        <SlashCommandWrapper commands={commands}>
+          <Discussion />
+        </SlashCommandWrapper>
+      );
 
-      const ws = wsInstances[0];
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "test-session",
-          vaultId: "vault-1",
-          slashCommands: [
-            { name: "/commit", description: "Create a commit", argumentHint: "<message>" },
-          ],
-        });
-      });
 
       const input = screen.getByRole("textbox");
 
-      // Type command prefix and select
       act(() => {
         fireEvent.change(input, { target: { value: "/com" } });
       });
@@ -665,7 +449,6 @@ describe("Discussion", () => {
         expect(screen.getByRole("listbox")).toBeDefined();
       });
 
-      // Press Enter to select
       act(() => {
         fireEvent.keyDown(input, { key: "Enter" });
       });
@@ -674,34 +457,25 @@ describe("Discussion", () => {
         expect((input as HTMLTextAreaElement).value).toBe("/commit ");
       });
 
-      // Placeholder should show the argumentHint
       expect((input as HTMLTextAreaElement).placeholder).toBe("<message>");
     });
 
     it("navigates selection with arrow keys", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      const commands: SlashCommand[] = [
+        { name: "/clear", description: "Clear history" },
+        { name: "/commit", description: "Create a commit" },
+        { name: "/compact", description: "Compact context" },
+      ];
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      render(
+        <SlashCommandWrapper commands={commands}>
+          <Discussion />
+        </SlashCommandWrapper>
+      );
 
-      const ws = wsInstances[0];
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "test-session",
-          vaultId: "vault-1",
-          slashCommands: [
-            { name: "/clear", description: "Clear history" },
-            { name: "/commit", description: "Create a commit" },
-            { name: "/compact", description: "Compact context" },
-          ],
-        });
-      });
 
       const input = screen.getByRole("textbox");
 
-      // Type slash to show all commands
       act(() => {
         fireEvent.change(input, { target: { value: "/c" } });
       });
@@ -726,28 +500,20 @@ describe("Discussion", () => {
     });
 
     it("selects command by clicking on it", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      const commands: SlashCommand[] = [
+        { name: "/commit", description: "Create a commit" },
+        { name: "/clear", description: "Clear history" },
+      ];
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      render(
+        <SlashCommandWrapper commands={commands}>
+          <Discussion />
+        </SlashCommandWrapper>
+      );
 
-      const ws = wsInstances[0];
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "test-session",
-          vaultId: "vault-1",
-          slashCommands: [
-            { name: "/commit", description: "Create a commit" },
-            { name: "/clear", description: "Clear history" },
-          ],
-        });
-      });
 
       const input = screen.getByRole("textbox");
 
-      // Type slash to show autocomplete
       act(() => {
         fireEvent.change(input, { target: { value: "/" } });
       });
@@ -762,34 +528,25 @@ describe("Discussion", () => {
         fireEvent.click(commitOption);
       });
 
-      // Input should be replaced with command + space
       await waitFor(() => {
         expect((input as HTMLTextAreaElement).value).toBe("/commit ");
       });
     });
 
     it("closes autocomplete with Escape key", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      const commands: SlashCommand[] = [
+        { name: "/help", description: "Show help" },
+      ];
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      render(
+        <SlashCommandWrapper commands={commands}>
+          <Discussion />
+        </SlashCommandWrapper>
+      );
 
-      const ws = wsInstances[0];
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "test-session",
-          vaultId: "vault-1",
-          slashCommands: [
-            { name: "/help", description: "Show help" },
-          ],
-        });
-      });
 
       const input = screen.getByRole("textbox");
 
-      // Type slash to show autocomplete
       act(() => {
         fireEvent.change(input, { target: { value: "/" } });
       });
@@ -798,15 +555,12 @@ describe("Discussion", () => {
         expect(screen.getByRole("listbox")).toBeDefined();
       });
 
-      // Press Escape
       act(() => {
         fireEvent.keyDown(input, { key: "Escape" });
       });
 
-      // Input should still have the text (just autocomplete closed)
-      // But autocomplete visibility is based on input value, so it should still show
-      // Actually the close just resets selection, the popup stays visible based on input
-      // This tests that Escape doesn't cause any errors
+      // The listbox visibility is derived from input state, not explicitly closed.
+      // Escape just resets selection. The popup stays visible based on input.
       expect(screen.getByRole("listbox")).toBeDefined();
     });
   });
@@ -814,10 +568,6 @@ describe("Discussion", () => {
   describe("draft persistence", () => {
     it("saves draft to localStorage", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       const input = screen.getByRole("textbox");
       fireEvent.change(input, { target: { value: "Draft message" } });
@@ -827,14 +577,10 @@ describe("Discussion", () => {
       });
     });
 
-    it("loads draft from localStorage on mount", async () => {
+    it("loads draft from localStorage on mount", () => {
       localStorage.setItem("memory-loop-discussion-draft", "Saved draft");
 
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       const input = screen.getByRole("textbox");
       expect((input as HTMLTextAreaElement).value).toBe("Saved draft");
@@ -842,10 +588,6 @@ describe("Discussion", () => {
 
     it("clears localStorage after successful submission", async () => {
       render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
 
       const input = screen.getByRole("textbox");
       const button = screen.getByRole("button", { name: /send/i });
@@ -864,280 +606,54 @@ describe("Discussion", () => {
     });
   });
 
-  describe("session resume from pendingSessionId", () => {
-    // Tests for the pendingSessionId flow when RecentActivity triggers a resume
-    let setPendingSessionIdFn: ((id: string | null) => void) | null = null;
-    let setShowDiscussionFn: ((show: boolean) => void) | null = null;
-
-    function PendingSessionWrapper() {
-      const [showDiscussion, setShowDiscussion] = React.useState(false);
-      const { setPendingSessionId } = useSession();
-
-      setPendingSessionIdFn = setPendingSessionId;
-      setShowDiscussionFn = setShowDiscussion;
-
-      return showDiscussion ? <Discussion /> : null;
-    }
-
-    it("sends resume_session when pendingSessionId is set before mount", async () => {
-      render(
-        <SessionProvider initialVaults={[testVault]}>
-          <PendingSessionWrapper />
-        </SessionProvider>
-      );
-
-      // Set pendingSessionId before mounting Discussion (simulates RecentActivity click)
-      act(() => {
-        setPendingSessionIdFn!("pending-session-abc123");
-      });
-
-      // Clear messages before mounting Discussion
-      sentMessages.length = 0;
-
-      // Mount Discussion
-      act(() => {
-        setShowDiscussionFn!(true);
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const ws = wsInstances[wsInstances.length - 1];
-
-      // With per-vault session storage, select_vault is sent first
-      await waitFor(() => {
-        const selectMessages = sentMessages.filter(
-          (m) => m.type === "select_vault"
-        );
-        expect(selectMessages.length).toBe(1);
-        expect(selectMessages[0]).toEqual({
-          type: "select_vault",
-          vaultId: testVault.id,
-        });
-      });
-
-      // Simulate vault selection response (empty sessionId means vault selected, no session yet)
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "",
-          vaultId: testVault.id,
-        });
-      });
-
-      // After vault selection, should send resume_session with the pendingSessionId
-      await waitFor(() => {
-        const resumeMessages = sentMessages.filter(
-          (m) => m.type === "resume_session"
-        );
-        expect(resumeMessages.length).toBe(1);
-        expect(resumeMessages[0]).toEqual({
-          type: "resume_session",
-          sessionId: "pending-session-abc123",
-        });
-      });
-    });
-
-    it("pendingSessionId takes priority over existing sessionId", async () => {
-      let setSessionIdFn: ((id: string) => void) | null = null;
-
-      function PriorityTestWrapper() {
-        const [showDiscussion, setShowDiscussion] = React.useState(false);
-        const { setPendingSessionId, setSessionId } = useSession();
-
-        setPendingSessionIdFn = setPendingSessionId;
-        setSessionIdFn = setSessionId;
-        setShowDiscussionFn = setShowDiscussion;
-
-        return showDiscussion ? <Discussion /> : null;
-      }
-
-      render(
-        <SessionProvider initialVaults={[testVault]}>
-          <PriorityTestWrapper />
-        </SessionProvider>
-      );
-
-      // Set both an existing sessionId AND a pendingSessionId
-      act(() => {
-        setSessionIdFn!("existing-session-111");
-        setPendingSessionIdFn!("pending-session-222");
-      });
-
-      sentMessages.length = 0;
-
-      act(() => {
-        setShowDiscussionFn!(true);
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const ws = wsInstances[wsInstances.length - 1];
-
-      // With per-vault session storage, select_vault is sent first
-      await waitFor(() => {
-        const selectMessages = sentMessages.filter(
-          (m) => m.type === "select_vault"
-        );
-        expect(selectMessages.length).toBe(1);
-      });
-
-      // Simulate vault selection response
-      act(() => {
-        ws.simulateMessage({
-          type: "session_ready",
-          sessionId: "",
-          vaultId: testVault.id,
-        });
-      });
-
-      // After vault selection, should resume the PENDING session, not the existing one
-      await waitFor(() => {
-        const resumeMessages = sentMessages.filter(
-          (m) => m.type === "resume_session"
-        );
-        expect(resumeMessages.length).toBe(1);
-        expect(resumeMessages[0]).toEqual({
-          type: "resume_session",
-          sessionId: "pending-session-222",
-        });
-      });
-    });
-
-    it("clears pendingSessionId on SESSION_NOT_FOUND error", async () => {
-      let getPendingSessionIdFn: (() => string | null) | null = null;
-
-      function ErrorTestWrapper() {
-        const [showDiscussion, setShowDiscussion] = React.useState(false);
-        const { setPendingSessionId, pendingSessionId } = useSession();
-
-        setPendingSessionIdFn = setPendingSessionId;
-        getPendingSessionIdFn = () => pendingSessionId;
-        setShowDiscussionFn = setShowDiscussion;
-
-        return showDiscussion ? <Discussion /> : null;
-      }
-
-      render(
-        <SessionProvider initialVaults={[testVault]}>
-          <ErrorTestWrapper />
-        </SessionProvider>
-      );
-
-      // Set pendingSessionId
-      act(() => {
-        setPendingSessionIdFn!("invalid-session-xyz");
-      });
-
-      // Mount Discussion
-      act(() => {
-        setShowDiscussionFn!(true);
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const ws = wsInstances[wsInstances.length - 1];
-
-      // Verify pendingSessionId is set
-      expect(getPendingSessionIdFn!()).toBe("invalid-session-xyz");
-
-      // Server responds with SESSION_NOT_FOUND error
-      act(() => {
-        ws.simulateMessage({
-          type: "error",
-          code: "SESSION_NOT_FOUND",
-          message: "Session not found",
-        });
-      });
-
-      // pendingSessionId should be cleared to prevent retry on reconnect
-      await waitFor(() => {
-        expect(getPendingSessionIdFn!()).toBeNull();
-      });
-
-      // Should have sent select_vault as fallback
-      await waitFor(() => {
-        const selectVaultMessages = sentMessages.filter(
-          (m) => m.type === "select_vault"
-        );
-        expect(selectVaultMessages.length).toBeGreaterThan(0);
-      });
-    });
-  });
-
   describe("abort functionality", () => {
     it("shows stop button when submitting", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      // Use a delayed response so we can observe the submitting state
+      mockFetch.mockImplementation(
+        () => new Promise((resolve) => {
+          setTimeout(
+            () => resolve(createSSEResponse([
+              { type: "response_end", messageId: "msg-1", durationMs: 100 },
+            ])),
+            5000
+          );
+        })
+      );
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      render(<Discussion />, { wrapper: TestWrapper });
 
       const input = screen.getByRole("textbox");
       const button = screen.getByRole("button", { name: /send/i });
 
-      // Submit a message
       fireEvent.change(input, { target: { value: "Hello Claude" } });
       fireEvent.click(button);
 
-      // Button should now show "Stop response" label
       await waitFor(() => {
         expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
-      });
-    });
-
-    it("sends abort message when stop button is clicked", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const input = screen.getByRole("textbox");
-      const button = screen.getByRole("button", { name: /send/i });
-
-      // Submit a message
-      fireEvent.change(input, { target: { value: "Hello Claude" } });
-      fireEvent.click(button);
-
-      // Wait for stop button to appear
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
-      });
-
-      // Clear sent messages to isolate the abort
-      sentMessages.length = 0;
-
-      // Click stop button
-      const stopButton = screen.getByRole("button", { name: /stop response/i });
-      fireEvent.click(stopButton);
-
-      // Should have sent abort message
-      await waitFor(() => {
-        expect(sentMessages).toContainEqual({ type: "abort" });
       });
     });
 
     it("reverts to send button after abort", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
+      // Use a delayed response
+      mockFetch.mockImplementation(
+        () => new Promise((resolve) => {
+          setTimeout(
+            () => resolve(createSSEResponse([
+              { type: "response_end", messageId: "msg-1", durationMs: 100 },
+            ])),
+            5000
+          );
+        })
+      );
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      render(<Discussion />, { wrapper: TestWrapper });
 
       const input = screen.getByRole("textbox");
       const button = screen.getByRole("button", { name: /send/i });
 
-      // Submit a message
       fireEvent.change(input, { target: { value: "Hello Claude" } });
       fireEvent.click(button);
 
-      // Wait for stop button
       await waitFor(() => {
         expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
       });
@@ -1146,71 +662,23 @@ describe("Discussion", () => {
       const stopButton = screen.getByRole("button", { name: /stop response/i });
       fireEvent.click(stopButton);
 
-      // Should revert to send button
       await waitFor(() => {
         expect(screen.getByRole("button", { name: /send/i })).toBeDefined();
       });
     });
 
-    it("stop button is enabled even when disconnected during submission", async () => {
-      render(<Discussion />, { wrapper: TestWrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const ws = wsInstances[wsInstances.length - 1];
-      const input = screen.getByRole("textbox");
-      const button = screen.getByRole("button", { name: /send/i });
-
-      // Submit a message
-      fireEvent.change(input, { target: { value: "Hello Claude" } });
-      fireEvent.click(button);
-
-      // Wait for stop button
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
-      });
-
-      // Simulate disconnect
-      ws.readyState = MockWebSocket.CLOSED;
-      act(() => {
-        if (ws.onclose) ws.onclose(new Event("close"));
-      });
-
-      // Stop button should still be clickable (not disabled)
-      const stopButton = screen.getByRole("button", { name: /stop response/i });
-      expect(stopButton.hasAttribute("disabled")).toBe(false);
-    });
-
     it("reverts to send button on response_end", async () => {
+      mockFetchWithResponse("Hi!");
+
       render(<Discussion />, { wrapper: TestWrapper });
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const ws = wsInstances[wsInstances.length - 1];
       const input = screen.getByRole("textbox");
       const button = screen.getByRole("button", { name: /send/i });
 
-      // Submit a message
       fireEvent.change(input, { target: { value: "Hello Claude" } });
       fireEvent.click(button);
 
-      // Wait for stop button
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: /stop response/i })).toBeDefined();
-      });
-
-      // Server sends response_end
-      act(() => {
-        ws.simulateMessage({ type: "response_start", messageId: "msg-1" });
-        ws.simulateMessage({ type: "response_chunk", messageId: "msg-1", content: "Hi!" });
-        ws.simulateMessage({ type: "response_end", messageId: "msg-1" });
-      });
-
-      // Should revert to send button
+      // After SSE stream completes (response_end received), should revert to send button
       await waitFor(() => {
         expect(screen.getByRole("button", { name: /send/i })).toBeDefined();
       });
@@ -1218,7 +686,6 @@ describe("Discussion", () => {
   });
 
   describe("prefill from inspiration", () => {
-    // Shared test helpers - using a controlled wrapper that preserves SessionProvider state
     let setPrefillFn: ((text: string | null) => void) | null = null;
     let getPrefillFn: (() => string | null) | null = null;
     let setShowDiscussionFn: ((show: boolean) => void) | null = null;
@@ -1227,7 +694,6 @@ describe("Discussion", () => {
       const [showDiscussion, setShowDiscussion] = React.useState(false);
       const { setDiscussionPrefill, discussionPrefill } = useSession();
 
-      // Expose functions to test
       setPrefillFn = setDiscussionPrefill;
       getPrefillFn = () => discussionPrefill;
       setShowDiscussionFn = setShowDiscussion;
@@ -1242,22 +708,18 @@ describe("Discussion", () => {
         </SessionProvider>
       );
 
-      // Set prefill before mounting Discussion
       act(() => {
         setPrefillFn!("What excites you today?");
       });
 
-      // Mount Discussion
       act(() => {
         setShowDiscussionFn!(true);
       });
 
       await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
+        const input = screen.getByRole("textbox");
+        expect((input as HTMLTextAreaElement).value).toBe("What excites you today?");
       });
-
-      const input = screen.getByRole("textbox");
-      expect((input as HTMLTextAreaElement).value).toBe("What excites you today?");
     });
 
     it("clears prefill from context after populating input", async () => {
@@ -1267,32 +729,25 @@ describe("Discussion", () => {
         </SessionProvider>
       );
 
-      // Set prefill
       act(() => {
         setPrefillFn!("Reflect on this...");
       });
 
-      // Mount Discussion
       act(() => {
         setShowDiscussionFn!(true);
       });
 
       await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
+        const input = screen.getByRole("textbox");
+        expect((input as HTMLTextAreaElement).value).toBe("Reflect on this...");
       });
 
-      // Verify input has the prefill
-      const input = screen.getByRole("textbox");
-      expect((input as HTMLTextAreaElement).value).toBe("Reflect on this...");
-
-      // Verify prefill was cleared from context
       await waitFor(() => {
         expect(getPrefillFn!()).toBeNull();
       });
     });
 
     it("prefill takes precedence over localStorage draft", async () => {
-      // Set draft in localStorage
       localStorage.setItem("memory-loop-discussion-draft", "Draft message");
 
       render(
@@ -1301,23 +756,18 @@ describe("Discussion", () => {
         </SessionProvider>
       );
 
-      // Set prefill
       act(() => {
         setPrefillFn!("Prefill message");
       });
 
-      // Mount Discussion
       act(() => {
         setShowDiscussionFn!(true);
       });
 
       await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
+        const input = screen.getByRole("textbox");
+        expect((input as HTMLTextAreaElement).value).toBe("Prefill message");
       });
-
-      const input = screen.getByRole("textbox");
-      // Prefill should win over draft
-      expect((input as HTMLTextAreaElement).value).toBe("Prefill message");
     });
 
     it("does not auto-submit prefill (user must click send)", async () => {
@@ -1331,22 +781,18 @@ describe("Discussion", () => {
         setPrefillFn!("Some prefill");
       });
 
-      // Clear any sent messages before mounting Discussion
-      sentMessages.length = 0;
+      // Clear any calls before mounting Discussion
+      mockFetch.mockClear();
 
       act(() => {
         setShowDiscussionFn!(true);
       });
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      // Give it a moment to settle
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Should not have sent discussion_message
-      const discussionMessages = sentMessages.filter(
-        (m) => m.type === "discussion_message"
-      );
-      expect(discussionMessages.length).toBe(0);
+      // Should not have sent any fetch requests
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });

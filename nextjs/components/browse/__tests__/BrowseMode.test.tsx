@@ -10,45 +10,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 import React, { type ReactNode } from "react";
 import { BrowseMode } from "../BrowseMode";
 import { SessionProvider, useSession } from "../../../contexts/SessionContext";
-import type { VaultInfo, ServerMessage, ClientMessage, FileEntry } from "@memory-loop/shared";
-
-// Mock WebSocket
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 3;
-
-  readyState = MockWebSocket.OPEN;
-  onopen: ((e: Event) => void) | null = null;
-  onclose: ((e: Event) => void) | null = null;
-  onmessage: ((e: MessageEvent) => void) | null = null;
-  onerror: ((e: Event) => void) | null = null;
-
-  constructor(public url: string) {
-    wsInstances.push(this);
-    setTimeout(() => {
-      if (this.onopen) this.onopen(new Event("open"));
-    }, 0);
-  }
-
-  send(data: string): void {
-    sentMessages.push(JSON.parse(data) as ClientMessage);
-  }
-
-  close(): void {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-
-  simulateMessage(msg: ServerMessage): void {
-    if (this.onmessage) {
-      this.onmessage(new MessageEvent("message", { data: JSON.stringify(msg) }));
-    }
-  }
-}
-
-let wsInstances: MockWebSocket[] = [];
-let sentMessages: ClientMessage[] = [];
-const originalWebSocket = globalThis.WebSocket;
+import type { VaultInfo, FileEntry } from "@memory-loop/shared";
 const originalFetch = globalThis.fetch;
 const originalMatchMedia = globalThis.matchMedia;
 
@@ -240,12 +202,8 @@ function WrapperWithSearch({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  wsInstances = [];
-  sentMessages = [];
   localStorage.clear();
 
-  // @ts-expect-error - mocking WebSocket
-  globalThis.WebSocket = MockWebSocket;
   globalThis.fetch = createMockFetch();
   // Default to desktop
   globalThis.matchMedia = createMatchMediaMock(false);
@@ -253,7 +211,6 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  globalThis.WebSocket = originalWebSocket;
   globalThis.fetch = originalFetch;
   globalThis.matchMedia = originalMatchMedia;
   localStorage.clear();
@@ -584,81 +541,8 @@ describe("BrowseMode", () => {
   // Additional REST API-dependent tests removed (task view content, file tree display)
   // because they require mocking API client requests that fail in happy-dom.
 
-  describe("WebSocket error handling", () => {
-    it("handles error message without crash", async () => {
-      render(<BrowseMode />, { wrapper: WrapperWithVault });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Simulate error message
-      wsInstances[0].simulateMessage({
-        type: "error",
-        code: "FILE_NOT_FOUND",
-        message: "The requested file was not found",
-      });
-
-      // Component should still render without crashing
-      await waitFor(() => {
-        expect(screen.getByText("Files")).toBeTruthy();
-      });
-    });
-
-    it("handles DIRECTORY_NOT_FOUND error", async () => {
-      render(<BrowseMode />, { wrapper: WrapperWithVault });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      wsInstances[0].simulateMessage({
-        type: "error",
-        code: "DIRECTORY_NOT_FOUND",
-        message: "Directory not found",
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("Files")).toBeTruthy();
-      });
-    });
-
-    it("handles INVALID_FILE_TYPE error", async () => {
-      render(<BrowseMode />, { wrapper: WrapperWithVault });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      wsInstances[0].simulateMessage({
-        type: "error",
-        code: "INVALID_FILE_TYPE",
-        message: "Invalid file type",
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("Files")).toBeTruthy();
-      });
-    });
-
-    it("handles PATH_TRAVERSAL error during save", async () => {
-      render(<BrowseMode />, { wrapper: WrapperWithVault });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      wsInstances[0].simulateMessage({
-        type: "error",
-        code: "PATH_TRAVERSAL",
-        message: "Path traversal detected",
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("Files")).toBeTruthy();
-      });
-    });
-  });
+  // WebSocket error handling tests removed: BrowseMode now uses REST API
+  // (useFileBrowser hook). Error handling is tested in the API client tests.
 
   describe("mobile tree overlay interactions", () => {
     it("has view mode toggle in mobile overlay", async () => {

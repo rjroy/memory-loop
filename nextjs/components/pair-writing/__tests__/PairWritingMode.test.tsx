@@ -6,11 +6,11 @@
  * @see .sdd/specs/memory-loop/2026-01-20-pair-writing-mode.md REQ-F-10, REQ-F-11, REQ-F-14, REQ-F-30
  */
 
-import { describe, it, expect, afterEach, mock } from "bun:test";
-import { render, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
 import { PairWritingMode } from "../PairWritingMode";
-import { SessionProvider, useSession } from "../../../contexts/SessionContext";
+import { SessionProvider } from "../../../contexts/SessionContext";
 import type { PairWritingEditorProps } from "../PairWritingEditor";
 import type { SelectionContext } from "../../../hooks/useTextSelection";
 
@@ -86,39 +86,62 @@ function MockEditorWithCallbacks(props: PairWritingEditorProps) {
   );
 }
 
-/**
- * Component that displays SessionContext messages for verification
- */
-function SessionMessagesDisplay() {
-  const { messages } = useSession();
-  return (
-    <div data-testid="session-messages">
-      {messages.map((msg, i) => (
-        <div key={i} data-testid={`message-${i}`} data-role={msg.role}>
-          {msg.content}
-        </div>
-      ))}
-    </div>
-  );
+// Mock fetch for useChat (PairWritingMode now uses useChat internally)
+const mockFetch = mock(() => Promise.resolve(new Response()));
+const originalFetch = globalThis.fetch;
+
+function createSSEResponse(events: Array<{ type: string; [key: string]: unknown }>): Response {
+  const body = events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+  return new Response(body, {
+    headers: { "Content-Type": "text/event-stream" },
+  });
 }
 
-// Wrapper to provide SessionContext
+// Test vault for useChat to work (PairWritingMode gets vault from SessionContext)
+const testVault: import("@memory-loop/shared").VaultInfo = {
+  id: "test-vault",
+  name: "Test Vault",
+  path: "/test/vault",
+  hasClaudeMd: true,
+  contentRoot: "/test/vault",
+  inboxPath: "00_Inbox",
+  metadataPath: "06_Metadata/memory-loop",
+  attachmentPath: "05_Attachments",
+  setupComplete: false,
+  promptsPerGeneration: 5,
+  maxPoolSize: 50,
+  quotesPerWeek: 1,
+  badges: [],
+  order: 999999,
+  cardsEnabled: true,
+  viMode: false,
+};
+
+// Wrapper to provide SessionContext with a vault selected
 function TestWrapper({ children }: { children: ReactNode }) {
-  return <SessionProvider>{children}</SessionProvider>;
+  return <SessionProvider initialVaults={[testVault]}>{children}</SessionProvider>;
 }
 
-// Wrapper that also displays session messages for verification
-function TestWrapperWithMessages({ children }: { children: ReactNode }) {
-  return (
-    <SessionProvider>
-      {children}
-      <SessionMessagesDisplay />
-    </SessionProvider>
+beforeEach(() => {
+  localStorage.clear();
+  // Pre-select vault via localStorage so SessionProvider picks it up
+  localStorage.setItem("memory-loop:vaultId", "test-vault");
+  mockFetch.mockReset();
+  // Default: return an SSE response that completes immediately
+  mockFetch.mockImplementation(() =>
+    Promise.resolve(
+      createSSEResponse([
+        { type: "session_ready", sessionId: "sess_test", vaultId: "test-vault" },
+        { type: "response_end", messageId: "msg_1", durationMs: 100 },
+      ])
+    )
   );
-}
+  globalThis.fetch = mockFetch as unknown as typeof fetch;
+});
 
 afterEach(() => {
   cleanup();
+  globalThis.fetch = originalFetch;
 });
 
 describe("PairWritingMode", () => {
@@ -128,9 +151,6 @@ describe("PairWritingMode", () => {
     assetBaseUrl: "/vault/test-vault/assets",
     onExit: mock(() => {}),
     onSave: mock(() => {}),
-    sendMessage: mock(() => {}),
-    lastMessage: null,
-    connectionStatus: "connected" as const,
     // Inject mock components to avoid mock.module pollution
     EditorComponent: MockEditor,
     DiscussionComponent: MockDiscussion,
@@ -324,9 +344,6 @@ describe("Quick Action handling", () => {
     assetBaseUrl: "/vault/test-vault/assets",
     onExit: mock(() => {}),
     onSave: mock(() => {}),
-    sendMessage: mock(() => {}),
-    lastMessage: null,
-    connectionStatus: "connected" as const,
     EditorComponent: MockEditorWithCallbacks,
     DiscussionComponent: MockDiscussion,
   };
@@ -335,44 +352,47 @@ describe("Quick Action handling", () => {
     cleanup();
   });
 
-  it("sends quick_action_request message when Quick Action is triggered", () => {
-    const sendMessage = mock(() => {});
+  it("sends chat message via fetch when Quick Action is triggered", async () => {
     render(
-      <PairWritingMode {...propsWithCallbacks} sendMessage={sendMessage} />,
+      <PairWritingMode {...propsWithCallbacks} />,
       { wrapper: TestWrapper }
     );
 
     // Trigger the quick action via mock editor
     fireEvent.click(screen.getByTestId("trigger-quick-action"));
 
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith({
-      type: "quick_action_request",
-      action: "tighten",
-      selection: "test selection",
-      contextBefore: "before ",
-      contextAfter: " after",
-      filePath: "notes/test-document.md",
-      selectionStartLine: 5,
-      selectionEndLine: 5,
-      totalLines: 10,
+    // useChat sends via fetch POST /api/chat
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalled();
     });
+
+    // Verify the message was sent to the chat endpoint
+    const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/chat");
+    const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+    expect(body.prompt).toContain("Quick Action: Tighten");
+    expect(body.prompt).toContain("test selection");
   });
 
-  it("adds user message to SessionContext when Quick Action is triggered", () => {
+  it("sends formatted Quick Action with selection context", async () => {
     render(
       <PairWritingMode {...propsWithCallbacks} />,
-      { wrapper: TestWrapperWithMessages }
+      { wrapper: TestWrapper }
     );
 
-    // Trigger the quick action
     fireEvent.click(screen.getByTestId("trigger-quick-action"));
 
-    // Check that a user message was added to session context
-    const messages = screen.getByTestId("session-messages");
-    const userMessage = within(messages).getByTestId("message-0");
-    expect(userMessage.getAttribute("data-role")).toBe("user");
-    expect(userMessage.textContent).toBe('[Tighten] "test selection"');
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalled();
+    });
+
+    const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+    const prompt = body.prompt as string;
+    expect(prompt).toContain("File: notes/test-document.md");
+    expect(prompt).toContain("Lines 5-5 of 10");
+    expect(prompt).toContain("before ");
+    expect(prompt).toContain(" after");
   });
 });
 
@@ -383,9 +403,6 @@ describe("Advisory Action handling", () => {
     assetBaseUrl: "/vault/test-vault/assets",
     onExit: mock(() => {}),
     onSave: mock(() => {}),
-    sendMessage: mock(() => {}),
-    lastMessage: null,
-    connectionStatus: "connected" as const,
     EditorComponent: MockEditorWithCallbacks,
     DiscussionComponent: MockDiscussion,
   };
@@ -394,45 +411,45 @@ describe("Advisory Action handling", () => {
     cleanup();
   });
 
-  it("sends advisory_action_request message when Advisory Action is triggered", () => {
-    const sendMessage = mock(() => {});
+  it("sends advisory chat message via fetch when Advisory Action is triggered", async () => {
     render(
-      <PairWritingMode {...propsWithCallbacks} sendMessage={sendMessage} />,
+      <PairWritingMode {...propsWithCallbacks} />,
       { wrapper: TestWrapper }
     );
 
     // Trigger the advisory action via mock editor
     fireEvent.click(screen.getByTestId("trigger-advisory-action"));
 
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith({
-      type: "advisory_action_request",
-      action: "validate",
-      selection: "test selection",
-      contextBefore: "before ",
-      contextAfter: " after",
-      filePath: "notes/test-document.md",
-      selectionStartLine: 5,
-      selectionEndLine: 5,
-      totalLines: 10,
-      snapshotSelection: undefined,
+    // useChat sends via fetch POST /api/chat
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalled();
     });
+
+    const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/chat");
+    const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+    expect(body.prompt).toContain("Advisory Action: Validate");
+    expect(body.prompt).toContain("test selection");
   });
 
-  it("adds user message to SessionContext when Advisory Action is triggered", () => {
+  it("sends formatted Advisory Action with selection context", async () => {
     render(
       <PairWritingMode {...propsWithCallbacks} />,
-      { wrapper: TestWrapperWithMessages }
+      { wrapper: TestWrapper }
     );
 
-    // Trigger the advisory action
     fireEvent.click(screen.getByTestId("trigger-advisory-action"));
 
-    // Check that a user message was added to session context
-    const messages = screen.getByTestId("session-messages");
-    const userMessage = within(messages).getByTestId("message-0");
-    expect(userMessage.getAttribute("data-role")).toBe("user");
-    expect(userMessage.textContent).toBe('[Validate] "test selection"');
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalled();
+    });
+
+    const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+    const prompt = body.prompt as string;
+    expect(prompt).toContain("File: notes/test-document.md");
+    expect(prompt).toContain("Lines 5-5 of 10");
+    expect(prompt).toContain("validate");
   });
 });
 
@@ -443,9 +460,6 @@ describe("onQuickActionComplete callback", () => {
     assetBaseUrl: "/vault/test-vault/assets",
     onExit: mock(() => {}),
     onSave: mock(() => {}),
-    sendMessage: mock(() => {}),
-    lastMessage: null,
-    connectionStatus: "connected" as const,
     EditorComponent: MockEditorWithCallbacks,
     DiscussionComponent: MockDiscussion,
   };
@@ -491,9 +505,6 @@ describe("content change handling", () => {
     assetBaseUrl: "/vault/test-vault/assets",
     onExit: mock(() => {}),
     onSave: mock(() => {}),
-    sendMessage: mock(() => {}),
-    lastMessage: null,
-    connectionStatus: "connected" as const,
     EditorComponent: MockEditorWithCallbacks,
     DiscussionComponent: MockDiscussion,
   };
@@ -577,9 +588,6 @@ describe("exit confirmation dialog flow (REQ-F-30)", () => {
     assetBaseUrl: "/vault/test-vault/assets",
     onExit: mock(() => {}),
     onSave: mock(() => {}),
-    sendMessage: mock(() => {}),
-    lastMessage: null,
-    connectionStatus: "connected" as const,
     EditorComponent: MockEditorWithCallbacks,
     DiscussionComponent: MockDiscussion,
   };
@@ -666,9 +674,6 @@ describe("snapshot state propagation", () => {
     assetBaseUrl: "/vault/test-vault/assets",
     onExit: mock(() => {}),
     onSave: mock(() => {}),
-    sendMessage: mock(() => {}),
-    lastMessage: null,
-    connectionStatus: "connected" as const,
     EditorComponent: MockEditorWithCallbacks,
     DiscussionComponent: MockDiscussion,
   };
@@ -701,9 +706,6 @@ describe("content reloading", () => {
     assetBaseUrl: "/vault/test-vault/assets",
     onExit: mock(() => {}),
     onSave: mock(() => {}),
-    sendMessage: mock(() => {}),
-    lastMessage: null,
-    connectionStatus: "connected" as const,
     EditorComponent: MockEditorWithCallbacks,
     DiscussionComponent: MockDiscussion,
   };

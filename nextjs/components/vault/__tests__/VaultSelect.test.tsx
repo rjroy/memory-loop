@@ -2,53 +2,16 @@
  * Tests for VaultSelect Component
  *
  * Tests rendering, loading states, vault list display, and user interactions.
- * Uses mock WebSocket and fetch for API responses.
+ * VaultSelect uses REST API for vault listing, session initialization, and config.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { VaultSelect } from "../VaultSelect";
-import { SessionProvider } from "../../../contexts/SessionContext";
-import type { VaultInfo, ServerMessage, ClientMessage } from "@memory-loop/shared";
+import { SessionProvider, STORAGE_KEY_VAULT } from "../../../contexts/SessionContext";
+import type { VaultInfo } from "@memory-loop/shared";
 
-// Mock WebSocket
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 3;
-
-  readyState = MockWebSocket.OPEN;
-  onopen: ((e: Event) => void) | null = null;
-  onclose: ((e: Event) => void) | null = null;
-  onmessage: ((e: MessageEvent) => void) | null = null;
-  onerror: ((e: Event) => void) | null = null;
-
-  constructor(public url: string) {
-    wsInstances.push(this);
-    setTimeout(() => {
-      if (this.onopen) this.onopen(new Event("open"));
-    }, 0);
-  }
-
-  send(data: string): void {
-    sentMessages.push(JSON.parse(data) as ClientMessage);
-  }
-
-  close(): void {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-
-  simulateMessage(msg: ServerMessage): void {
-    if (this.onmessage) {
-      this.onmessage(new MessageEvent("message", { data: JSON.stringify(msg) }));
-    }
-  }
-}
-
-let wsInstances: MockWebSocket[] = [];
-let sentMessages: ClientMessage[] = [];
-const originalWebSocket = globalThis.WebSocket;
 const originalFetch = globalThis.fetch;
 
 const testVaults: VaultInfo[] = [
@@ -69,7 +32,7 @@ const testVaults: VaultInfo[] = [
     badges: [{ text: "Primary", color: "blue" }],
     order: 1,
     cardsEnabled: true,
-      viMode: false,
+    viMode: false,
   },
   {
     id: "vault-2",
@@ -88,7 +51,7 @@ const testVaults: VaultInfo[] = [
     badges: [],
     order: 2,
     cardsEnabled: true,
-      viMode: false,
+    viMode: false,
   },
 ];
 
@@ -96,7 +59,18 @@ const testVaults: VaultInfo[] = [
 let createdVaults: VaultInfo[] = [];
 let createVaultError: string | null = null;
 
-// Mock fetch for vault list and vault creation
+// Session initialization response (configurable per test)
+let sessionInitResponse: {
+  sessionId: string;
+  messages: Array<{ role: string; content: string }>;
+  slashCommands?: Array<{ name: string; description: string }>;
+} = {
+  sessionId: "new-session-123",
+  messages: [],
+};
+let sessionInitError: string | null = null;
+
+// Mock fetch for vault list, vault creation, and session initialization
 function createMockFetch(vaults: VaultInfo[] = testVaults): typeof fetch {
   const mockFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -145,8 +119,15 @@ function createMockFetch(vaults: VaultInfo[] = testVaults): typeof fetch {
       }));
     }
 
-    if (url.includes("/api/sessions/")) {
-      return Promise.resolve(new Response(JSON.stringify({ sessionId: null }), {
+    // POST /api/vaults/:vaultId/sessions - initialize session
+    if (url.match(/\/api\/vaults\/[^/]+\/sessions$/) && method === "POST") {
+      if (sessionInitError) {
+        return Promise.resolve(new Response(
+          JSON.stringify({ message: sessionInitError }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        ));
+      }
+      return Promise.resolve(new Response(JSON.stringify(sessionInitResponse), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }));
@@ -163,20 +144,17 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  wsInstances = [];
-  sentMessages = [];
   createdVaults = [];
   createVaultError = null;
+  sessionInitResponse = { sessionId: "new-session-123", messages: [] };
+  sessionInitError = null;
   localStorage.clear();
 
-  // @ts-expect-error - mocking WebSocket
-  globalThis.WebSocket = MockWebSocket;
   globalThis.fetch = createMockFetch();
 });
 
 afterEach(() => {
   cleanup();
-  globalThis.WebSocket = originalWebSocket;
   globalThis.fetch = originalFetch;
   localStorage.clear();
 });
@@ -271,19 +249,6 @@ describe("VaultSelect", () => {
       });
     });
 
-    it("shows connection status", async () => {
-      render(<VaultSelect />, { wrapper: Wrapper });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Should show Connected status after WebSocket connects
-      await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeTruthy();
-      });
-    });
-
     it("shows settings button", async () => {
       render(<VaultSelect />, { wrapper: Wrapper });
 
@@ -318,11 +283,7 @@ describe("VaultSelect", () => {
 
   describe("error state", () => {
     it("shows error message when fetch fails", async () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const errorFetch = (input: RequestInfo | URL): Promise<Response> => {
-        return Promise.reject(new Error("Network error"));
-      };
-      globalThis.fetch = errorFetch as unknown as typeof fetch;
+      globalThis.fetch = (() => Promise.reject(new Error("Network error"))) as typeof fetch;
 
       render(<VaultSelect />, { wrapper: Wrapper });
 
@@ -332,11 +293,7 @@ describe("VaultSelect", () => {
     });
 
     it("shows retry button on error", async () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const errorFetch = (input: RequestInfo | URL): Promise<Response> => {
-        return Promise.reject(new Error("Network error"));
-      };
-      globalThis.fetch = errorFetch as unknown as typeof fetch;
+      globalThis.fetch = (() => Promise.reject(new Error("Network error"))) as typeof fetch;
 
       render(<VaultSelect />, { wrapper: Wrapper });
 
@@ -348,15 +305,21 @@ describe("VaultSelect", () => {
 
   describe("vault selection", () => {
     it("shows loading state when vault card is clicked", async () => {
+      // Make session init hang so we can observe loading state
+      globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        const method = init?.method ?? "GET";
+
+        if (url.match(/\/api\/vaults\/[^/]+\/sessions$/) && method === "POST") {
+          return new Promise(() => {}); // Never resolves
+        }
+        return createMockFetch()(input, init);
+      }) as typeof fetch;
+
       render(<VaultSelect />, { wrapper: Wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Personal Vault")).toBeTruthy();
-      });
-
-      // Wait for WebSocket connection
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
       });
 
       const card = screen.getByText("Personal Vault").closest("[role='option']")!;
@@ -368,40 +331,44 @@ describe("VaultSelect", () => {
       });
     });
 
-    it("sends select_vault message on click when no existing session", async () => {
+    it("calls POST /api/vaults/:vaultId/sessions on click", async () => {
+      const fetchSpy = mock<typeof fetch>((input, init) => createMockFetch()(input!, init));
+      globalThis.fetch = fetchSpy;
+
       render(<VaultSelect />, { wrapper: Wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Personal Vault")).toBeTruthy();
       });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Clear any initial messages
-      sentMessages.length = 0;
 
       const card = screen.getByText("Personal Vault").closest("[role='option']")!;
       fireEvent.click(card);
 
       await waitFor(() => {
-        expect(sentMessages).toContainEqual({
-          type: "select_vault",
-          vaultId: "vault-1",
+        const sessionCalls = fetchSpy.mock.calls.filter(([url, init]) => {
+          const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url?.url;
+          return urlStr?.includes("/api/vaults/vault-1/sessions") && init?.method === "POST";
         });
+        expect(sessionCalls.length).toBe(1);
       });
     });
 
     it("disables other cards while selection is in progress", async () => {
+      // Make session init hang so we stay in loading state
+      globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        const method = init?.method ?? "GET";
+
+        if (url.match(/\/api\/vaults\/[^/]+\/sessions$/) && method === "POST") {
+          return new Promise(() => {}); // Never resolves
+        }
+        return createMockFetch()(input, init);
+      }) as typeof fetch;
+
       render(<VaultSelect />, { wrapper: Wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Personal Vault")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
       });
 
       const personalCard = screen.getByText("Personal Vault").closest("[role='option']")!;
@@ -413,54 +380,83 @@ describe("VaultSelect", () => {
         expect(workCard.getAttribute("aria-disabled")).toBe("true");
       });
     });
-  });
 
-  describe("keyboard navigation", () => {
-    it("allows vault selection with Enter key", async () => {
+    it("calls onReady after successful session initialization", async () => {
+      const onReady = mock(() => {});
+
+      render(<VaultSelect onReady={onReady} />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Vault")).toBeTruthy();
+      });
+
+      const card = screen.getByText("Personal Vault").closest("[role='option']")!;
+      fireEvent.click(card);
+
+      await waitFor(() => {
+        expect(onReady).toHaveBeenCalled();
+      });
+    });
+
+    it("clears loading state after successful session initialization", async () => {
       render(<VaultSelect />, { wrapper: Wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Personal Vault")).toBeTruthy();
       });
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
+      const card = screen.getByText("Personal Vault").closest("[role='option']")!;
+      fireEvent.click(card);
 
-      sentMessages.length = 0;
+      // After session init resolves, loading state should be cleared
+      await waitFor(() => {
+        expect(card.classList.contains("vault-select__card--loading")).toBe(false);
+      });
+    });
+  });
+
+  describe("keyboard navigation", () => {
+    it("allows vault selection with Enter key", async () => {
+      const fetchSpy = mock<typeof fetch>((input, init) => createMockFetch()(input!, init));
+      globalThis.fetch = fetchSpy;
+
+      render(<VaultSelect />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Vault")).toBeTruthy();
+      });
 
       const card = screen.getByText("Personal Vault").closest("[role='option']")!;
       fireEvent.keyDown(card, { key: "Enter" });
 
       await waitFor(() => {
-        expect(sentMessages).toContainEqual({
-          type: "select_vault",
-          vaultId: "vault-1",
+        const sessionCalls = fetchSpy.mock.calls.filter(([url, init]) => {
+          const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url?.url;
+          return urlStr?.includes("/api/vaults/vault-1/sessions") && init?.method === "POST";
         });
+        expect(sessionCalls.length).toBe(1);
       });
     });
 
     it("allows vault selection with Space key", async () => {
+      const fetchSpy = mock<typeof fetch>((input, init) => createMockFetch()(input!, init));
+      globalThis.fetch = fetchSpy;
+
       render(<VaultSelect />, { wrapper: Wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Personal Vault")).toBeTruthy();
       });
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      sentMessages.length = 0;
-
       const card = screen.getByText("Personal Vault").closest("[role='option']")!;
       fireEvent.keyDown(card, { key: " " });
 
       await waitFor(() => {
-        expect(sentMessages).toContainEqual({
-          type: "select_vault",
-          vaultId: "vault-1",
+        const sessionCalls = fetchSpy.mock.calls.filter(([url, init]) => {
+          const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url?.url;
+          return urlStr?.includes("/api/vaults/vault-1/sessions") && init?.method === "POST";
         });
+        expect(sessionCalls.length).toBe(1);
       });
     });
   });
@@ -561,72 +557,12 @@ describe("VaultSelect", () => {
         expect(screen.getByText("Add Vault")).toBeTruthy();
       });
 
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
       const addCard = screen.getByText("Add Vault").closest("[role='option']")!;
       fireEvent.click(addCard);
 
       // Dialog opens with input field for vault name
       await waitFor(() => {
         expect(screen.getByLabelText("Vault Name")).toBeTruthy();
-      });
-    });
-  });
-
-  describe("session resume", () => {
-    it("sends resume_session when existing session found", async () => {
-      const sessionFetch = (input: RequestInfo | URL): Promise<Response> => {
-        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-
-        if (url.endsWith("/api/vaults")) {
-          return Promise.resolve(
-            new Response(JSON.stringify({ vaults: testVaults }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            })
-          );
-        }
-
-        if (url.includes("/api/sessions/vault-1")) {
-          return Promise.resolve(
-            new Response(JSON.stringify({ sessionId: "existing-session-123" }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            })
-          );
-        }
-
-        return Promise.resolve(
-          new Response(JSON.stringify({ sessionId: null }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          })
-        );
-      };
-      globalThis.fetch = sessionFetch as typeof fetch;
-
-      render(<VaultSelect />, { wrapper: Wrapper });
-
-      await waitFor(() => {
-        expect(screen.getByText("Personal Vault")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      sentMessages.length = 0;
-
-      const card = screen.getByText("Personal Vault").closest("[role='option']")!;
-      fireEvent.click(card);
-
-      await waitFor(() => {
-        expect(sentMessages).toContainEqual({
-          type: "resume_session",
-          sessionId: "existing-session-123",
-        });
       });
     });
   });
@@ -651,93 +587,76 @@ describe("VaultSelect", () => {
 
   describe("auto-resume from localStorage", () => {
     it("does not auto-resume if vault ID not in list", async () => {
-      localStorage.setItem("memory-loop-vault-id", "nonexistent-vault");
+      localStorage.setItem(STORAGE_KEY_VAULT, "nonexistent-vault");
+
+      const fetchSpy = mock<typeof fetch>((input, init) => createMockFetch()(input!, init));
+      globalThis.fetch = fetchSpy;
 
       render(<VaultSelect />, { wrapper: Wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Personal Vault")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
       });
 
       // Allow time for auto-resume to potentially trigger
       await new Promise((r) => setTimeout(r, 100));
 
-      // Should NOT have sent any select_vault for nonexistent vault
-      const selectMessages = sentMessages.filter(
-        (m) => m.type === "select_vault" && m.vaultId === "nonexistent-vault"
-      );
-      expect(selectMessages.length).toBe(0);
+      // Should NOT have sent any session init for nonexistent vault
+      const sessionCalls = fetchSpy.mock.calls.filter(([url, init]) => {
+        const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url?.url;
+        return urlStr?.includes("/api/vaults/nonexistent-vault/sessions") && init?.method === "POST";
+      });
+      expect(sessionCalls.length).toBe(0);
     });
-  });
 
-  describe("session_ready handling", () => {
-    it("calls onReady callback when session_ready received", async () => {
-      let readyCalled = false;
-      const onReady = () => {
-        readyCalled = true;
-      };
+    it("auto-resumes when persisted vault ID matches a loaded vault", async () => {
+      localStorage.setItem(STORAGE_KEY_VAULT, "vault-1");
+
+      const onReady = mock(() => {});
 
       render(<VaultSelect onReady={onReady} />, { wrapper: Wrapper });
 
+      // Should auto-initialize session for vault-1 and call onReady
       await waitFor(() => {
-        expect(screen.getByText("Personal Vault")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Click vault to select
-      const card = screen.getByText("Personal Vault").closest("[role='option']")!;
-      fireEvent.click(card);
-
-      // Simulate session_ready response
-      await waitFor(() => {
-        wsInstances[0].simulateMessage({
-          type: "session_ready",
-          sessionId: "new-session-123",
-          vaultId: "vault-1",
-          slashCommands: [],
-        });
-      });
-
-      await waitFor(() => {
-        expect(readyCalled).toBe(true);
+        expect(onReady).toHaveBeenCalled();
       });
     });
+  });
 
-    it("clears loading state after session_ready", async () => {
+  describe("error handling during selection", () => {
+    it("shows error when session initialization fails", async () => {
+      sessionInitError = "Something went wrong";
+      globalThis.fetch = createMockFetch();
+
       render(<VaultSelect />, { wrapper: Wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Personal Vault")).toBeTruthy();
       });
 
+      const card = screen.getByText("Personal Vault").closest("[role='option']")!;
+      fireEvent.click(card);
+
+      // Error should be displayed
       await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
+        expect(screen.getByText("Something went wrong")).toBeTruthy();
+      });
+    });
+
+    it("clears loading state after session initialization error", async () => {
+      sessionInitError = "Server error";
+      globalThis.fetch = createMockFetch();
+
+      render(<VaultSelect />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Personal Vault")).toBeTruthy();
       });
 
       const card = screen.getByText("Personal Vault").closest("[role='option']")!;
       fireEvent.click(card);
 
-      // Card should show loading
-      await waitFor(() => {
-        expect(card.classList.contains("vault-select__card--loading")).toBe(true);
-      });
-
-      // Simulate session_ready
-      wsInstances[0].simulateMessage({
-        type: "session_ready",
-        sessionId: "new-session-123",
-        vaultId: "vault-1",
-        slashCommands: [],
-      });
-
-      // Loading spinner should be gone (card loading state cleared)
+      // Loading state should be cleared after error
       await waitFor(() => {
         expect(card.classList.contains("vault-select__card--loading")).toBe(false);
       });
@@ -905,174 +824,12 @@ describe("VaultSelect", () => {
   // environment (happy-dom runs on about:blank). These flows are better tested
   // via integration tests.
 
-  describe("connection status display", () => {
-    it("shows Connected status when WebSocket is connected", async () => {
-      render(<VaultSelect />, { wrapper: Wrapper });
-
-      await waitFor(() => {
-        expect(screen.getByText("Personal Vault")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Should show connected status
-      await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeTruthy();
-      });
-    });
-  });
-
-  describe("error handling during selection", () => {
-    it("falls back to select_vault when session check returns non-OK", async () => {
-      const failingSessionFetch = (input: RequestInfo | URL): Promise<Response> => {
-        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-
-        if (url.endsWith("/api/vaults")) {
-          return Promise.resolve(
-            new Response(JSON.stringify({ vaults: testVaults }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            })
-          );
-        }
-
-        if (url.includes("/api/sessions/")) {
-          return Promise.resolve(new Response(null, { status: 500 }));
-        }
-
-        return Promise.resolve(new Response(null, { status: 404 }));
-      };
-      globalThis.fetch = failingSessionFetch as typeof fetch;
-
-      render(<VaultSelect />, { wrapper: Wrapper });
-
-      await waitFor(() => {
-        expect(screen.getByText("Personal Vault")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      sentMessages.length = 0;
-
-      const card = screen.getByText("Personal Vault").closest("[role='option']")!;
-      fireEvent.click(card);
-
-      // Should fall back to select_vault
-      await waitFor(() => {
-        expect(sentMessages).toContainEqual({
-          type: "select_vault",
-          vaultId: "vault-1",
-        });
-      });
-    });
-
-    it("shows error when WebSocket error received during selection", async () => {
-      render(<VaultSelect />, { wrapper: Wrapper });
-
-      await waitFor(() => {
-        expect(screen.getByText("Personal Vault")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const card = screen.getByText("Personal Vault").closest("[role='option']")!;
-      fireEvent.click(card);
-
-      // Simulate error message (not SESSION_NOT_FOUND)
-      wsInstances[0].simulateMessage({
-        type: "error",
-        code: "INTERNAL_ERROR",
-        message: "Something went wrong",
-      });
-
-      // Error should be displayed
-      await waitFor(() => {
-        expect(screen.getByText("Something went wrong")).toBeTruthy();
-      });
-    });
-
-    it("retries with select_vault when SESSION_NOT_FOUND error received", async () => {
-      render(<VaultSelect />, { wrapper: Wrapper });
-
-      await waitFor(() => {
-        expect(screen.getByText("Personal Vault")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      const card = screen.getByText("Personal Vault").closest("[role='option']")!;
-      fireEvent.click(card);
-
-      // Clear messages after initial selection
-      await waitFor(() => {
-        expect(sentMessages.length).toBeGreaterThan(0);
-      });
-      sentMessages.length = 0;
-
-      // Simulate SESSION_NOT_FOUND error (resume failed)
-      wsInstances[0].simulateMessage({
-        type: "error",
-        code: "SESSION_NOT_FOUND",
-        message: "Session not found",
-      });
-
-      // Should send select_vault to start fresh
-      await waitFor(() => {
-        expect(sentMessages).toContainEqual({
-          type: "select_vault",
-          vaultId: "vault-1",
-        });
-      });
-    });
-  });
-
-  describe("vault_list WebSocket message", () => {
-    it("uses vaults from vault_list message if fetch returned empty", async () => {
-      // Start with empty fetch response
-      globalThis.fetch = createMockFetch([]);
-
-      render(<VaultSelect />, { wrapper: Wrapper });
-
-      await waitFor(() => {
-        expect(screen.getByText("No Vaults Configured")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
-      });
-
-      // Simulate vault_list from WebSocket
-      wsInstances[0].simulateMessage({
-        type: "vault_list",
-        vaults: testVaults,
-      });
-
-      // Vaults should now appear
-      await waitFor(() => {
-        expect(screen.getByText("Personal Vault")).toBeTruthy();
-        expect(screen.getByText("Work Vault")).toBeTruthy();
-      });
-    });
-  });
-
   describe("add vault dialog interactions", () => {
     it("cancels add vault dialog", async () => {
       render(<VaultSelect />, { wrapper: Wrapper });
 
       await waitFor(() => {
         expect(screen.getByText("Add Vault")).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(wsInstances.length).toBeGreaterThan(0);
       });
 
       // Open dialog

@@ -5,7 +5,7 @@
  * Based on the spec in .lore/design/active-session-controller.md
  */
 
-import type { VaultInfo, AskUserQuestionItem, ConversationMessage, SlashCommand } from "@/lib/schemas";
+import type { AskUserQuestionItem, ConversationMessage, SlashCommand } from "@/lib/schemas";
 
 // =============================================================================
 // Session Events (emitted to subscribers)
@@ -111,12 +111,12 @@ export type SessionEventCallback = (event: SessionEvent) => void;
  */
 export interface ActiveSessionController {
   // Lifecycle
-  startSession(vault: VaultInfo, prompt: string): Promise<void>;
-  resumeSession(
-    vaultPath: string,
-    sessionId: string,
-    prompt: string
-  ): Promise<void>;
+  sendMessage(params: {
+    vaultId: string;
+    vaultPath: string;
+    sessionId: string | null;
+    prompt: string;
+  }): Promise<void>;
   clearSession(): Promise<void>;
 
   // Subscription (push)

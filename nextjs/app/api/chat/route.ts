@@ -4,8 +4,8 @@
  * POST /api/chat - Start or continue a chat session
  *
  * Request body:
- * - vaultId: string (required for new session)
- * - vaultPath: string (required for resume)
+ * - vaultId: string (required)
+ * - vaultPath: string (required)
  * - sessionId: string (optional, resume if provided)
  * - prompt: string (required)
  *
@@ -22,9 +22,8 @@ const log = createLogger("api/chat");
 
 // Request schema
 const ChatRequestSchema = z.object({
-  vaultId: z.string().optional(),
-  vaultPath: z.string().optional(),
-  vaultName: z.string().optional(),
+  vaultId: z.string().min(1, "vaultId is required"),
+  vaultPath: z.string().min(1, "vaultPath is required"),
   sessionId: z.string().optional(),
   prompt: z.string().min(1, "Prompt is required"),
 });
@@ -46,22 +45,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { vaultId, vaultPath, vaultName, sessionId, prompt } = result.data;
-
-  // Validate we have enough info to start/resume
-  if (!sessionId && !vaultId) {
-    return Response.json(
-      { error: "Either vaultId (for new session) or sessionId (for resume) is required" },
-      { status: 400 }
-    );
-  }
-
-  if (!vaultPath) {
-    return Response.json(
-      { error: "vaultPath is required" },
-      { status: 400 }
-    );
-  }
+  const { vaultId, vaultPath, sessionId, prompt } = result.data;
 
   const controller = getController();
 
@@ -104,22 +88,15 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      // Start or resume session
+      // Send message (creates new session or resumes existing)
       void (async () => {
         try {
-          if (sessionId) {
-            // Resume existing session
-            await controller.resumeSession(vaultPath, sessionId, prompt);
-          } else if (vaultId) {
-            // Create new session with minimal vault info from request
-            // Cast to VaultInfo - controller only uses id, path, name for session
-            const vault = {
-              id: vaultId,
-              path: vaultPath,
-              name: vaultName ?? vaultId,
-            } as import("@/lib/schemas").VaultInfo;
-            await controller.startSession(vault, prompt);
-          }
+          await controller.sendMessage({
+            vaultId,
+            vaultPath,
+            sessionId: sessionId ?? null,
+            prompt,
+          });
         } catch (err) {
           if (isClosing) return;
           log.error("Session error", err);

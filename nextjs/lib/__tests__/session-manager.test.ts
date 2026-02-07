@@ -119,6 +119,7 @@ function createMockQueryGenerator(
       return this;
     },
     interrupt: mockInterrupt,
+    close: () => {},
     supportedCommands: mockSupportedCommands,
   };
 
@@ -842,6 +843,37 @@ describe("Session Manager", () => {
 
       const updated = await loadSession(vaultPath, "resume-session");
       expect(updated!.lastActiveAt).not.toBe("2025-01-01T00:00:00.000Z");
+    });
+
+    test("saves under new ID and clears previousMessages when SDK returns different ID", async () => {
+      const metadata = createMockMetadata({
+        id: "old-session-id",
+        vaultPath,
+        messages: [{ id: "m1", role: "user", content: "hello", timestamp: "2025-01-01T00:00:00.000Z" }],
+      });
+      await saveSession(metadata);
+
+      // SDK returns a different session ID (session wasn't found, new one created)
+      const mockGenerator = createMockQueryGenerator("new-session-id");
+      mockQuery.mockReturnValue(mockGenerator);
+
+      const result = await resumeSession(vaultPath, "old-session-id", "Continue", undefined, undefined, undefined, createMockQueryFn());
+
+      // Should return the new SDK session ID
+      expect(result.sessionId).toBe("new-session-id");
+
+      // previousMessages should be undefined (not a real resume)
+      expect(result.previousMessages).toBeUndefined();
+
+      // Old session file should still exist (not deleted)
+      const oldSession = await loadSession(vaultPath, "old-session-id");
+      expect(oldSession).not.toBeNull();
+
+      // New session file should exist under the new ID
+      const newSession = await loadSession(vaultPath, "new-session-id");
+      expect(newSession).not.toBeNull();
+      expect(newSession!.id).toBe("new-session-id");
+      expect(newSession!.vaultId).toBe(metadata.vaultId);
     });
   });
 

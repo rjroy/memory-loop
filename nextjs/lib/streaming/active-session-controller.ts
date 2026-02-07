@@ -164,18 +164,44 @@ export function createActiveSessionController(): IActiveSessionController {
   }
 
   /**
+   * Cleans up stale state from a previous query without emitting events.
+   * Called before starting a new query to ensure a clean slate.
+   */
+  function resetQueryState(): void {
+    if (queryResult) {
+      try {
+        queryResult.close();
+      } catch (err) {
+        log.warn("Failed to close previous query", err);
+      }
+      queryResult = null;
+    }
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+    discardPendingPrompts();
+    isStreamingActive = false;
+  }
+
+  /**
    * Runs the streaming loop for a query.
+   *
+   * This is the single code path for both new and resumed sessions.
+   * The only difference is whether session_ready includes createdAt
+   * (new) or messages (resume).
    */
   async function runStreaming(
-    vault: VaultInfo,
+    vaultId: string,
+    vaultPath: string,
     prompt: string,
     result: SessionQueryResult,
     isNewSession: boolean
   ): Promise<void> {
     queryResult = result;
     currentSessionId = result.sessionId;
-    currentVaultId = vault.id;
-    currentVaultPath = vault.path;
+    currentVaultId = vaultId;
+    currentVaultPath = vaultPath;
     isStreamingActive = true;
     abortController = new AbortController();
 
@@ -201,7 +227,7 @@ export function createActiveSessionController(): IActiveSessionController {
         emit({
           type: "session_ready",
           sessionId: result.sessionId,
-          vaultId: vault.id,
+          vaultId,
           createdAt: new Date().toISOString(),
           slashCommands,
         });
@@ -211,7 +237,7 @@ export function createActiveSessionController(): IActiveSessionController {
         emit({
           type: "session_ready",
           sessionId: result.sessionId,
-          vaultId: vault.id,
+          vaultId,
           messages: result.previousMessages,
           slashCommands,
         });
@@ -219,7 +245,7 @@ export function createActiveSessionController(): IActiveSessionController {
 
       // Append user message to session
       const userMessageId = generateMessageId();
-      await sdkAppendMessage(vault.path, result.sessionId, {
+      await sdkAppendMessage(vaultPath, result.sessionId, {
         id: userMessageId,
         role: "user",
         content: prompt,
@@ -268,7 +294,7 @@ export function createActiveSessionController(): IActiveSessionController {
           contextUsage: streamResult.contextUsage,
           durationMs,
         };
-        await sdkAppendMessage(vault.path, result.sessionId, assistantMessage);
+        await sdkAppendMessage(vaultPath, result.sessionId, assistantMessage);
       }
     } catch (err) {
       log.error("Streaming failed", err);
@@ -280,7 +306,15 @@ export function createActiveSessionController(): IActiveSessionController {
     } finally {
       isStreamingActive = false;
       abortController = null;
-      // Note: queryResult is kept for potential resume
+
+      if (queryResult) {
+        try {
+          queryResult.close();
+        } catch (err) {
+          log.warn("Failed to close query", err);
+        }
+      }
+      queryResult = null;
     }
   }
 
@@ -289,86 +323,69 @@ export function createActiveSessionController(): IActiveSessionController {
   // =============================================================================
 
   return {
-    async startSession(vault: VaultInfo, prompt: string): Promise<void> {
-      log.info(`Starting session for vault: ${vault.id}`);
+    async sendMessage({ vaultId, vaultPath, sessionId, prompt }): Promise<void> {
+      const isNewSession = !sessionId;
+      log.info(
+        `sendMessage: vault=${vaultId}, session=${sessionId ?? "new"}, ` +
+        `isNew=${isNewSession}`
+      );
 
-      // Clear existing session if any (REQ-5)
-      if (queryResult || currentSessionId) {
-        await this.clearSession();
-      }
+      // Clean up stale state from any previous query
+      resetQueryState();
 
       try {
-        const result = await sdkCreateSession(
-          vault,
-          prompt,
-          undefined, // options
-          createToolPermissionCallback(),
-          createAskUserQuestionCallback()
-        );
+        const permCallback = createToolPermissionCallback();
+        const questionCallback = createAskUserQuestionCallback();
 
-        await runStreaming(vault, prompt, result, true);
+        let result: SessionQueryResult;
+
+        if (sessionId) {
+          // Resume existing session (message 2+, or resume from ground tab)
+          result = await sdkResumeSession(
+            vaultPath,
+            sessionId,
+            prompt,
+            undefined,
+            permCallback,
+            questionCallback
+          );
+        } else {
+          // Create new session (first message)
+          const vault = { id: vaultId, path: vaultPath } as VaultInfo;
+          result = await sdkCreateSession(
+            vault,
+            prompt,
+            undefined,
+            permCallback,
+            questionCallback
+          );
+        }
+
+        // If resume returned a different session ID, the SDK couldn't find
+        // the original session. Warn the user so they know context was lost.
+        if (sessionId && result.sessionId !== sessionId) {
+          log.warn(
+            `Resume failed: requested ${sessionId}, got ${result.sessionId}`
+          );
+          emit({
+            type: "error",
+            code: "SDK_ERROR",
+            message: "Could not resume previous session. Starting a new conversation.",
+          });
+        }
+
+        await runStreaming(vaultId, vaultPath, prompt, result, isNewSession);
       } catch (err) {
-        log.error("Failed to start session", err);
+        log.error("sendMessage failed", err);
         emit({
           type: "error",
           code: "SDK_ERROR",
-          message: err instanceof Error ? err.message : "Failed to start session",
+          message: err instanceof Error ? err.message : "Failed to send message",
         });
       }
     },
 
-    async resumeSession(
-      vaultPath: string,
-      sessionId: string,
-      prompt: string
-    ): Promise<void> {
-      log.info(`Resuming session: ${sessionId}`);
-
-      try {
-        const result = await sdkResumeSession(
-          vaultPath,
-          sessionId,
-          prompt,
-          undefined, // options
-          createToolPermissionCallback(),
-          createAskUserQuestionCallback()
-        );
-
-        // Get vault info from session result
-        const vault: VaultInfo = {
-          id: result.sessionId.split("_")[0] || "unknown",
-          name: "",
-          path: vaultPath,
-          hasClaudeMd: true,
-          contentRoot: "",
-          inboxPath: "",
-          metadataPath: "",
-          attachmentPath: "",
-          setupComplete: true,
-          promptsPerGeneration: 10,
-          maxPoolSize: 50,
-          quotesPerWeek: 3,
-          badges: [],
-          order: Infinity,
-          cardsEnabled: false,
-          viMode: false,
-        };
-
-        // Update current vault path
-        currentVaultPath = vaultPath;
-        currentSessionId = sessionId;
-
-        await runStreaming(vault, prompt, result, false);
-      } catch (err) {
-        log.error("Failed to resume session", err);
-        emit({
-          type: "error",
-          code: "SDK_ERROR",
-          message: err instanceof Error ? err.message : "Failed to resume session",
-        });
-      }
-    },
-
+    // eslint-disable-next-line @typescript-eslint/require-await -- interface requires Promise<void> for callers that await it
     async clearSession(): Promise<void> {
       log.info("Clearing session");
 
@@ -377,12 +394,12 @@ export function createActiveSessionController(): IActiveSessionController {
         abortController.abort();
       }
 
-      // Interrupt the SDK query if active
+      // Close the SDK query to terminate the child process
       if (queryResult) {
         try {
-          await queryResult.interrupt();
+          queryResult.close();
         } catch (err) {
-          log.warn("Failed to interrupt query", err);
+          log.warn("Failed to close query", err);
         }
         queryResult = null;
       }
@@ -393,6 +410,7 @@ export function createActiveSessionController(): IActiveSessionController {
       // Reset state
       currentSessionId = null;
       currentVaultId = null;
+      currentVaultPath = null;
       streamerState.cumulativeTokens = 0;
       streamerState.contextWindow = null;
       isStreamingActive = false;

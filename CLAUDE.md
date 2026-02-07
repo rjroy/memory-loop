@@ -82,6 +82,19 @@ Domain logic lives in `nextjs/lib/`. These modules are imported by API routes an
 | Think | `discussion` | Discussion |
 | Recall | `browse` | BrowseMode |
 
+## Authentication
+
+GitHub OAuth via Auth.js v5 (`next-auth@beta`). Middleware-based route protection, so existing API route handlers don't need changes.
+
+| File | Purpose |
+|------|---------|
+| `auth.ts` | Auth.js config, GitHub provider, allowlist callbacks |
+| `middleware.ts` | Route protection (public: `/api/health`, `/api/auth/*`) |
+| `components/AuthProvider.tsx` | Client-side session provider (separate from app SessionContext) |
+| `app/api/auth/[...nextauth]/route.ts` | Auth.js route handler |
+
+Unauthenticated API requests get 401 JSON `{ error: { code, message } }`. Unauthenticated page requests redirect to GitHub sign-in. `AUTH_ALLOWED_USERS` controls who can sign in (fail closed if empty).
+
 ## Environment
 
 ```bash
@@ -90,6 +103,12 @@ PORT=3000                   # Server port
 HOSTNAME=0.0.0.0            # Bind address (Next.js uses HOSTNAME, not HOST)
 MOCK_SDK=true               # Disable real Anthropic API calls for testing
 LOG_LEVEL=silent            # Suppress logs (useful in tests)
+AUTH_SECRET=                # Signs session cookies (generate: bunx auth secret)
+AUTH_GITHUB_ID=             # GitHub OAuth App Client ID
+AUTH_GITHUB_SECRET=         # GitHub OAuth App Client Secret
+AUTH_ALLOWED_USERS=         # Comma-separated GitHub usernames
+AUTH_URL=                   # Base URL for callbacks (e.g. http://192.168.1.50:3000)
+AUTH_TRUST_HOST=true        # Required for non-localhost deployments
 ```
 
 Each vault must contain a `CLAUDE.md` file at root to be discovered.
@@ -190,4 +209,4 @@ When making changes that affect user-facing behavior, update the relevant docs. 
 - Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: schema definition in `lib/schemas/`, config loading in `lib/vault-config.ts`, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
 - When the SDK returns a different session ID than the one passed to `resume`, that means the session wasn't found. Don't adapt to it (migrate metadata, rename files). Treat it as a failure and investigate why the SDK can't find the session.
 - Error events that aren't rendered to the user are the same as no error handling. Every SSE error event must be visible in the UI. If `useChat` captures an error but the component doesn't display it, the user sees a working response followed by silent corruption.
-- Turbopack (dev) and webpack (build) handle imports differently. `serverExternalPackages` only works for webpack; turbopack still traces into those packages. Never use `webpackIgnore` on dynamic imports (it prevents `@/` alias resolution at runtime). To hide production-only imports from turbopack, use `if (NODE_ENV === "production") { await import(...) }` — turbopack dead-code-eliminates this branch. Early returns after `NODE_ENV === "development"` checks do NOT prevent tracing. Always test both `bun run --cwd nextjs dev` and `bun run --cwd nextjs build` when touching instrumentation.
+- Instrumentation compiles for all runtimes the app uses. When middleware exists, `instrumentation.ts` compiles for Edge too. Node.js-only imports must go inside `if (process.env.NEXT_RUNTIME === "nodejs") { ... }` blocks, not after early returns. Webpack replaces `NEXT_RUNTIME` at compile time and dead-code-eliminates the unused branch. Early returns (`if (NEXT_RUNTIME !== "nodejs") return;`) do NOT prevent webpack from tracing imports that follow. Always test both `bun run --cwd nextjs dev` and `bun run --cwd nextjs build` when touching instrumentation.

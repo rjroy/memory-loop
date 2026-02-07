@@ -1,10 +1,6 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
-// Node.js runtime avoids edge compilation of instrumentation.ts,
-// which imports scheduler code using node:crypto, node:fs, etc.
-export const runtime = "nodejs";
-
 type AuthAction = "public" | "api-unauthorized" | "page-redirect" | "allow";
 
 /**

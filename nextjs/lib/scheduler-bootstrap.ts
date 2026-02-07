@@ -1,12 +1,11 @@
 /**
  * Scheduler Bootstrap
  *
- * Isolates scheduler startup from instrumentation.ts so that
- * turbopack (dev) never needs to resolve dependencies like cron's
- * child_process or node:crypto. instrumentation.ts returns early
- * in development mode before importing this module.
+ * Isolates scheduler startup from instrumentation.ts. Only imported
+ * inside the NEXT_RUNTIME === "nodejs" block so webpack can
+ * dead-code-eliminate it when building for Edge.
  *
- * This module is only loaded in production.
+ * This module is only loaded in production on Node.js.
  */
 
 import {

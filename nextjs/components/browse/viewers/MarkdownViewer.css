@@ -186,6 +186,41 @@
   word-break: break-word;
 }
 
+.markdown-viewer__frontmatter-nested {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: inherit;
+}
+
+.markdown-viewer__frontmatter-nested tr:not(:last-child) {
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.markdown-viewer__frontmatter-nested .markdown-viewer__frontmatter-key {
+  background: transparent;
+  font-weight: normal;
+  color: var(--color-text-secondary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.markdown-viewer__frontmatter-nested .markdown-viewer__frontmatter-value {
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.markdown-viewer__frontmatter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.markdown-viewer__frontmatter-list-item {
+  padding: var(--spacing-xs) 0;
+}
+
+.markdown-viewer__frontmatter-list-item:not(:last-child) {
+  border-bottom: 1px solid var(--glass-border);
+}
+
 /* Markdown element styling */
 .markdown-viewer__content h1,
 .markdown-viewer__content h2,

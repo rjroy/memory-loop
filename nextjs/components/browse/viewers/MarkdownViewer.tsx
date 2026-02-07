@@ -216,25 +216,66 @@ function LoadingSkeleton(): ReactNode {
 }
 
 /**
- * Formats a frontmatter value for display.
- * Handles arrays, objects, and primitive values.
+ * Checks whether a value is a plain primitive (string, number, boolean)
+ * as opposed to a nested structure that needs recursive rendering.
  */
-function formatFrontmatterValue(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.join(", ");
-  }
+function isPrimitive(value: unknown): boolean {
+  return typeof value !== "object" || value === null || value instanceof Date;
+}
+
+/**
+ * Renders a frontmatter value as React nodes.
+ * Primitives render as text. Arrays render as comma-separated lists (if all
+ * primitive) or as nested blocks. Objects render as nested key-value tables.
+ */
+function FrontmatterValue({ value }: { value: unknown }): ReactNode {
   if (value instanceof Date) {
-    return value.toLocaleDateString();
+    return <>{value.toLocaleDateString()}</>;
   }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    // Arrays of all primitives get comma-separated inline display
+    if (value.every(isPrimitive)) {
+      return <>{value.map(String).join(", ")}</>;
+    }
+    // Arrays with nested structures get block display
+    return (
+      <ul className="markdown-viewer__frontmatter-list">
+        {(value as unknown[]).map((item, i) => (
+          <li key={i} className="markdown-viewer__frontmatter-list-item">
+            <FrontmatterValue value={item} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
   if (typeof value === "object" && value !== null) {
-    return JSON.stringify(value);
+    const entries = Object.entries(value as Record<string, unknown>);
+    return (
+      <table className="markdown-viewer__frontmatter-nested">
+        <tbody>
+          {entries.map(([k, v]) => (
+            <tr key={k}>
+              <th className="markdown-viewer__frontmatter-key">{k}</th>
+              <td className="markdown-viewer__frontmatter-value">
+                <FrontmatterValue value={v} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
   }
-  return String(value);
+
+  return <>{String(value)}</>;
 }
 
 /**
  * FrontmatterTable renders YAML frontmatter as a styled table.
  * Similar to how GitHub renders frontmatter in markdown files.
+ * Nested objects and arrays render recursively.
  */
 function FrontmatterTable({
   data,
@@ -255,7 +296,7 @@ function FrontmatterTable({
             <tr key={key}>
               <th className="markdown-viewer__frontmatter-key">{key}</th>
               <td className="markdown-viewer__frontmatter-value">
-                {formatFrontmatterValue(value)}
+                <FrontmatterValue value={value} />
               </td>
             </tr>
           ))}

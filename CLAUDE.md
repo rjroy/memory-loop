@@ -82,6 +82,19 @@ Domain logic lives in `nextjs/lib/`. These modules are imported by API routes an
 | Think | `discussion` | Discussion |
 | Recall | `browse` | BrowseMode |
 
+## Authentication
+
+GitHub OAuth via Auth.js v5 (`next-auth@beta`). Middleware-based route protection, so existing API route handlers don't need changes.
+
+| File | Purpose |
+|------|---------|
+| `auth.ts` | Auth.js config, GitHub provider, allowlist callbacks |
+| `middleware.ts` | Route protection (public: `/api/health`, `/api/auth/*`) |
+| `components/AuthProvider.tsx` | Client-side session provider (separate from app SessionContext) |
+| `app/api/auth/[...nextauth]/route.ts` | Auth.js route handler |
+
+Unauthenticated API requests get 401 JSON `{ error: { code, message } }`. Unauthenticated page requests redirect to GitHub sign-in. `AUTH_ALLOWED_USERS` controls who can sign in (fail closed if empty).
+
 ## Environment
 
 ```bash
@@ -90,6 +103,12 @@ PORT=3000                   # Server port
 HOSTNAME=0.0.0.0            # Bind address (Next.js uses HOSTNAME, not HOST)
 MOCK_SDK=true               # Disable real Anthropic API calls for testing
 LOG_LEVEL=silent            # Suppress logs (useful in tests)
+AUTH_SECRET=                # Signs session cookies (generate: bunx auth secret)
+AUTH_GITHUB_ID=             # GitHub OAuth App Client ID
+AUTH_GITHUB_SECRET=         # GitHub OAuth App Client Secret
+AUTH_ALLOWED_USERS=         # Comma-separated GitHub usernames
+AUTH_URL=                   # Base URL for callbacks (e.g. http://192.168.1.50:3000)
+AUTH_TRUST_HOST=true        # Required for non-localhost deployments
 ```
 
 Each vault must contain a `CLAUDE.md` file at root to be discovered.

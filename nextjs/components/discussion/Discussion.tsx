@@ -136,12 +136,16 @@ export function Discussion({ sendMessageRef }: DiscussionProps = {}): React.Reac
         });
       }
 
-      // Handle errors
+      // Handle errors - show them as system messages in the conversation
       if (message.type === "error") {
         setIsSubmitting(false);
+        const errorMsg = typeof message.message === "string"
+          ? message.message
+          : "An error occurred.";
+        addMessage({ role: "assistant", content: errorMsg });
       }
     },
-    [handleServerMessage, addToolToLastMessage, updateToolInput, completeToolInvocation]
+    [handleServerMessage, addMessage, addToolToLastMessage, updateToolInput, completeToolInvocation]
   );
 
   // Capture pendingSessionId on mount and clear it from context.

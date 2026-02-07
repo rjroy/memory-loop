@@ -487,10 +487,9 @@ describe("useChat", () => {
       const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
       const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
       expect(body.sessionId).toBe("sess_resume_123");
+      expect(body.vaultId).toBe("test-vault");
       expect(body.vaultPath).toBe("/path/to/vault");
       expect(body.prompt).toBe("Continue our conversation");
-      // Should NOT have vaultId (resume path, not new session path)
-      expect(body.vaultId).toBeUndefined();
     });
 
     it("ignores null initialSessionId", () => {

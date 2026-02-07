@@ -160,20 +160,16 @@ export function useChat(
 
       try {
         // Build request body - always include vault info
-        const body = sessionId
-          ? {
-              // Resume session
-              vaultPath: vault.path,
-              sessionId,
-              prompt: text,
-            }
-          : {
-              // New session - include full vault info
-              vaultId: vault.id,
-              vaultPath: vault.path,
-              vaultName: vault.name,
-              prompt: text,
-            };
+        const body: Record<string, string> = {
+          vaultId: vault.id,
+          vaultPath: vault.path,
+          prompt: text,
+        };
+        if (sessionId) {
+          body.sessionId = sessionId;
+        }
+
+        log.info(`sendMessage: session=${sessionId ?? "new"}, vault=${vault.id}`);
 
         const response = await fetch(`${apiBase}/chat`, {
           method: "POST",
@@ -221,6 +217,7 @@ export function useChat(
             for (const event of events) {
               // Handle session_ready to capture session ID
               if (event.type === "session_ready" && typeof event.sessionId === "string" && event.sessionId) {
+                log.info(`Session ready: ${event.sessionId}`);
                 setSessionId(event.sessionId);
               }
 

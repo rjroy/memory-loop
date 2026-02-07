@@ -555,6 +555,8 @@ export async function appendMessage(
 ): Promise<void> {
   const metadata = await loadSession(vaultPath, sessionId);
   if (!metadata) {
+    const filePath = await getSessionFilePath(vaultPath, sessionId);
+    log.error(`Session file not found at: ${filePath}`);
     throw new SessionError(
       `Session "${sessionId}" not found`,
       "SESSION_NOT_FOUND"
@@ -616,6 +618,8 @@ export interface SessionQueryResult {
   events: AsyncGenerator<SDKMessage, void>;
   /** Function to interrupt the query */
   interrupt: () => Promise<void>;
+  /** Close the SDK query and terminate the child process. */
+  close: () => void;
   /** Function to fetch supported slash commands */
   supportedCommands: () => Promise<SDKSlashCommand[]>;
   /** Conversation history from prior turns (populated on resume) */
@@ -869,6 +873,7 @@ export async function createSession(
       sessionId,
       events: wrapGenerator(firstEvent, queryResult),
       interrupt: () => queryResult.interrupt(),
+      close: () => queryResult.close(),
       supportedCommands: () => queryResult.supportedCommands(),
     };
   } catch (error) {
@@ -969,17 +974,32 @@ export async function resumeSession(
       await extractSessionId(queryResult);
     log.info(`Session resumed: ${resumedId}`);
 
-    // Update lastActiveAt
+    // If the SDK returns a different session ID, it means the session
+    // wasn't found and the SDK created a new one. Don't migrate metadata
+    // or pretend this is a continuation. Log the failure and treat it as
+    // a fresh session (no previous messages for the UI).
+    if (resumedId !== sessionId) {
+      log.error(
+        `SDK could not find session ${sessionId}, created new session ${resumedId} instead. ` +
+        `This usually means the previous SDK subprocess was killed before it could persist session data.`
+      );
+    }
+
+    // Save metadata under the ID the SDK actually returned
+    metadata.id = resumedId;
     metadata.lastActiveAt = new Date().toISOString();
     await saveSession(metadata);
 
-    // Return wrapped result with previous messages for session_ready
+    // Return wrapped result. If the session ID changed, clear previousMessages
+    // so the caller knows this is effectively a fresh session.
+    const isActualResume = resumedId === sessionId;
     return {
       sessionId: resumedId,
       events: wrapGenerator(firstEvent, queryResult),
       interrupt: () => queryResult.interrupt(),
+      close: () => queryResult.close(),
       supportedCommands: () => queryResult.supportedCommands(),
-      previousMessages: metadata.messages,
+      previousMessages: isActualResume ? metadata.messages : undefined,
     };
   } catch (error) {
     log.error("Failed to resume session", error);

@@ -267,8 +267,36 @@ metadata:
       });
 
       expect(screen.getByText("metadata")).toBeDefined();
-      // Nested objects are JSON stringified
-      expect(screen.getByText('{"author":"John","version":"1.0"}')).toBeDefined();
+      // Nested objects render as nested key-value pairs
+      expect(screen.getByText("author")).toBeDefined();
+      expect(screen.getByText("John")).toBeDefined();
+      expect(screen.getByText("version")).toBeDefined();
+      expect(screen.getByText("1.0")).toBeDefined();
+    });
+
+    it("handles arrays of objects in frontmatter", () => {
+      const content = `---
+people:
+  - name: Alice
+    role: dev
+  - name: Bob
+    role: design
+---
+
+# Content`;
+      const { container } = render(<MarkdownViewer />, {
+        wrapper: createTestWrapper({
+          currentPath: "test.md",
+          currentFileContent: content,
+        }),
+      });
+
+      expect(screen.getByText("people")).toBeDefined();
+      expect(screen.getByText("Alice")).toBeDefined();
+      expect(screen.getByText("Bob")).toBeDefined();
+      // Should render as list items with nested tables, not [object Object]
+      const listItems = container.querySelectorAll(".markdown-viewer__frontmatter-list-item");
+      expect(listItems.length).toBe(2);
     });
 
     it("does not show frontmatter table when no frontmatter exists", () => {

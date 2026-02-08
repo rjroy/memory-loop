@@ -1,7 +1,9 @@
 /**
  * useChat Hook
  *
- * Manages chat communication with the backend via SSE.
+ * Manages chat communication with the backend via two-phase flow:
+ * 1. POST /api/chat - Submit message, get session ID (or 409 if processing)
+ * 2. GET /api/chat/stream - Attach SSE viewport for snapshot + live events
  *
  * Session ID is owned by SessionContext and passed in as a parameter.
  * This hook does NOT maintain its own session ID state. When a session_ready
@@ -11,9 +13,10 @@
  * Features:
  * - Start new sessions (sessionId is null)
  * - Resume existing sessions (sessionId is set)
- * - Stream responses via SSE
+ * - Stream responses via SSE (separate GET endpoint)
  * - Resolve tool permissions and questions mid-stream
  * - Abort in-flight requests
+ * - Reconnect to active stream on mount (via snapshot)
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -102,7 +105,10 @@ function parseSSE(chunk: string): SSEEvent[] {
 }
 
 /**
- * React hook for managing chat via SSE.
+ * React hook for managing chat via two-phase SSE.
+ *
+ * Phase 1: POST /api/chat submits the message and returns { sessionId }.
+ * Phase 2: GET /api/chat/stream connects to the SSE viewport for events.
  *
  * Session ID is caller-owned (from SessionContext). This hook reads
  * it via a ref so callbacks always use the latest value without
@@ -121,7 +127,7 @@ export function useChat(
   const { apiBase = "/api", onEvent, onStreamStart, onStreamEnd, onError } =
     options;
 
-  // State (session ID is NOT here - it's owned by the caller)
+  // State (session ID is NOT here, it's owned by the caller)
   const [streamingState, setStreamingState] = useState<ChatStreamingState>("idle");
   const [lastError, setLastError] = useState<string | null>(null);
 
@@ -148,8 +154,150 @@ export function useChat(
   }, [onEvent, onStreamStart, onStreamEnd, onError]);
 
   /**
-   * Sends a message to start/continue a conversation.
-   * Uses sessionIdRef to always read the latest session ID.
+   * Processes a single SSE event from the stream.
+   *
+   * Handles snapshot events (first event from stream), translates
+   * prompt_pending events into the ServerMessage types the frontend
+   * components expect, and forwards everything else via onEvent.
+   */
+  function handleStreamEvent(event: SSEEvent): void {
+    // Handle snapshot event (first event from stream)
+    if (event.type === "snapshot") {
+      onEventRef.current?.(event as unknown as ServerMessage);
+      return;
+    }
+
+    // Handle errors
+    if (event.type === "error") {
+      const errorMessage = typeof event.message === "string" ? event.message : "Unknown error";
+      setLastError(errorMessage);
+      onErrorRef.current?.(errorMessage);
+    }
+
+    // Log session_ready (context update happens via onEvent -> useServerMessageHandler)
+    if (event.type === "session_ready" && typeof event.sessionId === "string" && event.sessionId) {
+      log.info(`Session ready: ${event.sessionId}`);
+    }
+
+    // Translate prompt_pending events to the ServerMessage types
+    // the frontend components expect
+    if (event.type === "prompt_pending") {
+      const prompt = event.prompt as {
+        id: string;
+        type: string;
+        toolName?: string;
+        input?: unknown;
+        questions?: unknown[];
+      };
+      if (prompt.type === "tool_permission") {
+        onEventRef.current?.({
+          type: "tool_permission_request",
+          toolUseId: prompt.id,
+          toolName: prompt.toolName ?? "",
+          input: prompt.input,
+        } as unknown as ServerMessage);
+      } else if (prompt.type === "ask_user_question") {
+        onEventRef.current?.({
+          type: "ask_user_question_request",
+          toolUseId: prompt.id,
+          questions: prompt.questions ?? [],
+        } as unknown as ServerMessage);
+      }
+      return;
+    }
+
+    // Forward all other events to callback
+    onEventRef.current?.(event as unknown as ServerMessage);
+  }
+
+  /**
+   * Connects to GET /api/chat/stream and reads SSE events.
+   *
+   * The stream starts with a snapshot event containing current state,
+   * then sends live events while processing continues. Callable from
+   * sendMessage (after the POST) or from a reconnection effect.
+   *
+   * This is fire-and-forget: it launches an async reader internally.
+   * The AbortController in abortControllerRef controls its lifecycle.
+   */
+  function connectToStream(): void {
+    // Abort any existing stream connection
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setStreamingState("streaming");
+
+    // Fire-and-forget async reader
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase}/chat/stream`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`Stream failed: HTTP ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parse complete events from buffer (SSE events separated by double newlines)
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+
+          for (const part of parts) {
+            if (!part.trim()) continue;
+            const events = parseSSE(part);
+            for (const event of events) {
+              handleStreamEvent(event);
+            }
+          }
+        }
+
+        // Process remaining buffer
+        if (buffer.trim()) {
+          const events = parseSSE(buffer);
+          for (const event of events) {
+            handleStreamEvent(event);
+          }
+        }
+
+        setStreamingState("idle");
+        onStreamEndRef.current?.();
+      } catch (err) {
+        if ((err as Error).name === "AbortError") {
+          setStreamingState("idle");
+          onStreamEndRef.current?.();
+          return;
+        }
+        const error = err instanceof Error ? err.message : "Stream connection failed";
+        setLastError(error);
+        setStreamingState("error");
+        onErrorRef.current?.(error);
+        onStreamEndRef.current?.();
+      } finally {
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
+      }
+    })();
+  }
+
+  /**
+   * Sends a message via two-phase flow:
+   * 1. POST /api/chat (submit message, get session ID or 409)
+   * 2. connectToStream() (attach SSE viewport)
    */
   const sendMessage = useCallback(
     async (text: string): Promise<void> => {
@@ -160,14 +308,6 @@ export function useChat(
         return;
       }
 
-      // Abort any existing request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
       setStreamingState("starting");
       setLastError(null);
       onStreamStartRef.current?.();
@@ -175,7 +315,7 @@ export function useChat(
       const currentSessionId = sessionIdRef.current;
 
       try {
-        // Build request body - always include vault info
+        // Phase 1: Submit message via REST
         const body: Record<string, string> = {
           vaultId: vault.id,
           vaultPath: vault.path,
@@ -187,122 +327,34 @@ export function useChat(
 
         log.info(`sendMessage: session=${currentSessionId ?? "new"}, vault=${vault.id}`);
 
-        const response = await fetch(`${apiBase}/chat`, {
+        const postResponse = await fetch(`${apiBase}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
-          signal: controller.signal,
         });
 
-        if (!response.ok) {
-          const errorBody = (await response.json().catch(() => ({}))) as { error?: string };
-          const error = errorBody.error ?? `HTTP ${response.status}`;
-          throw new Error(error);
-        }
-
-        if (!response.body) {
-          throw new Error("No response body");
-        }
-
-        setStreamingState("streaming");
-
-        // Read SSE stream
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            break;
+        if (!postResponse.ok) {
+          const errorBody = await postResponse.json().catch(() => ({})) as {
+            error?: { code?: string; message?: string };
+          };
+          if (postResponse.status === 409) {
+            const error = errorBody.error?.message ?? "Processing in progress, please wait";
+            setLastError(error);
+            setStreamingState("error");
+            onErrorRef.current?.(error);
+            return;
           }
-
-          // Decode chunk and add to buffer
-          buffer += decoder.decode(value, { stream: true });
-
-          // Parse complete events from buffer
-          // SSE events are separated by double newlines
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() ?? ""; // Keep incomplete part in buffer
-
-          for (const part of parts) {
-            if (!part.trim()) continue;
-
-            const events = parseSSE(part);
-            for (const event of events) {
-              // Log session_ready (context update happens via onEvent → useServerMessageHandler)
-              if (event.type === "session_ready" && typeof event.sessionId === "string" && event.sessionId) {
-                log.info(`Session ready: ${event.sessionId}`);
-              }
-
-              // Handle errors
-              if (event.type === "error") {
-                const errorMessage = typeof event.message === "string" ? event.message : "Unknown error";
-                setLastError(errorMessage);
-                onErrorRef.current?.(errorMessage);
-              }
-
-              // Translate prompt_pending events to the ServerMessage types
-              // the frontend components expect
-              if (event.type === "prompt_pending") {
-                const prompt = event.prompt as {
-                  id: string;
-                  type: string;
-                  toolName?: string;
-                  input?: unknown;
-                  questions?: unknown[];
-                };
-                if (prompt.type === "tool_permission") {
-                  onEventRef.current?.({
-                    type: "tool_permission_request",
-                    toolUseId: prompt.id,
-                    toolName: prompt.toolName ?? "",
-                    input: prompt.input,
-                  } as unknown as ServerMessage);
-                } else if (prompt.type === "ask_user_question") {
-                  onEventRef.current?.({
-                    type: "ask_user_question_request",
-                    toolUseId: prompt.id,
-                    questions: prompt.questions ?? [],
-                  } as unknown as ServerMessage);
-                }
-                continue;
-              }
-
-              // Forward all other events to callback
-              onEventRef.current?.(event as unknown as ServerMessage);
-            }
-          }
+          throw new Error(errorBody.error?.message ?? `HTTP ${postResponse.status}`);
         }
 
-        // Process any remaining buffer
-        if (buffer.trim()) {
-          const events = parseSSE(buffer);
-          for (const event of events) {
-            onEventRef.current?.(event as unknown as ServerMessage);
-          }
-        }
-
-        setStreamingState("idle");
-        onStreamEndRef.current?.();
+        // Phase 2: Connect to SSE stream
+        connectToStream();
       } catch (err) {
-        if ((err as Error).name === "AbortError") {
-          // Request was aborted, not an error
-          setStreamingState("idle");
-          onStreamEndRef.current?.();
-          return;
-        }
-
         const error = err instanceof Error ? err.message : "Unknown error";
         setLastError(error);
         setStreamingState("error");
         onErrorRef.current?.(error);
         onStreamEndRef.current?.();
-      } finally {
-        if (abortControllerRef.current === controller) {
-          abortControllerRef.current = null;
-        }
       }
     },
     [vault, apiBase]
@@ -310,15 +362,12 @@ export function useChat(
 
   /**
    * Aborts the current streaming response.
+   *
+   * Sends the abort request to the server first so the controller can
+   * emit terminal events, then closes the SSE connection as cleanup.
    */
   const abort = useCallback(async (): Promise<void> => {
-    // Abort the fetch
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-
-    // Also notify server (best-effort)
+    // Notify server to abort (best-effort, before closing stream)
     const currentSessionId = sessionIdRef.current;
     if (currentSessionId) {
       try {
@@ -326,8 +375,14 @@ export function useChat(
           method: "POST",
         });
       } catch {
-        // Ignore errors - server may have already ended
+        // Ignore errors, server may have already ended
       }
+    }
+
+    // Close the SSE stream connection
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
 
     setStreamingState("idle");

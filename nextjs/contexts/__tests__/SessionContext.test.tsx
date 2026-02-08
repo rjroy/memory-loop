@@ -1483,4 +1483,239 @@ describe("SessionContext", () => {
       expect(result.current.browser.search.snippetsCache.size).toBe(0);
     });
   });
+
+  describe("snapshot event handling", () => {
+    // Helper to create a snapshot message. The snapshot type is not in the
+    // ServerMessage union (it's a transport-level SSE event), so we cast it.
+    function createSnapshot(overrides: Record<string, unknown> = {}) {
+      return {
+        type: "snapshot",
+        sessionId: null,
+        isProcessing: false,
+        content: "",
+        toolInvocations: [],
+        pendingPrompts: [],
+        contextUsage: undefined,
+        cumulativeTokens: 0,
+        contextWindow: null,
+        ...overrides,
+      } as unknown as import("@/lib/schemas").ServerMessage;
+    }
+
+    it("restores session ID from snapshot", () => {
+      const { result } = useTestSessionWithHandler();
+
+      act(() => {
+        result.current.handler(createSnapshot({ sessionId: "snap-session-123" }));
+      });
+
+      expect(result.current.session.sessionId).toBe("snap-session-123");
+      expect(result.current.session.pendingSessionId).toBeNull();
+    });
+
+    it("does not set session ID when null", () => {
+      const { result } = useTestSessionWithHandler();
+
+      act(() => {
+        result.current.session.setSessionId("existing-session");
+      });
+
+      act(() => {
+        result.current.handler(createSnapshot({ sessionId: null }));
+      });
+
+      expect(result.current.session.sessionId).toBe("existing-session");
+    });
+
+    it("adds new assistant message when snapshot has content and no streaming message exists", () => {
+      const { result } = useTestSessionWithHandler();
+
+      act(() => {
+        result.current.handler(createSnapshot({
+          content: "Here is the accumulated response so far.",
+          isProcessing: true,
+        }));
+      });
+
+      expect(result.current.session.messages).toHaveLength(1);
+      expect(result.current.session.messages[0].role).toBe("assistant");
+      expect(result.current.session.messages[0].content).toBe("Here is the accumulated response so far.");
+      expect(result.current.session.messages[0].isStreaming).toBe(true);
+    });
+
+    it("adds static assistant message when processing is complete", () => {
+      const { result } = useTestSessionWithHandler();
+
+      act(() => {
+        result.current.handler(createSnapshot({
+          content: "Completed response.",
+          isProcessing: false,
+        }));
+      });
+
+      expect(result.current.session.messages).toHaveLength(1);
+      expect(result.current.session.messages[0].isStreaming).toBe(false);
+    });
+
+    it("replaces existing streaming message content with snapshot", () => {
+      const { result } = useTestSessionWithHandler();
+
+      // Simulate a response_start creating a streaming message
+      act(() => {
+        result.current.handler({ type: "response_start", messageId: "msg-1" });
+      });
+
+      expect(result.current.session.messages).toHaveLength(1);
+      expect(result.current.session.messages[0].content).toBe("");
+      expect(result.current.session.messages[0].isStreaming).toBe(true);
+
+      // Snapshot arrives with accumulated content (reconnection scenario)
+      act(() => {
+        result.current.handler(createSnapshot({
+          content: "Accumulated content from server.",
+          isProcessing: true,
+        }));
+      });
+
+      // Should replace, not append
+      expect(result.current.session.messages).toHaveLength(1);
+      expect(result.current.session.messages[0].content).toBe("Accumulated content from server.");
+      expect(result.current.session.messages[0].isStreaming).toBe(true);
+    });
+
+    it("does not add message when snapshot content is empty", () => {
+      const { result } = useTestSessionWithHandler();
+
+      act(() => {
+        result.current.handler(createSnapshot({
+          content: "",
+          isProcessing: false,
+        }));
+      });
+
+      expect(result.current.session.messages).toHaveLength(0);
+    });
+
+    it("restores context usage from snapshot", () => {
+      const { result } = useTestSessionWithHandler();
+
+      act(() => {
+        result.current.handler(createSnapshot({
+          content: "Response with context usage.",
+          isProcessing: false,
+          contextUsage: 65,
+        }));
+      });
+
+      expect(result.current.session.messages[0].contextUsage).toBe(65);
+    });
+
+    it("does not set context usage when not provided", () => {
+      const { result } = useTestSessionWithHandler();
+
+      act(() => {
+        result.current.handler(createSnapshot({
+          content: "Response without context usage.",
+          isProcessing: false,
+          contextUsage: undefined,
+        }));
+      });
+
+      expect(result.current.session.messages[0].contextUsage).toBeUndefined();
+    });
+
+    it("adds message after existing user message from snapshot", () => {
+      const { result } = useTestSessionWithHandler();
+
+      // User sent a message
+      act(() => {
+        result.current.session.addMessage({ role: "user", content: "Tell me about X" });
+      });
+
+      // Snapshot arrives with assistant content
+      act(() => {
+        result.current.handler(createSnapshot({
+          content: "X is a fascinating topic.",
+          isProcessing: true,
+        }));
+      });
+
+      expect(result.current.session.messages).toHaveLength(2);
+      expect(result.current.session.messages[0].role).toBe("user");
+      expect(result.current.session.messages[1].role).toBe("assistant");
+      expect(result.current.session.messages[1].content).toBe("X is a fascinating topic.");
+    });
+
+    it("clears pending session ID when snapshot restores session", () => {
+      const { result } = useTestSessionWithHandler();
+
+      act(() => {
+        result.current.session.setPendingSessionId("pending-123");
+      });
+
+      expect(result.current.session.pendingSessionId).toBe("pending-123");
+
+      act(() => {
+        result.current.handler(createSnapshot({ sessionId: "actual-session" }));
+      });
+
+      expect(result.current.session.sessionId).toBe("actual-session");
+      expect(result.current.session.pendingSessionId).toBeNull();
+    });
+  });
+
+  describe("replaceLastMessageContent", () => {
+    it("replaces content of last assistant message", () => {
+      const { result } = useTestSession();
+
+      act(() => {
+        result.current.addMessage({ role: "assistant", content: "old content", isStreaming: true });
+        result.current.replaceLastMessageContent("new content", false);
+      });
+
+      expect(result.current.messages[0].content).toBe("new content");
+      expect(result.current.messages[0].isStreaming).toBe(false);
+    });
+
+    it("does nothing when no messages exist", () => {
+      const { result } = useTestSession();
+
+      act(() => {
+        result.current.replaceLastMessageContent("content", false);
+      });
+
+      expect(result.current.messages).toHaveLength(0);
+    });
+
+    it("does nothing when last message is a user message", () => {
+      const { result } = useTestSession();
+
+      act(() => {
+        result.current.addMessage({ role: "user", content: "user message" });
+        result.current.replaceLastMessageContent("should not appear", false);
+      });
+
+      expect(result.current.messages[0].content).toBe("user message");
+    });
+
+    it("preserves tool invocations when replacing content", () => {
+      const { result } = useTestSession();
+
+      act(() => {
+        result.current.addMessage({
+          role: "assistant",
+          content: "original",
+          isStreaming: true,
+          toolInvocations: [
+            { toolUseId: "t1", toolName: "Read", status: "complete" as const, output: "data" },
+          ],
+        });
+        result.current.replaceLastMessageContent("replaced", true);
+      });
+
+      expect(result.current.messages[0].content).toBe("replaced");
+      expect(result.current.messages[0].toolInvocations).toHaveLength(1);
+      expect(result.current.messages[0].toolInvocations![0].toolUseId).toBe("t1");
+    });
+  });
 });

@@ -89,6 +89,7 @@ export type SessionAction =
   | { type: "SET_SLASH_COMMANDS"; commands: SlashCommand[] }
   | { type: "SET_LAST_MESSAGE_CONTEXT_USAGE"; contextUsage: number }
   | { type: "SET_LAST_MESSAGE_DURATION"; durationMs: number }
+  | { type: "REPLACE_LAST_MESSAGE_CONTENT"; content: string; isStreaming: boolean }
   | { type: "SET_SEARCH_ACTIVE"; isActive: boolean }
   | { type: "SET_SEARCH_MODE"; mode: SearchMode }
   | { type: "SET_SEARCH_QUERY"; query: string }
@@ -374,6 +375,28 @@ function handleSetLastMessageDuration(
   return { ...state, messages };
 }
 
+/**
+ * Replaces (not appends) the content of the last assistant message.
+ * Used by snapshot restore where the server sends accumulated content
+ * that should overwrite rather than append to the existing message.
+ */
+function handleReplaceLastMessageContent(
+  state: SessionState,
+  content: string,
+  isStreaming: boolean
+): SessionState {
+  if (state.messages.length === 0) return state;
+  const messages = [...state.messages];
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage.role !== "assistant") return state;
+  messages[messages.length - 1] = {
+    ...lastMessage,
+    content,
+    isStreaming,
+  };
+  return { ...state, messages };
+}
+
 // ----------------------------------------------------------------------------
 // Main reducer
 // ----------------------------------------------------------------------------
@@ -607,6 +630,9 @@ export function sessionReducer(
 
     case "SET_LAST_MESSAGE_DURATION":
       return handleSetLastMessageDuration(state, action.durationMs);
+
+    case "REPLACE_LAST_MESSAGE_CONTENT":
+      return handleReplaceLastMessageContent(state, action.content, action.isStreaming);
 
     // Search actions
     case "SET_SEARCH_ACTIVE":

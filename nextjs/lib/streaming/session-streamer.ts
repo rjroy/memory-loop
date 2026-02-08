@@ -49,6 +49,17 @@ export interface StreamingResult {
 }
 
 /**
+ * Handle returned by startStreamSdkEvents.
+ * Provides synchronous snapshot access and a promise for the final result.
+ */
+export interface StreamerHandle {
+  /** Read accumulated state at any point during or after streaming. */
+  getSnapshot: () => StreamingResult;
+  /** Resolves with the final StreamingResult when streaming completes. */
+  result: Promise<StreamingResult>;
+}
+
+/**
  * State tracked across the streaming lifecycle.
  */
 export interface StreamerState {
@@ -65,7 +76,141 @@ export interface StreamerEmitter {
 }
 
 /**
+ * Starts streaming SDK events and returns a handle immediately.
+ *
+ * The handle provides synchronous snapshot access to accumulated state and a
+ * promise that resolves when streaming completes. The async loop runs as a
+ * detached promise, so callers can read partial state via getSnapshot() at
+ * any point during streaming.
+ *
+ * @param events - Async generator of SDK events
+ * @param messageId - Message ID for response events
+ * @param emitter - Emitter to send SessionEvents
+ * @param state - Mutable state for token tracking
+ * @param abortSignal - Optional abort signal to stop streaming
+ * @returns StreamerHandle with getSnapshot() and result promise
+ */
+export function startStreamSdkEvents(
+  events: AsyncGenerator<SDKMessage, void>,
+  messageId: string,
+  emitter: StreamerEmitter,
+  state: StreamerState,
+  abortSignal?: AbortSignal
+): StreamerHandle {
+  const responseChunks: string[] = [];
+  const toolsMap = new Map<string, StoredToolInvocation>();
+  const contentBlocks = new Map<number, ContentBlockState>();
+  let contextUsage: number | undefined;
+
+  function getSnapshot(): StreamingResult {
+    return {
+      content: responseChunks.join(""),
+      toolInvocations: Array.from(toolsMap.values()),
+      contextUsage,
+    };
+  }
+
+  const result = (async (): Promise<StreamingResult> => {
+    for await (const event of events) {
+      // Check for abort
+      if (abortSignal?.aborted) {
+        log.debug("Streaming aborted");
+        // Mark any running tools as incomplete
+        for (const tool of toolsMap.values()) {
+          if (tool.status === "running") {
+            tool.status = "complete";
+            tool.output = "[Streaming aborted]";
+          }
+        }
+        break;
+      }
+
+      log.debug(`SDK event: ${event.type}`, summarizeEvent(event));
+
+      switch (event.type) {
+        case "stream_event": {
+          const text = handleStreamEvent(
+            event,
+            messageId,
+            emitter,
+            toolsMap,
+            contentBlocks
+          );
+          if (text) {
+            responseChunks.push(text);
+          }
+          break;
+        }
+        case "assistant": {
+          // Assistant event contains the complete message - use as authoritative source
+          const assistantEvent: SDKAssistantMessage = event;
+          const completeContent = extractAssistantContent(assistantEvent);
+          if (completeContent) {
+            // Check if we need to emit the content
+            // This handles cases where stream_events didn't contain all the content
+            const streamedContent = responseChunks.join("");
+            if (completeContent !== streamedContent) {
+              // Emit only the portion not yet streamed
+              const remainingContent = completeContent.slice(
+                streamedContent.length
+              );
+              if (remainingContent) {
+                log.debug("Emitting remaining content from assistant event", {
+                  streamedLength: streamedContent.length,
+                  completeLength: completeContent.length,
+                  remainingLength: remainingContent.length,
+                });
+                emitter.emit({
+                  type: "response_chunk",
+                  messageId,
+                  content: remainingContent,
+                });
+              }
+            }
+            // Replace accumulated chunks with complete content for return value
+            responseChunks.length = 0;
+            responseChunks.push(completeContent);
+          }
+          break;
+        }
+        case "result": {
+          const usage = handleResultEvent(event, emitter, toolsMap, state);
+          if (usage !== undefined) {
+            contextUsage = usage;
+          }
+          // Result is the terminal event - return immediately
+          return getSnapshot();
+        }
+        case "user": {
+          handleUserEvent(event, emitter, toolsMap);
+          break;
+        }
+        case "system": {
+          handleSystemEvent(event, state);
+          break;
+        }
+      }
+    }
+
+    return getSnapshot();
+  })();
+
+  // Prevent unhandled rejection warnings on the detached promise.
+  // Errors are already emitted via the emitter; this catch is purely
+  // defensive so the promise doesn't surface as unhandled. The original
+  // error still propagates to anyone who awaits `result`.
+  result.catch((err) => {
+    log.error("Streaming failed (detached)", err);
+  });
+
+  return { getSnapshot, result };
+}
+
+/**
  * Streams SDK events and emits SessionEvents.
+ *
+ * Backward-compatible wrapper around startStreamSdkEvents. Returns a promise
+ * that resolves with the final StreamingResult.
  *
  * @param events - Async generator of SDK events
  * @param messageId - Message ID for response events
@@ -81,99 +226,14 @@ export async function streamSdkEvents(
   state: StreamerState,
   abortSignal?: AbortSignal
 ): Promise<StreamingResult> {
-  const responseChunks: string[] = [];
-  const toolsMap = new Map<string, StoredToolInvocation>();
-  const contentBlocks = new Map<number, ContentBlockState>();
-  let contextUsage: number | undefined;
-
-  for await (const event of events) {
-    // Check for abort
-    if (abortSignal?.aborted) {
-      log.debug("Streaming aborted");
-      // Mark any running tools as incomplete
-      for (const tool of toolsMap.values()) {
-        if (tool.status === "running") {
-          tool.status = "complete";
-          tool.output = "[Streaming aborted]";
-        }
-      }
-      break;
-    }
-
-    log.debug(`SDK event: ${event.type}`, summarizeEvent(event));
-
-    switch (event.type) {
-      case "stream_event": {
-        const text = handleStreamEvent(
-          event,
-          messageId,
-          emitter,
-          toolsMap,
-          contentBlocks
-        );
-        if (text) {
-          responseChunks.push(text);
-        }
-        break;
-      }
-      case "assistant": {
-        // Assistant event contains the complete message - use as authoritative source
-        const assistantEvent: SDKAssistantMessage = event;
-        const completeContent = extractAssistantContent(assistantEvent);
-        if (completeContent) {
-          // Check if we need to emit the content
-          // This handles cases where stream_events didn't contain all the content
-          const streamedContent = responseChunks.join("");
-          if (completeContent !== streamedContent) {
-            // Emit only the portion not yet streamed
-            const remainingContent = completeContent.slice(streamedContent.length);
-            if (remainingContent) {
-              log.debug("Emitting remaining content from assistant event", {
-                streamedLength: streamedContent.length,
-                completeLength: completeContent.length,
-                remainingLength: remainingContent.length,
-              });
-              emitter.emit({
-                type: "response_chunk",
-                messageId,
-                content: remainingContent,
-              });
-            }
-          }
-          // Replace accumulated chunks with complete content for return value
-          responseChunks.length = 0;
-          responseChunks.push(completeContent);
-        }
-        break;
-      }
-      case "result": {
-        const usage = handleResultEvent(event, emitter, toolsMap, state);
-        if (usage !== undefined) {
-          contextUsage = usage;
-        }
-        // Result is the terminal event - return immediately
-        return {
-          content: responseChunks.join(""),
-          toolInvocations: Array.from(toolsMap.values()),
-          contextUsage,
-        };
-      }
-      case "user": {
-        handleUserEvent(event, emitter, toolsMap);
-        break;
-      }
-      case "system": {
-        handleSystemEvent(event, state);
-        break;
-      }
-    }
-  }
-
-  return {
-    content: responseChunks.join(""),
-    toolInvocations: Array.from(toolsMap.values()),
-    contextUsage,
-  };
+  const handle = startStreamSdkEvents(
+    events,
+    messageId,
+    emitter,
+    state,
+    abortSignal
+  );
+  return handle.result;
 }
 
 /**

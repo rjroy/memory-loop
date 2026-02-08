@@ -45,9 +45,9 @@ nextjs/
 ### Communication
 
 - **REST API** (Next.js API routes) for stateless operations (file CRUD, search, config, cards)
-- **SSE** (Server-Sent Events) for AI chat streaming via POST `/api/chat`
+- **Two-phase chat**: POST `/api/chat` (submit message, returns `{ sessionId }`) then GET `/api/chat/stream` (SSE viewport)
 
-The frontend sends a prompt via REST, then reads the SSE stream for incremental responses. Stop/permission/answer requests are separate REST calls alongside the stream.
+The server processes each message to completion regardless of client connectivity. SSE connections are viewports into processing state, not drivers of it. Clients can disconnect and reconnect freely; the first SSE event is always a snapshot of current state. Stop/permission/answer requests are separate REST calls.
 
 ### Key Domain Modules
 
@@ -68,10 +68,11 @@ Domain logic lives in `nextjs/lib/`. These modules are imported by API routes an
 |------|---------|
 | `app/layout.tsx` | Root layout |
 | `app/page.tsx` | Main SPA entry (client component) |
-| `app/api/chat/route.ts` | SSE chat endpoint |
+| `app/api/chat/route.ts` | REST chat send (POST, returns sessionId) |
+| `app/api/chat/stream/route.ts` | SSE viewport (GET, snapshot-first) |
 | `lib/controller.ts` | Active Session Controller (SDK orchestration) |
 | `contexts/SessionContext.tsx` | Global state via useReducer |
-| `hooks/useChat.ts` | SSE chat client |
+| `hooks/useChat.ts` | Two-phase chat client (POST then SSE) |
 
 ### Mode Mapping
 

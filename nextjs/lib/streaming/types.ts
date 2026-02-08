@@ -5,7 +5,7 @@
  * Based on the spec in .lore/design/active-session-controller.md
  */
 
-import type { AskUserQuestionItem, ConversationMessage, SlashCommand } from "@/lib/schemas";
+import type { AskUserQuestionItem, ConversationMessage, SlashCommand, StoredToolInvocation } from "@/lib/schemas";
 
 // =============================================================================
 // Session Events (emitted to subscribers)
@@ -96,6 +96,37 @@ export interface SessionState {
   isStreaming: boolean;
 }
 
+/**
+ * Point-in-time snapshot of session processing state.
+ * Used for reconnecting clients (REQ-SDC-8).
+ */
+export interface SessionSnapshot {
+  sessionId: string | null;
+  isProcessing: boolean;
+  content: string;
+  toolInvocations: StoredToolInvocation[];
+  pendingPrompts: PendingPrompt[];
+  contextUsage?: number;
+  cumulativeTokens: number;
+  contextWindow: number | null;
+}
+
+// =============================================================================
+// Errors
+// =============================================================================
+
+/**
+ * Thrown when a message is sent while the controller is already processing.
+ * Callers should catch this and return an appropriate error response.
+ */
+export class AlreadyProcessingError extends Error {
+  readonly code = "ALREADY_PROCESSING" as const;
+  constructor() {
+    super("A message is currently being processed. Please wait for it to complete.");
+    this.name = "AlreadyProcessingError";
+  }
+}
+
 // =============================================================================
 // Controller Interface
 // =============================================================================
@@ -117,7 +148,9 @@ export interface ActiveSessionController {
     sessionId: string | null;
     prompt: string;
   }): Promise<void>;
-  clearSession(): Promise<void>;
+  clearSession(): void;
+  /** Abort current processing, persist partial result. Session remains valid. */
+  abortProcessing(): void;
 
   // Subscription (push)
   subscribe(callback: SessionEventCallback): () => void;
@@ -125,6 +158,8 @@ export interface ActiveSessionController {
   // State queries (pull, for reconnect)
   getPendingPrompts(): PendingPrompt[];
   getState(): SessionState;
+  /** Get a point-in-time snapshot of processing state (for reconnecting clients) */
+  getSnapshot(): SessionSnapshot;
   isStreaming(): boolean;
 
   // Prompts

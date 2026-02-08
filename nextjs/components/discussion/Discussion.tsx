@@ -60,12 +60,11 @@ export function Discussion({ sendMessageRef }: DiscussionProps = {}): React.Reac
   const {
     vault,
     messages,
+    sessionId: contextSessionId,
     addMessage,
     startNewSession,
     discussionPrefill,
     setDiscussionPrefill,
-    pendingSessionId,
-    setPendingSessionId,
     showNewSessionDialog,
     setShowNewSessionDialog,
     addToolToLastMessage,
@@ -148,19 +147,10 @@ export function Discussion({ sendMessageRef }: DiscussionProps = {}): React.Reac
     [handleServerMessage, addMessage, addToolToLastMessage, updateToolInput, completeToolInvocation]
   );
 
-  // Capture pendingSessionId on mount and clear it from context.
-  // useRef ensures we read it once (the value at mount time) and don't
-  // re-initialize useChat's session ID on subsequent renders.
-  const initialSessionIdRef = useRef(pendingSessionId);
-  useEffect(() => {
-    if (initialSessionIdRef.current) {
-      setPendingSessionId(null);
-    }
-  }, [setPendingSessionId]);
-
   // SSE transport via useChat hook
-  const chat = useChat(vault, {
-    initialSessionId: initialSessionIdRef.current,
+  // Session ID comes from SessionContext (single source of truth).
+  // useChat reads it via ref so callbacks always use the latest value.
+  const chat = useChat(vault, contextSessionId, {
     onEvent: handleMessage,
     onStreamStart: () => setIsSubmitting(true),
     onStreamEnd: () => setIsSubmitting(false),

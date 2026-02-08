@@ -16,7 +16,7 @@ import {
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
-import yaml from "js-yaml";
+import { parse as parseYaml } from "yaml";
 import { useSession } from "../../../contexts/SessionContext";
 import { encodeAssetPath } from "@/lib/utils/file-types";
 import "./MarkdownViewer.css";
@@ -467,7 +467,7 @@ export function MarkdownViewer({
     try {
       // Extract YAML between delimiters
       const yamlContent = currentFileContent.slice(4, endMatch);
-      const data = yaml.load(yamlContent) as Record<string, unknown> | null;
+      const data = parseYaml(yamlContent) as Record<string, unknown> | null;
 
       // Extract content after closing delimiter
       const contentStart = endMatch + 4; // Skip \n---

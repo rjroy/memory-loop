@@ -3,9 +3,14 @@
  *
  * Manages chat communication with the backend via SSE.
  *
+ * Session ID is owned by SessionContext and passed in as a parameter.
+ * This hook does NOT maintain its own session ID state. When a session_ready
+ * event arrives, it's forwarded via onEvent to useServerMessageHandler which
+ * updates context. The next render passes the updated session ID back in.
+ *
  * Features:
- * - Start new sessions
- * - Resume existing sessions
+ * - Start new sessions (sessionId is null)
+ * - Resume existing sessions (sessionId is set)
  * - Stream responses via SSE
  * - Resolve tool permissions and questions mid-stream
  * - Abort in-flight requests
@@ -45,8 +50,6 @@ export interface UseChatResult {
   streamingState: ChatStreamingState;
   /** Whether currently streaming (convenience alias) */
   isStreaming: boolean;
-  /** Current session ID (if any) */
-  sessionId: string | null;
   /** Last error message (if any) */
   lastError: string | null;
 }
@@ -57,8 +60,6 @@ export interface UseChatResult {
 export interface UseChatOptions {
   /** API base URL (defaults to /api) */
   apiBase?: string;
-  /** Initial session ID for resuming a previous session */
-  initialSessionId?: string | null;
   /** Callback for each received event */
   onEvent?: (event: ServerMessage) => void;
   /** Callback when streaming starts */
@@ -103,23 +104,35 @@ function parseSSE(chunk: string): SSEEvent[] {
 /**
  * React hook for managing chat via SSE.
  *
+ * Session ID is caller-owned (from SessionContext). This hook reads
+ * it via a ref so callbacks always use the latest value without
+ * needing to be recreated on every session ID change.
+ *
  * @param vault - The current vault (required for new sessions)
+ * @param sessionId - Current session ID from context (null = new session)
  * @param options - Configuration options
  * @returns Chat state and controls
  */
 export function useChat(
   vault: VaultInfo | null,
+  sessionId: string | null,
   options: UseChatOptions = {}
 ): UseChatResult {
-  const { apiBase = "/api", initialSessionId, onEvent, onStreamStart, onStreamEnd, onError } =
+  const { apiBase = "/api", onEvent, onStreamStart, onStreamEnd, onError } =
     options;
 
-  // State
+  // State (session ID is NOT here - it's owned by the caller)
   const [streamingState, setStreamingState] = useState<ChatStreamingState>("idle");
-  const [sessionId, setSessionId] = useState<string | null>(initialSessionId ?? null);
   const [lastError, setLastError] = useState<string | null>(null);
 
-  // Refs for cleanup
+  // Ref for session ID so callbacks always read the latest value
+  // without needing to be recreated when session ID changes
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  // Refs for cleanup and stable callback references
   const abortControllerRef = useRef<AbortController | null>(null);
   const onEventRef = useRef(onEvent);
   const onStreamStartRef = useRef(onStreamStart);
@@ -136,6 +149,7 @@ export function useChat(
 
   /**
    * Sends a message to start/continue a conversation.
+   * Uses sessionIdRef to always read the latest session ID.
    */
   const sendMessage = useCallback(
     async (text: string): Promise<void> => {
@@ -158,6 +172,8 @@ export function useChat(
       setLastError(null);
       onStreamStartRef.current?.();
 
+      const currentSessionId = sessionIdRef.current;
+
       try {
         // Build request body - always include vault info
         const body: Record<string, string> = {
@@ -165,11 +181,11 @@ export function useChat(
           vaultPath: vault.path,
           prompt: text,
         };
-        if (sessionId) {
-          body.sessionId = sessionId;
+        if (currentSessionId) {
+          body.sessionId = currentSessionId;
         }
 
-        log.info(`sendMessage: session=${sessionId ?? "new"}, vault=${vault.id}`);
+        log.info(`sendMessage: session=${currentSessionId ?? "new"}, vault=${vault.id}`);
 
         const response = await fetch(`${apiBase}/chat`, {
           method: "POST",
@@ -215,10 +231,9 @@ export function useChat(
 
             const events = parseSSE(part);
             for (const event of events) {
-              // Handle session_ready to capture session ID
+              // Log session_ready (context update happens via onEvent → useServerMessageHandler)
               if (event.type === "session_ready" && typeof event.sessionId === "string" && event.sessionId) {
                 log.info(`Session ready: ${event.sessionId}`);
-                setSessionId(event.sessionId);
               }
 
               // Handle errors
@@ -290,7 +305,7 @@ export function useChat(
         }
       }
     },
-    [vault, sessionId, apiBase]
+    [vault, apiBase]
   );
 
   /**
@@ -304,9 +319,10 @@ export function useChat(
     }
 
     // Also notify server (best-effort)
-    if (sessionId) {
+    const currentSessionId = sessionIdRef.current;
+    if (currentSessionId) {
       try {
-        await fetch(`${apiBase}/chat/${sessionId}/abort`, {
+        await fetch(`${apiBase}/chat/${currentSessionId}/abort`, {
           method: "POST",
         });
       } catch {
@@ -316,21 +332,22 @@ export function useChat(
 
     setStreamingState("idle");
     onStreamEndRef.current?.();
-  }, [sessionId, apiBase]);
+  }, [apiBase]);
 
   /**
    * Resolves a pending tool permission request.
    */
   const resolvePermission = useCallback(
     async (toolUseId: string, allowed: boolean): Promise<void> => {
-      if (!sessionId) {
+      const currentSessionId = sessionIdRef.current;
+      if (!currentSessionId) {
         log.warn("Cannot resolve permission: no session");
         return;
       }
 
       try {
         const response = await fetch(
-          `${apiBase}/chat/${sessionId}/permission/${toolUseId}`,
+          `${apiBase}/chat/${currentSessionId}/permission/${toolUseId}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -346,7 +363,7 @@ export function useChat(
         log.error("Failed to resolve permission", err);
       }
     },
-    [sessionId, apiBase]
+    [apiBase]
   );
 
   /**
@@ -354,14 +371,15 @@ export function useChat(
    */
   const resolveQuestion = useCallback(
     async (toolUseId: string, answers: Record<string, string>): Promise<void> => {
-      if (!sessionId) {
+      const currentSessionId = sessionIdRef.current;
+      if (!currentSessionId) {
         log.warn("Cannot resolve question: no session");
         return;
       }
 
       try {
         const response = await fetch(
-          `${apiBase}/chat/${sessionId}/answer/${toolUseId}`,
+          `${apiBase}/chat/${currentSessionId}/answer/${toolUseId}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -377,22 +395,18 @@ export function useChat(
         log.error("Failed to resolve question", err);
       }
     },
-    [sessionId, apiBase]
+    [apiBase]
   );
 
-  /**
-   * Clear session on vault change (but not on initial mount).
-   */
+  // Abort in-flight requests on vault change
   const prevVaultIdRef = useRef(vault?.id);
   useEffect(() => {
     if (prevVaultIdRef.current === vault?.id) return;
     prevVaultIdRef.current = vault?.id;
 
-    setSessionId(null);
     setLastError(null);
     setStreamingState("idle");
 
-    // Abort any in-flight request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -415,7 +429,6 @@ export function useChat(
     resolveQuestion,
     streamingState,
     isStreaming: streamingState === "streaming" || streamingState === "starting",
-    sessionId,
     lastError,
   };
 }

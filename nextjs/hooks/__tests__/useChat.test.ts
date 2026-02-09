@@ -1,7 +1,11 @@
 /**
  * Tests for useChat hook
  *
- * Tests SSE streaming, session management, and permission resolution.
+ * Tests two-phase SSE streaming, session management, and permission resolution.
+ *
+ * Two-phase flow:
+ * 1. POST /api/chat returns JSON { sessionId }
+ * 2. GET /api/chat/stream returns SSE (snapshot + live events)
  *
  * Session ID is caller-owned (passed as parameter). useChat reads it
  * via ref so callbacks always use the latest value without recreating.
@@ -48,6 +52,39 @@ function createSSEResponse(events: Array<{ type: string; [key: string]: unknown 
   });
 }
 
+/**
+ * Creates the standard JSON response for POST /api/chat.
+ */
+function createPostResponse(sessionId: string): Response {
+  return new Response(JSON.stringify({ sessionId }), {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Sets up mockFetch to handle the two-phase flow:
+ * 1. First call (POST /api/chat) returns JSON { sessionId }
+ * 2. Second call (GET /api/chat/stream) returns SSE events
+ */
+function setupTwoPhaseResponse(
+  sessionId: string,
+  sseEvents: Array<{ type: string; [key: string]: unknown }>
+): void {
+  let callCount = 0;
+  mockFetch.mockImplementation((...args: unknown[]) => {
+    callCount++;
+    const url = args[0] as string;
+    if (url.endsWith("/chat/stream")) {
+      return Promise.resolve(createSSEResponse(sseEvents));
+    }
+    // POST /api/chat
+    if (callCount === 1 || url.endsWith("/chat")) {
+      return Promise.resolve(createPostResponse(sessionId));
+    }
+    return Promise.resolve(new Response(JSON.stringify({})));
+  });
+}
+
 beforeEach(() => {
   mockFetch.mockReset();
   globalThis.fetch = mockFetch as unknown as typeof fetch;
@@ -90,17 +127,14 @@ describe("useChat", () => {
       expect(onError).toHaveBeenCalledWith("No vault selected");
     });
 
-    it("makes POST request to /api/chat for new session", async () => {
-      mockFetch.mockImplementation(() =>
-        Promise.resolve(
-          createSSEResponse([
-            { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
-            { type: "response_start", messageId: "msg_1" },
-            { type: "response_chunk", messageId: "msg_1", content: "Hello" },
-            { type: "response_end", messageId: "msg_1", durationMs: 100 },
-          ])
-        )
-      );
+    it("makes POST to /api/chat then GET to /api/chat/stream", async () => {
+      setupTwoPhaseResponse("sess_123", [
+        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+        { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
+        { type: "response_start", messageId: "msg_1" },
+        { type: "response_chunk", messageId: "msg_1", content: "Hello" },
+        { type: "response_end", messageId: "msg_1", durationMs: 100 },
+      ]);
 
       const { result } = renderHook(() => useChat(testVault, null));
 
@@ -108,26 +142,34 @@ describe("useChat", () => {
         await result.current.sendMessage("Hello");
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
-      expect(call[0]).toBe("/api/chat");
-      expect(call[1].method).toBe("POST");
+      // Wait for the stream to finish (connectToStream is fire-and-forget)
+      await waitFor(() => {
+        expect(result.current.streamingState).toBe("idle");
+      });
 
-      const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+      // Should have called POST then GET
+      expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+      // First call: POST /api/chat
+      const postCall = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      expect(postCall[0]).toBe("/api/chat");
+      expect(postCall[1].method).toBe("POST");
+
+      const body = JSON.parse(postCall[1].body as string) as Record<string, unknown>;
       expect(body.vaultId).toBe("test-vault");
       expect(body.prompt).toBe("Hello");
       expect(body.sessionId).toBeUndefined();
+
+      // Second call: GET /api/chat/stream
+      const getCall = mockFetch.mock.calls[1] as unknown as [string, RequestInit?];
+      expect(getCall[0]).toBe("/api/chat/stream");
     });
 
-    it("includes sessionId in request when provided", async () => {
-      mockFetch.mockImplementation(() =>
-        Promise.resolve(
-          createSSEResponse([
-            { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
-            { type: "response_end", messageId: "msg_1", durationMs: 100 },
-          ])
-        )
-      );
+    it("includes sessionId in POST request when provided", async () => {
+      setupTwoPhaseResponse("sess_123", [
+        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+        { type: "response_end", messageId: "msg_1", durationMs: 100 },
+      ]);
 
       const { result } = renderHook(() => useChat(testVault, "sess_123"));
 
@@ -135,8 +177,12 @@ describe("useChat", () => {
         await result.current.sendMessage("Continue our conversation");
       });
 
-      const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
-      const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+      await waitFor(() => {
+        expect(result.current.streamingState).toBe("idle");
+      });
+
+      const postCall = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      const body = JSON.parse(postCall[1].body as string) as Record<string, unknown>;
       expect(body.sessionId).toBe("sess_123");
       expect(body.vaultId).toBe("test-vault");
       expect(body.vaultPath).toBe("/path/to/vault");
@@ -144,15 +190,12 @@ describe("useChat", () => {
     });
 
     it("uses latest sessionId via ref when it changes between renders", async () => {
-      // Start with null (new session)
-      mockFetch.mockImplementationOnce(() =>
-        Promise.resolve(
-          createSSEResponse([
-            { type: "session_ready", sessionId: "sess_new", vaultId: "test-vault" },
-            { type: "response_end", messageId: "msg_1", durationMs: 100 },
-          ])
-        )
-      );
+      // First call: new session
+      setupTwoPhaseResponse("sess_new", [
+        { type: "snapshot", sessionId: "sess_new", isProcessing: true },
+        { type: "session_ready", sessionId: "sess_new", vaultId: "test-vault" },
+        { type: "response_end", messageId: "msg_1", durationMs: 100 },
+      ]);
 
       const { result, rerender } = renderHook(
         ({ sessionId }: { sessionId: string | null }) => useChat(testVault, sessionId),
@@ -163,25 +206,38 @@ describe("useChat", () => {
         await result.current.sendMessage("Hello");
       });
 
+      await waitFor(() => {
+        expect(result.current.streamingState).toBe("idle");
+      });
+
       // Simulate context updating session ID (e.g. from session_ready via onEvent)
       rerender({ sessionId: "sess_new" });
 
       // Second message should use the updated session ID
-      mockFetch.mockImplementationOnce(() =>
-        Promise.resolve(
-          createSSEResponse([
-            { type: "response_end", messageId: "msg_2", durationMs: 100 },
-          ])
-        )
-      );
+      setupTwoPhaseResponse("sess_new", [
+        { type: "snapshot", sessionId: "sess_new", isProcessing: true },
+        { type: "response_end", messageId: "msg_2", durationMs: 100 },
+      ]);
 
       await act(async () => {
         await result.current.sendMessage("Follow up");
       });
 
-      const call = mockFetch.mock.calls[1] as unknown as [string, RequestInit];
-      const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
-      expect(body.sessionId).toBe("sess_new");
+      await waitFor(() => {
+        expect(result.current.streamingState).toBe("idle");
+      });
+
+      // Find the second POST call
+      const postCalls = (mockFetch.mock.calls as unknown as [string, RequestInit?][]).filter(
+        (call) => {
+          const opts = call[1];
+          return opts?.method === "POST" && call[0] === "/api/chat";
+        }
+      );
+      expect(postCalls.length).toBe(2);
+
+      const secondPostBody = JSON.parse(postCalls[1][1]!.body as string) as Record<string, unknown>;
+      expect(secondPostBody.sessionId).toBe("sess_new");
     });
 
     it("transitions streaming state correctly", async () => {
@@ -190,14 +246,11 @@ describe("useChat", () => {
         sawStarting = true;
       };
 
-      mockFetch.mockImplementation(() =>
-        Promise.resolve(
-          createSSEResponse([
-            { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
-            { type: "response_end", messageId: "msg_1", durationMs: 100 },
-          ])
-        )
-      );
+      setupTwoPhaseResponse("sess_123", [
+        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+        { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
+        { type: "response_end", messageId: "msg_1", durationMs: 100 },
+      ]);
 
       const { result } = renderHook(() => useChat(testVault, null, { onStreamStart }));
 
@@ -207,26 +260,26 @@ describe("useChat", () => {
         await result.current.sendMessage("Hello");
       });
 
+      await waitFor(() => {
+        expect(result.current.streamingState).toBe("idle");
+      });
+
       expect(sawStarting).toBe(true);
-      expect(result.current.streamingState).toBe("idle");
     });
 
-    it("calls onEvent for each received event", async () => {
+    it("calls onEvent for each received SSE event", async () => {
       const events: unknown[] = [];
       const onEvent = mock((event: unknown) => {
         events.push(event);
       });
 
-      mockFetch.mockImplementation(() =>
-        Promise.resolve(
-          createSSEResponse([
-            { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
-            { type: "response_start", messageId: "msg_1" },
-            { type: "response_chunk", messageId: "msg_1", content: "Hello" },
-            { type: "response_end", messageId: "msg_1", durationMs: 100 },
-          ])
-        )
-      );
+      setupTwoPhaseResponse("sess_123", [
+        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+        { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
+        { type: "response_start", messageId: "msg_1" },
+        { type: "response_chunk", messageId: "msg_1", content: "Hello" },
+        { type: "response_end", messageId: "msg_1", durationMs: 100 },
+      ]);
 
       const { result } = renderHook(() => useChat(testVault, null, { onEvent }));
 
@@ -234,24 +287,27 @@ describe("useChat", () => {
         await result.current.sendMessage("Hello");
       });
 
-      expect(onEvent).toHaveBeenCalledTimes(4);
-      expect(events[0]).toMatchObject({ type: "session_ready" });
-      expect(events[1]).toMatchObject({ type: "response_start" });
-      expect(events[2]).toMatchObject({ type: "response_chunk" });
-      expect(events[3]).toMatchObject({ type: "response_end" });
+      await waitFor(() => {
+        expect(result.current.streamingState).toBe("idle");
+      });
+
+      // snapshot + session_ready + response_start + response_chunk + response_end
+      expect(onEvent).toHaveBeenCalledTimes(5);
+      expect(events[0]).toMatchObject({ type: "snapshot" });
+      expect(events[1]).toMatchObject({ type: "session_ready" });
+      expect(events[2]).toMatchObject({ type: "response_start" });
+      expect(events[3]).toMatchObject({ type: "response_chunk" });
+      expect(events[4]).toMatchObject({ type: "response_end" });
     });
 
     it("calls onStreamStart and onStreamEnd", async () => {
       const onStreamStart = mock(() => {});
       const onStreamEnd = mock(() => {});
 
-      mockFetch.mockImplementation(() =>
-        Promise.resolve(
-          createSSEResponse([
-            { type: "response_end", messageId: "msg_1", durationMs: 100 },
-          ])
-        )
-      );
+      setupTwoPhaseResponse("sess_123", [
+        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+        { type: "response_end", messageId: "msg_1", durationMs: 100 },
+      ]);
 
       const { result } = renderHook(() =>
         useChat(testVault, null, { onStreamStart, onStreamEnd })
@@ -261,16 +317,21 @@ describe("useChat", () => {
         await result.current.sendMessage("Hello");
       });
 
+      await waitFor(() => {
+        expect(result.current.streamingState).toBe("idle");
+      });
+
       expect(onStreamStart).toHaveBeenCalledTimes(1);
       expect(onStreamEnd).toHaveBeenCalledTimes(1);
     });
 
-    it("handles HTTP errors", async () => {
+    it("handles HTTP errors from POST", async () => {
       mockFetch.mockImplementation(() =>
         Promise.resolve(
-          new Response(JSON.stringify({ error: "Vault not found" }), {
-            status: 404,
-          })
+          new Response(
+            JSON.stringify({ error: { code: "NOT_FOUND", message: "Vault not found" } }),
+            { status: 404 }
+          )
         )
       );
 
@@ -286,16 +347,39 @@ describe("useChat", () => {
       expect(onError).toHaveBeenCalledWith("Vault not found");
     });
 
-    it("handles SSE error events", async () => {
-      const onError = mock(() => {});
-
+    it("handles 409 conflict (already processing)", async () => {
       mockFetch.mockImplementation(() =>
         Promise.resolve(
-          createSSEResponse([
-            { type: "error", code: "SDK_ERROR", message: "Something went wrong" },
-          ])
+          new Response(
+            JSON.stringify({
+              error: { code: "ALREADY_PROCESSING", message: "Processing in progress" },
+            }),
+            { status: 409 }
+          )
         )
       );
+
+      const onError = mock(() => {});
+      const { result } = renderHook(() => useChat(testVault, null, { onError }));
+
+      await act(async () => {
+        await result.current.sendMessage("Hello");
+      });
+
+      expect(result.current.lastError).toBe("Processing in progress");
+      expect(result.current.streamingState).toBe("error");
+      expect(onError).toHaveBeenCalledWith("Processing in progress");
+      // Should NOT have attempted to connect to stream
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("handles SSE error events from stream", async () => {
+      const onError = mock(() => {});
+
+      setupTwoPhaseResponse("sess_123", [
+        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+        { type: "error", code: "SDK_ERROR", message: "Something went wrong" },
+      ]);
 
       const { result } = renderHook(() => useChat(testVault, null, { onError }));
 
@@ -303,34 +387,74 @@ describe("useChat", () => {
         await result.current.sendMessage("Hello");
       });
 
-      expect(result.current.lastError).toBe("Something went wrong");
+      await waitFor(() => {
+        expect(result.current.lastError).toBe("Something went wrong");
+      });
+
       expect(onError).toHaveBeenCalledWith("Something went wrong");
+    });
+
+    it("forwards snapshot event via onEvent", async () => {
+      const events: unknown[] = [];
+      const onEvent = mock((event: unknown) => {
+        events.push(event);
+      });
+
+      setupTwoPhaseResponse("sess_123", [
+        { type: "snapshot", sessionId: "sess_123", isProcessing: true, conversationHistory: [] },
+      ]);
+
+      const { result } = renderHook(() => useChat(testVault, null, { onEvent }));
+
+      await act(async () => {
+        await result.current.sendMessage("Hello");
+      });
+
+      await waitFor(() => {
+        expect(result.current.streamingState).toBe("idle");
+      });
+
+      expect(events[0]).toMatchObject({
+        type: "snapshot",
+        sessionId: "sess_123",
+        isProcessing: true,
+      });
     });
   });
 
   describe("abort", () => {
-    it("aborts in-flight requests", async () => {
-      mockFetch.mockImplementation(
-        () =>
-          new Promise((resolve) => {
+    it("sends abort to server first, then closes stream", async () => {
+      // Set up a long-running stream
+      mockFetch.mockImplementation((...args: unknown[]) => {
+        const url = args[0] as string;
+        if (url.endsWith("/chat/stream")) {
+          return new Promise<Response>((resolve) => {
             setTimeout(
               () =>
                 resolve(
                   createSSEResponse([
+                    { type: "snapshot", sessionId: "sess_123", isProcessing: true },
                     { type: "response_end", messageId: "msg_1", durationMs: 100 },
                   ])
                 ),
               1000
             );
-          })
-      );
+          });
+        }
+        if (url.endsWith("/abort")) {
+          return Promise.resolve(new Response(JSON.stringify({ success: true })));
+        }
+        // POST /api/chat
+        return Promise.resolve(createPostResponse("sess_123"));
+      });
 
-      const { result } = renderHook(() => useChat(testVault, null));
+      const { result } = renderHook(() => useChat(testVault, "sess_123"));
 
       act(() => {
         void result.current.sendMessage("Hello");
       });
 
+      // Wait for streaming to start (POST completes, connectToStream fires)
       await waitFor(() => {
         expect(result.current.isStreaming).toBe(true);
       });
@@ -344,7 +468,6 @@ describe("useChat", () => {
     });
 
     it("sends abort request to server when session exists", async () => {
-      // Session ID is passed as parameter, no need to establish via message
       mockFetch.mockImplementation(() =>
         Promise.resolve(new Response(JSON.stringify({ success: true })))
       );
@@ -355,7 +478,8 @@ describe("useChat", () => {
         await result.current.abort();
       });
 
-      expect(mockFetch).toHaveBeenLastCalledWith(
+      // The abort should call the server endpoint
+      expect(mockFetch).toHaveBeenCalledWith(
         "/api/chat/sess_123/abort",
         expect.objectContaining({ method: "POST" })
       );
@@ -413,16 +537,19 @@ describe("useChat", () => {
 
   describe("vault change", () => {
     it("resets state when vault changes", async () => {
+      // Set up the POST to fail so we get an error state
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ error: { code: "FAIL", message: "fail" } }),
+            { status: 500 }
+          )
+        )
+      );
+
       const { result, rerender } = renderHook(
         ({ vault }: { vault: VaultInfo | null }) => useChat(vault, null),
         { initialProps: { vault: testVault } }
-      );
-
-      // Set an error state first
-      mockFetch.mockImplementation(() =>
-        Promise.resolve(
-          new Response(JSON.stringify({ error: "fail" }), { status: 500 })
-        )
       );
 
       await act(async () => {

@@ -16,13 +16,14 @@ import {
   type ActiveSessionController,
   type SessionEvent,
   type SessionState,
+  type SessionSnapshot,
   type PendingPrompt,
   type PromptResponse,
 } from "@/lib/streaming";
 import { initializeSdkProvider } from "@/lib/sdk-provider";
 
 // Re-export types for use in route handlers
-export type { SessionEvent, SessionState, PendingPrompt, PromptResponse };
+export type { SessionEvent, SessionState, SessionSnapshot, PendingPrompt, PromptResponse };
 
 // Attach singleton to globalThis so it survives Next.js dev mode module reloading
 const globalForController = globalThis as unknown as {

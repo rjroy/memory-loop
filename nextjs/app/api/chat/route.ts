@@ -1,7 +1,7 @@
 /**
- * SSE Chat Endpoint
+ * Chat Send Endpoint
  *
- * POST /api/chat - Start or continue a chat session
+ * POST /api/chat - Submit a message to the controller (fire-and-forget)
  *
  * Request body:
  * - vaultId: string (required)
@@ -9,18 +9,18 @@
  * - sessionId: string (optional, resume if provided)
  * - prompt: string (required)
  *
- * Response: Server-Sent Events stream
+ * Response: JSON with { sessionId } on success.
+ * Clients connect to GET /api/chat/stream to receive SSE events.
  */
 
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { getController, type SessionEvent } from "@/lib/controller";
-import { encodeSSE, SSE_HEADERS } from "@/lib/sse";
+import { getController } from "@/lib/controller";
+import { AlreadyProcessingError } from "@/lib/streaming";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("api/chat");
 
-// Request schema
 const ChatRequestSchema = z.object({
   vaultId: z.string().min(1, "vaultId is required"),
   vaultPath: z.string().min(1, "vaultPath is required"),
@@ -29,101 +29,61 @@ const ChatRequestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  // Parse and validate request
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+    return Response.json(
+      { error: { code: "INVALID_JSON", message: "Invalid JSON" } },
+      { status: 400 }
+    );
   }
 
   const result = ChatRequestSchema.safeParse(body);
   if (!result.success) {
     return Response.json(
-      { error: result.error.issues[0]?.message ?? "Invalid request" },
+      {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: result.error.issues[0]?.message ?? "Invalid request",
+        },
+      },
       { status: 400 }
     );
   }
 
   const { vaultId, vaultPath, sessionId, prompt } = result.data;
-
   const controller = getController();
 
-  // Shared cleanup function - called on terminal events or client disconnect
-  let unsubscribe: (() => void) | null = null;
-  let isClosing = false;
+  try {
+    await controller.sendMessage({
+      vaultId,
+      vaultPath,
+      sessionId: sessionId ?? null,
+      prompt,
+    });
 
-  function cleanup() {
-    if (isClosing) return;
-    isClosing = true;
-    unsubscribe?.();
+    // sendMessage returns immediately (fire-and-forget). Get state for response.
+    const state = controller.getState();
+    return Response.json({ sessionId: state.sessionId });
+  } catch (err) {
+    if (err instanceof AlreadyProcessingError) {
+      return Response.json(
+        { error: { code: err.code, message: err.message } },
+        { status: 409 }
+      );
+    }
+
+    log.error("Chat request failed", err);
+    return Response.json(
+      {
+        error: {
+          code: "INTERNAL_ERROR",
+          message:
+            err instanceof Error ? err.message : "Internal error",
+        },
+      },
+      { status: 500 }
+    );
   }
-
-  // Create SSE stream
-  const stream = new ReadableStream({
-    start(streamController) {
-      // Subscribe to controller events
-      unsubscribe = controller.subscribe((event: SessionEvent) => {
-        if (isClosing) return;
-
-        try {
-          streamController.enqueue(encodeSSE(event));
-
-          // Close stream on terminal events
-          if (
-            event.type === "response_end" ||
-            event.type === "error" ||
-            event.type === "session_cleared"
-          ) {
-            cleanup();
-            try {
-              streamController.close();
-            } catch {
-              // Already closed
-            }
-          }
-        } catch {
-          // Stream closed by client (tab switch, navigation, etc.)
-          cleanup();
-        }
-      });
-
-      // Send message (creates new session or resumes existing)
-      void (async () => {
-        try {
-          await controller.sendMessage({
-            vaultId,
-            vaultPath,
-            sessionId: sessionId ?? null,
-            prompt,
-          });
-        } catch (err) {
-          if (isClosing) return;
-          log.error("Session error", err);
-          try {
-            streamController.enqueue(
-              encodeSSE({
-                type: "error",
-                code: "SDK_ERROR",
-                message: err instanceof Error ? err.message : "Session failed",
-              })
-            );
-            streamController.close();
-          } catch {
-            // Stream already closed
-          }
-          cleanup();
-        }
-      })();
-    },
-
-    // Called when the client disconnects (tab switch, navigation, abort)
-    cancel() {
-      cleanup();
-    },
-  });
-
-  return new Response(stream, {
-    headers: SSE_HEADERS,
-  });
 }

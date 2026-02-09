@@ -15,6 +15,7 @@ import type { VaultInfo, ConversationMessage, SlashCommand } from "@/lib/schemas
 import type {
   SessionEvent,
   SessionState,
+  SessionSnapshot,
   PendingPrompt,
   PromptResponse,
   SessionEventCallback,
@@ -22,8 +23,9 @@ import type {
   PendingQuestionRequest,
   ActiveSessionController as IActiveSessionController,
 } from "./types";
-import type { StreamerState, StreamerEmitter } from "./session-streamer";
-import { streamSdkEvents } from "./session-streamer";
+import { AlreadyProcessingError } from "./types";
+import type { StreamerState, StreamerEmitter, StreamerHandle } from "./session-streamer";
+import { startStreamSdkEvents } from "./session-streamer";
 import {
   createSession as sdkCreateSession,
   resumeSession as sdkResumeSession,
@@ -55,7 +57,10 @@ export function createActiveSessionController(): IActiveSessionController {
   let currentVaultPath: string | null = null;
   let queryResult: SessionQueryResult | null = null;
   let isStreamingActive = false;
+  let isProcessing = false;
   let abortController: AbortController | null = null;
+  let currentStreamerHandle: StreamerHandle | null = null;
+  let currentGeneration = 0;
 
   // Streaming state (mutable, passed to streamer)
   const streamerState: StreamerState = {
@@ -164,24 +169,49 @@ export function createActiveSessionController(): IActiveSessionController {
   }
 
   /**
-   * Cleans up stale state from a previous query without emitting events.
-   * Called before starting a new query to ensure a clean slate.
+   * Internal clear session logic. Terminates the SDK process, discards
+   * pending prompts, resets all state, and emits session_cleared.
+   *
+   * Used by both the public clearSession() method and sendMessage()
+   * when a new session replaces an active one.
    */
-  function resetQueryState(): void {
-    if (queryResult) {
-      try {
-        queryResult.close();
-      } catch (err) {
-        log.warn("Failed to close previous query", err);
-      }
-      queryResult = null;
-    }
+  function performClearSession(): void {
+    log.info("Clearing session");
+
+    // Abort any active streaming
     if (abortController) {
       abortController.abort();
       abortController = null;
     }
+
+    // Close the SDK query to terminate the child process
+    if (queryResult) {
+      try {
+        queryResult.close();
+      } catch (err) {
+        log.warn("Failed to close query", err);
+      }
+      queryResult = null;
+    }
+
+    // Discard pending prompts (REQ-5)
     discardPendingPrompts();
+
+    // Reset state
+    currentSessionId = null;
+    currentVaultId = null;
+    currentVaultPath = null;
+    streamerState.cumulativeTokens = 0;
+    streamerState.contextWindow = null;
     isStreamingActive = false;
+    isProcessing = false;
+    currentStreamerHandle = null;
+    slashCommands = [];
+
+    // Invalidate any running generation so its finally block skips cleanup
+    currentGeneration++;
+
+    emit({ type: "session_cleared" });
   }
 
   /**
@@ -189,7 +219,8 @@ export function createActiveSessionController(): IActiveSessionController {
    *
    * This is the single code path for both new and resumed sessions.
    * The only difference is whether session_ready includes createdAt
-   * (new) or messages (resume).
+   * (new) or messages (resume). Processing continues independently
+   * after sendMessage() kicks it off (fire-and-forget).
    */
   async function runStreaming(
     vaultId: string,
@@ -203,7 +234,13 @@ export function createActiveSessionController(): IActiveSessionController {
     currentVaultId = vaultId;
     currentVaultPath = vaultPath;
     isStreamingActive = true;
+    isProcessing = true;
     abortController = new AbortController();
+    currentGeneration++;
+    const gen = currentGeneration;
+
+    let messageId = "";
+    let queryStartTime = 0;
 
     try {
       // Fetch slash commands for both new and resumed sessions
@@ -253,19 +290,20 @@ export function createActiveSessionController(): IActiveSessionController {
       });
 
       // Start response streaming
-      const messageId = generateMessageId();
-      const queryStartTime = Date.now();
+      messageId = generateMessageId();
+      queryStartTime = Date.now();
 
       emit({ type: "response_start", messageId });
 
       // Stream SDK events
-      const streamResult = await streamSdkEvents(
+      currentStreamerHandle = startStreamSdkEvents(
         result.events,
         messageId,
         emitter,
         streamerState,
         abortController.signal
       );
+      const streamResult = await currentStreamerHandle.result;
 
       const durationMs = Date.now() - queryStartTime;
       log.info(`Query completed in ${durationMs}ms`);
@@ -277,7 +315,7 @@ export function createActiveSessionController(): IActiveSessionController {
         durationMs,
       });
 
-      // Persist assistant message
+      // Persist assistant message on normal completion
       if (
         streamResult.content.length > 0 ||
         streamResult.toolInvocations.length > 0
@@ -303,18 +341,50 @@ export function createActiveSessionController(): IActiveSessionController {
         code: "SDK_ERROR",
         message: err instanceof Error ? err.message : "Streaming failed",
       });
-    } finally {
-      isStreamingActive = false;
-      abortController = null;
 
-      if (queryResult) {
-        try {
-          queryResult.close();
-        } catch (err) {
-          log.warn("Failed to close query", err);
+      // Persist partial result from snapshot on error/abort
+      if (messageId && queryStartTime) {
+        const snapshot = currentStreamerHandle?.getSnapshot();
+        if (snapshot && (snapshot.content.length > 0 || snapshot.toolInvocations.length > 0)) {
+          try {
+            const durationMs = Date.now() - queryStartTime;
+            emit({ type: "response_end", messageId, contextUsage: snapshot.contextUsage, durationMs });
+            const assistantMessage: ConversationMessage = {
+              id: messageId,
+              role: "assistant",
+              content: snapshot.content,
+              timestamp: new Date().toISOString(),
+              toolInvocations:
+                snapshot.toolInvocations.length > 0
+                  ? snapshot.toolInvocations
+                  : undefined,
+              contextUsage: snapshot.contextUsage,
+              durationMs,
+            };
+            await sdkAppendMessage(vaultPath, result.sessionId, assistantMessage);
+          } catch (persistErr) {
+            log.error("Failed to persist partial result", persistErr);
+          }
         }
       }
-      queryResult = null;
+    } finally {
+      if (gen === currentGeneration) {
+        isProcessing = false;
+        isStreamingActive = false;
+        abortController = null;
+        currentStreamerHandle = null;
+
+        if (queryResult) {
+          try {
+            queryResult.close();
+          } catch (err) {
+            log.warn("Failed to close query", err);
+          }
+        }
+        queryResult = null;
+      } else {
+        log.warn(`Stale generation ${gen} (current: ${currentGeneration}), skipping cleanup`);
+      }
     }
   }
 
@@ -330,8 +400,15 @@ export function createActiveSessionController(): IActiveSessionController {
         `isNew=${isNewSession}`
       );
 
-      // Clean up stale state from any previous query
-      resetQueryState();
+      // REQ-SDC-2: Reject messages during processing for same session
+      if (isProcessing && sessionId) {
+        throw new AlreadyProcessingError();
+      }
+
+      // REQ-SDC-6: New session clears existing processing
+      if (isProcessing && !sessionId) {
+        performClearSession();
+      }
 
       try {
         const permCallback = createToolPermissionCallback();
@@ -374,8 +451,17 @@ export function createActiveSessionController(): IActiveSessionController {
           });
         }
 
-        await runStreaming(vaultId, vaultPath, prompt, result, isNewSession);
+        // Set session identity before fire-and-forget so getState().sessionId
+        // is available to callers immediately after sendMessage() returns.
+        currentSessionId = result.sessionId;
+        currentVaultId = vaultId;
+        currentVaultPath = vaultPath;
+
+        // Fire and forget - processing continues independently.
+        // runStreaming has its own try/catch for streaming errors.
+        void runStreaming(vaultId, vaultPath, prompt, result, isNewSession);
       } catch (err) {
+        // Only catches SDK session creation errors now
         log.error("sendMessage failed", err);
         emit({
           type: "error",
@@ -385,38 +471,36 @@ export function createActiveSessionController(): IActiveSessionController {
       }
     },
 
-    // eslint-disable-next-line @typescript-eslint/require-await -- interface requires Promise<void> for callers that await it
-    async clearSession(): Promise<void> {
-      log.info("Clearing session");
+    clearSession(): void {
+      performClearSession();
+    },
 
-      // Abort any active streaming
+    abortProcessing(): void {
+      log.info("Aborting processing");
+
+      if (!isProcessing) {
+        log.warn("No active processing to abort");
+        return;
+      }
+
+      // Interrupt the SDK cleanly (not close, which kills the process)
+      if (queryResult) {
+        try {
+          queryResult.interrupt().catch((err: unknown) => {
+            log.error("Async interrupt failed", err);
+          });
+        } catch (err) {
+          log.warn("Failed to interrupt query", err);
+        }
+      }
+
+      // Signal the streamer loop to exit
       if (abortController) {
         abortController.abort();
       }
 
-      // Close the SDK query to terminate the child process
-      if (queryResult) {
-        try {
-          queryResult.close();
-        } catch (err) {
-          log.warn("Failed to close query", err);
-        }
-        queryResult = null;
-      }
-
-      // Discard pending prompts (REQ-5)
+      // Discard pending prompts
       discardPendingPrompts();
-
-      // Reset state
-      currentSessionId = null;
-      currentVaultId = null;
-      currentVaultPath = null;
-      streamerState.cumulativeTokens = 0;
-      streamerState.contextWindow = null;
-      isStreamingActive = false;
-      slashCommands = [];
-
-      emit({ type: "session_cleared" });
     },
 
     subscribe(callback: SessionEventCallback): () => void {
@@ -451,6 +535,28 @@ export function createActiveSessionController(): IActiveSessionController {
         contextWindow: streamerState.contextWindow,
         activeModel: streamerState.activeModel,
         isStreaming: isStreamingActive,
+      };
+    },
+
+    getSnapshot(): SessionSnapshot {
+      const streamerSnapshot = currentStreamerHandle?.getSnapshot();
+      const prompts: PendingPrompt[] = [];
+      for (const request of pendingPermissions.values()) {
+        prompts.push(request.prompt);
+      }
+      for (const request of pendingQuestions.values()) {
+        prompts.push(request.prompt);
+      }
+
+      return {
+        sessionId: currentSessionId,
+        isProcessing,
+        content: streamerSnapshot?.content ?? "",
+        toolInvocations: streamerSnapshot?.toolInvocations ?? [],
+        pendingPrompts: prompts,
+        contextUsage: streamerSnapshot?.contextUsage,
+        cumulativeTokens: streamerState.cumulativeTokens,
+        contextWindow: streamerState.contextWindow,
       };
     },
 
@@ -514,7 +620,7 @@ export function getActiveSessionController(): IActiveSessionController {
  */
 export function resetActiveSessionController(): void {
   if (controller) {
-    void controller.clearSession();
+    controller.clearSession();
   }
   controller = null;
 }

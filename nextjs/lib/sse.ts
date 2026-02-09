@@ -4,13 +4,15 @@
  * Helper functions for Server-Sent Events streaming.
  */
 
-import type { SessionEvent } from "./controller";
-
 /**
- * Encodes a SessionEvent as an SSE message.
+ * Encodes an object as an SSE message.
  * Format: "data: {json}\n\n"
+ *
+ * Accepts any object rather than a specific event type so it can
+ * encode both SessionEvent payloads and snapshot payloads without
+ * maintaining a union of every possible shape.
  */
-export function encodeSSE(event: SessionEvent): Uint8Array {
+export function encodeSSE(event: object): Uint8Array {
   const encoder = new TextEncoder();
   const data = `data: ${JSON.stringify(event)}\n\n`;
   return encoder.encode(data);

@@ -353,6 +353,13 @@ export function SessionProvider({
     dispatch({ type: "SET_LAST_MESSAGE_DURATION", durationMs });
   }, []);
 
+  const replaceLastMessageContent = useCallback(
+    (content: string, isStreaming: boolean) => {
+      dispatch({ type: "REPLACE_LAST_MESSAGE_CONTENT", content, isStreaming });
+    },
+    []
+  );
+
   // Search actions
   const setSearchActive = useCallback((isActive: boolean) => {
     dispatch({ type: "SET_SEARCH_ACTIVE", isActive });
@@ -457,6 +464,7 @@ export function SessionProvider({
     setSlashCommands,
     setLastMessageContextUsage,
     setLastMessageDuration,
+    replaceLastMessageContent,
     setSearchActive,
     setSearchMode,
     setSearchQuery,
@@ -500,6 +508,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     setMessages,
     addMessage,
     updateLastMessage,
+    replaceLastMessageContent,
     setPendingSessionId,
     setSlashCommands,
     setLastMessageContextUsage,
@@ -584,8 +593,44 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         // Note: search_results, snippets, index_progress, pinned_assets, meeting_started,
         // meeting_stopped, meeting_state handlers removed - now handled by REST API hooks
 
-        default:
+        default: {
+          // Handle snapshot event (not in ServerMessage union, sent by SSE stream endpoint)
+          const rawMessage = message as unknown as Record<string, unknown>;
+          if (rawMessage.type === "snapshot") {
+            // Restore session ID
+            if (typeof rawMessage.sessionId === "string" && rawMessage.sessionId) {
+              setSessionId(rawMessage.sessionId);
+              setPendingSessionId(null);
+            }
+
+            // Restore accumulated content as assistant message
+            const content = typeof rawMessage.content === "string" ? rawMessage.content : "";
+            const isStillProcessing = !!rawMessage.isProcessing;
+
+            if (content) {
+              const currentMessages = messagesRef.current;
+              const lastMessage = currentMessages[currentMessages.length - 1];
+
+              if (lastMessage?.role === "assistant" && lastMessage.isStreaming) {
+                // Replace existing streaming message with snapshot content
+                replaceLastMessageContent(content, isStillProcessing);
+              } else {
+                // Add new assistant message from snapshot
+                addMessage({
+                  role: "assistant",
+                  content,
+                  isStreaming: isStillProcessing,
+                });
+              }
+            }
+
+            // Restore context usage
+            if (typeof rawMessage.contextUsage === "number") {
+              setLastMessageContextUsage(rawMessage.contextUsage);
+            }
+          }
           break;
+        }
       }
     },
     [
@@ -594,6 +639,7 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
       setMessages,
       addMessage,
       updateLastMessage,
+      replaceLastMessageContent,
       setPendingSessionId,
       setSlashCommands,
       setLastMessageContextUsage,

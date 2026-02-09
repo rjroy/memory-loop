@@ -11,11 +11,15 @@ export type {
   PendingPrompt,
   PromptResponse,
   SessionState,
+  SessionSnapshot,
   SessionEventCallback,
   ActiveSessionController,
   PendingPermissionRequest,
   PendingQuestionRequest,
 } from "./types";
+
+// Errors
+export { AlreadyProcessingError } from "./types";
 
 // Controller
 export {
@@ -25,5 +29,5 @@ export {
 } from "./active-session-controller";
 
 // Streamer utilities (for direct use if needed)
-export type { StreamingResult, StreamerState, StreamerEmitter } from "./session-streamer";
-export { streamSdkEvents } from "./session-streamer";
+export type { StreamingResult, StreamerState, StreamerEmitter, StreamerHandle } from "./session-streamer";
+export { streamSdkEvents, startStreamSdkEvents } from "./session-streamer";

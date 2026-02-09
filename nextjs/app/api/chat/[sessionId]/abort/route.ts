@@ -37,8 +37,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  // Clear session (which aborts streaming)
-  await controller.clearSession();
+  // Abort processing, persist partial result. Session remains valid.
+  controller.abortProcessing();
 
   return Response.json({ success: true, aborted: true });
 }

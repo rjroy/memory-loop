@@ -264,6 +264,8 @@ export interface SessionActions {
   setLastMessageContextUsage: (contextUsage: number) => void;
   /** Set turn duration on the last assistant message */
   setLastMessageDuration: (durationMs: number) => void;
+  /** Replace (not append) content of the last assistant message. Used by snapshot restore. */
+  replaceLastMessageContent: (content: string, isStreaming: boolean) => void;
   // Search actions
   /** Activate or deactivate search mode */
   setSearchActive: (isActive: boolean) => void;

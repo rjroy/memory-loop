@@ -70,7 +70,7 @@ export function useFileUpload(vaultId: string | undefined): UseFileUploadResult 
         const formData = new FormData();
         formData.append("file", file);
 
-        const response = await fetch(`/vault/${vaultId}/upload`, {
+        const response = await fetch(`/api/vaults/${vaultId}/upload`, {
           method: "POST",
           body: formData,
         });

@@ -99,7 +99,7 @@ describe("useFileUpload", () => {
 
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       const [url, options] = fetchSpy.mock.calls[0] as [string, RequestInit];
-      expect(url).toBe(`/vault/${mockVaultId}/upload`);
+      expect(url).toBe(`/api/vaults/${mockVaultId}/upload`);
       expect(options.method).toBe("POST");
       expect(options.body).toBeInstanceOf(FormData);
 

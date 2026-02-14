@@ -52,5 +52,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   return NextResponse.json({
     success: true,
     path: result.path,
+    converted: result.converted,
+    originalFormat: result.originalFormat,
   });
 }

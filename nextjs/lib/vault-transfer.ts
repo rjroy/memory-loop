@@ -15,7 +15,6 @@ import {
   discoverVaults,
   getVaultById,
   directoryExists,
-  fileExists,
 } from "./vault-manager";
 import { isPathWithinVault } from "./file-browser";
 
@@ -175,23 +174,34 @@ export async function transferFile(
     );
   }
 
-  // Check target doesn't exist (unless overwrite is enabled)
-  // Also reject symlinks at target to prevent writing outside vault boundary
-  const targetExists = await fileExists(targetFullPath);
-  if (targetExists) {
-    if (!overwrite) {
-      throw new VaultTransferError(
-        `Target file "${targetPath}" already exists in vault "${targetVaultId}". Set overwrite=true to replace.`,
-        "TARGET_EXISTS"
-      );
+  // Check if anything exists at target path (including broken symlinks)
+  // Use lstat instead of stat/fileExists to detect symlinks even if target is broken
+  let targetStats;
+  try {
+    targetStats = await lstat(targetFullPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
     }
-    // When overwriting, verify target isn't a symlink (could write outside vault)
-    const targetStats = await lstat(targetFullPath);
+    // Path doesn't exist at all - safe to proceed
+    targetStats = null;
+  }
+
+  if (targetStats) {
+    // Reject symlinks regardless of overwrite setting (prevent writing outside vault)
     if (targetStats.isSymbolicLink()) {
       log.warn(`Target symlink rejected: ${targetPath}`);
       throw new VaultTransferError(
         `Target path "${targetPath}" is a symbolic link and cannot be overwritten`,
         "PATH_TRAVERSAL"
+      );
+    }
+
+    // Regular file exists - check overwrite permission
+    if (!overwrite) {
+      throw new VaultTransferError(
+        `Target file "${targetPath}" already exists in vault "${targetVaultId}". Set overwrite=true to replace.`,
+        "TARGET_EXISTS"
       );
     }
   }

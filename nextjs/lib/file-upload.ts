@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import { isPathWithinVault } from "./file-browser";
 import { directoryExists } from "./vault-manager";
 import { createLogger } from "./logger";
+import { convertToWebp } from "./utils/image-converter";
 
 const log = createLogger("FileUpload");
 
@@ -59,6 +60,10 @@ export interface FileUploadResult {
   path?: string;
   /** Error message (on failure) */
   error?: string;
+  /** Whether image conversion was performed (REQ-IMAGE-WEBP-14) */
+  converted?: boolean;
+  /** Original format for converted images (REQ-IMAGE-WEBP-14) */
+  originalFormat?: string;
 }
 
 /**
@@ -154,8 +159,27 @@ export async function uploadFile(
     };
   }
 
-  // Generate unique filename
-  const filename = generateFilename(ext);
+  // Check if file is an image and should be converted (REQ-IMAGE-WEBP-6)
+  const category = getFileCategory(ext);
+  let finalBuffer = fileBuffer;
+  let finalExtension = ext;
+  let converted = false;
+  let originalFormat: string | undefined;
+
+  if (category === "image" && ext !== ".svg") {
+    // Convert raster images to WebP
+    const conversionResult = await convertToWebp(fileBuffer, originalFilename);
+    finalBuffer = conversionResult.buffer;
+    converted = conversionResult.converted;
+    originalFormat = conversionResult.originalFormat;
+
+    if (converted) {
+      finalExtension = ".webp";
+    }
+  }
+
+  // Generate unique filename with final extension
+  const filename = generateFilename(finalExtension);
   const relativePath = join(attachmentPath, filename);
   const fullPath = join(contentRoot, relativePath);
 
@@ -189,11 +213,13 @@ export async function uploadFile(
 
   // Write file
   try {
-    await writeFile(fullPath, fileBuffer);
-    log.info(`File uploaded successfully: ${relativePath}`);
+    await writeFile(fullPath, finalBuffer);
+    log.info(`File uploaded successfully: ${relativePath}${converted ? ` (converted from ${originalFormat})` : ""}`);
     return {
       success: true,
       path: relativePath,
+      converted,
+      originalFormat,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

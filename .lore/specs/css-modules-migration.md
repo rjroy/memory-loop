@@ -1,12 +1,14 @@
 ---
 title: CSS Modules migration for Memory Loop
 date: 2026-02-14
-status: draft
-tags: [css, css-modules, styling, refactor, dead-css-detection]
+status: superseded
+tags: [css, css-modules, styling, refactor, dead-css-detection, aborted]
 modules: [components, styles]
-related: [.lore/brainstorm/css-modules-migration.md]
+related: [.lore/brainstorm/css-modules-migration.md, .lore/retros/css-modules-migration-failure.md]
 req-prefix: CSS-MOD
 ---
+
+> **Note**: This migration was attempted on 2026-02-14 but aborted due to implementation failures. See `.lore/retros/css-modules-migration-failure.md` for lessons learned.
 
 # Spec: CSS Modules Migration
 

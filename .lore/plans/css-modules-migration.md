@@ -1,11 +1,13 @@
 ---
 title: CSS Modules migration implementation plan
 date: 2026-02-14
-status: draft
-tags: [css, css-modules, refactor, implementation-plan]
+status: superseded
+tags: [css, css-modules, refactor, implementation-plan, aborted]
 modules: [components, styles]
-related: [.lore/specs/css-modules-migration.md, .lore/brainstorm/css-modules-migration.md]
+related: [.lore/specs/css-modules-migration.md, .lore/brainstorm/css-modules-migration.md, .lore/retros/css-modules-migration-failure.md]
 ---
+
+> **Note**: This plan was executed on 2026-02-14 but the migration was aborted due to implementation failures. See `.lore/retros/css-modules-migration-failure.md` for lessons learned.
 
 # Plan: CSS Modules Migration
 

@@ -10,16 +10,24 @@
  * imports that appear after the return.
  */
 
-export async function register() {
+export async function register(
+  deps: {
+    checkCwebpAvailability?: () => Promise<boolean>;
+    bootstrapSchedulers?: (log: ReturnType<typeof import("@/lib/logger").createLogger>) => Promise<void>;
+  } = {}
+) {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { createLogger } = await import("@/lib/logger");
     const log = createLogger("instrumentation");
 
+    // Check cwebp binary availability on startup (REQ-IMAGE-WEBP-15)
+    const checkCwebpAvailability = deps.checkCwebpAvailability ?? (await import("@/lib/utils/image-converter")).checkCwebpAvailability;
+    await checkCwebpAvailability();
+    // Server continues regardless of result (REQ-IMAGE-WEBP-16)
+
     if (process.env.NODE_ENV === "production") {
       try {
-        const { bootstrapSchedulers } = await import(
-          "@/lib/scheduler-bootstrap"
-        );
+        const bootstrapSchedulers = deps.bootstrapSchedulers ?? (await import("@/lib/scheduler-bootstrap")).bootstrapSchedulers;
         await bootstrapSchedulers(log);
       } catch (error: unknown) {
         log.error("Failed to bootstrap schedulers", error);

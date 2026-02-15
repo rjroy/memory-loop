@@ -266,6 +266,14 @@ export interface SessionActions {
   setLastMessageDuration: (durationMs: number) => void;
   /** Replace (not append) content of the last assistant message. Used by snapshot restore. */
   replaceLastMessageContent: (content: string, isStreaming: boolean) => void;
+  /** Ensure a streaming assistant message exists (no-op if one already exists). Race-safe. */
+  ensureStreamingMessage: () => void;
+  /** Append a text chunk to the streaming assistant message (creates one if needed). Race-safe. */
+  appendStreamingChunk: (content: string) => void;
+  /** Set messages only if the current message list is empty. Race-safe. */
+  setMessagesIfEmpty: (messages: ConversationMessageProtocol[]) => void;
+  /** Handle a snapshot event from SSE reconnection. Race-safe. */
+  handleSnapshot: (sessionId: string | undefined, content: string, isProcessing: boolean, contextUsage?: number) => void;
   // Search actions
   /** Activate or deactivate search mode */
   setSearchActive: (isActive: boolean) => void;

@@ -101,6 +101,11 @@ export type SessionAction =
   // Meeting actions
   | { type: "SET_MEETING_STATE"; state: MeetingState }
   | { type: "CLEAR_MEETING" }
+  // Streaming actions (race-condition-safe: decisions happen in reducer, not in stale refs)
+  | { type: "ENSURE_STREAMING_MESSAGE" }
+  | { type: "APPEND_STREAMING_CHUNK"; content: string }
+  | { type: "SET_MESSAGES_IF_EMPTY"; messages: ConversationMessageProtocol[] }
+  | { type: "HANDLE_SNAPSHOT"; sessionId?: string; content: string; isProcessing: boolean; contextUsage?: number }
   // Vault config update
   | { type: "UPDATE_VAULT_CONFIG"; config: EditableVaultConfig };
 
@@ -395,6 +400,150 @@ function handleReplaceLastMessageContent(
     isStreaming,
   };
   return { ...state, messages };
+}
+
+/**
+ * Ensures a streaming assistant message exists. If the last message is already
+ * a streaming assistant message, this is a no-op. Otherwise, adds a new one.
+ * Replaces the messagesRef-based check that was in useServerMessageHandler's
+ * response_start handler, which was racy because the ref lagged behind dispatches.
+ */
+function handleEnsureStreamingMessage(state: SessionState): SessionState {
+  const lastMessage = state.messages[state.messages.length - 1];
+  if (lastMessage?.role === "assistant" && lastMessage.isStreaming) {
+    return state;
+  }
+
+  return {
+    ...state,
+    messages: [
+      ...state.messages,
+      {
+        id: generateMessageId(),
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+        isStreaming: true,
+      },
+    ],
+  };
+}
+
+/**
+ * Appends a text chunk to the current streaming assistant message. If no
+ * streaming assistant message exists, creates one with the chunk content.
+ * This is the core fix for message fragmentation: the reducer always sees the
+ * latest state, so a message added by ENSURE_STREAMING_MESSAGE is visible
+ * immediately without waiting for a React re-render.
+ */
+function handleAppendStreamingChunk(state: SessionState, content: string): SessionState {
+  const lastMessage = state.messages[state.messages.length - 1];
+
+  if (lastMessage?.role === "assistant" && lastMessage.isStreaming) {
+    const prefix = state.needsLineBreakBeforeText && content ? "\n\n" : "";
+    const messages = [...state.messages];
+    messages[messages.length - 1] = {
+      ...lastMessage,
+      content: lastMessage.content + prefix + content,
+    };
+    return {
+      ...state,
+      messages,
+      needsLineBreakBeforeText: prefix ? false : state.needsLineBreakBeforeText,
+    };
+  }
+
+  // No streaming assistant message exists yet (e.g., response_start was missed).
+  // Create one with the chunk content rather than dropping it.
+  return {
+    ...state,
+    messages: [
+      ...state.messages,
+      {
+        id: generateMessageId(),
+        role: "assistant",
+        content,
+        timestamp: new Date(),
+        isStreaming: true,
+      },
+    ],
+  };
+}
+
+/**
+ * Sets messages only if the current message list is empty.
+ * Used by session_ready to restore server history without overwriting
+ * an in-flight user message.
+ */
+function handleSetMessagesIfEmpty(
+  state: SessionState,
+  protocolMessages: ConversationMessageProtocol[]
+): SessionState {
+  if (state.messages.length > 0) {
+    return state;
+  }
+  return handleSetMessages(state, protocolMessages);
+}
+
+/**
+ * Handles a snapshot event from SSE reconnection. The server sends accumulated
+ * content that should replace or create the streaming assistant message.
+ */
+function handleSnapshot(
+  state: SessionState,
+  sessionId: string | undefined,
+  content: string,
+  isProcessing: boolean,
+  contextUsage: number | undefined
+): SessionState {
+  let newState = state;
+
+  if (sessionId) {
+    newState = {
+      ...newState,
+      sessionId,
+      pendingSessionId: null,
+    };
+  }
+
+  if (content) {
+    const lastMessage = newState.messages[newState.messages.length - 1];
+
+    if (lastMessage?.role === "assistant" && lastMessage.isStreaming) {
+      const messages = [...newState.messages];
+      messages[messages.length - 1] = {
+        ...lastMessage,
+        content,
+        isStreaming: isProcessing,
+      };
+      newState = { ...newState, messages };
+    } else {
+      newState = {
+        ...newState,
+        messages: [
+          ...newState.messages,
+          {
+            id: generateMessageId(),
+            role: "assistant",
+            content,
+            timestamp: new Date(),
+            isStreaming: isProcessing,
+          },
+        ],
+      };
+    }
+  }
+
+  if (contextUsage !== undefined) {
+    const messages = [...newState.messages];
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === "assistant") {
+      messages[messages.length - 1] = { ...lastMessage, contextUsage };
+      newState = { ...newState, messages };
+    }
+  }
+
+  return newState;
 }
 
 // ----------------------------------------------------------------------------
@@ -702,6 +851,25 @@ export function sessionReducer(
         ...state,
         meeting: { isActive: false },
       };
+
+    // Streaming actions
+    case "ENSURE_STREAMING_MESSAGE":
+      return handleEnsureStreamingMessage(state);
+
+    case "APPEND_STREAMING_CHUNK":
+      return handleAppendStreamingChunk(state, action.content);
+
+    case "SET_MESSAGES_IF_EMPTY":
+      return handleSetMessagesIfEmpty(state, action.messages);
+
+    case "HANDLE_SNAPSHOT":
+      return handleSnapshot(
+        state,
+        action.sessionId,
+        action.content,
+        action.isProcessing,
+        action.contextUsage
+      );
 
     // Vault config update - merges editable config fields into current vault
     case "UPDATE_VAULT_CONFIG":

@@ -11,7 +11,6 @@ import React, {
   useReducer,
   useCallback,
   useEffect,
-  useRef,
   type ReactNode,
 } from "react";
 import type {
@@ -360,6 +359,28 @@ export function SessionProvider({
     []
   );
 
+  const ensureStreamingMessage = useCallback(() => {
+    dispatch({ type: "ENSURE_STREAMING_MESSAGE" });
+  }, []);
+
+  const appendStreamingChunk = useCallback((content: string) => {
+    dispatch({ type: "APPEND_STREAMING_CHUNK", content });
+  }, []);
+
+  const setMessagesIfEmpty = useCallback(
+    (messages: ConversationMessageProtocol[]) => {
+      dispatch({ type: "SET_MESSAGES_IF_EMPTY", messages });
+    },
+    []
+  );
+
+  const handleSnapshot = useCallback(
+    (sessionId: string | undefined, content: string, isProcessing: boolean, contextUsage?: number) => {
+      dispatch({ type: "HANDLE_SNAPSHOT", sessionId, content, isProcessing, contextUsage });
+    },
+    []
+  );
+
   // Search actions
   const setSearchActive = useCallback((isActive: boolean) => {
     dispatch({ type: "SET_SEARCH_ACTIVE", isActive });
@@ -465,6 +486,10 @@ export function SessionProvider({
     setLastMessageContextUsage,
     setLastMessageDuration,
     replaceLastMessageContent,
+    ensureStreamingMessage,
+    appendStreamingChunk,
+    setMessagesIfEmpty,
+    handleSnapshot,
     setSearchActive,
     setSearchMode,
     setSearchQuery,
@@ -502,23 +527,18 @@ export function useSession(): SessionContextValue {
  */
 export function useServerMessageHandler(): (message: ServerMessage) => void {
   const {
-    messages,
     setSessionId,
     setSessionStartTime,
-    setMessages,
-    addMessage,
+    setMessagesIfEmpty,
+    ensureStreamingMessage,
+    appendStreamingChunk,
     updateLastMessage,
-    replaceLastMessageContent,
+    handleSnapshot,
     setPendingSessionId,
     setSlashCommands,
     setLastMessageContextUsage,
     setLastMessageDuration,
   } = useSession();
-
-  const messagesRef = useRef(messages);
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
 
   return useCallback(
     (message: ServerMessage) => {
@@ -535,50 +555,21 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
             setSessionStartTime(new Date(message.createdAt));
           }
           // Only restore server history when local state is empty (fresh
-          // session load). If messages already exist locally, the user just
-          // sent one and the server history is stale (it doesn't include
-          // the in-flight user message yet). Replacing would wipe it out.
-          if (message.messages && message.messages.length > 0 && messagesRef.current.length === 0) {
-            setMessages(message.messages);
+          // session load). The emptiness check is inside the reducer to avoid
+          // the stale-ref race that caused message fragmentation.
+          if (message.messages && message.messages.length > 0) {
+            setMessagesIfEmpty(message.messages);
           }
           setSlashCommands(message.slashCommands ?? []);
           break;
 
-        case "response_start": {
-          const currentMessages = messagesRef.current;
-          const lastMessage = currentMessages[currentMessages.length - 1];
-          if (
-            !lastMessage ||
-            lastMessage.role !== "assistant" ||
-            !lastMessage.isStreaming
-          ) {
-            addMessage({
-              role: "assistant",
-              content: "",
-              isStreaming: true,
-            });
-          }
+        case "response_start":
+          ensureStreamingMessage();
           break;
-        }
 
-        case "response_chunk": {
-          const currentMessages = messagesRef.current;
-          const lastMessage = currentMessages[currentMessages.length - 1];
-          if (
-            !lastMessage ||
-            lastMessage.role !== "assistant" ||
-            !lastMessage.isStreaming
-          ) {
-            addMessage({
-              role: "assistant",
-              content: message.content,
-              isStreaming: true,
-            });
-          } else {
-            updateLastMessage(message.content, true);
-          }
+        case "response_chunk":
+          appendStreamingChunk(message.content);
           break;
-        }
 
         case "response_end":
           updateLastMessage("", false);
@@ -597,37 +588,16 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
           // Handle snapshot event (not in ServerMessage union, sent by SSE stream endpoint)
           const rawMessage = message as unknown as Record<string, unknown>;
           if (rawMessage.type === "snapshot") {
-            // Restore session ID
-            if (typeof rawMessage.sessionId === "string" && rawMessage.sessionId) {
-              setSessionId(rawMessage.sessionId);
-              setPendingSessionId(null);
-            }
-
-            // Restore accumulated content as assistant message
+            const sessionId = typeof rawMessage.sessionId === "string" && rawMessage.sessionId
+              ? rawMessage.sessionId
+              : undefined;
             const content = typeof rawMessage.content === "string" ? rawMessage.content : "";
-            const isStillProcessing = !!rawMessage.isProcessing;
+            const isProcessing = !!rawMessage.isProcessing;
+            const contextUsage = typeof rawMessage.contextUsage === "number"
+              ? rawMessage.contextUsage
+              : undefined;
 
-            if (content) {
-              const currentMessages = messagesRef.current;
-              const lastMessage = currentMessages[currentMessages.length - 1];
-
-              if (lastMessage?.role === "assistant" && lastMessage.isStreaming) {
-                // Replace existing streaming message with snapshot content
-                replaceLastMessageContent(content, isStillProcessing);
-              } else {
-                // Add new assistant message from snapshot
-                addMessage({
-                  role: "assistant",
-                  content,
-                  isStreaming: isStillProcessing,
-                });
-              }
-            }
-
-            // Restore context usage
-            if (typeof rawMessage.contextUsage === "number") {
-              setLastMessageContextUsage(rawMessage.contextUsage);
-            }
+            handleSnapshot(sessionId, content, isProcessing, contextUsage);
           }
           break;
         }
@@ -636,10 +606,11 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     [
       setSessionId,
       setSessionStartTime,
-      setMessages,
-      addMessage,
+      setMessagesIfEmpty,
+      ensureStreamingMessage,
+      appendStreamingChunk,
       updateLastMessage,
-      replaceLastMessageContent,
+      handleSnapshot,
       setPendingSessionId,
       setSlashCommands,
       setLastMessageContextUsage,

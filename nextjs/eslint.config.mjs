@@ -39,5 +39,21 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },
+  },
+  // The Agent SDK's .d.ts imports types via .mjs specifiers that eslint's type
+  // resolver can't follow (tsc handles them via skipLibCheck). These three files
+  // iterate AsyncGenerator<SDKMessage> from the SDK, so every property access
+  // on yielded events triggers false positives.
+  {
+    files: [
+      "lib/streaming/session-streamer.ts",
+      "lib/session-manager.ts",
+      "lib/extraction/fact-extractor.ts",
+    ],
+    rules: {
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
+    },
   }
 );

@@ -15,6 +15,17 @@ activity_timeline:
   - timestamp: 2026-02-23T03:20:16.058Z
     event: created
     reason: "Commission created"
+  - timestamp: 2026-02-23T03:20:38.317Z
+    event: status_failed
+    reason: "Worker completed without submitting result"
+  - timestamp: 2026-02-23T03:21:31.365Z
+    event: user_note
+    reason: "Use the status report MCP call."
+  - timestamp: 2026-02-23T03:21:42.126Z
+    event: status_pending
+    reason: "Commission reset for redispatch"
+    from: "failed"
+    to: "pending"
 current_progress: ""
 result_summary: ""
 projectName: memory-loop

@@ -1,23 +1,20 @@
 ---
-title: "Commission: Hello World"
+title: "Commission: Status Review"
 date: 2026-02-23
-status: completed
+status: pending
 tags: [commission]
 worker: Assistant
 workerDisplayTitle: "Guild Assistant"
-prompt: "Provide a summary of the project as a note within the commission."
+prompt: "Give a project status"
 dependencies: []
 linked_artifacts: []
 resource_overrides:
   maxTurns: 150
   maxBudgetUsd: 1.00
 activity_timeline:
-  - timestamp: 2026-02-23T04:00:29.423Z
+  - timestamp: 2026-02-23T04:04:32.237Z
     event: created
     reason: "Commission created"
-  - timestamp: 2026-02-23T04:01:12.830Z
-    event: status_completed
-    reason: "Worker completed successfully"
 current_progress: ""
 result_summary: ""
 projectName: memory-loop

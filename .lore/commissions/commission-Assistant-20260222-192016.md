@@ -50,6 +50,14 @@ activity_timeline:
     reason: "Commission reset for redispatch"
     from: "failed"
     to: "pending"
+  - timestamp: 2026-02-23T03:38:09.162Z
+    event: status_failed
+    reason: "Worker completed without submitting result"
+  - timestamp: 2026-02-23T03:39:48.412Z
+    event: status_pending
+    reason: "Commission reset for redispatch"
+    from: "failed"
+    to: "pending"
 current_progress: ""
 result_summary: ""
 projectName: memory-loop

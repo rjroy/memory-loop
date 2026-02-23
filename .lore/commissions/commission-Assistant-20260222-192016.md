@@ -1,7 +1,7 @@
 ---
 title: "Commission: Hello World"
 date: 2026-02-23
-status: pending
+status: completed
 tags: [commission]
 worker: Assistant
 workerDisplayTitle: "Guild Assistant"
@@ -74,6 +74,9 @@ activity_timeline:
     reason: "Commission reset for redispatch"
     from: "failed"
     to: "pending"
+  - timestamp: 2026-02-23T03:45:28.662Z
+    event: status_completed
+    reason: "Worker completed successfully"
 current_progress: ""
 result_summary: ""
 projectName: memory-loop

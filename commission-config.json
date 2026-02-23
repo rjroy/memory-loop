@@ -1,0 +1,16 @@
+{
+  "commissionId": "commission-Assistant-20260222-200432",
+  "projectName": "memory-loop",
+  "projectPath": "/home/rjroy/Projects/memory-loop",
+  "workerPackageName": "guild-hall-sample-assistant",
+  "prompt": "Give a project status",
+  "dependencies": [],
+  "workingDirectory": "/home/rjroy/.guild-hall/worktrees/memory-loop/commission-Assistant-20260222-200432",
+  "daemonSocketPath": "/home/rjroy/.guild-hall/guild-hall.sock",
+  "packagesDir": "./packages",
+  "guildHallHome": "/home/rjroy/.guild-hall",
+  "resourceOverrides": {
+    "maxTurns": 150,
+    "maxBudgetUsd": 1
+  }
+}

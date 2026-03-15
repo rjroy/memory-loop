@@ -18,8 +18,9 @@ import {
   resolveProjectPath,
   resolveAreaPath,
   type VaultConfig,
-} from "./vault-config";
-import { DEFAULT_INBOX_PATH, directoryExists } from "./vault-manager";
+} from "@memory-loop/shared";
+import { DEFAULT_INBOX_PATH } from "@memory-loop/shared";
+import { directoryExists } from "@memory-loop/shared/server";
 
 const log = createLogger("TaskManager");
 

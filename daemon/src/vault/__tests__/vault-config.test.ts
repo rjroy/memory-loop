@@ -9,6 +9,13 @@ import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  loadVaultConfig,
+  loadSlashCommands,
+  saveSlashCommands,
+  savePinnedAssets,
+  saveVaultConfig,
+} from "../vault-config";
+import {
   CONFIG_FILE_NAME,
   SLASH_COMMANDS_FILE,
   DEFAULT_METADATA_PATH,
@@ -21,9 +28,6 @@ import {
   DEFAULT_CARDS_ENABLED,
   DEFAULT_VI_MODE,
   VALID_DISCUSSION_MODELS,
-  loadVaultConfig,
-  loadSlashCommands,
-  resolveContentRoot,
   resolveMetadataPath,
   resolveGoalsPath,
   resolveContextualPromptsPath,
@@ -38,13 +42,10 @@ import {
   resolveDiscussionModel,
   resolveCardsEnabled,
   resolveViMode,
-  saveSlashCommands,
-  savePinnedAssets,
-  saveVaultConfig,
   slashCommandsEqual,
-  type VaultConfig,
-} from "../vault-config";
-import type { SlashCommand, EditableVaultConfig } from "@memory-loop/shared";
+} from "@memory-loop/shared";
+import { resolveContentRoot } from "@memory-loop/shared/server";
+import type { VaultConfig, SlashCommand, EditableVaultConfig } from "@memory-loop/shared";
 
 // Test helpers
 async function writeConfig(dir: string, data: unknown): Promise<void> {

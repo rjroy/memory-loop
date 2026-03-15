@@ -9,7 +9,8 @@
 import { mkdir, appendFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { VaultInfo, StoredToolInvocation } from "@memory-loop/shared";
-import { getVaultInboxPath, directoryExists } from "./vault-manager";
+import { getVaultInboxPath } from "@memory-loop/shared";
+import { directoryExists } from "@memory-loop/shared/server";
 import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 
 /**

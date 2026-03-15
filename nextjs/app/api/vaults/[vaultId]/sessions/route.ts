@@ -12,9 +12,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { getVaultById } from "@/lib/vault-manager";
+import { getVaultById, loadSlashCommands, loadVaultConfig } from "@/lib/vault-client";
 import { loadSession, getSessionForVault } from "@/lib/session-manager";
-import { loadSlashCommands, loadVaultConfig } from "@/lib/vault-config";
 import type { SlashCommand } from "@memory-loop/shared";
 
 interface RouteParams {

@@ -32,7 +32,7 @@ import {
   MEMORY_LOOP_GITIGNORE_PATH,
   type SetupCompleteMarker,
 } from "../vault-setup";
-import { directoryExists, fileExists } from "../vault-manager";
+import { directoryExists, fileExists } from "@memory-loop/shared/server";
 import { configureSdkForTesting, _resetForTesting, type QueryFunction } from "../sdk-provider";
 
 // =============================================================================

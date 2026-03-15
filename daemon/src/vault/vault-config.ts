@@ -1,5 +1,5 @@
 /**
- * Vault Configuration I/O
+ * Vault Configuration I/O (Daemon)
  *
  * Filesystem operations for loading and saving vault configuration.
  * Types and resolver functions are in @memory-loop/shared.
@@ -7,14 +7,13 @@
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import type { SlashCommand, Badge, BadgeColor, EditableVaultConfig } from "@memory-loop/shared";
+import type { SlashCommand, Badge, BadgeColor, EditableVaultConfig, VaultConfig } from "@memory-loop/shared";
 import {
   createLogger,
   CONFIG_FILE_NAME,
   SLASH_COMMANDS_FILE,
   VALID_DISCUSSION_MODELS,
   VALID_BADGE_COLORS,
-  type VaultConfig,
 } from "@memory-loop/shared";
 import { fileExists } from "@memory-loop/shared/server";
 
@@ -106,9 +105,6 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
   }
 }
 
-/**
- * Result type for saveVaultConfig operation.
- */
 export type SaveConfigResult =
   | { success: true }
   | { success: false; error: string };
@@ -130,10 +126,6 @@ function isAllDefaults(config: EditableVaultConfig): boolean {
   );
 }
 
-/**
- * Saves editable vault configuration fields to .memory-loop.json.
- * Preserves existing configuration fields while updating editable fields.
- */
 export async function saveVaultConfig(
   vaultPath: string,
   editableConfig: EditableVaultConfig
@@ -188,9 +180,6 @@ export async function saveVaultConfig(
   }
 }
 
-/**
- * Saves pinned assets to the vault configuration file.
- */
 export async function savePinnedAssets(
   vaultPath: string,
   paths: string[]
@@ -217,9 +206,6 @@ export async function savePinnedAssets(
   log.info(`Saved ${paths.length} pinned assets to ${configPath}`);
 }
 
-/**
- * Loads cached slash commands from .memory-loop/slash-commands.json.
- */
 export async function loadSlashCommands(
   vaultPath: string
 ): Promise<SlashCommand[] | undefined> {
@@ -260,9 +246,6 @@ export async function loadSlashCommands(
   }
 }
 
-/**
- * Saves slash commands to .memory-loop/slash-commands.json.
- */
 export async function saveSlashCommands(
   vaultPath: string,
   commands: SlashCommand[]
@@ -274,46 +257,3 @@ export async function saveSlashCommands(
   await writeFile(cachePath, JSON.stringify(commands, null, 2) + "\n", "utf-8");
   log.info(`Cached ${commands.length} slash commands to ${cachePath}`);
 }
-
-// Re-export types and functions from shared for backward compatibility during migration
-export type { VaultConfig } from "@memory-loop/shared";
-export { resolveContentRoot } from "@memory-loop/shared/server";
-export {
-  resolveMetadataPath,
-  resolveGoalsPath,
-  resolveContextualPromptsPath,
-  resolveGeneralInspirationPath,
-  resolveProjectPath,
-  resolveAreaPath,
-  resolveAttachmentPath,
-  resolvePromptsPerGeneration,
-  resolveMaxPoolSize,
-  resolveQuotesPerWeek,
-  resolveBadges,
-  resolvePinnedAssets,
-  resolveRecentCaptures,
-  resolveRecentDiscussions,
-  resolveDiscussionModel,
-  resolveOrder,
-  resolveCardsEnabled,
-  resolveViMode,
-  slashCommandsEqual,
-  DEFAULT_METADATA_PATH,
-  DEFAULT_PROJECT_PATH,
-  DEFAULT_AREA_PATH,
-  DEFAULT_ATTACHMENT_PATH,
-  DEFAULT_PROMPTS_PER_GENERATION,
-  DEFAULT_MAX_POOL_SIZE,
-  DEFAULT_QUOTES_PER_WEEK,
-  DEFAULT_RECENT_CAPTURES,
-  DEFAULT_RECENT_DISCUSSIONS,
-  VALID_DISCUSSION_MODELS,
-  DEFAULT_DISCUSSION_MODEL,
-  DEFAULT_ORDER,
-  DEFAULT_CARDS_ENABLED,
-  DEFAULT_VI_MODE,
-  VALID_BADGE_COLORS,
-  CONFIG_FILE_NAME,
-  SLASH_COMMANDS_FILE,
-} from "@memory-loop/shared";
-export type { DiscussionModelLocal as DiscussionModel } from "@memory-loop/shared";

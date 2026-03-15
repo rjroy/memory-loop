@@ -1,13 +1,12 @@
 /**
- * Vault Manager
+ * Vault Manager (Daemon)
  *
- * Discovers Obsidian vaults from the VAULTS_DIR environment variable.
- * Parses CLAUDE.md for vault metadata and detects inbox locations.
+ * Vault discovery, creation, and filesystem operations.
+ * This is the authoritative implementation per REQ-DAB-1.
  */
 
 import { readdir, readFile, mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { VaultInfo, VaultConfig } from "@memory-loop/shared";
 import {
   createLogger,
@@ -44,15 +43,21 @@ export class VaultsDirError extends Error {
 
 export const DEFAULT_VAULTS_DIR_NAME = "vaults";
 
-function getProjectRoot(): string {
-  const currentFile = fileURLToPath(import.meta.url);
-  const backendSrc = dirname(currentFile);
-  const backend = dirname(backendSrc);
-  return dirname(backend);
+/**
+ * Gets the daemon's root directory.
+ * Uses DAEMON_ROOT env var or falls back to the daemon package's parent directory.
+ */
+function getDaemonRoot(): string {
+  if (process.env.DAEMON_ROOT) {
+    return process.env.DAEMON_ROOT;
+  }
+  // daemon/src/vault/vault-manager.ts -> daemon/src/vault -> daemon/src -> daemon -> project root
+  const currentDir = dirname(new URL(import.meta.url).pathname);
+  return join(currentDir, "..", "..", "..");
 }
 
 export function getDefaultVaultsDir(): string {
-  return join(getProjectRoot(), DEFAULT_VAULTS_DIR_NAME);
+  return join(getDaemonRoot(), DEFAULT_VAULTS_DIR_NAME);
 }
 
 export function getVaultsDir(): string {
@@ -364,16 +369,3 @@ This vault was created by Memory Loop.
   log.info(`Vault created successfully: ${vault.id} (${vault.name})`);
   return vault;
 }
-
-// Re-export path helpers from shared for backward compatibility during migration
-export {
-  getVaultInboxPath,
-  getVaultMetadataPath,
-  extractVaultName,
-  titleToDirectoryName,
-  DEFAULT_INBOX_PATH,
-  GOALS_FILE_PATH,
-  INBOX_PATTERNS,
-  ATTACHMENT_PATTERNS,
-} from "@memory-loop/shared";
-export type { ExtractedTitle } from "@memory-loop/shared";

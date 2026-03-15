@@ -16,7 +16,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
-import { discoverVaults } from "../vault-manager";
+import { discoverVaults } from "../vault-client";
 import type { VaultInfo } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
 import {

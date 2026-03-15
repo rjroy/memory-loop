@@ -12,17 +12,18 @@ import { copyFile, mkdir, readdir, readFile, writeFile, stat, chmod, rm } from "
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLogger } from "@memory-loop/shared";
-import { getVaultById, fileExists, directoryExists } from "./vault-manager";
+import { fileExists, directoryExists } from "@memory-loop/shared/server";
+import { getVaultById } from "./vault-client";
 import { validatePath } from "./file-browser";
 import { mapSdkError } from "./session-manager";
+import { loadVaultConfig } from "./vault-client";
 import {
-  loadVaultConfig,
-  resolveContentRoot,
   resolveProjectPath,
   resolveAreaPath,
   resolveAttachmentPath,
   type VaultConfig,
-} from "./vault-config";
+} from "@memory-loop/shared";
+import { resolveContentRoot } from "@memory-loop/shared/server";
 import { getSdkQuery } from "./sdk-provider";
 
 const log = createLogger("VaultSetup");

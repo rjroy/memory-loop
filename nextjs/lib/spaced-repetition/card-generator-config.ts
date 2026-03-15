@@ -15,7 +15,7 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
 import { createLogger } from "@memory-loop/shared";
-import { fileExists } from "../vault-manager";
+import { fileExists } from "@memory-loop/shared/server";
 
 const log = createLogger("card-generator-config");
 

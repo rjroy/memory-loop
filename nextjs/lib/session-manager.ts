@@ -24,7 +24,8 @@ export type { SessionMetadata, ConversationMessage } from "@memory-loop/shared";
 // Re-export QueryFunction for backward compatibility
 export type { QueryFunction } from "./sdk-provider";
 import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@memory-loop/shared";
-import { directoryExists, fileExists, getVaultById } from "./vault-manager";
+import { directoryExists, fileExists } from "@memory-loop/shared/server";
+import { getVaultById } from "./vault-client";
 import {
   initializeTranscript,
   appendToTranscript,
@@ -35,7 +36,8 @@ import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
 import { createLogger } from "@memory-loop/shared";
 const log = createLogger("Session");
 import { createVaultTransferServer } from "./vault-transfer";
-import { loadVaultConfig, resolveRecentDiscussions, resolveDiscussionModel } from "./vault-config";
+import { loadVaultConfig } from "./vault-client";
+import { resolveRecentDiscussions, resolveDiscussionModel } from "@memory-loop/shared";
 
 /**
  * Default SDK options for Discussion mode.

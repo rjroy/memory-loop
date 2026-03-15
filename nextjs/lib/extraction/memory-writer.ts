@@ -20,7 +20,8 @@ import { readFile, writeFile, rename, unlink, mkdir, copyFile, stat } from "node
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createLogger } from "@memory-loop/shared";
-import { fileExists, getVaultsDir } from "../vault-manager";
+import { fileExists } from "@memory-loop/shared/server";
+import { getVaultsDir } from "../vault-client";
 
 const log = createLogger("memory-writer");
 

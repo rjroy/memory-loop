@@ -9,7 +9,8 @@
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { VaultInfo, RecentNoteEntry } from "@memory-loop/shared";
-import { getVaultInboxPath, directoryExists, fileExists } from "./vault-manager";
+import { getVaultInboxPath } from "@memory-loop/shared";
+import { directoryExists, fileExists } from "@memory-loop/shared/server";
 
 /**
  * Error thrown when note capture operations fail.

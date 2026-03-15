@@ -15,7 +15,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { VaultInfo } from "@memory-loop/shared";
-import { DEFAULT_MAX_POOL_SIZE } from "./vault-config";
+import { DEFAULT_MAX_POOL_SIZE } from "@memory-loop/shared";
 import { getSdkQuery, type QueryFunction } from "./sdk-provider";
 import { createLogger } from "@memory-loop/shared";
 

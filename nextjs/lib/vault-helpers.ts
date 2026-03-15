@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getVaultById } from "@/lib/vault-manager";
+import { getVaultById } from "@/lib/vault-client";
 import type { VaultInfo } from "@memory-loop/shared";
 
 /**

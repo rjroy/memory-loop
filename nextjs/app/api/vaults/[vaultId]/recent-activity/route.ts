@@ -8,11 +8,8 @@ import { NextResponse } from "next/server";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
 import { getRecentNotes } from "@/lib/note-capture";
 import { getRecentSessions } from "@/lib/session-manager";
-import {
-  loadVaultConfig,
-  resolveRecentCaptures,
-  resolveRecentDiscussions,
-} from "@/lib/vault-config";
+import { loadVaultConfig } from "@/lib/vault-client";
+import { resolveRecentCaptures, resolveRecentDiscussions } from "@memory-loop/shared";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

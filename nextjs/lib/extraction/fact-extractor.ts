@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { createLogger } from "@memory-loop/shared";
-import { fileExists } from "../vault-manager";
+import { fileExists } from "@memory-loop/shared/server";
 import type { DiscoveredTranscript } from "./transcript-reader";
 import { getSdkQuery, type QueryFunction } from "../sdk-provider";
 

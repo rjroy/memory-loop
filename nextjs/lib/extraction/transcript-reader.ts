@@ -16,9 +16,10 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { VaultInfo } from "@memory-loop/shared";
-import { discoverVaults, directoryExists } from "../vault-manager";
-import { getTranscriptsDirectory } from "../transcript-manager";
 import { createLogger } from "@memory-loop/shared";
+import { directoryExists } from "@memory-loop/shared/server";
+import { discoverVaults } from "../vault-client";
+import { getTranscriptsDirectory } from "../transcript-manager";
 import {
   calculateChecksum,
   isTranscriptProcessed,

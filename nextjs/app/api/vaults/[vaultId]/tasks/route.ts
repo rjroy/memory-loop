@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
 import { getAllTasks, toggleTask } from "@/lib/task-manager";
-import { loadVaultConfig } from "@/lib/vault-config";
+import { loadVaultConfig } from "@/lib/vault-client";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

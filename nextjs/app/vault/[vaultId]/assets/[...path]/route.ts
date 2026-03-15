@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server";
 import { readFile, lstat } from "node:fs/promises";
 import { join, extname } from "node:path";
-import { getVaultById } from "@/lib/vault-manager";
+import { getVaultById } from "@/lib/vault-client";
 import { isPathWithinVault } from "@/lib/file-browser";
 
 interface RouteParams {

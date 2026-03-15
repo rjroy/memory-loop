@@ -14,7 +14,7 @@
  */
 
 import { createLogger } from "@memory-loop/shared";
-import { getVaultsDir } from "../vault-manager";
+import { getVaultsDir } from "../vault-client";
 import {
   readExtractionState,
   writeExtractionState,

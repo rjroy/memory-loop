@@ -6,6 +6,8 @@
  * replaced as domain modules migrate in later stages.
  */
 
+import { getVaults } from "../vault";
+
 export interface HealthResponse {
   status: "ok";
   uptime: number;
@@ -18,14 +20,15 @@ export interface HealthResponse {
   };
 }
 
-export function healthHandler(startTime: number): Response {
+export async function healthHandler(startTime: number): Promise<Response> {
   const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+  const vaults = await getVaults();
 
   const body: HealthResponse = {
     status: "ok",
     uptime: uptimeSeconds,
     version: "0.0.0",
-    vaults: 0,
+    vaults: vaults.length,
     activeSessions: 0,
     schedulers: {
       extraction: { status: "idle", lastRun: null, nextRun: null },

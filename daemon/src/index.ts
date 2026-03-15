@@ -7,6 +7,7 @@
 
 import { createLogger } from "@memory-loop/shared";
 import { startServer } from "./server";
+import { initVaultCache } from "./vault";
 
 const log = createLogger("daemon");
 const startTime = Date.now();
@@ -23,6 +24,11 @@ const socketPath = process.env.DAEMON_SOCKET ?? (process.env.DAEMON_PORT ? undef
 const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : undefined;
 
 const server = startServer({ socketPath, port, startTime });
+
+// Initialize vault cache after server starts
+initVaultCache().catch((error) => {
+  log.error(`Failed to initialize vault cache: ${error instanceof Error ? error.message : String(error)}`);
+});
 
 log.info("Memory Loop daemon started");
 

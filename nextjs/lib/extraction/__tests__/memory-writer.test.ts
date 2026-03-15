@@ -34,7 +34,7 @@ import {
   MEMORY_SIZE_WARNING_BYTES,
   VAULT_INSIGHTS_SECTION,
 } from "../memory-writer";
-import { fileExists, directoryExists } from "../../vault-manager";
+import { fileExists, directoryExists } from "@memory-loop/shared/server";
 
 // =============================================================================
 // Global Test Setup - Isolate from real user files

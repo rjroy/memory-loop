@@ -10,27 +10,28 @@ import {
   getVaultsDir,
   getDefaultVaultsDir,
   ensureVaultsDir,
-  extractVaultName,
   discoverVaults,
   getVaultById,
-  getVaultInboxPath,
   VaultsDirError,
   VaultCreationError,
-  DEFAULT_INBOX_PATH,
   DEFAULT_VAULTS_DIR_NAME,
-  INBOX_PATTERNS,
-  GOALS_FILE_PATH,
-  directoryExists,
-  fileExists,
   detectInboxPath,
   detectGoalsPath,
   parseVault,
   getVaultGoals,
-  titleToDirectoryName,
   getUniqueDirectoryName,
   createVault,
 } from "../vault-manager";
 import type { VaultInfo } from "@memory-loop/shared";
+import {
+  extractVaultName,
+  getVaultInboxPath,
+  DEFAULT_INBOX_PATH,
+  INBOX_PATTERNS,
+  GOALS_FILE_PATH,
+  titleToDirectoryName,
+} from "@memory-loop/shared";
+import { directoryExists, fileExists } from "@memory-loop/shared/server";
 
 // =============================================================================
 // Environment Variable Tests

@@ -16,10 +16,10 @@ import {
   loadVaultConfig,
   saveVaultConfig,
   savePinnedAssets,
-  resolvePinnedAssets,
   type SaveConfigResult,
-} from "../vault-config";
-import { createVault, getVaultById, VaultCreationError } from "../vault-manager";
+} from "../vault-client";
+import { resolvePinnedAssets } from "@memory-loop/shared";
+import { createVault, getVaultById } from "../vault-client";
 import { runVaultSetup, type SetupResult } from "../vault-setup";
 import { createLogger } from "@memory-loop/shared";
 
@@ -210,5 +210,3 @@ export async function handleCreateVault(
   return { vault: updatedVault ?? vault };
 }
 
-// Re-export VaultCreationError for consumers
-export { VaultCreationError };

@@ -17,7 +17,7 @@ import {
   VaultTransferError,
   createVaultTransferServer,
 } from "../vault-transfer";
-import { fileExists } from "../vault-manager";
+import { fileExists } from "@memory-loop/shared/server";
 
 // =============================================================================
 // Test Helpers

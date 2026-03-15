@@ -11,8 +11,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { VaultInfo } from "@memory-loop/shared";
-import { fileExists } from "./vault-manager";
 import { createLogger } from "@memory-loop/shared";
+import { fileExists } from "@memory-loop/shared/server";
 
 const log = createLogger("DailyPrepManager");
 

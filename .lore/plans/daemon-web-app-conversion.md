@@ -1,7 +1,7 @@
 ---
 title: "Daemon migration Stage 6: Web app conversion"
 date: 2026-03-14
-status: draft
+status: approved
 tags: [daemon, migration, proxy, nextjs, cleanup, stage-6]
 modules: [api-routes, lib, daemon]
 related:

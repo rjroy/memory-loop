@@ -1,7 +1,7 @@
 ---
 title: "Commission: Review: Stage 5 fix verification (post-stall state check)"
 date: 2026-03-15
-status: dispatched
+status: completed
 type: one-shot
 tags: [commission]
 worker: Thorne
@@ -22,6 +22,55 @@ activity_timeline:
     reason: "Dispatched to worker"
     from: "pending"
     to: "dispatched"
-current_progress: ""
+  - timestamp: 2026-03-15T22:16:04.006Z
+    event: status_in_progress
+    reason: "Execution started"
+    from: "dispatched"
+    to: "in_progress"
+  - timestamp: 2026-03-15T22:16:11.162Z
+    event: progress_report
+    reason: "Starting verification of five findings from prior review. Checking each independently, then running quality gates."
+  - timestamp: 2026-03-15T22:16:39.667Z
+    event: progress_report
+    reason: "All five findings inspected via code review. Now running quality gates: typecheck, lint, test, build."
+  - timestamp: 2026-03-15T22:18:43.105Z
+    event: progress_report
+    reason: "All verification complete. Compiling findings report."
+  - timestamp: 2026-03-15T22:18:58.098Z
+    event: result_submitted
+    reason: "## Stage 5 Verification: All Five Findings Resolved\n\n### Finding Status\n\n| # | Finding | Status | Evidence |\n|---|---------|--------|----------|\n| 1 | Next.js build (session-client.ts cast) | **FIXED** | `DaemonError` class replaces unsafe cast. `bun run --cwd nextjs build` exits 0. |\n| 2 | Daemon zod dependency | **FIXED** | `\"zod\": \"^4.0.0\"` declared in `daemon/package.json:23`. All 1892 daemon tests pass. |\n| 3 | Wrong test field (isProcessing vs isStreaming) | **FIXED** | `chat-routes.test.ts:200-203` asserts `isStreaming`, not `isProcessing`. Line 106 has a stale comment mentioning `isProcessing` but it's a comment, not an assertion. |\n| 4 | Duplicate singleton | **FIXED** | `session-controller.ts` is a thin singleton wrapper that calls `createActiveSessionController()` from the streaming module. `active-session-controller.ts` exports a factory function only, no module-level state. Single point of singleton management. |\n| 5 | Missing tests | **FIXED** | Both `daemon/src/__tests__/sse-proxy.test.ts` and `daemon/src/__tests__/mock-mode.test.ts` exist and pass. |\n\n### Quality Gates\n\n| Gate | Result |\n|------|--------|\n| `bun run typecheck` | PASS (all 3 packages) |\n| `bun run lint` | PASS |\n| Next.js tests | PASS (2068 tests, 70 files) |\n| Daemon tests | PASS (1892 tests, 46 files) |\n| `bun run --cwd nextjs build` | PASS |\n\nNote: Daemon tests fail in the default sandbox because `os.tmpdir()` resolves to `/tmp/claude` which is read-only. Setting `TMPDIR=/tmp/claude-1000` (the sandbox-writable path) produces a clean run. This is an environment constraint, not a code defect.\n\n### Minor Residual\n\n`chat-routes.test.ts:106` has a comment saying \"isProcessing: false\" that should say \"isStreaming: false\". Comment only, not an assertion. Impact: zero, but worth noting for hygiene."
+  - timestamp: 2026-03-15T22:19:02.790Z
+    event: status_completed
+    reason: "Execution completed"
+    from: "in_progress"
+    to: "completed"
+current_progress: "All verification complete. Compiling findings report."
 projectName: memory-loop
 ---
+## Stage 5 Verification: All Five Findings Resolved
+
+### Finding Status
+
+| # | Finding | Status | Evidence |
+|---|---------|--------|----------|
+| 1 | Next.js build (session-client.ts cast) | **FIXED** | `DaemonError` class replaces unsafe cast. `bun run --cwd nextjs build` exits 0. |
+| 2 | Daemon zod dependency | **FIXED** | `"zod": "^4.0.0"` declared in `daemon/package.json:23`. All 1892 daemon tests pass. |
+| 3 | Wrong test field (isProcessing vs isStreaming) | **FIXED** | `chat-routes.test.ts:200-203` asserts `isStreaming`, not `isProcessing`. Line 106 has a stale comment mentioning `isProcessing` but it's a comment, not an assertion. |
+| 4 | Duplicate singleton | **FIXED** | `session-controller.ts` is a thin singleton wrapper that calls `createActiveSessionController()` from the streaming module. `active-session-controller.ts` exports a factory function only, no module-level state. Single point of singleton management. |
+| 5 | Missing tests | **FIXED** | Both `daemon/src/__tests__/sse-proxy.test.ts` and `daemon/src/__tests__/mock-mode.test.ts` exist and pass. |
+
+### Quality Gates
+
+| Gate | Result |
+|------|--------|
+| `bun run typecheck` | PASS (all 3 packages) |
+| `bun run lint` | PASS |
+| Next.js tests | PASS (2068 tests, 70 files) |
+| Daemon tests | PASS (1892 tests, 46 files) |
+| `bun run --cwd nextjs build` | PASS |
+
+Note: Daemon tests fail in the default sandbox because `os.tmpdir()` resolves to `/tmp/claude` which is read-only. Setting `TMPDIR=/tmp/claude-1000` (the sandbox-writable path) produces a clean run. This is an environment constraint, not a code defect.
+
+### Minor Residual
+
+`chat-routes.test.ts:106` has a comment saying "isProcessing: false" that should say "isStreaming: false". Comment only, not an assertion. Impact: zero, but worth noting for hygiene.

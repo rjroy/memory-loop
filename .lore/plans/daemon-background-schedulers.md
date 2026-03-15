@@ -1,7 +1,7 @@
 ---
 title: "Stage 4: Daemon background schedulers"
 date: 2026-03-14
-status: draft
+status: approved
 tags: [daemon, migration, extraction, spaced-repetition, schedulers, sdk-provider, api]
 modules: [extraction-manager, extraction-state, transcript-reader, fact-extractor, memory-writer, card-discovery-scheduler, card-discovery-state, card-generator, card-generator-config, card-dedup, card-manager, card-storage, card-schema, sm2-algorithm, scheduler-bootstrap, sdk-provider, config-handlers, instrumentation]
 related:

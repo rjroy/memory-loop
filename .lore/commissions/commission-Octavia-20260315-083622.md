@@ -1,7 +1,7 @@
 ---
 title: "Commission: Update Stage 3-6 plans: incorporate Thorne's review findings"
 date: 2026-03-15
-status: failed
+status: dispatched
 type: one-shot
 tags: [commission]
 worker: Octavia
@@ -10,18 +10,18 @@ prompt: "Thorne reviewed the four remaining daemon migration plans against the c
 dependencies: []
 linked_artifacts: []
 
+resource_overrides:
+  maxTurns: 1000
+
 activity_timeline:
-  - timestamp: 2026-03-15T15:05:13.966Z
+  - timestamp: 2026-03-15T15:36:22.356Z
     event: created
     reason: "Commission created"
-  - timestamp: 2026-03-15T15:05:13.968Z
+  - timestamp: 2026-03-15T15:36:22.359Z
     event: status_dispatched
     reason: "Dispatched to worker"
     from: "pending"
     to: "dispatched"
-  - timestamp: 2026-03-15T15:14:12.643Z
-    event: status_failed
-    reason: "Session error: error_max_turns"
 current_progress: ""
 projectName: memory-loop
 ---

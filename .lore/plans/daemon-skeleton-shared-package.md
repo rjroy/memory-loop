@@ -1,7 +1,7 @@
 ---
 title: "Stage 1: Daemon skeleton and shared package"
 date: 2026-03-14
-status: draft
+status: executed
 tags: [daemon, monorepo, shared-package, schemas, migration, infrastructure]
 modules: [schemas, logger, daemon]
 related:

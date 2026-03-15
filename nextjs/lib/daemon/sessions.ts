@@ -1,17 +1,13 @@
 /**
- * Transitional Session Client
+ * Daemon Session Client
  *
  * HTTP client that proxies session and chat operations to the daemon API.
- * Uses the shared daemon-fetch module for connection logic.
- *
- * This module replaces direct imports of session-manager, controller,
- * and streaming modules. It will be deleted in a future stage when the
- * Next.js app is fully converted to a daemon client.
+ * Part of the permanent daemon client layer for the web app.
  */
 
 import type { SessionState } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
-import { daemonFetch } from "./daemon-fetch";
+import { daemonFetch } from "./fetch";
 
 const log = createLogger("session-client");
 

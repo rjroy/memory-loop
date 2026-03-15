@@ -1,12 +1,9 @@
 /**
- * Shared Daemon Fetch Module
+ * Daemon Fetch Module
  *
- * Provides the HTTP connection layer for all daemon client facades
- * (vault-client, file-client, session-client). Handles Unix socket
- * and TCP port resolution, error wrapping, and test injection.
- *
- * All daemon client modules import daemonFetch from here instead of
- * implementing their own connection logic.
+ * Provides the HTTP connection layer for all daemon client modules
+ * (vaults, files, sessions). Handles Unix socket and TCP port resolution,
+ * error wrapping, and test injection.
  */
 
 // ---------------------------------------------------------------------------
@@ -85,8 +82,7 @@ function getDaemonFetch(): FetchFn {
  * Call the returned function in afterEach to reset state.
  *
  * This configures the shared fetch layer used by ALL daemon client
- * facades (vault-client, file-client, etc.), so one mock injection
- * covers all clients.
+ * modules (vaults, files, sessions), so one mock injection covers all.
  */
 export function configureDaemonFetchForTesting(mockFetch: FetchFn): () => void {
   _fetchFn = mockFetch;
@@ -104,7 +100,7 @@ export function configureDaemonFetchForTesting(mockFetch: FetchFn): () => void {
 
 /**
  * Fetch from the daemon, wrapping connection errors in DaemonUnavailableError.
- * All daemon client facades should use this instead of raw fetch.
+ * All daemon client modules should use this instead of raw fetch.
  */
 export async function daemonFetch(
   path: string,

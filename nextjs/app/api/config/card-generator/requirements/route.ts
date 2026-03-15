@@ -7,7 +7,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { daemonFetch } from "@/lib/daemon-fetch";
+import { daemonFetch } from "@/lib/daemon/fetch";
 
 export async function DELETE() {
   const res = await daemonFetch("/config/card-generator/requirements", {

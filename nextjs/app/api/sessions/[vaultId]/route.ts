@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from "next/server";
-import * as sessionClient from "@/lib/session-client";
+import * as sessionClient from "@/lib/daemon/sessions";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

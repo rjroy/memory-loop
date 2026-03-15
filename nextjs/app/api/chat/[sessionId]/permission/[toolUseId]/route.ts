@@ -7,8 +7,8 @@
 
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import * as sessionClient from "@/lib/session-client";
-import { DaemonUnavailableError } from "@/lib/daemon-fetch";
+import * as sessionClient from "@/lib/daemon/sessions";
+import { DaemonUnavailableError } from "@/lib/daemon/fetch";
 
 const PermissionResponseSchema = z.object({
   allowed: z.boolean(),

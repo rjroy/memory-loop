@@ -42,16 +42,20 @@ daemon/          # @memory-loop/daemon: Background daemon process
 
 Shared types and schemas live in `@memory-loop/shared`. Both nextjs and daemon import from it. Never import from `@/lib/schemas` or `@/lib/logger` in nextjs (those paths no longer exist).
 
-### Next.js App
+### Next.js App (Pure Frontend)
 
 ```
 nextjs/
-  app/           # Pages and API routes
+  app/           # Pages and API proxy routes
   components/    # React components
   hooks/         # React hooks
   contexts/      # State management
-  lib/           # Domain logic, utilities
+  lib/           # Daemon client layer, browser API client
+  lib/daemon/    # HTTP clients for daemon communication
+  lib/api/       # Browser-side fetch wrapper and types
 ```
+
+The Next.js app contains no domain logic. All API routes are thin proxies that forward requests to the daemon via Unix socket. Domain logic, SDK calls, and filesystem access all happen in the daemon.
 
 ### Daemon
 
@@ -73,18 +77,17 @@ The daemon listens on a Unix socket by default (`$XDG_RUNTIME_DIR/memory-loop.so
 
 The server processes each message to completion regardless of client connectivity. SSE connections are viewports into processing state, not drivers of it. Clients can disconnect and reconnect freely; the first SSE event is always a snapshot of current state. Stop/permission/answer requests are separate REST calls.
 
-### Key Domain Modules
+### Daemon Client Layer
 
-Domain logic lives in `nextjs/lib/`. These modules are imported by API routes and contain no HTTP server of their own.
+The `lib/daemon/` directory contains HTTP client modules that communicate with the daemon. These are the only modules that know daemon API URLs.
 
 | File | Purpose |
 |------|---------|
-| `lib/session-manager.ts` | Claude Agent SDK session create/resume/save |
-| `lib/streaming/session-streamer.ts` | Transforms SDK events into SessionEvents |
-| `lib/vault-manager.ts` | Vault discovery from VAULTS_DIR |
-| `lib/note-capture.ts` | Writes to daily notes (00_Inbox/YYYY-MM-DD.md) |
-| `lib/file-browser.ts` | Read-only markdown browsing with security checks |
-| `lib/scheduler-bootstrap.ts` | Isolates scheduler startup from instrumentation.ts (turbopack can't trace into it) |
+| `lib/daemon/fetch.ts` | Unix socket/TCP connection, `DaemonUnavailableError`, test injection |
+| `lib/daemon/vaults.ts` | Vault discovery, config, pinned assets, slash commands |
+| `lib/daemon/files.ts` | File operations, transcripts, path validation |
+| `lib/daemon/sessions.ts` | Chat send/stream, abort, permission, session lifecycle |
+| `lib/daemon/index.ts` | Barrel export |
 
 ### Key Application Modules
 
@@ -92,9 +95,9 @@ Domain logic lives in `nextjs/lib/`. These modules are imported by API routes an
 |------|---------|
 | `app/layout.tsx` | Root layout |
 | `app/page.tsx` | Main SPA entry (client component) |
-| `app/api/chat/route.ts` | REST chat send (POST, returns sessionId) |
-| `app/api/chat/stream/route.ts` | SSE viewport (GET, snapshot-first) |
-| `lib/controller.ts` | Active Session Controller (SDK orchestration) |
+| `app/api/chat/route.ts` | Proxy: POST chat to daemon |
+| `app/api/chat/stream/route.ts` | Proxy: SSE stream from daemon |
+| `lib/api/client.ts` | Browser-side fetch wrapper for Next.js API routes |
 | `contexts/SessionContext.tsx` | Global state via useReducer |
 | `hooks/useChat.ts` | Two-phase chat client (POST then SSE) |
 
@@ -135,7 +138,7 @@ journalctl --user -u memory-loop | grep -i error       # Search for errors
 
 ### Scheduled Tasks
 
-Two background processes run via Next.js instrumentation (`nextjs/instrumentation.ts`), started once on server boot:
+Two background processes run in the daemon (not in Next.js):
 
 | Task | Default Time | Purpose |
 |------|--------------|---------|
@@ -182,21 +185,19 @@ afterEach(() => {
 
 **When NOT to use:** Async generators, `waitFor()` from testing-library, complex async state machines.
 
-### SDK Provider Pattern
+### Daemon Client Testing Pattern
 
-The Claude Agent SDK uses a centralized provider (`lib/sdk-provider.ts`) to prevent accidental API calls in tests. In the app, `lib/controller.ts` calls `initializeSdkProvider()` lazily on first use. All other modules use `getSdkQuery()`, which throws `SdkNotInitializedError` if not initialized.
-
-In tests, use `configureSdkForTesting(mockFn)` to inject a mock:
+The daemon client layer (`lib/daemon/`) uses a centralized fetch provider for test injection. In tests, use `configureDaemonFetchForTesting` to inject a mock:
 
 ```typescript
-import { configureSdkForTesting } from "../sdk-provider";
+import { configureDaemonFetchForTesting } from "../daemon/fetch";
 
 let cleanup: () => void;
-beforeEach(() => { cleanup = configureSdkForTesting(mockQueryFn); });
+beforeEach(() => { cleanup = configureDaemonFetchForTesting(mockFetchFn); });
 afterEach(() => { cleanup(); });
 ```
 
-This ensures tests never accidentally spend API tokens.
+This mock covers all daemon client modules (vaults, files, sessions) since they all use the shared fetch layer. SDK provider and domain logic testing lives in the daemon package.
 
 ## Documentation
 

@@ -5,8 +5,8 @@
  */
 
 import { NextRequest } from "next/server";
-import * as sessionClient from "@/lib/session-client";
-import { DaemonUnavailableError } from "@/lib/daemon-fetch";
+import * as sessionClient from "@/lib/daemon/sessions";
+import { DaemonUnavailableError } from "@/lib/daemon/fetch";
 
 interface RouteParams {
   params: Promise<{

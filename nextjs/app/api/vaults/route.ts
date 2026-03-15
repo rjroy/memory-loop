@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { discoverVaults, createVault } from "@/lib/vault-client";
+import { discoverVaults, createVault } from "@/lib/daemon/vaults";
 import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("api/vaults");

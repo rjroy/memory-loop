@@ -8,7 +8,7 @@
  * client handles it uniformly.
  */
 
-import * as sessionClient from "@/lib/session-client";
+import * as sessionClient from "@/lib/daemon/sessions";
 import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("api/chat/stream");

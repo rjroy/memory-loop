@@ -1,11 +1,8 @@
 /**
- * Transitional Vault Client (REQ-DAB-23)
+ * Daemon Vault Client
  *
  * HTTP client that proxies vault operations to the daemon API.
- * This module will be deleted in Stage 6 when the Next.js app
- * is fully converted to a daemon client.
- *
- * Uses the shared daemon-fetch module for HTTP connection logic.
+ * Part of the permanent daemon client layer for the web app.
  */
 
 import { basename, join } from "node:path";
@@ -17,8 +14,8 @@ import type {
   SaveConfigResult,
 } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
-import { daemonFetch } from "./daemon-fetch";
-export { DaemonUnavailableError } from "./daemon-fetch";
+import { daemonFetch } from "./fetch";
+export { DaemonUnavailableError } from "./fetch";
 export type { SaveConfigResult };
 
 const log = createLogger("vault-client");
@@ -29,7 +26,7 @@ const log = createLogger("vault-client");
 
 // Re-export for existing test code that calls configureVaultClientForTesting.
 // Delegates to the shared daemon-fetch provider.
-export { configureDaemonFetchForTesting as configureVaultClientForTesting } from "./daemon-fetch";
+export { configureDaemonFetchForTesting as configureVaultClientForTesting } from "./fetch";
 
 /**
  * Extract vault ID from a vault path.

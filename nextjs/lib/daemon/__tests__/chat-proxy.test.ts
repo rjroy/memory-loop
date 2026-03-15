@@ -6,8 +6,8 @@
  */
 
 import { describe, test, expect, afterEach } from "bun:test";
-import { configureDaemonFetchForTesting } from "../daemon-fetch";
-import type { FetchFn } from "../daemon-fetch";
+import { configureDaemonFetchForTesting } from "../fetch";
+import type { FetchFn } from "../fetch";
 
 let cleanupFetch: (() => void) | undefined;
 
@@ -21,7 +21,7 @@ afterEach(() => {
 async function importStreamRoute() {
   // We can't import the route directly due to Next.js module resolution.
   // Instead, test the session-client + error handling pattern.
-  const { getChatStream } = await import("../session-client");
+  const { getChatStream } = await import("../sessions");
   return { getChatStream };
 }
 

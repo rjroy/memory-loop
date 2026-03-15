@@ -9,7 +9,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { daemonFetch } from "@/lib/daemon-fetch";
+import { daemonFetch } from "@/lib/daemon/fetch";
 
 export async function GET() {
   const res = await daemonFetch("/config/extraction-prompt");

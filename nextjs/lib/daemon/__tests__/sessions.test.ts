@@ -6,10 +6,9 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { configureDaemonFetchForTesting } from "../daemon-fetch";
-import type { FetchFn } from "../daemon-fetch";
+import { configureDaemonFetchForTesting } from "../fetch";
+import type { FetchFn } from "../fetch";
 
-// Import session-client functions under test
 import {
   sendMessage,
   getChatStream,
@@ -23,7 +22,7 @@ import {
   getInspiration,
   initSession,
   deleteSessionById,
-} from "../session-client";
+} from "../sessions";
 
 let cleanupFetch: (() => void) | undefined;
 let lastRequest: { path: string; init?: RequestInit } | null = null;

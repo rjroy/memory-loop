@@ -1,24 +1,20 @@
 /**
- * Transitional File Client (REQ-DAB-23)
+ * Daemon File Client
  *
- * Provides file/transcript operations to nextjs modules that haven't
- * migrated to the daemon yet (session-manager, vault-transfer, vault-setup).
- *
- * Uses the shared daemon-fetch module so test injection covers all clients.
- * This module will be deleted in Stage 5/6 when remaining consumers move.
+ * Provides file and transcript operations via the daemon API.
+ * Part of the permanent daemon client layer for the web app.
  */
 
 import { resolve } from "node:path";
 import { realpath as fsRealpath } from "node:fs/promises";
 import type { VaultInfo, StoredToolInvocation } from "@memory-loop/shared";
 import { createLogger, formatTimeForTimestamp } from "@memory-loop/shared";
-import { daemonFetch } from "./daemon-fetch";
+import { daemonFetch } from "./fetch";
 
 const log = createLogger("file-client");
 
 // ---------------------------------------------------------------------------
 // Path validation (local copies, no daemon call needed)
-// TODO: Stage 5 - remove when vault-transfer and vault-setup move to daemon
 // ---------------------------------------------------------------------------
 
 /**

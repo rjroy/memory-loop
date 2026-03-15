@@ -10,8 +10,8 @@
 import { NextResponse } from "next/server";
 import { readFile, lstat } from "node:fs/promises";
 import { join, extname } from "node:path";
-import { getVaultById } from "@/lib/vault-client";
-import { isPathWithinVault } from "@/lib/file-client";
+import { getVaultById } from "@/lib/daemon/vaults";
+import { isPathWithinVault } from "@/lib/daemon/files";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; path: string[] }>;

@@ -197,10 +197,10 @@ describe("GET /session/state", () => {
     const app = createApp(startTime);
     const res = await app.request("/session/state");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { sessionId: string | null; isProcessing: boolean };
+    const body = (await res.json()) as { sessionId: string | null; isStreaming: boolean };
     expect(body).toHaveProperty("sessionId");
-    expect(body).toHaveProperty("isProcessing");
-    expect(body.isProcessing).toBe(false);
+    expect(body).toHaveProperty("isStreaming");
+    expect(body.isStreaming).toBe(false);
   });
 });
 

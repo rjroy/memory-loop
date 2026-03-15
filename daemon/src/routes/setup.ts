@@ -40,7 +40,7 @@ export async function setupHandler(c: Context): Promise<Response> {
 
   const { vaultId } = result.data;
 
-  const vault = getCachedVaultById(vaultId);
+  const vault = await getCachedVaultById(vaultId);
   if (!vault) {
     return c.json(
       { error: { code: "VAULT_NOT_FOUND", message: `Vault not found: ${vaultId}` } },

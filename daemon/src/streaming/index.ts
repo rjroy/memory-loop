@@ -6,8 +6,6 @@
 
 export {
   createActiveSessionController,
-  getActiveSessionController,
-  resetActiveSessionController,
   type ActiveSessionController,
 } from "./active-session-controller";
 

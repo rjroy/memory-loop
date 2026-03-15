@@ -66,7 +66,7 @@ describe("POST /config/extraction/trigger", () => {
 
     const body = await response.json() as Record<string, unknown>;
     expect(typeof body.status).toBe("string");
-    expect(["complete", "error", "running"]).toContain(body.status);
+    expect(["complete", "error", "running"]).toContain(body.status as string);
   });
 });
 

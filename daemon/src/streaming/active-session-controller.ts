@@ -636,25 +636,3 @@ export function createActiveSessionController(): ActiveSessionController {
   };
 }
 
-// Singleton instance
-let controller: ActiveSessionController | null = null;
-
-/**
- * Gets the singleton Active Session Controller instance.
- */
-export function getActiveSessionController(): ActiveSessionController {
-  if (!controller) {
-    controller = createActiveSessionController();
-  }
-  return controller;
-}
-
-/**
- * Resets the singleton for testing.
- */
-export function resetActiveSessionController(): void {
-  if (controller) {
-    controller.clearSession();
-  }
-  controller = null;
-}

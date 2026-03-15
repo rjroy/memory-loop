@@ -76,7 +76,7 @@ export function chatStreamHandler(c: Context): Response {
         clearInterval(keepAlive);
         return;
       }
-      stream.writeSSE({ data: "", comment: "keep-alive" }).catch(() => {
+      stream.writeSSE({ data: "", event: "keep-alive" }).catch(() => {
         cleanup();
       });
     }, KEEPALIVE_INTERVAL_MS);

@@ -48,7 +48,7 @@ export async function sessionInitHandler(c: Context): Promise<Response> {
     );
   }
 
-  const vault = getCachedVaultById(vaultId);
+  const vault = await getCachedVaultById(vaultId);
   if (!vault) {
     return c.json(
       { error: "VAULT_NOT_FOUND", message: `Vault "${vaultId}" not found` },

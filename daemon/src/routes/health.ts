@@ -12,6 +12,7 @@ import {
   isExtractionRunning,
   getLastRunResult,
   getNextScheduledRun,
+  type ExtractionRunResult,
 } from "../extraction/extraction-manager";
 import {
   isSchedulerRunning as isCardSchedulerRunning,
@@ -27,7 +28,7 @@ export interface HealthResponse {
   schedulers: {
     extraction: {
       status: string;
-      lastRun: Record<string, unknown> | null;
+      lastRun: ExtractionRunResult | null;
       nextRun: string | null;
     };
     cardDiscovery: {

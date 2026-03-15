@@ -15,6 +15,22 @@ import { daemonFetch } from "./daemon-fetch";
 
 const log = createLogger("session-client");
 
+/**
+ * Error with additional daemon-specific fields (code, status).
+ * Avoids unsafe casting of Error to Record<string, unknown>.
+ */
+class DaemonError extends Error {
+  code?: string;
+  status?: number;
+
+  constructor(message: string, opts?: { code?: string; status?: number }) {
+    super(message);
+    this.name = "DaemonError";
+    this.code = opts?.code;
+    this.status = opts?.status;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Chat operations
 // ---------------------------------------------------------------------------
@@ -32,10 +48,10 @@ export async function sendMessage(params: {
   });
   if (!res.ok) {
     const body = (await res.json()) as { error: { code: string; message: string } };
-    const err = new Error(body.error.message);
-    (err as Record<string, unknown>).code = body.error.code;
-    (err as Record<string, unknown>).status = res.status;
-    throw err;
+    throw new DaemonError(body.error.message, {
+      code: body.error.code,
+      status: res.status,
+    });
   }
   return (await res.json()) as { sessionId: string };
 }
@@ -53,9 +69,7 @@ export async function abortProcessing(sessionId: string): Promise<void> {
   if (!res.ok) {
     const body = (await res.json()) as { error: string | { code: string; message: string } };
     const msg = typeof body.error === "string" ? body.error : body.error.message;
-    const err = new Error(msg);
-    (err as Record<string, unknown>).status = res.status;
-    throw err;
+    throw new DaemonError(msg, { status: res.status });
   }
 }
 
@@ -71,9 +85,7 @@ export async function respondToPermission(
   });
   if (!res.ok) {
     const body = (await res.json()) as { error: { code: string; message: string } };
-    const err = new Error(body.error.message);
-    (err as Record<string, unknown>).status = res.status;
-    throw err;
+    throw new DaemonError(body.error.message, { status: res.status });
   }
 }
 
@@ -89,9 +101,7 @@ export async function respondToAnswer(
   });
   if (!res.ok) {
     const body = (await res.json()) as { error: { code: string; message: string } };
-    const err = new Error(body.error.message);
-    (err as Record<string, unknown>).status = res.status;
-    throw err;
+    throw new DaemonError(body.error.message, { status: res.status });
   }
 }
 
@@ -128,10 +138,10 @@ export async function runSetup(
   });
   if (!res.ok) {
     const body = (await res.json()) as { error: { code: string; message: string } };
-    const err = new Error(body.error.message);
-    (err as Record<string, unknown>).code = body.error.code;
-    (err as Record<string, unknown>).status = res.status;
-    throw err;
+    throw new DaemonError(body.error.message, {
+      code: body.error.code,
+      status: res.status,
+    });
   }
   return res.json();
 }
@@ -168,9 +178,7 @@ export async function initSession(
   if (!res.ok) {
     const body = (await res.json()) as { error: string; message?: string };
     const msg = typeof body.error === "string" ? body.message ?? body.error : String(body.error);
-    const err = new Error(msg);
-    (err as Record<string, unknown>).status = res.status;
-    throw err;
+    throw new DaemonError(msg, { status: res.status });
   }
   return res.json();
 }

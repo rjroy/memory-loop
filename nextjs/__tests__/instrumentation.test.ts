@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, test, beforeEach, afterEach } from 'bun:test';
 import { register } from '../instrumentation';
 
 describe('instrumentation', () => {

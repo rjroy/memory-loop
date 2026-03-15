@@ -19,7 +19,7 @@ export async function sessionDeleteHandler(c: Context): Promise<Response> {
     );
   }
 
-  const vault = getCachedVaultById(vaultId);
+  const vault = await getCachedVaultById(vaultId);
   if (!vault) {
     return c.json(
       { error: { code: "VAULT_NOT_FOUND", message: "Vault not found" } },

@@ -24,12 +24,12 @@ function jsonError(c: Context, code: string, message: string, status: 400 | 404 
 }
 
 async function getVaultOrError(c: Context) {
-  const vaultId = c.req.param("id");
+  const vaultId = c.req.param("id") ?? "";
   const vault = await getCachedVaultById(vaultId);
   if (!vault) {
-    return { error: jsonError(c, "VAULT_NOT_FOUND", `Vault not found: ${vaultId}`, 404) };
+    return { error: jsonError(c, "VAULT_NOT_FOUND", `Vault not found: ${vaultId}`, 404) } as const;
   }
-  return { vault };
+  return { vault } as const;
 }
 
 const UUID_RE = /^[a-f0-9-]{36}$/i;
@@ -46,7 +46,7 @@ function validateCardId(c: Context): string | Response {
 // GET /vaults/:id/cards/due
 // ---------------------------------------------------------------------------
 
-export async function dueCardsHandler(c: Context): Promise<Response> {
+export async function dueCardsHandler(c: Context) {
   const result = await getVaultOrError(c);
   if ("error" in result) return result.error;
 
@@ -71,7 +71,7 @@ export async function dueCardsHandler(c: Context): Promise<Response> {
 // GET /vaults/:id/cards/:cardId
 // ---------------------------------------------------------------------------
 
-export async function cardDetailHandler(c: Context): Promise<Response> {
+export async function cardDetailHandler(c: Context) {
   const vaultResult = await getVaultOrError(c);
   if ("error" in vaultResult) return vaultResult.error;
 
@@ -107,7 +107,7 @@ export async function cardDetailHandler(c: Context): Promise<Response> {
 // POST /vaults/:id/cards/:cardId/review
 // ---------------------------------------------------------------------------
 
-export async function cardReviewHandler(c: Context): Promise<Response> {
+export async function cardReviewHandler(c: Context) {
   const vaultResult = await getVaultOrError(c);
   if ("error" in vaultResult) return vaultResult.error;
 
@@ -160,7 +160,7 @@ export async function cardReviewHandler(c: Context): Promise<Response> {
 // POST /vaults/:id/cards/:cardId/archive
 // ---------------------------------------------------------------------------
 
-export async function cardArchiveHandler(c: Context): Promise<Response> {
+export async function cardArchiveHandler(c: Context) {
   const vaultResult = await getVaultOrError(c);
   if ("error" in vaultResult) return vaultResult.error;
 

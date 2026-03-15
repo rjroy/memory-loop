@@ -76,21 +76,6 @@ export async function createVault(title: string): Promise<VaultInfo> {
   return (await res.json()) as VaultInfo;
 }
 
-// TODO: Stage 3 - move to daemon file read endpoint
-export async function getVaultGoals(vault: VaultInfo): Promise<string | null> {
-  if (!vault.goalsPath) {
-    return null;
-  }
-  const goalsFullPath = join(vault.contentRoot, vault.goalsPath);
-  try {
-    const { readFile } = await import("node:fs/promises");
-    return await readFile(goalsFullPath, "utf-8");
-  } catch {
-    log.warn(`Failed to read goals file: ${goalsFullPath}`);
-    return null;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Config operations (proxied to daemon)
 // ---------------------------------------------------------------------------

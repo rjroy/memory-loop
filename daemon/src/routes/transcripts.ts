@@ -8,6 +8,7 @@ import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { getCachedVaultById } from "../vault";
 import { initializeTranscript, appendToTranscript } from "../files/transcript-manager";
+import { isPathWithinVault } from "../files/file-browser";
 
 function jsonError(
   c: Context,
@@ -82,6 +83,11 @@ export async function appendTranscriptHandler(c: Context): Promise<Response> {
   const { path, content } = body as { path?: string; content?: string };
   if (typeof path !== "string" || typeof content !== "string") {
     return jsonError(c, "Missing required fields: path, content", "INVALID_REQUEST", 400);
+  }
+
+  // Validate path is within vault boundary
+  if (!(await isPathWithinVault(vault.contentRoot, path))) {
+    return jsonError(c, "Path is outside the vault boundary", "PATH_TRAVERSAL", 403);
   }
 
   try {

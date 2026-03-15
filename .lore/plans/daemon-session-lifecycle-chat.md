@@ -68,7 +68,7 @@ Server-driven chat guarantees preserved (from `.lore/specs/server-driven-chat.md
 
 **D5: mock-sdk.ts strategy.** After Stage 4, `sdk-provider.ts` is already in the daemon. `mock-sdk.ts` provides a mock query function for E2E testing without real API calls. Two things move: (1) `mock-sdk.ts` moves to daemon alongside sdk-provider, (2) the daemon checks `MOCK_SDK=true` to substitute mock responses. The mock generates `ServerMessage` events (from shared schemas), so it integrates naturally with the daemon's session pipeline. Next.js doesn't need mock-sdk after this stage because it no longer hosts the SDK.
 
-**D6: MCP server registration is daemon-owned.** `vault-transfer.ts` creates an MCP server via `createSdkMcpServer()` and passes it to `session-manager.ts` as part of SDK query options. Since both vault-transfer and session-manager move to daemon, MCP registration requires zero architectural changes. The vault-transfer MCP server's dependencies (`vault-manager`, `file-browser`) are already in the daemon after Stages 2-3. The `createVaultTransferServer()` call stays exactly where it is, just in daemon context.
+**D6: MCP server registration is daemon-owned.** `vault-transfer.ts` creates an MCP server via `createSdkMcpServer()` and passes it to `session-manager.ts` as part of SDK query options. Since both vault-transfer and session-manager move to daemon, MCP registration requires zero architectural changes. The vault-transfer MCP server's dependencies (vault-manager in `daemon/src/vault/`, file-browser in `daemon/src/files/`) are already in the daemon after Stages 2-3. The `createVaultTransferServer()` call stays exactly where it is, just in daemon context.
 
 **D7: Inspiration and vault-setup use SDK independently.** Both `inspiration-manager.ts` and `vault-setup.ts` call `getSdkQuery()` directly (not through session-manager). They're not part of the chat pipeline; they're on-demand SDK consumers for content generation and vault initialization. They move to daemon as independent modules with their own daemon API endpoints. Their SDK usage pattern (fire query, collect response, return) doesn't interact with the active session.
 
@@ -84,7 +84,7 @@ Server-driven chat guarantees preserved (from `.lore/specs/server-driven-chat.md
 
 | File | Lines | Role | Daemon Dependencies After Migration |
 |------|-------|------|--------------------------------------|
-| `lib/vault-transfer.ts` | 396 | MCP server for cross-vault file ops | vault-manager, file-browser (already in daemon) |
+| `lib/vault-transfer.ts` | 396 | MCP server for cross-vault file ops | vault-client (transitional), file-browser (already in daemon) |
 | `lib/inspiration-manager.ts` | 1250 | Contextual prompts and quote generation | sdk-provider, vault-config (in daemon) |
 | `lib/mock-sdk.ts` | 116 | Test/dev mock SDK responses | schemas (in shared) |
 
@@ -94,8 +94,8 @@ Note: `lib/vault-setup.ts` (1024 lines) moves in Sub-phase B alongside session-m
 
 | File | Lines | Role | Daemon Dependencies After Migration |
 |------|-------|------|--------------------------------------|
-| `lib/session-manager.ts` | 1037 | SDK session create/resume/save | sdk-provider, vault-manager, vault-config, transcript-manager, note-capture, vault-transfer (all in daemon) |
-| `lib/vault-setup.ts` | 1024 | Vault initialization (PARA dirs, CLAUDE.md update) | vault-manager, vault-config, file-browser, sdk-provider, session-manager (mapSdkError) |
+| `lib/session-manager.ts` | 1037 | SDK session create/resume/save | sdk-provider, vault-client (transitional), vault-config (in daemon), transcript-manager, note-capture, vault-transfer (all in daemon after Stage 3) |
+| `lib/vault-setup.ts` | 1024 | Vault initialization (PARA dirs, CLAUDE.md update) | vault-client (transitional), vault-config (in daemon), file-browser (in daemon), sdk-provider, session-manager (mapSdkError) |
 | `lib/streaming/session-streamer.ts` | 636 | SDK event → SessionEvent transformation | schemas (in shared) |
 | `lib/streaming/active-session-controller.ts` | 627 | Stateful session orchestration | session-manager, session-streamer, logger |
 | `lib/streaming/types.ts` | 192 | Type definitions for session events | schemas (in shared); types move to shared package |
@@ -131,7 +131,7 @@ Note: `lib/vault-setup.ts` (1024 lines) moves in Sub-phase B alongside session-m
 
 This plan assumes Stages 1-4 are complete. Specifically:
 - Daemon process exists with Hono HTTP framework on Unix socket (Stage 1)
-- vault-manager, vault-config are in daemon (Stage 2)
+- vault-manager, vault-config are in daemon (Stage 2); nextjs modules use vault-client transitional facade
 - file-browser, note-capture, transcript-manager are in daemon (Stage 3)
 - sdk-provider is in daemon (Stage 4)
 - Daemon directory structure (`daemon/src/`, `daemon/src/routes/`) exists
@@ -142,7 +142,7 @@ Stage 4 plan is currently `status: active`. This plan can be reviewed and approv
 
 - **Transitional client facade** (Stage 2 D4, Stage 3 D7): Next.js keeps a thin client module that calls daemon endpoints. This pattern replaces direct module imports.
 - **Copy-then-delete** (Stage 4 D1): sdk-provider was copied to daemon, nextjs copy kept temporarily. By Stage 5, the nextjs copy of sdk-provider is deleted because no nextjs code calls it anymore.
-- **Daemon route registration** (Stage 1 D1): Hono routes at `daemon/src/routes/`. Follow existing patterns from Stages 2-4.
+- **Daemon route registration** (Stage 1 D1): Hono routes at `daemon/src/routes/`, registered in `daemon/src/router.ts:registerRoutes()`. Follow existing patterns from Stages 2-4.
 
 ## Implementation Steps
 
@@ -175,9 +175,9 @@ Move `pair-writing-prompts.ts` to `packages/shared/src/pair-writing-prompts.ts`.
 **Addresses**: D5, D6, D7
 **Expertise**: none
 
-**vault-transfer.ts**: All its dependencies (`vault-manager`, `file-browser`) are already in daemon. Move file, update imports. The `createVaultTransferServer()` function stays as-is; it will be called by session-manager in Step 3.
+**vault-transfer.ts**: Its dependencies (vault-manager as `vault-client` transitional import, file-browser) are already in daemon. Move file, update `vault-client` imports to `../vault/vault-manager` (daemon's own module). The `createVaultTransferServer()` function stays as-is; it will be called by session-manager in Step 3.
 
-**vault-setup.ts**: Dependencies include `vault-manager`, `vault-config`, `file-browser`, `session-manager` (for `mapSdkError`), and `sdk-provider`. All are in or will be in daemon. The `mapSdkError` import creates a forward dependency on session-manager (Step 3). Extract `mapSdkError` as a standalone utility first (it's a simple error-message mapper), or move vault-setup alongside session-manager in Step 3 instead. **Decision: Move vault-setup in Step 3 alongside session-manager to avoid the forward dependency.**
+**vault-setup.ts**: Dependencies include `vault-client` (transitional), `vault-config`, `file-browser`, `session-manager` (for `mapSdkError`), and `sdk-provider`. All are in or will be in daemon. The `mapSdkError` import creates a forward dependency on session-manager (Step 3). **Decision: Move vault-setup in Step 3 alongside session-manager to avoid the forward dependency.**
 
 **inspiration-manager.ts**: Dependencies are `sdk-provider`, `vault-config`, and `VaultInfo` from schemas (shared). Move file, update imports. Create daemon endpoint `GET /inspiration` that accepts `vaultId` query param, looks up vault, calls `getInspiration(vault)`.
 
@@ -194,7 +194,7 @@ Daemon route creation and Next.js proxy updates for vault-setup and inspiration 
 This is the core step. Move the five files into daemon:
 
 **session-manager.ts** (`daemon/src/session-manager.ts`):
-- All imports are now satisfied within daemon: `sdk-provider`, `vault-manager`, `vault-config`, `transcript-manager`, `note-capture`, `vault-transfer`, `logger`.
+- All imports are now satisfied within daemon: `sdk-provider`, `vault/vault-manager` (was `vault-client`), `vault/vault-config`, `files/transcript-manager`, `files/note-capture`, `vault-transfer`, `logger`.
 - `pair-writing-prompts` imports from `@memory-loop/shared`.
 - `mapSdkError` stays in session-manager (vault-setup imports from here, or extract to shared utility).
 - `VaultConfig` and schema types import from `@memory-loop/shared`.
@@ -234,7 +234,7 @@ This is the core step. Move the five files into daemon:
 **Addresses**: REQ-DAB-5, REQ-DAB-24, D4, D9, D10
 **Expertise**: none
 
-Create daemon endpoints following the capability-oriented URL grammar from `.lore/research/daemon-rest-api.md`:
+Register all session routes in `daemon/src/router.ts:registerRoutes()`. Create daemon endpoints following the capability-oriented URL grammar from `.lore/research/daemon-rest-api.md`:
 
 **`POST /session/chat/send`**
 - Body: `{ vaultId, vaultPath, sessionId?, prompt }`
@@ -245,7 +245,34 @@ Create daemon endpoints following the capability-oriented URL grammar from `.lor
 - On other errors: returns structured error with 500
 
 **`GET /session/chat/stream`**
-- Returns SSE stream
+- Returns SSE stream using **Hono's `hono/streaming` SSE helper** (`streamSSE`). This is the reason we converted to Hono (Stage 1 fix commission). Use the `streamSSE(c, async (stream) => { ... })` pattern:
+  ```typescript
+  import { streamSSE } from "hono/streaming";
+
+  app.get("/session/chat/stream", (c) => {
+    return streamSSE(c, async (stream) => {
+      // Send snapshot as first event
+      await stream.writeSSE({ data: JSON.stringify(snapshot), event: "snapshot" });
+
+      // Subscribe to controller events
+      const unsubscribe = controller.subscribe((event) => {
+        stream.writeSSE({ data: JSON.stringify(event), event: event.type });
+      });
+
+      // Keep-alive every 15s
+      const keepAlive = setInterval(() => {
+        stream.writeSSE({ data: "", event: "keep-alive" });
+      }, 15000);
+
+      // Cleanup on abort (client disconnect)
+      stream.onAbort(() => {
+        clearInterval(keepAlive);
+        unsubscribe();
+        // Do NOT abort processing (REQ-SDC-4)
+      });
+    });
+  });
+  ```
 - First event: snapshot (`{ type: "snapshot", ...controller.getSnapshot() }`)
 - If not processing: close stream after snapshot
 - If processing: subscribe to controller events, forward each as SSE
@@ -296,20 +323,20 @@ Note on REQ-SDC-6: The `POST /session/chat/send` endpoint calls `controller.send
 **Addresses**: REQ-DAB-5, D3, D4
 **Expertise**: none
 
-Create `nextjs/lib/session-client.ts` following the transitional client pattern from Stages 2-3:
+Create `nextjs/lib/session-client.ts` using the shared `daemon-fetch` module from Stage 3, Step 0. This follows the same pattern as vault-client and file-client: import `daemonFetch` and `DaemonUnavailableError` from `@/lib/daemon-fetch`, use them for all daemon communication. No new connection logic, no `DAEMON_URL` env var. The Unix socket / TCP fallback resolution is handled once in `daemon-fetch`.
 
 ```typescript
-// Pattern from Stage 2's vault-client.ts and Stage 3's file-client.ts
-const DAEMON_URL = process.env.DAEMON_URL ?? "http://localhost:3001";
+// Uses daemon-fetch (same pattern as vault-client and file-client)
+import { daemonFetch, DaemonUnavailableError } from "./daemon-fetch";
 
 export async function sendMessage(params: { ... }): Promise<{ sessionId: string }> {
-  const res = await fetch(`${DAEMON_URL}/session/chat/send`, { method: "POST", ... });
+  const res = await daemonFetch("/session/chat/send", { method: "POST", ... });
   // error handling
   return res.json();
 }
 
 export async function getChatStream(): Promise<Response> {
-  return fetch(`${DAEMON_URL}/session/chat/stream`);
+  return daemonFetch("/session/chat/stream");
 }
 
 export async function abortProcessing(sessionId: string): Promise<void> { ... }
@@ -319,6 +346,8 @@ export async function getSessionState(): Promise<SessionState> { ... }
 export async function clearSession(): Promise<void> { ... }
 export async function lookupSession(vaultId: string): Promise<string | null> { ... }
 ```
+
+Because session-client uses `daemon-fetch`, test injection via `configureDaemonFetchForTesting` in `test-daemon-helpers.ts` covers session-client automatically. No new test helpers needed (Finding #5 from Thorne review: extend existing test helper pattern, don't create new ones).
 
 Rewrite each Next.js chat API route to use session-client:
 
@@ -443,7 +472,7 @@ Grep for any remaining direct imports of deleted modules. Fix any broken referen
    - Daemon stream closes, proxy closes
    - Client disconnects from proxy, daemon stream continues (verify via controller state)
    - Keep-alive comments pass through proxy
-   - **Buffering test**: Verify events arrive at proxy output within 100ms of daemon emission (catches accidental buffering). Note: this test requires real timers, not fake timers (the streaming path uses async generators which are incompatible with fake timers per CLAUDE.md).
+   - **Event ordering test**: Verify events arrive at proxy output in the same order as daemon emission, and all events arrive within a 1-second timeout (catches accidental buffering without flaky millisecond thresholds). Note: this test requires real timers, not fake timers (the streaming path uses async generators which are incompatible with fake timers per CLAUDE.md).
 
 8. **mock-mode.test.ts**: Start daemon with `MOCK_SDK=true`, send a chat message, verify mock response streams through the full pipeline (daemon SSE → proxy → client).
 
@@ -559,7 +588,7 @@ Consult `.lore/lore-agents.md` for the full agent registry.
 - [ ] `nextjs/lib/` contains no direct imports of SDK, session-manager, or active-session-controller
 - [ ] Next.js chat API routes proxy to daemon (no local session logic)
 - [ ] SSE proxy is byte-transparent: daemon bytes arrive at browser unchanged
-- [ ] SSE proxy latency: events arrive within 100ms of daemon emission (no buffering)
+- [ ] SSE proxy correctness: events arrive in order with 1s timeout (no buffering)
 - [ ] Single-session constraint enforced at daemon level (POST while processing → 409)
 - [ ] Session create, resume, abort, permission, answer all work through daemon API
 - [ ] MCP server registration (vault-transfer) works from daemon context

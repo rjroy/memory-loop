@@ -44,13 +44,13 @@ Staging goals addressed:
 | File | Lines | Role | Dependencies |
 |------|-------|------|-------------|
 | `lib/file-browser.ts` | ~500 | Directory listing, file read/write/rename/delete, path security | schemas, logger |
-| `lib/file-upload.ts` | 233 | File upload with WebP conversion | file-browser (`isPathWithinVault`), vault-manager (`directoryExists`), image-converter |
-| `lib/note-capture.ts` | 408 | Daily note creation/append, recent notes | schemas, vault-manager (`getVaultInboxPath`, `directoryExists`, `fileExists`) |
-| `lib/meeting-capture.ts` | 416 | Meeting file creation/append, stop meeting | schemas, vault-manager, note-capture (formatters) |
+| `lib/file-upload.ts` | 233 | File upload with WebP conversion | file-browser (`isPathWithinVault`), `@memory-loop/shared` (`directoryExists`), image-converter |
+| `lib/note-capture.ts` | 408 | Daily note creation/append, recent notes | `@memory-loop/shared` (schemas, `getVaultInboxPath`, `directoryExists`, `fileExists`) |
+| `lib/meeting-capture.ts` | 416 | Meeting file creation/append, stop meeting | `@memory-loop/shared` (schemas, `getVaultInboxPath`), note-capture (formatters) |
 | `lib/meeting-store.ts` | 93 | In-memory active meeting per vault | meeting-capture (`ActiveMeeting`), logger |
-| `lib/transcript-manager.ts` | 256 | Transcript file init/append | schemas, vault-manager, note-capture (formatters) |
-| `lib/task-manager.ts` | 425 | Task discovery/parsing/toggle from vault dirs | schemas, file-browser (`validatePath`, `FileBrowserError`), vault-config, vault-manager |
-| `lib/daily-prep-manager.ts` | 507 | Daily prep frontmatter parsing | schemas, vault-manager (`fileExists`), logger |
+| `lib/transcript-manager.ts` | 256 | Transcript file init/append | `@memory-loop/shared` (schemas, `getVaultInboxPath`, `directoryExists`), note-capture (formatters) |
+| `lib/task-manager.ts` | 425 | Task discovery/parsing/toggle from vault dirs | schemas, file-browser (`validatePath`, `FileBrowserError`), `@memory-loop/shared` (vault config types) |
+| `lib/daily-prep-manager.ts` | 507 | Daily prep frontmatter parsing | `@memory-loop/shared` (schemas, `fileExists`), logger |
 | `lib/reference-updater.ts` | 242 | Update wikilinks/markdown links on rename | logger |
 | `lib/search-cache.ts` | 235 | LRU cache for SearchIndexManager instances | search/search-index, logger |
 | `lib/search/search-index.ts` | ~400 | File and content search index | schemas |
@@ -100,7 +100,7 @@ All test files use standard `node:fs/promises` for setup, no Next.js `Request`/`
 | `/api/vaults/[vaultId]/search/content/route.ts` | GET | search-handlers (via handlers) |
 | `/api/vaults/[vaultId]/search/snippets/route.ts` | GET | search-handlers (via handlers) |
 | `/api/vaults/[vaultId]/pinned-assets/route.ts` | GET, PUT | config-handlers |
-| `/api/vaults/[vaultId]/goals/route.ts` | GET | vault-manager (getVaultGoals) |
+| `/api/vaults/[vaultId]/goals/route.ts` | GET | vault-client (`getVaultGoals`) |
 
 **Stage 2 establishes patterns this plan builds on:**
 
@@ -222,9 +222,40 @@ daemon/src/
 
 ## Precondition
 
-Stage 2 must be complete before beginning any step below. That means: vault-manager and vault-config live in `daemon/src/vault/`, the vault API routes are serving, vault-client exists as the transitional facade in nextjs, and all Stage 2 acceptance criteria are met.
+Stage 2 must be complete before beginning any step below. That means: vault modules live in `daemon/src/vault/`, the vault API routes are serving, vault-client exists as the transitional facade in nextjs, and all Stage 2 acceptance criteria are met.
+
+**Stage 3 must complete before Stage 4.** Although the original staging brainstorm described Stages 3 and 4 as potentially parallel, they cannot run independently. Stage 3 establishes the daemon-fetch shared module (Step 0), the daemon route handler patterns for file operations, and the API route proxy conversion pattern. Stage 4 must follow these patterns, not reinvent them. Running them in parallel would produce inconsistent implementations that need rework.
 
 ## Implementation Steps
+
+### Preliminary: Extract shared daemon-fetch module
+
+#### Step 0: Create `nextjs/lib/daemon-fetch.ts` shared module
+
+**Files**: `nextjs/lib/daemon-fetch.ts` (new), `nextjs/lib/vault-client.ts` (refactor)
+**Addresses**: Architectural recommendation from Thorne review (prevents three copy-paste implementations of Unix socket connection logic)
+
+Three client facades will need daemon connection logic by the end of Stage 5: vault-client (Stage 2, exists), file-client (this stage), and session-client (Stage 5). Each needs Unix socket resolution, `DAEMON_SOCKET` / `DAEMON_PORT` env handling, `DaemonUnavailableError` wrapping, and a provider pattern for test injection.
+
+Extract a shared `daemon-fetch` module from vault-client before creating file-client:
+
+1. Create `nextjs/lib/daemon-fetch.ts` containing:
+   - `DaemonUnavailableError` class (moved from vault-client)
+   - `getSocketPath()`, `getDaemonPort()`, `defaultDaemonFetch()` (moved from vault-client)
+   - `daemonFetch(path, init)` wrapper that catches connection errors and throws `DaemonUnavailableError`
+   - Provider pattern: `configureDaemonFetchForTesting(mockFetch)` returns cleanup function
+   - Type: `FetchFn = (path: string, init?: RequestInit) => Promise<Response>`
+
+2. Refactor `nextjs/lib/vault-client.ts`:
+   - Remove `DaemonUnavailableError`, `getSocketPath`, `getDaemonPort`, `defaultDaemonFetch`, `daemonFetch`, `FetchFn`, and the provider pattern internals
+   - Import `daemonFetch` and `DaemonUnavailableError` from `./daemon-fetch`
+   - `configureVaultClientForTesting` becomes a thin wrapper around `configureDaemonFetchForTesting` (or is replaced by it; all facades share one mock)
+
+3. Update `nextjs/test-daemon-helpers.ts`:
+   - Import `configureDaemonFetchForTesting` from `./lib/daemon-fetch` instead of `configureVaultClientForTesting` from vault-client
+   - One mock fetch injection configures all client facades simultaneously (they all use the same underlying `daemonFetch`)
+
+**Verification**: `bun run typecheck && bun run test` from root. Vault-client tests pass unchanged (same behavior, different module boundary).
 
 ### Sub-Phase A: File Operations
 
@@ -346,7 +377,7 @@ This resolves the Stage 2 TODO in vault-client's `getVaultGoals`.
 
 All error responses follow the Stage 1 convention: `{ "error": string, "code": string, "detail"?: string }`. Error codes map from `FileBrowserError.code` values.
 
-Register routes in `daemon/src/server.ts`. Update `daemon/src/routes/help.ts` to include file endpoints.
+Register routes in `daemon/src/router.ts:registerRoutes()`. Update `daemon/src/routes/help.ts` to include file endpoints.
 
 Write tests in `daemon/src/routes/__tests__/files.test.ts`:
 - Test each endpoint with Hono's `app.request()`.
@@ -434,7 +465,7 @@ Returns: `{ meeting: MeetingState }` (isActive: false if no meeting).
 Returns: `{ content: string, entryCount: number, filePath: string }`.
 Error: 404 if no active meeting.
 
-Register routes in `daemon/src/server.ts`. Update help discovery.
+Register routes in `daemon/src/router.ts:registerRoutes()`. Update help discovery.
 
 Write tests for both route modules.
 
@@ -487,7 +518,7 @@ Returns: `{ success: true, newState: string }`.
 **`GET /vaults/:id/daily-prep/today`** - Get today's daily prep status.
 Returns: `DailyPrepStatus` object.
 
-Register routes. Update help discovery. Write tests.
+Register routes in `daemon/src/router.ts:registerRoutes()`. Update help discovery. Write tests.
 
 **Verification**: Route tests pass.
 
@@ -549,7 +580,7 @@ Query params: `path` (required), `q` (required).
 Inline: `getOrCreateIndex(vaultId, contentRoot)`, then `index.getSnippets(path, q)`.
 Returns: `{ snippets: ContextSnippet[] }`.
 
-Register routes. Update help discovery. Write tests.
+Register routes in `daemon/src/router.ts:registerRoutes()`. Update help discovery. Write tests.
 
 **Verification**: Route tests pass.
 
@@ -560,7 +591,7 @@ Register routes. Update help discovery. Write tests.
 **Files**: `nextjs/lib/file-client.ts` (new)
 **Addresses**: REQ-DAB-22, REQ-DAB-23, D7
 
-Create `nextjs/lib/file-client.ts` following the vault-client pattern from Stage 2. This provides the same async interface for downstream nextjs modules that still import from deleted modules.
+Create `nextjs/lib/file-client.ts` using the shared `daemon-fetch` module from Step 0. This provides the same async interface for downstream nextjs modules that still import from deleted modules. Because file-client uses `daemon-fetch` (not its own connection logic), test injection via `configureDaemonFetchForTesting` in `test-daemon-helpers.ts` covers file-client automatically. No new test helpers needed.
 
 Functions to expose (calling daemon API over Unix socket):
 
@@ -601,47 +632,74 @@ These endpoints are thin wrappers around `initializeTranscript` and `appendToTra
 
 **Verification**: `bun run --cwd nextjs typecheck` passes.
 
-#### Step 16: Rewrite downstream imports across nextjs
+#### Step 16: Rewrite downstream imports across nextjs (lib/ modules)
 
-**Files**: ~15 files in `nextjs/lib/` and `nextjs/app/api/`
+**Files**: ~4 files in `nextjs/lib/`
 
-Switch all remaining nextjs imports from deleted modules to their new sources.
+Update lib/ modules that still import from deleted Stage 3 modules. These are modules that don't move until Stage 5.
 
-1. **API route files (17 routes)**: These routes currently import from `lib/file-browser`, `lib/note-capture`, `lib/meeting-capture`, `lib/meeting-store`, `lib/task-manager`, `lib/daily-prep-manager`, `lib/handlers/search-handlers`, etc. During Stage 3, these routes continue to work by importing from the transitional `file-client`. But since these routes will become daemon API proxies in Stage 6, and the daemon now serves these endpoints directly, an alternative is to convert these specific routes to daemon proxies now (calling the daemon API instead of importing domain modules).
+| Module | Old Import | New Source |
+|--------|-----------|-----------|
+| `session-manager.ts` | `formatDateForFilename` from note-capture | `@memory-loop/shared` (moved in Step 2) |
+| `session-manager.ts` | `initializeTranscript`, `appendToTranscript` from transcript-manager | `@/lib/file-client` |
+| `vault-transfer.ts` | `isPathWithinVault` from file-browser | `@/lib/file-client` (local copy per D7) |
+| `vault-setup.ts` | `validatePath` from file-browser | `@/lib/file-client` (local copy per D7) |
 
-   Decision: Convert the API routes to daemon proxies now for the modules that moved in this stage. This eliminates the need for a large file-client and reduces the remaining work in Stage 6. Each route becomes a thin HTTP proxy:
+**Verification**: `bun run --cwd nextjs typecheck` passes.
 
-   ```typescript
-   // Before (direct import)
-   import { listDirectory } from "@/lib/file-browser";
-   const entries = await listDirectory(vault.contentRoot, path);
+#### Step 17: Convert file operation API routes to daemon proxies
 
-   // After (daemon proxy)
-   const res = await fetch(`http://localhost/vaults/${vaultId}/files?path=${path}`, { unix: socketPath });
-   const data = await res.json();
-   ```
+**Files**: ~7 route files under `nextjs/app/api/vaults/[vaultId]/`
 
-   This follows the same pattern as Stage 2's vault-client, but applied at the route level. The vault-helpers `getVaultOrError` function was already rewritten in Stage 2 to use vault-client.
+Convert routes that imported file-browser, file-upload, reference-updater to daemon proxies. Each route becomes a thin HTTP proxy using `daemonFetch` from `@/lib/daemon-fetch`:
 
-2. **lib/ modules still in nextjs** that imported from moved modules:
+- `/api/vaults/[vaultId]/files/route.ts` (GET, POST)
+- `/api/vaults/[vaultId]/files/[...path]/route.ts` (GET, PUT, PATCH, DELETE)
+- `/api/vaults/[vaultId]/directories/route.ts` (POST)
+- `/api/vaults/[vaultId]/directories/[...path]/route.ts` (GET, DELETE)
+- `/api/vaults/[vaultId]/upload/route.ts` (POST)
+- `/api/vaults/[vaultId]/goals/route.ts` (GET)
 
-   | Module | Old Import | New Source |
-   |--------|-----------|-----------|
-   | `session-manager.ts` | `formatDateForFilename` from note-capture | `@memory-loop/shared` (moved in Step 2) |
-   | `session-manager.ts` | `initializeTranscript`, `appendToTranscript` from transcript-manager | `@/lib/file-client` |
-   | `vault-transfer.ts` | `isPathWithinVault` from file-browser | `@/lib/file-client` (local copy per D7) |
-   | `vault-setup.ts` | `validatePath` from file-browser | `@/lib/file-client` (local copy per D7) |
+The vault-helpers `getVaultOrError` function was already rewritten in Stage 2 to use vault-client. These routes follow the same pattern, calling daemon endpoints instead of importing domain modules.
 
-3. Run grep to verify completeness:
-   ```
-   grep -r "from.*file-browser\|from.*note-capture\|from.*meeting-capture\|from.*meeting-store\|from.*transcript-manager\|from.*task-manager\|from.*daily-prep-manager\|from.*reference-updater\|from.*search-cache\|from.*search-handlers\|from.*search/search-index\|from.*search/fuzzy-matcher\|from.*utils/image-converter" nextjs/
-   ```
+**Verification**: `bun run --cwd nextjs typecheck && bun run --cwd nextjs test` passes.
 
-   Expected remaining matches: only `file-client.ts` (transitional), and `vault-transfer.ts`/`session-manager.ts` importing from file-client. No direct imports from deleted modules.
+#### Step 18: Convert capture and meeting API routes to daemon proxies
+
+**Files**: ~4 route files
+
+- `/api/vaults/[vaultId]/capture/route.ts` (POST)
+- `/api/vaults/[vaultId]/recent-notes/route.ts` (GET)
+- `/api/vaults/[vaultId]/recent-activity/route.ts` (GET)
+- `/api/vaults/[vaultId]/meetings/route.ts` (POST)
+- `/api/vaults/[vaultId]/meetings/current/route.ts` (GET, DELETE)
+
+**Verification**: `bun run --cwd nextjs typecheck` passes.
+
+#### Step 19: Convert task, daily-prep, and search API routes to daemon proxies
+
+**Files**: ~5 route files
+
+- `/api/vaults/[vaultId]/tasks/route.ts` (GET, PATCH)
+- `/api/vaults/[vaultId]/daily-prep/today/route.ts` (GET)
+- `/api/vaults/[vaultId]/search/files/route.ts` (GET)
+- `/api/vaults/[vaultId]/search/content/route.ts` (GET)
+- `/api/vaults/[vaultId]/search/snippets/route.ts` (GET)
+
+**Verification**: `bun run --cwd nextjs typecheck` passes.
+
+#### Step 20: Verify no remaining imports from deleted modules
+
+Run grep to verify completeness:
+```
+grep -r "from.*file-browser\|from.*note-capture\|from.*meeting-capture\|from.*meeting-store\|from.*transcript-manager\|from.*task-manager\|from.*daily-prep-manager\|from.*reference-updater\|from.*search-cache\|from.*search-handlers\|from.*search/search-index\|from.*search/fuzzy-matcher\|from.*utils/image-converter" nextjs/
+```
+
+Expected remaining matches: only `file-client.ts` (transitional), and `vault-transfer.ts`/`session-manager.ts` importing from file-client. No direct imports from deleted modules.
 
 **Verification**: `bun run typecheck && bun run lint && bun run test && bun run build` from root. `bun run --cwd nextjs dev` works. Grep confirms zero imports from deleted modules (except through file-client).
 
-#### Step 17: Integration test
+#### Step 21: Integration test
 
 **Files**: `daemon/src/__tests__/file-operations-integration.test.ts` (new)
 
@@ -668,7 +726,7 @@ End-to-end test validating the file operations API works through the HTTP layer.
 
 **Verification**: Integration test passes end-to-end.
 
-#### Step 18: Validate against spec
+#### Step 22: Validate against spec
 
 Launch a sub-agent that reads the spec at `.lore/specs/daemon-application-boundary.md`, the staging goals from `.lore/brainstorm/daemon-migration-stages.md` (Stage 3 section), and reviews the implementation. Flag any requirements not met.
 
@@ -699,7 +757,7 @@ This is the largest stage by file count. Most steps are mechanical (move files, 
 
 - **Step 14** (search routes): The search-handlers dissolution is straightforward but the timing metadata (`searchTimeMs`) should be preserved. Review that the `getOrCreateIndex` call correctly resolves the vault's content root (not the vault root).
 
-- **Step 16** (import rewriting): High-volume mechanical change. Run grep-first, then bulk replace, then all quality gates. A code-reviewer agent should check the diff for missed imports.
+- **Steps 17-19** (route proxy conversion): Split by domain (file ops, capture/meetings, tasks/search). Each step is independently verifiable. A code-reviewer agent should check the diff for missed imports after Step 20's grep verification.
 
 Consult `.lore/lore-agents.md` for available review agents. The `plan-reviewer`, `code-reviewer`, and `silent-failure-hunter` agents are relevant.
 

@@ -71,7 +71,7 @@ After Stage 6, `nextjs/lib/` contains only web-presentation modules:
 | `lib/api/types.ts` | API error types, request options | Frontend type definitions |
 | `lib/sse.ts` | SSE encoding/headers utilities | Used by proxy routes for SSE forwarding |
 | `lib/schemas/` | Shared Zod schemas | Becomes re-export from `@memory-loop/shared` |
-| `lib/daemon-client.ts` | HTTP-over-socket base client | Used by proxy routes to reach daemon |
+| `lib/daemon-fetch.ts` | Shared Unix socket/TCP connection, `DaemonUnavailableError` | Used by all client facades to reach daemon |
 | `lib/utils/file-types.ts` | File extension detection | Used by 6 React components for asset display |
 
 Everything else in `lib/` gets deleted. The deletion list in Step 4 is exhaustive; only modules explicitly listed there are removed. If a module isn't on either the "delete" or "keep" list, investigate before deleting.
@@ -151,8 +151,8 @@ All 41 Next.js API route files and their disposition after Stage 6.
 
 Read every proxied route file and verify it follows the established proxy pattern:
 
-1. No imports from domain modules in `nextjs/lib/` (no `vault-manager`, `session-manager`, `note-capture`, etc.)
-2. Imports only from: `next/server`, `@/lib/daemon-client` (or stage-specific client facade), `@/lib/sse` (for SSE routes), `@memory-loop/shared` (for types/schemas)
+1. No imports from domain modules in `nextjs/lib/` (no `session-manager`, `note-capture`, etc.; `vault-client` is a transitional facade, not a domain module)
+2. Imports only from: `next/server`, `@/lib/daemon-fetch` (or stage-specific client facade: vault-client, file-client, session-client), `@/lib/sse` (for SSE routes), `@memory-loop/shared` (for types/schemas)
 3. Route handler extracts params and query string, forwards to daemon endpoint, returns daemon response
 4. Error responses from daemon are forwarded as-is (status code and body)
 
@@ -169,7 +169,7 @@ This step may be empty if all previous stages executed cleanly. That's the expec
 
 ### Step 3: Promote Transitional Client Facades to Permanent Daemon Layer
 
-**Files**: `nextjs/lib/vault-client.ts`, `nextjs/lib/file-client.ts`, `nextjs/lib/session-client.ts`
+**Files**: `nextjs/lib/vault-client.ts`, `nextjs/lib/file-client.ts`, `nextjs/lib/session-client.ts`, `nextjs/lib/daemon-fetch.ts`
 **Addresses**: REQ-DAB-23
 
 The transitional client facades (`vault-client.ts` from Stage 2, `file-client.ts` from Stage 3, `session-client.ts` from Stage 5) wrap `daemon-client.ts` with domain-specific methods. They were created as stepping stones so proxy routes didn't need to know raw daemon URLs.
@@ -182,7 +182,7 @@ Now that all routes are proxied and stable, these facades add an unnecessary lay
 
 **Decision: Keep the facades.** They're thin, they prevent URL typos, and deleting them just to say "fewer files" isn't a good trade. But rename them: they're no longer "transitional," they're the permanent daemon API layer for the web app. Move them to `nextjs/lib/daemon/` alongside `daemon-client.ts`:
 
-- `nextjs/lib/daemon/client.ts` (was `daemon-client.ts`, the base HTTP-over-socket client)
+- `nextjs/lib/daemon/fetch.ts` (was `daemon-fetch.ts`, the shared Unix socket connection logic + `DaemonUnavailableError`)
 - `nextjs/lib/daemon/vaults.ts` (was `vault-client.ts`)
 - `nextjs/lib/daemon/files.ts` (was `file-client.ts`)
 - `nextjs/lib/daemon/sessions.ts` (was `session-client.ts`)
@@ -203,9 +203,9 @@ Delete all domain modules that now live in the daemon. This is the largest singl
 
 | Module | Moved to daemon in |
 |--------|--------------------|
-| `lib/vault-manager.ts` | Stage 2 |
-| `lib/vault-config.ts` | Stage 2 |
-| `lib/vault-setup.ts` | Stage 2 |
+| `lib/vault-client.ts` | Stage 2 (transitional facade; promoted to `lib/daemon/vaults.ts` in Step 3) |
+| `lib/vault-config.ts` | Stage 2 (already deleted in Stage 2) |
+| `lib/vault-setup.ts` | Stage 5 |
 | `lib/file-browser.ts` | Stage 3 |
 | `lib/file-upload.ts` | Stage 3 |
 | `lib/note-capture.ts` | Stage 3 |
@@ -232,7 +232,7 @@ Delete all domain modules that now live in the daemon. This is the largest singl
 | `lib/scheduler-bootstrap.ts` | Stage 4 (schedulers run in daemon) |
 | `lib/pair-writing-prompts.ts` | Stage 5 (session context) |
 | `lib/reference-updater.ts` | Stage 3 or 5 (file operations) |
-| `lib/vault-transfer.ts` | Stage 2 (vault operations) |
+| `lib/vault-transfer.ts` | Stage 5 (MCP server for cross-vault file ops) |
 | `lib/utils/image-converter.ts` | Stage 3 (file operations, no remaining Next.js consumers after `file-upload.ts` deleted) |
 
 **Modules to keep** (web-owned):
@@ -354,7 +354,7 @@ No steps require external domain expertise (security, performance, etc.) beyond 
 ## Acceptance Criteria
 
 1. **Zero domain imports in nextjs/**: `grep -r "from.*@/lib/" nextjs/` returns only imports from approved paths: `@/lib/api/`, `@/lib/sse`, `@/lib/daemon/`, `@/lib/schemas/`, and `@/lib/utils/file-types`. No imports from deleted domain modules anywhere in the codebase.
-2. **nextjs/lib/ contains only web-owned modules**: `lib/api/`, `lib/daemon/`, `lib/sse.ts`, `lib/schemas/` (re-export barrel). Nothing else.
+2. **nextjs/lib/ contains only web-owned modules**: `lib/api/`, `lib/daemon/`, `lib/sse.ts`, `lib/schemas/` (re-export barrel), `lib/utils/file-types.ts`. Nothing else.
 3. **All 40 proxy routes forward to daemon**: Each route handler's only job is param extraction, daemon call, response forwarding
 4. **SSE streaming works without buffering**: Chat stream displays tokens incrementally, no visible delay from the proxy hop
 5. **Build passes cleanly**: `typecheck`, `lint`, `test`, and `build` all succeed with zero errors

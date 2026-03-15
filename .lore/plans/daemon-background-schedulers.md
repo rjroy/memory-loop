@@ -49,17 +49,17 @@ Staging goals addressed:
 
 | File | Lines | Role | Dependencies |
 |------|-------|------|-------------|
-| `lib/extraction/extraction-manager.ts` | ~450 | Orchestration, cron scheduling, catch-up | vault-manager, extraction-state, transcript-reader, fact-extractor, memory-writer, cron |
+| `lib/extraction/extraction-manager.ts` | ~450 | Orchestration, cron scheduling, catch-up | vault-client (`getVaultsDir`), extraction-state, transcript-reader, fact-extractor, memory-writer, cron |
 | `lib/extraction/extraction-state.ts` | ~345 | State persistence at ~/.config/memory-loop/extraction-state.json | zod, logger |
-| `lib/extraction/transcript-reader.ts` | ~310 | Transcript discovery across vaults | vault-manager (discoverVaults), transcript-manager (getTranscriptsDirectory), schemas |
-| `lib/extraction/fact-extractor.ts` | ~463 | LLM-based extraction with retry | sdk-provider (getSdkQuery), vault-manager (fileExists) |
-| `lib/extraction/memory-writer.ts` | ~966 | Sandbox/commit for memory files, dedup | logger, vault-manager (fileExists, getVaultsDir) |
+| `lib/extraction/transcript-reader.ts` | ~310 | Transcript discovery across vaults | vault-client (`discoverVaults`), transcript-manager (`getTranscriptsDirectory`), schemas |
+| `lib/extraction/fact-extractor.ts` | ~463 | LLM-based extraction with retry | sdk-provider (`getSdkQuery`), `@memory-loop/shared` (`fileExists`) |
+| `lib/extraction/memory-writer.ts` | ~966 | Sandbox/commit for memory files, dedup | logger, `@memory-loop/shared` (`fileExists`), vault-client (`getVaultsDir`) |
 
 ### Card Discovery System (10 source files)
 
 | File | Lines | Role | Dependencies |
 |------|-------|------|-------------|
-| `lib/spaced-repetition/card-discovery-scheduler.ts` | ~1024 | Scheduler orchestration, daily/weekly passes | vault-manager (discoverVaults), card-discovery-state, card-generator, card-manager, card-storage, card-dedup, card-generator-config |
+| `lib/spaced-repetition/card-discovery-scheduler.ts` | ~1024 | Scheduler orchestration, daily/weekly passes | vault-client (`discoverVaults`), card-discovery-state, card-generator, card-manager, card-storage, card-dedup, card-generator-config |
 | `lib/spaced-repetition/card-discovery-state.ts` | ~379 | State persistence, stale-run recovery | logger |
 | `lib/spaced-repetition/card-generator.ts` | ~388 | LLM card generation | sdk-provider (getSdkQuery) |
 | `lib/spaced-repetition/card-generator-config.ts` | ~270 | Config with user overrides | logger |
@@ -76,7 +76,7 @@ Staging goals addressed:
 |------|-------|------|-------------|
 | `lib/sdk-provider.ts` | 81 | SDK query singleton | @anthropic-ai/claude-agent-sdk |
 | `lib/scheduler-bootstrap.ts` | 57 | Bootstraps both schedulers | extraction-manager, card-discovery-scheduler, sdk-provider |
-| `lib/handlers/config-handlers.ts` | 215 | REST wrappers for config operations | vault-config, vault-manager, vault-setup, logger |
+| `lib/handlers/config-handlers.ts` | 215 | REST wrappers for config operations | vault-config, vault-client, vault-setup, logger |
 
 ### Test Files (14 + 1 e2e)
 
@@ -106,7 +106,7 @@ All test files use `node:fs/promises` for setup and `configureSdkForTesting` for
 
 | Route | Method | Module Imports |
 |-------|--------|---------------|
-| `/api/config/memory` | GET, PUT | extraction/memory-writer, vault-manager (fileExists) |
+| `/api/config/memory` | GET, PUT | extraction/memory-writer |
 | `/api/config/extraction-prompt` | GET, PUT, DELETE | extraction/fact-extractor |
 | `/api/config/extraction-prompt/trigger` | POST | extraction/extraction-manager, controller (ensureSdk) |
 | `/api/config/card-generator` | GET, PUT | spaced-repetition/card-generator-config, card-discovery-scheduler |
@@ -135,28 +135,33 @@ All test files use `node:fs/promises` for setup and `configureSdkForTesting` for
 
 By the time Stage 4 begins, these imports will already be updated:
 - `fileExists`, `directoryExists` → `@memory-loop/shared`
-- `discoverVaults`, `getVaultsDir`, `getVaultById` → vault-client (transitional) or daemon vault module
+- `discoverVaults`, `getVaultsDir`, `getVaultById` → `vault-client.ts` (transitional facade from Stage 2)
 - `getTranscriptsDirectory` → `@memory-loop/shared` (moved in Stage 3, Step 6)
 - `VaultInfo`, schemas → `@memory-loop/shared`
 - Logger → `@memory-loop/shared`
 
+**Important:** The fix commission (post-Stage 2) deleted `vault-manager.ts` from nextjs. Modules that previously imported from `vault-manager` now import from `vault-client.ts`. The import rewrite steps below reflect this: when moving modules to daemon, `vault-client` imports become `../vault/vault-manager` (the daemon's own vault module).
+
 What remains are internal cross-references within the extraction and spaced-repetition subsystems (these resolve naturally since all modules move together), and the `sdk-provider` import (resolved by moving sdk-provider to daemon in Step 1).
 
-### Stage Independence
+### Stage Dependency: Stage 3 must complete first
 
-Stage 4 depends on Stage 2 (vault foundation) but NOT on Stage 3 (stateless file operations). The only Stage 3 dependency is `getTranscriptsDirectory` in `transcript-reader.ts`, but Stage 3 moves that function to `@memory-loop/shared` (Stage 3, Step 6). If Stage 4 runs before Stage 3, this function must be moved to shared as part of Stage 4 instead. The plan includes a precondition check for this.
+Stage 4 depends on both Stage 2 (vault foundation) and Stage 3 (stateless file operations). The original staging brainstorm described Stages 3 and 4 as potentially parallel, but they cannot run independently:
+
+1. Stage 3 establishes the `daemon-fetch` shared module (Step 0) that Stage 4's route proxies must use for consistency.
+2. Stage 3 establishes the daemon route handler patterns that Stage 4 must follow.
+3. Stage 3 moves `getTranscriptsDirectory` to `@memory-loop/shared`, which `transcript-reader.ts` needs.
+4. Stage 3's API route proxy conversion pattern (Steps 17-19) is the template for Stage 4's Step 8.
+
+If any of these are missing, Stage 4 will produce inconsistent code that requires rework.
 
 ## Decisions
 
-### D1: SDK provider moves to daemon, stays available in nextjs via re-export
+### D1: SDK provider duplicated to daemon
 
-`sdk-provider.ts` is the centralized SDK query singleton. Three modules in Stage 4 scope call `getSdkQuery()`: `fact-extractor.ts`, `card-generator.ts`, `card-dedup.ts`. Post-Stage 4, only Stage 5 modules (`session-manager.ts`, `inspiration-manager.ts`, `vault-setup.ts`) still need SDK access from nextjs.
+Copy `sdk-provider.ts` (81 lines) to `daemon/src/sdk-provider.ts`. Both daemon and nextjs keep independent copies. The daemon initializes its copy on startup. The nextjs copy stays for Stage 5 consumers (session-manager, inspiration-manager, vault-setup). When those modules move to daemon in Stage 5, the nextjs copy is deleted.
 
-Move `sdk-provider.ts` to `daemon/src/sdk-provider.ts`. The daemon calls `initializeSdkProvider()` on startup, before schedulers start. This is identical to what `scheduler-bootstrap.ts` does today.
-
-For the Stage 5 transition period, nextjs modules that still need `getSdkQuery()` (session-manager, inspiration-manager, vault-setup) continue importing from their local copy. Create a `nextjs/lib/sdk-provider.ts` that re-exports from the daemon package. This is transitional; when those modules move to the daemon in Stage 5, the nextjs re-export is deleted.
-
-Alternative considered: keep sdk-provider in `@memory-loop/shared`. Rejected because `@anthropic-ai/claude-agent-sdk` is a daemon dependency (it manages the LLM connection). Putting it in the shared package would make the shared package depend on the Agent SDK, which the web app doesn't need. The shared package should stay infrastructure-only (schemas, logger, types, utilities).
+SDK provider doesn't go in `@memory-loop/shared` because that would make the shared package depend on the Agent SDK, which the web app doesn't need.
 
 ### D2: Scheduler startup replaces scheduler-bootstrap.ts
 
@@ -292,71 +297,34 @@ The `cron` package is dynamically imported in `extraction-manager.ts` (`const { 
 
 ## Precondition
 
-Stage 2 must be complete before beginning any step below. That means: vault-manager lives in `daemon/src/vault/`, vault API routes are serving, and vault-client exists as the transitional facade.
+**Stages 2 and 3 must both be complete before beginning any step below.**
 
-Stage 3 is NOT required. However, if Stage 3 has completed, `getTranscriptsDirectory` will already be in `@memory-loop/shared`. If Stage 3 has NOT completed, Step 2 of this plan must handle moving `getTranscriptsDirectory` to the shared package.
+Stage 2: vault-manager lives in `daemon/src/vault/`, vault API routes are serving, vault-client exists as the transitional facade.
 
-Check: Before starting, verify that `getTranscriptsDirectory` is available in `@memory-loop/shared`. If not, add it during Step 2.
+Stage 3: file operation modules live in `daemon/src/files/`, the `daemon-fetch` shared module exists in `nextjs/lib/daemon-fetch.ts`, `getTranscriptsDirectory` is in `@memory-loop/shared`, and the daemon route handler and API proxy patterns are established.
 
 ## Implementation Steps
 
 ### Sub-Phase A: SDK Provider and Shared Types
 
-#### Step 1: Move sdk-provider.ts to daemon
+#### Step 1: Copy sdk-provider.ts to daemon
 
-**Files**: `nextjs/lib/sdk-provider.ts` → `daemon/src/sdk-provider.ts`, new `nextjs/lib/sdk-provider.ts` (re-export shim)
+**Files**: `daemon/src/sdk-provider.ts` (new copy), `daemon/src/__tests__/sdk-provider.test.ts` (new copy)
 **Addresses**: D1
 
-1. Copy `nextjs/lib/sdk-provider.ts` to `daemon/src/sdk-provider.ts`.
-   - No import changes needed. It imports only from `@anthropic-ai/claude-agent-sdk`.
-
+1. Copy `nextjs/lib/sdk-provider.ts` to `daemon/src/sdk-provider.ts`. No import changes needed (it imports only from `@anthropic-ai/claude-agent-sdk`).
 2. Add `@anthropic-ai/claude-agent-sdk` to `daemon/package.json` dependencies.
+3. Copy `nextjs/lib/__tests__/sdk-provider.test.ts` to `daemon/src/__tests__/sdk-provider.test.ts`. Update test imports to `../sdk-provider`.
+4. The nextjs copy stays unchanged for Stage 5 consumers. Mark it `// TODO: Stage 5 - delete when session-manager moves to daemon`.
 
-3. Replace `nextjs/lib/sdk-provider.ts` with a transitional re-export shim:
-   ```typescript
-   /**
-    * SDK Provider (transitional)
-    *
-    * Re-exports from the daemon's sdk-provider for modules that haven't
-    * migrated yet (session-manager, inspiration-manager, vault-setup).
-    * Delete this file when those modules move to daemon in Stage 5.
-    */
-   export {
-     initializeSdkProvider,
-     getSdkQuery,
-     configureSdkForTesting,
-     _resetForTesting,
-     SdkNotInitializedError,
-     type QueryFunction,
-   } from "@memory-loop/daemon/src/sdk-provider";
-   ```
+**Verification**: `bun run --cwd daemon typecheck && bun run --cwd daemon test` passes. `bun run --cwd nextjs typecheck` unchanged.
 
-   Wait: this won't work. The daemon is a separate workspace package, and importing its source files directly from nextjs would create a cross-package dependency on a non-exported internal path. That defeats the package boundary.
+#### Step 2: Verify extraction/card shared types are available
 
-   Better approach: keep `sdk-provider.ts` in nextjs as-is until Stage 5. The daemon gets its own copy. Both copies are identical, and both work independently. The daemon initializes its copy on startup. Nextjs modules continue using their local copy (session-manager, inspiration-manager, vault-setup call `initializeSdkProvider()` through controller.ts's `ensureSdk()`). The duplication is acceptable for one stage's lifetime.
-
-   Revised plan:
-   - Copy `sdk-provider.ts` to `daemon/src/sdk-provider.ts` (not `git mv`, since the original stays)
-   - Update daemon's copy imports if needed (none needed, it only imports from the SDK package)
-   - The original `nextjs/lib/sdk-provider.ts` stays unchanged for Stage 5 consumers
-   - When Stage 5 moves session-manager and friends to daemon, `nextjs/lib/sdk-provider.ts` is deleted
-
-4. Move `nextjs/lib/__tests__/sdk-provider.test.ts` to `daemon/src/__tests__/sdk-provider.test.ts`:
-   - Copy (not move) the test file to daemon. The nextjs copy can be deleted since the canonical location is now daemon, and nextjs consumers don't test the provider itself.
-   - Update test imports to `../sdk-provider`.
-
-5. Add `@anthropic-ai/claude-agent-sdk` to daemon's devDependencies if it's not already a runtime dep.
-
-**Verification**: `bun run --cwd daemon typecheck` passes. `bun run --cwd daemon test` runs sdk-provider tests. `bun run --cwd nextjs typecheck` still passes (nextjs sdk-provider unchanged).
-
-#### Step 2: Ensure extraction/card shared types are available
-
-**Files**: `packages/shared/src/index.ts` (update if needed)
+**Files**: `packages/shared/src/index.ts` (verify)
 **Addresses**: D3 precondition check
 
-1. Check if `getTranscriptsDirectory` is in `@memory-loop/shared` (Stage 3 may have done this).
-   - If YES: no action needed.
-   - If NO: Extract `getTranscriptsDirectory` from `nextjs/lib/transcript-manager.ts` into `packages/shared/src/vault-paths.ts`. It's a pure path derivation: `join(getVaultInboxPath(vault), "chats")`. Export it from `packages/shared/src/index.ts`. Update `transcript-reader.ts` to import from `@memory-loop/shared`.
+1. Verify `getTranscriptsDirectory` is in `@memory-loop/shared` (moved in Stage 3, Step 6). This is a precondition; if missing, Stage 3 was not completed correctly.
 
 2. Verify `card-schema.ts` and `sm2-algorithm.ts` don't need to move to shared.
    - `card-schema.ts` defines Zod schemas for cards. Only consumed by spaced-repetition modules and the card API routes. Since card routes will become daemon proxies, the schemas don't need to be in the shared package. They stay with the spaced-repetition module in the daemon.
@@ -383,24 +351,25 @@ Check: Before starting, verify that `getTranscriptsDirectory` is available in `@
 3. Update imports in each file:
    - `extraction-manager.ts`:
      - `../logger` → `@memory-loop/shared`
-     - `../vault-manager` (`getVaultsDir`) → `../vault/vault-manager` (daemon's own vault module)
+     - `../vault-client` (`getVaultsDir`) → `../vault/vault-manager` (daemon's own vault module)
      - Internal extraction imports (`./extraction-state`, `./transcript-reader`, etc.) stay relative
      - `cron` → static import instead of dynamic (no bundler constraint in daemon, per D9)
    - `extraction-state.ts`:
      - `../logger` → `@memory-loop/shared`
      - `zod` stays as-is
    - `transcript-reader.ts`:
-     - `../vault-manager` (`discoverVaults`, `directoryExists`) → `../vault/vault-manager` for `discoverVaults`, `@memory-loop/shared` for `directoryExists`
+     - `../vault-client` (`discoverVaults`) → `../vault/vault-manager`
      - `../transcript-manager` (`getTranscriptsDirectory`) → `@memory-loop/shared` (moved in Step 2 or Stage 3)
      - `@/lib/schemas` → `@memory-loop/shared`
      - `../logger` → `@memory-loop/shared`
    - `fact-extractor.ts`:
      - `../sdk-provider` → `../sdk-provider` (daemon's own copy from Step 1)
-     - `../vault-manager` (`fileExists`) → `@memory-loop/shared`
+     - `fileExists` already imports from `@memory-loop/shared` (no change needed)
      - `../logger` → `@memory-loop/shared`
    - `memory-writer.ts`:
      - `../logger` → `@memory-loop/shared`
-     - `../vault-manager` (`fileExists`, `getVaultsDir`) → `@memory-loop/shared` for `fileExists`, `../vault/vault-manager` for `getVaultsDir`
+     - `fileExists` already imports from `@memory-loop/shared` (no change needed)
+     - `../vault-client` (`getVaultsDir`) → `../vault/vault-manager`
 
 4. Move `cron` from `nextjs/package.json` dependencies to `daemon/package.json` dependencies (D9).
 
@@ -481,7 +450,7 @@ Returns: `{ "success": true, "isOverride": true }`.
 Removes user override file, returns default prompt.
 Returns: `{ "success": true, "content": "..." }`.
 
-Register routes in `daemon/src/server.ts`. Update help discovery.
+Register routes in `daemon/src/router.ts:registerRoutes()`. Update help discovery.
 
 Write tests in `daemon/src/routes/__tests__/extraction.test.ts`:
 - Test status endpoint returns expected shape
@@ -514,7 +483,7 @@ Write tests in `daemon/src/routes/__tests__/extraction.test.ts`:
 
 3. Update imports in each file:
    - `card-discovery-scheduler.ts`:
-     - `../vault-manager` (`discoverVaults`) → `../vault/vault-manager`
+     - `../vault-client` (`discoverVaults`) → `../vault/vault-manager`
      - `@/lib/schemas` (`VaultInfo`) → `@memory-loop/shared`
      - `../logger` → `@memory-loop/shared`
      - Internal imports (`./card-discovery-state`, `./card-generator`, etc.) stay relative
@@ -605,7 +574,7 @@ Calls `triggerManualGeneration()`. No `ensureSdk()` needed (daemon initialized S
 Returns: `{ "status": "complete", "filesProcessed": 5, "cardsCreated": 3 }`.
 Error: 400 if generation can't start (already running, no budget).
 
-Register both route modules in `daemon/src/server.ts`. Update help discovery.
+Register both route modules in `daemon/src/router.ts:registerRoutes()`. Update help discovery.
 
 Write tests:
 - `daemon/src/routes/__tests__/cards.test.ts`: Test each card endpoint with fixture vault and test cards.
@@ -673,7 +642,7 @@ Write tests:
 
 4. Update the Next.js config API routes to proxy to the daemon:
 
-   **`/api/config/memory/route.ts`**: Currently imports from `extraction/memory-writer` and `vault-manager`. Both are now in daemon. Convert to daemon proxy: call `GET/PUT /config/memory`.
+   **`/api/config/memory/route.ts`**: Currently imports from `extraction/memory-writer`. Now in daemon. Convert to daemon proxy using `daemonFetch` from `@/lib/daemon-fetch`: call `GET/PUT /config/memory`.
 
    **`/api/config/extraction-prompt/route.ts`**: Currently imports from `extraction/fact-extractor`. Now in daemon. Convert to daemon proxy: call `GET/PUT/DELETE /config/extraction-prompt`.
 
@@ -689,7 +658,9 @@ Write tests:
 
    **Card API routes** (4 routes under `/api/vaults/[vaultId]/cards/`): Currently import from `@/lib/spaced-repetition`. Now in daemon. Convert to daemon proxy: call the corresponding `GET/POST /vaults/:id/cards/*` daemon endpoints.
 
-5. Run grep to verify completeness:
+5. All proxy routes should use `daemonFetch` from `@/lib/daemon-fetch` (the shared module established in Stage 3, Step 0). Follow the pattern from Stage 3's Steps 17-19 for consistency.
+
+6. Run grep to verify completeness:
    ```
    grep -r "from.*extraction\|from.*spaced-repetition\|from.*scheduler-bootstrap\|from.*config-handlers\|from.*handlers" nextjs/lib/ nextjs/app/
    ```
@@ -697,8 +668,6 @@ Write tests:
    - `sdk-provider` imports in nextjs are expected (unchanged per D1, stays for Stage 5 consumers)
    - `vault-setup.ts` import stays (Stage 5)
    - `vault-helpers` import stays (unchanged)
-
-   The grep pattern should exclude `sdk-provider` to avoid false positives, or the implementer should know these matches are expected and correct.
 
 **Verification**: `bun run typecheck && bun run lint && bun run test && bun run build` from root. `bun run --cwd nextjs dev` works. No nextjs file imports from deleted modules.
 

@@ -1,3 +1,11 @@
+---
+title: Agent SDK .mjs type declaration bug
+date: 2026-02-18
+status: open
+tags: [bug, upstream, agent-sdk, typescript, eslint]
+modules: [session-streamer, session-manager, fact-extractor]
+---
+
 # Agent SDK .mjs Type Declaration Bug
 
 **Status:** Open (upstream)

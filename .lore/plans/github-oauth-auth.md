@@ -1,5 +1,5 @@
 ---
-status: superseded 
+status: executed
 ---
 
 # Add GitHub OAuth Authentication (Single-User Door Lock)

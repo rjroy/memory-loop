@@ -1,7 +1,7 @@
 ---
 title: CSS Modules migration for Memory Loop
 date: 2026-02-12
-status: open
+status: parked
 tags: [css, css-modules, styling, dead-css, developer-experience]
 modules: [components, styles]
 ---

@@ -1,7 +1,7 @@
 ---
 title: "Commission: Lore maintenance: tend .lore/ artifacts"
 date: 2026-03-15
-status: failed
+status: abandoned
 type: one-shot
 tags: [commission]
 worker: Octavia
@@ -22,6 +22,11 @@ activity_timeline:
   - timestamp: 2026-03-15T02:14:02.883Z
     event: status_failed
     reason: "Session completed without submitting result"
+  - timestamp: 2026-03-15T02:18:25.240Z
+    event: status_abandoned
+    reason: "going to try it manually."
+    from: "failed"
+    to: "abandoned"
 current_progress: ""
 projectName: memory-loop
 ---

@@ -15,16 +15,19 @@
 
 import { createApp } from "@memory-loop/daemon/server";
 import { resetCache } from "@memory-loop/daemon/vault";
-import { configureVaultClientForTesting } from "./lib/vault-client";
+import { configureDaemonFetchForTesting } from "./lib/daemon-fetch";
 
 /**
- * Set up an in-process daemon and configure vault-client to use it.
+ * Set up an in-process daemon and configure daemon-fetch to use it.
  * Call this in beforeEach after setting VAULTS_DIR.
  * Returns a cleanup function to call in afterEach.
  *
  * Does NOT pre-populate the vault cache. The cache starts empty with a stale
  * timestamp so every getVaults() call refreshes from disk. This lets tests
  * create vault directories after setup and still have them discovered.
+ *
+ * Configures the shared daemon-fetch layer, which means all client facades
+ * (vault-client, file-client) route through the in-process daemon.
  */
 export function setupTestDaemon(): () => void {
   const app = createApp(Date.now());
@@ -33,13 +36,13 @@ export function setupTestDaemon(): () => void {
   // Every getVaults() call will re-discover from VAULTS_DIR.
   resetCache();
 
-  // Configure vault-client to route through the in-process daemon
-  const cleanupClient = configureVaultClientForTesting(async (path, init) => {
+  // Configure shared daemon-fetch to route through the in-process daemon
+  const cleanupFetch = configureDaemonFetchForTesting(async (path, init) => {
     return app.request(path, init);
   });
 
   return () => {
-    cleanupClient();
+    cleanupFetch();
     resetCache();
   };
 }

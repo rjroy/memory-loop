@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import { readFile, lstat } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { getVaultById } from "@/lib/vault-client";
-import { isPathWithinVault } from "@/lib/file-browser";
+import { isPathWithinVault } from "@/lib/file-client";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; path: string[] }>;

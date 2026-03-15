@@ -1,13 +1,14 @@
 /**
- * Directories API Route (Vault-Scoped, Path-Based)
+ * Directories API Route (Vault-Scoped, Path-Based) - Daemon Proxy
  *
  * GET /api/vaults/:vaultId/directories/:path/contents - Get directory contents for delete preview
  * DELETE /api/vaults/:vaultId/directories/:path - Delete directory and contents
+ *
+ * Proxies requests to daemon endpoints.
  */
 
 import { NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse } from "@/lib/vault-helpers";
-import { deleteDirectory, getDirectoryContents } from "@/lib/file-browser";
+import { daemonFetch } from "@/lib/daemon-fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; path: string[] }>;
@@ -17,30 +18,24 @@ interface RouteParams {
  * GET /api/vaults/:vaultId/directories/:path
  *
  * Gets directory contents for deletion preview.
- * The last segment must be "contents" (matching the Hono pattern /directories/:path/contents).
+ * The last segment must be "contents" (matching the daemon pattern /directories/:path/contents).
  */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { vaultId, path } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
+  const segments = path.map(decodeURIComponent);
 
   // The catch-all captures "some/dir/contents" - strip trailing "contents" segment
-  const segments = path.map(decodeURIComponent);
   if (segments[segments.length - 1] !== "contents") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const dirPath = segments.slice(0, -1).join("/");
+  const dirSegments = segments.slice(0, -1);
+  const encodedPath = dirSegments.map(encodeURIComponent).join("/");
 
-  const result = await getDirectoryContents(vault.contentRoot, dirPath);
-
-  return NextResponse.json({
-    path: dirPath,
-    files: result.files,
-    directories: result.directories,
-    totalFiles: result.totalFiles,
-    totalDirectories: result.totalDirectories,
-    truncated: result.truncated,
-  });
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/directories/${encodedPath}/contents`
+  );
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }
 
 /**
@@ -50,16 +45,12 @@ export async function GET(_request: Request, { params }: RouteParams) {
  */
 export async function DELETE(_request: Request, { params }: RouteParams) {
   const { vaultId, path } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
+  const encodedPath = path.map(encodeURIComponent).join("/");
 
-  const dirPath = path.map(decodeURIComponent).join("/");
-
-  const result = await deleteDirectory(vault.contentRoot, dirPath);
-
-  return NextResponse.json({
-    path: result.path,
-    filesDeleted: result.filesDeleted,
-    directoriesDeleted: result.directoriesDeleted,
-  });
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/directories/${encodedPath}`,
+    { method: "DELETE" }
+  );
+  const responseBody: unknown = await res.json();
+  return NextResponse.json(responseBody, { status: res.status });
 }

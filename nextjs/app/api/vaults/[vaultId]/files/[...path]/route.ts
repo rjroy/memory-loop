@@ -1,44 +1,29 @@
 /**
- * Files API Routes (Vault-Scoped, Path-Based)
+ * Files API Routes (Vault-Scoped, Path-Based) - Daemon Proxy
  *
  * GET /api/vaults/:vaultId/files/:path - Read file content
  * PUT /api/vaults/:vaultId/files/:path - Write file content
  * PATCH /api/vaults/:vaultId/files/:path - Rename/move file
  * DELETE /api/vaults/:vaultId/files/:path - Delete file
+ *
+ * Proxies requests to daemon endpoints:
+ *   GET /vaults/:id/files/*
+ *   PUT /vaults/:id/files/* (body: { content })
+ *   PATCH /vaults/:id/files/* (body: { newName } or { newPath })
+ *   DELETE /vaults/:id/files/*
  */
 
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import {
-  readMarkdownFile,
-  writeMarkdownFile,
-  deleteFile,
-  renameFile,
-  moveFile,
-} from "@/lib/file-browser";
-import { updateReferences } from "@/lib/reference-updater";
+import { daemonFetch } from "@/lib/daemon-fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; path: string[] }>;
 }
 
-const WriteFileBodySchema = z.object({
-  content: z.string(),
-});
-
-const RenameFileBodySchema = z.object({
-  newName: z.string().min(1, "New name is required"),
-});
-
-const MoveFileBodySchema = z.object({
-  newPath: z.string().min(1, "New path is required"),
-});
-
-function hasExtension(filePath: string): boolean {
-  const lastSlash = filePath.lastIndexOf("/");
-  const lastDot = filePath.lastIndexOf(".");
-  return lastDot > lastSlash && lastDot !== filePath.length - 1;
+function buildFilePath(vaultId: string, path: string[]): string {
+  const encodedVaultId = encodeURIComponent(vaultId);
+  const encodedPath = path.map(encodeURIComponent).join("/");
+  return `/vaults/${encodedVaultId}/files/${encodedPath}`;
 }
 
 /**
@@ -48,18 +33,9 @@ function hasExtension(filePath: string): boolean {
  */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { vaultId, path } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  const filePath = path.map(decodeURIComponent).join("/");
-
-  const result = await readMarkdownFile(vault.contentRoot, filePath);
-
-  return NextResponse.json({
-    path: filePath,
-    content: result.content,
-    truncated: result.truncated,
-  });
+  const res = await daemonFetch(buildFilePath(vaultId, path));
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }
 
 /**
@@ -69,26 +45,14 @@ export async function GET(_request: Request, { params }: RouteParams) {
  */
 export async function PUT(request: Request, { params }: RouteParams) {
   const { vaultId, path } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  const body: unknown = await request.json();
-  const parsed = WriteFileBodySchema.safeParse(body);
-  if (!parsed.success) {
-    return jsonError(
-      "VALIDATION_ERROR",
-      `Invalid request: ${parsed.error.issues[0]?.message ?? "Unknown validation error"}`
-    );
-  }
-
-  const filePath = path.map(decodeURIComponent).join("/");
-
-  await writeMarkdownFile(vault.contentRoot, filePath, parsed.data.content);
-
-  return NextResponse.json({
-    path: filePath,
-    success: true,
+  const body = await request.text();
+  const res = await daemonFetch(buildFilePath(vaultId, path), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body,
   });
+  const responseBody: unknown = await res.json();
+  return NextResponse.json(responseBody, { status: res.status });
 }
 
 /**
@@ -99,61 +63,14 @@ export async function PUT(request: Request, { params }: RouteParams) {
  */
 export async function PATCH(request: Request, { params }: RouteParams) {
   const { vaultId, path } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  const body: unknown = await request.json();
-  const filePath = path.map(decodeURIComponent).join("/");
-
-  // Check if this is a rename or move operation
-  const renameResult = RenameFileBodySchema.safeParse(body);
-  const moveResult = MoveFileBodySchema.safeParse(body);
-
-  if (renameResult.success) {
-    // Rename operation
-    const { newName } = renameResult.data;
-
-    const result = await renameFile(vault.contentRoot, filePath, newName);
-
-    // Update references
-    const isDirectory = !hasExtension(result.newPath);
-    const refResult = await updateReferences(
-      vault.contentRoot,
-      result.oldPath,
-      result.newPath,
-      isDirectory
-    );
-
-    return NextResponse.json({
-      oldPath: result.oldPath,
-      newPath: result.newPath,
-      referencesUpdated: refResult.referencesUpdated,
-    });
-  } else if (moveResult.success) {
-    // Move operation
-    const { newPath } = moveResult.data;
-
-    const result = await moveFile(vault.contentRoot, filePath, newPath);
-
-    // Update references
-    const refResult = await updateReferences(
-      vault.contentRoot,
-      result.oldPath,
-      result.newPath,
-      result.isDirectory
-    );
-
-    return NextResponse.json({
-      oldPath: result.oldPath,
-      newPath: result.newPath,
-      referencesUpdated: refResult.referencesUpdated,
-    });
-  } else {
-    return jsonError(
-      "VALIDATION_ERROR",
-      "Request body must contain either 'newName' (for rename) or 'newPath' (for move)"
-    );
-  }
+  const body = await request.text();
+  const res = await daemonFetch(buildFilePath(vaultId, path), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+  const responseBody: unknown = await res.json();
+  return NextResponse.json(responseBody, { status: res.status });
 }
 
 /**
@@ -163,12 +80,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
  */
 export async function DELETE(_request: Request, { params }: RouteParams) {
   const { vaultId, path } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  const filePath = path.map(decodeURIComponent).join("/");
-
-  await deleteFile(vault.contentRoot, filePath);
-
-  return NextResponse.json({ path: filePath });
+  const res = await daemonFetch(buildFilePath(vaultId, path), {
+    method: "DELETE",
+  });
+  const responseBody: unknown = await res.json();
+  return NextResponse.json(responseBody, { status: res.status });
 }

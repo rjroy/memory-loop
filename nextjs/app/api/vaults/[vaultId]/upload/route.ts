@@ -1,12 +1,14 @@
 /**
- * Upload API Route (Vault-Scoped)
+ * Upload API Route (Vault-Scoped) - Daemon Proxy
  *
  * POST /api/vaults/:vaultId/upload - Upload a file to the vault's attachment directory
+ *
+ * Proxies requests to daemon endpoint:
+ *   POST /vaults/:id/upload (multipart)
  */
 
 import { NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { uploadFile } from "@/lib/file-upload";
+import { daemonFetch } from "@/lib/daemon-fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -16,43 +18,20 @@ interface RouteParams {
  * POST /api/vaults/:vaultId/upload
  *
  * Accepts multipart form data with a "file" field.
- * Validates, generates a unique filename, and writes to the vault's attachment directory.
+ * Forwards the form data to the daemon for processing.
  */
 export async function POST(request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
 
-  let formData: FormData;
-  try {
-    formData = await request.formData();
-  } catch {
-    return jsonError("VALIDATION_ERROR", "Invalid multipart form data");
-  }
-
-  const file = formData.get("file");
-  if (!file || !(file instanceof File)) {
-    return jsonError("VALIDATION_ERROR", "No file provided");
-  }
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  const result = await uploadFile(
-    vault.path,
-    vault.contentRoot,
-    vault.attachmentPath,
-    buffer,
-    file.name
+  // Read incoming form data and reconstruct for the daemon
+  const formData = await request.formData();
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
   );
-
-  if (!result.success) {
-    return jsonError("UPLOAD_FAILED", result.error ?? "Upload failed", 400);
-  }
-
-  return NextResponse.json({
-    success: true,
-    path: result.path,
-    converted: result.converted,
-    originalFormat: result.originalFormat,
-  });
+  const responseBody: unknown = await res.json();
+  return NextResponse.json(responseBody, { status: res.status });
 }

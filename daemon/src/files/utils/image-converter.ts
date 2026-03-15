@@ -285,7 +285,7 @@ function detectWebpAnimation(buffer: Buffer): boolean {
  */
 export async function checkCwebpAvailability(
   deps: {
-    execFileAsync?: typeof execFileAsyncDefault;
+    execFileAsync?: (file: string, args: string[], options?: { timeout?: number }) => Promise<{ stdout: string; stderr: string }>;
   } = {}
 ): Promise<boolean> {
   const { execFileAsync = execFileAsyncDefault } = deps;

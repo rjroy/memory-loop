@@ -1,12 +1,14 @@
 /**
- * File Search API Route (Vault-Scoped)
+ * File Search API Route (Vault-Scoped) - Daemon Proxy
  *
  * GET /api/vaults/:vaultId/search/files - Search for files by name
+ *
+ * Proxies requests to daemon endpoint:
+ *   GET /vaults/:id/search/files (query: q, limit)
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { searchFilesRest } from "@/lib/handlers";
+import { daemonFetch } from "@/lib/daemon-fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -23,32 +25,15 @@ interface RouteParams {
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  const query = request.nextUrl.searchParams.get("q");
+  const query = request.nextUrl.searchParams.get("q") ?? "";
   const limitParam = request.nextUrl.searchParams.get("limit");
 
-  // Validate query parameter
-  if (!query || query.trim() === "") {
-    return jsonError("VALIDATION_ERROR", "Query parameter 'q' is required");
+  let url = `/vaults/${encodeURIComponent(vaultId)}/search/files?q=${encodeURIComponent(query)}`;
+  if (limitParam) {
+    url += `&limit=${encodeURIComponent(limitParam)}`;
   }
 
-  // Parse optional limit
-  let limit: number | undefined;
-  if (limitParam !== null) {
-    const parsed = parseInt(limitParam, 10);
-    if (isNaN(parsed) || parsed < 1) {
-      return jsonError("VALIDATION_ERROR", "Invalid limit parameter. Must be a positive integer.");
-    }
-    limit = parsed;
-  }
-
-  const result = await searchFilesRest(vault.id, vault.contentRoot, query, limit);
-
-  return NextResponse.json({
-    results: result.results,
-    totalMatches: result.totalMatches,
-    searchTimeMs: result.searchTimeMs,
-  });
+  const res = await daemonFetch(url);
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }

@@ -19,7 +19,7 @@ import type { VaultInfo } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
 import { directoryExists } from "@memory-loop/shared/server";
 import { discoverVaults } from "../vault-client";
-import { getTranscriptsDirectory } from "../transcript-manager";
+import { getTranscriptsDirectory } from "@memory-loop/shared";
 import {
   calculateChecksum,
   isTranscriptProcessed,

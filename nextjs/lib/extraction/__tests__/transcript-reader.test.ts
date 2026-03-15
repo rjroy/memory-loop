@@ -14,7 +14,7 @@ import {
   readTranscript,
   discoverVaultTranscripts,
 } from "../transcript-reader";
-import { getTranscriptsDirectory } from "../../transcript-manager";
+import { getTranscriptsDirectory } from "@memory-loop/shared";
 import { createEmptyState, markTranscriptProcessed, calculateChecksum } from "../extraction-state";
 import { createMockVault } from "../../__tests__/test-helpers";
 

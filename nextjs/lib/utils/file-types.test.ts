@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isCsvFile, encodeAssetPath } from "./file-types";
+import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isCsvFile, encodeAssetPath } from "@memory-loop/shared";
 
 describe("isImageFile", () => {
   test("returns true for common image extensions", () => {

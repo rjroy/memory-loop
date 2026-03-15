@@ -55,6 +55,28 @@ export {
   slashCommandsEqual,
 } from "./vault-config";
 
+// File type utilities
+export {
+  IMAGE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
+  isImageFile,
+  isVideoFile,
+  isPdfFile,
+  isMarkdownFile,
+  isJsonFile,
+  isTxtFile,
+  isCsvFile,
+  hasSupportedViewer,
+  encodeAssetPath,
+} from "./file-types";
+
+// Date formatting utilities
+export {
+  formatDateForFilename,
+  formatTimeForTimestamp,
+  getDailyNoteFilename,
+} from "./date-utils";
+
 // Vault path helpers
 export type { ExtractedTitle } from "./vault-paths";
 export {
@@ -66,4 +88,5 @@ export {
   titleToDirectoryName,
   getVaultInboxPath,
   getVaultMetadataPath,
+  getTranscriptsDirectory,
 } from "./vault-paths";

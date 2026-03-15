@@ -1,12 +1,14 @@
 /**
- * Recent Notes API Route (Vault-Scoped)
+ * Recent Notes API Route (Vault-Scoped) - Daemon Proxy
  *
  * GET /api/vaults/:vaultId/recent-notes - Get recent captured notes
+ *
+ * Proxies requests to daemon endpoint:
+ *   GET /vaults/:id/recent-notes (query: limit)
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getRecentNotes } from "@/lib/note-capture";
+import { daemonFetch } from "@/lib/daemon-fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -20,25 +22,14 @@ interface RouteParams {
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  // Parse optional limit query param
   const limitParam = request.nextUrl.searchParams.get("limit");
-  let limit = 5;
+
+  let url = `/vaults/${encodeURIComponent(vaultId)}/recent-notes`;
   if (limitParam) {
-    const parsed = parseInt(limitParam, 10);
-    if (isNaN(parsed) || parsed < 1 || parsed > 100) {
-      return jsonError("VALIDATION_ERROR", "limit must be a number between 1 and 100");
-    }
-    limit = parsed;
+    url += `?limit=${encodeURIComponent(limitParam)}`;
   }
 
-  try {
-    const notes = await getRecentNotes(vault, limit);
-    return NextResponse.json({ notes });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to get recent notes";
-    return jsonError("INTERNAL_ERROR", message, 500);
-  }
+  const res = await daemonFetch(url);
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }

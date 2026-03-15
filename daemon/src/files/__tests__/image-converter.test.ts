@@ -1,6 +1,5 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
-import { detectImageFormat, convertToWebp, checkCwebpAvailability } from '../image-converter';
-import type { ExecException } from 'child_process';
+import { detectImageFormat, convertToWebp, checkCwebpAvailability } from '../utils/image-converter';
 
 describe('image-converter', () => {
   describe('checkCwebpAvailability', () => {
@@ -19,7 +18,7 @@ describe('image-converter', () => {
     test('returns false and logs error when cwebp binary is missing (ENOENT)', async () => {
       const deps = {
         execFileAsync: async () => {
-          const error = new Error('spawn cwebp ENOENT') as ExecException;
+          const error = new Error('spawn cwebp ENOENT') as NodeJS.ErrnoException;
           error.code = 'ENOENT';
           throw error;
         },
@@ -558,7 +557,7 @@ describe('image-converter', () => {
         const deps = {
           ...mockDeps,
           execFileAsync: async () => {
-            const error = new Error('Command failed') as ExecException;
+            const error = new Error('Command failed') as NodeJS.ErrnoException & { killed?: boolean; signal?: string };
             error.killed = true;
             error.signal = 'SIGTERM';
             throw error;
@@ -580,7 +579,7 @@ describe('image-converter', () => {
         const deps = {
           ...mockDeps,
           execFileAsync: async () => {
-            const error = new Error('spawn cwebp ENOENT') as ExecException;
+            const error = new Error('spawn cwebp ENOENT') as NodeJS.ErrnoException;
             error.code = 'ENOENT';
             throw error;
           },

@@ -1,22 +1,18 @@
 /**
- * Directories API Route (Vault-Scoped)
+ * Directories API Route (Vault-Scoped) - Daemon Proxy
  *
  * POST /api/vaults/:vaultId/directories - Create a new directory
+ *
+ * Proxies requests to daemon endpoint:
+ *   POST /vaults/:id/directories (body: { path, name })
  */
 
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { createDirectory } from "@/lib/file-browser";
+import { daemonFetch } from "@/lib/daemon-fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
 }
-
-const CreateDirectoryBodySchema = z.object({
-  path: z.string(),
-  name: z.string().min(1, "Directory name is required"),
-});
 
 /**
  * POST /api/vaults/:vaultId/directories
@@ -25,22 +21,15 @@ const CreateDirectoryBodySchema = z.object({
  */
 export async function POST(request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  const body: unknown = await request.json();
-  const parsed = CreateDirectoryBodySchema.safeParse(body);
-  if (!parsed.success) {
-    return jsonError(
-      "VALIDATION_ERROR",
-      `Invalid request: ${parsed.error.issues[0]?.message ?? "Unknown validation error"}`
-    );
-  }
-
-  const { path, name } = parsed.data;
-  const decodedPath = decodeURIComponent(path);
-
-  const createdPath = await createDirectory(vault.contentRoot, decodedPath, name);
-
-  return NextResponse.json({ path: createdPath }, { status: 201 });
+  const body = await request.text();
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/directories`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    }
+  );
+  const responseBody: unknown = await res.json();
+  return NextResponse.json(responseBody, { status: res.status });
 }

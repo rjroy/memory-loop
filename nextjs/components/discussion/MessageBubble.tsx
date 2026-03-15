@@ -10,7 +10,7 @@ import React from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ConversationMessage } from "../../contexts/SessionContext";
-import { encodeAssetPath } from "@/lib/utils/file-types";
+import { encodeAssetPath } from "@memory-loop/shared";
 import { ToolDisplay } from "./ToolDisplay";
 import "./MessageBubble.css";
 

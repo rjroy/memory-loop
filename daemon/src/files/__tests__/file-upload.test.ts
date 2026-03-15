@@ -19,8 +19,8 @@ import {
   MAX_FILE_SIZES,
 } from "../file-upload";
 
-// Path to real image files for testing
-const TEST_FIXTURES_DIR = join(import.meta.dir, "../../public");
+// Path to real image files for testing (still in nextjs/public)
+const TEST_FIXTURES_DIR = join(import.meta.dir, "../../../../nextjs/public");
 
 describe("generateFilename", () => {
   it("generates filename with date prefix", () => {

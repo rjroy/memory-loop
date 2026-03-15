@@ -16,7 +16,7 @@ import {
   getVaultById,
 } from "./vault-client";
 import { directoryExists } from "@memory-loop/shared/server";
-import { isPathWithinVault } from "./file-browser";
+import { isPathWithinVault } from "./file-client";
 
 const log = createLogger("VaultTransfer");
 

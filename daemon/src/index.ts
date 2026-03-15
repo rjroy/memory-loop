@@ -8,6 +8,7 @@
 import { createLogger } from "@memory-loop/shared";
 import { startServer } from "./server";
 import { initVaultCache } from "./vault";
+import { checkCwebpAvailability } from "./files/utils/image-converter";
 
 const log = createLogger("daemon");
 const startTime = Date.now();
@@ -26,6 +27,10 @@ const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : u
 // Initialize vault cache before accepting requests to prevent
 // early requests hitting an empty cache.
 await initVaultCache();
+
+// Check cwebp binary availability (REQ-IMAGE-WEBP-15)
+// Server continues regardless of result (REQ-IMAGE-WEBP-16)
+await checkCwebpAvailability();
 
 const server = startServer({ socketPath, port, startTime });
 

@@ -12,7 +12,6 @@
 
 export async function register(
   deps: {
-    checkCwebpAvailability?: () => Promise<boolean>;
     bootstrapSchedulers?: (log: ReturnType<typeof import("@memory-loop/shared").createLogger>) => Promise<void>;
   } = {}
 ) {
@@ -20,10 +19,7 @@ export async function register(
     const { createLogger } = await import("@memory-loop/shared");
     const log = createLogger("instrumentation");
 
-    // Check cwebp binary availability on startup (REQ-IMAGE-WEBP-15)
-    const checkCwebpAvailability = deps.checkCwebpAvailability ?? (await import("@/lib/utils/image-converter")).checkCwebpAvailability;
-    await checkCwebpAvailability();
-    // Server continues regardless of result (REQ-IMAGE-WEBP-16)
+    // cwebp availability check moved to daemon startup (REQ-IMAGE-WEBP-15/16)
 
     if (process.env.NODE_ENV === "production") {
       try {

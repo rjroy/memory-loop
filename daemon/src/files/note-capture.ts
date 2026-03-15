@@ -9,8 +9,16 @@
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { VaultInfo, RecentNoteEntry } from "@memory-loop/shared";
-import { getVaultInboxPath } from "@memory-loop/shared";
+import {
+  getVaultInboxPath,
+  formatDateForFilename,
+  formatTimeForTimestamp,
+  getDailyNoteFilename,
+} from "@memory-loop/shared";
 import { directoryExists, fileExists } from "@memory-loop/shared/server";
+
+// Re-export date utilities for backward compatibility within daemon code
+export { formatDateForFilename, formatTimeForTimestamp, getDailyNoteFilename };
 
 /**
  * Error thrown when note capture operations fail.
@@ -34,41 +42,6 @@ export interface CaptureResult {
   notePath: string;
   /** Error message if capture failed */
   error?: string;
-}
-
-/**
- * Formats a Date object as YYYY-MM-DD.
- *
- * @param date - The date to format
- * @returns Date string in YYYY-MM-DD format
- */
-export function formatDateForFilename(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-/**
- * Formats a Date object as HH:MM for timestamp prefixes.
- *
- * @param date - The date to format
- * @returns Time string in HH:MM format (24-hour)
- */
-export function formatTimeForTimestamp(date: Date): string {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
-}
-
-/**
- * Gets the filename for today's daily note.
- *
- * @param date - Optional date to use (defaults to now)
- * @returns Filename in YYYY-MM-DD.md format
- */
-export function getDailyNoteFilename(date: Date = new Date()): string {
-  return `${formatDateForFilename(date)}.md`;
 }
 
 /**

@@ -21,7 +21,7 @@ import {
   getCacheStats,
   configureSearchCache,
   getSearchCacheConfig,
-} from "../search-cache";
+} from "../search/search-cache";
 
 // =============================================================================
 // Test Helpers

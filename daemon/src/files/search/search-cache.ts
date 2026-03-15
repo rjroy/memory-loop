@@ -7,7 +7,7 @@
  * @see .sdd/tasks/2026-01-21-rest-api-migration-tasks.md (TASK-009)
  */
 
-import { SearchIndexManager } from "./search/search-index";
+import { SearchIndexManager } from "./search-index";
 import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("SearchCache");

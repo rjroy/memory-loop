@@ -5,12 +5,10 @@
  * This module will be deleted in Stage 6 when the Next.js app
  * is fully converted to a daemon client.
  *
- * Uses a provider pattern (like sdk-provider.ts) so tests can inject
- * mock fetch responses without hitting the network.
+ * Uses the shared daemon-fetch module for HTTP connection logic.
  */
 
 import { basename, join } from "node:path";
-import { readFile } from "node:fs/promises";
 import type {
   VaultInfo,
   VaultConfig,
@@ -19,98 +17,19 @@ import type {
   SaveConfigResult,
 } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
+import { daemonFetch } from "./daemon-fetch";
+export { DaemonUnavailableError } from "./daemon-fetch";
 export type { SaveConfigResult };
 
 const log = createLogger("vault-client");
 
 // ---------------------------------------------------------------------------
-// DaemonUnavailableError
+// Backwards-compatible test configuration
 // ---------------------------------------------------------------------------
 
-/**
- * Thrown when the daemon is unreachable.
- * Callers can catch this to distinguish "no data" from "daemon down."
- */
-export class DaemonUnavailableError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
-    super(message);
-    this.name = "DaemonUnavailableError";
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Provider pattern for testability
-// ---------------------------------------------------------------------------
-
-type FetchFn = (path: string, init?: RequestInit) => Promise<Response>;
-
-let _fetchFn: FetchFn | null = null;
-let _initialized = false;
-
-function getSocketPath(): string {
-  if (process.env.DAEMON_SOCKET) {
-    return process.env.DAEMON_SOCKET;
-  }
-  const xdgRuntime = process.env.XDG_RUNTIME_DIR;
-  if (xdgRuntime) {
-    return `${xdgRuntime}/memory-loop.sock`;
-  }
-  return "/tmp/memory-loop.sock";
-}
-
-function getDaemonPort(): number | undefined {
-  return process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : undefined;
-}
-
-function defaultDaemonFetch(path: string, init?: RequestInit): Promise<Response> {
-  const port = getDaemonPort();
-  if (port) {
-    return fetch(`http://127.0.0.1:${port}${path}`, init);
-  }
-
-  const socketPath = getSocketPath();
-  return fetch(`http://localhost${path}`, {
-    ...init,
-    unix: socketPath,
-  } as RequestInit);
-}
-
-function getDaemonFetch(): FetchFn {
-  if (_initialized && _fetchFn) {
-    return _fetchFn;
-  }
-  return defaultDaemonFetch;
-}
-
-/**
- * Configure vault-client for testing. Returns cleanup function.
- * Call the returned function in afterEach to reset state.
- */
-export function configureVaultClientForTesting(mockFetch: FetchFn): () => void {
-  _fetchFn = mockFetch;
-  _initialized = true;
-
-  return () => {
-    _fetchFn = null;
-    _initialized = false;
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Internal fetch wrapper with error distinction
-// ---------------------------------------------------------------------------
-
-async function daemonFetch(path: string, init?: RequestInit): Promise<Response> {
-  const fetchFn = getDaemonFetch();
-  try {
-    return await fetchFn(path, init);
-  } catch (error) {
-    throw new DaemonUnavailableError(
-      `Daemon unreachable at ${path}: ${error instanceof Error ? error.message : String(error)}`,
-      error,
-    );
-  }
-}
+// Re-export for existing test code that calls configureVaultClientForTesting.
+// Delegates to the shared daemon-fetch provider.
+export { configureDaemonFetchForTesting as configureVaultClientForTesting } from "./daemon-fetch";
 
 /**
  * Extract vault ID from a vault path.
@@ -164,6 +83,7 @@ export async function getVaultGoals(vault: VaultInfo): Promise<string | null> {
   }
   const goalsFullPath = join(vault.contentRoot, vault.goalsPath);
   try {
+    const { readFile } = await import("node:fs/promises");
     return await readFile(goalsFullPath, "utf-8");
   } catch {
     log.warn(`Failed to read goals file: ${goalsFullPath}`);
@@ -175,9 +95,13 @@ export async function getVaultGoals(vault: VaultInfo): Promise<string | null> {
 // Config operations (proxied to daemon)
 // ---------------------------------------------------------------------------
 
-export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
+export async function loadVaultConfig(
+  vaultPath: string,
+): Promise<VaultConfig> {
   const vaultId = vaultIdFromPath(vaultPath);
-  const res = await daemonFetch(`/vaults/${encodeURIComponent(vaultId)}/config`);
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/config`,
+  );
   if (!res.ok) {
     log.error(`Failed to load config for ${vaultId}: ${res.status}`);
     return {};
@@ -190,11 +114,14 @@ export async function saveVaultConfig(
   editableConfig: EditableVaultConfig,
 ): Promise<SaveConfigResult> {
   const vaultId = vaultIdFromPath(vaultPath);
-  const res = await daemonFetch(`/vaults/${encodeURIComponent(vaultId)}/config`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(editableConfig),
-  });
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/config`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(editableConfig),
+    },
+  );
   if (!res.ok) {
     const body = (await res.json()) as { error: string };
     return { success: false, error: body.error };
@@ -207,11 +134,14 @@ export async function savePinnedAssets(
   paths: string[],
 ): Promise<void> {
   const vaultId = vaultIdFromPath(vaultPath);
-  const res = await daemonFetch(`/vaults/${encodeURIComponent(vaultId)}/config/pinned-assets`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ paths }),
-  });
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/config/pinned-assets`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths }),
+    },
+  );
   if (!res.ok) {
     log.error(`Failed to save pinned assets for ${vaultId}: ${res.status}`);
   }
@@ -221,7 +151,9 @@ export async function loadSlashCommands(
   vaultPath: string,
 ): Promise<SlashCommand[] | undefined> {
   const vaultId = vaultIdFromPath(vaultPath);
-  const res = await daemonFetch(`/vaults/${encodeURIComponent(vaultId)}/config/slash-commands`);
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/config/slash-commands`,
+  );
   if (!res.ok) {
     log.error(`Failed to load slash commands for ${vaultId}: ${res.status}`);
     return undefined;
@@ -235,11 +167,14 @@ export async function saveSlashCommands(
   commands: SlashCommand[],
 ): Promise<void> {
   const vaultId = vaultIdFromPath(vaultPath);
-  const res = await daemonFetch(`/vaults/${encodeURIComponent(vaultId)}/config/slash-commands`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ commands }),
-  });
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/config/slash-commands`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commands }),
+    },
+  );
   if (!res.ok) {
     log.error(`Failed to save slash commands for ${vaultId}: ${res.status}`);
   }

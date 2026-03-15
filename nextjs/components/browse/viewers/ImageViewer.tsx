@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useEffect, type ReactNode } from "react";
-import { encodeAssetPath } from "@/lib/utils/file-types";
+import { encodeAssetPath } from "@memory-loop/shared";
 import "./ImageViewer.css";
 
 export interface ImageViewerProps {

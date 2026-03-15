@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { createLogger } from "@memory-loop/shared";
 import { fileExists, directoryExists } from "@memory-loop/shared/server";
 import { getVaultById } from "./vault-client";
-import { validatePath } from "./file-browser";
+import { validatePath } from "./file-client";
 import { mapSdkError } from "./session-manager";
 import { loadVaultConfig } from "./vault-client";
 import {

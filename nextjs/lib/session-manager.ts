@@ -31,8 +31,8 @@ import {
   appendToTranscript,
   formatUserMessage,
   formatAssistantMessage,
-} from "./transcript-manager";
-import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
+} from "./file-client";
+import { formatDateForFilename, formatTimeForTimestamp } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
 const log = createLogger("Session");
 import { createVaultTransferServer } from "./vault-transfer";

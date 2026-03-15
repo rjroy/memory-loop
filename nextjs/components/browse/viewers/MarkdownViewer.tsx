@@ -18,7 +18,7 @@ import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
 import { parse as parseYaml } from "yaml";
 import { useSession } from "../../../contexts/SessionContext";
-import { encodeAssetPath } from "@/lib/utils/file-types";
+import { encodeAssetPath } from "@memory-loop/shared";
 import "./MarkdownViewer.css";
 
 /**

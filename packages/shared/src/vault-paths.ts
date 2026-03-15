@@ -89,3 +89,8 @@ export function getVaultInboxPath(vault: VaultInfo): string {
 export function getVaultMetadataPath(vault: VaultInfo): string {
   return `${vault.contentRoot}/${vault.metadataPath}`;
 }
+
+/** Gets the absolute path to the transcripts (chats) directory for a vault. */
+export function getTranscriptsDirectory(vault: VaultInfo): string {
+  return `${getVaultInboxPath(vault)}/chats`;
+}

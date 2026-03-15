@@ -1,12 +1,14 @@
 /**
- * Daily Prep Status Route (Vault-Scoped)
+ * Daily Prep Status Route (Vault-Scoped) - Daemon Proxy
  *
  * GET /api/vaults/:vaultId/daily-prep/today - Get today's prep status
+ *
+ * Proxies requests to daemon endpoint:
+ *   GET /vaults/:id/daily-prep/today
  */
 
 import { NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getDailyPrepStatus } from "@/lib/daily-prep-manager";
+import { daemonFetch } from "@/lib/daemon-fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -20,14 +22,9 @@ interface RouteParams {
  */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  try {
-    const status = await getDailyPrepStatus(vault);
-    return NextResponse.json(status);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to get daily prep status";
-    return jsonError("INTERNAL_ERROR", message, 500);
-  }
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/daily-prep/today`
+  );
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }

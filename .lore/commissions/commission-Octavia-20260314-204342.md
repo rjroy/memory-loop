@@ -1,7 +1,7 @@
 ---
 title: "Commission: Plan: Stage 2 - Vault Foundation"
 date: 2026-03-15
-status: blocked
+status: dispatched
 type: one-shot
 tags: [commission]
 worker: Octavia
@@ -20,6 +20,16 @@ activity_timeline:
     reason: "Dependencies not satisfied"
     from: "pending"
     to: "blocked"
+  - timestamp: 2026-03-15T03:52:49.903Z
+    event: status_pending
+    reason: "Dependencies satisfied"
+    from: "blocked"
+    to: "pending"
+  - timestamp: 2026-03-15T03:52:49.906Z
+    event: status_dispatched
+    reason: "Dispatched to worker"
+    from: "pending"
+    to: "dispatched"
 current_progress: ""
 projectName: memory-loop
 ---

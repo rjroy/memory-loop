@@ -1,3 +1,7 @@
+---
+status: executed
+---
+
 # Remove Auth Layer from Memory Loop
 
 ## Context

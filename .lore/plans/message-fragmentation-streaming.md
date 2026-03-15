@@ -1,3 +1,7 @@
+---
+status: executed
+---
+
 # Fix Message Fragmentation During Streaming
 
 ## Context

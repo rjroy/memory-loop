@@ -1,7 +1,7 @@
 ---
 title: Image to WebP conversion on upload
 date: 2026-02-14
-status: draft
+status: implemented
 tags: [image-processing, webp, upload, optimization, compression]
 modules: [file-upload]
 related: [.lore/reference/think.md, .lore/retros/file-upload-asset-serving-migration-gap.md]

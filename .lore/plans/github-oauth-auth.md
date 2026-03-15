@@ -1,3 +1,7 @@
+---
+status: superseded 
+---
+
 # Add GitHub OAuth Authentication (Single-User Door Lock)
 
 ## Context

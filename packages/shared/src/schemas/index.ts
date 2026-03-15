@@ -10,7 +10,7 @@
 export const VERSION = "0.1.0";
 
 // Core types
-export type { VaultInfo, SessionMetadata, ErrorCode, StoredToolInvocation, ConversationMessage, Badge, BadgeColor } from "./types";
+export type { VaultInfo, SessionMetadata, ErrorCode, StoredToolInvocation, ConversationMessage, Badge, BadgeColor, SaveConfigResult } from "./types";
 
 // Editable vault config types (from protocol)
 export type { EditableVaultConfig, DiscussionModel } from "./protocol";

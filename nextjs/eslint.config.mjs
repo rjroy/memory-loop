@@ -20,6 +20,7 @@ export default tseslint.config(
       "**/*.js",
       "**/*.mjs",
       "next-env.d.ts",
+      "test-daemon-helpers.ts",
     ],
   },
   // Disable type-checked rules in test files (bun:test can't be resolved by projectService)

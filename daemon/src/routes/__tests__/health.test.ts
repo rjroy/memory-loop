@@ -1,10 +1,12 @@
 import { describe, test, expect } from "bun:test";
-import { healthHandler, type HealthResponse } from "../health";
+import { createApp } from "../../server";
+import type { HealthResponse } from "../health";
 
 describe("GET /health", () => {
   test("returns 200 with expected JSON shape", async () => {
     const startTime = Date.now() - 5000;
-    const response = await healthHandler(startTime);
+    const app = createApp(startTime);
+    const response = await app.request("/health");
 
     expect(response.status).toBe(200);
 
@@ -21,7 +23,8 @@ describe("GET /health", () => {
 
   test("uptime is a non-negative number", async () => {
     const startTime = Date.now();
-    const response = await healthHandler(startTime);
+    const app = createApp(startTime);
+    const response = await app.request("/health");
     const body = (await response.json()) as HealthResponse;
 
     expect(body.uptime).toBeGreaterThanOrEqual(0);
@@ -29,7 +32,8 @@ describe("GET /health", () => {
 
   test("uptime reflects elapsed time", async () => {
     const startTime = Date.now() - 10_000;
-    const response = await healthHandler(startTime);
+    const app = createApp(startTime);
+    const response = await app.request("/health");
     const body = (await response.json()) as HealthResponse;
 
     expect(body.uptime).toBeGreaterThanOrEqual(9);

@@ -6,6 +6,7 @@
  * replaced as domain modules migrate in later stages.
  */
 
+import type { Context } from "hono";
 import { getVaults } from "../vault";
 
 export interface HealthResponse {
@@ -20,7 +21,7 @@ export interface HealthResponse {
   };
 }
 
-export async function healthHandler(startTime: number): Promise<Response> {
+export async function healthHandler(c: Context, startTime: number): Promise<Response> {
   const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
   const vaults = await getVaults();
 
@@ -36,5 +37,5 @@ export async function healthHandler(startTime: number): Promise<Response> {
     },
   };
 
-  return Response.json(body);
+  return c.json(body);
 }

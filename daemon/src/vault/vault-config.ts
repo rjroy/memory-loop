@@ -7,7 +7,7 @@
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import type { SlashCommand, Badge, BadgeColor, EditableVaultConfig, VaultConfig } from "@memory-loop/shared";
+import type { SlashCommand, Badge, BadgeColor, EditableVaultConfig, VaultConfig, SaveConfigResult } from "@memory-loop/shared";
 import {
   createLogger,
   CONFIG_FILE_NAME,
@@ -105,9 +105,7 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
   }
 }
 
-export type SaveConfigResult =
-  | { success: true }
-  | { success: false; error: string };
+export type { SaveConfigResult };
 
 function isAllDefaults(config: EditableVaultConfig): boolean {
   return (

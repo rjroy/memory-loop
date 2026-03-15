@@ -23,12 +23,11 @@ function getDefaultSocketPath(): string {
 const socketPath = process.env.DAEMON_SOCKET ?? (process.env.DAEMON_PORT ? undefined : getDefaultSocketPath());
 const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : undefined;
 
-const server = startServer({ socketPath, port, startTime });
+// Initialize vault cache before accepting requests to prevent
+// early requests hitting an empty cache.
+await initVaultCache();
 
-// Initialize vault cache after server starts
-initVaultCache().catch((error) => {
-  log.error(`Failed to initialize vault cache: ${error instanceof Error ? error.message : String(error)}`);
-});
+const server = startServer({ socketPath, port, startTime });
 
 log.info("Memory Loop daemon started");
 

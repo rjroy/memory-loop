@@ -28,6 +28,7 @@ import {
   SESSIONS_DIR,
   type QueryFunction,
 } from "../session-manager";
+import { setupTestDaemon } from "../../test-daemon-helpers";
 
 // =============================================================================
 // Mock SDK Query Function (injected via DI)
@@ -131,21 +132,33 @@ function createMockQueryGenerator(
 // =============================================================================
 
 describe("Session Manager", () => {
+  let vaultsDir: string;
   let testDir: string;
   let vaultPath: string;
   let sessionsDir: string;
+  let originalVaultsDir: string | undefined;
+  let cleanupDaemon: () => void;
 
   beforeEach(async () => {
-    // Create unique test directory (acts as vault root)
-    testDir = join(
+    // Create a vaults wrapper dir so the daemon can discover vaults
+    vaultsDir = join(
       tmpdir(),
-      `session-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      `session-vaults-${Date.now()}-${Math.random().toString(36).slice(2)}`
     );
+    testDir = join(vaultsDir, "test-vault");
     await mkdir(testDir, { recursive: true });
+
+    // Create CLAUDE.md so the daemon recognizes this as a vault
+    await writeFile(join(testDir, "CLAUDE.md"), "# Test Vault\n");
 
     // vaultPath is the test directory
     vaultPath = testDir;
     sessionsDir = join(vaultPath, SESSIONS_DIR);
+
+    // Set VAULTS_DIR and configure in-process daemon
+    originalVaultsDir = process.env.VAULTS_DIR;
+    process.env.VAULTS_DIR = vaultsDir;
+    cleanupDaemon = setupTestDaemon();
 
     // Reset mocks
     mockQuery.mockReset();
@@ -153,9 +166,18 @@ describe("Session Manager", () => {
   });
 
   afterEach(async () => {
+    cleanupDaemon();
+
+    // Restore VAULTS_DIR
+    if (originalVaultsDir === undefined) {
+      delete process.env.VAULTS_DIR;
+    } else {
+      process.env.VAULTS_DIR = originalVaultsDir;
+    }
+
     // Cleanup test directory
     try {
-      await rm(testDir, { recursive: true, force: true });
+      await rm(vaultsDir, { recursive: true, force: true });
     } catch {
       // Ignore cleanup errors
     }
@@ -703,7 +725,7 @@ describe("Session Manager", () => {
 
   describe("createSession", () => {
     test("calls SDK query with correct options", async () => {
-      const vault = createMockVault();
+      const vault = createMockVault({ path: vaultPath });
       const mockGenerator = createMockQueryGenerator("new-session-id");
       mockQuery.mockReturnValue(mockGenerator);
 
@@ -737,7 +759,7 @@ describe("Session Manager", () => {
     });
 
     test("returns event generator", async () => {
-      const vault = createMockVault();
+      const vault = createMockVault({ path: vaultPath });
       const mockGenerator = createMockQueryGenerator("session-with-events", [
         { type: "assistant", content: "Hi there" },
       ]);
@@ -756,7 +778,7 @@ describe("Session Manager", () => {
     });
 
     test("throws SessionError on SDK failure", async () => {
-      const vault = createMockVault();
+      const vault = createMockVault({ path: vaultPath });
       mockQuery.mockImplementation(() => {
         throw new Error("ENOENT");
       });
@@ -771,7 +793,7 @@ describe("Session Manager", () => {
     });
 
     test("provides interrupt function", async () => {
-      const vault = createMockVault();
+      const vault = createMockVault({ path: vaultPath });
       const mockGenerator = createMockQueryGenerator("interruptible-session");
       mockQuery.mockReturnValue(mockGenerator);
 
@@ -783,7 +805,7 @@ describe("Session Manager", () => {
     });
 
     test("passes additional options to SDK", async () => {
-      const vault = createMockVault();
+      const vault = createMockVault({ path: vaultPath });
       const mockGenerator = createMockQueryGenerator("custom-options-session");
       mockQuery.mockReturnValue(mockGenerator);
 

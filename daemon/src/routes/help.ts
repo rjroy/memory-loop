@@ -5,6 +5,8 @@
  * Each migration stage adds entries as new endpoints are created.
  */
 
+import type { Context } from "hono";
+
 export interface HelpResponse {
   name: string;
   version: string;
@@ -16,7 +18,7 @@ export interface HelpResponse {
   }>;
 }
 
-export function helpHandler(): Response {
+export function helpHandler(c: Context): Response {
   const body: HelpResponse = {
     name: "memory-loop",
     version: "0.0.0",
@@ -80,5 +82,5 @@ export function helpHandler(): Response {
     ],
   };
 
-  return Response.json(body);
+  return c.json(body);
 }

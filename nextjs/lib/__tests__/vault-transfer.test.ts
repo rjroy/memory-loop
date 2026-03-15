@@ -18,6 +18,7 @@ import {
   createVaultTransferServer,
 } from "../vault-transfer";
 import { fileExists } from "@memory-loop/shared/server";
+import { setupTestDaemon } from "../../test-daemon-helpers";
 
 // =============================================================================
 // Test Helpers
@@ -102,14 +103,17 @@ describe("VaultTransferError", () => {
 describe("transferFile", () => {
   let testDir: string;
   let originalVaultsDir: string | undefined;
+  let cleanupDaemon: () => void;
 
   beforeEach(async () => {
     testDir = await createTestDir();
     originalVaultsDir = process.env.VAULTS_DIR;
     process.env.VAULTS_DIR = testDir;
+    cleanupDaemon = setupTestDaemon();
   });
 
   afterEach(async () => {
+    cleanupDaemon();
     if (originalVaultsDir === undefined) {
       delete process.env.VAULTS_DIR;
     } else {
@@ -488,14 +492,17 @@ describe("transferFile", () => {
 describe("listTransferableVaults", () => {
   let testDir: string;
   let originalVaultsDir: string | undefined;
+  let cleanupDaemon: () => void;
 
   beforeEach(async () => {
     testDir = await createTestDir();
     originalVaultsDir = process.env.VAULTS_DIR;
     process.env.VAULTS_DIR = testDir;
+    cleanupDaemon = setupTestDaemon();
   });
 
   afterEach(async () => {
+    cleanupDaemon();
     if (originalVaultsDir === undefined) {
       delete process.env.VAULTS_DIR;
     } else {

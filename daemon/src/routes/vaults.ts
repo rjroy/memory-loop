@@ -5,8 +5,10 @@
  * All operations go through the vault cache.
  */
 
-import type { VaultInfo, EditableVaultConfig, SlashCommand } from "@memory-loop/shared";
+import type { EditableVaultConfig, SlashCommand } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
+import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
   getVaults,
   getCachedVaultById,
@@ -22,176 +24,182 @@ import {
 
 const log = createLogger("vault-routes");
 
-function jsonError(error: string, code: string, status: number, detail?: string): Response {
-  return Response.json(
+function jsonError(c: Context, error: string, code: string, status: ContentfulStatusCode, detail?: string): Response {
+  return c.json(
     { error, code, ...(detail ? { detail } : {}) },
-    { status },
+    status,
   );
 }
 
 /**
  * GET /vaults - List all discovered vaults.
  */
-export async function listVaultsHandler(): Promise<Response> {
+export async function listVaultsHandler(c: Context): Promise<Response> {
   const vaults = await getVaults();
-  return Response.json({ vaults });
+  return c.json({ vaults });
 }
 
 /**
  * GET /vaults/:id - Get a single vault by ID.
  */
-export async function getVaultHandler(vaultId: string): Promise<Response> {
+export async function getVaultHandler(c: Context): Promise<Response> {
+  const vaultId = c.req.param("id") ?? "";
   const vault = await getCachedVaultById(vaultId);
   if (!vault) {
-    return jsonError("Vault not found", "VAULT_NOT_FOUND", 404);
+    return jsonError(c, "Vault not found", "VAULT_NOT_FOUND", 404);
   }
-  return Response.json(vault);
+  return c.json(vault);
 }
 
 /**
  * POST /vaults - Create a new vault.
  */
-export async function createVaultHandler(req: Request): Promise<Response> {
+export async function createVaultHandler(c: Context): Promise<Response> {
   let body: unknown;
   try {
-    body = await req.json();
+    body = await c.req.json();
   } catch {
-    return jsonError("Invalid JSON body", "INVALID_REQUEST", 400);
+    return jsonError(c, "Invalid JSON body", "INVALID_REQUEST", 400);
   }
 
   if (typeof body !== "object" || body === null || !("title" in body)) {
-    return jsonError("Missing required field: title", "INVALID_TITLE", 400);
+    return jsonError(c, "Missing required field: title", "INVALID_TITLE", 400);
   }
 
   const { title } = body as { title: unknown };
   if (typeof title !== "string" || title.trim().length === 0) {
-    return jsonError("Title must be a non-empty string", "INVALID_TITLE", 400);
+    return jsonError(c, "Title must be a non-empty string", "INVALID_TITLE", 400);
   }
 
   try {
     const vault = await createVault(title);
     await invalidateCache();
-    return Response.json(vault, { status: 201 });
+    return c.json(vault, 201);
   } catch (error) {
     if (error instanceof VaultCreationError) {
-      return jsonError(error.message, "INVALID_TITLE", 400);
+      return jsonError(c, error.message, "INVALID_TITLE", 400);
     }
     const message = error instanceof Error ? error.message : String(error);
     log.error(`Failed to create vault: ${message}`);
-    return jsonError("Internal server error", "INTERNAL_ERROR", 500);
+    return jsonError(c, "Internal server error", "INTERNAL_ERROR", 500);
   }
 }
 
 /**
  * GET /vaults/:id/config - Get vault configuration.
  */
-export async function getVaultConfigHandler(vaultId: string): Promise<Response> {
+export async function getVaultConfigHandler(c: Context): Promise<Response> {
+  const vaultId = c.req.param("id") ?? "";
   const vault = await getCachedVaultById(vaultId);
   if (!vault) {
-    return jsonError("Vault not found", "VAULT_NOT_FOUND", 404);
+    return jsonError(c, "Vault not found", "VAULT_NOT_FOUND", 404);
   }
 
   const config = await loadVaultConfig(vault.path);
-  return Response.json(config);
+  return c.json(config);
 }
 
 /**
  * PUT /vaults/:id/config - Update vault configuration.
  */
-export async function updateVaultConfigHandler(vaultId: string, req: Request): Promise<Response> {
+export async function updateVaultConfigHandler(c: Context): Promise<Response> {
+  const vaultId = c.req.param("id") ?? "";
   const vault = await getCachedVaultById(vaultId);
   if (!vault) {
-    return jsonError("Vault not found", "VAULT_NOT_FOUND", 404);
+    return jsonError(c, "Vault not found", "VAULT_NOT_FOUND", 404);
   }
 
   let body: unknown;
   try {
-    body = await req.json();
+    body = await c.req.json();
   } catch {
-    return jsonError("Invalid JSON body", "INVALID_REQUEST", 400);
+    return jsonError(c, "Invalid JSON body", "INVALID_REQUEST", 400);
   }
 
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    return jsonError("Request body must be an object", "INVALID_REQUEST", 400);
+    return jsonError(c, "Request body must be an object", "INVALID_REQUEST", 400);
   }
 
   const editableConfig = body as EditableVaultConfig;
   const result = await saveVaultConfig(vault.path, editableConfig);
 
   if (!result.success) {
-    return jsonError(result.error, "CONFIG_SAVE_FAILED", 500);
+    return jsonError(c, result.error, "CONFIG_SAVE_FAILED", 500);
   }
 
   await invalidateCache();
   const updatedConfig = await loadVaultConfig(vault.path);
-  return Response.json(updatedConfig);
+  return c.json(updatedConfig);
 }
 
 /**
  * PUT /vaults/:id/config/pinned-assets - Update pinned assets.
  */
-export async function updatePinnedAssetsHandler(vaultId: string, req: Request): Promise<Response> {
+export async function updatePinnedAssetsHandler(c: Context): Promise<Response> {
+  const vaultId = c.req.param("id") ?? "";
   const vault = await getCachedVaultById(vaultId);
   if (!vault) {
-    return jsonError("Vault not found", "VAULT_NOT_FOUND", 404);
+    return jsonError(c, "Vault not found", "VAULT_NOT_FOUND", 404);
   }
 
   let body: unknown;
   try {
-    body = await req.json();
+    body = await c.req.json();
   } catch {
-    return jsonError("Invalid JSON body", "INVALID_REQUEST", 400);
+    return jsonError(c, "Invalid JSON body", "INVALID_REQUEST", 400);
   }
 
   if (typeof body !== "object" || body === null || !("paths" in body)) {
-    return jsonError("Missing required field: paths", "INVALID_REQUEST", 400);
+    return jsonError(c, "Missing required field: paths", "INVALID_REQUEST", 400);
   }
 
   const { paths } = body as { paths: unknown };
   if (!Array.isArray(paths) || !paths.every((p): p is string => typeof p === "string")) {
-    return jsonError("paths must be an array of strings", "INVALID_REQUEST", 400);
+    return jsonError(c, "paths must be an array of strings", "INVALID_REQUEST", 400);
   }
 
   await savePinnedAssets(vault.path, paths);
-  return Response.json({ success: true });
+  return c.json({ success: true });
 }
 
 /**
  * GET /vaults/:id/config/slash-commands - Get cached slash commands.
  */
-export async function getSlashCommandsHandler(vaultId: string): Promise<Response> {
+export async function getSlashCommandsHandler(c: Context): Promise<Response> {
+  const vaultId = c.req.param("id") ?? "";
   const vault = await getCachedVaultById(vaultId);
   if (!vault) {
-    return jsonError("Vault not found", "VAULT_NOT_FOUND", 404);
+    return jsonError(c, "Vault not found", "VAULT_NOT_FOUND", 404);
   }
 
   const commands = await loadSlashCommands(vault.path);
-  return Response.json({ commands: commands ?? null });
+  return c.json({ commands: commands ?? null });
 }
 
 /**
  * PUT /vaults/:id/config/slash-commands - Save slash commands cache.
  */
-export async function updateSlashCommandsHandler(vaultId: string, req: Request): Promise<Response> {
+export async function updateSlashCommandsHandler(c: Context): Promise<Response> {
+  const vaultId = c.req.param("id") ?? "";
   const vault = await getCachedVaultById(vaultId);
   if (!vault) {
-    return jsonError("Vault not found", "VAULT_NOT_FOUND", 404);
+    return jsonError(c, "Vault not found", "VAULT_NOT_FOUND", 404);
   }
 
   let body: unknown;
   try {
-    body = await req.json();
+    body = await c.req.json();
   } catch {
-    return jsonError("Invalid JSON body", "INVALID_REQUEST", 400);
+    return jsonError(c, "Invalid JSON body", "INVALID_REQUEST", 400);
   }
 
   if (typeof body !== "object" || body === null || !("commands" in body)) {
-    return jsonError("Missing required field: commands", "INVALID_REQUEST", 400);
+    return jsonError(c, "Missing required field: commands", "INVALID_REQUEST", 400);
   }
 
   const { commands } = body as { commands: unknown };
   if (!Array.isArray(commands)) {
-    return jsonError("commands must be an array", "INVALID_REQUEST", 400);
+    return jsonError(c, "commands must be an array", "INVALID_REQUEST", 400);
   }
 
   const validCommands: SlashCommand[] = commands
@@ -211,14 +219,14 @@ export async function updateSlashCommandsHandler(vaultId: string, req: Request):
     }));
 
   await saveSlashCommands(vault.path, validCommands);
-  return Response.json({ success: true });
+  return c.json({ success: true });
 }
 
 /**
  * GET /vaults/help - Vault API discovery.
  */
-export function vaultsHelpHandler(): Response {
-  return Response.json({
+export function vaultsHelpHandler(c: Context): Response {
+  return c.json({
     resource: "vaults",
     endpoints: [
       { path: "/vaults", method: "GET", description: "List all discovered vaults" },

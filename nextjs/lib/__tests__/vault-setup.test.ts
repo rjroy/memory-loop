@@ -34,6 +34,7 @@ import {
 } from "../vault-setup";
 import { directoryExists, fileExists } from "@memory-loop/shared/server";
 import { configureSdkForTesting, _resetForTesting, type QueryFunction } from "../sdk-provider";
+import { setupTestDaemon } from "../../test-daemon-helpers";
 
 // =============================================================================
 // Mock Query Function Factory
@@ -106,6 +107,7 @@ let vaultPath: string;
 // Reference object for late binding in mock functions
 const vaultPathRef: { current: string } = { current: "" };
 const originalVaultsDir = process.env.VAULTS_DIR;
+let cleanupDaemon: () => void;
 
 beforeEach(async () => {
   // Create a unique test directory for each test
@@ -122,10 +124,12 @@ beforeEach(async () => {
 
   // Set VAULTS_DIR for vault discovery
   process.env.VAULTS_DIR = testDir;
+  cleanupDaemon = setupTestDaemon();
 });
 
 afterEach(async () => {
-  // Reset SDK mock
+  // Cleanup daemon and SDK mock
+  cleanupDaemon();
   _resetForTesting();
 
   // Restore original env

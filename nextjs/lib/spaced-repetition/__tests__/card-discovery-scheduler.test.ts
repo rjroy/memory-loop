@@ -30,6 +30,7 @@ import {
 } from "../card-discovery-state";
 import * as cardGenerator from "../card-generator";
 import * as cardManager from "../card-manager";
+import { setupTestDaemon } from "../../../test-daemon-helpers";
 
 // =============================================================================
 // Test Utilities
@@ -39,6 +40,7 @@ let testDir: string;
 let originalHome: string | undefined;
 let originalVaultsDir: string | undefined;
 let originalDiscoveryHour: string | undefined;
+let cleanupDaemon: () => void;
 
 async function createTestDir(): Promise<string> {
   const dir = join(tmpdir(), `card-discovery-scheduler-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -82,9 +84,13 @@ beforeEach(async () => {
   // Create vaults directory
   await mkdir(join(testDir, "vaults"), { recursive: true });
   await mkdir(join(testDir, ".config", "memory-loop"), { recursive: true });
+
+  cleanupDaemon = setupTestDaemon();
 });
 
 afterEach(async () => {
+  cleanupDaemon();
+
   // Stop scheduler if running
   if (isSchedulerRunning()) {
     stopScheduler();

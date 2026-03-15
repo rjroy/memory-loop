@@ -148,6 +148,13 @@ export interface SessionMetadata {
  * These codes provide structured error information for clients
  * to handle specific error conditions appropriately.
  */
+/**
+ * Result type for vault config save operations.
+ */
+export type SaveConfigResult =
+  | { success: true }
+  | { success: false; error: string };
+
 export type ErrorCode =
   | "VAULT_NOT_FOUND"
   | "VAULT_ACCESS_DENIED"

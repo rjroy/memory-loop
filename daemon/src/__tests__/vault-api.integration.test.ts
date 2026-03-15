@@ -9,10 +9,11 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { handleRequest } from "../router";
+import { createApp } from "../server";
 import { initVaultCache, resetCache } from "../vault";
 
 const startTime = Date.now();
+const app = createApp(startTime);
 let testVaultsDir: string;
 
 async function request(
@@ -25,7 +26,7 @@ async function request(
     init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify(body);
   }
-  return handleRequest(new Request(`http://localhost${path}`, init), startTime);
+  return app.request(path, init);
 }
 
 async function createFixtureVault(name: string, claudeMdContent: string, config?: Record<string, unknown>): Promise<void> {

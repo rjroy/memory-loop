@@ -1,9 +1,12 @@
 import { describe, test, expect } from "bun:test";
-import { helpHandler, type HelpResponse } from "../help";
+import { createApp } from "../../server";
+import type { HelpResponse } from "../help";
+
+const app = createApp(Date.now());
 
 describe("GET /help", () => {
   test("returns 200 with expected structure", async () => {
-    const response = helpHandler();
+    const response = await app.request("/help");
 
     expect(response.status).toBe(200);
 
@@ -15,7 +18,7 @@ describe("GET /help", () => {
   });
 
   test("health endpoint is listed in discovery", async () => {
-    const response = helpHandler();
+    const response = await app.request("/help");
     const body = (await response.json()) as HelpResponse;
 
     const healthEntry = body.endpoints.find((e) => e.path === "/health");
@@ -24,7 +27,7 @@ describe("GET /help", () => {
   });
 
   test("help endpoint is listed in discovery", async () => {
-    const response = helpHandler();
+    const response = await app.request("/help");
     const body = (await response.json()) as HelpResponse;
 
     const helpEntry = body.endpoints.find((e) => e.path === "/help");

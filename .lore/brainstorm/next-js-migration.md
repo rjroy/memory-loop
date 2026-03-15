@@ -2,7 +2,7 @@
 title: Next.js migration and WebSocket architecture rethink
 date: 2026-02-05
 status: resolved
-tags: [architecture, next-js, websocket, sse, refactor, claude-sdk]
+tags: [architecture, next-js, websocket, sse, refactor, agent-sdk]
 modules: [websocket-handler, session-manager, backend]
 ---
 

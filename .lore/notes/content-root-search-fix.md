@@ -2,7 +2,7 @@
 title: Implementation notes: content-root-search-fix
 date: 2026-02-06
 status: complete
-tags: [implementation, notes]
+tags: [implementation]
 source: .lore/plans/content-root-search-fix.md
 modules: [search-handlers, search-routes]
 ---

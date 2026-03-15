@@ -2,7 +2,7 @@
 title: Implementation plan for image-to-webp conversion
 date: 2026-02-14
 status: executed
-tags: [implementation, plan, image-processing, webp]
+tags: [implementation, image-processing, webp]
 modules: [file-upload, image-converter]
 related: [.lore/specs/image-webp-conversion.md, .lore/retros/file-upload-asset-serving-migration-gap.md]
 ---

@@ -2,7 +2,7 @@
 title: Implementation notes: collapse-workspaces
 date: 2026-02-06
 status: complete
-tags: [implementation, notes]
+tags: [implementation]
 source: .lore/plans/collapse-workspaces.md
 modules: [backend, shared, nextjs]
 ---

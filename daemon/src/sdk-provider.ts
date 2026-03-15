@@ -1,5 +1,3 @@
-// TODO: Stage 5 - delete this file when session-manager moves to daemon
-
 /**
  * SDK Provider
  *
@@ -35,8 +33,6 @@ export class SdkNotInitializedError extends Error {
 
 /**
  * Initialize with real SDK. Idempotent: safe to call multiple times.
- * In Next.js, multiple API routes may need the SDK before the chat
- * controller is first accessed, so this must not throw on re-init.
  */
 export function initializeSdkProvider(): void {
   if (_initialized) return;

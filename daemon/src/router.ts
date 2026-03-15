@@ -55,6 +55,28 @@ import {
   initTranscriptHandler,
   appendTranscriptHandler,
 } from "./routes/transcripts";
+import {
+  extractionStatusHandler,
+  extractionTriggerHandler,
+  memoryGetHandler,
+  memoryPutHandler,
+  extractionPromptGetHandler,
+  extractionPromptPutHandler,
+  extractionPromptDeleteHandler,
+} from "./routes/extraction";
+import {
+  dueCardsHandler,
+  cardDetailHandler,
+  cardReviewHandler,
+  cardArchiveHandler,
+} from "./routes/cards";
+import {
+  cardGeneratorConfigGetHandler,
+  cardGeneratorConfigPutHandler,
+  cardGeneratorRequirementsDeleteHandler,
+  cardGeneratorStatusHandler,
+  cardGeneratorTriggerHandler,
+} from "./routes/card-config";
 
 export function registerRoutes(app: Hono, startTime: number): void {
   // Health and help
@@ -116,4 +138,26 @@ export function registerRoutes(app: Hono, startTime: number): void {
   // Transcripts
   app.post("/vaults/:id/transcripts", (c) => initTranscriptHandler(c));
   app.post("/vaults/:id/transcripts/append", (c) => appendTranscriptHandler(c));
+
+  // Extraction config
+  app.get("/config/extraction/status", (c) => extractionStatusHandler(c));
+  app.post("/config/extraction/trigger", (c) => extractionTriggerHandler(c));
+  app.get("/config/memory", (c) => memoryGetHandler(c));
+  app.put("/config/memory", (c) => memoryPutHandler(c));
+  app.get("/config/extraction-prompt", (c) => extractionPromptGetHandler(c));
+  app.put("/config/extraction-prompt", (c) => extractionPromptPutHandler(c));
+  app.delete("/config/extraction-prompt", (c) => extractionPromptDeleteHandler(c));
+
+  // Card routes (vault-scoped)
+  app.get("/vaults/:id/cards/due", (c) => dueCardsHandler(c));
+  app.get("/vaults/:id/cards/:cardId", (c) => cardDetailHandler(c));
+  app.post("/vaults/:id/cards/:cardId/review", (c) => cardReviewHandler(c));
+  app.post("/vaults/:id/cards/:cardId/archive", (c) => cardArchiveHandler(c));
+
+  // Card generator config
+  app.get("/config/card-generator", (c) => cardGeneratorConfigGetHandler(c));
+  app.put("/config/card-generator", (c) => cardGeneratorConfigPutHandler(c));
+  app.delete("/config/card-generator/requirements", (c) => cardGeneratorRequirementsDeleteHandler(c));
+  app.get("/config/card-generator/status", (c) => cardGeneratorStatusHandler(c));
+  app.post("/config/card-generator/trigger", (c) => cardGeneratorTriggerHandler(c));
 }

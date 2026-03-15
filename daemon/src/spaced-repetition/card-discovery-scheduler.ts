@@ -16,7 +16,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
-import { discoverVaults } from "../vault-client";
+import { discoverVaults } from "../vault/vault-manager";
 import type { VaultInfo } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
 import {
@@ -1021,4 +1021,16 @@ export function getDiscoveryHourFromEnv(): number {
   }
 
   return hour;
+}
+
+/**
+ * Reset scheduler state for testing.
+ */
+export function resetSchedulerState(): void {
+  if (schedulerState.timerId) {
+    clearInterval(schedulerState.timerId);
+  }
+  schedulerState.timerId = null;
+  schedulerState.running = false;
+  schedulerState.runInProgress = false;
 }

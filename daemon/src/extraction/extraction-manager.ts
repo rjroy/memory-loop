@@ -13,8 +13,9 @@
  * - TD-12: Sandbox pattern for safe operations
  */
 
+import { CronJob } from "cron";
 import { createLogger } from "@memory-loop/shared";
-import { getVaultsDir } from "../vault-client";
+import { getVaultsDir } from "../vault/vault-manager";
 import {
   readExtractionState,
   writeExtractionState,
@@ -86,8 +87,8 @@ export interface ExtractionRunResult {
  * Extraction manager instance state.
  */
 interface ManagerState {
-  /** The cron job instance (typed loosely to avoid static import of cron) */
-  cronJob: { stop: () => void; nextDate: () => { toJSDate: () => Date } } | null;
+  /** The cron job instance */
+  cronJob: CronJob | null;
   /** Whether an extraction is currently running */
   isRunning: boolean;
   /** Last run result */
@@ -372,7 +373,6 @@ export async function startScheduler(): Promise<boolean> {
   log.info(`Starting extraction scheduler with schedule: ${schedule}`);
 
   try {
-    const { CronJob } = await import("cron");
     state.cronJob = new CronJob(
       schedule,
       () => {

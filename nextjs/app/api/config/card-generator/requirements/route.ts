@@ -1,33 +1,18 @@
 /**
- * Card Generator Requirements Reset API
+ * Card Generator Requirements Reset API - Daemon Proxy
  *
  * DELETE /api/config/card-generator/requirements - Reset requirements to default
+ *
+ * Proxies to daemon: DELETE /config/card-generator/requirements
  */
 
 import { NextResponse } from "next/server";
-import {
-  deleteRequirementsOverride,
-  getDefaultRequirements,
-} from "@/lib/spaced-repetition/card-generator-config";
+import { daemonFetch } from "@/lib/daemon-fetch";
 
-/**
- * DELETE - Removes user override and returns default requirements
- */
 export async function DELETE() {
-  try {
-    await deleteRequirementsOverride();
-    const defaultContent = getDefaultRequirements();
-
-    return NextResponse.json({
-      success: true,
-      content: defaultContent,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to reset requirements";
-    return NextResponse.json({
-      success: false,
-      content: "",
-      error: message,
-    }, { status: 500 });
-  }
+  const res = await daemonFetch("/config/card-generator/requirements", {
+    method: "DELETE",
+  });
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }

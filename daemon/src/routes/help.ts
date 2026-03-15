@@ -83,6 +83,32 @@ export function helpHandler(c: Context): Response {
       // Transcripts
       { path: "/vaults/:id/transcripts", method: "POST", description: "Initialize transcript (body: { sessionId, firstMessage })" },
       { path: "/vaults/:id/transcripts/append", method: "POST", description: "Append to transcript (body: { path, content })" },
+
+      // Extraction
+      { path: "/config/extraction/status", method: "GET", description: "Get extraction scheduler status" },
+      { path: "/config/extraction/trigger", method: "POST", description: "Manually trigger extraction run" },
+
+      // Memory
+      { path: "/config/memory", method: "GET", description: "Read memory file content" },
+      { path: "/config/memory", method: "PUT", description: "Update memory file (body: { content })" },
+
+      // Extraction prompt
+      { path: "/config/extraction-prompt", method: "GET", description: "Get extraction prompt" },
+      { path: "/config/extraction-prompt", method: "PUT", description: "Set custom extraction prompt (body: { content })" },
+      { path: "/config/extraction-prompt", method: "DELETE", description: "Reset extraction prompt to default" },
+
+      // Cards (vault-scoped)
+      { path: "/vaults/:id/cards/due", method: "GET", description: "Get due cards for review" },
+      { path: "/vaults/:id/cards/:cardId", method: "GET", description: "Get card detail" },
+      { path: "/vaults/:id/cards/:cardId/review", method: "POST", description: "Submit card review (body: { response })" },
+      { path: "/vaults/:id/cards/:cardId/archive", method: "POST", description: "Archive a card" },
+
+      // Card generator config
+      { path: "/config/card-generator", method: "GET", description: "Get card generator configuration" },
+      { path: "/config/card-generator", method: "PUT", description: "Update card generator config (body: { requirements })" },
+      { path: "/config/card-generator/requirements", method: "DELETE", description: "Reset card generator requirements to default" },
+      { path: "/config/card-generator/status", method: "GET", description: "Get card generation status" },
+      { path: "/config/card-generator/trigger", method: "POST", description: "Manually trigger card generation" },
     ],
   };
 

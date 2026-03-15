@@ -18,7 +18,7 @@ import { join } from "node:path";
 import type { VaultInfo } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
 import { directoryExists } from "@memory-loop/shared/server";
-import { discoverVaults } from "../vault-client";
+import { discoverVaults } from "../vault/vault-manager";
 import { getTranscriptsDirectory } from "@memory-loop/shared";
 import {
   calculateChecksum,

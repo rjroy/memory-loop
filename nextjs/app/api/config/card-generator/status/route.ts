@@ -1,28 +1,16 @@
 /**
- * Card Generation Status API
+ * Card Generation Status API - Daemon Proxy
  *
  * GET /api/config/card-generator/status - Get current generation status
+ *
+ * Proxies to daemon: GET /config/card-generator/status
  */
 
 import { NextResponse } from "next/server";
-import { isGenerationRunning } from "@/lib/spaced-repetition/card-discovery-scheduler";
+import { daemonFetch } from "@/lib/daemon-fetch";
 
-/**
- * GET - Returns current generation status
- */
-export function GET() {
-  try {
-    const running = isGenerationRunning();
-
-    return NextResponse.json({
-      status: running ? "running" : "idle",
-      message: running ? "Generation in progress" : "No generation running",
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to get status";
-    return NextResponse.json(
-      { error: "INTERNAL_ERROR", message },
-      { status: 500 }
-    );
-  }
+export async function GET() {
+  const res = await daemonFetch("/config/card-generator/status");
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }

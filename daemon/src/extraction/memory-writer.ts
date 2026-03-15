@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createLogger } from "@memory-loop/shared";
 import { fileExists } from "@memory-loop/shared/server";
-import { getVaultsDir } from "../vault-client";
+import { getVaultsDir } from "../vault/vault-manager";
 
 const log = createLogger("memory-writer");
 

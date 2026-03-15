@@ -24,7 +24,7 @@ import {
   createEmptyState,
   markTranscriptProcessed,
   updateLastRunAt,
-} from "../extraction/extraction-state";
+} from "../extraction-state";
 import {
   enforceMemoryLimit,
   checkMemorySize,
@@ -36,15 +36,15 @@ import {
   SANDBOX_RELATIVE_PATH,
   MAX_MEMORY_SIZE_BYTES,
   MEMORY_SIZE_WARNING_BYTES,
-} from "../extraction/memory-writer";
+} from "../memory-writer";
 import {
   buildExtractionPrompt,
-} from "../extraction/fact-extractor";
+} from "../fact-extractor";
 import {
   needsCatchUp,
   getCatchUpThresholdMs,
   DEFAULT_CATCHUP_THRESHOLD_MS,
-} from "../extraction/extraction-manager";
+} from "../extraction-manager";
 
 // =============================================================================
 // Test Utilities

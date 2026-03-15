@@ -9,6 +9,9 @@ related:
   - .lore/retros/collapse-workspaces.md
   - .lore/retros/content-root-and-instrumentation-fix.md
   - .lore/brainstorm/collapse-workspaces.md
+  - .lore/research/daemon-rest-api.md
+  - .lore/research/claude-agent-sdk.md
+  - .lore/research/claude-agent-sdk-ref-typescript.md
 ---
 
 # Brainstorm: Daemon Migration Stages
@@ -283,29 +286,32 @@ Stage 2 (vault foundation) is small enough to fold into Stage 1 (skeleton). But 
 
 Stages 3 and 4 could combine into "all non-session domain logic." But that's ~25 files and ~20 API endpoints, which is too large for a single plan. The natural seam (stateless ops vs background schedulers) is worth preserving.
 
-## Open Questions
+## Resolved Questions
 
-1. **Daemon API design spec.** The daemon needs a REST API, but the spec defers endpoint design to [STUB: daemon-rest-api]. Should the API design be a separate spec that precedes all domain extraction stages, or should each stage define its own endpoints? A separate spec risks over-designing before we know what patterns emerge. Per-stage definition risks inconsistency. Middle ground: establish conventions in Stage 1 (URL structure, error format, pagination) and let each stage apply them.
+1. **Daemon API design spec.** Resolved: use the middle ground. The Guild Hall daemon REST API design (`.lore/research/daemon-rest-api.md`, stored as reference material) provides proven conventions: capability-oriented URL grammar, `help` as a discovery primitive, structured error format, SSE streaming wire format, HTTP method guidance. Stage 1 establishes Memory Loop's conventions by adapting these patterns (without adopting Guild Hall's domain model), and each subsequent stage applies them. No separate API design spec needed.
 
-2. **SSE proxying architecture.** The spec says the browser doesn't connect to the daemon directly. The web app must proxy SSE from daemon to browser. Next.js API routes can do this (read SSE from daemon, write SSE to browser), but it's a streaming proxy, not a simple request/response proxy. This needs design work before Stage 5 starts. It might warrant its own design document.
+2. **SSE proxying architecture.** Resolved: no standalone design document needed. The daemon-side wire format is established (unnamed SSE messages, JSON payloads with `type` discriminator, errors in-stream). The Next.js proxy is mechanical: a route handler opens a `fetch()` to the daemon's SSE endpoint and pipes the `ReadableStream` body into the response. The proxy is byte-transparent since it doesn't parse or transform events. The only open implementation question is buffering behavior (whether Next.js or its HTTP layer buffers SSE frames), which is a "test and observe" question during Stage 5, not an upfront design question.
 
-3. **SDK provider sharing.** Both schedulers (Stage 4) and session lifecycle (Stage 5) need `sdk-provider.ts`. In the current codebase, it's a singleton initialized once. In the daemon, it's still a singleton, just in a different process. The question is whether the daemon needs multiple SDK provider instances (one for scheduled work, one for interactive chat) or if a single provider with appropriate concurrency handling is sufficient. The Agent SDK probably handles this internally, but it's worth verifying.
+3. **SDK provider sharing.** Resolved: single provider, shared. Confirmed by direct experience that the Agent SDK's `query()` handles concurrent calls from multiple Promises without issues. The daemon initializes one SDK provider at startup. Both schedulers and interactive chat use it. No need for separate instances or concurrency wrappers.
 
-4. **Schema package structure.** Stage 1 extracts schemas into a shared package. The current `schemas/` directory exports both protocol types (used for WebSocket/SSE messages) and domain types (VaultInfo, SessionMetadata). Some protocol types are web-only (client message schemas). Should the shared package include everything, or should web-specific protocol types stay in the web app? Simpler to move everything and let tree-shaking handle it, but worth deciding explicitly.
+4. **Schema package structure.** Resolved: move everything into one shared package. Web-specific protocol types (client message schemas) go with the rest. Tree-shaking handles unused imports on each side. Splitting adds package boundaries that would be wrong within two stages. Finalized during Stage 1 planning.
 
-5. **Test migration.** Each domain module has colocated tests in `__tests__/`. When a module moves to the daemon, its tests move too. But some tests may depend on Next.js test infrastructure or assume the module runs in a Next.js context. Each stage plan should audit its tests for portability before starting work.
+5. **Test migration.** Resolved: per-stage audit. The SDK provider test pattern (`configureSdkForTesting`) is already dependency-injection-based and portable. The main risk is tests using Next.js `Request`/`Response` objects, but those live in route tests (Stage 6), not domain module tests. Each stage plan audits its module tests for portability before starting work.
 
-6. **Handlers layer.** `lib/handlers/` contains `search-handlers.ts` and `config-handlers.ts`, which are intermediate wrappers between API routes and domain modules. In the daemon, these dissolve into route handlers. But during migration, they might serve as the daemon's route handlers temporarily. Worth deciding per-stage whether to preserve or dissolve them.
+6. **Handlers layer.** Resolved: dissolve them. `search-handlers.ts` and `config-handlers.ts` are thin wrappers that exist because API routes wanted a layer between route and domain logic. In the daemon, route handlers ARE that layer. Keeping them adds indirection. Dissolved during their respective stage (Stage 3 for search-handlers, Stage 4 for config-handlers).
 
-7. **Legacy session route.** `app/api/sessions/[vaultId]/route.ts` exists at a non-standard path (not under `/vaults/`). It returns the existing session ID for a vault. This needs to map to a daemon endpoint, but its URL doesn't follow the vault-scoped pattern. Worth deciding whether to normalize it during migration or keep the legacy shape.
+7. **Legacy session route.** Resolved: normalize during migration. The `/api/sessions/[vaultId]` route becomes vault-scoped in the daemon (e.g., `GET /vaults/:id/session`). Migration is the right time to fix URL shape. Handled during Stage 5 planning.
 
 ## Next Steps
 
-Each stage described here can become its own plan via `/lore-development:prep-plan`. The recommended order for planning:
+All open questions are resolved. Each stage can proceed to planning via `/lore-development:prep-plan`. The recommended order:
 
-1. Stage 1 (skeleton) and Stage 2 (vault foundation) can be planned together or sequentially.
+1. Stage 1 (skeleton) and Stage 2 (vault foundation) can be planned together or sequentially. Stage 1 should establish daemon API conventions adapted from the Guild Hall reference design (`.lore/research/daemon-rest-api.md`).
 2. Stages 3 and 4 can be planned in parallel once Stage 2's plan is approved.
-3. Stage 5 should be planned after Stages 3 and 4 are at least planned (if not executed), because the patterns established there inform the session migration.
+3. Stage 5 should be planned after Stages 3 and 4 are at least planned (if not executed), because the patterns established there inform the session migration. SSE proxy buffering should be tested during Stage 5 implementation, not designed upfront.
 4. Stages 6 and 7 can be planned in parallel once Stage 5's plan exists.
 
-The daemon REST API conventions (open question #1) should be resolved before Stage 2's plan is finalized. The SSE proxying design (open question #2) should be resolved before Stage 5's plan is finalized.
+Reference material for planning:
+- `.lore/research/daemon-rest-api.md` (Guild Hall API design, adapt conventions)
+- `.lore/research/claude-agent-sdk.md` (SDK capabilities and concurrency behavior)
+- `.lore/research/claude-agent-sdk-ref-typescript.md` (TypeScript SDK API reference)

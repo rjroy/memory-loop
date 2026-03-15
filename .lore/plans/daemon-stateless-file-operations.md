@@ -1,7 +1,7 @@
 ---
 title: "Stage 3: Daemon stateless file operations"
 date: 2026-03-14
-status: Draft
+status: approved
 tags: [daemon, migration, file-operations, search, meetings, tasks, api]
 modules: [file-browser, file-upload, note-capture, meeting-capture, meeting-store, transcript-manager, task-manager, daily-prep-manager, reference-updater, search-cache, search-index, search-handlers]
 related:

@@ -1,7 +1,7 @@
 ---
 title: "Commission: Update Stage 3-6 plans: incorporate Thorne's review findings"
 date: 2026-03-15
-status: failed
+status: abandoned
 type: one-shot
 tags: [commission]
 worker: Octavia
@@ -22,6 +22,11 @@ activity_timeline:
   - timestamp: 2026-03-15T15:14:12.643Z
     event: status_failed
     reason: "Session error: error_max_turns"
+  - timestamp: 2026-03-15T16:00:35.306Z
+    event: status_abandoned
+    reason: "max turn failure ... recreated the commission with a higher limit"
+    from: "failed"
+    to: "abandoned"
 current_progress: ""
 projectName: memory-loop
 ---

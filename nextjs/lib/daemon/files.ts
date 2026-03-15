@@ -5,66 +5,9 @@
  * Part of the permanent daemon client layer for the web app.
  */
 
-import { resolve } from "node:path";
-import { realpath as fsRealpath } from "node:fs/promises";
 import type { VaultInfo, StoredToolInvocation } from "@memory-loop/shared";
-import { createLogger, formatTimeForTimestamp } from "@memory-loop/shared";
+import { formatTimeForTimestamp } from "@memory-loop/shared";
 import { daemonFetch } from "./fetch";
-
-const log = createLogger("file-client");
-
-// ---------------------------------------------------------------------------
-// Path validation (local copies, no daemon call needed)
-// ---------------------------------------------------------------------------
-
-/**
- * Checks whether a target path is within the vault boundary.
- * Uses filesystem realpath resolution to prevent symlink escapes.
- */
-export async function isPathWithinVault(
-  vaultPath: string,
-  targetPath: string,
-): Promise<boolean> {
-  try {
-    const realVaultPath = await fsRealpath(vaultPath);
-
-    let realTargetPath: string;
-    try {
-      realTargetPath = await fsRealpath(targetPath);
-    } catch {
-      realTargetPath = resolve(targetPath);
-    }
-
-    const normalizedVault = realVaultPath.endsWith("/")
-      ? realVaultPath
-      : realVaultPath + "/";
-
-    return (
-      realTargetPath === realVaultPath ||
-      realTargetPath.startsWith(normalizedVault)
-    );
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Validates and resolves a relative path within a vault.
- * Throws if the path escapes the vault boundary.
- */
-export async function validatePath(
-  vaultPath: string,
-  relativePath: string,
-): Promise<string> {
-  const targetPath = resolve(vaultPath, relativePath);
-
-  if (!(await isPathWithinVault(vaultPath, targetPath))) {
-    log.warn(`Path traversal attempt: ${relativePath}`);
-    throw new Error(`Path "${relativePath}" is outside the vault boundary`);
-  }
-
-  return targetPath;
-}
 
 // ---------------------------------------------------------------------------
 // Transcript operations (proxied to daemon)

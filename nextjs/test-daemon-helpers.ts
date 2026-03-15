@@ -15,7 +15,7 @@
 
 import { createApp } from "@memory-loop/daemon/server";
 import { resetCache } from "@memory-loop/daemon/vault";
-import { configureDaemonFetchForTesting } from "./lib/daemon-fetch";
+import { configureDaemonFetchForTesting } from "./lib/daemon/fetch";
 
 /**
  * Set up an in-process daemon and configure daemon-fetch to use it.

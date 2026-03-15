@@ -77,6 +77,7 @@ import {
   cardGeneratorStatusHandler,
   cardGeneratorTriggerHandler,
 } from "./routes/card-config";
+import { assetHandler } from "./routes/assets";
 import { setupHandler } from "./routes/setup";
 import { inspirationHandler } from "./routes/inspiration";
 import {
@@ -120,6 +121,9 @@ export function registerRoutes(app: Hono, startTime: number): void {
   app.post("/vaults/:id/directories", (c) => createDirectoryHandler(c));
   app.get("/vaults/:id/directories/*", (c) => getDirectoryContentsHandler(c));
   app.delete("/vaults/:id/directories/*", (c) => deleteDirectoryHandler(c));
+
+  // Assets (binary file serving)
+  app.get("/vaults/:id/assets/*", (c) => assetHandler(c));
 
   // Upload
   app.post("/vaults/:id/upload", (c) => uploadFileHandler(c));

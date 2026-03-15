@@ -1,7 +1,7 @@
 ---
 title: "Commission: Lore maintenance: tend .lore/ artifacts"
 date: 2026-03-15
-status: dispatched
+status: failed
 type: one-shot
 tags: [commission]
 worker: Octavia
@@ -19,6 +19,9 @@ activity_timeline:
     reason: "Dispatched to worker"
     from: "pending"
     to: "dispatched"
+  - timestamp: 2026-03-15T02:14:02.883Z
+    event: status_failed
+    reason: "Session completed without submitting result"
 current_progress: ""
 projectName: memory-loop
 ---

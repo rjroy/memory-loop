@@ -11,7 +11,7 @@
  * - Emit events to subscribers (pub-sub pattern)
  */
 
-import type { VaultInfo, ConversationMessage, SlashCommand } from "@/lib/schemas";
+import type { VaultInfo, ConversationMessage, SlashCommand } from "@memory-loop/shared";
 import type {
   SessionEvent,
   SessionState,
@@ -35,7 +35,8 @@ import {
   type AskUserQuestionCallback,
   type AskUserQuestionItem,
 } from "../session-manager";
-import { sessionLog as log } from "../logger";
+import { createLogger } from "@memory-loop/shared";
+const log = createLogger("Session");
 
 /**
  * Generates a unique message ID.

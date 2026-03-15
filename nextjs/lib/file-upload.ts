@@ -10,7 +10,7 @@ import { join, extname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { isPathWithinVault } from "./file-browser";
 import { directoryExists } from "./vault-manager";
-import { createLogger } from "./logger";
+import { createLogger } from "@memory-loop/shared";
 import { convertToWebp } from "./utils/image-converter";
 
 const log = createLogger("FileUpload");

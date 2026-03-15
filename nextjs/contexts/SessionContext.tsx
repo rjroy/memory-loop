@@ -28,7 +28,7 @@ import type {
 
   MeetingState,
   EditableVaultConfig,
-} from "@/lib/schemas";
+} from "@memory-loop/shared";
 
 import {
   type AppMode,

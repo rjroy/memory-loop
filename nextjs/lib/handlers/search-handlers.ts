@@ -9,9 +9,10 @@
  * Used by Next.js API routes for search operations.
  */
 
-import { serverLog as log } from "../logger";
+import { createLogger } from "@memory-loop/shared";
+const log = createLogger("Server");
 import { getOrCreateIndex } from "../search-cache";
-import type { FileSearchResult, ContentSearchResult, ContextSnippet } from "@/lib/schemas";
+import type { FileSearchResult, ContentSearchResult, ContextSnippet } from "@memory-loop/shared";
 
 // =============================================================================
 // REST API Search Functions (using search cache)

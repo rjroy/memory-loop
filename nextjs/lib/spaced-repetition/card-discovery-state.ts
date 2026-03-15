@@ -17,7 +17,7 @@ import { readFile, writeFile, rename, unlink, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("card-discovery-state");
 

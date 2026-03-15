@@ -10,8 +10,8 @@
  * These handlers wrap existing vault-config functions for REST endpoints.
  */
 
-import type { VaultInfo, EditableVaultConfig } from "@/lib/schemas";
-import { EditableVaultConfigSchema } from "@/lib/schemas";
+import type { VaultInfo, EditableVaultConfig } from "@memory-loop/shared";
+import { EditableVaultConfigSchema } from "@memory-loop/shared";
 import {
   loadVaultConfig,
   saveVaultConfig,
@@ -21,7 +21,7 @@ import {
 } from "../vault-config";
 import { createVault, getVaultById, VaultCreationError } from "../vault-manager";
 import { runVaultSetup, type SetupResult } from "../vault-setup";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("ConfigHandlers");
 

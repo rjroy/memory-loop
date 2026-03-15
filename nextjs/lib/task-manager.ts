@@ -8,8 +8,8 @@
 
 import { readdir, readFile, writeFile, lstat, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
-import type { TaskEntry, TaskCategory } from "@/lib/schemas";
-import { createLogger } from "./logger";
+import type { TaskEntry, TaskCategory } from "@memory-loop/shared";
+import { createLogger } from "@memory-loop/shared";
 import {
   validatePath,
   FileBrowserError,

@@ -11,7 +11,7 @@
 import { copyFile, mkdir, readdir, readFile, writeFile, stat, chmod, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createLogger } from "./logger";
+import { createLogger } from "@memory-loop/shared";
 import { getVaultById, fileExists, directoryExists } from "./vault-manager";
 import { validatePath } from "./file-browser";
 import { mapSdkError } from "./session-manager";

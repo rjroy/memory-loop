@@ -15,10 +15,10 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { VaultInfo } from "@/lib/schemas";
+import type { VaultInfo } from "@memory-loop/shared";
 import { discoverVaults, directoryExists } from "../vault-manager";
 import { getTranscriptsDirectory } from "../transcript-manager";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 import {
   calculateChecksum,
   isTranscriptProcessed,

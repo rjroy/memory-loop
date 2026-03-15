@@ -10,7 +10,7 @@ import { copyFile, stat, mkdir, unlink, lstat } from "node:fs/promises";
 import { join, dirname, extname } from "node:path";
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import { createLogger } from "./logger";
+import { createLogger } from "@memory-loop/shared";
 import {
   discoverVaults,
   getVaultById,

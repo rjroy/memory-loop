@@ -8,7 +8,7 @@
 
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { VaultInfo, RecentNoteEntry } from "@/lib/schemas";
+import type { VaultInfo, RecentNoteEntry } from "@memory-loop/shared";
 import { getVaultInboxPath, directoryExists, fileExists } from "./vault-manager";
 
 /**

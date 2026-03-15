@@ -5,7 +5,7 @@
  */
 
 import { open } from "node:fs/promises";
-import type { VaultInfo } from "@/lib/schemas";
+import type { VaultInfo } from "@memory-loop/shared";
 
 /**
  * Creates a mock VaultInfo object with sensible defaults.

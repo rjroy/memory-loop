@@ -60,6 +60,30 @@ if ! run_quiet "build" bun run build; then
     FAILED=1
 fi
 
+echo -e "${YELLOW}Shared${NC}"
+
+cd "$REPO_ROOT/packages/shared"
+
+if ! run_quiet "typecheck" bun run typecheck; then
+    FAILED=1
+fi
+
+if ! run_quiet "unit tests" LOG_LEVEL=silent bun test; then
+    FAILED=1
+fi
+
+echo -e "${YELLOW}Daemon${NC}"
+
+cd "$REPO_ROOT/daemon"
+
+if ! run_quiet "typecheck" bun run typecheck; then
+    FAILED=1
+fi
+
+if ! run_quiet "unit tests" bun run test; then
+    FAILED=1
+fi
+
 #
 # Summary
 #

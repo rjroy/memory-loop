@@ -30,7 +30,7 @@ import {
   getUniqueDirectoryName,
   createVault,
 } from "../vault-manager";
-import type { VaultInfo } from "@/lib/schemas";
+import type { VaultInfo } from "@memory-loop/shared";
 
 // =============================================================================
 // Environment Variable Tests

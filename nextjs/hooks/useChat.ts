@@ -20,8 +20,8 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { ServerMessage, VaultInfo } from "@/lib/schemas";
-import { createLogger } from "@/lib/logger";
+import type { ServerMessage, VaultInfo } from "@memory-loop/shared";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("useChat");
 

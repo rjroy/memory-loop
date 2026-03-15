@@ -9,7 +9,7 @@ import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { SessionMetadata, VaultInfo } from "@/lib/schemas";
+import type { SessionMetadata, VaultInfo } from "@memory-loop/shared";
 
 import {
   getSessionsDir,

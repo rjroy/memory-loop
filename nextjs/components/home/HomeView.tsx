@@ -23,8 +23,8 @@ import { GoalsCard } from "./GoalsCard";
 import { InspirationCard } from "./InspirationCard";
 import { SpacedRepetitionWidget } from "./SpacedRepetitionWidget";
 
-import type { InspirationItem } from "@/lib/schemas";
-import { createLogger } from "@/lib/logger";
+import type { InspirationItem } from "@memory-loop/shared";
+import { createLogger } from "@memory-loop/shared";
 import "./HomeView.css";
 
 const log = createLogger("HomeView");

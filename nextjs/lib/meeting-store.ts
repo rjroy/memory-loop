@@ -7,7 +7,8 @@
  */
 
 import type { ActiveMeeting } from "./meeting-capture";
-import { wsLog as log } from "./logger";
+import { createLogger } from "@memory-loop/shared";
+const log = createLogger("WS");
 
 /**
  * Global map of vault ID to active meeting.

@@ -19,9 +19,9 @@ import type {
 
   MeetingState,
   EditableVaultConfig,
-} from "@/lib/schemas";
+} from "@memory-loop/shared";
 
-import { createLogger } from "@/lib/logger";
+import { createLogger } from "@memory-loop/shared";
 import type {
   SessionState,
   ConversationMessage,

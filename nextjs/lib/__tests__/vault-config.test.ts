@@ -44,7 +44,7 @@ import {
   slashCommandsEqual,
   type VaultConfig,
 } from "../vault-config";
-import type { SlashCommand, EditableVaultConfig } from "@/lib/schemas";
+import type { SlashCommand, EditableVaultConfig } from "@memory-loop/shared";
 
 // Test helpers
 async function writeConfig(dir: string, data: unknown): Promise<void> {

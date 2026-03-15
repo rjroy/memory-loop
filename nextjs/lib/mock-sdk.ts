@@ -5,7 +5,7 @@
  * Simulates Claude Agent SDK behavior without making real API calls.
  */
 
-import type { ServerMessage } from "@/lib/schemas";
+import type { ServerMessage } from "@memory-loop/shared";
 
 /**
  * Check if mock mode is enabled.

@@ -15,7 +15,7 @@
 
 import { getController, type SessionEvent } from "@/lib/controller";
 import { encodeSSE, SSE_HEADERS } from "@/lib/sse";
-import { createLogger } from "@/lib/logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("api/chat/stream");
 

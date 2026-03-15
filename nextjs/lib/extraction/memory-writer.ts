@@ -19,7 +19,7 @@
 import { readFile, writeFile, rename, unlink, mkdir, copyFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 import { fileExists, getVaultsDir } from "../vault-manager";
 
 const log = createLogger("memory-writer");

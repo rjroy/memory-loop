@@ -19,7 +19,7 @@ import type {
 
   MeetingState,
   EditableVaultConfig,
-} from "@/lib/schemas";
+} from "@memory-loop/shared";
 
 /**
  * Application mode: home, note capture, discussion, or browse.

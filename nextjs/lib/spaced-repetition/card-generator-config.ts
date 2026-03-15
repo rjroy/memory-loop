@@ -14,7 +14,7 @@ import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 import { fileExists } from "../vault-manager";
 
 const log = createLogger("card-generator-config");

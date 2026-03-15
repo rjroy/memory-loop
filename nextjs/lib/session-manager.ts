@@ -19,11 +19,11 @@ import { getSdkQuery, type QueryFunction } from "./sdk-provider";
 export type { SDKSlashCommand };
 
 // Re-export types from shared for convenience
-export type { SessionMetadata, ConversationMessage } from "@/lib/schemas";
+export type { SessionMetadata, ConversationMessage } from "@memory-loop/shared";
 
 // Re-export QueryFunction for backward compatibility
 export type { QueryFunction } from "./sdk-provider";
-import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@/lib/schemas";
+import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@memory-loop/shared";
 import { directoryExists, fileExists, getVaultById } from "./vault-manager";
 import {
   initializeTranscript,
@@ -32,7 +32,8 @@ import {
   formatAssistantMessage,
 } from "./transcript-manager";
 import { formatDateForFilename, formatTimeForTimestamp } from "./note-capture";
-import { sessionLog as log } from "./logger";
+import { createLogger } from "@memory-loop/shared";
+const log = createLogger("Session");
 import { createVaultTransferServer } from "./vault-transfer";
 import { loadVaultConfig, resolveRecentDiscussions, resolveDiscussionModel } from "./vault-config";
 

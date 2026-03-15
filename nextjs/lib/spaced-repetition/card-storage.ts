@@ -28,7 +28,7 @@ import {
   isDueToday,
   getToday,
 } from "./card-schema";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("card-storage");
 

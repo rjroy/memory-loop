@@ -14,7 +14,7 @@
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { VaultInfo, MeetingState } from "@/lib/schemas";
+import type { VaultInfo, MeetingState } from "@memory-loop/shared";
 import {
   getVaultInboxPath,
   directoryExists,

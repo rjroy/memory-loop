@@ -15,7 +15,7 @@ import { NextResponse } from "next/server";
 import { getVaultById } from "@/lib/vault-manager";
 import { loadSession, getSessionForVault } from "@/lib/session-manager";
 import { loadSlashCommands, loadVaultConfig } from "@/lib/vault-config";
-import type { SlashCommand } from "@/lib/schemas";
+import type { SlashCommand } from "@memory-loop/shared";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;

@@ -13,7 +13,7 @@
  * - TD-12: Sandbox pattern for safe operations
  */
 
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 import { getVaultsDir } from "../vault-manager";
 import {
   readExtractionState,

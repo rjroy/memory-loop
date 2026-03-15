@@ -7,9 +7,9 @@
 
 import { readdir, readFile, writeFile, lstat, realpath, unlink, rename, mkdir, stat, rm } from "node:fs/promises";
 import { join, resolve, extname, basename } from "node:path";
-import type { FileEntry } from "@/lib/schemas";
-import type { ErrorCode } from "@/lib/schemas";
-import { createLogger } from "./logger";
+import type { FileEntry } from "@memory-loop/shared";
+import type { ErrorCode } from "@memory-loop/shared";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("FileBrowser");
 

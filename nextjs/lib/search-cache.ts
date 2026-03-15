@@ -8,7 +8,7 @@
  */
 
 import { SearchIndexManager } from "./search/search-index";
-import { createLogger } from "./logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("SearchCache");
 

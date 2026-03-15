@@ -34,7 +34,7 @@ import {
   type CardState,
   isValidResponse,
 } from "./sm2-algorithm";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("card-manager");
 

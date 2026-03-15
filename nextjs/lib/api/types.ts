@@ -5,7 +5,7 @@
  * Error format matches backend RestErrorResponse (REQ-NF-3).
  */
 
-import type { ErrorCode } from "@/lib/schemas";
+import type { ErrorCode } from "@memory-loop/shared";
 
 /**
  * REST API error response format.

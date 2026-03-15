@@ -21,7 +21,7 @@
 import type { Card } from "./card-schema";
 import { archiveCard, type VaultPathInfo } from "./card-storage";
 import { getSdkQuery, type QueryFunction } from "../sdk-provider";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("card-dedup");
 

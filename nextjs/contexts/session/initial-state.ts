@@ -4,7 +4,7 @@
  * Creates default state objects for browser, search, widgets, and session.
  */
 
-import type { MeetingState } from "@/lib/schemas";
+import type { MeetingState } from "@memory-loop/shared";
 import type {
   BrowserState,
   SearchState,

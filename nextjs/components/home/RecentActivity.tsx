@@ -11,8 +11,8 @@
 import React, { useCallback, useState } from "react";
 import { useSession } from "../../contexts/SessionContext";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
-import type { RecentNoteEntry, RecentDiscussionEntry, ConversationMessage, SlashCommand } from "@/lib/schemas";
-import { createLogger } from "@/lib/logger";
+import type { RecentNoteEntry, RecentDiscussionEntry, ConversationMessage, SlashCommand } from "@memory-loop/shared";
+import { createLogger } from "@memory-loop/shared";
 import "./RecentActivity.css";
 
 const log = createLogger("RecentActivity");

@@ -17,7 +17,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getController } from "@/lib/controller";
 import { AlreadyProcessingError } from "@/lib/streaming";
-import { createLogger } from "@/lib/logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("api/chat");
 

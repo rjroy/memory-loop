@@ -8,7 +8,7 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { useSession } from "../../contexts/SessionContext";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
-import type { FileEntry } from "@/lib/schemas";
+import type { FileEntry } from "@memory-loop/shared";
 import "./MoveDialog.css";
 
 interface MoveDialogProps {

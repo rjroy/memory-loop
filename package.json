@@ -3,15 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "workspaces": ["nextjs"],
+  "workspaces": ["nextjs", "packages/shared", "daemon"],
   "scripts": {
     "dev": "bun run --cwd nextjs dev",
     "build": "bun run --cwd nextjs build",
     "start": "bun run --cwd nextjs start",
     "lint": "bun run --cwd nextjs lint",
-    "test": "bun run --cwd nextjs test",
+    "test": "LOG_LEVEL=silent bun test --cwd packages/shared && LOG_LEVEL=silent bun test --cwd nextjs && LOG_LEVEL=silent bun test --cwd daemon",
     "test:coverage": "bun run --cwd nextjs test:coverage",
-    "typecheck": "bun run --cwd nextjs typecheck"
+    "typecheck": "bun run --cwd packages/shared typecheck && bun run --cwd nextjs typecheck && bun run --cwd daemon typecheck",
+    "daemon:dev": "bun run --cwd daemon dev",
+    "daemon:start": "bun run --cwd daemon start",
+    "daemon:test": "bun run --cwd daemon test",
+    "daemon:typecheck": "bun run --cwd daemon typecheck"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

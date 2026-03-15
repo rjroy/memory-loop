@@ -12,7 +12,7 @@
  * - "silent" - No logs (useful for tests)
  */
 
-type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
+export type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
 
 const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   debug: 0,
@@ -93,9 +93,3 @@ export function createLogger(module: string) {
     error: (message: string, data?: unknown) => log("error", message, data),
   };
 }
-
-// Pre-created loggers for each module
-export const wsLog = createLogger("WS");
-export const vaultLog = createLogger("Vault");
-export const sessionLog = createLogger("Session");
-export const serverLog = createLogger("Server");

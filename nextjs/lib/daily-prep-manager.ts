@@ -10,9 +10,9 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { VaultInfo } from "@/lib/schemas";
+import type { VaultInfo } from "@memory-loop/shared";
 import { fileExists } from "./vault-manager";
-import { createLogger } from "./logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("DailyPrepManager");
 

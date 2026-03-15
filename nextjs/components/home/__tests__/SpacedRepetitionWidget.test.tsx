@@ -10,7 +10,7 @@ import { render, screen, cleanup, fireEvent, waitFor, act } from "@testing-libra
 import { SessionProvider } from "../../../contexts/SessionContext";
 import { SpacedRepetitionWidget } from "../SpacedRepetitionWidget";
 import type { FetchFn } from "../../../api/types";
-import type { DueCardsResponse, CardDetail } from "@/lib/schemas";
+import type { DueCardsResponse, CardDetail } from "@memory-loop/shared";
 
 /**
  * Wrapper component that provides SessionContext for testing.

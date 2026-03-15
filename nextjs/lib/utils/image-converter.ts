@@ -11,7 +11,7 @@ import { writeFile as writeFileDefault, readFile as readFileDefault, unlink as u
 import { randomBytes } from "crypto";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createLogger } from '../logger';
+import { createLogger } from "@memory-loop/shared";
 
 const execFileAsyncDefault = promisify(execFile);
 const log = createLogger('ImageConverter');

@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("extraction-state");
 

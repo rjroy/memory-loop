@@ -11,7 +11,7 @@ import type {
   FileSearchResult,
   ContentSearchResult,
   ContextSnippet,
-} from "@/lib/schemas";
+} from "@memory-loop/shared";
 
 // Test data
 const fileResults: FileSearchResult[] = [

@@ -8,8 +8,9 @@
 import { readdir, readFile, stat, access, mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { VaultInfo } from "@/lib/schemas";
-import { vaultLog as log } from "./logger";
+import type { VaultInfo } from "@memory-loop/shared";
+import { createLogger } from "@memory-loop/shared";
+const log = createLogger("Vault");
 import {
   loadVaultConfig,
   resolveContentRoot,

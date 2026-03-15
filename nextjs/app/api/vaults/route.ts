@@ -12,7 +12,7 @@ import {
   createVault,
   VaultCreationError,
 } from "@/lib/vault-manager";
-import { createLogger } from "@/lib/logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("api/vaults");
 

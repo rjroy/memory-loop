@@ -15,10 +15,10 @@
 import { readdir, readFile, writeFile, stat, lstat, mkdir, rm } from "node:fs/promises";
 import { join, basename, extname, dirname } from "node:path";
 import MiniSearch from "minisearch";
-import type { FileSearchResult, ContentSearchResult, ContextSnippet } from "@/lib/schemas";
+import type { FileSearchResult, ContentSearchResult, ContextSnippet } from "@memory-loop/shared";
 import { fuzzySearchFiles, escapeRegex, type FuzzyMatchFile } from "./fuzzy-matcher";
 import { isPathWithinVault } from "../file-browser";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("SearchIndex");
 

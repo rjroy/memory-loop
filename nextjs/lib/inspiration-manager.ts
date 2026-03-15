@@ -14,10 +14,10 @@
 
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { VaultInfo } from "@/lib/schemas";
+import type { VaultInfo } from "@memory-loop/shared";
 import { DEFAULT_MAX_POOL_SIZE } from "./vault-config";
 import { getSdkQuery, type QueryFunction } from "./sdk-provider";
-import { createLogger } from "./logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("inspiration-manager");
 

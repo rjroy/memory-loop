@@ -32,7 +32,7 @@ import { SearchResults } from "./SearchResults";
 import { PairWritingMode } from "../pair-writing/PairWritingMode";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
 import { isImageFile, isVideoFile, isPdfFile, isMarkdownFile, isJsonFile, isTxtFile, isCsvFile, hasSupportedViewer } from "@/lib/utils/file-types";
-import { createLogger } from "@/lib/logger";
+import { createLogger } from "@memory-loop/shared";
 // Note: FileSearchResult, ContentSearchResult types removed - now handled internally by REST API hooks
 import "./BrowseMode.css";
 

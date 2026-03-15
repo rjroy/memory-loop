@@ -13,7 +13,7 @@
  * @see .sdd/plans/2026-01-07-recall-search-plan.md (TD-1)
  */
 
-import type { FileSearchResult } from "@/lib/schemas";
+import type { FileSearchResult } from "@memory-loop/shared";
 
 // =============================================================================
 // Types

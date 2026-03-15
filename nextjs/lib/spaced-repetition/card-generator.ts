@@ -14,7 +14,7 @@
  */
 
 import { getSdkQuery, type QueryFunction } from "../sdk-provider";
-import { createLogger } from "../logger";
+import { createLogger } from "@memory-loop/shared";
 import {
   DEFAULT_REQUIREMENTS,
   loadRequirements,

@@ -12,25 +12,37 @@ Memory Loop is a mobile-friendly web interface for interacting with Obsidian vau
 # Development
 bun install              # Install dependencies
 bun run --cwd nextjs dev # Start Next.js dev server (:3000)
+bun run daemon:dev       # Start daemon with --watch
 
 # Testing
-bun run test             # Run all tests
-bun run test:coverage    # Generate coverage report
+bun run test             # Run all tests (shared, nextjs, daemon)
+bun run test:coverage    # Generate coverage report (nextjs)
 bun run --cwd nextjs test lib/__tests__/specific-file.test.ts  # Single file
 LOG_LEVEL=silent bun run --cwd nextjs test  # Suppress logs during tests
 
 # Quality
-bun run typecheck        # TypeScript checking
+bun run typecheck        # TypeScript checking (all packages)
 bun run lint             # ESLint
 
 # Production
 bun run --cwd nextjs build  # Build Next.js
+bun run daemon:start        # Start daemon
 ./scripts/launch.sh         # Build and start Next.js in production
 ```
 
 ## Architecture
 
-Next.js 15 App Router application. Domain logic lives in `lib/`, UI in `components/`, `hooks/`, and `contexts/`.
+Monorepo with three packages:
+
+```
+packages/shared/ # @memory-loop/shared: Zod schemas, logger
+nextjs/          # @memory-loop/nextjs: Next.js 15 web app
+daemon/          # @memory-loop/daemon: Background daemon process
+```
+
+Shared types and schemas live in `@memory-loop/shared`. Both nextjs and daemon import from it. Never import from `@/lib/schemas` or `@/lib/logger` in nextjs (those paths no longer exist).
+
+### Next.js App
 
 ```
 nextjs/
@@ -38,9 +50,21 @@ nextjs/
   components/    # React components
   hooks/         # React hooks
   contexts/      # State management
-  lib/           # Domain logic, schemas, utilities
-  lib/schemas/   # Zod schemas and TypeScript types
+  lib/           # Domain logic, utilities
 ```
+
+### Daemon
+
+```
+daemon/
+  src/index.ts         # Entry point (Unix socket or TCP listener)
+  src/server.ts        # Bun.serve() configuration
+  src/router.ts        # Request routing
+  src/routes/health.ts # GET /health
+  src/routes/help.ts   # GET /help (API discovery)
+```
+
+The daemon listens on a Unix socket by default (`$XDG_RUNTIME_DIR/memory-loop.sock`). Set `DAEMON_PORT` for localhost TCP fallback.
 
 ### Communication
 
@@ -91,6 +115,8 @@ PORT=3000                   # Server port
 HOSTNAME=0.0.0.0            # Bind address (Next.js uses HOSTNAME, not HOST)
 MOCK_SDK=true               # Disable real Anthropic API calls for testing
 LOG_LEVEL=silent            # Suppress logs (useful in tests)
+DAEMON_SOCKET=/path/to.sock # Daemon Unix socket path (default: $XDG_RUNTIME_DIR/memory-loop.sock)
+DAEMON_PORT=9876            # Daemon TCP port (overrides socket if set)
 ```
 
 Each vault must contain a `CLAUDE.md` file at root to be discovered.
@@ -188,7 +214,7 @@ When making changes that affect user-facing behavior, update the relevant docs. 
 
 ## Critical Lessons
 
-- Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: schema definition in `lib/schemas/`, config loading in `lib/vault-config.ts`, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
+- Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: schema definition in `packages/shared/src/schemas/`, config loading in `lib/vault-config.ts`, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
 - When the SDK returns a different session ID than the one passed to `resume`, that means the session wasn't found. Don't adapt to it (migrate metadata, rename files). Treat it as a failure and investigate why the SDK can't find the session.
 - Error events that aren't rendered to the user are the same as no error handling. Every SSE error event must be visible in the UI. If `useChat` captures an error but the component doesn't display it, the user sees a working response followed by silent corruption.
 - Instrumentation compiles for all runtimes the app uses. Node.js-only imports must go inside `if (process.env.NEXT_RUNTIME === "nodejs") { ... }` blocks, not after early returns. Webpack replaces `NEXT_RUNTIME` at compile time and dead-code-eliminates the unused branch. Early returns (`if (NEXT_RUNTIME !== "nodejs") return;`) do NOT prevent webpack from tracing imports that follow. Always test both `bun run --cwd nextjs dev` and `bun run --cwd nextjs build` when touching instrumentation.

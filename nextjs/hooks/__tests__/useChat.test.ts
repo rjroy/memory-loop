@@ -14,7 +14,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useChat } from "../useChat";
-import type { VaultInfo } from "@/lib/schemas";
+import type { VaultInfo } from "@memory-loop/shared";
 
 // Mock fetch responses
 const mockFetch = mock(() => Promise.resolve(new Response()));

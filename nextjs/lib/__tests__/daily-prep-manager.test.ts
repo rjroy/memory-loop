@@ -8,7 +8,7 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { VaultInfo } from "@/lib/schemas";
+import type { VaultInfo } from "@memory-loop/shared";
 import {
   formatDateAsYYYYMMDD,
   getDailyPrepDir,

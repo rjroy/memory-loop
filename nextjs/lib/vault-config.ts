@@ -8,9 +8,9 @@
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, normalize, dirname } from "node:path";
-import type { SlashCommand, Badge, BadgeColor, EditableVaultConfig } from "@/lib/schemas";
+import type { SlashCommand, Badge, BadgeColor, EditableVaultConfig } from "@memory-loop/shared";
 import { fileExists } from "./vault-manager";
-import { createLogger } from "./logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("VaultConfig");
 

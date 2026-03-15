@@ -1,0 +1,19 @@
+{
+  "name": "@memory-loop/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "test": "LOG_LEVEL=silent bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@memory-loop/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.4",
+    "typescript": "^5.7.2"
+  }
+}

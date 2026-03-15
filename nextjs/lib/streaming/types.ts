@@ -5,7 +5,7 @@
  * Based on the spec in .lore/design/active-session-controller.md
  */
 
-import type { AskUserQuestionItem, ConversationMessage, SlashCommand, StoredToolInvocation } from "@/lib/schemas";
+import type { AskUserQuestionItem, ConversationMessage, SlashCommand, StoredToolInvocation } from "@memory-loop/shared";
 
 // =============================================================================
 // Session Events (emitted to subscribers)

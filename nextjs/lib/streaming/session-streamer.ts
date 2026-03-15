@@ -14,9 +14,10 @@ import type {
   SDKCompactBoundaryMessage,
   ModelUsage,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { StoredToolInvocation } from "@/lib/schemas";
+import type { StoredToolInvocation } from "@memory-loop/shared";
 import type { SessionEvent } from "./types";
-import { sessionLog as log } from "../logger";
+import { createLogger } from "@memory-loop/shared";
+const log = createLogger("Session");
 
 /**
  * Type alias for raw stream events from the SDK.

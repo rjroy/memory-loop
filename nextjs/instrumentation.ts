@@ -13,11 +13,11 @@
 export async function register(
   deps: {
     checkCwebpAvailability?: () => Promise<boolean>;
-    bootstrapSchedulers?: (log: ReturnType<typeof import("@/lib/logger").createLogger>) => Promise<void>;
+    bootstrapSchedulers?: (log: ReturnType<typeof import("@memory-loop/shared").createLogger>) => Promise<void>;
   } = {}
 ) {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { createLogger } = await import("@/lib/logger");
+    const { createLogger } = await import("@memory-loop/shared");
     const log = createLogger("instrumentation");
 
     // Check cwebp binary availability on startup (REQ-IMAGE-WEBP-15)

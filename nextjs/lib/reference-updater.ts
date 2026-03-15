@@ -9,7 +9,7 @@
 
 import { readdir, readFile, writeFile, lstat } from "node:fs/promises";
 import { join, basename, extname } from "node:path";
-import { createLogger } from "./logger";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("ReferenceUpdater");
 

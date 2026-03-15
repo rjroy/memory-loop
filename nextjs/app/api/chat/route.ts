@@ -1,32 +1,15 @@
 /**
- * Chat Send Endpoint
+ * Chat Send Endpoint (Proxy)
  *
- * POST /api/chat - Submit a message to the controller (fire-and-forget)
- *
- * Request body:
- * - vaultId: string (required)
- * - vaultPath: string (required)
- * - sessionId: string (optional, resume if provided)
- * - prompt: string (required)
- *
- * Response: JSON with { sessionId } on success.
- * Clients connect to GET /api/chat/stream to receive SSE events.
+ * POST /api/chat - Proxies to daemon POST /session/chat/send
  */
 
 import { NextRequest } from "next/server";
-import { z } from "zod";
-import { getController } from "@/lib/controller";
-import { AlreadyProcessingError } from "@/lib/streaming";
+import * as sessionClient from "@/lib/session-client";
+import { DaemonUnavailableError } from "@/lib/daemon-fetch";
 import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("api/chat");
-
-const ChatRequestSchema = z.object({
-  vaultId: z.string().min(1, "vaultId is required"),
-  vaultPath: z.string().min(1, "vaultPath is required"),
-  sessionId: z.string().optional(),
-  prompt: z.string().min(1, "Prompt is required"),
-});
 
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -39,50 +22,38 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = ChatRequestSchema.safeParse(body);
-  if (!result.success) {
-    return Response.json(
-      {
-        error: {
-          code: "VALIDATION_ERROR",
-          message: result.error.issues[0]?.message ?? "Invalid request",
-        },
-      },
-      { status: 400 }
-    );
-  }
-
-  const { vaultId, vaultPath, sessionId, prompt } = result.data;
-  const controller = getController();
-
   try {
-    await controller.sendMessage({
-      vaultId,
-      vaultPath,
-      sessionId: sessionId ?? null,
-      prompt,
-    });
-
-    // sendMessage returns immediately (fire-and-forget). Get state for response.
-    const state = controller.getState();
-    return Response.json({ sessionId: state.sessionId });
+    const result = await sessionClient.sendMessage(
+      body as {
+        vaultId: string;
+        vaultPath: string;
+        sessionId?: string;
+        prompt: string;
+      },
+    );
+    return Response.json(result);
   } catch (err) {
-    if (err instanceof AlreadyProcessingError) {
+    if (err instanceof DaemonUnavailableError) {
+      log.error("Daemon unavailable", err);
       return Response.json(
-        { error: { code: err.code, message: err.message } },
-        { status: 409 }
+        { error: { code: "DAEMON_UNAVAILABLE", message: "Daemon is not available" } },
+        { status: 503 }
+      );
+    }
+
+    const status = (err as Record<string, unknown>).status;
+    const code = (err as Record<string, unknown>).code;
+
+    if (typeof status === "number" && status >= 400) {
+      return Response.json(
+        { error: { code: code ?? "ERROR", message: (err as Error).message } },
+        { status }
       );
     }
 
     log.error("Chat request failed", err);
     return Response.json(
-      {
-        error: {
-          code: "INTERNAL_ERROR",
-          message:
-            err instanceof Error ? err.message : "Internal error",
-        },
-      },
+      { error: { code: "INTERNAL_ERROR", message: (err as Error).message } },
       { status: 500 }
     );
   }

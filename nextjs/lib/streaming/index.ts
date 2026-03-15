@@ -1,11 +1,10 @@
 /**
- * Streaming Module
+ * Streaming Module (Transitional)
  *
- * Session management and SDK event streaming.
- * Used by Next.js SSE chat endpoint.
+ * Re-exports session types from @memory-loop/shared.
+ * The actual streaming implementation has moved to the daemon.
  */
 
-// Types
 export type {
   SessionEvent,
   PendingPrompt,
@@ -13,21 +12,6 @@ export type {
   SessionState,
   SessionSnapshot,
   SessionEventCallback,
-  ActiveSessionController,
-  PendingPermissionRequest,
-  PendingQuestionRequest,
-} from "./types";
+} from "@memory-loop/shared";
 
-// Errors
-export { AlreadyProcessingError } from "./types";
-
-// Controller
-export {
-  createActiveSessionController,
-  getActiveSessionController,
-  resetActiveSessionController,
-} from "./active-session-controller";
-
-// Streamer utilities (for direct use if needed)
-export type { StreamingResult, StreamerState, StreamerEmitter, StreamerHandle } from "./session-streamer";
-export { streamSdkEvents, startStreamSdkEvents } from "./session-streamer";
+export { AlreadyProcessingError } from "@memory-loop/shared";

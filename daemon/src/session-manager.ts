@@ -25,18 +25,18 @@ export type { SessionMetadata, ConversationMessage } from "@memory-loop/shared";
 export type { QueryFunction } from "./sdk-provider";
 import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@memory-loop/shared";
 import { directoryExists, fileExists } from "@memory-loop/shared/server";
-import { getVaultById } from "./vault-client";
+import { getVaultById } from "./vault/vault-manager";
 import {
   initializeTranscript,
   appendToTranscript,
   formatUserMessage,
   formatAssistantMessage,
-} from "./file-client";
+} from "./files/transcript-manager";
 import { formatDateForFilename, formatTimeForTimestamp } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
 const log = createLogger("Session");
 import { createVaultTransferServer } from "./vault-transfer";
-import { loadVaultConfig } from "./vault-client";
+import { loadVaultConfig } from "./vault/vault-config";
 import { resolveRecentDiscussions, resolveDiscussionModel } from "@memory-loop/shared";
 
 /**
@@ -472,7 +472,7 @@ function truncatePreview(text: string, maxLength: number): string {
   if (firstLine.length <= maxLength) {
     return firstLine;
   }
-  return firstLine.slice(0, maxLength - 1) + "…";
+  return firstLine.slice(0, maxLength - 1) + "\u2026";
 }
 
 /**

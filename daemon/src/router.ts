@@ -77,6 +77,20 @@ import {
   cardGeneratorStatusHandler,
   cardGeneratorTriggerHandler,
 } from "./routes/card-config";
+import { setupHandler } from "./routes/setup";
+import { inspirationHandler } from "./routes/inspiration";
+import {
+  chatSendHandler,
+  chatStreamHandler,
+  chatAbortHandler,
+  chatPermissionHandler,
+  chatAnswerHandler,
+  sessionClearHandler,
+  sessionStateHandler,
+  sessionLookupHandler,
+  sessionInitHandler,
+  sessionDeleteHandler,
+} from "./routes/session";
 
 export function registerRoutes(app: Hono, startTime: number): void {
   // Health and help
@@ -160,4 +174,20 @@ export function registerRoutes(app: Hono, startTime: number): void {
   app.delete("/config/card-generator/requirements", (c) => cardGeneratorRequirementsDeleteHandler(c));
   app.get("/config/card-generator/status", (c) => cardGeneratorStatusHandler(c));
   app.post("/config/card-generator/trigger", (c) => cardGeneratorTriggerHandler(c));
+
+  // Setup and Inspiration
+  app.post("/config/setup", (c) => setupHandler(c));
+  app.get("/inspiration", (c) => inspirationHandler(c));
+
+  // Session / Chat
+  app.post("/session/chat/send", (c) => chatSendHandler(c));
+  app.get("/session/chat/stream", (c) => chatStreamHandler(c));
+  app.post("/session/chat/abort", (c) => chatAbortHandler(c));
+  app.post("/session/chat/permission", (c) => chatPermissionHandler(c));
+  app.post("/session/chat/answer", (c) => chatAnswerHandler(c));
+  app.post("/session/clear", (c) => sessionClearHandler(c));
+  app.get("/session/state", (c) => sessionStateHandler(c));
+  app.get("/session/lookup/:vaultId", (c) => sessionLookupHandler(c));
+  app.post("/session/init/:vaultId", (c) => sessionInitHandler(c));
+  app.delete("/session/:vaultId/:sessionId", (c) => sessionDeleteHandler(c));
 }

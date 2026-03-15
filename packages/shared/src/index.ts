@@ -77,6 +77,40 @@ export {
   getDailyNoteFilename,
 } from "./date-utils";
 
+// Session types
+export type {
+  SessionEvent,
+  PendingPrompt,
+  PromptResponse,
+  SessionState,
+  SessionSnapshot,
+  SessionEventCallback,
+} from "./session-types";
+export { AlreadyProcessingError } from "./session-types";
+
+// Pair writing prompts
+export type {
+  QuickActionType,
+  AdvisoryActionType,
+  QuickActionContext,
+  PositionHint,
+  AdvisoryActionContext,
+} from "./pair-writing-prompts";
+export {
+  calculatePositionHint,
+  formatPositionHint,
+  buildQuickActionPrompt,
+  validateQuickActionContext,
+  getActionConfig,
+  isQuickActionType,
+  isAdvisoryActionType,
+  buildAdvisoryActionPrompt,
+  buildValidatePrompt,
+  buildCritiquePrompt,
+  buildComparePrompt,
+  buildDiscussPrompt,
+} from "./pair-writing-prompts";
+
 // Vault path helpers
 export type { ExtractedTitle } from "./vault-paths";
 export {

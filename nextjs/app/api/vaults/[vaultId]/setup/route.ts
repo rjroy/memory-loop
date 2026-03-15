@@ -1,17 +1,12 @@
 /**
- * Setup API Route (Vault-Scoped)
+ * Setup API Route (Proxy)
  *
- * POST /api/vaults/:vaultId/setup - Setup vault (create directories, install commands)
- *
- * Inlines the setup handler logic directly. vault-setup.ts remains in
- * nextjs until Stage 5 moves it to the daemon.
+ * POST /api/vaults/:vaultId/setup - Proxies to daemon POST /config/setup
  */
 
 import { NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { ensureSdk } from "@/lib/controller";
-import { getVaultById } from "@/lib/vault-client";
-import { runVaultSetup } from "@/lib/vault-setup";
+import * as sessionClient from "@/lib/session-client";
+import { DaemonUnavailableError } from "@/lib/daemon-fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -19,29 +14,24 @@ interface RouteParams {
 
 export async function POST(_request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  ensureSdk();
-
-  // Verify vault exists via vault-client
-  const resolvedVault = await getVaultById(vault.id);
-  if (!resolvedVault) {
-    return jsonError("VAULT_NOT_FOUND", `Vault "${vault.id}" not found`, 404);
-  }
-
-  if (!resolvedVault.hasClaudeMd) {
-    return jsonError(
-      "VALIDATION_ERROR",
-      `Vault "${resolvedVault.name}" is missing CLAUDE.md at root`,
-    );
-  }
 
   try {
-    const result = await runVaultSetup(vault.id);
+    const result = await sessionClient.runSetup(vaultId);
     return NextResponse.json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to setup vault";
-    return jsonError("INTERNAL_ERROR", message, 500);
+  } catch (err) {
+    if (err instanceof DaemonUnavailableError) {
+      return NextResponse.json(
+        { error: { code: "DAEMON_UNAVAILABLE", message: "Daemon is not available" } },
+        { status: 503 }
+      );
+    }
+
+    const status = (err as Record<string, unknown>).status;
+    const code = (err as Record<string, unknown>).code;
+
+    return NextResponse.json(
+      { error: { code: code ?? "INTERNAL_ERROR", message: (err as Error).message } },
+      { status: typeof status === "number" ? status : 500 }
+    );
   }
 }

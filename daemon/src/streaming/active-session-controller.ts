@@ -11,19 +11,23 @@
  * - Emit events to subscribers (pub-sub pattern)
  */
 
-import type { VaultInfo, ConversationMessage, SlashCommand } from "@memory-loop/shared";
 import type {
+  VaultInfo,
+  ConversationMessage,
+  SlashCommand,
   SessionEvent,
   SessionState,
   SessionSnapshot,
   PendingPrompt,
   PromptResponse,
   SessionEventCallback,
+  AskUserQuestionItem,
+} from "@memory-loop/shared";
+import { AlreadyProcessingError } from "@memory-loop/shared";
+import type {
   PendingPermissionRequest,
   PendingQuestionRequest,
-  ActiveSessionController as IActiveSessionController,
 } from "./types";
-import { AlreadyProcessingError } from "./types";
 import type { StreamerState, StreamerEmitter, StreamerHandle } from "./session-streamer";
 import { startStreamSdkEvents } from "./session-streamer";
 import {
@@ -33,10 +37,39 @@ import {
   type SessionQueryResult,
   type ToolPermissionCallback,
   type AskUserQuestionCallback,
-  type AskUserQuestionItem,
 } from "../session-manager";
 import { createLogger } from "@memory-loop/shared";
 const log = createLogger("Session");
+
+/**
+ * Active Session Controller interface.
+ * Owns the live SDK connection and manages streaming state.
+ */
+export interface ActiveSessionController {
+  // Lifecycle
+  sendMessage(params: {
+    vaultId: string;
+    vaultPath: string;
+    sessionId: string | null;
+    prompt: string;
+  }): Promise<void>;
+  clearSession(): void;
+  /** Abort current processing, persist partial result. Session remains valid. */
+  abortProcessing(): void;
+
+  // Subscription (push)
+  subscribe(callback: SessionEventCallback): () => void;
+
+  // State queries (pull, for reconnect)
+  getPendingPrompts(): PendingPrompt[];
+  getState(): SessionState;
+  /** Get a point-in-time snapshot of processing state (for reconnecting clients) */
+  getSnapshot(): SessionSnapshot;
+  isStreaming(): boolean;
+
+  // Prompts
+  respondToPrompt(promptId: string, response: PromptResponse): void;
+}
 
 /**
  * Generates a unique message ID.
@@ -50,7 +83,7 @@ function generateMessageId(): string {
  *
  * This is a singleton per server - only one active session at a time (REQ-4).
  */
-export function createActiveSessionController(): IActiveSessionController {
+export function createActiveSessionController(): ActiveSessionController {
   // Session state
   let currentSessionId: string | null = null;
   let currentVaultId: string | null = null;
@@ -604,12 +637,12 @@ export function createActiveSessionController(): IActiveSessionController {
 }
 
 // Singleton instance
-let controller: IActiveSessionController | null = null;
+let controller: ActiveSessionController | null = null;
 
 /**
  * Gets the singleton Active Session Controller instance.
  */
-export function getActiveSessionController(): IActiveSessionController {
+export function getActiveSessionController(): ActiveSessionController {
   if (!controller) {
     controller = createActiveSessionController();
   }

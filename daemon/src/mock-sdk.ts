@@ -58,7 +58,6 @@ export async function* generateMockResponse(
       toolUseId,
     };
 
-    // Small delay to simulate tool execution
     await sleep(100);
 
     yield {
@@ -89,7 +88,6 @@ export async function* generateMockResponse(
       content: chunk,
     };
 
-    // Small delay between chunks to simulate streaming
     await sleep(30);
   }
 
@@ -107,9 +105,6 @@ export function createMockSession(vaultId: string): string {
   return `mock_session_${vaultId}_${Date.now()}`;
 }
 
-/**
- * Utility for async delays.
- */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -109,6 +109,20 @@ export function helpHandler(c: Context): Response {
       { path: "/config/card-generator/requirements", method: "DELETE", description: "Reset card generator requirements to default" },
       { path: "/config/card-generator/status", method: "GET", description: "Get card generation status" },
       { path: "/config/card-generator/trigger", method: "POST", description: "Manually trigger card generation" },
+
+      // Setup and Inspiration
+      { path: "/config/setup", method: "POST", description: "Run vault setup (body: { vaultId })" },
+      { path: "/inspiration", method: "GET", description: "Get inspiration data (query: vaultId)" },
+
+      // Session / Chat
+      { path: "/session/chat/send", method: "POST", description: "Submit a message (body: { vaultId, vaultPath, prompt, sessionId? })" },
+      { path: "/session/chat/stream", method: "GET", description: "SSE stream of session events (snapshot-first)" },
+      { path: "/session/chat/abort", method: "POST", description: "Abort current streaming (body: { sessionId })" },
+      { path: "/session/chat/permission", method: "POST", description: "Respond to tool permission (body: { sessionId, toolUseId, allowed })" },
+      { path: "/session/chat/answer", method: "POST", description: "Respond to AskUserQuestion (body: { sessionId, toolUseId, answers })" },
+      { path: "/session/clear", method: "POST", description: "Clear the current session" },
+      { path: "/session/state", method: "GET", description: "Get current session state" },
+      { path: "/session/lookup/:vaultId", method: "GET", description: "Look up existing session for a vault" },
     ],
   };
 

@@ -13,10 +13,10 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLogger } from "@memory-loop/shared";
 import { fileExists, directoryExists } from "@memory-loop/shared/server";
-import { getVaultById } from "./vault-client";
-import { validatePath } from "./file-client";
+import { getVaultById } from "./vault/vault-manager";
+import { validatePath } from "./files/file-browser";
 import { mapSdkError } from "./session-manager";
-import { loadVaultConfig } from "./vault-client";
+import { loadVaultConfig } from "./vault/vault-config";
 import {
   resolveProjectPath,
   resolveAreaPath,

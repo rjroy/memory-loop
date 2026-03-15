@@ -11,12 +11,9 @@ import { join, dirname, extname } from "node:path";
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { createLogger } from "@memory-loop/shared";
-import {
-  discoverVaults,
-  getVaultById,
-} from "./vault-client";
+import { discoverVaults, getVaultById } from "./vault/vault-manager";
 import { directoryExists } from "@memory-loop/shared/server";
-import { isPathWithinVault } from "./file-client";
+import { isPathWithinVault } from "./files/file-browser";
 
 const log = createLogger("VaultTransfer");
 
@@ -101,10 +98,6 @@ export interface TransferResult {
 
 /**
  * Transfers a file from one vault to another.
- *
- * @param options - Transfer options
- * @returns Transfer result with details about the operation
- * @throws VaultTransferError on failure
  */
 export async function transferFile(
   options: TransferOptions
@@ -148,7 +141,7 @@ export async function transferFile(
   const sourceFullPath = await validateSafePath(sourceVault.contentRoot, sourcePath);
   const targetFullPath = await validateSafePath(targetVault.contentRoot, targetPath);
 
-  // Check source file exists and is not a symlink (prevent symlink-based path traversal)
+  // Check source file exists and is not a symlink
   try {
     const sourceStats = await lstat(sourceFullPath);
     if (sourceStats.isSymbolicLink()) {
@@ -175,7 +168,6 @@ export async function transferFile(
   }
 
   // Check if anything exists at target path (including broken symlinks)
-  // Use lstat instead of stat/fileExists to detect symlinks even if target is broken
   let targetStats;
   try {
     targetStats = await lstat(targetFullPath);
@@ -183,12 +175,10 @@ export async function transferFile(
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       throw error;
     }
-    // Path doesn't exist at all - safe to proceed
     targetStats = null;
   }
 
   if (targetStats) {
-    // Reject symlinks regardless of overwrite setting (prevent writing outside vault)
     if (targetStats.isSymbolicLink()) {
       log.warn(`Target symlink rejected: ${targetPath}`);
       throw new VaultTransferError(
@@ -197,7 +187,6 @@ export async function transferFile(
       );
     }
 
-    // Regular file exists - check overwrite permission
     if (!overwrite) {
       throw new VaultTransferError(
         `Target file "${targetPath}" already exists in vault "${targetVaultId}". Set overwrite=true to replace.`,
@@ -222,12 +211,10 @@ export async function transferFile(
     await copyFile(sourceFullPath, targetFullPath);
     log.info(`Copied ${bytesTransferred} bytes to ${targetFullPath}`);
   } else {
-    // For move: copy then delete (safer than rename across filesystems)
     await copyFile(sourceFullPath, targetFullPath);
     try {
       await unlink(sourceFullPath);
     } catch (unlinkError) {
-      // Copy succeeded but delete failed - user has duplicates
       log.error(`Move copy succeeded but source deletion failed: ${sourceFullPath}`);
       throw new VaultTransferError(
         `File copied to target but source deletion failed: ${unlinkError instanceof Error ? unlinkError.message : String(unlinkError)}. File exists in both locations.`,
@@ -249,8 +236,6 @@ export async function transferFile(
 
 /**
  * Lists all available vaults for transfer operations.
- *
- * @returns Array of vault info objects
  */
 export async function listTransferableVaults(): Promise<
   Array<{ id: string; name: string; path: string }>
@@ -265,10 +250,6 @@ export async function listTransferableVaults(): Promise<
 
 /**
  * Creates an SDK MCP server with vault transfer tools.
- *
- * The server provides:
- * - transfer_file: Copy or move a file between vaults
- * - list_vaults: List available vaults for transfer
  */
 export function createVaultTransferServer() {
   return createSdkMcpServer({

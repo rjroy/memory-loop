@@ -1,11 +1,11 @@
 /**
- * Streaming Types
+ * Session Types
  *
- * Type definitions for the Active Session Controller and streaming infrastructure.
- * Based on the spec in .lore/design/active-session-controller.md
+ * Type definitions for the session lifecycle and streaming infrastructure.
+ * Used by daemon (producer) and Next.js/browser (consumer).
  */
 
-import type { AskUserQuestionItem, ConversationMessage, SlashCommand, StoredToolInvocation } from "@memory-loop/shared";
+import type { AskUserQuestionItem, ConversationMessage, SlashCommand, StoredToolInvocation } from "./schemas/index";
 
 // =============================================================================
 // Session Events (emitted to subscribers)
@@ -128,64 +128,10 @@ export class AlreadyProcessingError extends Error {
 }
 
 // =============================================================================
-// Controller Interface
+// Callback
 // =============================================================================
 
 /**
  * Callback type for session event subscribers.
  */
 export type SessionEventCallback = (event: SessionEvent) => void;
-
-/**
- * Active Session Controller interface.
- * Owns the live SDK connection and manages streaming state.
- */
-export interface ActiveSessionController {
-  // Lifecycle
-  sendMessage(params: {
-    vaultId: string;
-    vaultPath: string;
-    sessionId: string | null;
-    prompt: string;
-  }): Promise<void>;
-  clearSession(): void;
-  /** Abort current processing, persist partial result. Session remains valid. */
-  abortProcessing(): void;
-
-  // Subscription (push)
-  subscribe(callback: SessionEventCallback): () => void;
-
-  // State queries (pull, for reconnect)
-  getPendingPrompts(): PendingPrompt[];
-  getState(): SessionState;
-  /** Get a point-in-time snapshot of processing state (for reconnecting clients) */
-  getSnapshot(): SessionSnapshot;
-  isStreaming(): boolean;
-
-  // Prompts
-  respondToPrompt(promptId: string, response: PromptResponse): void;
-}
-
-// =============================================================================
-// Internal Types (used by controller implementation)
-// =============================================================================
-
-/**
- * Internal pending permission request.
- * Wraps the SDK's canUseTool callback promise.
- */
-export interface PendingPermissionRequest {
-  prompt: PendingPrompt;
-  resolve: (allowed: boolean) => void;
-  reject: (error: Error) => void;
-}
-
-/**
- * Internal pending AskUserQuestion request.
- * Wraps the SDK's canUseTool callback promise for AskUserQuestion.
- */
-export interface PendingQuestionRequest {
-  prompt: PendingPrompt;
-  resolve: (answers: Record<string, string>) => void;
-  reject: (error: Error) => void;
-}

@@ -1,7 +1,7 @@
 ---
 title: "Stage 7: CLI client"
 date: 2026-03-14
-status: approved
+status: executed
 tags: [daemon, cli, mcp, progressive-discovery, agent-interaction, migration, stage-7]
 modules: [cli, daemon]
 related:

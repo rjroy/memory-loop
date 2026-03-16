@@ -53,21 +53,21 @@ export function chatStreamHandler(c: Context): Response {
     const unsubscribe = controller.subscribe((event) => {
       if (cleaned) return;
 
-      stream.writeSSE({
-        data: JSON.stringify(event),
-      }).catch(() => {
-        // Stream closed by client
-        cleanup();
-      });
-
-      // Close stream on terminal events
-      if (
+      const isTerminal =
         event.type === "response_end" ||
         event.type === "error" ||
         event.type === "aborted" ||
-        event.type === "session_cleared"
-      ) {
-        cleanup();
+        event.type === "session_cleared";
+
+      const writePromise = stream.writeSSE({
+        data: JSON.stringify(event),
+      });
+
+      if (isTerminal) {
+        // Wait for the write to flush before closing so the client receives the terminal event
+        writePromise.then(() => cleanup()).catch(() => cleanup());
+      } else {
+        writePromise.catch(() => cleanup());
       }
     });
 

@@ -381,6 +381,10 @@ export function SessionProvider({
     []
   );
 
+  const finalizeStreaming = useCallback(() => {
+    dispatch({ type: "FINALIZE_STREAMING" });
+  }, []);
+
   // Search actions
   const setSearchActive = useCallback((isActive: boolean) => {
     dispatch({ type: "SET_SEARCH_ACTIVE", isActive });
@@ -490,6 +494,7 @@ export function SessionProvider({
     appendStreamingChunk,
     setMessagesIfEmpty,
     handleSnapshot,
+    finalizeStreaming,
     setSearchActive,
     setSearchMode,
     setSearchQuery,

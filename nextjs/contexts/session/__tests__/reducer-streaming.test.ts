@@ -198,6 +198,45 @@ describe("fragmentation race condition", () => {
 });
 
 // ---------------------------------------------------------------------------
+// FINALIZE_STREAMING
+// ---------------------------------------------------------------------------
+describe("FINALIZE_STREAMING", () => {
+  test("clears isStreaming on a streaming assistant message", () => {
+    const state: SessionState = {
+      ...initialState,
+      messages: [makeUserMessage(), makeStreamingAssistantMessage("partial response")],
+    };
+    const result = sessionReducer(state, { type: "FINALIZE_STREAMING" });
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[1].content).toBe("partial response");
+    expect(result.messages[1].isStreaming).toBe(false);
+  });
+
+  test("no-ops when no messages are streaming", () => {
+    const state: SessionState = {
+      ...initialState,
+      messages: [makeUserMessage(), makeFinishedAssistantMessage()],
+    };
+    const result = sessionReducer(state, { type: "FINALIZE_STREAMING" });
+    expect(result).toBe(state);
+  });
+
+  test("no-ops when messages are empty", () => {
+    const result = sessionReducer(initialState, { type: "FINALIZE_STREAMING" });
+    expect(result).toBe(initialState);
+  });
+
+  test("clears isStreaming on empty-content streaming message", () => {
+    const state: SessionState = {
+      ...initialState,
+      messages: [makeUserMessage(), makeStreamingAssistantMessage("")],
+    };
+    const result = sessionReducer(state, { type: "FINALIZE_STREAMING" });
+    expect(result.messages[1].isStreaming).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // SET_MESSAGES_IF_EMPTY
 // ---------------------------------------------------------------------------
 describe("SET_MESSAGES_IF_EMPTY", () => {

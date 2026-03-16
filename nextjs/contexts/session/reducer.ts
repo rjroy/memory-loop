@@ -106,6 +106,8 @@ export type SessionAction =
   | { type: "APPEND_STREAMING_CHUNK"; content: string }
   | { type: "SET_MESSAGES_IF_EMPTY"; messages: ConversationMessageProtocol[] }
   | { type: "HANDLE_SNAPSHOT"; sessionId?: string; content: string; isProcessing: boolean; contextUsage?: number }
+  // Safety net: clear isStreaming on any message when the SSE stream closes
+  | { type: "FINALIZE_STREAMING" }
   // Vault config update
   | { type: "UPDATE_VAULT_CONFIG"; config: EditableVaultConfig };
 
@@ -486,6 +488,23 @@ function handleSetMessagesIfEmpty(
 }
 
 /**
+ * Safety net: clears isStreaming on any message that still has it set.
+ * Called when the SSE stream closes, so the UI never shows a permanent
+ * streaming indicator even if response_end was lost (network issue, race).
+ */
+function handleFinalizeStreaming(state: SessionState): SessionState {
+  const streamingIndex = state.messages.findIndex((m) => m.isStreaming);
+  if (streamingIndex === -1) return state;
+
+  const messages = [...state.messages];
+  messages[streamingIndex] = {
+    ...messages[streamingIndex],
+    isStreaming: false,
+  };
+  return { ...state, messages };
+}
+
+/**
  * Handles a snapshot event from SSE reconnection. The server sends accumulated
  * content that should replace or create the streaming assistant message.
  */
@@ -861,6 +880,9 @@ export function sessionReducer(
 
     case "SET_MESSAGES_IF_EMPTY":
       return handleSetMessagesIfEmpty(state, action.messages);
+
+    case "FINALIZE_STREAMING":
+      return handleFinalizeStreaming(state);
 
     case "HANDLE_SNAPSHOT":
       return handleSnapshot(

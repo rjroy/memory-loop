@@ -71,6 +71,7 @@ export function Discussion({ sendMessageRef }: DiscussionProps = {}): React.Reac
     updateToolInput,
     completeToolInvocation,
     slashCommands,
+    finalizeStreaming,
   } = useSession();
 
   // Detect touch-only devices (no hover capability)
@@ -153,7 +154,7 @@ export function Discussion({ sendMessageRef }: DiscussionProps = {}): React.Reac
   const chat = useChat(vault, contextSessionId, {
     onEvent: handleMessage,
     onStreamStart: () => setIsSubmitting(true),
-    onStreamEnd: () => setIsSubmitting(false),
+    onStreamEnd: () => { setIsSubmitting(false); finalizeStreaming(); },
     onError: () => setIsSubmitting(false),
   });
 

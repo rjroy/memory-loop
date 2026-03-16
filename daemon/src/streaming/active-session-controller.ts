@@ -638,6 +638,7 @@ export function createActiveSessionController(): ActiveSessionController {
           code,
           message: err instanceof Error ? err.message : "Failed to send message",
         });
+        throw err; // Re-throw so POST handler returns HTTP error
       }
     },
 

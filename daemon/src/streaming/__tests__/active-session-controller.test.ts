@@ -577,7 +577,7 @@ describe("crash during pending prompt", () => {
 // =============================================================================
 
 describe("sendMessage error handling", () => {
-  test("SDK failure emits error with SDK_ERROR code", async () => {
+  test("SDK failure emits error with SDK_ERROR code and rethrows", async () => {
     const mockQuery = (() => {
       throw new Error("Connection refused");
     }) as unknown as QueryFunction;
@@ -588,22 +588,21 @@ describe("sendMessage error handling", () => {
     const events: SessionEvent[] = [];
     controller.subscribe((event) => events.push(event));
 
-    await controller.sendMessage({
-      vaultId: "v1",
-      vaultPath: tempDir,
-      sessionId: null,
-      prompt: "test",
-    });
-
-    // Wait for error event
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await expect(
+      controller.sendMessage({
+        vaultId: "v1",
+        vaultPath: tempDir,
+        sessionId: null,
+        prompt: "test",
+      })
+    ).rejects.toThrow("Connection refused");
 
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();
     expect((errorEvent as { code: string }).code).toBe("SDK_ERROR");
   });
 
-  test("resume failure emits error with RESUME_FAILED code", async () => {
+  test("resume failure emits error with RESUME_FAILED code and rethrows", async () => {
     // Create session metadata
     const { saveSession } = await import("../../session-manager");
     await saveSession({
@@ -625,14 +624,14 @@ describe("sendMessage error handling", () => {
     const events: SessionEvent[] = [];
     controller.subscribe((event) => events.push(event));
 
-    await controller.sendMessage({
-      vaultId: "v1",
-      vaultPath: tempDir,
-      sessionId: "sess-rf",
-      prompt: "resume test",
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await expect(
+      controller.sendMessage({
+        vaultId: "v1",
+        vaultPath: tempDir,
+        sessionId: "sess-rf",
+        prompt: "resume test",
+      })
+    ).rejects.toThrow("Could not resume previous session");
 
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();

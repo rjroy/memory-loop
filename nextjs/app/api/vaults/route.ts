@@ -6,13 +6,8 @@
  */
 
 import { NextResponse } from "next/server";
-import {
-  discoverVaults,
-  VaultsDirError,
-  createVault,
-  VaultCreationError,
-} from "@/lib/vault-manager";
-import { createLogger } from "@/lib/logger";
+import { discoverVaults, createVault } from "@/lib/daemon/vaults";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("api/vaults");
 
@@ -26,10 +21,8 @@ export async function GET() {
     const vaults = await discoverVaults();
     return NextResponse.json({ vaults });
   } catch (error) {
-    if (error instanceof VaultsDirError) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    throw error;
+    const message = error instanceof Error ? error.message : "Failed to discover vaults";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -60,13 +53,11 @@ export async function POST(request: Request) {
     log.info(`Created vault: ${vault.id}`);
     return NextResponse.json({ vault }, { status: 201 });
   } catch (error) {
-    if (error instanceof VaultCreationError) {
-      return NextResponse.json(
-        { error: { code: "VALIDATION_ERROR", message: error.message } },
-        { status: 400 }
-      );
-    }
+    const message = error instanceof Error ? error.message : "Failed to create vault";
     log.error("Failed to create vault", error);
-    throw error;
+    return NextResponse.json(
+      { error: { code: "VALIDATION_ERROR", message } },
+      { status: 400 }
+    );
   }
 }

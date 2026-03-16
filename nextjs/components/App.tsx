@@ -24,7 +24,7 @@ import { ConfigEditorDialog, type EditableVaultConfig } from "@/components/vault
 import { useHoliday } from "@/hooks/useHoliday";
 import { useMeetings } from "@/hooks/useMeetings";
 import { useConfig } from "@/hooks/useConfig";
-import { createLogger } from "@/lib/logger";
+import { createLogger } from "@memory-loop/shared";
 import "@/styles/App.css";
 
 const log = createLogger("App");

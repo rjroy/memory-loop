@@ -1,14 +1,16 @@
 /**
- * Current Meeting API Route (Vault-Scoped)
+ * Current Meeting API Route (Vault-Scoped) - Daemon Proxy
  *
  * GET /api/vaults/:vaultId/meetings/current - Get meeting state
  * DELETE /api/vaults/:vaultId/meetings/current - Stop current meeting
+ *
+ * Proxies requests to daemon endpoints:
+ *   GET /vaults/:id/meetings/current
+ *   DELETE /vaults/:id/meetings/current
  */
 
 import { NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { stopMeeting, toMeetingState } from "@/lib/meeting-capture";
-import { getActiveMeeting, clearActiveMeeting } from "@/lib/meeting-store";
+import { daemonFetch } from "@/lib/daemon/fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -21,18 +23,11 @@ interface RouteParams {
  */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  const activeMeeting = getActiveMeeting(vault.id);
-  const state = toMeetingState(activeMeeting);
-
-  return NextResponse.json({
-    isActive: state.isActive,
-    ...(state.title && { title: state.title }),
-    ...(state.filePath && { filePath: state.filePath }),
-    ...(state.startedAt && { startedAt: state.startedAt }),
-  });
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/meetings/current`
+  );
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }
 
 /**
@@ -43,33 +38,10 @@ export async function GET(_request: Request, { params }: RouteParams) {
  */
 export async function DELETE(_request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  const activeMeeting = getActiveMeeting(vault.id);
-  if (!activeMeeting) {
-    return jsonError("VALIDATION_ERROR", "No meeting is currently in progress.", 404);
-  }
-
-  try {
-    const result = await stopMeeting(activeMeeting);
-
-    if (!result.success) {
-      return jsonError("INTERNAL_ERROR", result.error ?? "Failed to stop meeting", 500);
-    }
-
-    const filePath = activeMeeting.relativePath;
-
-    // Clear active meeting from global store
-    clearActiveMeeting(vault.id);
-
-    return NextResponse.json({
-      filePath,
-      content: result.content ?? "",
-      entryCount: result.entryCount ?? 0,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to stop meeting";
-    return jsonError("INTERNAL_ERROR", message, 500);
-  }
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/meetings/current`,
+    { method: "DELETE" }
+  );
+  const responseBody: unknown = await res.json();
+  return NextResponse.json(responseBody, { status: res.status });
 }

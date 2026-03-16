@@ -10,6 +10,7 @@ function getGitCommitHash(): string {
 }
 
 const nextConfig: NextConfig = {
+  transpilePackages: ["@memory-loop/shared"],
   env: {
     NEXT_PUBLIC_APP_VERSION: getGitCommitHash(),
   },

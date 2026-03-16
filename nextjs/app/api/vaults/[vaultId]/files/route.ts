@@ -1,23 +1,20 @@
 /**
- * Files API Routes (Vault-Scoped)
+ * Files API Routes (Vault-Scoped) - Daemon Proxy
  *
  * GET /api/vaults/:vaultId/files - List directory contents
  * POST /api/vaults/:vaultId/files - Create a new file
+ *
+ * Proxies requests to daemon endpoints:
+ *   GET /vaults/:id/files (query: path)
+ *   POST /vaults/:id/files (body: { path, name })
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { listDirectory, createFile } from "@/lib/file-browser";
+import { daemonFetch } from "@/lib/daemon/fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
 }
-
-const CreateFileBodySchema = z.object({
-  path: z.string(),
-  name: z.string().min(1, "File name is required"),
-});
 
 /**
  * GET /api/vaults/:vaultId/files
@@ -26,18 +23,12 @@ const CreateFileBodySchema = z.object({
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
   const path = request.nextUrl.searchParams.get("path") ?? "";
-  const decodedPath = decodeURIComponent(path);
-
-  const entries = await listDirectory(vault.contentRoot, decodedPath);
-
-  return NextResponse.json({
-    path: decodedPath,
-    entries,
-  });
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/files?path=${encodeURIComponent(path)}`
+  );
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }
 
 /**
@@ -47,22 +38,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  */
 export async function POST(request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  const body: unknown = await request.json();
-  const parsed = CreateFileBodySchema.safeParse(body);
-  if (!parsed.success) {
-    return jsonError(
-      "VALIDATION_ERROR",
-      `Invalid request: ${parsed.error.issues[0]?.message ?? "Unknown validation error"}`
-    );
-  }
-
-  const { path, name } = parsed.data;
-  const decodedPath = decodeURIComponent(path);
-
-  const createdPath = await createFile(vault.contentRoot, decodedPath, name);
-
-  return NextResponse.json({ path: createdPath }, { status: 201 });
+  const body = await request.text();
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/files`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    }
+  );
+  const responseBody: unknown = await res.json();
+  return NextResponse.json(responseBody, { status: res.status });
 }

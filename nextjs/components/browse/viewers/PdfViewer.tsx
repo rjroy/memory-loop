@@ -6,7 +6,7 @@
  */
 
 import { type ReactNode } from "react";
-import { encodeAssetPath } from "@/lib/utils/file-types";
+import { encodeAssetPath } from "@memory-loop/shared";
 import "./PdfViewer.css";
 
 export interface PdfViewerProps {

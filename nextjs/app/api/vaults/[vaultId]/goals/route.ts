@@ -1,12 +1,14 @@
 /**
- * Goals API Route (Vault-Scoped)
+ * Goals API Route (Vault-Scoped) - Daemon Proxy
  *
  * GET /api/vaults/:vaultId/goals - Get vault goals
+ *
+ * Proxies requests to daemon endpoint:
+ *   GET /vaults/:id/goals
  */
 
 import { NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getVaultGoals } from "@/lib/vault-manager";
+import { daemonFetch } from "@/lib/daemon/fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -20,14 +22,9 @@ interface RouteParams {
  */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  try {
-    const content = await getVaultGoals(vault);
-    return NextResponse.json({ content });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to get goals";
-    return jsonError("INTERNAL_ERROR", message, 500);
-  }
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/goals`
+  );
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }

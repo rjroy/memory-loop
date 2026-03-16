@@ -2,7 +2,7 @@
 title: Fix PairWriting actions not appearing in Discussion
 date: 2026-02-05
 status: executed
-tags: [bug-fix, pair-writing, discussion, sse, ref-forwarding]
+tags: [bug, pair-writing, discussion, sse, ref-forwarding]
 modules: [pair-writing, discussion, use-chat]
 ---
 

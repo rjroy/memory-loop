@@ -17,7 +17,7 @@ import {
   SlashCommandAutocomplete,
   useSlashCommandNavigation,
 } from "../SlashCommandAutocomplete";
-import type { SlashCommand } from "@/lib/schemas";
+import type { SlashCommand } from "@memory-loop/shared";
 
 // Test fixtures
 const testCommands: SlashCommand[] = [

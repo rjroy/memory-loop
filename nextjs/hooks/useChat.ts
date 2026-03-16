@@ -20,8 +20,8 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { ServerMessage, VaultInfo } from "@/lib/schemas";
-import { createLogger } from "@/lib/logger";
+import type { ServerMessage, VaultInfo } from "@memory-loop/shared";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("useChat");
 
@@ -163,6 +163,12 @@ export function useChat(
   function handleStreamEvent(event: SSEEvent): void {
     // Handle snapshot event (first event from stream)
     if (event.type === "snapshot") {
+      onEventRef.current?.(event as unknown as ServerMessage);
+      return;
+    }
+
+    // Handle aborted as a non-error terminal event (REQ-ESS-19)
+    if (event.type === "aborted") {
       onEventRef.current?.(event as unknown as ServerMessage);
       return;
     }

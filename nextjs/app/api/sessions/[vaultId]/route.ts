@@ -1,23 +1,18 @@
 /**
- * Session Lookup API Route
+ * Session Lookup API Route (Proxy)
  *
- * GET /api/sessions/:vaultId - Get existing session ID for a vault
+ * GET /api/sessions/:vaultId - Proxies to daemon GET /session/lookup/:vaultId
  */
 
 import { NextResponse } from "next/server";
-import { getSessionForVault } from "@/lib/session-manager";
+import * as sessionClient from "@/lib/daemon/sessions";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
 }
 
-/**
- * GET /api/sessions/:vaultId
- *
- * Returns the session ID if one exists for the given vault.
- */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { vaultId } = await params;
-  const sessionId = await getSessionForVault(vaultId);
+  const sessionId = await sessionClient.lookupSession(vaultId);
   return NextResponse.json({ sessionId });
 }

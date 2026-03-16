@@ -12,7 +12,7 @@ import {
   useSession,
   useServerMessageHandler,
 } from "../SessionContext";
-import type { VaultInfo, TaskEntry } from "@/lib/schemas";
+import type { VaultInfo, TaskEntry } from "@memory-loop/shared";
 
 beforeEach(() => {
   localStorage.clear();
@@ -1499,7 +1499,7 @@ describe("SessionContext", () => {
         cumulativeTokens: 0,
         contextWindow: null,
         ...overrides,
-      } as unknown as import("@/lib/schemas").ServerMessage;
+      } as unknown as import("@memory-loop/shared").ServerMessage;
     }
 
     it("restores session ID from snapshot", () => {

@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, type MutableRefObject } from "react";
-import type { ServerMessage, SlashCommand } from "@/lib/schemas";
+import type { ServerMessage, SlashCommand } from "@memory-loop/shared";
 import { useChat } from "../../hooks/useChat";
 import { useSession, useServerMessageHandler } from "../../contexts/SessionContext";
 import { ConversationPane, DiscussionEmptyState } from "../shared/ConversationPane";
@@ -71,6 +71,7 @@ export function Discussion({ sendMessageRef }: DiscussionProps = {}): React.Reac
     updateToolInput,
     completeToolInvocation,
     slashCommands,
+    finalizeStreaming,
   } = useSession();
 
   // Detect touch-only devices (no hover capability)
@@ -153,7 +154,7 @@ export function Discussion({ sendMessageRef }: DiscussionProps = {}): React.Reac
   const chat = useChat(vault, contextSessionId, {
     onEvent: handleMessage,
     onStreamStart: () => setIsSubmitting(true),
-    onStreamEnd: () => setIsSubmitting(false),
+    onStreamEnd: () => { setIsSubmitting(false); finalizeStreaming(); },
     onError: () => setIsSubmitting(false),
   });
 

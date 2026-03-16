@@ -61,6 +61,9 @@ log "HOSTNAME: $HOSTNAME"
 log "PORT: $PORT"
 log "Project root: $PROJECT_ROOT"
 
+# NOTE: The daemon process must be running separately for full functionality.
+# Start it with: bun run --cwd daemon start
+
 # Build Next.js
 log "Building Next.js..."
 if ! bun run --cwd "$NEXTJS_DIR" build >> "$LOG_FILE" 2>&1; then

@@ -12,35 +12,63 @@ Memory Loop is a mobile-friendly web interface for interacting with Obsidian vau
 # Development
 bun install              # Install dependencies
 bun run --cwd nextjs dev # Start Next.js dev server (:3000)
+bun run daemon:dev       # Start daemon with --watch
 
 # Testing
-bun run test             # Run all tests
-bun run test:coverage    # Generate coverage report
+bun run test             # Run all tests (shared, nextjs, daemon)
+bun run test:coverage    # Generate coverage report (nextjs)
 bun run --cwd nextjs test lib/__tests__/specific-file.test.ts  # Single file
 LOG_LEVEL=silent bun run --cwd nextjs test  # Suppress logs during tests
 
 # Quality
-bun run typecheck        # TypeScript checking
+bun run typecheck        # TypeScript checking (all packages)
 bun run lint             # ESLint
 
 # Production
 bun run --cwd nextjs build  # Build Next.js
+bun run daemon:start        # Start daemon
 ./scripts/launch.sh         # Build and start Next.js in production
 ```
 
 ## Architecture
 
-Next.js 15 App Router application. Domain logic lives in `lib/`, UI in `components/`, `hooks/`, and `contexts/`.
+Monorepo with three packages:
+
+```
+packages/shared/ # @memory-loop/shared: Zod schemas, logger
+nextjs/          # @memory-loop/nextjs: Next.js 15 web app
+daemon/          # @memory-loop/daemon: Background daemon process
+```
+
+Shared types and schemas live in `@memory-loop/shared`. Both nextjs and daemon import from it. Never import from `@/lib/schemas` or `@/lib/logger` in nextjs (those paths no longer exist).
+
+### Next.js App (Pure Frontend)
 
 ```
 nextjs/
-  app/           # Pages and API routes
+  app/           # Pages and API proxy routes
   components/    # React components
   hooks/         # React hooks
   contexts/      # State management
-  lib/           # Domain logic, schemas, utilities
-  lib/schemas/   # Zod schemas and TypeScript types
+  lib/           # Daemon client layer, browser API client
+  lib/daemon/    # HTTP clients for daemon communication
+  lib/api/       # Browser-side fetch wrapper and types
 ```
+
+The Next.js app contains no domain logic. All API routes are thin proxies that forward requests to the daemon via Unix socket. Domain logic, SDK calls, and filesystem access all happen in the daemon.
+
+### Daemon
+
+```
+daemon/
+  src/index.ts         # Entry point (Unix socket or TCP listener)
+  src/server.ts        # Bun.serve() configuration
+  src/router.ts        # Request routing
+  src/routes/health.ts # GET /health
+  src/routes/help.ts   # GET /help (API discovery)
+```
+
+The daemon listens on a Unix socket by default (`$XDG_RUNTIME_DIR/memory-loop.sock`). Set `DAEMON_PORT` for localhost TCP fallback.
 
 ### Communication
 
@@ -49,18 +77,17 @@ nextjs/
 
 The server processes each message to completion regardless of client connectivity. SSE connections are viewports into processing state, not drivers of it. Clients can disconnect and reconnect freely; the first SSE event is always a snapshot of current state. Stop/permission/answer requests are separate REST calls.
 
-### Key Domain Modules
+### Daemon Client Layer
 
-Domain logic lives in `nextjs/lib/`. These modules are imported by API routes and contain no HTTP server of their own.
+The `lib/daemon/` directory contains HTTP client modules that communicate with the daemon. These are the only modules that know daemon API URLs.
 
 | File | Purpose |
 |------|---------|
-| `lib/session-manager.ts` | Claude Agent SDK session create/resume/save |
-| `lib/streaming/session-streamer.ts` | Transforms SDK events into SessionEvents |
-| `lib/vault-manager.ts` | Vault discovery from VAULTS_DIR |
-| `lib/note-capture.ts` | Writes to daily notes (00_Inbox/YYYY-MM-DD.md) |
-| `lib/file-browser.ts` | Read-only markdown browsing with security checks |
-| `lib/scheduler-bootstrap.ts` | Isolates scheduler startup from instrumentation.ts (turbopack can't trace into it) |
+| `lib/daemon/fetch.ts` | Unix socket/TCP connection, `DaemonUnavailableError`, test injection |
+| `lib/daemon/vaults.ts` | Vault discovery, config, pinned assets, slash commands |
+| `lib/daemon/files.ts` | File operations, transcripts, path validation |
+| `lib/daemon/sessions.ts` | Chat send/stream, abort, permission, session lifecycle |
+| `lib/daemon/index.ts` | Barrel export |
 
 ### Key Application Modules
 
@@ -68,9 +95,9 @@ Domain logic lives in `nextjs/lib/`. These modules are imported by API routes an
 |------|---------|
 | `app/layout.tsx` | Root layout |
 | `app/page.tsx` | Main SPA entry (client component) |
-| `app/api/chat/route.ts` | REST chat send (POST, returns sessionId) |
-| `app/api/chat/stream/route.ts` | SSE viewport (GET, snapshot-first) |
-| `lib/controller.ts` | Active Session Controller (SDK orchestration) |
+| `app/api/chat/route.ts` | Proxy: POST chat to daemon |
+| `app/api/chat/stream/route.ts` | Proxy: SSE stream from daemon |
+| `lib/api/client.ts` | Browser-side fetch wrapper for Next.js API routes |
 | `contexts/SessionContext.tsx` | Global state via useReducer |
 | `hooks/useChat.ts` | Two-phase chat client (POST then SSE) |
 
@@ -91,6 +118,8 @@ PORT=3000                   # Server port
 HOSTNAME=0.0.0.0            # Bind address (Next.js uses HOSTNAME, not HOST)
 MOCK_SDK=true               # Disable real Anthropic API calls for testing
 LOG_LEVEL=silent            # Suppress logs (useful in tests)
+DAEMON_SOCKET=/path/to.sock # Daemon Unix socket path (default: $XDG_RUNTIME_DIR/memory-loop.sock)
+DAEMON_PORT=9876            # Daemon TCP port (overrides socket if set)
 ```
 
 Each vault must contain a `CLAUDE.md` file at root to be discovered.
@@ -109,7 +138,7 @@ journalctl --user -u memory-loop | grep -i error       # Search for errors
 
 ### Scheduled Tasks
 
-Two background processes run via Next.js instrumentation (`nextjs/instrumentation.ts`), started once on server boot:
+Two background processes run in the daemon (not in Next.js):
 
 | Task | Default Time | Purpose |
 |------|--------------|---------|
@@ -156,21 +185,19 @@ afterEach(() => {
 
 **When NOT to use:** Async generators, `waitFor()` from testing-library, complex async state machines.
 
-### SDK Provider Pattern
+### Daemon Client Testing Pattern
 
-The Claude Agent SDK uses a centralized provider (`lib/sdk-provider.ts`) to prevent accidental API calls in tests. In the app, `lib/controller.ts` calls `initializeSdkProvider()` lazily on first use. All other modules use `getSdkQuery()`, which throws `SdkNotInitializedError` if not initialized.
-
-In tests, use `configureSdkForTesting(mockFn)` to inject a mock:
+The daemon client layer (`lib/daemon/`) uses a centralized fetch provider for test injection. In tests, use `configureDaemonFetchForTesting` to inject a mock:
 
 ```typescript
-import { configureSdkForTesting } from "../sdk-provider";
+import { configureDaemonFetchForTesting } from "../daemon/fetch";
 
 let cleanup: () => void;
-beforeEach(() => { cleanup = configureSdkForTesting(mockQueryFn); });
+beforeEach(() => { cleanup = configureDaemonFetchForTesting(mockFetchFn); });
 afterEach(() => { cleanup(); });
 ```
 
-This ensures tests never accidentally spend API tokens.
+This mock covers all daemon client modules (vaults, files, sessions) since they all use the shared fetch layer. SDK provider and domain logic testing lives in the daemon package.
 
 ## Documentation
 
@@ -188,8 +215,10 @@ When making changes that affect user-facing behavior, update the relevant docs. 
 
 ## Critical Lessons
 
-- Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: schema definition in `lib/schemas/`, config loading in `lib/vault-config.ts`, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
+- Trace config changes end-to-end: When adding a new config field, grep for all places the config object is constructed, copied, or merged. In this codebase: schema definition in `packages/shared/src/schemas/`, config loading in `lib/vault-config.ts`, frontend initialConfig props (multiple components), reducer cases, and post-save state updates.
 - When the SDK returns a different session ID than the one passed to `resume`, that means the session wasn't found. Don't adapt to it (migrate metadata, rename files). Treat it as a failure and investigate why the SDK can't find the session.
 - Error events that aren't rendered to the user are the same as no error handling. Every SSE error event must be visible in the UI. If `useChat` captures an error but the component doesn't display it, the user sees a working response followed by silent corruption.
 - Instrumentation compiles for all runtimes the app uses. Node.js-only imports must go inside `if (process.env.NEXT_RUNTIME === "nodejs") { ... }` blocks, not after early returns. Webpack replaces `NEXT_RUNTIME` at compile time and dead-code-eliminates the unused branch. Early returns (`if (NEXT_RUNTIME !== "nodejs") return;`) do NOT prevent webpack from tracing imports that follow. Always test both `bun run --cwd nextjs dev` and `bun run --cwd nextjs build` when touching instrumentation.
 - When multiple event handlers need to check current state before deciding what to do (e.g., "is the last message a streaming assistant?"), that logic belongs in the reducer, not in the handler. Handlers that read state via `useRef` will see stale data when events arrive faster than React renders. The reducer always operates on the latest state.
+- In two-phase architectures (POST then SSE), errors during the POST phase must be thrown, not just emitted. Emitting to zero subscribers is silent failure. The POST handler converts exceptions to HTTP error responses, which the frontend already handles. If a catch block calls `emit()` but the subscriber list might be empty, that catch block must also `throw`.
+- Spec validation and code review verify correctness, not assembly. Code can satisfy every requirement in isolation while never working in the running system. Plans that change user-facing behavior should include a manual smoke test step: start the system, open the browser, do the thing.

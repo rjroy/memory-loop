@@ -19,7 +19,7 @@ import type {
 
   MeetingState,
   EditableVaultConfig,
-} from "@/lib/schemas";
+} from "@memory-loop/shared";
 
 /**
  * Application mode: home, note capture, discussion, or browse.
@@ -274,6 +274,8 @@ export interface SessionActions {
   setMessagesIfEmpty: (messages: ConversationMessageProtocol[]) => void;
   /** Handle a snapshot event from SSE reconnection. Race-safe. */
   handleSnapshot: (sessionId: string | undefined, content: string, isProcessing: boolean, contextUsage?: number) => void;
+  /** Safety net: clear isStreaming on all messages when the SSE stream closes. */
+  finalizeStreaming: () => void;
   // Search actions
   /** Activate or deactivate search mode */
   setSearchActive: (isActive: boolean) => void;

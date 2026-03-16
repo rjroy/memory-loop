@@ -1,53 +1,18 @@
 /**
- * Extraction Trigger API
+ * Extraction Trigger API - Daemon Proxy
  *
- * POST /api/config/extraction-prompt/trigger - Manually trigger extraction run
+ * POST /api/config/extraction-prompt/trigger - Manually trigger extraction
+ *
+ * Proxies to daemon: POST /config/extraction/trigger
  */
 
 import { NextResponse } from "next/server";
-import { ensureSdk } from "@/lib/controller";
-import {
-  runExtraction,
-  isExtractionRunning,
-} from "@/lib/extraction/extraction-manager";
+import { daemonFetch } from "@/lib/daemon/fetch";
 
-/**
- * POST - Triggers manual extraction run
- */
 export async function POST() {
-  ensureSdk();
-
-  // Check if extraction is already running
-  if (isExtractionRunning()) {
-    return NextResponse.json({
-      status: "running",
-      message: "Extraction already in progress",
-    });
-  }
-
-  try {
-    // Run extraction
-    const result = await runExtraction(false);
-
-    if (result.success) {
-      return NextResponse.json({
-        status: "complete",
-        message: `Processed ${result.transcriptsProcessed} transcript(s)`,
-        transcriptsProcessed: result.transcriptsProcessed,
-      });
-    } else {
-      return NextResponse.json({
-        status: "error",
-        error: result.error,
-        message: "Extraction failed",
-      }, { status: 500 });
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Extraction failed";
-    return NextResponse.json({
-      status: "error",
-      error: message,
-      message: "Extraction failed unexpectedly",
-    }, { status: 500 });
-  }
+  const res = await daemonFetch("/config/extraction/trigger", {
+    method: "POST",
+  });
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }

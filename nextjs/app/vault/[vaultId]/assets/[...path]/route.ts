@@ -1,101 +1,45 @@
 /**
- * Asset Serving Route (Vault-Scoped)
+ * Asset Serving Route (Vault-Scoped) - Daemon Proxy
  *
  * GET /vault/:vaultId/assets/:path - Serve binary files from vault
  *
- * Serves images, videos, PDFs, and other files from the vault's content root.
+ * Proxies to daemon endpoint: GET /vaults/:id/assets/*
  * Used by ImageViewer, VideoViewer, PdfViewer, MarkdownViewer, and MessageBubble.
  */
 
 import { NextResponse } from "next/server";
-import { readFile, lstat } from "node:fs/promises";
-import { join, extname } from "node:path";
-import { getVaultById } from "@/lib/vault-manager";
-import { isPathWithinVault } from "@/lib/file-browser";
+import { daemonFetch } from "@/lib/daemon/fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; path: string[] }>;
 }
 
-const MIME_TYPES: Record<string, string> = {
-  // Images
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".svg": "image/svg+xml",
-  ".avif": "image/avif",
-  ".bmp": "image/bmp",
-  ".ico": "image/x-icon",
-  // Video
-  ".mp4": "video/mp4",
-  ".mov": "video/quicktime",
-  ".webm": "video/webm",
-  ".ogg": "video/ogg",
-  ".m4v": "video/mp4",
-  // Documents
-  ".pdf": "application/pdf",
-  // Text
-  ".txt": "text/plain",
-  ".md": "text/markdown",
-  ".csv": "text/csv",
-  ".tsv": "text/tab-separated-values",
-  ".json": "application/json",
-};
-
 /**
  * GET /vault/:vaultId/assets/*
  *
- * Serves a file from the vault's content root with the correct Content-Type.
+ * Proxies the request to the daemon, which handles path validation,
+ * symlink checks, and binary file reading.
  */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { vaultId, path: pathSegments } = await params;
 
-  const vault = await getVaultById(vaultId);
-  if (!vault) {
-    return NextResponse.json(
-      { error: { code: "VAULT_NOT_FOUND", message: "Vault not found" } },
-      { status: 404 }
-    );
+  const encodedVaultId = encodeURIComponent(vaultId);
+  const encodedPath = pathSegments.map(encodeURIComponent).join("/");
+  const daemonPath = `/vaults/${encodedVaultId}/assets/${encodedPath}`;
+
+  const res = await daemonFetch(daemonPath);
+
+  if (!res.ok) {
+    const body: unknown = await res.json();
+    return NextResponse.json(body, { status: res.status });
   }
 
-  const relativePath = pathSegments.map(decodeURIComponent).join("/");
-  const fullPath = join(vault.contentRoot, relativePath);
-
-  // Security: ensure path stays within vault
-  if (!(await isPathWithinVault(vault.path, fullPath))) {
-    return NextResponse.json(
-      { error: { code: "PATH_TRAVERSAL", message: "Invalid path" } },
-      { status: 403 }
-    );
-  }
-
-  // Check file exists and is a regular file (not symlink)
-  try {
-    const stats = await lstat(fullPath);
-    if (stats.isSymbolicLink() || !stats.isFile()) {
-      return NextResponse.json(
-        { error: { code: "FILE_NOT_FOUND", message: "File not found" } },
-        { status: 404 }
-      );
-    }
-  } catch {
-    return NextResponse.json(
-      { error: { code: "FILE_NOT_FOUND", message: "File not found" } },
-      { status: 404 }
-    );
-  }
-
-  const buffer = await readFile(fullPath);
-  const ext = extname(relativePath).toLowerCase();
-  const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-
+  const buffer = await res.arrayBuffer();
   return new NextResponse(buffer, {
     headers: {
-      "Content-Type": contentType,
-      "Content-Length": buffer.length.toString(),
-      "Cache-Control": "private, max-age=3600",
+      "Content-Type": res.headers.get("Content-Type") ?? "application/octet-stream",
+      "Content-Length": res.headers.get("Content-Length") ?? String(buffer.byteLength),
+      "Cache-Control": res.headers.get("Cache-Control") ?? "private, max-age=3600",
     },
   });
 }

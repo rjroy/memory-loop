@@ -1,53 +1,34 @@
 /**
- * Session API Route (Vault-Scoped)
+ * Session API Route (Proxy)
  *
- * DELETE /api/vaults/:vaultId/sessions/:sessionId - Delete a session
+ * DELETE /api/vaults/:vaultId/sessions/:sessionId - Proxies to daemon DELETE /session/:vaultId/:sessionId
  */
 
 import { NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { deleteSession, validateSessionId, SessionError } from "@/lib/session-manager";
+import * as sessionClient from "@/lib/daemon/sessions";
+import { DaemonUnavailableError } from "@/lib/daemon/fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string; sessionId: string }>;
 }
 
-/**
- * DELETE /api/vaults/:vaultId/sessions/:sessionId
- *
- * Deletes the session metadata file from the vault's sessions directory.
- * Returns success: true with deleted: false if the session doesn't exist.
- */
 export async function DELETE(_request: Request, { params }: RouteParams) {
   const { vaultId, sessionId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
-
-  // Validate session ID format
-  try {
-    validateSessionId(sessionId);
-  } catch (error) {
-    if (error instanceof SessionError && error.code === "SESSION_INVALID") {
-      return jsonError("VALIDATION_ERROR", error.message);
-    }
-    throw error;
-  }
 
   try {
-    const deleted = await deleteSession(vault.path, sessionId);
-
-    return NextResponse.json({
-      success: true,
-      deleted,
+    const result = await sessionClient.deleteSessionById(vaultId, sessionId);
+    return NextResponse.json(result, {
+      status: result.success ? 200 : 500,
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete session";
+  } catch (err) {
+    if (err instanceof DaemonUnavailableError) {
+      return NextResponse.json(
+        { success: false, deleted: false, error: "Daemon is not available" },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
-      {
-        success: false,
-        deleted: false,
-        error: message,
-      },
+      { success: false, deleted: false, error: (err as Error).message },
       { status: 500 }
     );
   }

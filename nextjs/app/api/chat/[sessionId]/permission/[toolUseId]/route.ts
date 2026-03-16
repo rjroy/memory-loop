@@ -1,17 +1,14 @@
 /**
- * Tool Permission Response Endpoint
+ * Tool Permission Response Endpoint (Proxy)
  *
  * POST /api/chat/[sessionId]/permission/[toolUseId]
- *
- * Resolves a pending tool permission request.
- *
- * Request body:
- * - allowed: boolean
+ * Proxies to daemon POST /session/chat/permission
  */
 
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { getController } from "@/lib/controller";
+import * as sessionClient from "@/lib/daemon/sessions";
+import { DaemonUnavailableError } from "@/lib/daemon/fetch";
 
 const PermissionResponseSchema = z.object({
   allowed: z.boolean(),
@@ -27,18 +24,6 @@ interface RouteParams {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { sessionId, toolUseId } = await params;
 
-  // Validate session matches current session
-  const controller = getController();
-  const state = controller.getState();
-
-  if (state.sessionId !== sessionId) {
-    return Response.json(
-      { error: "Session mismatch. This permission request may have expired." },
-      { status: 409 }
-    );
-  }
-
-  // Parse request body
   let body: unknown;
   try {
     body = await request.json();
@@ -54,13 +39,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const { allowed } = result.data;
-
-  // Resolve the pending permission
-  controller.respondToPrompt(toolUseId, {
-    type: "tool_permission",
-    allowed,
-  });
-
-  return Response.json({ success: true });
+  try {
+    await sessionClient.respondToPermission(
+      sessionId,
+      toolUseId,
+      result.data.allowed,
+    );
+    return Response.json({ success: true });
+  } catch (err) {
+    if (err instanceof DaemonUnavailableError) {
+      return Response.json({ error: "Daemon is not available" }, { status: 503 });
+    }
+    const status = (err as Record<string, unknown>).status;
+    return Response.json(
+      { error: (err as Error).message },
+      { status: typeof status === "number" ? status : 500 }
+    );
+  }
 }

@@ -1,7 +1,7 @@
 ---
 title: Server-driven chat processing
 date: 2026-02-08
-status: approved
+status: implemented
 tags: [architecture, session-management, sse, streaming, chat, processing-model]
 modules: [active-session-controller, session-manager, session-streamer, chat-route, useChat]
 related:

@@ -2,7 +2,7 @@
 title: Think Feature
 date: 2026-01-28
 status: current
-tags: [think, ai-conversation, streaming, claude-sdk, gctr]
+tags: [think, ai-conversation, streaming, agent-sdk, gctr]
 modules: [discussion, session-manager, active-session-controller]
 ---
 

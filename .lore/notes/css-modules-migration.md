@@ -2,7 +2,7 @@
 title: Implementation notes: CSS Modules migration
 date: 2026-02-14
 status: complete
-tags: [implementation, notes, css, css-modules, refactor, aborted]
+tags: [implementation, css, css-modules, refactor, aborted]
 source: .lore/plans/css-modules-migration.md
 modules: [components, styles]
 related: [.lore/specs/css-modules-migration.md, .lore/brainstorm/css-modules-migration.md, .lore/retros/css-modules-migration-failure.md]

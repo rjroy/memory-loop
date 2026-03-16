@@ -19,7 +19,7 @@ import type {
   ReviewResult,
   DueCardsResponse,
   ArchiveResponse,
-} from "@/lib/schemas";
+} from "@memory-loop/shared";
 import type { FetchFn } from "@/lib/api/types";
 
 /**

@@ -1,103 +1,47 @@
 /**
- * Chat Stream Endpoint (SSE viewport)
+ * Chat Stream Endpoint (SSE Proxy)
  *
- * GET /api/chat/stream - Connect to receive session events
+ * GET /api/chat/stream - Proxies SSE stream from daemon GET /session/chat/stream
  *
- * Sends a snapshot event first with current controller state, then
- * subscribes to live events if processing is in progress.
- *
- * Stream closes on terminal events (response_end, error, session_cleared)
- * or when the client disconnects. Client disconnect does NOT abort
- * processing; the controller continues independently.
- *
- * Multiple concurrent connections are supported (each subscribes independently).
+ * Byte-transparent: the daemon's SSE bytes flow through unchanged.
+ * On daemon connection failure, returns an SSE error event so the
+ * client handles it uniformly.
  */
 
-import { getController, type SessionEvent } from "@/lib/controller";
-import { encodeSSE, SSE_HEADERS } from "@/lib/sse";
-import { createLogger } from "@/lib/logger";
+import * as sessionClient from "@/lib/daemon/sessions";
+import { createLogger } from "@memory-loop/shared";
 
 const log = createLogger("api/chat/stream");
 
-export function GET() {
-  const controller = getController();
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
+};
 
-  let unsubscribe: (() => void) | null = null;
-  let isClosing = false;
+function errorSSEResponse(code: string, message: string): Response {
+  const event = JSON.stringify({ type: "error", code, message });
+  const body = `data: ${event}\n\n`;
+  return new Response(body, { headers: SSE_HEADERS });
+}
 
-  function cleanup() {
-    if (isClosing) return;
-    isClosing = true;
-    unsubscribe?.();
+export async function GET() {
+  try {
+    const daemonResponse = await sessionClient.getChatStream();
+    if (!daemonResponse.ok || !daemonResponse.body) {
+      log.error(`Daemon stream returned ${daemonResponse.status}`);
+      return errorSSEResponse(
+        "DAEMON_ERROR",
+        "Could not connect to daemon stream",
+      );
+    }
+    return new Response(daemonResponse.body, { headers: SSE_HEADERS });
+  } catch (err) {
+    log.error("Daemon stream connection failed", err);
+    return errorSSEResponse(
+      "DAEMON_UNAVAILABLE",
+      err instanceof Error ? err.message : "Daemon is not available",
+    );
   }
-
-  const stream = new ReadableStream({
-    start(streamController) {
-      // Send snapshot as first event
-      try {
-        const snapshot = controller.getSnapshot();
-        streamController.enqueue(encodeSSE({ type: "snapshot", ...snapshot }));
-
-        // If not processing, snapshot has the final state (REQ-SDC-9). Close immediately.
-        if (!snapshot.isProcessing) {
-          cleanup();
-          try {
-            streamController.close();
-          } catch {
-            /* already closed */
-          }
-          return;
-        }
-      } catch (err) {
-        log.error("Failed to get snapshot", err);
-        streamController.enqueue(
-          encodeSSE({
-            type: "error",
-            code: "SNAPSHOT_ERROR",
-            message: "Failed to get session snapshot",
-          })
-        );
-        try {
-          streamController.close();
-        } catch {
-          /* already closed */
-        }
-        cleanup();
-        return;
-      }
-
-      // Subscribe to live events while processing continues
-      unsubscribe = controller.subscribe((event: SessionEvent) => {
-        if (isClosing) return;
-
-        try {
-          streamController.enqueue(encodeSSE(event));
-
-          // Close stream on terminal events
-          if (
-            event.type === "response_end" ||
-            event.type === "error" ||
-            event.type === "session_cleared"
-          ) {
-            cleanup();
-            try {
-              streamController.close();
-            } catch {
-              /* already closed */
-            }
-          }
-        } catch {
-          // Stream closed by client
-          cleanup();
-        }
-      });
-    },
-
-    cancel() {
-      // Client disconnected. Clean up subscription but do NOT abort processing.
-      cleanup();
-    },
-  });
-
-  return new Response(stream, { headers: SSE_HEADERS });
 }

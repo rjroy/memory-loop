@@ -1,3 +1,11 @@
+---
+title: Fix message fragmentation during streaming
+date: 2026-02-07
+status: executed
+tags: [bug, streaming, race-condition, react, reducer]
+modules: [session-context, useChat]
+---
+
 # Fix Message Fragmentation During Streaming
 
 ## Context

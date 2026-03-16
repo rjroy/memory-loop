@@ -1,3 +1,11 @@
+---
+title: Remove auth layer from Memory Loop
+date: 2026-02-10
+status: executed
+tags: [auth, simplification]
+modules: [auth, middleware]
+---
+
 # Remove Auth Layer from Memory Loop
 
 ## Context

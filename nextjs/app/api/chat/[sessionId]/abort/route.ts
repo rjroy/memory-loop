@@ -1,13 +1,12 @@
 /**
- * Abort Chat Endpoint
+ * Abort Chat Endpoint (Proxy)
  *
- * POST /api/chat/[sessionId]/abort
- *
- * Aborts the current streaming response.
+ * POST /api/chat/[sessionId]/abort - Proxies to daemon POST /session/chat/abort
  */
 
 import { NextRequest } from "next/server";
-import { getController } from "@/lib/controller";
+import * as sessionClient from "@/lib/daemon/sessions";
+import { DaemonUnavailableError } from "@/lib/daemon/fetch";
 
 interface RouteParams {
   params: Promise<{
@@ -15,30 +14,31 @@ interface RouteParams {
   }>;
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(_request: NextRequest, { params }: RouteParams) {
   const { sessionId } = await params;
 
-  const controller = getController();
-  const state = controller.getState();
+  try {
+    await sessionClient.abortProcessing(sessionId);
+    return Response.json({ success: true, aborted: true });
+  } catch (err) {
+    if (err instanceof DaemonUnavailableError) {
+      return Response.json(
+        { error: "Daemon is not available" },
+        { status: 503 }
+      );
+    }
 
-  // Validate session matches
-  if (state.sessionId !== sessionId) {
+    const status = (err as Record<string, unknown>).status;
+    if (typeof status === "number" && status >= 400) {
+      return Response.json(
+        { error: (err as Error).message },
+        { status }
+      );
+    }
+
     return Response.json(
-      { error: "Session mismatch" },
-      { status: 409 }
+      { error: (err as Error).message },
+      { status: 500 }
     );
   }
-
-  // Only abort if streaming
-  if (!controller.isStreaming()) {
-    return Response.json(
-      { error: "No active streaming to abort" },
-      { status: 400 }
-    );
-  }
-
-  // Abort processing, persist partial result. Session remains valid.
-  controller.abortProcessing();
-
-  return Response.json({ success: true, aborted: true });
 }

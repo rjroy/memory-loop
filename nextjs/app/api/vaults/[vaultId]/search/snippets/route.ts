@@ -1,12 +1,11 @@
 /**
- * Search Snippets API Route (Vault-Scoped)
+ * Search Snippets API Route (Vault-Scoped) - Daemon Proxy
  *
  * GET /api/vaults/:vaultId/search/snippets - Get context snippets for a file
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getVaultOrError, isErrorResponse, jsonError } from "@/lib/vault-helpers";
-import { getSnippetsRest } from "@/lib/handlers";
+import { daemonFetch } from "@/lib/daemon/fetch";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -15,34 +14,20 @@ interface RouteParams {
 /**
  * GET /api/vaults/:vaultId/search/snippets
  *
- * Get context snippets for a file matching a query.
- *
- * Query parameters:
- * - path: Relative path to the file (required)
- * - q: Search query (required, non-empty)
+ * Proxies to daemon GET /vaults/:id/search/snippets
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { vaultId } = await params;
-  const vault = await getVaultOrError(vaultId);
-  if (isErrorResponse(vault)) return vault;
+  const path = request.nextUrl.searchParams.get("path") ?? "";
+  const q = request.nextUrl.searchParams.get("q") ?? "";
 
-  const path = request.nextUrl.searchParams.get("path");
-  const query = request.nextUrl.searchParams.get("q");
+  const search = new URLSearchParams();
+  if (path) search.set("path", path);
+  if (q) search.set("q", q);
 
-  // Validate path parameter
-  if (!path || path.trim() === "") {
-    return jsonError("VALIDATION_ERROR", "Query parameter 'path' is required");
-  }
-
-  // Validate query parameter
-  if (!query || query.trim() === "") {
-    return jsonError("VALIDATION_ERROR", "Query parameter 'q' is required");
-  }
-
-  const snippets = await getSnippetsRest(vault.id, vault.contentRoot, path, query);
-
-  return NextResponse.json({
-    path,
-    snippets,
-  });
+  const res = await daemonFetch(
+    `/vaults/${encodeURIComponent(vaultId)}/search/snippets?${search.toString()}`
+  );
+  const body: unknown = await res.json();
+  return NextResponse.json(body, { status: res.status });
 }

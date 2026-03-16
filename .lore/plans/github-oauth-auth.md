@@ -1,3 +1,11 @@
+---
+title: Add GitHub OAuth authentication (single-user door lock)
+date: 2026-02-06
+status: executed
+tags: [auth, middleware, github-oauth]
+modules: [auth, middleware]
+---
+
 # Add GitHub OAuth Authentication (Single-User Door Lock)
 
 ## Context

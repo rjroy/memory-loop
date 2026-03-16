@@ -9,7 +9,7 @@
  * - Uses dependency injection for fetch (testable without mock.module)
  */
 
-import type { ErrorCode } from "@/lib/schemas";
+import type { ErrorCode } from "@memory-loop/shared";
 import {
   ApiError,
   isApiErrorResponse,

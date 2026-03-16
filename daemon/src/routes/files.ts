@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { createLogger } from "@memory-loop/shared";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { getCachedVaultById, loadVaultConfig } from "../vault";
+import { getCachedVaultById } from "../vault";
 import {
   listDirectory,
   createFile,
@@ -22,8 +22,6 @@ import {
   createDirectory,
   getDirectoryContents,
   deleteDirectory,
-  isPathWithinVault,
-  validatePath,
   FileBrowserError,
 } from "../files/file-browser";
 import { uploadFile } from "../files/file-upload";
@@ -74,7 +72,7 @@ function extractWildcardPath(c: Context, resource: string): string {
 function handleFileBrowserError(c: Context, error: unknown): Response {
   if (error instanceof FileBrowserError) {
     const status = ERROR_CODE_TO_STATUS[error.code] ?? 500;
-    return jsonError(c, error.message, error.code, status as ContentfulStatusCode);
+    return jsonError(c, error.message, error.code, status);
   }
   const message = error instanceof Error ? error.message : String(error);
   log.error(`Unexpected error: ${message}`);
@@ -104,7 +102,7 @@ export async function listFilesHandler(c: Context): Promise<Response> {
   const path = c.req.query("path") ?? "";
 
   try {
-    const entries = await listDirectory(vault!.contentRoot, path);
+    const entries = await listDirectory(vault.contentRoot, path);
     return c.json({ path, entries });
   } catch (err) {
     return handleFileBrowserError(c, err);
@@ -135,7 +133,7 @@ export async function createFileHandler(c: Context): Promise<Response> {
   }
 
   try {
-    const result = await createFile(vault!.contentRoot, dirPath, name);
+    const result = await createFile(vault.contentRoot, dirPath, name);
     return c.json(result, 201);
   } catch (err) {
     return handleFileBrowserError(c, err);
@@ -155,7 +153,7 @@ export async function readFileHandler(c: Context): Promise<Response> {
   }
 
   try {
-    const result = await readMarkdownFile(vault!.contentRoot, filePath);
+    const result = await readMarkdownFile(vault.contentRoot, filePath);
     return c.json(result);
   } catch (err) {
     return handleFileBrowserError(c, err);
@@ -191,7 +189,7 @@ export async function writeFileHandler(c: Context): Promise<Response> {
   }
 
   try {
-    await writeMarkdownFile(vault!.contentRoot, filePath, content);
+    await writeMarkdownFile(vault.contentRoot, filePath, content);
     return c.json({ success: true });
   } catch (err) {
     return handleFileBrowserError(c, err);
@@ -227,15 +225,15 @@ export async function patchFileHandler(c: Context): Promise<Response> {
     let result: { oldPath: string; newPath: string };
 
     if (newPath !== undefined) {
-      result = await moveFile(vault!.contentRoot, filePath, newPath);
+      result = await moveFile(vault.contentRoot, filePath, newPath);
     } else if (newName !== undefined) {
-      result = await renameFile(vault!.contentRoot, filePath, newName);
+      result = await renameFile(vault.contentRoot, filePath, newName);
     } else {
       return jsonError(c, "Must provide newName or newPath", "INVALID_REQUEST", 400);
     }
 
     // Update references across the vault
-    await updateReferences(vault!.contentRoot, result.oldPath, result.newPath, false);
+    await updateReferences(vault.contentRoot, result.oldPath, result.newPath, false);
 
     return c.json(result);
   } catch (err) {
@@ -256,7 +254,7 @@ export async function deleteFileHandler(c: Context): Promise<Response> {
   }
 
   try {
-    await deleteFile(vault!.contentRoot, filePath);
+    await deleteFile(vault.contentRoot, filePath);
     return c.json({ success: true });
   } catch (err) {
     return handleFileBrowserError(c, err);
@@ -291,7 +289,7 @@ export async function createDirectoryHandler(c: Context): Promise<Response> {
   }
 
   try {
-    const result = await createDirectory(vault!.contentRoot, dirPath, name);
+    const result = await createDirectory(vault.contentRoot, dirPath, name);
     return c.json(result, 201);
   } catch (err) {
     return handleFileBrowserError(c, err);
@@ -308,7 +306,7 @@ export async function getDirectoryContentsHandler(c: Context): Promise<Response>
   const dirPath = extractWildcardPath(c, "directories");
 
   try {
-    const entries = await getDirectoryContents(vault!.contentRoot, dirPath);
+    const entries = await getDirectoryContents(vault.contentRoot, dirPath);
     return c.json({ entries });
   } catch (err) {
     return handleFileBrowserError(c, err);
@@ -328,7 +326,7 @@ export async function deleteDirectoryHandler(c: Context): Promise<Response> {
   }
 
   try {
-    await deleteDirectory(vault!.contentRoot, dirPath);
+    await deleteDirectory(vault.contentRoot, dirPath);
     return c.json({ success: true });
   } catch (err) {
     return handleFileBrowserError(c, err);
@@ -360,9 +358,9 @@ export async function uploadFileHandler(c: Context): Promise<Response> {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const result = await uploadFile(
-    vault!.path,
-    vault!.contentRoot,
-    vault!.attachmentPath,
+    vault.path,
+    vault.contentRoot,
+    vault.attachmentPath,
     buffer,
     file.name,
   );
@@ -385,15 +383,15 @@ export async function getGoalsHandler(c: Context): Promise<Response> {
   const { vault, error } = await resolveVault(c);
   if (error) return error;
 
-  if (!vault!.goalsPath) {
+  if (!vault.goalsPath) {
     return jsonError(c, "No goals file configured", "NOT_FOUND", 404);
   }
 
-  const goalsFullPath = join(vault!.contentRoot, vault!.goalsPath);
+  const goalsFullPath = join(vault.contentRoot, vault.goalsPath);
 
   try {
     const content = await readFile(goalsFullPath, "utf-8");
-    return c.json({ content, path: vault!.goalsPath });
+    return c.json({ content, path: vault.goalsPath });
   } catch {
     return jsonError(c, "Goals file not found", "FILE_NOT_FOUND", 404);
   }

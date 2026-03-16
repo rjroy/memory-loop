@@ -7,7 +7,7 @@
 import type { Context } from "hono";
 import { getController } from "../../session-controller";
 
-export async function sessionClearHandler(c: Context): Promise<Response> {
+export function sessionClearHandler(c: Context): Response {
   const controller = getController();
   controller.clearSession();
   return c.json({ success: true });

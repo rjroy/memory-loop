@@ -79,10 +79,17 @@ function formatVaultList(data: { vaults: VaultItem[] }): string {
   );
 }
 
+function stringifyValue(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  if (typeof v === "string") return v;
+  return String(v as number | boolean);
+}
+
 function formatVaultInfo(data: VaultItem & Record<string, unknown>): string {
   const pairs: [string, string][] = Object.entries(data).map(([k, v]) => [
     k,
-    typeof v === "object" ? JSON.stringify(v) : String(v),
+    stringifyValue(v),
   ]);
   return formatKeyValue(pairs);
 }
@@ -194,7 +201,7 @@ function formatCardsDue(data: { cards: CardItem[] }): string {
 function formatConfig(data: Record<string, unknown>): string {
   const pairs: [string, string][] = Object.entries(data).map(([k, v]) => [
     k,
-    typeof v === "object" ? JSON.stringify(v) : String(v),
+    stringifyValue(v),
   ]);
   return formatKeyValue(pairs);
 }
@@ -233,7 +240,7 @@ export function formatOutput(data: unknown, flags: GlobalFlags): string {
       return formatCardsDue(obj as { cards: CardItem[] });
     }
     if ("content" in obj && typeof obj.content === "string") {
-      return obj.content as string;
+      return obj.content;
     }
     if ("id" in obj && "title" in obj) {
       return formatVaultInfo(obj as VaultItem & Record<string, unknown>);

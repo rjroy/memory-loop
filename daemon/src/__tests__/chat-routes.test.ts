@@ -9,7 +9,6 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../server";
 import { resetController } from "../session-controller";
 import { configureSdkForTesting, _resetForTesting } from "../sdk-provider";
-import { discoverVaults } from "../vault/vault-manager";
 
 let cleanupSdk: (() => void) | undefined;
 const startTime = Date.now();

@@ -5,13 +5,10 @@
  * Uses the search cache for per-vault index management.
  */
 
-import { createLogger } from "@memory-loop/shared";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { getCachedVaultById } from "../vault";
 import { getOrCreateIndex } from "../files/search/search-cache";
-
-const log = createLogger("search-routes");
 
 function jsonError(
   c: Context,

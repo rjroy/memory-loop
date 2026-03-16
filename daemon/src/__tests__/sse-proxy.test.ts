@@ -101,7 +101,7 @@ describe("SSE event ordering", () => {
   });
 
   test("events emitted by controller arrive at stream output", async () => {
-    const app = createApp(startTime);
+    createApp(startTime);
     const controller = getController();
 
     // Manually emit events via the controller's subscriber mechanism

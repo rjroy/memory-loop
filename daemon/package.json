@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
+    "lint": "eslint src/",
     "test": "LOG_LEVEL=silent bun test",
     "typecheck": "tsc --noEmit"
   },

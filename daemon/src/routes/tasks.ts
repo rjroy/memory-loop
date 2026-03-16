@@ -4,13 +4,10 @@
  * Handles task listing and toggling across vault directories.
  */
 
-import { createLogger } from "@memory-loop/shared";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { getCachedVaultById, loadVaultConfig } from "../vault";
 import { getAllTasks, toggleTask } from "../files/task-manager";
-
-const log = createLogger("task-routes");
 
 function jsonError(
   c: Context,

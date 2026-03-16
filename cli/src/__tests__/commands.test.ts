@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { describe, expect, test, afterEach } from "bun:test";
 import { configureClientForTesting, type FetchFn } from "../client";
 import { executeVaultList, executeVaultInfo, executeVaultCreate } from "../commands/vault";
 import { executeCapture } from "../commands/capture";

@@ -188,7 +188,9 @@ export function showCommandHelp(
     for (const flag of cmd.flags) {
       const shortStr = flag.short ? `-${flag.short}, ` : "    ";
       const defaultStr =
-        flag.default !== undefined ? dim(` (default: ${flag.default})`) : "";
+        flag.default !== undefined
+          ? dim(` (default: ${typeof flag.default === "string" ? flag.default : JSON.stringify(flag.default)})`)
+          : "";
       lines.push(
         `  ${shortStr}--${flag.name.padEnd(12)} ${flag.description}${defaultStr}`,
       );

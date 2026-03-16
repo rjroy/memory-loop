@@ -10,7 +10,7 @@ import { createApp } from "../server";
 import { resetController } from "../session-controller";
 import { configureSdkForTesting, _resetForTesting } from "../sdk-provider";
 import { isMockMode } from "../mock-sdk";
-import type { SessionEvent } from "@memory-loop/shared";
+
 
 let cleanupSdk: (() => void) | undefined;
 const startTime = Date.now();

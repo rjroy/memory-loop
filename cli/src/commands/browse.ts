@@ -28,13 +28,13 @@ export async function executeBrowseRead(
   );
 
   if (!response.ok) {
-    const error = await response.json();
+    const error: unknown = await response.json();
     return { data: error, exitCode: 1 };
   }
 
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    const data = await response.json();
+    const data: unknown = await response.json();
     return { data, exitCode: EXIT_SUCCESS };
   }
 

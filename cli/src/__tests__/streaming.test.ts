@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { describe, expect, test, afterEach } from "bun:test";
 import { configureClientForTesting, daemonSSE } from "../client";
 
 /**
@@ -149,8 +149,8 @@ describe("daemonSSE", () => {
     );
 
     try {
-      for await (const _event of daemonSSE("/session/chat/stream")) {
-        // Should not reach here
+      for await (const event of daemonSSE("/session/chat/stream")) {
+        void event; // consume iterator - should not reach here
       }
       expect(true).toBe(false);
     } catch (error) {

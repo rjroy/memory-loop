@@ -13,7 +13,17 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/*.js", "**/*.mjs"],
+    ignores: ["**/dist/**", "**/node_modules/**", "**/*.js", "**/*.mjs", "nextjs/**"],
+  },
+  // Disable type-checked rules in test files (bun:test can't be resolved by projectService)
+  {
+    files: [
+      "**/__tests__/**/*.ts",
+      "**/__tests__/**/*.tsx",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+    ],
+    ...tseslint.configs.disableTypeChecked,
   },
   // The Agent SDK's .d.ts imports types via .mjs specifiers that eslint's type
   // resolver can't follow (tsc handles them via skipLibCheck). These files

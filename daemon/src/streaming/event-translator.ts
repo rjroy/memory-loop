@@ -10,9 +10,9 @@
  * returns zero or more SdkRunnerEvents.
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
+ 
+ 
+ 
 
 import type {
   SDKMessage,
@@ -192,7 +192,7 @@ function handleUserMessage(event: SDKUserMessage): SdkRunnerEvent[] {
     }
 
     if (block.type === "tool_result" && "tool_use_id" in block) {
-      const toolUseId = block.tool_use_id as string;
+      const toolUseId = block.tool_use_id;
       const output = ("content" in block ? block.content : null) as string;
       events.push({
         type: "tool_result",

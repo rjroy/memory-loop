@@ -12,7 +12,11 @@ export async function executeSearch(
 ): Promise<CommandResult> {
   const vaultId = await resolveVault(args.vault);
   const query = encodeURIComponent(args.query);
-  const limit = flags.limit !== undefined ? `&limit=${flags.limit}` : "";
+  const limitValue = flags.limit;
+  const limit =
+    limitValue !== undefined
+      ? `&limit=${typeof limitValue === "string" ? limitValue : JSON.stringify(limitValue)}`
+      : "";
   const data = await daemonJson(
     `/vaults/${encodeURIComponent(vaultId)}/search/content?q=${query}${limit}`,
   );

@@ -4,7 +4,6 @@
  * Handles meeting lifecycle: start, get current state, and stop.
  */
 
-import { createLogger } from "@memory-loop/shared";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { getCachedVaultById } from "../vault";
@@ -14,8 +13,6 @@ import {
   setActiveMeeting,
   clearActiveMeeting,
 } from "../files/meeting-store";
-
-const log = createLogger("meeting-routes");
 
 function jsonError(
   c: Context,

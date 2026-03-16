@@ -116,7 +116,7 @@ export async function cardReviewHandler(c: Context) {
 
   let body: { response?: string };
   try {
-    body = await c.req.json() as { response?: string };
+    body = await c.req.json();
   } catch {
     return jsonError(c, "VALIDATION_ERROR", "Invalid JSON body");
   }

@@ -9,7 +9,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createActiveSessionController } from "../active-session-controller";
 import type { SessionEvent } from "@memory-loop/shared";
@@ -43,7 +43,7 @@ function createMockQuery(
     onClose?: () => void;
   }
 ): QueryFunction {
-  return ((_args: unknown) => {
+  return (() => {
     let interrupted = false;
     let index = 0;
 
@@ -694,7 +694,7 @@ describe("subprocess cleanup", () => {
 describe("streaming crash", () => {
   test("SDK error during streaming emits error event", async () => {
     // Mock that yields init then throws
-    const mockQuery = ((_args: unknown) => {
+    const mockQuery = (() => {
       let messageIndex = 0;
       const messages = [
         { type: "system", subtype: "init", session_id: "sess-crash" },

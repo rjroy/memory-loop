@@ -95,5 +95,5 @@ export function chatStreamHandler(c: Context): Response {
       // If cleanup already happened (race), resolve immediately
       if (cleaned) resolve();
     });
-  }) as Response;
+  });
 }

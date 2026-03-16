@@ -46,14 +46,9 @@ export async function cardGeneratorConfigGetHandler(c: Context): Promise<Respons
 // PUT /config/card-generator
 // ---------------------------------------------------------------------------
 
-interface CardGeneratorUpdateRequest {
-  requirements?: string;
-  weeklyByteLimit?: number;
-}
-
 export async function cardGeneratorConfigPutHandler(c: Context): Promise<Response> {
   try {
-    const body = await c.req.json() as CardGeneratorUpdateRequest;
+    const body: { requirements?: unknown; weeklyByteLimit?: unknown } = await c.req.json();
 
     if (typeof body.requirements === "string") {
       await saveRequirementsOverride(body.requirements);

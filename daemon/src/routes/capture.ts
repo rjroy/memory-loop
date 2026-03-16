@@ -5,7 +5,6 @@
  * recent notes retrieval, and recent activity.
  */
 
-import { createLogger } from "@memory-loop/shared";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { getCachedVaultById } from "../vault";
@@ -13,8 +12,6 @@ import { captureToDaily, getRecentNotes } from "../files/note-capture";
 import { captureToMeeting } from "../files/meeting-capture";
 import { getActiveMeeting, incrementMeetingEntryCount } from "../files/meeting-store";
 import { getRecentSessions } from "../session-manager";
-
-const log = createLogger("capture-routes");
 
 function jsonError(
   c: Context,

@@ -33,7 +33,7 @@ import {
 // GET /config/extraction/status
 // ---------------------------------------------------------------------------
 
-export async function extractionStatusHandler(c: Context): Promise<Response> {
+export function extractionStatusHandler(c: Context): Response {
   const nextRun = getNextScheduledRun();
 
   return c.json({
@@ -107,7 +107,7 @@ export async function memoryGetHandler(c: Context): Promise<Response> {
 export async function memoryPutHandler(c: Context): Promise<Response> {
   let body: { content?: string };
   try {
-    body = await c.req.json() as { content?: string };
+    body = await c.req.json();
   } catch {
     return c.json(
       { error: { code: "VALIDATION_ERROR", message: "Invalid JSON in request body" } },
@@ -159,7 +159,7 @@ export async function extractionPromptGetHandler(c: Context): Promise<Response> 
 
 export async function extractionPromptPutHandler(c: Context): Promise<Response> {
   try {
-    const body = await c.req.json() as { content: string };
+    const body: { content?: unknown } = await c.req.json();
 
     if (typeof body.content !== "string") {
       return c.json(

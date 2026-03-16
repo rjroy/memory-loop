@@ -53,7 +53,7 @@ export function startServer(config: ServerConfig): { stop: () => void } {
 
     return {
       stop: () => {
-        server.stop();
+        void server.stop();
         try {
           unlinkSync(socketPath);
         } catch {
@@ -74,7 +74,7 @@ export function startServer(config: ServerConfig): { stop: () => void } {
 
     return {
       stop: () => {
-        server.stop();
+        void server.stop();
       },
     };
   }

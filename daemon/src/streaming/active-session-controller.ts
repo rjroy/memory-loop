@@ -5,10 +5,11 @@
  * Implements the session-viewport separation spec (REQ-6).
  *
  * Key responsibilities:
- * - Hold queryResult (live SDK connection)
+ * - Hold queryResult (live SDK connection) for the current turn only
  * - Manage pendingPermissions and pendingQuestions maps
  * - Track cumulativeTokens, contextWindow, activeModel
  * - Emit events to subscribers (pub-sub pattern)
+ * - Translate SDK events via createStreamTranslator() (REQ-ESS-4)
  */
 
 import type {
@@ -22,14 +23,14 @@ import type {
   PromptResponse,
   SessionEventCallback,
   AskUserQuestionItem,
+  StoredToolInvocation,
 } from "@memory-loop/shared";
 import { AlreadyProcessingError } from "@memory-loop/shared";
 import type {
   PendingPermissionRequest,
   PendingQuestionRequest,
 } from "./types";
-import type { StreamerState, StreamerEmitter, StreamerHandle } from "./session-streamer";
-import { startStreamSdkEvents } from "./session-streamer";
+import { createStreamTranslator } from "./event-translator";
 import {
   createSession as sdkCreateSession,
   resumeSession as sdkResumeSession,
@@ -80,6 +81,15 @@ function generateMessageId(): string {
 }
 
 /**
+ * Mutable state tracked across turns for token accumulation.
+ */
+interface StreamerState {
+  cumulativeTokens: number;
+  contextWindow: number | null;
+  activeModel: string | null;
+}
+
+/**
  * Creates an Active Session Controller instance.
  *
  * This is a singleton per server - only one active session at a time (REQ-4).
@@ -94,15 +104,19 @@ export function createActiveSessionController(): ActiveSessionController {
   let isStreamingActive = false;
   let isProcessing = false;
   let abortController: AbortController | null = null;
-  let currentStreamerHandle: StreamerHandle | null = null;
   let currentGeneration = 0;
 
-  // Streaming state (mutable, passed to streamer)
+  // Streaming state (cumulative across turns, REQ-ESS-13)
   const streamerState: StreamerState = {
     cumulativeTokens: 0,
     contextWindow: null,
     activeModel: null,
   };
+
+  // Per-turn snapshot state (accumulated during runStreaming, read by getSnapshot)
+  let currentResponseChunks: string[] = [];
+  let currentToolsMap = new Map<string, StoredToolInvocation>();
+  let currentContextUsage: number | undefined;
 
   // Pending prompts
   const pendingPermissions = new Map<string, PendingPermissionRequest>();
@@ -127,11 +141,6 @@ export function createActiveSessionController(): ActiveSessionController {
       }
     }
   }
-
-  /**
-   * Emitter interface for session-streamer.
-   */
-  const emitter: StreamerEmitter = { emit };
 
   /**
    * Creates a tool permission callback for the SDK.
@@ -204,6 +213,28 @@ export function createActiveSessionController(): ActiveSessionController {
   }
 
   /**
+   * Returns whether any pending prompts are active.
+   */
+  function hasPendingPrompts(): boolean {
+    return pendingPermissions.size > 0 || pendingQuestions.size > 0;
+  }
+
+  /**
+   * Reads current accumulated streaming state as a snapshot.
+   */
+  function getStreamingSnapshot(): {
+    content: string;
+    toolInvocations: StoredToolInvocation[];
+    contextUsage: number | undefined;
+  } {
+    return {
+      content: currentResponseChunks.join(""),
+      toolInvocations: Array.from(currentToolsMap.values()),
+      contextUsage: currentContextUsage,
+    };
+  }
+
+  /**
    * Internal clear session logic. Terminates the SDK process, discards
    * pending prompts, resets all state, and emits session_cleared.
    *
@@ -240,7 +271,9 @@ export function createActiveSessionController(): ActiveSessionController {
     streamerState.contextWindow = null;
     isStreamingActive = false;
     isProcessing = false;
-    currentStreamerHandle = null;
+    currentResponseChunks = [];
+    currentToolsMap = new Map();
+    currentContextUsage = undefined;
     slashCommands = [];
 
     // Invalidate any running generation so its finally block skips cleanup
@@ -253,9 +286,9 @@ export function createActiveSessionController(): ActiveSessionController {
    * Runs the streaming loop for a query.
    *
    * This is the single code path for both new and resumed sessions.
-   * The only difference is whether session_ready includes createdAt
-   * (new) or messages (resume). Processing continues independently
-   * after sendMessage() kicks it off (fire-and-forget).
+   * The controller owns the for-await loop over SDK events, translates
+   * each via createStreamTranslator(), and processes the resulting
+   * SdkRunnerEvents inline (REQ-ESS-4).
    */
   async function runStreaming(
     vaultId: string,
@@ -273,6 +306,11 @@ export function createActiveSessionController(): ActiveSessionController {
     abortController = new AbortController();
     currentGeneration++;
     const gen = currentGeneration;
+
+    // Reset per-turn snapshot state
+    currentResponseChunks = [];
+    currentToolsMap = new Map();
+    currentContextUsage = undefined;
 
     let messageId = "";
     let queryStartTime = 0;
@@ -330,15 +368,114 @@ export function createActiveSessionController(): ActiveSessionController {
 
       emit({ type: "response_start", messageId });
 
-      // Stream SDK events
-      currentStreamerHandle = startStreamSdkEvents(
-        result.events,
-        messageId,
-        emitter,
-        streamerState,
-        abortController.signal
-      );
-      const streamResult = await currentStreamerHandle.result;
+      // Stream SDK events through the translator (REQ-ESS-4)
+      const translate = createStreamTranslator();
+
+      for await (const sdkMessage of result.events) {
+        if (abortController.signal.aborted) {
+          log.debug("Streaming aborted");
+          // Mark any running tools as incomplete
+          for (const tool of currentToolsMap.values()) {
+            if (tool.status === "running") {
+              tool.status = "complete";
+              tool.output = "[Streaming aborted]";
+            }
+          }
+          break;
+        }
+
+        for (const event of translate(sdkMessage)) {
+          switch (event.type) {
+            case "session":
+              // Session ID already known from extractSessionId() in session-manager.
+              // The translator produces this for the first system init message;
+              // we can update activeModel tracking from it but otherwise ignore.
+              break;
+
+            case "text_delta":
+              currentResponseChunks.push(event.text);
+              emit({ type: "response_chunk", messageId, content: event.text });
+              break;
+
+            case "tool_use":
+              log.info(`Tool started: ${event.name} (${event.id})`);
+              currentToolsMap.set(event.id, {
+                toolUseId: event.id,
+                toolName: event.name,
+                status: "running",
+              });
+              emit({ type: "tool_start", toolName: event.name, toolUseId: event.id });
+              break;
+
+            case "tool_input": {
+              log.debug(`Tool input complete for ${event.toolUseId}`);
+              const tracked = currentToolsMap.get(event.toolUseId);
+              if (tracked) {
+                tracked.input = event.input;
+              }
+              emit({ type: "tool_input", toolUseId: event.toolUseId, input: event.input });
+              break;
+            }
+
+            case "tool_result": {
+              log.info(`Tool completed: ${event.toolUseId ?? "unknown"}`);
+              if (event.toolUseId) {
+                const trackedTool = currentToolsMap.get(event.toolUseId);
+                if (trackedTool) {
+                  trackedTool.output = event.output ?? null;
+                  trackedTool.status = "complete";
+                }
+                emit({ type: "tool_end", toolUseId: event.toolUseId, output: event.output ?? null });
+              }
+              break;
+            }
+
+            case "turn_end": {
+              // Compute context usage from turn usage data (REQ-ESS-13)
+              if (event.usage) {
+                const turnTokens = event.usage.inputTokens + event.usage.outputTokens;
+                streamerState.cumulativeTokens += turnTokens;
+
+                if (event.usage.model) {
+                  streamerState.activeModel = event.usage.model;
+                }
+                if (event.usage.contextWindow && event.usage.contextWindow > 0) {
+                  streamerState.contextWindow = event.usage.contextWindow;
+                  currentContextUsage = Math.round(
+                    (100 * streamerState.cumulativeTokens) / event.usage.contextWindow
+                  );
+                  currentContextUsage = Math.max(0, Math.min(100, currentContextUsage));
+                  log.debug(
+                    `Context usage: ${streamerState.cumulativeTokens}/${event.usage.contextWindow} = ${currentContextUsage}% ` +
+                    `(turn: +${turnTokens}, model: ${event.usage.model ?? "unknown"})`
+                  );
+                }
+              }
+              break;
+            }
+
+            case "compact_boundary": {
+              // Reset cumulative tokens on context compaction
+              const estimatedPostCompact = Math.round(event.preTokens * 0.3);
+              log.info(
+                `Compact boundary: pre_tokens=${event.preTokens}, ` +
+                `trigger=${event.trigger}, ` +
+                `resetting cumulative from ${streamerState.cumulativeTokens} to ~${estimatedPostCompact}`
+              );
+              streamerState.cumulativeTokens = estimatedPostCompact;
+              break;
+            }
+
+            case "error":
+              emit({ type: "error", code: "SDK_ERROR", message: event.reason });
+              break;
+
+            case "aborted":
+              emit({ type: "aborted" });
+              break;
+          }
+        }
+      }
 
       const durationMs = Date.now() - queryStartTime;
       log.info(`Query completed in ${durationMs}ms`);
@@ -346,41 +483,50 @@ export function createActiveSessionController(): ActiveSessionController {
       emit({
         type: "response_end",
         messageId,
-        contextUsage: streamResult.contextUsage,
+        contextUsage: currentContextUsage,
         durationMs,
       });
 
       // Persist assistant message on normal completion
-      if (
-        streamResult.content.length > 0 ||
-        streamResult.toolInvocations.length > 0
-      ) {
+      const content = currentResponseChunks.join("");
+      const toolInvocations = Array.from(currentToolsMap.values());
+      if (content.length > 0 || toolInvocations.length > 0) {
         const assistantMessage: ConversationMessage = {
           id: messageId,
           role: "assistant",
-          content: streamResult.content,
+          content,
           timestamp: new Date().toISOString(),
-          toolInvocations:
-            streamResult.toolInvocations.length > 0
-              ? streamResult.toolInvocations
-              : undefined,
-          contextUsage: streamResult.contextUsage,
+          toolInvocations: toolInvocations.length > 0 ? toolInvocations : undefined,
+          contextUsage: currentContextUsage,
           durationMs,
         };
         await sdkAppendMessage(vaultPath, result.sessionId, assistantMessage);
       }
     } catch (err) {
-      log.error("Streaming failed", err);
-      emit({
-        type: "error",
-        code: "SDK_ERROR",
-        message: err instanceof Error ? err.message : "Streaming failed",
-      });
+      // REQ-ESS-10: Detect pending prompts during crash
+      const hadPendingPrompts = hasPendingPrompts();
+      discardPendingPrompts();
+
+      if (hadPendingPrompts) {
+        log.error("Subprocess crashed while waiting for user response", err);
+        emit({
+          type: "error",
+          code: "SDK_ERROR",
+          message: "Processing crashed while waiting for your response. Please try again.",
+        });
+      } else {
+        log.error("Streaming failed", err);
+        emit({
+          type: "error",
+          code: "SDK_ERROR",
+          message: err instanceof Error ? err.message : "Streaming failed",
+        });
+      }
 
       // Persist partial result from snapshot on error/abort
       if (messageId && queryStartTime) {
-        const snapshot = currentStreamerHandle?.getSnapshot();
-        if (snapshot && (snapshot.content.length > 0 || snapshot.toolInvocations.length > 0)) {
+        const snapshot = getStreamingSnapshot();
+        if (snapshot.content.length > 0 || snapshot.toolInvocations.length > 0) {
           try {
             const durationMs = Date.now() - queryStartTime;
             emit({ type: "response_end", messageId, contextUsage: snapshot.contextUsage, durationMs });
@@ -407,7 +553,6 @@ export function createActiveSessionController(): ActiveSessionController {
         isProcessing = false;
         isStreamingActive = false;
         abortController = null;
-        currentStreamerHandle = null;
 
         if (queryResult) {
           try {
@@ -508,6 +653,9 @@ export function createActiveSessionController(): ActiveSessionController {
         return;
       }
 
+      // REQ-ESS-19: Check for pending prompts before aborting
+      const hadPendingPrompts = hasPendingPrompts();
+
       // Interrupt the SDK cleanly (not close, which kills the process)
       if (queryResult) {
         try {
@@ -519,13 +667,18 @@ export function createActiveSessionController(): ActiveSessionController {
         }
       }
 
-      // Signal the streamer loop to exit
+      // Signal the streaming loop to exit
       if (abortController) {
         abortController.abort();
       }
 
       // Discard pending prompts
       discardPendingPrompts();
+
+      // REQ-ESS-19: If prompts were pending, emit aborted (not error)
+      if (hadPendingPrompts) {
+        emit({ type: "aborted" });
+      }
     },
 
     subscribe(callback: SessionEventCallback): () => void {
@@ -564,7 +717,7 @@ export function createActiveSessionController(): ActiveSessionController {
     },
 
     getSnapshot(): SessionSnapshot {
-      const streamerSnapshot = currentStreamerHandle?.getSnapshot();
+      const snapshot = getStreamingSnapshot();
       const prompts: PendingPrompt[] = [];
       for (const request of pendingPermissions.values()) {
         prompts.push(request.prompt);
@@ -576,10 +729,10 @@ export function createActiveSessionController(): ActiveSessionController {
       return {
         sessionId: currentSessionId,
         isProcessing,
-        content: streamerSnapshot?.content ?? "",
-        toolInvocations: streamerSnapshot?.toolInvocations ?? [],
+        content: snapshot.content,
+        toolInvocations: snapshot.toolInvocations,
         pendingPrompts: prompts,
-        contextUsage: streamerSnapshot?.contextUsage,
+        contextUsage: snapshot.contextUsage,
         cumulativeTokens: streamerState.cumulativeTokens,
         contextWindow: streamerState.contextWindow,
       };
@@ -626,4 +779,3 @@ export function createActiveSessionController(): ActiveSessionController {
     },
   };
 }
-

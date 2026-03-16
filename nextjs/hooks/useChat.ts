@@ -167,6 +167,12 @@ export function useChat(
       return;
     }
 
+    // Handle aborted as a non-error terminal event (REQ-ESS-19)
+    if (event.type === "aborted") {
+      onEventRef.current?.(event as unknown as ServerMessage);
+      return;
+    }
+
     // Handle errors
     if (event.type === "error") {
       const errorMessage = typeof event.message === "string" ? event.message : "Unknown error";

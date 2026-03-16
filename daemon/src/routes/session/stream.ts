@@ -7,7 +7,7 @@
  * Sends a snapshot event first with current controller state, then
  * subscribes to live events if processing is in progress.
  *
- * Stream closes on terminal events (response_end, error, session_cleared)
+ * Stream closes on terminal events (response_end, error, aborted, session_cleared)
  * or when the client disconnects. Client disconnect does NOT abort
  * processing; the controller continues independently (REQ-SDC-4).
  */
@@ -64,6 +64,7 @@ export function chatStreamHandler(c: Context): Response {
       if (
         event.type === "response_end" ||
         event.type === "error" ||
+        event.type === "aborted" ||
         event.type === "session_cleared"
       ) {
         cleanup();

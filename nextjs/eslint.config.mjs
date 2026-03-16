@@ -47,7 +47,6 @@ export default tseslint.config(
   // on yielded events triggers false positives.
   {
     files: [
-      "lib/streaming/session-streamer.ts",
       "lib/session-manager.ts",
       "lib/extraction/fact-extractor.ts",
     ],

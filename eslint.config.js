@@ -22,7 +22,6 @@ export default tseslint.config(
   // See: .lore/bugs/agent-sdk-mjs-type-declarations.md
   {
     files: [
-      "daemon/src/streaming/session-streamer.ts",
       "daemon/src/streaming/event-translator.ts",
       "daemon/src/session-manager.ts",
     ],

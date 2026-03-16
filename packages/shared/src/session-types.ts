@@ -35,6 +35,7 @@ export type SessionEvent =
       reason: "not_found" | "already_resolved";
     }
   | { type: "error"; code: string; message: string }
+  | { type: "aborted" }
   | { type: "session_cleared" }
   | {
       type: "session_ready";

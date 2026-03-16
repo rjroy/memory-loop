@@ -3,19 +3,22 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "workspaces": ["nextjs", "packages/shared", "daemon"],
+  "workspaces": ["nextjs", "packages/shared", "daemon", "cli"],
   "scripts": {
     "dev": "bun run --cwd nextjs dev",
     "build": "bun run --cwd nextjs build",
     "start": "bun run --cwd nextjs start",
     "lint": "bun run --cwd nextjs lint",
-    "test": "LOG_LEVEL=silent bun test --cwd packages/shared && LOG_LEVEL=silent bun test --cwd nextjs && LOG_LEVEL=silent bun test --cwd daemon",
+    "test": "LOG_LEVEL=silent bun test --cwd packages/shared && LOG_LEVEL=silent bun test --cwd nextjs && LOG_LEVEL=silent bun test --cwd daemon && LOG_LEVEL=silent bun test --cwd cli",
     "test:coverage": "bun run --cwd nextjs test:coverage",
-    "typecheck": "bun run --cwd packages/shared typecheck && bun run --cwd nextjs typecheck && bun run --cwd daemon typecheck",
+    "typecheck": "bun run --cwd packages/shared typecheck && bun run --cwd nextjs typecheck && bun run --cwd daemon typecheck && bun run --cwd cli typecheck",
     "daemon:dev": "bun run --cwd daemon dev",
     "daemon:start": "bun run --cwd daemon start",
     "daemon:test": "bun run --cwd daemon test",
-    "daemon:typecheck": "bun run --cwd daemon typecheck"
+    "daemon:typecheck": "bun run --cwd daemon typecheck",
+    "cli": "bun run --cwd cli dev --",
+    "cli:test": "bun run --cwd cli test",
+    "cli:typecheck": "bun run --cwd cli typecheck"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

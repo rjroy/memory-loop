@@ -68,13 +68,25 @@ if ! run_quiet "typecheck" bun run typecheck; then
     FAILED=1
 fi
 
-if ! run_quiet "unit tests" LOG_LEVEL=silent bun test; then
+if ! run_quiet "unit tests" env LOG_LEVEL=silent bun test; then
     FAILED=1
 fi
 
 echo -e "${YELLOW}Daemon${NC}"
 
 cd "$REPO_ROOT/daemon"
+
+if ! run_quiet "typecheck" bun run typecheck; then
+    FAILED=1
+fi
+
+if ! run_quiet "unit tests" bun run test; then
+    FAILED=1
+fi
+
+echo -e "${YELLOW}CLI${NC}"
+
+cd "$REPO_ROOT/cli"
 
 if ! run_quiet "typecheck" bun run typecheck; then
     FAILED=1

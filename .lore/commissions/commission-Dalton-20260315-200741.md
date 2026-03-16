@@ -1,7 +1,7 @@
 ---
 title: "Commission: Implement: Ephemeral SDK Sessions Steps 4-5 (controller refactor, abort/crash handling)"
 date: 2026-03-16
-status: blocked
+status: dispatched
 type: one-shot
 tags: [commission]
 worker: Dalton
@@ -20,6 +20,16 @@ activity_timeline:
     reason: "Dependencies not satisfied"
     from: "pending"
     to: "blocked"
+  - timestamp: 2026-03-16T03:14:40.412Z
+    event: status_pending
+    reason: "Dependencies satisfied"
+    from: "blocked"
+    to: "pending"
+  - timestamp: 2026-03-16T03:14:40.414Z
+    event: status_dispatched
+    reason: "Dispatched to worker"
+    from: "pending"
+    to: "dispatched"
 current_progress: ""
 projectName: memory-loop
 ---

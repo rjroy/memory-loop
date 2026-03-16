@@ -5,7 +5,7 @@
   "type": "module",
   "workspaces": ["nextjs", "packages/shared", "daemon", "cli"],
   "scripts": {
-    "dev": "bun run --cwd nextjs dev",
+    "dev": "VAULTS=/home/rjroy/Projects/Vaults/ bun run --cwd nextjs dev",
     "build": "bun run --cwd nextjs build",
     "start": "bun run --cwd nextjs start",
     "lint": "bun run --cwd nextjs lint",

@@ -105,7 +105,7 @@ export async function listFilesHandler(c: Context): Promise<Response> {
 
   try {
     const entries = await listDirectory(vault!.contentRoot, path);
-    return c.json({ entries });
+    return c.json({ path, entries });
   } catch (err) {
     return handleFileBrowserError(c, err);
   }

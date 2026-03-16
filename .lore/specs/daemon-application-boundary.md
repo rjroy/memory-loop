@@ -1,7 +1,7 @@
 ---
 title: Daemon application boundary
 date: 2026-03-14
-status: draft
+status: implemented
 tags: [architecture, daemon, cli, web, agents, domain-boundary, refactor]
 modules: [session-manager, vault-manager, note-capture, file-browser, scheduler-bootstrap, controller, extraction, spaced-repetition]
 related:

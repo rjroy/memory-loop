@@ -1,7 +1,7 @@
 ---
 title: "Stage 2: Daemon vault foundation"
 date: 2026-03-14
-status: approved
+status: executed
 tags: [daemon, vault, migration, monorepo, api, hybrid-state]
 modules: [vault-manager, vault-config, vault-helpers, daemon]
 related:

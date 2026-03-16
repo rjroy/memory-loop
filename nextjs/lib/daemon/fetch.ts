@@ -4,7 +4,12 @@
  * Provides the HTTP connection layer for all daemon client modules
  * (vaults, files, sessions). Handles Unix socket and TCP port resolution,
  * error wrapping, and test injection.
+ *
+ * Next.js runs under Node.js, not Bun, so Unix socket requests use
+ * Node's http module with socketPath instead of Bun's `unix` fetch option.
  */
+
+import * as http from "node:http";
 
 // ---------------------------------------------------------------------------
 // DaemonUnavailableError
@@ -54,6 +59,92 @@ function getDaemonPort(): number | undefined {
     : undefined;
 }
 
+function extractHeaders(init?: RequestInit): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (init?.headers) {
+    const h = init.headers;
+    if (h instanceof Headers) {
+      h.forEach((v, k) => { headers[k] = v; });
+    } else if (Array.isArray(h)) {
+      for (const [k, v] of h) { headers[k] = v; }
+    } else {
+      Object.assign(headers, h);
+    }
+  }
+  return headers;
+}
+
+function buildResponseHeaders(res: http.IncomingMessage): Headers {
+  const responseHeaders = new Headers();
+  for (const [key, value] of Object.entries(res.headers)) {
+    if (value !== undefined) {
+      const values = Array.isArray(value) ? value : [value];
+      for (const v of values) {
+        responseHeaders.append(key, v);
+      }
+    }
+  }
+  return responseHeaders;
+}
+
+/**
+ * Make an HTTP request over a Unix socket using Node's http module.
+ * Returns a standard Response with a streaming body so SSE and large
+ * binary responses work without buffering the full payload in memory.
+ */
+function fetchViaUnixSocket(
+  socketPath: string,
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        socketPath,
+        path,
+        method: init?.method ?? "GET",
+        headers: extractHeaders(init),
+      },
+      (nodeResponse) => {
+        const body = new ReadableStream({
+          start(controller) {
+            nodeResponse.on("data", (chunk: Buffer) => {
+              controller.enqueue(new Uint8Array(chunk));
+            });
+            nodeResponse.on("end", () => controller.close());
+            nodeResponse.on("error", (err) => controller.error(err));
+          },
+          cancel() {
+            nodeResponse.destroy();
+          },
+        });
+
+        resolve(
+          new Response(body, {
+            status: nodeResponse.statusCode ?? 500,
+            statusText: nodeResponse.statusMessage ?? "",
+            headers: buildResponseHeaders(nodeResponse),
+          }),
+        );
+      },
+    );
+
+    req.on("error", reject);
+
+    if (init?.body) {
+      if (typeof init.body === "string") {
+        req.write(init.body);
+      } else if (init.body instanceof ArrayBuffer) {
+        req.write(Buffer.from(init.body));
+      } else if (Buffer.isBuffer(init.body)) {
+        req.write(init.body);
+      }
+    }
+
+    req.end();
+  });
+}
+
 function defaultDaemonFetch(
   path: string,
   init?: RequestInit,
@@ -64,10 +155,7 @@ function defaultDaemonFetch(
   }
 
   const socketPath = getSocketPath();
-  return fetch(`http://localhost${path}`, {
-    ...init,
-    unix: socketPath,
-  } as RequestInit);
+  return fetchViaUnixSocket(socketPath, path, init);
 }
 
 function getDaemonFetch(): FetchFn {

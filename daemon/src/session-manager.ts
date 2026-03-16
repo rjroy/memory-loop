@@ -36,6 +36,7 @@ import { formatDateForFilename, formatTimeForTimestamp } from "@memory-loop/shar
 import { createLogger } from "@memory-loop/shared";
 const log = createLogger("Session");
 import { createVaultTransferServer } from "./vault-transfer";
+import { isSessionExpiryError } from "./streaming/event-translator";
 import { loadVaultConfig } from "./vault/vault-config";
 import { resolveRecentDiscussions, resolveDiscussionModel } from "@memory-loop/shared";
 
@@ -95,6 +96,7 @@ export class SessionError extends Error {
       | "SESSION_INVALID"
       | "SDK_ERROR"
       | "STORAGE_ERROR"
+      | "RESUME_FAILED"
   ) {
     super(message);
     this.name = "SessionError";
@@ -777,6 +779,40 @@ function createCanUseTool(
 }
 
 /**
+ * Input for preparing per-turn SDK options.
+ */
+export interface TurnPrepInput {
+  vaultPath: string;
+  resume?: string;
+  canUseTool?: Options["canUseTool"];
+  additionalOptions?: Partial<Options>;
+}
+
+/**
+ * Assembles SDK options for a single turn. Handles vault config loading,
+ * model resolution, and MCP server setup. Used by both createSession()
+ * and resumeSession() to eliminate duplicated option construction.
+ */
+export async function prepareTurnOptions(input: TurnPrepInput): Promise<Partial<Options>> {
+  const config = await loadVaultConfig(input.vaultPath);
+  const model = resolveDiscussionModel(config);
+  const vaultTransferServer = createVaultTransferServer();
+
+  return {
+    ...DISCUSSION_MODE_OPTIONS,
+    model,
+    ...input.additionalOptions,
+    cwd: input.vaultPath,
+    ...(input.resume ? { resume: input.resume } : {}),
+    mcpServers: {
+      ...input.additionalOptions?.mcpServers,
+      "vault-transfer": vaultTransferServer,
+    },
+    ...(input.canUseTool ? { canUseTool: input.canUseTool } : {}),
+  };
+}
+
+/**
  * Creates a new Claude Agent SDK session for a vault.
  *
  * @param vault - The vault to create a session for
@@ -806,34 +842,24 @@ export async function createSession(
     // Create SDK query with vault's cwd, project settings, and discussion mode defaults
     log.info("Calling Claude Agent SDK query()...");
 
-    // Load vault config to get discussion model
-    const config = await loadVaultConfig(vault.path);
-    const model = resolveDiscussionModel(config);
-    log.info(`Using discussion model: ${model}`);
+    const canUseTool = requestToolPermission
+      ? createCanUseTool(requestToolPermission, askUserQuestion)
+      : undefined;
 
-    // Create vault transfer MCP server for this session
-    const vaultTransferServer = createVaultTransferServer();
+    const mergedOptions = await prepareTurnOptions({
+      vaultPath: vault.path,
+      canUseTool,
+      additionalOptions: options,
+    });
 
-    const mergedOptions: Partial<Options> = {
-      ...DISCUSSION_MODE_OPTIONS,
-      model, // Set model from vault config
-      ...options, // Merge defaults then caller options, then force specific fields below
-      cwd: vault.path,
-      mcpServers: {
-        ...options?.mcpServers,
-        "vault-transfer": vaultTransferServer, // Always include vault-transfer
-      },
-    };
-
-    // Add canUseTool callback if permission callback is provided
     if (requestToolPermission) {
-      mergedOptions.canUseTool = createCanUseTool(requestToolPermission, askUserQuestion);
       log.info("Tool permission callback configured");
       if (askUserQuestion) {
         log.info("AskUserQuestion callback configured");
       }
     }
 
+    log.info(`Using discussion model: ${mergedOptions.model}`);
     log.debug("SDK options:", {
       model: mergedOptions.model,
       allowedTools: mergedOptions.allowedTools,
@@ -931,35 +957,25 @@ export async function resumeSession(
     // Create SDK query with resume option and discussion mode defaults
     log.info("Calling Claude Agent SDK query() with resume...");
 
-    // Load vault config to get discussion model
-    const config = await loadVaultConfig(vaultPath);
-    const model = resolveDiscussionModel(config);
-    log.info(`Using discussion model: ${model}`);
+    const canUseTool = requestToolPermission
+      ? createCanUseTool(requestToolPermission, askUserQuestion)
+      : undefined;
 
-    // Create vault transfer MCP server for this session
-    const vaultTransferServer = createVaultTransferServer();
-
-    const mergedOptions: Partial<Options> = {
-      ...DISCUSSION_MODE_OPTIONS,
-      model, // Set model from vault config
-      ...options, // Merge defaults then caller options, then force specific fields below
+    const mergedOptions = await prepareTurnOptions({
+      vaultPath: metadata.vaultPath,
       resume: sessionId,
-      cwd: metadata.vaultPath,
-      mcpServers: {
-        ...options?.mcpServers,
-        "vault-transfer": vaultTransferServer, // Always include vault-transfer
-      },
-    };
+      canUseTool,
+      additionalOptions: options,
+    });
 
-    // Add canUseTool callback if permission callback is provided
     if (requestToolPermission) {
-      mergedOptions.canUseTool = createCanUseTool(requestToolPermission, askUserQuestion);
       log.info("Tool permission callback configured");
       if (askUserQuestion) {
         log.info("AskUserQuestion callback configured");
       }
     }
 
+    log.info(`Using discussion model: ${mergedOptions.model}`);
     log.debug("SDK options:", {
       model: mergedOptions.model,
       allowedTools: mergedOptions.allowedTools,
@@ -977,37 +993,45 @@ export async function resumeSession(
       await extractSessionId(queryResult);
     log.info(`Session resumed: ${resumedId}`);
 
-    // If the SDK returns a different session ID, it means the session
-    // wasn't found and the SDK created a new one. Don't migrate metadata
-    // or pretend this is a continuation. Log the failure and treat it as
-    // a fresh session (no previous messages for the UI).
+    // If the SDK returns a different session ID, the original session
+    // wasn't found. Don't adapt to the mismatch (see retro:
+    // .lore/retros/discussion-multi-turn-resume.md). Close the query
+    // and surface the failure so the caller can start fresh.
     if (resumedId !== sessionId) {
       log.error(
         `SDK could not find session ${sessionId}, created new session ${resumedId} instead. ` +
         `This usually means the previous SDK subprocess was killed before it could persist session data.`
       );
+      queryResult.close();
+      throw new SessionError(
+        "Could not resume previous session. Starting a new conversation.",
+        "RESUME_FAILED"
+      );
     }
 
-    // Save metadata under the ID the SDK actually returned
-    metadata.id = resumedId;
+    // Save metadata with updated timestamp
     metadata.lastActiveAt = new Date().toISOString();
     await saveSession(metadata);
 
-    // Return wrapped result. If the session ID changed, clear previousMessages
-    // so the caller knows this is effectively a fresh session.
-    const isActualResume = resumedId === sessionId;
     return {
       sessionId: resumedId,
       events: wrapGenerator(firstEvent, queryResult),
       interrupt: () => queryResult.interrupt(),
       close: () => queryResult.close(),
       supportedCommands: () => queryResult.supportedCommands(),
-      previousMessages: isActualResume ? metadata.messages : undefined,
+      previousMessages: metadata.messages,
     };
   } catch (error) {
     log.error("Failed to resume session", error);
     if (error instanceof SessionError) {
       throw error;
+    }
+    // Check if the SDK threw a session expiry error
+    if (error instanceof Error && isSessionExpiryError(error.message)) {
+      throw new SessionError(
+        "Could not resume previous session. The session may have expired.",
+        "RESUME_FAILED"
+      );
     }
     throw new SessionError(mapSdkError(error), "SDK_ERROR");
   }

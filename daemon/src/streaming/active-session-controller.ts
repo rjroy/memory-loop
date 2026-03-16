@@ -34,6 +34,7 @@ import {
   createSession as sdkCreateSession,
   resumeSession as sdkResumeSession,
   appendMessage as sdkAppendMessage,
+  SessionError,
   type SessionQueryResult,
   type ToolPermissionCallback,
   type AskUserQuestionCallback,
@@ -472,19 +473,6 @@ export function createActiveSessionController(): ActiveSessionController {
           );
         }
 
-        // If resume returned a different session ID, the SDK couldn't find
-        // the original session. Warn the user so they know context was lost.
-        if (sessionId && result.sessionId !== sessionId) {
-          log.warn(
-            `Resume failed: requested ${sessionId}, got ${result.sessionId}`
-          );
-          emit({
-            type: "error",
-            code: "SDK_ERROR",
-            message: "Could not resume previous session. Starting a new conversation.",
-          });
-        }
-
         // Set session identity before fire-and-forget so getState().sessionId
         // is available to callers immediately after sendMessage() returns.
         currentSessionId = result.sessionId;
@@ -495,11 +483,14 @@ export function createActiveSessionController(): ActiveSessionController {
         // runStreaming has its own try/catch for streaming errors.
         void runStreaming(vaultId, vaultPath, prompt, result, isNewSession);
       } catch (err) {
-        // Only catches SDK session creation errors now
         log.error("sendMessage failed", err);
+        const code =
+          err instanceof SessionError && err.code === "RESUME_FAILED"
+            ? "RESUME_FAILED"
+            : "SDK_ERROR";
         emit({
           type: "error",
-          code: "SDK_ERROR",
+          code,
           message: err instanceof Error ? err.message : "Failed to send message",
         });
       }

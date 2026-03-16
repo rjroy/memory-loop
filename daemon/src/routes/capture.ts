@@ -12,6 +12,7 @@ import { getCachedVaultById } from "../vault";
 import { captureToDaily, getRecentNotes } from "../files/note-capture";
 import { captureToMeeting } from "../files/meeting-capture";
 import { getActiveMeeting, incrementMeetingEntryCount } from "../files/meeting-store";
+import { getRecentSessions } from "../session-manager";
 
 const log = createLogger("capture-routes");
 
@@ -94,8 +95,7 @@ export async function recentNotesHandler(c: Context): Promise<Response> {
 /**
  * GET /vaults/:id/recent-activity - Get recent activity.
  *
- * Returns recent captures and empty discussions list (placeholder
- * until discussion sessions are tracked in the daemon).
+ * Returns recent captures and recent discussion sessions.
  */
 export async function recentActivityHandler(c: Context): Promise<Response> {
   const vaultId = c.req.param("id") ?? "";
@@ -104,9 +104,13 @@ export async function recentActivityHandler(c: Context): Promise<Response> {
     return jsonError(c, "Vault not found", "VAULT_NOT_FOUND", 404);
   }
 
-  const notes = await getRecentNotes(vault, 5);
+  const limit = vault.recentDiscussions ?? 5;
+  const [notes, discussions] = await Promise.all([
+    getRecentNotes(vault, 5),
+    getRecentSessions(vault.path, limit),
+  ]);
   return c.json({
     captures: notes,
-    discussions: [],
+    discussions,
   });
 }

@@ -1,7 +1,7 @@
 ---
 title: "Stage 5: Daemon session lifecycle and chat"
 date: 2026-03-14
-status: approved
+status: executed
 tags: [daemon, migration, session, chat, sse, streaming, mcp, sdk, stage-5]
 modules: [session-manager, active-session-controller, session-streamer, controller, vault-transfer, vault-setup, inspiration-manager, pair-writing-prompts, mock-sdk, sse]
 related:

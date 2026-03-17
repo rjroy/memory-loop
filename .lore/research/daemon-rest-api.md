@@ -1,13 +1,14 @@
 ---
 title: "Guild Hall Daemon REST API (reference design, not Memory Loop)"
 date: 2026-03-13
-status: reference
+status: active
 tags: [architecture, daemon, rest-api, cli, discovery, skills, guild-hall, external-reference]
 source-project: guild-hall
 modules: [daemon, cli, web]
 related:
   - .lore/specs/daemon-application-boundary.md
   - .lore/brainstorm/daemon-migration-stages.md
+  - .lore/reference/daemon-application-boundary.md
 note: >
   This design was written for the Guild Hall project, not Memory Loop.
   It is stored here as reference material for Memory Loop's daemon API design.

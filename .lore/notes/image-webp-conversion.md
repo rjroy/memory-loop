@@ -1,9 +1,9 @@
 ---
-title: Implementation notes: image-webp-conversion
+title: "Implementation notes: image-webp-conversion"
 date: 2026-02-14
 status: complete
 tags: [implementation, image-processing, webp]
-source: .lore/plans/image-webp-conversion.md
+source: .lore/_archive/image-webp-conversion.md
 modules: [file-upload, image-converter]
 ---
 

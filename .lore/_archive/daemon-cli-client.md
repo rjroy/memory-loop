@@ -8,12 +8,12 @@ related:
   - .lore/specs/daemon-application-boundary.md
   - .lore/brainstorm/daemon-migration-stages.md
   - .lore/research/daemon-rest-api.md
-  - .lore/plans/daemon-skeleton-shared-package.md
-  - .lore/plans/daemon-vault-foundation.md
-  - .lore/plans/daemon-stateless-file-operations.md
-  - .lore/plans/daemon-background-schedulers.md
-  - .lore/plans/daemon-session-lifecycle-chat.md
-  - .lore/plans/daemon-web-app-conversion.md
+  - .lore/_archive/daemon-skeleton-shared-package.md
+  - .lore/_archive/daemon-vault-foundation.md
+  - .lore/_archive/daemon-stateless-file-operations.md
+  - .lore/_archive/daemon-background-schedulers.md
+  - .lore/_archive/daemon-session-lifecycle-chat.md
+  - .lore/_archive/daemon-web-app-conversion.md
 ---
 
 # Plan: Stage 7 - CLI Client
@@ -23,7 +23,7 @@ related:
 **Spec**: `.lore/specs/daemon-application-boundary.md`
 **Staging**: `.lore/brainstorm/daemon-migration-stages.md` (Stage 7 section)
 **API conventions**: `.lore/research/daemon-rest-api.md`
-**Previous stage plans**: `.lore/plans/daemon-skeleton-shared-package.md` through `daemon-web-app-conversion.md`
+**Previous stage plans**: `.lore/_archive/daemon-skeleton-shared-package.md` through `daemon-web-app-conversion.md`
 
 Requirements addressed:
 - REQ-DAB-7: CLI is a first-class client of the daemon API -> Steps 1-8

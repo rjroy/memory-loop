@@ -50,7 +50,7 @@ export function createStreamTranslator(): (msg: SDKMessage) => SdkRunnerEvent[] 
 
       case "stream_event":
         return handleStreamEvent(
-          msg as SDKPartialAssistantMessage,
+          msg,
           blockToolIds,
           blockInputChunks,
           blockToolNames
@@ -65,7 +65,7 @@ export function createStreamTranslator(): (msg: SDKMessage) => SdkRunnerEvent[] 
         return handleUserMessage(msg as SDKUserMessage);
 
       case "result":
-        return handleResultMessage(msg as SDKResultMessage);
+        return handleResultMessage(msg);
 
       default:
         return [];

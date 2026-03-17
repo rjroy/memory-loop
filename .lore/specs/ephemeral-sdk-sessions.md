@@ -1,7 +1,7 @@
 ---
 title: Ephemeral SDK sessions
 date: 2026-03-15
-status: approved
+status: implemented
 tags: [sdk, agent-sdk, session, streaming, architecture, subprocess]
 modules: [session-manager, active-session-controller, session-streamer, sdk-provider]
 related:
@@ -9,7 +9,7 @@ related:
   - .lore/specs/server-driven-chat.md
   - .lore/retros/discussion-multi-turn-resume.md
   - .lore/retros/server-driven-chat.md
-  - .lore/plans/daemon-session-lifecycle-chat.md
+  - .lore/_archive/daemon-session-lifecycle-chat.md
   - .lore/research/claude-agent-sdk.md
   - .lore/brainstorm/daemon-migration-stages.md
 req-prefix: ESS
@@ -147,7 +147,7 @@ None. All stubs resolved.
 
 - **Daemon Application Boundary spec** (`.lore/specs/daemon-application-boundary.md`): REQ-DAB-19 says the daemon holds "in-memory state for active sessions." This spec refines what that means: in-memory state is the controller's session ID, pending prompts, and subscriber list. It is NOT a persistent subprocess.
 - **Server-Driven Chat spec** (`.lore/specs/server-driven-chat.md`): REQ-SDC-5 (single active session), REQ-SDC-7 (unified sendMessage), REQ-SDC-11 through REQ-SDC-14 (pending prompts) all remain valid. The processing model is preserved. What changes is the subprocess lifetime, not the processing semantics.
-- **Stage 5 plan** (`.lore/plans/daemon-session-lifecycle-chat.md`): This plan was written around the long-lived subprocess model. The session lifecycle parts (init, lookup, delete routes) remain valid. The active-session-controller internals need to be replanned.
+- **Stage 5 plan** (`.lore/_archive/daemon-session-lifecycle-chat.md`): This plan was written around the long-lived subprocess model. The session lifecycle parts (init, lookup, delete routes) remain valid. The active-session-controller internals need to be replanned.
 - **Multi-turn resume retro** (`.lore/retros/discussion-multi-turn-resume.md`): Documents four wasted debugging sessions caused by SDK resume interacting with vault settings hooks. The ephemeral model doesn't eliminate resume, but REQ-ESS-3 (loud failure on resume mismatch) would have surfaced this bug immediately instead of silently adapting.
 - **Guild Hall's sdk-runner.ts**: The reference implementation. `runSdkSession()` is the stateless event generator. `prepareSdkSession()` is the per-turn setup. `createStreamTranslator()` is the event translator. `drainSdkSession()` is the generator consumer for non-interactive use cases (commissions). Memory Loop's interactive use case (pending prompts) means we can't drain; we need to yield events and handle prompts inline.
 - **SDK concurrency**: The daemon migration brainstorm confirmed `query()` handles concurrent calls safely. Per-turn subprocess creation doesn't conflict with background SDK usage (extraction, card generation).

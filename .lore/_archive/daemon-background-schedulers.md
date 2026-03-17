@@ -2,15 +2,15 @@
 title: "Stage 4: Daemon background schedulers"
 date: 2026-03-14
 status: executed
-tags: [daemon, migration, extraction, spaced-repetition, schedulers, sdk-provider, api]
+tags: [daemon, migration, extraction, spaced-repetition, scheduling, sdk-provider, api]
 modules: [extraction-manager, extraction-state, transcript-reader, fact-extractor, memory-writer, card-discovery-scheduler, card-discovery-state, card-generator, card-generator-config, card-dedup, card-manager, card-storage, card-schema, sm2-algorithm, scheduler-bootstrap, sdk-provider, config-handlers, instrumentation]
 related:
   - .lore/specs/daemon-application-boundary.md
   - .lore/brainstorm/daemon-migration-stages.md
   - .lore/research/daemon-rest-api.md
-  - .lore/plans/daemon-skeleton-shared-package.md
-  - .lore/plans/daemon-vault-foundation.md
-  - .lore/plans/daemon-stateless-file-operations.md
+  - .lore/_archive/daemon-skeleton-shared-package.md
+  - .lore/_archive/daemon-vault-foundation.md
+  - .lore/_archive/daemon-stateless-file-operations.md
 ---
 
 # Plan: Stage 4 - Daemon Background Schedulers
@@ -20,9 +20,9 @@ related:
 **Spec**: `.lore/specs/daemon-application-boundary.md`
 **Staging**: `.lore/brainstorm/daemon-migration-stages.md` (Stage 4 section)
 **API conventions**: `.lore/research/daemon-rest-api.md`
-**Stage 1 plan**: `.lore/plans/daemon-skeleton-shared-package.md`
-**Stage 2 plan**: `.lore/plans/daemon-vault-foundation.md`
-**Stage 3 plan**: `.lore/plans/daemon-stateless-file-operations.md`
+**Stage 1 plan**: `.lore/_archive/daemon-skeleton-shared-package.md`
+**Stage 2 plan**: `.lore/_archive/daemon-vault-foundation.md`
+**Stage 3 plan**: `.lore/_archive/daemon-stateless-file-operations.md`
 
 Requirements addressed:
 - REQ-DAB-1: Daemon is the authority boundary → All steps (scheduler modules move to daemon)

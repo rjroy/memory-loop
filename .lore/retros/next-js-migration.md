@@ -4,7 +4,7 @@ date: 2026-02-05
 status: complete
 tags: [architecture, refactor, next-js, sse, websocket, state-management, race-condition]
 modules: [session-context, discussion, pair-writing, active-session-controller, useChat]
-related: [.lore/brainstorm/next-js-migration.md, .lore/plans/nextjs-consolidation.md]
+related: [.lore/brainstorm/next-js-migration.md, .lore/_archive/nextjs-consolidation.md]
 ---
 
 # Retro: Next.js Migration
@@ -37,5 +37,5 @@ Migrated Memory Loop from Vite SPA + Hono backend to Next.js 15 App Router. Repl
 ## Artifacts
 
 - `.lore/brainstorm/next-js-migration.md` - Original architecture analysis
-- `.lore/plans/nextjs-consolidation.md` - Migration execution plan
+- `.lore/_archive/nextjs-consolidation.md` - Migration execution plan
 - PR #458 - The complete migration PR

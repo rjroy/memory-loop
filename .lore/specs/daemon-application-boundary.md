@@ -12,7 +12,7 @@ related:
   - .lore/brainstorm/collapse-workspaces.md
   - .lore/brainstorm/agentic-data-source-pattern.md
   - .lore/reference/_overview.md
-  - .lore/example/daemon-application-boundary.md
+  - .lore/reference/daemon-application-boundary.md
 req-prefix: DAB
 ---
 
@@ -197,4 +197,4 @@ This is a target-architecture spec with no implementation deliverable. Standard 
 - **Collapse workspaces retro** (`.lore/retros/collapse-workspaces.md`) documents collapsing the three-workspace structure (backend/, shared/, nextjs/) into one because there was only one consumer. A daemon reintroduces multi-consumer architecture. The retro notes the mechanical cost: 218 files changed, 127 import rewrites.
 - **Content-root and instrumentation fix retro** (`.lore/retros/content-root-and-instrumentation-fix.md`) documents bundler-related failures in background schedulers running through `instrumentation.ts`. Moving schedulers to the daemon eliminates this failure class entirely.
 - **Agentic data source pattern brainstorm** (`.lore/brainstorm/agentic-data-source-pattern.md`) defines how external services integrate via MCP servers. The daemon would own MCP server registration for vault sessions.
-- **Guild Hall daemon application boundary** (`.lore/example/daemon-application-boundary.md`) is the reference pattern this spec adapts. Key concepts carried forward: daemon as authority boundary, web as client, CLI as first-class client, human-agent parity. Concepts not carried forward: "skills" terminology (replaced by CLI commands and MCP tool definitions), five internal concerns model (Guild Hall-specific), toolbox abstractions.
+- **Guild Hall daemon application boundary** (`.lore/reference/daemon-application-boundary.md`) is the reference pattern this spec adapts. Key concepts carried forward: daemon as authority boundary, web as client, CLI as first-class client, human-agent parity. Concepts not carried forward: "skills" terminology (replaced by CLI commands and MCP tool definitions), five internal concerns model (Guild Hall-specific), toolbox abstractions.

@@ -3,7 +3,7 @@ title: "Implementation validation: server-driven chat"
 date: 2026-02-08
 status: complete
 tags: [validation, review, server-driven-chat]
-source: .lore/plans/server-driven-chat.md
+source: .lore/_archive/server-driven-chat.md
 modules: [session-streamer, active-session-controller, chat-routes, useChat]
 related: [.lore/specs/server-driven-chat.md]
 ---
@@ -12,7 +12,7 @@ related: [.lore/specs/server-driven-chat.md]
 
 **Date**: 2026-02-08
 **Spec**: `.lore/specs/server-driven-chat.md`
-**Plan**: `.lore/plans/server-driven-chat.md`
+**Plan**: `.lore/_archive/server-driven-chat.md`
 **Reviewer**: Fresh-context agent
 
 ## Summary

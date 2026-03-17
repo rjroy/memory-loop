@@ -4,7 +4,7 @@ date: 2026-02-14
 status: complete
 tags: [css-modules, refactor, migration, failure, automation, verification]
 modules: [components, styles]
-related: [.lore/specs/css-modules-migration.md, .lore/plans/css-modules-migration.md, .lore/notes/css-modules-migration.md]
+related: [.lore/_archive/css-modules-migration-spec.md, .lore/_archive/css-modules-migration.md, .lore/notes/css-modules-migration.md]
 ---
 
 # Retro: CSS Modules Migration Failure
@@ -143,8 +143,8 @@ Converting 45 files in one shot created a large blast radius. When it failed, ha
 
 ## Artifacts
 
-- Spec: `.lore/specs/css-modules-migration.md`
-- Plan: `.lore/plans/css-modules-migration.md`
+- Spec: `.lore/_archive/css-modules-migration-spec.md`
+- Plan: `.lore/_archive/css-modules-migration.md`
 - Implementation notes: `.lore/notes/css-modules-migration.md`
 - Brainstorm: `.lore/brainstorm/css-modules-migration.md`
 - Verification script: `scripts/verify-css-modules.sh` (written post-failure)

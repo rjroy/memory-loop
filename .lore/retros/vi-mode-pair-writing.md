@@ -4,7 +4,7 @@ date: 2026-01-29
 status: complete
 tags: [vi-mode, pair-writing, implementation, lessons-learned]
 modules: [pair-writing-editor, use-vi-mode, use-vi-cursor]
-related: [.lore/specs/vi-mode-pair-writing.md, .lore/plans/vi-mode-pair-writing.md]
+related: [.lore/specs/vi-mode-pair-writing.md, .lore/_archive/vi-mode-pair-writing.md]
 ---
 
 # Retro: Vi Mode for Pair Writing
@@ -50,7 +50,7 @@ Added vi-style modal editing to Pair Writing mode. Implementation includes Norma
 ## Artifacts
 
 - Spec: `.lore/specs/vi-mode-pair-writing.md`
-- Plan: `.lore/plans/vi-mode-pair-writing.md`
+- Plan: `.lore/_archive/vi-mode-pair-writing.md`
 - Work breakdown: `.lore/_archive/vi-mode-pair-writing-work.md`
 - Research: `.lore/_archive/vi-mode-implementation.md`
 - Issue: #394

@@ -6,7 +6,7 @@ tags: [refactor, monorepo, workspace-collapse, ci, turbopack, bundler, deploymen
 modules: [nextjs, backend, shared, ci, instrumentation]
 related:
   - .lore/brainstorm/collapse-workspaces.md
-  - .lore/plans/collapse-workspaces.md
+  - .lore/_archive/collapse-workspaces.md
   - .lore/notes/collapse-workspaces.md
   - .lore/retros/next-js-migration.md
 ---
@@ -41,6 +41,6 @@ Collapsed the three-workspace monorepo (backend/, shared/, nextjs/) into a singl
 ## Artifacts
 
 - `.lore/brainstorm/collapse-workspaces.md` - Original analysis
-- `.lore/plans/collapse-workspaces.md` - Execution plan (11 steps)
+- `.lore/_archive/collapse-workspaces.md` - Execution plan (11 steps)
 - `.lore/notes/collapse-workspaces.md` - Implementation notes with divergences
 - PR #461 - The collapse PR

@@ -4,7 +4,7 @@ date: 2026-02-02
 status: complete
 tags: [skill-development, ui, iterative-design, lore-workflow]
 modules: [daily-prep-manager, session-actions-card, ask-user-question-dialog, home-view]
-related: [.lore/brainstorm/daily-prep-system.md, .lore/_archive/daily-planning-science.md, .lore/specs/daily-prep.md, .lore/plans/daily-prep-system.md]
+related: [.lore/brainstorm/daily-prep-system.md, .lore/_archive/daily-planning-science.md, .lore/specs/daily-prep.md, .lore/_archive/daily-prep-system.md]
 ---
 
 # Retro: Daily Prep System (#443)
@@ -27,7 +27,7 @@ Built a skill-based bookend planning system for morning commitment and evening r
 
 ## What Could Improve
 
-- **Plan document was not in .lore/**: The plan was originally captured in `~/.claude/plans/` (Claude Code's native plan mode location), not committed to the repo. Moved to `.lore/plans/daily-prep-system.md` during this retro. This is the same issue identified in the vi-mode retro: scratchpad plans aren't visible for drift detection unless explicitly preserved.
+- **Plan document was not in .lore/**: The plan was originally captured in `~/.claude/plans/` (Claude Code's native plan mode location), not committed to the repo. Moved to `.lore/_archive/daily-prep-system.md` during this retro. This is the same issue identified in the vi-mode retro: scratchpad plans aren't visible for drift detection unless explicitly preserved.
 
 - **Brainstorm/research required refinement passes**: The commit message notes "required refinement." The initial brainstorm was more scattered, and research needed curation to extract actionable insights. This is normal for the process but worth noting: first drafts of lore documents aren't final.
 
@@ -48,7 +48,7 @@ Built a skill-based bookend planning system for morning commitment and evening r
 ## Artifacts
 
 - Issue/PR: #443
-- Plan: `.lore/plans/daily-prep-system.md`
+- Plan: `.lore/_archive/daily-prep-system.md`
 - Brainstorm: `.lore/brainstorm/daily-prep-system.md`
 - Research: `.lore/_archive/daily-planning-science.md`
 - Spec: `.lore/specs/daily-prep.md`

@@ -6,7 +6,7 @@ tags: [architecture, concurrency, fire-and-forget, sse, streaming, review-proces
 modules: [active-session-controller, session-streamer, chat-route, useChat]
 related:
   - .lore/specs/server-driven-chat.md
-  - .lore/plans/server-driven-chat.md
+  - .lore/_archive/server-driven-chat.md
   - .lore/notes/server-driven-chat.md
   - .lore/notes/server-driven-chat-validation.md
 ---
@@ -42,7 +42,7 @@ Refactored the chat system from "SSE drives processing" to "server processes to 
 ## Artifacts
 
 - Spec: `.lore/specs/server-driven-chat.md`
-- Plan: `.lore/plans/server-driven-chat.md`
+- Plan: `.lore/_archive/server-driven-chat.md`
 - Implementation notes: `.lore/notes/server-driven-chat.md`
 - Spec validation: `.lore/notes/server-driven-chat-validation.md`
 - PR: #474

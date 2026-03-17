@@ -1,7 +1,7 @@
 ---
 title: Daemon migration staging strategy
 date: 2026-03-14
-status: open
+status: resolved
 tags: [architecture, daemon, migration, staging, refactor]
 modules: [session-manager, vault-manager, controller, extraction, spaced-repetition, file-browser, note-capture, search-cache, scheduler-bootstrap]
 related:

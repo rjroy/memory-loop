@@ -11,10 +11,10 @@ related:
   - .lore/research/daemon-rest-api.md
   - .lore/research/claude-agent-sdk.md
   - .lore/research/claude-agent-sdk-ref-typescript.md
-  - .lore/plans/daemon-skeleton-shared-package.md
-  - .lore/plans/daemon-vault-foundation.md
-  - .lore/plans/daemon-stateless-file-operations.md
-  - .lore/plans/daemon-background-schedulers.md
+  - .lore/_archive/daemon-skeleton-shared-package.md
+  - .lore/_archive/daemon-vault-foundation.md
+  - .lore/_archive/daemon-stateless-file-operations.md
+  - .lore/_archive/daemon-background-schedulers.md
   - .lore/retros/server-driven-chat.md
   - .lore/retros/discussion-multi-turn-resume.md
 ---

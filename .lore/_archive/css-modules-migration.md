@@ -4,7 +4,7 @@ date: 2026-02-14
 status: executed
 tags: [css, css-modules, refactor, aborted]
 modules: [components, styles]
-related: [.lore/specs/css-modules-migration.md, .lore/brainstorm/css-modules-migration.md, .lore/retros/css-modules-migration-failure.md]
+related: [.lore/_archive/css-modules-migration-spec.md, .lore/brainstorm/css-modules-migration.md, .lore/retros/css-modules-migration-failure.md]
 ---
 
 > **Note**: This plan was executed on 2026-02-14 but the migration was aborted due to implementation failures. See `.lore/retros/css-modules-migration-failure.md` for lessons learned.
@@ -13,7 +13,7 @@ related: [.lore/specs/css-modules-migration.md, .lore/brainstorm/css-modules-mig
 
 ## Spec Reference
 
-**Spec**: `.lore/specs/css-modules-migration.md`
+**Spec**: `.lore/_archive/css-modules-migration-spec.md`
 
 Requirements addressed:
 - REQ-CSS-MOD-1: Rename 45 component CSS files to `.module.css` → Steps 3, 4
@@ -465,12 +465,12 @@ Demonstrate that dead CSS is now detectable:
 
 ### Step 9: Validate Against Spec
 
-**Files**: `.lore/specs/css-modules-migration.md` (read-only)
+**Files**: `.lore/_archive/css-modules-migration-spec.md` (read-only)
 **Addresses**: All requirements
 **Expertise**: Fresh-context review (sub-agent)
 
 Launch a sub-agent that:
-1. Reads the spec at `.lore/specs/css-modules-migration.md`
+1. Reads the spec at `.lore/_archive/css-modules-migration-spec.md`
 2. Reviews the implementation with these concrete checks:
    - `grep -r 'import.*\.css"' nextjs/components/` → Should return zero matches (all should be `.module.css`)
    - `grep -r 'className="[a-z-]*__' nextjs/components/` → Should return zero BEM separators (`__` or `--`)

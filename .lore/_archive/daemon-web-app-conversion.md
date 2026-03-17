@@ -2,16 +2,16 @@
 title: "Stage 6: Web app conversion"
 date: 2026-03-14
 status: executed
-tags: [daemon, migration, proxy, nextjs, cleanup, stage-6]
+tags: [daemon, migration, proxy, next-js, cleanup, stage-6]
 modules: [api-routes, lib, daemon]
 related:
   - .lore/specs/daemon-application-boundary.md
   - .lore/brainstorm/daemon-migration-stages.md
-  - .lore/plans/daemon-skeleton-shared-package.md
-  - .lore/plans/daemon-vault-foundation.md
-  - .lore/plans/daemon-stateless-file-operations.md
-  - .lore/plans/daemon-background-schedulers.md
-  - .lore/plans/daemon-session-lifecycle-chat.md
+  - .lore/_archive/daemon-skeleton-shared-package.md
+  - .lore/_archive/daemon-vault-foundation.md
+  - .lore/_archive/daemon-stateless-file-operations.md
+  - .lore/_archive/daemon-background-schedulers.md
+  - .lore/_archive/daemon-session-lifecycle-chat.md
 ---
 
 # Plan: Daemon Migration Stage 6 -- Web App Conversion

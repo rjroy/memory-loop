@@ -4,7 +4,7 @@ date: 2026-02-07
 status: complete
 tags: [auth, middleware, webpack, edge-runtime, instrumentation, dead-code-elimination]
 modules: [auth, middleware, instrumentation]
-related: [.lore/plans/github-oauth-auth.md]
+related: [.lore/_archive/github-oauth-auth.md]
 ---
 
 # Retro: GitHub OAuth Authentication
@@ -34,5 +34,5 @@ Added GitHub OAuth via Auth.js v5 as a single-user gate for the LAN-deployed Mem
 
 ## Artifacts
 
-- Plan: `.lore/plans/github-oauth-auth.md`
+- Plan: `.lore/_archive/github-oauth-auth.md`
 - Deployment guide: `docs/deployment/github-oauth.md`

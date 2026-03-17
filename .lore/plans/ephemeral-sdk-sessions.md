@@ -2,12 +2,12 @@
 title: "Ephemeral SDK sessions"
 date: 2026-03-15
 status: approved
-tags: [sdk, agent-sdk, session, streaming, ephemeral, subprocess, refactor]
+tags: [sdk, agent-sdk, session, streaming, ephemeral-sessions, subprocess, refactor]
 modules: [session-manager, active-session-controller, session-streamer, sdk-provider]
 related:
   - .lore/specs/ephemeral-sdk-sessions.md
   - .lore/specs/server-driven-chat.md
-  - .lore/plans/daemon-session-lifecycle-chat.md
+  - .lore/_archive/daemon-session-lifecycle-chat.md
   - .lore/retros/discussion-multi-turn-resume.md
   - .lore/research/claude-agent-sdk.md
 ---
@@ -17,7 +17,7 @@ related:
 ## Spec Reference
 
 **Spec**: `.lore/specs/ephemeral-sdk-sessions.md`
-**Existing plan (superseded internals)**: `.lore/plans/daemon-session-lifecycle-chat.md`
+**Existing plan (superseded internals)**: `.lore/_archive/daemon-session-lifecycle-chat.md`
 **Reference implementation**: Guild Hall's `sdk-runner.ts` + `event-translator.ts`
 
 Requirements addressed:

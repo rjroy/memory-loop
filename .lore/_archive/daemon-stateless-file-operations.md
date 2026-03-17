@@ -2,14 +2,14 @@
 title: "Stage 3: Daemon stateless file operations"
 date: 2026-03-14
 status: executed
-tags: [daemon, migration, file-operations, search, meetings, tasks, api]
+tags: [daemon, migration, file-operations, search, meeting, tasks, api]
 modules: [file-browser, file-upload, note-capture, meeting-capture, meeting-store, transcript-manager, task-manager, daily-prep-manager, reference-updater, search-cache, search-index, search-handlers]
 related:
   - .lore/specs/daemon-application-boundary.md
   - .lore/brainstorm/daemon-migration-stages.md
   - .lore/research/daemon-rest-api.md
-  - .lore/plans/daemon-skeleton-shared-package.md
-  - .lore/plans/daemon-vault-foundation.md
+  - .lore/_archive/daemon-skeleton-shared-package.md
+  - .lore/_archive/daemon-vault-foundation.md
 ---
 
 # Plan: Stage 3 - Daemon Stateless File Operations
@@ -19,8 +19,8 @@ related:
 **Spec**: `.lore/specs/daemon-application-boundary.md`
 **Staging**: `.lore/brainstorm/daemon-migration-stages.md` (Stage 3 section)
 **API conventions**: `.lore/research/daemon-rest-api.md`
-**Stage 1 plan**: `.lore/plans/daemon-skeleton-shared-package.md`
-**Stage 2 plan**: `.lore/plans/daemon-vault-foundation.md`
+**Stage 1 plan**: `.lore/_archive/daemon-skeleton-shared-package.md`
+**Stage 2 plan**: `.lore/_archive/daemon-vault-foundation.md`
 
 Requirements addressed:
 - REQ-DAB-1: Daemon is the authority boundary → All steps (domain modules move to daemon)

@@ -1,11 +1,11 @@
 ---
-title: Implementation notes: CSS Modules migration
+title: "Implementation notes: CSS Modules migration"
 date: 2026-02-14
 status: complete
 tags: [implementation, css, css-modules, refactor, aborted]
-source: .lore/plans/css-modules-migration.md
+source: .lore/_archive/css-modules-migration.md
 modules: [components, styles]
-related: [.lore/specs/css-modules-migration.md, .lore/brainstorm/css-modules-migration.md, .lore/retros/css-modules-migration-failure.md]
+related: [.lore/_archive/css-modules-migration-spec.md, .lore/brainstorm/css-modules-migration.md, .lore/retros/css-modules-migration-failure.md]
 ---
 
 > **Note**: Implementation was aborted on 2026-02-14 after multiple failed attempts. Changes were reverted. See `.lore/retros/css-modules-migration-failure.md` for complete analysis.

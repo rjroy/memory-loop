@@ -4,7 +4,7 @@ date: 2026-01-31
 status: complete
 tags: [vi-mode, planning, scope-management, llm-limitations]
 modules: [use-vi-mode]
-related: [.lore/retros/vi-mode-pair-writing.md, .lore/plans/vi-mode-pair-writing.md]
+related: [.lore/retros/vi-mode-pair-writing.md, .lore/_archive/vi-mode-pair-writing.md]
 ---
 
 # Retro: Vi Mode Word Motions (#435)
@@ -46,5 +46,5 @@ Extended vi mode with word motions (`w`, `b`), operator+motion combinations (`dw
 
 - Issue: #435
 - PR: #438
-- Plan: `.lore/plans/vi-mode-word-motions.md`
+- Plan: `.lore/_archive/vi-mode-word-motions.md`
 - Prior retro: `.lore/retros/vi-mode-pair-writing.md`

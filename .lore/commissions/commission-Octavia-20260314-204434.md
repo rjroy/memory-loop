@@ -10,7 +10,7 @@ prompt: "Create a detailed implementation plan for Stage 7 of the daemon migrati
 dependencies:
   - commission-Octavia-20260314-204424
 linked_artifacts:
-  - .lore/plans/daemon-cli-client.md
+  - .lore/_archive/daemon-cli-client.md
 
 activity_timeline:
   - timestamp: 2026-03-15T03:44:34.998Z
@@ -47,7 +47,7 @@ activity_timeline:
     reason: "Plan written, reviewed by plan-reviewer agent, and refined based on reviewer feedback. Three priority improvements applied: (1) Added REQ-DAB-14 and REQ-DAB-25 to requirement mapping with explicit deferral/handling notes, (2) Split Step 5 into 5a (stateless commands) and 5b (streaming commands) for clearer review checkpoints, (3) Specified daemonSSE return type as AsyncIterable of parsed events in both Step 2 and Step 5b to prevent cross-step ambiguity. Also fixed incorrect pipe example in D6 and noted mcp config as DX convenience."
   - timestamp: 2026-03-15T05:13:50.368Z
     event: result_submitted
-    reason: "Created implementation plan for Stage 7: CLI Client at `.lore/plans/daemon-cli-client.md`.\n\nThe plan covers 19 CLI commands mapped to daemon endpoints across Stages 1-5, organized in 11 implementation steps (including the 5a/5b split). Key design decisions: no external CLI framework (D1), JSON-default output with --human flag (D2), progressive discovery through daemon /help endpoints (D3), structured command registry as canonical metadata source (D4), MCP tool definition projection from registry (D5), SSE streaming for chat commands (D6), and fuzzy vault name resolution (D7).\n\nRequirements addressed: REQ-DAB-7 through REQ-DAB-15, with REQ-DAB-14 (MCP server) explicitly deferred to [STUB: mcp-tool-projection] and REQ-DAB-25 (session concurrency) handled via 409 Conflict error display.\n\nFresh-eyes review by plan-reviewer agent identified three priority improvements, all applied: requirement mapping completeness (REQ-DAB-14/25), step granularity (5a/5b split for streaming complexity), and cross-step interface specification (daemonSSE return type)."
+    reason: "Created implementation plan for Stage 7: CLI Client at `.lore/_archive/daemon-cli-client.md`.\n\nThe plan covers 19 CLI commands mapped to daemon endpoints across Stages 1-5, organized in 11 implementation steps (including the 5a/5b split). Key design decisions: no external CLI framework (D1), JSON-default output with --human flag (D2), progressive discovery through daemon /help endpoints (D3), structured command registry as canonical metadata source (D4), MCP tool definition projection from registry (D5), SSE streaming for chat commands (D6), and fuzzy vault name resolution (D7).\n\nRequirements addressed: REQ-DAB-7 through REQ-DAB-15, with REQ-DAB-14 (MCP server) explicitly deferred to [STUB: mcp-tool-projection] and REQ-DAB-25 (session concurrency) handled via 409 Conflict error display.\n\nFresh-eyes review by plan-reviewer agent identified three priority improvements, all applied: requirement mapping completeness (REQ-DAB-14/25), step granularity (5a/5b split for streaming complexity), and cross-step interface specification (daemonSSE return type)."
   - timestamp: 2026-03-15T05:13:55.215Z
     event: status_completed
     reason: "Execution completed"
@@ -56,7 +56,7 @@ activity_timeline:
 current_progress: "Plan written, reviewed by plan-reviewer agent, and refined based on reviewer feedback. Three priority improvements applied: (1) Added REQ-DAB-14 and REQ-DAB-25 to requirement mapping with explicit deferral/handling notes, (2) Split Step 5 into 5a (stateless commands) and 5b (streaming commands) for clearer review checkpoints, (3) Specified daemonSSE return type as AsyncIterable of parsed events in both Step 2 and Step 5b to prevent cross-step ambiguity. Also fixed incorrect pipe example in D6 and noted mcp config as DX convenience."
 projectName: memory-loop
 ---
-Created implementation plan for Stage 7: CLI Client at `.lore/plans/daemon-cli-client.md`.
+Created implementation plan for Stage 7: CLI Client at `.lore/_archive/daemon-cli-client.md`.
 
 The plan covers 19 CLI commands mapped to daemon endpoints across Stages 1-5, organized in 11 implementation steps (including the 5a/5b split). Key design decisions: no external CLI framework (D1), JSON-default output with --human flag (D2), progressive discovery through daemon /help endpoints (D3), structured command registry as canonical metadata source (D4), MCP tool definition projection from registry (D5), SSE streaming for chat commands (D6), and fuzzy vault name resolution (D7).
 

@@ -9,6 +9,7 @@ related:
   - .lore/specs/workers/guild-hall-workers.md
   - .lore/specs/workers/worker-domain-plugins.md
   - .lore/research/agent-native-applications.md
+  - .lore/research/daemon-rest-api.md
 req-prefix: DAB
 ---
 

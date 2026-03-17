@@ -13,7 +13,7 @@ linked_artifacts:
 
   - .lore/brainstorm/daemon-migration-stages.md
   - .lore/retros/collapse-workspaces.md
-  - .lore/plans/collapse-workspaces.md
+  - .lore/_archive/collapse-workspaces.md
   - .lore/brainstorm/collapse-workspaces.md
   - .lore/research/daemon-rest-api.md
   - .lore/retros/content-root-and-instrumentation-fix.md
@@ -24,7 +24,7 @@ linked_artifacts:
   - package.json
   - .lore/brainstorm/daemon-migration-stages.md
   - .lore/retros/collapse-workspaces.md
-  - .lore/plans/collapse-workspaces.md
+  - .lore/_archive/collapse-workspaces.md
   - .lore/brainstorm/collapse-workspaces.md
   - .lore/research/daemon-rest-api.md
   - .lore/retros/content-root-and-instrumentation-fix.md

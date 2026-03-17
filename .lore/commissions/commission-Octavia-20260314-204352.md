@@ -10,7 +10,7 @@ prompt: "Create a detailed implementation plan for Stage 3 of the daemon migrati
 dependencies:
   - commission-Octavia-20260314-204342
 linked_artifacts:
-  - .lore/plans/daemon-stateless-file-operations.md
+  - .lore/_archive/daemon-stateless-file-operations.md
 
 activity_timeline:
   - timestamp: 2026-03-15T03:43:52.250Z
@@ -50,7 +50,7 @@ activity_timeline:
     reason: "Plan review complete. Three confirmed findings to address: (1) getTranscriptsDirectory import in extraction/transcript-reader.ts unhandled, (2) handlers/index.ts re-export of search-handlers not mentioned in Step 12, (3) vault-setup.ts imports validatePath from file-browser not covered. Applying fixes now."
   - timestamp: 2026-03-15T04:14:49.942Z
     event: result_submitted
-    reason: "Created the Stage 3 implementation plan at `.lore/plans/daemon-stateless-file-operations.md`.\n\nThe plan covers migrating ~12 stateless file operation modules into the daemon, organized into four sub-phases:\n- **Sub-Phase A**: File operations (file-browser, file-upload, reference-updater, utilities)\n- **Sub-Phase B**: Capture and meetings (note-capture, meeting-capture, meeting-store, transcript-manager)\n- **Sub-Phase C**: Tasks and daily prep (task-manager, daily-prep-manager)\n- **Sub-Phase D**: Search subsystem (search-cache, search-index, fuzzy-matcher, search-handlers dissolution)\n\n18 implementation steps, 9 decisions (D1-D9), 26 daemon endpoints, and 5 identified risks. Fresh-eyes review by plan-reviewer agent surfaced three findings, all addressed: getTranscriptsDirectory import for extraction subsystem (moved to shared package), handlers/index.ts re-export cleanup on search-handlers deletion, and vault-setup.ts validatePath coverage in transitional file-client."
+    reason: "Created the Stage 3 implementation plan at `.lore/_archive/daemon-stateless-file-operations.md`.\n\nThe plan covers migrating ~12 stateless file operation modules into the daemon, organized into four sub-phases:\n- **Sub-Phase A**: File operations (file-browser, file-upload, reference-updater, utilities)\n- **Sub-Phase B**: Capture and meetings (note-capture, meeting-capture, meeting-store, transcript-manager)\n- **Sub-Phase C**: Tasks and daily prep (task-manager, daily-prep-manager)\n- **Sub-Phase D**: Search subsystem (search-cache, search-index, fuzzy-matcher, search-handlers dissolution)\n\n18 implementation steps, 9 decisions (D1-D9), 26 daemon endpoints, and 5 identified risks. Fresh-eyes review by plan-reviewer agent surfaced three findings, all addressed: getTranscriptsDirectory import for extraction subsystem (moved to shared package), handlers/index.ts re-export cleanup on search-handlers deletion, and vault-setup.ts validatePath coverage in transitional file-client."
   - timestamp: 2026-03-15T04:14:52.552Z
     event: status_completed
     reason: "Execution completed"
@@ -59,7 +59,7 @@ activity_timeline:
 current_progress: "Plan review complete. Three confirmed findings to address: (1) getTranscriptsDirectory import in extraction/transcript-reader.ts unhandled, (2) handlers/index.ts re-export of search-handlers not mentioned in Step 12, (3) vault-setup.ts imports validatePath from file-browser not covered. Applying fixes now."
 projectName: memory-loop
 ---
-Created the Stage 3 implementation plan at `.lore/plans/daemon-stateless-file-operations.md`.
+Created the Stage 3 implementation plan at `.lore/_archive/daemon-stateless-file-operations.md`.
 
 The plan covers migrating ~12 stateless file operation modules into the daemon, organized into four sub-phases:
 - **Sub-Phase A**: File operations (file-browser, file-upload, reference-updater, utilities)

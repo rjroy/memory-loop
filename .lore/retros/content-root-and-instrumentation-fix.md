@@ -4,7 +4,7 @@ date: 2026-02-06
 status: complete
 tags: [bug, bundler, turbopack, webpack, instrumentation, search, content-root]
 modules: [search-routes, instrumentation, scheduler-bootstrap]
-related: [.lore/plans/content-root-search-fix.md, .lore/notes/content-root-search-fix.md]
+related: [.lore/_archive/content-root-search-fix.md, .lore/notes/content-root-search-fix.md]
 ---
 
 # Retro: contentRoot search fix + instrumentation repair
@@ -34,7 +34,7 @@ Two fixes shipped in one PR. The planned work (issue #449, three one-word edits 
 
 ## Artifacts
 
-- Plan: `.lore/plans/content-root-search-fix.md`
+- Plan: `.lore/_archive/content-root-search-fix.md`
 - Notes: `.lore/notes/content-root-search-fix.md`
 - PR: [#465](https://github.com/rjroy/memory-loop/pull/465)
 - Issue: [#449](https://github.com/rjroy/memory-loop/issues/449)

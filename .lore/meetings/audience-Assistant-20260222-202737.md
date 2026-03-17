@@ -32,7 +32,7 @@ notes_summary: |
   **Artifacts Referenced**
   
   - `.lore/specs/image-webp-conversion.md` — status updated from draft to implemented
-  - `.lore/plans/image-webp-conversion.md` — status updated from draft to executed
+  - `.lore/_archive/image-webp-conversion.md` — status updated from draft to executed
   - `.lore/specs/server-driven-chat.md` — approved spec, reviewed for context
   - `.lore/brainstorm/css-modules-migration.md` — open brainstorm, reviewed
   - `.lore/brainstorm/agentic-data-source-pattern.md` — open brainstorm, reviewed

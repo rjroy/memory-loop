@@ -4,13 +4,13 @@ date: 2026-01-30
 status: executed
 tags: [vi-mode, pair-writing, word-motions, operators]
 modules: [use-vi-mode]
-related: [.lore/retros/vi-mode-word-motions.md, .lore/plans/vi-mode-pair-writing.md]
+related: [.lore/retros/vi-mode-word-motions.md, .lore/_archive/vi-mode-pair-writing.md]
 ---
 
 # Plan: Vi Mode Word Motions and Operators
 
 **Issue:** #435 - high impact additions for vi mode
-**Related:** `.lore/plans/vi-mode-pair-writing.md`, `.lore/retros/vi-mode-pair-writing.md`
+**Related:** `.lore/_archive/vi-mode-pair-writing.md`, `.lore/retros/vi-mode-pair-writing.md`
 
 ## Context
 

@@ -5,6 +5,7 @@ status: complete
 reviewer: Thorne
 spec: .lore/specs/ephemeral-sdk-sessions.md
 plan: .lore/plans/ephemeral-sdk-sessions.md
+tags: [review, ephemeral-sessions, spec-validation, session]
 ---
 
 # Ephemeral SDK Sessions: Spec Validation Review

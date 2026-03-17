@@ -8,7 +8,7 @@ related:
   - .lore/specs/daemon-application-boundary.md
   - .lore/brainstorm/daemon-migration-stages.md
   - .lore/research/daemon-rest-api.md
-  - .lore/plans/daemon-skeleton-shared-package.md
+  - .lore/_archive/daemon-skeleton-shared-package.md
 ---
 
 # Plan: Stage 2 - Daemon Vault Foundation
@@ -18,7 +18,7 @@ related:
 **Spec**: `.lore/specs/daemon-application-boundary.md`
 **Staging**: `.lore/brainstorm/daemon-migration-stages.md` (Stage 2 section)
 **API conventions**: `.lore/research/daemon-rest-api.md`
-**Stage 1 plan**: `.lore/plans/daemon-skeleton-shared-package.md`
+**Stage 1 plan**: `.lore/_archive/daemon-skeleton-shared-package.md`
 
 Requirements addressed:
 - REQ-DAB-1: Daemon is the authority boundary for vault operations → Steps 3, 5

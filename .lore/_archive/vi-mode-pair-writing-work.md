@@ -4,13 +4,13 @@ date: 2026-01-29
 status: complete
 tags: [vi-mode, pair-writing, task-tracking, implementation]
 modules: [pair-writing-editor, use-vi-mode]
-related: [.lore/specs/vi-mode-pair-writing.md, .lore/plans/vi-mode-pair-writing.md]
+related: [.lore/specs/vi-mode-pair-writing.md, .lore/_archive/vi-mode-pair-writing.md]
 ---
 
 # Work Breakdown: Vi Mode for Pair Writing
 
 Spec: `.lore/specs/vi-mode-pair-writing.md`
-Plan: `.lore/plans/vi-mode-pair-writing.md`
+Plan: `.lore/_archive/vi-mode-pair-writing.md`
 
 ## Chunks
 

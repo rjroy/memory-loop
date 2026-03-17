@@ -10,7 +10,7 @@ prompt: "Create a detailed implementation plan for Stage 6 of the daemon migrati
 dependencies:
   - commission-Octavia-20260314-204413
 linked_artifacts:
-  - .lore/plans/daemon-web-app-conversion.md
+  - .lore/_archive/daemon-web-app-conversion.md
 
 activity_timeline:
   - timestamp: 2026-03-15T03:44:24.739Z
@@ -47,7 +47,7 @@ activity_timeline:
     reason: "Drafting the Stage 6 plan document. All context gathered: 41 routes inventoried, all 5 previous stage plans analyzed. Key finding: most routes were already converted to proxies in Stages 3-5, making Stage 6 primarily a cleanup/verification/deletion stage."
   - timestamp: 2026-03-15T05:02:36.013Z
     event: result_submitted
-    reason: "Created `.lore/plans/daemon-web-app-conversion.md` -- the Stage 6 implementation plan for converting Next.js from domain-logic host to pure UI proxy layer.\n\nKey finding: Stages 3-5 already converted all 40 of 41 API routes to daemon proxies. Stage 6 is therefore a cleanup/verification/deletion stage, not a bulk conversion. The plan has 10 steps: audit proxy routes for completeness, fix any stragglers, promote transitional client facades to a permanent `lib/daemon/` layer, delete ~30 domain modules from `nextjs/lib/`, update schema imports, clean up instrumentation.ts, convert tests to verify proxy behavior, integration smoke test, build verification, and spec validation.\n\nThe plan includes a complete inventory table mapping all 41 routes to their daemon endpoints with stage attribution, an explicit \"modules to keep\" vs \"modules to delete\" classification, and 7 acceptance criteria.\n\nFresh-eyes review by plan-reviewer agent surfaced 3 critical findings, all addressed: Step 3 title corrected from \"Delete\" to \"Promote\", module filenames verified against disk (daily-prep.ts -> daily-prep-manager.ts, goal-tracker.ts removed, image-converter.ts path corrected), and lib/utils/file-types.ts added to the keep list (used by 6 React components)."
+    reason: "Created `.lore/_archive/daemon-web-app-conversion.md` -- the Stage 6 implementation plan for converting Next.js from domain-logic host to pure UI proxy layer.\n\nKey finding: Stages 3-5 already converted all 40 of 41 API routes to daemon proxies. Stage 6 is therefore a cleanup/verification/deletion stage, not a bulk conversion. The plan has 10 steps: audit proxy routes for completeness, fix any stragglers, promote transitional client facades to a permanent `lib/daemon/` layer, delete ~30 domain modules from `nextjs/lib/`, update schema imports, clean up instrumentation.ts, convert tests to verify proxy behavior, integration smoke test, build verification, and spec validation.\n\nThe plan includes a complete inventory table mapping all 41 routes to their daemon endpoints with stage attribution, an explicit \"modules to keep\" vs \"modules to delete\" classification, and 7 acceptance criteria.\n\nFresh-eyes review by plan-reviewer agent surfaced 3 critical findings, all addressed: Step 3 title corrected from \"Delete\" to \"Promote\", module filenames verified against disk (daily-prep.ts -> daily-prep-manager.ts, goal-tracker.ts removed, image-converter.ts path corrected), and lib/utils/file-types.ts added to the keep list (used by 6 React components)."
   - timestamp: 2026-03-15T05:02:39.521Z
     event: status_completed
     reason: "Execution completed"
@@ -56,7 +56,7 @@ activity_timeline:
 current_progress: "Drafting the Stage 6 plan document. All context gathered: 41 routes inventoried, all 5 previous stage plans analyzed. Key finding: most routes were already converted to proxies in Stages 3-5, making Stage 6 primarily a cleanup/verification/deletion stage."
 projectName: memory-loop
 ---
-Created `.lore/plans/daemon-web-app-conversion.md` -- the Stage 6 implementation plan for converting Next.js from domain-logic host to pure UI proxy layer.
+Created `.lore/_archive/daemon-web-app-conversion.md` -- the Stage 6 implementation plan for converting Next.js from domain-logic host to pure UI proxy layer.
 
 Key finding: Stages 3-5 already converted all 40 of 41 API routes to daemon proxies. Stage 6 is therefore a cleanup/verification/deletion stage, not a bulk conversion. The plan has 10 steps: audit proxy routes for completeness, fix any stragglers, promote transitional client facades to a permanent `lib/daemon/` layer, delete ~30 domain modules from `nextjs/lib/`, update schema imports, clean up instrumentation.ts, convert tests to verify proxy behavior, integration smoke test, build verification, and spec validation.
 

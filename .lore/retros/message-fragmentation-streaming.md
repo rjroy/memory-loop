@@ -4,7 +4,7 @@ date: 2026-02-15
 status: complete
 tags: [bug, react, race-condition, streaming, reducer, useRef]
 modules: [session-context, session-reducer]
-related: [.lore/plans/message-fragmentation-streaming.md]
+related: [.lore/_archive/message-fragmentation-streaming.md]
 ---
 
 # Retro: Message Fragmentation During Streaming

@@ -1,7 +1,7 @@
 ---
 title: Ephemeral SDK sessions
 date: 2026-03-15
-status: approved
+status: implemented
 tags: [sdk, agent-sdk, session, streaming, architecture, subprocess]
 modules: [session-manager, active-session-controller, session-streamer, sdk-provider]
 related:

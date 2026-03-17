@@ -319,9 +319,7 @@ async function consumeQueryEvents(
 
   for await (const event of events) {
     // Capture any result content
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- SDK AsyncGenerator types use .mjs specifiers that eslint can't resolve
     if (event.type === "result" && "result" in event) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- same SDK type resolution issue
       lastContent = String(event.result);
     }
   }

@@ -8,6 +8,7 @@
 import { describe, test, expect } from "bun:test";
 import { createStreamTranslator, isSessionExpiryError } from "../event-translator";
 import type { SdkRunnerEvent } from "../types";
+import { SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
 
 // Helper to create typed SDK messages without importing SDK types directly.
 // The translator casts internally, so we only need the shape it checks.
@@ -16,7 +17,7 @@ function systemInit(sessionId: string) {
     type: "system" as const,
     subtype: "init",
     session_id: sessionId,
-  };
+  } as SDKSystemMessage;
 }
 
 function compactBoundary(preTokens: number, trigger: string) {

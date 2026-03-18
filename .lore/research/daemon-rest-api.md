@@ -1,7 +1,7 @@
 ---
 title: "Guild Hall Daemon REST API (reference design, not Memory Loop)"
 date: 2026-03-13
-status: archive
+status: archived
 tags: [architecture, daemon, rest-api, cli, discovery, skills, guild-hall, external-reference]
 source-project: guild-hall
 modules: [daemon, cli, web]

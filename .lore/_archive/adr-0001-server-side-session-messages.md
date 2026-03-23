@@ -1,7 +1,7 @@
 ---
 title: "ADR 0001: Server-Side Session Message Storage"
 date: 2025-12-25
-status: accepted
+status: archived
 tags: [adr, architecture, session, storage]
 modules: [sessions]
 ---

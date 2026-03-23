@@ -1,5 +1,5 @@
 ---
-title: "Audience with Guild Master"
+title: "Dispatch Celeste for Vision Document"
 date: 2026-03-23
 status: open
 tags: [meeting]
@@ -12,4 +12,7 @@ meeting_log:
   - timestamp: 2026-03-23T20:42:16.684Z
     event: opened
     reason: "User started audience"
+  - timestamp: 2026-03-23T20:43:10.666Z
+    event: renamed
+    reason: "Renamed to: Dispatch Celeste for Vision Document"
 ---

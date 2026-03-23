@@ -9,8 +9,6 @@ tags: [vision, architecture, gctr, daemon, cli, agents]
 
 # Vision: Memory Loop
 
-## What Memory Loop Is
-
 Memory Loop is a mobile-friendly web interface for interacting with Obsidian vaults through Claude AI. It runs as a local service on your machine and gives you a touch-optimized way to capture notes, have AI conversations with full vault context, and browse your knowledge base from any device.
 
 The interface is organized around the GCTR framework: Ground (orient yourself), Capture (record fleeting thoughts), Think (process ideas with AI), Recall (find and review what you've stored). These names describe what you do, not what the app implements. They teach a practice of knowledge work while you use the tool.

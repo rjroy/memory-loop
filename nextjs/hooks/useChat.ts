@@ -16,7 +16,8 @@
  * - Stream responses via SSE (separate GET endpoint)
  * - Resolve tool permissions and questions mid-stream
  * - Abort in-flight requests
- * - Reconnect to active stream on mount (via snapshot)
+ * - Auto-reconnect on SSE drop with exponential backoff
+ * - Reconnect to active/completed sessions on mount
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -140,6 +141,10 @@ export function useChat(
 
   // Refs for cleanup and stable callback references
   const abortControllerRef = useRef<AbortController | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
+  const userAbortedRef = useRef(false);
+  const mountReconnectedRef = useRef(false);
   const onEventRef = useRef(onEvent);
   const onStreamStartRef = useRef(onStreamStart);
   const onStreamEndRef = useRef(onStreamEnd);
@@ -216,12 +221,53 @@ export function useChat(
     onEventRef.current?.(event as unknown as ServerMessage);
   }
 
+  /** Max reconnect attempts before giving up */
+  const MAX_RETRIES = 5;
+
+  /**
+   * Cancels any pending reconnect timer.
+   */
+  function cancelReconnect(): void {
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }
+
+  /**
+   * Schedules a reconnect attempt with exponential backoff.
+   * Backoff: 1s, 2s, 4s, 8s, 16s (capped at MAX_RETRIES).
+   */
+  function scheduleReconnect(): void {
+    if (userAbortedRef.current) return;
+    if (retryCountRef.current >= MAX_RETRIES) {
+      log.warn(`Max reconnect attempts (${MAX_RETRIES}) reached, giving up`);
+      setStreamingState("error");
+      setLastError("Connection lost. Refresh to retry.");
+      onStreamEndRef.current?.();
+      return;
+    }
+
+    const delay = Math.min(1000 * Math.pow(2, retryCountRef.current), 16_000);
+    retryCountRef.current += 1;
+    log.info(`Reconnecting in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      connectToStream();
+    }, delay);
+  }
+
   /**
    * Connects to GET /api/chat/stream and reads SSE events.
    *
    * The stream starts with a snapshot event containing current state,
    * then sends live events while processing continues. Callable from
-   * sendMessage (after the POST) or from a reconnection effect.
+   * sendMessage (after the POST), from a reconnection timer, or from
+   * a mount effect to recover in-progress/completed sessions.
+   *
+   * On unexpected disconnection, automatically schedules a reconnect.
+   * The daemon's snapshot mechanism restores full state on each connect.
    *
    * This is fire-and-forget: it launches an async reader internally.
    * The AbortController in abortControllerRef controls its lifecycle.
@@ -239,6 +285,10 @@ export function useChat(
 
     // Fire-and-forget async reader
     void (async () => {
+      // Track whether this connection received any events (to distinguish
+      // "connected then dropped" from "couldn't connect at all")
+      let receivedSnapshot = false;
+
       try {
         const response = await fetch(`${apiBase}/chat/stream`, {
           signal: controller.signal,
@@ -266,6 +316,7 @@ export function useChat(
             if (!part.trim()) continue;
             const events = parseSSE(part);
             for (const event of events) {
+              if (event.type === "snapshot") receivedSnapshot = true;
               handleStreamEvent(event);
             }
           }
@@ -275,10 +326,13 @@ export function useChat(
         if (buffer.trim()) {
           const events = parseSSE(buffer);
           for (const event of events) {
+            if (event.type === "snapshot") receivedSnapshot = true;
             handleStreamEvent(event);
           }
         }
 
+        // Clean exit (stream closed normally after terminal event)
+        retryCountRef.current = 0;
         setStreamingState("idle");
         onStreamEndRef.current?.();
       } catch (err) {
@@ -287,11 +341,20 @@ export function useChat(
           onStreamEndRef.current?.();
           return;
         }
+
+        // Connection dropped unexpectedly. If we received a snapshot,
+        // the daemon is still processing. Reconnect to pick up where we left off.
         const error = err instanceof Error ? err.message : "Stream connection failed";
-        setLastError(error);
-        setStreamingState("error");
-        onErrorRef.current?.(error);
-        onStreamEndRef.current?.();
+        log.warn(`Stream connection lost: ${error} (hadSnapshot=${receivedSnapshot})`);
+
+        if (!userAbortedRef.current) {
+          scheduleReconnect();
+        } else {
+          setLastError(error);
+          setStreamingState("error");
+          onErrorRef.current?.(error);
+          onStreamEndRef.current?.();
+        }
       } finally {
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
@@ -316,6 +379,10 @@ export function useChat(
 
       setStreamingState("starting");
       setLastError(null);
+      retryCountRef.current = 0;
+      userAbortedRef.current = false;
+      mountReconnectedRef.current = true; // suppress mount-reconnect after sendMessage
+      cancelReconnect();
       onStreamStartRef.current?.();
 
       const currentSessionId = sessionIdRef.current;
@@ -373,6 +440,9 @@ export function useChat(
    * emit terminal events, then closes the SSE connection as cleanup.
    */
   const abort = useCallback(async (): Promise<void> => {
+    userAbortedRef.current = true;
+    cancelReconnect();
+
     // Notify server to abort (best-effort, before closing stream)
     const currentSessionId = sessionIdRef.current;
     if (currentSessionId) {
@@ -467,6 +537,7 @@ export function useChat(
 
     setLastError(null);
     setStreamingState("idle");
+    cancelReconnect();
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -474,9 +545,24 @@ export function useChat(
     }
   }, [vault?.id]);
 
+  // Reconnect on mount when there's an existing session.
+  // Probes the stream endpoint to recover in-progress or just-completed responses.
+  // The snapshot gives us full state regardless of whether the daemon is still
+  // processing or finished while we were away.
+  useEffect(() => {
+    if (mountReconnectedRef.current) return;
+    if (!sessionId || !vault) return;
+    if (abortControllerRef.current) return; // already connected
+
+    mountReconnectedRef.current = true;
+    log.info(`Mount reconnect: probing stream for session ${sessionId}`);
+    connectToStream();
+  }, [sessionId, vault]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      cancelReconnect();
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }

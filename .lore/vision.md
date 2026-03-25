@@ -1,7 +1,7 @@
 ---
 title: Memory Loop Vision
 date: 2026-03-23
-status: draft
+status: approved
 review_trigger: quarterly or after major architectural milestone
 last_reviewed: 2026-03-23
 tags: [vision, architecture, gctr, daemon, cli, agents]

@@ -1,7 +1,7 @@
 ---
 title: Session viewport separation
 date: 2026-02-03
-status: draft
+status: implemented 
 tags: [architecture, websocket, session-management, separation-of-concerns, refactor]
 modules: [websocket-handler, session-manager, active-session-controller]
 related: [.lore/_archive/session-viewport-separation-brainstorm.md]

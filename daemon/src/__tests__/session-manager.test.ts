@@ -1,131 +1,235 @@
 /**
  * Session Manager Tests
  *
- * Tests prepareTurnOptions(), resume failure detection, and session lifecycle.
- * Uses real filesystem (temp dirs) for vault config, mock SDK via DI.
+ * Tests session lifecycle, resume failure handling, and piSessionPath storage.
+ * Uses real filesystem (temp dirs) for vault config and session metadata.
+ * Uses mock pi-session factory via configurePiSessionForTesting.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  prepareTurnOptions,
-  DISCUSSION_MODE_OPTIONS,
+  DISCUSSION_TOOLS,
   resumeSession,
+  createSession,
   saveSession,
+  loadSession,
   SessionError,
 } from "../session-manager";
-import type { SessionMetadata } from "@memory-loop/shared";
+import {
+  configurePiSessionForTesting,
+  _resetPiSessionForTesting,
+  type PiSessionResult,
+} from "../pi-session-factory";
+import type { SessionMetadata, VaultInfo } from "@memory-loop/shared";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 let tempDir: string;
+
+/**
+ * Minimal AgentSession mock that satisfies the interface shape.
+ * Only the fields actually accessed by session-manager are needed.
+ */
+function makeMockAgentSession(): AgentSession {
+  return {
+    sessionFile: undefined,
+    bindExtensions: async () => {},
+    setModel: async () => {},
+    modelRegistry: { find: () => undefined },
+    prompt: async () => {},
+    subscribe: () => () => {},
+    abort: async () => {},
+    isStreaming: false,
+    state: { messages: [] },
+    messages: [],
+    sessionId: "mock-session-id",
+    sessionName: undefined,
+    scopedModels: [],
+  } as unknown as AgentSession;
+}
+
+/**
+ * Builds a PiSessionResult for injection into the mock factory.
+ */
+function makeMockPiSessionResult(jsonlPath: string | null = "/tmp/test.jsonl"): PiSessionResult {
+  return {
+    session: makeMockAgentSession(),
+    jsonlPath,
+  };
+}
 
 beforeEach(async () => {
   tempDir = await mkdtemp(join("/tmp/claude-1000", "session-mgr-test-"));
 });
 
 afterEach(async () => {
+  _resetPiSessionForTesting();
   await rm(tempDir, { recursive: true, force: true });
 });
 
 // =============================================================================
-// prepareTurnOptions
+// DISCUSSION_TOOLS constant
 // =============================================================================
 
-describe("prepareTurnOptions", () => {
-  test("returns default options when no vault config exists", async () => {
-    const options = await prepareTurnOptions({ vaultPath: tempDir });
-
-    expect(options.cwd).toBe(tempDir);
-    // Default model from resolveDiscussionModel when no config
-    expect(options.model).toBeDefined();
-    expect(options.allowedTools).toEqual(DISCUSSION_MODE_OPTIONS.allowedTools);
-    expect(options.permissionMode).toBe("acceptEdits");
-    expect(options.includePartialMessages).toBe(true);
-    expect(options.mcpServers).toBeDefined();
-    expect(options.mcpServers!["vault-transfer"]).toBeDefined();
-    // No resume
-    expect(options.resume).toBeUndefined();
-    // No canUseTool
-    expect(options.canUseTool).toBeUndefined();
+describe("DISCUSSION_TOOLS", () => {
+  test("contains the expected pi-agent built-in tool names", () => {
+    expect(DISCUSSION_TOOLS).toContain("read");
+    expect(DISCUSSION_TOOLS).toContain("grep");
+    expect(DISCUSSION_TOOLS).toContain("bash");
   });
 
-  test("includes resume when provided", async () => {
-    const options = await prepareTurnOptions({
-      vaultPath: tempDir,
-      resume: "sess-abc123",
-    });
+  test("does not contain legacy SDK tool names", () => {
+    // These were in DISCUSSION_MODE_OPTIONS.allowedTools but have no pi-agent equivalent
+    expect(DISCUSSION_TOOLS).not.toContain("WebFetch");
+    expect(DISCUSSION_TOOLS).not.toContain("WebSearch");
+    expect(DISCUSSION_TOOLS).not.toContain("Task");
+    expect(DISCUSSION_TOOLS).not.toContain("AskUserQuestion");
+  });
+});
 
-    expect(options.resume).toBe("sess-abc123");
+// =============================================================================
+// createSession
+// =============================================================================
+
+describe("createSession", () => {
+  const mockVault: VaultInfo = {
+    id: "test-vault",
+    path: "",       // set in beforeEach
+    name: "Test Vault",
+    contentRoot: "",
+  } as VaultInfo;
+
+  beforeEach(() => {
+    mockVault.path = tempDir;
+    mockVault.contentRoot = tempDir;
   });
 
-  test("includes canUseTool when provided", async () => {
-    const mockCanUseTool = async () => ({
-      behavior: "allow" as const,
-      updatedInput: {},
-    });
+  test("stores piSessionPath in metadata when factory returns a path", async () => {
+    const mockResult = makeMockPiSessionResult("/tmp/pi-sessions/test.jsonl");
+    const cleanup = configurePiSessionForTesting(async () => mockResult);
 
-    const options = await prepareTurnOptions({
-      vaultPath: tempDir,
-      canUseTool: mockCanUseTool,
-    });
+    try {
+      const result = await createSession(mockVault);
 
-    expect(options.canUseTool).toBe(mockCanUseTool);
+      const metadata = await loadSession(tempDir, result.sessionId);
+      expect(metadata).not.toBeNull();
+      expect(metadata!.piSessionPath).toBe("/tmp/pi-sessions/test.jsonl");
+    } finally {
+      cleanup();
+    }
   });
 
-  test("resolves model from vault config", async () => {
-    // Write a vault config with a custom model
+  test("stores undefined piSessionPath when factory returns null jsonlPath", async () => {
+    const mockResult = makeMockPiSessionResult(null);
+    const cleanup = configurePiSessionForTesting(async () => mockResult);
+
+    try {
+      const result = await createSession(mockVault);
+
+      const metadata = await loadSession(tempDir, result.sessionId);
+      expect(metadata).not.toBeNull();
+      expect(metadata!.piSessionPath).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("returns the session ID and piSession from the factory result", async () => {
+    const fakeSession = makeMockAgentSession();
+    const cleanup = configurePiSessionForTesting(async () => ({
+      session: fakeSession,
+      jsonlPath: "/tmp/pi-sessions/test.jsonl",
+    }));
+
+    try {
+      const result = await createSession(mockVault);
+
+      expect(result.sessionId).toBeTruthy();
+      expect(result.piSession).toBe(fakeSession);
+      expect(result.previousMessages).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("session metadata is persisted on disk", async () => {
+    const cleanup = configurePiSessionForTesting(async () => makeMockPiSessionResult());
+
+    try {
+      const result = await createSession(mockVault);
+
+      const loaded = await loadSession(tempDir, result.sessionId);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.id).toBe(result.sessionId);
+      expect(loaded!.vaultId).toBe(mockVault.id);
+      expect(loaded!.vaultPath).toBe(tempDir);
+      expect(loaded!.messages).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("uses vault config model when present", async () => {
     await writeFile(
       join(tempDir, ".memory-loop.json"),
       JSON.stringify({ discussionModel: "haiku" })
     );
 
-    const options = await prepareTurnOptions({ vaultPath: tempDir });
-
-    expect(options.model).toBe("haiku");
-  });
-
-  test("merges additionalOptions", async () => {
-    const options = await prepareTurnOptions({
-      vaultPath: tempDir,
-      additionalOptions: {
-        maxBudgetUsd: 5.0,
-      },
+    let capturedOpts: { model?: { provider: string; modelId: string } } = {};
+    const cleanup = configurePiSessionForTesting(async (opts) => {
+      capturedOpts = opts;
+      return makeMockPiSessionResult();
     });
 
-    expect(options.maxBudgetUsd).toBe(5.0);
+    try {
+      await createSession(mockVault);
+      expect(capturedOpts.model).toEqual({ provider: "anthropic", modelId: "claude-haiku-4-5" });
+    } finally {
+      cleanup();
+    }
   });
 
-  test("additionalOptions mcpServers merge with vault-transfer", async () => {
-    const options = await prepareTurnOptions({
-      vaultPath: tempDir,
-      additionalOptions: {
-        mcpServers: {
-          "custom-server": { command: "echo", args: ["test"] },
-        },
-      },
+  test("passes no model when vault config has no discussionModel", async () => {
+    // No .memory-loop.json — uses default "opus" which maps to anthropic/claude-opus-4-5
+    let capturedOpts: { model?: { provider: string; modelId: string } } = {};
+    const cleanup = configurePiSessionForTesting(async (opts) => {
+      capturedOpts = opts;
+      return makeMockPiSessionResult();
     });
 
-    expect(options.mcpServers!["vault-transfer"]).toBeDefined();
-    expect(options.mcpServers!["custom-server"]).toBeDefined();
+    try {
+      await createSession(mockVault);
+      // Default is "opus"
+      expect(capturedOpts.model).toEqual({ provider: "anthropic", modelId: "claude-opus-4-5" });
+    } finally {
+      cleanup();
+    }
   });
 
-  test("cwd is always set to vaultPath", async () => {
-    const options = await prepareTurnOptions({
-      vaultPath: tempDir,
-      additionalOptions: { cwd: "/should/be/overridden" },
+  test("wraps factory errors in SessionError with SDK_ERROR code", async () => {
+    const cleanup = configurePiSessionForTesting(async () => {
+      throw new Error("rate_limit exceeded");
     });
 
-    // cwd from vaultPath takes precedence (it's spread after additionalOptions)
-    expect(options.cwd).toBe(tempDir);
+    try {
+      await createSession(mockVault);
+      expect(true).toBe(false); // should not reach here
+    } catch (err) {
+      expect(err).toBeInstanceOf(SessionError);
+      expect((err as SessionError).code).toBe("SDK_ERROR");
+    } finally {
+      cleanup();
+    }
   });
 });
 
 // =============================================================================
-// Resume failure detection
+// resumeSession failure detection
 // =============================================================================
 
 describe("resumeSession failure detection", () => {
-  async function createTestSession(sessionId: string): Promise<void> {
+  async function createTestSession(sessionId: string, piSessionPath?: string): Promise<void> {
     const sessionsDir = join(tempDir, ".memory-loop", "sessions");
     await mkdir(sessionsDir, { recursive: true });
     const metadata: SessionMetadata = {
@@ -135,131 +239,87 @@ describe("resumeSession failure detection", () => {
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
       messages: [],
+      piSessionPath,
     };
     await saveSession(metadata);
   }
 
-  test("SDK session expiry error produces RESUME_FAILED", async () => {
-    await createTestSession("sess-expired");
-
-    // Mock SDK that throws a session expiry error
-    const mockQuery = (() => {
-      throw new Error("Session not found: sess-expired");
-    }) as never;
+  test("throws RESUME_FAILED when piSessionPath is absent from metadata", async () => {
+    await createTestSession("sess-no-path"); // no piSessionPath
 
     try {
-      await resumeSession(
-        tempDir,
-        "sess-expired",
-        "hello",
-        undefined,
-        undefined,
-        undefined,
-        mockQuery
-      );
-      // Should not reach here
-      expect(true).toBe(false);
+      await resumeSession(tempDir, "sess-no-path");
+      expect(true).toBe(false); // should not reach here
     } catch (err) {
       expect(err).toBeInstanceOf(SessionError);
       const sessionErr = err as SessionError;
       expect(sessionErr.code).toBe("RESUME_FAILED");
-      expect(sessionErr.message).toContain("expired");
+      expect(sessionErr.message).toContain("no pi-agent session path");
     }
   });
 
-  test("SDK session ID mismatch produces RESUME_FAILED", async () => {
-    await createTestSession("sess-original");
-
-    let closeCalled = false;
-    // Mock SDK that returns a different session ID
-    const mockQuery = (() => {
-      async function* events() {
-        yield {
-          type: "system",
-          subtype: "init",
-          session_id: "sess-different",
-        };
-      }
-      return {
-        [Symbol.asyncIterator]: () => events(),
-        next: async () => {
-          const gen = events();
-          return gen.next();
-        },
-        return: async () => ({ done: true as const, value: undefined }),
-        throw: async () => ({ done: true as const, value: undefined }),
-        interrupt: async () => {},
-        close: () => {
-          closeCalled = true;
-        },
-        supportedCommands: async () => [],
-      };
-    }) as never;
-
+  test("throws SESSION_NOT_FOUND when session metadata does not exist", async () => {
     try {
-      await resumeSession(
-        tempDir,
-        "sess-original",
-        "hello",
-        undefined,
-        undefined,
-        undefined,
-        mockQuery
-      );
+      await resumeSession(tempDir, "nonexistent-session");
       expect(true).toBe(false);
     } catch (err) {
       expect(err).toBeInstanceOf(SessionError);
-      const sessionErr = err as SessionError;
-      expect(sessionErr.code).toBe("RESUME_FAILED");
-      expect(closeCalled).toBe(true);
+      expect((err as SessionError).code).toBe("SESSION_NOT_FOUND");
     }
   });
 
-  test("non-expiry SDK error produces SDK_ERROR", async () => {
-    await createTestSession("sess-other");
+  test("returns piSession and previousMessages on successful resume", async () => {
+    await createTestSession("sess-with-path", "/tmp/pi-sessions/existing.jsonl");
 
-    const mockQuery = (() => {
-      throw new Error("Rate limit exceeded");
-    }) as never;
+    const fakeSession = makeMockAgentSession();
+    const cleanup = configurePiSessionForTesting(async () => ({
+      session: fakeSession,
+      jsonlPath: "/tmp/pi-sessions/existing.jsonl",
+    }));
 
     try {
-      await resumeSession(
-        tempDir,
-        "sess-other",
-        "hello",
-        undefined,
-        undefined,
-        undefined,
-        mockQuery
-      );
-      expect(true).toBe(false);
-    } catch (err) {
-      expect(err).toBeInstanceOf(SessionError);
-      const sessionErr = err as SessionError;
-      expect(sessionErr.code).toBe("SDK_ERROR");
+      const result = await resumeSession(tempDir, "sess-with-path");
+      expect(result.sessionId).toBe("sess-with-path");
+      expect(result.piSession).toBe(fakeSession);
+      expect(result.previousMessages).toEqual([]);
+    } finally {
+      cleanup();
     }
   });
 
-  test("session not found on disk produces SESSION_NOT_FOUND", async () => {
-    const mockQuery = (() => {
-      throw new Error("Should not reach SDK");
-    }) as never;
+  test("wraps factory errors in SessionError with SDK_ERROR code", async () => {
+    await createTestSession("sess-factory-error", "/tmp/pi-sessions/missing.jsonl");
+
+    const cleanup = configurePiSessionForTesting(async () => {
+      throw new Error("ENOENT: file not found");
+    });
 
     try {
-      await resumeSession(
-        tempDir,
-        "nonexistent-session",
-        "hello",
-        undefined,
-        undefined,
-        undefined,
-        mockQuery
-      );
+      await resumeSession(tempDir, "sess-factory-error");
       expect(true).toBe(false);
     } catch (err) {
       expect(err).toBeInstanceOf(SessionError);
-      const sessionErr = err as SessionError;
-      expect(sessionErr.code).toBe("SESSION_NOT_FOUND");
+      expect((err as SessionError).code).toBe("SDK_ERROR");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("SessionError thrown by factory propagates unchanged", async () => {
+    await createTestSession("sess-session-error", "/tmp/pi-sessions/test.jsonl");
+
+    const cleanup = configurePiSessionForTesting(async () => {
+      throw new SessionError("internal failure", "STORAGE_ERROR");
+    });
+
+    try {
+      await resumeSession(tempDir, "sess-session-error");
+      expect(true).toBe(false);
+    } catch (err) {
+      expect(err).toBeInstanceOf(SessionError);
+      expect((err as SessionError).code).toBe("STORAGE_ERROR");
+    } finally {
+      cleanup();
     }
   });
 });

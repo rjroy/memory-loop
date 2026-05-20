@@ -4,7 +4,7 @@
  * Tests Jaccard similarity, tokenization, and LLM verification.
  */
 
-import { describe, it, expect, afterEach, spyOn } from "bun:test";
+import { describe, it, expect, spyOn } from "bun:test";
 import {
   tokenize,
   jaccardSimilarity,
@@ -16,67 +16,59 @@ import {
   createDedupStats,
   STOPWORDS,
   JACCARD_THRESHOLD,
+  type CreateSessionFn,
 } from "../card-dedup";
 import type { Card } from "../card-schema";
-import {
-  configureSdkForTesting,
-  _resetForTesting,
-  type QueryFunction,
-} from "../../sdk-provider";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import * as cardStorage from "../card-storage";
 
 // =============================================================================
-// Mock SDK Helpers
+// Mock Session Helpers
 // =============================================================================
 
-/**
- * Create a mock SDK query function that returns a predetermined response.
- */
-function createMockSdk(response: string): QueryFunction {
-  return (() => {
-     
-    async function* mockGenerator() {
-      yield {
-        type: "assistant",
-        message: {
-          content: [{ type: "text", text: response }],
-        },
-      };
-    }
-    return mockGenerator();
-  }) as unknown as QueryFunction;
+/** Build a minimal AgentSession mock that returns a predetermined text response. */
+function buildMockSession(response: string): AgentSession {
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: [{ type: "text", text: response }],
+      },
+    ],
+    prompt: async () => {},
+    abort: () => {},
+    subscribe: () => () => {},
+    bindExtensions: async () => {},
+    modelRegistry: { find: () => undefined },
+    setModel: async () => {},
+    sessionFile: undefined,
+  } as unknown as AgentSession;
 }
 
 /**
- * Create a mock SDK that throws an error.
+ * Create a mock session factory that returns a predetermined text response.
  */
-function createErrorMockSdk(error: Error): QueryFunction {
-  return (() => {
-    // eslint-disable-next-line require-yield
-    async function* mockGenerator(): AsyncGenerator<{ type: string }> {
-      throw error;
-    }
-    return mockGenerator();
-  }) as unknown as QueryFunction;
+function createMockSessionFn(response: string): CreateSessionFn {
+  return async () => ({ session: buildMockSession(response), jsonlPath: null });
 }
 
 /**
- * Create a mock SDK that counts calls.
+ * Create a mock session factory that throws an error.
  */
-function createCountingMockSdk(response: string, counter: { count: number }): QueryFunction {
-  return (() => {
+function createErrorSessionFn(error: Error): CreateSessionFn {
+  return async () => {
+    throw error;
+  };
+}
+
+/**
+ * Create a mock session factory that counts calls and returns a response.
+ */
+function createCountingSessionFn(response: string, counter: { count: number }): CreateSessionFn {
+  return async () => {
     counter.count++;
-     
-    async function* mockGenerator() {
-      yield {
-        type: "assistant",
-        message: {
-          content: [{ type: "text", text: response }],
-        },
-      };
-    }
-    return mockGenerator();
-  }) as unknown as QueryFunction;
+    return { session: buildMockSession(response), jsonlPath: null };
+  };
 }
 
 // =============================================================================
@@ -106,9 +98,7 @@ function createMockCard(
   };
 }
 
-afterEach(() => {
-  _resetForTesting();
-});
+// No global SDK state to reset — session injection is per-call now.
 
 // =============================================================================
 // Tokenize Tests
@@ -346,113 +336,96 @@ describe("findDuplicateCandidates", () => {
 
 describe("verifyDuplicateWithLLM", () => {
   it("returns true when LLM says YES", async () => {
-    configureSdkForTesting(createMockSdk("YES"));
-
     const candidate = {
       existingCard: createMockCard("1", "What is X?"),
       similarity: 0.8,
     };
 
-    const result = await verifyDuplicateWithLLM("What is X?", candidate);
+    const result = await verifyDuplicateWithLLM("What is X?", candidate, createMockSessionFn("YES"));
     expect(result).toBe(true);
   });
 
   it("returns false when LLM says NO", async () => {
-    configureSdkForTesting(createMockSdk("NO"));
-
     const candidate = {
       existingCard: createMockCard("1", "What is X?"),
       similarity: 0.8,
     };
 
-    const result = await verifyDuplicateWithLLM("What is Y?", candidate);
+    const result = await verifyDuplicateWithLLM("What is Y?", candidate, createMockSessionFn("NO"));
     expect(result).toBe(false);
   });
 
   it("handles YES with extra text", async () => {
-    configureSdkForTesting(createMockSdk("YES, these questions test the same knowledge."));
-
     const candidate = {
       existingCard: createMockCard("1", "What is X?"),
       similarity: 0.8,
     };
 
-    const result = await verifyDuplicateWithLLM("What is X?", candidate);
+    const result = await verifyDuplicateWithLLM("What is X?", candidate, createMockSessionFn("YES, these questions test the same knowledge."));
     expect(result).toBe(true);
   });
 
   it("handles lowercase yes", async () => {
-    configureSdkForTesting(createMockSdk("yes"));
-
     const candidate = {
       existingCard: createMockCard("1", "What is X?"),
       similarity: 0.8,
     };
 
-    const result = await verifyDuplicateWithLLM("What is X?", candidate);
+    const result = await verifyDuplicateWithLLM("What is X?", candidate, createMockSessionFn("yes"));
     expect(result).toBe(true);
   });
 
   it("fails open on error (returns false)", async () => {
-    configureSdkForTesting(createErrorMockSdk(new Error("Rate limit exceeded")));
-
     const candidate = {
       existingCard: createMockCard("1", "What is X?"),
       similarity: 0.8,
     };
 
-    const result = await verifyDuplicateWithLLM("What is X?", candidate);
+    const result = await verifyDuplicateWithLLM("What is X?", candidate, createErrorSessionFn(new Error("Rate limit exceeded")));
     expect(result).toBe(false);
   });
 
   it("fails open on network error", async () => {
-    configureSdkForTesting(createErrorMockSdk(new Error("ECONNREFUSED")));
-
     const candidate = {
       existingCard: createMockCard("1", "What is X?"),
       similarity: 0.8,
     };
 
-    const result = await verifyDuplicateWithLLM("What is X?", candidate);
+    const result = await verifyDuplicateWithLLM("What is X?", candidate, createErrorSessionFn(new Error("ECONNREFUSED")));
     expect(result).toBe(false);
   });
 });
 
 describe("verifyDuplicatesWithLLM", () => {
   it("returns empty array when no candidates", async () => {
-    // No SDK needed for empty candidates
+    // No session needed for empty candidates
     const result = await verifyDuplicatesWithLLM("What is X?", []);
     expect(result.duplicates).toHaveLength(0);
   });
 
   it("returns first confirmed duplicate", async () => {
-    configureSdkForTesting(createMockSdk("YES"));
-
     const candidates = [
       { existingCard: createMockCard("1", "Question 1"), similarity: 0.9 },
       { existingCard: createMockCard("2", "Question 2"), similarity: 0.8 },
     ];
 
-    const result = await verifyDuplicatesWithLLM("What is X?", candidates);
+    const result = await verifyDuplicatesWithLLM("What is X?", candidates, createMockSessionFn("YES"));
     expect(result.duplicates).toHaveLength(1);
     expect(result.duplicates[0].metadata.id).toBe("1");
   });
 
   it("returns empty array when all candidates rejected", async () => {
-    configureSdkForTesting(createMockSdk("NO"));
-
     const candidates = [
       { existingCard: createMockCard("1", "Question 1"), similarity: 0.9 },
       { existingCard: createMockCard("2", "Question 2"), similarity: 0.8 },
     ];
 
-    const result = await verifyDuplicatesWithLLM("What is X?", candidates);
+    const result = await verifyDuplicatesWithLLM("What is X?", candidates, createMockSessionFn("NO"));
     expect(result.duplicates).toHaveLength(0);
   });
 
   it("stops checking after first confirmed duplicate", async () => {
     const counter = { count: 0 };
-    configureSdkForTesting(createCountingMockSdk("YES", counter));
 
     const candidates = [
       { existingCard: createMockCard("1", "Question 1"), similarity: 0.9 },
@@ -460,7 +433,7 @@ describe("verifyDuplicatesWithLLM", () => {
       { existingCard: createMockCard("3", "Question 3"), similarity: 0.7 },
     ];
 
-    await verifyDuplicatesWithLLM("What is X?", candidates);
+    await verifyDuplicatesWithLLM("What is X?", candidates, createCountingSessionFn("YES", counter));
     expect(counter.count).toBe(1); // Should stop after first YES
   });
 });
@@ -508,7 +481,6 @@ describe("checkAndHandleDuplicate", () => {
   });
 
   it("archives duplicate and returns isDuplicate false (new card replaces old)", async () => {
-    configureSdkForTesting(createMockSdk("YES"));
     const mockArchiveCard = spyOn(cardStorage, "archiveCard").mockResolvedValue(true);
 
     const existingCards = [createMockCard("old-id", "What is the Q4 deadline?")];
@@ -519,7 +491,8 @@ describe("checkAndHandleDuplicate", () => {
       "What is the deadline for Q4?",
       "December 31",
       context,
-      stats
+      stats,
+      createMockSessionFn("YES")
     );
 
     // New card should still be created (replaces the old one)
@@ -535,7 +508,6 @@ describe("checkAndHandleDuplicate", () => {
   });
 
   it("handles archive failure gracefully", async () => {
-    configureSdkForTesting(createMockSdk("YES"));
     const mockArchiveCard = spyOn(cardStorage, "archiveCard").mockResolvedValue(false);
 
     const existingCards = [createMockCard("old-id", "What is the Q4 deadline?")];
@@ -546,7 +518,8 @@ describe("checkAndHandleDuplicate", () => {
       "What is the deadline for Q4?",
       "December 31",
       context,
-      stats
+      stats,
+      createMockSessionFn("YES")
     );
 
     expect(result.isDuplicate).toBe(false);
@@ -557,7 +530,6 @@ describe("checkAndHandleDuplicate", () => {
   });
 
   it("checks against newCards for self-deduplication", async () => {
-    configureSdkForTesting(createMockSdk("YES"));
     const mockArchiveCard = spyOn(cardStorage, "archiveCard").mockResolvedValue(true);
 
     // Simulate a card created earlier in the same pass
@@ -570,7 +542,8 @@ describe("checkAndHandleDuplicate", () => {
       "What is the deadline for Q4?",
       "December 31",
       context,
-      stats
+      stats,
+      createMockSessionFn("YES")
     );
 
     expect(result.isDuplicate).toBe(false);
@@ -584,8 +557,6 @@ describe("checkAndHandleDuplicate", () => {
   });
 
   it("fails open when LLM verification fails", async () => {
-    configureSdkForTesting(createErrorMockSdk(new Error("API error")));
-
     const existingCards = [createMockCard("old-id", "What is the Q4 deadline?")];
     const context = createDedupContext(existingCards, mockVaultPathInfo);
     const stats = createDedupStats();
@@ -594,7 +565,8 @@ describe("checkAndHandleDuplicate", () => {
       "What is the deadline for Q4?",
       "December 31",
       context,
-      stats
+      stats,
+      createErrorSessionFn(new Error("API error"))
     );
 
     // Should allow the new card (fail open)

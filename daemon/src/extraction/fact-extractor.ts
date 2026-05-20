@@ -1,15 +1,15 @@
 /**
  * Fact Extractor
  *
- * Calls Claude Agent SDK to analyze transcripts and extract durable facts.
- * Uses Haiku model for cost efficiency with a focused extraction prompt.
+ * Uses a pi-agent inMemory session to analyze transcripts and extract durable
+ * facts. The session is ephemeral — it is not persisted to disk.
  *
  * Spec Requirements:
  * - REQ-F-6: Customizable extraction prompt
  * - REQ-F-7: LLM-based fact extraction
  *
  * Plan Reference:
- * - TD-2: Single query() call using Haiku, tools enabled
+ * - TD-2: Extraction via inMemory pi-agent session
  * - TD-6: Default prompt in codebase, user override in ~/.config
  * - TD-12: Sandbox pattern (caller handles copy to/from VAULTS_DIR)
  */
@@ -18,11 +18,17 @@ import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { createLogger } from "@memory-loop/shared";
 import { fileExists } from "@memory-loop/shared/server";
 import type { DiscoveredTranscript } from "./transcript-reader";
-import { getSdkQuery, type QueryFunction } from "../sdk-provider";
+import {
+  createPiSession,
+  extractFinalText,
+  SessionManager,
+  type CreateSessionFn,
+} from "../pi-session-factory";
+
+export type { CreateSessionFn };
 
 const log = createLogger("fact-extractor");
 
@@ -52,30 +58,22 @@ export const USER_PROMPT_PATH = join(
 );
 
 /**
- * Retry delay for SDK errors (in milliseconds).
+ * Retry delay for session errors (in milliseconds).
  */
 const RETRY_DELAY_MS = 2000;
 
 /**
- * SDK options for extraction.
- * Uses Haiku for cost efficiency (per TD-2).
+ * Built-in tools enabled for extraction sessions.
+ *
+ * - "read": read files from disk (transcripts, memory file)
+ * - "grep": search within files
+ * - "bash": write the updated memory file and any other filesystem ops
+ *
+ * "glob" and "edit"/"write" are not confirmed built-ins in pi-agent; bash
+ * covers everything the agent needs for write operations. Tools are lowercase
+ * per pi-agent convention (confirmed in session-manager.ts DISCUSSION_TOOLS).
  */
-export const EXTRACTION_SDK_OPTIONS: Partial<Options> = {
-  model: "haiku",
-  allowedTools: [
-    "Glob",
-    "Grep",
-    "Read",
-    "Edit",
-    "Write",
-    "Task",
-  ],
-  permissionMode: "acceptEdits",
-  maxBudgetUsd: 0.50, // Conservative budget for extraction
-};
-
-// Re-export QueryFunction for test convenience
-export type { QueryFunction } from "../sdk-provider";
+const EXTRACTION_TOOLS = ["read", "grep", "bash"] as const;
 
 /**
  * Result of an extraction run.
@@ -169,7 +167,7 @@ export async function hasPromptOverride(): Promise<boolean> {
  * @param basePrompt - The durable facts prompt (user-customizable)
  * @param transcripts - Transcripts to process
  * @param vaultsDir - Path to VAULTS_DIR for sandboxed operations
- * @returns Complete prompt for the SDK
+ * @returns Complete prompt for the session
  */
 export function buildExtractionPrompt(
   basePrompt: string,
@@ -303,57 +301,44 @@ After writing the memory file, re-read it completely and check each entry agains
 }
 
 // =============================================================================
-// SDK Interaction
+// Session Interaction
 // =============================================================================
 
 /**
- * Consume all events from an SDK query, waiting for completion.
+ * Extract the final assistant text from a message list.
  *
- * @param events - Async generator of SDK events
- * @returns Final result message content if available
+ * Re-export of `extractFinalText` from pi-session-factory. Kept with an
+ * underscore-prefixed alias so existing unit tests can import it directly;
+ * treat as internal.
  */
-async function consumeQueryEvents(
-  events: AsyncGenerator<SDKMessage, void>
-): Promise<string | undefined> {
-  let lastContent: string | undefined;
-
-  for await (const event of events) {
-    // Capture any result content
-    if (event.type === "result" && "result" in event) {
-      lastContent = String(event.result);
-    }
-  }
-
-  return lastContent;
-}
+export const _finalText = extractFinalText;
 
 /**
- * Run a single extraction attempt.
+ * Run a single extraction attempt using an inMemory pi-agent session.
  *
- * @param prompt - Full extraction prompt
- * @param vaultsDir - Working directory for SDK
- * @param queryFn - Query function (for testing)
- * @returns Result content or throws on error
+ * @param fullPrompt - Full extraction prompt (system + task)
+ * @param vaultsDir - Working directory for the session (cwd)
+ * @param createSessionFn - Session factory (injectable for testing)
+ * @returns Final assistant text, or empty string if no assistant message
  */
 async function runExtractionAttempt(
-  prompt: string,
+  fullPrompt: string,
   vaultsDir: string,
-  queryFn: QueryFunction
-): Promise<string | undefined> {
-  log.info("Starting extraction query...");
+  createSessionFn: CreateSessionFn
+): Promise<string> {
+  log.info("Starting extraction session...");
 
-  const queryResult = queryFn({
-    prompt,
-    options: {
-      ...EXTRACTION_SDK_OPTIONS,
-      cwd: vaultsDir,
-    },
+  const { session } = await createSessionFn({
+    cwd: vaultsDir,
+    systemPrompt: fullPrompt,
+    tools: [...EXTRACTION_TOOLS],
+    sessionManager: SessionManager.inMemory(vaultsDir),
   });
 
-  // Consume all events and wait for completion
-  const result = await consumeQueryEvents(queryResult);
+  await session.prompt(fullPrompt);
 
-  log.info("Extraction query completed");
+  const result = _finalText(session.messages);
+  log.info("Extraction session completed");
   return result;
 }
 
@@ -369,13 +354,13 @@ function sleep(ms: number): Promise<void> {
 // =============================================================================
 
 /**
- * Extract facts from transcripts using Claude Agent SDK.
+ * Extract facts from transcripts using a pi-agent inMemory session.
  *
  * This function:
  * 1. Loads the extraction prompt (user override or default)
  * 2. Builds the full prompt with transcript references
- * 3. Calls the SDK to run extraction
- * 4. Handles errors with single retry
+ * 3. Creates an inMemory pi-agent session and runs the prompt
+ * 4. Handles errors with a single retry
  *
  * The caller is responsible for:
  * - Setting up the sandbox (copying memory.md to VAULTS_DIR)
@@ -384,17 +369,14 @@ function sleep(ms: number): Promise<void> {
  *
  * @param transcripts - Transcripts to process
  * @param vaultsDir - VAULTS_DIR path for sandboxed operations
- * @param queryFn - Optional query function for testing
+ * @param createSessionFn - Optional session factory for testing
  * @returns Extraction result with success status
  */
 export async function extractFacts(
   transcripts: DiscoveredTranscript[],
   vaultsDir: string,
-  queryFn?: QueryFunction
+  createSessionFn: CreateSessionFn = createPiSession
 ): Promise<ExtractionResult> {
-  // Use provided mock or fall back to centralized SDK provider
-  const query = queryFn ?? getSdkQuery();
-
   if (transcripts.length === 0) {
     log.info("No transcripts to process");
     return {
@@ -428,7 +410,7 @@ export async function extractFacts(
 
   // First attempt
   try {
-    await runExtractionAttempt(fullPrompt, vaultsDir, query);
+    await runExtractionAttempt(fullPrompt, vaultsDir, createSessionFn);
     return {
       success: true,
       transcriptsProcessed: transcripts.length,
@@ -438,23 +420,23 @@ export async function extractFacts(
     log.warn(`First extraction attempt failed: ${(error as Error).message}`);
   }
 
-  // Retry with backoff
+  // Retry once after a short backoff
   log.info(`Retrying extraction after ${RETRY_DELAY_MS}ms...`);
   await sleep(RETRY_DELAY_MS);
 
   try {
-    await runExtractionAttempt(fullPrompt, vaultsDir, query);
+    await runExtractionAttempt(fullPrompt, vaultsDir, createSessionFn);
     return {
       success: true,
       transcriptsProcessed: transcripts.length,
       wasRetry: true,
     };
   } catch (error) {
-    const errorMessage = (error as Error).message;
-    log.error(`Extraction failed after retry: ${errorMessage}`);
+    const message = (error as Error).message;
+    log.error(`Extraction failed after retry: ${message}`);
     return {
       success: false,
-      error: errorMessage,
+      error: message,
       transcriptsProcessed: 0,
       wasRetry: true,
     };

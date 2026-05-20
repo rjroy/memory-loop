@@ -16,8 +16,15 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { VaultInfo } from "@memory-loop/shared";
 import { DEFAULT_MAX_POOL_SIZE } from "@memory-loop/shared";
-import { getSdkQuery, type QueryFunction } from "./sdk-provider";
 import { createLogger } from "@memory-loop/shared";
+import {
+  createPiSession,
+  extractFinalText,
+  SessionManager,
+  type CreateSessionFn,
+} from "./pi-session-factory";
+
+export type { CreateSessionFn };
 
 const log = createLogger("inspiration-manager");
 
@@ -115,12 +122,26 @@ export function isWeekday(date: Date): boolean {
 // =============================================================================
 
 /**
+ * Encode a date as a comparable integer (YYYYMMDD) using local time.
+ * Lets us compare dates as numbers without time/timezone noise.
+ */
+function toDateOrdinal(date: Date): number {
+  return (
+    date.getFullYear() * 10000 +
+    (date.getMonth() + 1) * 100 +
+    date.getDate()
+  );
+}
+
+/**
  * Check if contextual prompt generation is needed
  *
  * Returns true if ANY of the following are true:
  * - File doesn't exist
  * - Generation marker is missing
  * - Not generated today (different date)
+ *
+ * Future-dated markers are treated as up-to-date (no regeneration).
  *
  * Note: Generation runs every day including weekends.
  * Weekdays get work-reflection prompts, weekends get creative prompts.
@@ -131,8 +152,6 @@ export function isWeekday(date: Date): boolean {
 export async function isContextualGenerationNeeded(
   vault: VaultInfo
 ): Promise<boolean> {
-  const today = new Date();
-
   const filePath = getContextualPromptsPath(vault);
   const parsed = await parseInspirationFile(filePath);
 
@@ -141,30 +160,9 @@ export async function isContextualGenerationNeeded(
     return true;
   }
 
-  // Compare dates (year, month, day) - ignore time component
-  const generatedDate = parsed.lastGenerated;
-  // Only generate if the last generated date is in the past based on date
-  const yearDiff = generatedDate.getFullYear() - today.getFullYear();
-  if (yearDiff > 0) {
-    // Future year - never generate
-    return false;
-  } else if (yearDiff < 0) {
-    // Past year - always generate
-    return true;
-  } else {
-    // Same year - check month
-    const monthDiff = generatedDate.getMonth() - today.getMonth();
-    if (monthDiff > 0) {
-      // Future month - never generate
-      return false;
-    } else if (monthDiff < 0) {
-      // Past month - always generate
-      return true;
-    } else {
-      // Same month - check day
-      return generatedDate.getDate() < today.getDate();
-    }
-  }
+  // Regenerate only when the last-generated date is strictly in the past.
+  // Same-day or future-dated markers count as up-to-date.
+  return toDateOrdinal(parsed.lastGenerated) < toDateOrdinal(new Date());
 }
 
 /**
@@ -181,10 +179,6 @@ export async function isContextualGenerationNeeded(
 export async function isQuoteGenerationNeeded(
   vault: VaultInfo
 ): Promise<boolean> {
-  const today = new Date();
-  const currentWeek = getISOWeekNumber(today);
-  const currentYear = today.getFullYear();
-
   const filePath = getGeneralInspirationPath(vault);
   const parsed = await parseInspirationFile(filePath);
 
@@ -193,21 +187,16 @@ export async function isQuoteGenerationNeeded(
     return true;
   }
 
-  // Use week number from marker if available, otherwise calculate from date
+  // Use week number from marker if available, otherwise calculate from date.
+  // Combine year + week into a single ordinal so we can compare numerically.
+  // Future-dated markers (year ahead of today) read as up-to-date and skip generation.
+  const today = new Date();
   const generatedWeek =
     parsed.weekNumber ?? getISOWeekNumber(parsed.lastGenerated);
-  const generatedYear = parsed.lastGenerated.getFullYear();
+  const generatedOrdinal = parsed.lastGenerated.getFullYear() * 100 + generatedWeek;
+  const currentOrdinal = today.getFullYear() * 100 + getISOWeekNumber(today);
 
-  if (generatedYear > currentYear) {
-    // Future year - never generated this week
-    return false;
-  } else if (generatedYear == currentYear) {
-    // Only generate if week number is less than current week
-    return generatedWeek < currentWeek;
-  } else {
-    // Past year - definitely needs generation
-    return true;
-  }
+  return generatedOrdinal < currentOrdinal;
 }
 
 // =============================================================================
@@ -672,6 +661,24 @@ export function formatGenerationMarker(
 }
 
 /**
+ * Write an inspiration file with a fresh generation marker and the given items.
+ * Creates the parent directory if missing (REQ-F-20).
+ */
+async function writeInspirationFile(
+  filePath: string,
+  items: InspirationItem[],
+  weekNumber?: number
+): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true });
+
+  const marker = formatGenerationMarker(new Date(), weekNumber);
+  const itemLines = items.map(formatInspirationItem).join("\n");
+  const content = `${marker}\n\n${itemLines}\n`;
+
+  await writeFile(filePath, content, "utf-8");
+}
+
+/**
  * Append new entries to an inspiration file
  *
  * REQ-F-13: Append generated prompts (don't overwrite existing)
@@ -687,24 +694,9 @@ export async function appendToInspirationFile(
   entries: InspirationItem[],
   weekNumber?: number
 ): Promise<void> {
-  // Ensure directory exists (REQ-F-20)
-  const dir = dirname(filePath);
-  await mkdir(dir, { recursive: true });
-
-  // Read existing content
   const parsed = await parseInspirationFile(filePath);
-
-  // Combine existing items with new entries
   const allItems = [...parsed.items, ...entries];
-
-  // Format the new file content
-  const today = new Date();
-  const marker = formatGenerationMarker(today, weekNumber);
-  const itemLines = allItems.map(formatInspirationItem).join("\n");
-
-  const content = `${marker}\n\n${itemLines}\n`;
-
-  await writeFile(filePath, content, "utf-8");
+  await writeInspirationFile(filePath, allItems, weekNumber);
 }
 
 /**
@@ -725,22 +717,13 @@ export async function prunePool(
 ): Promise<void> {
   const parsed = await parseInspirationFile(filePath);
 
-  // No pruning needed if within limit
   if (parsed.items.length <= maxSize) {
     return;
   }
 
   // Keep only the newest entries (from the end)
   const prunedItems = parsed.items.slice(-maxSize);
-
-  // Format the new file content
-  const today = new Date();
-  const marker = formatGenerationMarker(today, parsed.weekNumber);
-  const itemLines = prunedItems.map(formatInspirationItem).join("\n");
-
-  const content = `${marker}\n\n${itemLines}\n`;
-
-  await writeFile(filePath, content, "utf-8");
+  await writeInspirationFile(filePath, prunedItems, parsed.weekNumber);
 }
 
 /**
@@ -856,44 +839,24 @@ Format your response as markdown list ${itemWord} with attribution:
 Generate ${count} ${quoteWord}:`;
 }
 
-// Re-export QueryFunction for test convenience
-export type { QueryFunction } from "./sdk-provider";
-
 /**
- * Collect full text response from an SDK query result.
- * Iterates through all events and extracts text from assistant messages.
+ * Run a single-turn LLM prompt using an inMemory pi-agent session.
+ * Returns the assistant's text response, or empty string on any error.
  *
- * @param queryResult - The async generator from query()
+ * @param prompt - The prompt to send
+ * @param createSessionFn - Session factory (injectable for testing)
  * @returns Full text response
  */
-async function collectResponse(
-  queryResult: ReturnType<QueryFunction>
+async function runPrompt(
+  prompt: string,
+  createSessionFn: CreateSessionFn
 ): Promise<string> {
-  const responseParts: string[] = [];
-
-  for await (const event of queryResult) {
-    // Cast to unknown for flexible property checking
-    // The SDK types are more constrained than runtime events
-    const rawEvent = event as unknown as Record<string, unknown>;
-    const eventType = rawEvent.type as string;
-
-    if (eventType === "assistant") {
-      // Extract text from assistant message content blocks
-      const message = rawEvent.message as
-        | { content?: Array<{ type: string; text?: string }> }
-        | undefined;
-
-      if (message?.content) {
-        for (const block of message.content) {
-          if (block.type === "text" && block.text) {
-            responseParts.push(block.text);
-          }
-        }
-      }
-    }
-  }
-
-  return responseParts.join("");
+  const { session } = await createSessionFn({
+    cwd: process.cwd(),
+    sessionManager: SessionManager.inMemory(),
+  });
+  await session.prompt(prompt);
+  return extractFinalText(session.messages);
 }
 
 /**
@@ -924,11 +887,13 @@ export function parseAIResponse(response: string): InspirationItem[] {
  *
  * @param context - Vault content for context (from gatherDayContext)
  * @param count - Number of prompts to generate (default: 5)
+ * @param createSessionFn - Session factory (injectable for testing)
  * @returns Array of generated prompts (may be empty on error)
  */
 export async function generateContextualPrompts(
   context: string,
-  count: number = 5
+  count: number = 5,
+  createSessionFn: CreateSessionFn = createPiSession
 ): Promise<InspirationItem[]> {
   // Skip if no context provided
   if (!context || !context.trim()) {
@@ -942,17 +907,7 @@ export async function generateContextualPrompts(
   const prompt = buildContextualPromptTemplate(count).replace("{context}", truncatedContext);
 
   try {
-    const queryResult = getSdkQuery()({
-      prompt,
-      options: {
-        model: GENERATION_MODEL,
-        maxTurns: 1,
-        allowedTools: [], // No tools needed for generation
-        settingSources: ["local", "project", "user"],
-      },
-    });
-
-    const response = await collectResponse(queryResult);
+    const response = await runPrompt(prompt, createSessionFn);
     return parseAIResponse(response);
   } catch (error) {
     // Log error but return empty (graceful handling per REQ-NF-3)
@@ -968,11 +923,13 @@ export async function generateContextualPrompts(
  *
  * @param context - Optional vault content for light context nudge
  * @param count - Number of prompts to generate (default: 5)
+ * @param createSessionFn - Session factory (injectable for testing)
  * @returns Array of generated creative prompts (may be empty on error)
  */
 export async function generateWeekendPrompts(
   context?: string,
-  count: number = 5
+  count: number = 5,
+  createSessionFn: CreateSessionFn = createPiSession
 ): Promise<InspirationItem[]> {
   try {
     // Build context nudge - just a hint about their interests, not detailed content
@@ -988,17 +945,7 @@ export async function generateWeekendPrompts(
 
     const prompt = buildWeekendPromptTemplate(count).replace("{context_nudge}", contextNudge);
 
-    const queryResult = getSdkQuery()({
-      prompt,
-      options: {
-        model: GENERATION_MODEL,
-        maxTurns: 1,
-        allowedTools: [],  
-        settingSources: ["local", "project", "user"],
-      },
-    });
-
-    const response = await collectResponse(queryResult);
+    const response = await runPrompt(prompt, createSessionFn);
     return parseAIResponse(response);
   } catch (error) {
     log.error("Failed to generate weekend prompts", error);
@@ -1015,11 +962,13 @@ export async function generateWeekendPrompts(
  *
  * @param context - Optional vault content for context-aware quote selection
  * @param count - Number of quotes to generate (default: 1)
+ * @param createSessionFn - Session factory (injectable for testing)
  * @returns Array of generated quotes (may be empty on error)
  */
 export async function generateInspirationQuote(
   context?: string,
-  count: number = 1
+  count: number = 1,
+  createSessionFn: CreateSessionFn = createPiSession
 ): Promise<InspirationItem[]> {
   try {
     // Build context section based on whether context is provided
@@ -1033,17 +982,7 @@ export async function generateInspirationQuote(
 
     const prompt = buildQuotePromptTemplate(count).replace("{context_section}", contextSection);
 
-    const queryResult = getSdkQuery()({
-      prompt,
-      options: {
-        model: GENERATION_MODEL,
-        maxTurns: 1,
-        allowedTools: [], // No tools needed for generation
-        settingSources: ["local", "project", "user"],
-      },
-    });
-
-    const response = await collectResponse(queryResult);
+    const response = await runPrompt(prompt, createSessionFn);
     const items = parseAIResponse(response);
 
     // Return up to the requested number of quotes
@@ -1149,9 +1088,13 @@ export function selectWeightedRandom<T>(items: T[]): T | undefined {
  * 5. Return contextual (null if unavailable) and quote (fallback if unavailable)
  *
  * @param vault - VaultInfo object
+ * @param createSessionFn - Session factory (injectable for testing)
  * @returns Promise resolving to contextual prompt and quote
  */
-export async function getInspiration(vault: VaultInfo): Promise<InspirationResult> {
+export async function getInspiration(
+  vault: VaultInfo,
+  createSessionFn: CreateSessionFn = createPiSession
+): Promise<InspirationResult> {
   const contextualPath = getContextualPromptsPath(vault);
   const quotePath = getGeneralInspirationPath(vault);
 
@@ -1183,11 +1126,11 @@ export async function getInspiration(vault: VaultInfo): Promise<InspirationResul
 
       if (dayType === "weekend") {
         // Weekend: creative prompts (context is optional nudge)
-        newPrompts = await generateWeekendPrompts(context, vault.promptsPerGeneration);
+        newPrompts = await generateWeekendPrompts(context, vault.promptsPerGeneration, createSessionFn);
       } else {
         // Weekday: reflection prompts (requires context)
         newPrompts = context.trim()
-          ? await generateContextualPrompts(context, vault.promptsPerGeneration)
+          ? await generateContextualPrompts(context, vault.promptsPerGeneration, createSessionFn)
           : [];
       }
 
@@ -1203,7 +1146,7 @@ export async function getInspiration(vault: VaultInfo): Promise<InspirationResul
   // Phase 2: Trigger quote generation (once per week, context-aware)
   if (needsQuote) {
     try {
-      const newQuotes = await generateInspirationQuote(context, vault.quotesPerWeek);
+      const newQuotes = await generateInspirationQuote(context, vault.quotesPerWeek, createSessionFn);
 
       if (newQuotes.length > 0) {
         await appendAndPrune(quotePath, newQuotes, currentWeek, vault.maxPoolSize);

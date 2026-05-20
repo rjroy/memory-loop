@@ -1,15 +1,15 @@
 /**
  * Active Session Controller
  *
- * Owns the live SDK connection and manages streaming state.
+ * Owns the live pi-agent session and manages streaming state.
  * Implements the session-viewport separation spec (REQ-6).
  *
  * Key responsibilities:
- * - Hold queryResult (live SDK connection) for the current turn only
+ * - Hold the active pi-agent AgentSession for the current turn
  * - Manage pendingPermissions and pendingQuestions maps
  * - Track cumulativeTokens, contextWindow, activeModel
  * - Emit events to subscribers (pub-sub pattern)
- * - Translate SDK events via createStreamTranslator() (REQ-ESS-4)
+ * - Translate pi-agent events via createPiEventAdapter() (REQ-ESS-4)
  */
 
 import type {
@@ -30,7 +30,7 @@ import type {
   PendingPermissionRequest,
   PendingQuestionRequest,
 } from "./types";
-import { createStreamTranslator } from "./event-translator";
+import { createPiEventAdapter } from "./event-translator";
 import {
   createSession as sdkCreateSession,
   resumeSession as sdkResumeSession,
@@ -103,7 +103,6 @@ export function createActiveSessionController(): ActiveSessionController {
   let queryResult: SessionQueryResult | null = null;
   let isStreamingActive = false;
   let isProcessing = false;
-  let abortController: AbortController | null = null;
   let currentGeneration = 0;
 
   // Streaming state (cumulative across turns, REQ-ESS-13)
@@ -199,17 +198,19 @@ export function createActiveSessionController(): ActiveSessionController {
    * Called when session is cleared (REQ-5).
    */
   function discardPendingPrompts(): void {
-    for (const [id, request] of pendingPermissions) {
-      log.info(`Discarding pending permission: ${id}`);
-      request.reject(new Error("Session cleared"));
+    const reason = new Error("Session cleared");
+    function drain<T extends { reject: (err: Error) => void }>(
+      label: string,
+      map: Map<string, T>
+    ): void {
+      for (const [id, request] of map) {
+        log.info(`Discarding pending ${label}: ${id}`);
+        request.reject(reason);
+      }
+      map.clear();
     }
-    pendingPermissions.clear();
-
-    for (const [id, request] of pendingQuestions) {
-      log.info(`Discarding pending question: ${id}`);
-      request.reject(new Error("Session cleared"));
-    }
-    pendingQuestions.clear();
+    drain("permission", pendingPermissions);
+    drain("question", pendingQuestions);
   }
 
   /**
@@ -217,6 +218,17 @@ export function createActiveSessionController(): ActiveSessionController {
    */
   function hasPendingPrompts(): boolean {
     return pendingPermissions.size > 0 || pendingQuestions.size > 0;
+  }
+
+  /**
+   * Collects all pending prompts (permissions and questions) as a flat array.
+   * Used by both getPendingPrompts() and getSnapshot().
+   */
+  function collectPendingPrompts(): PendingPrompt[] {
+    return [
+      ...Array.from(pendingPermissions.values(), (r) => r.prompt),
+      ...Array.from(pendingQuestions.values(), (r) => r.prompt),
+    ];
   }
 
   /**
@@ -235,6 +247,29 @@ export function createActiveSessionController(): ActiveSessionController {
   }
 
   /**
+   * Builds the assistant ConversationMessage for persistence. Returns null
+   * when there's nothing worth saving (no text and no tool invocations).
+   */
+  function buildAssistantMessage(
+    messageId: string,
+    snapshot: { content: string; toolInvocations: StoredToolInvocation[]; contextUsage: number | undefined },
+    durationMs: number
+  ): ConversationMessage | null {
+    if (snapshot.content.length === 0 && snapshot.toolInvocations.length === 0) {
+      return null;
+    }
+    return {
+      id: messageId,
+      role: "assistant",
+      content: snapshot.content,
+      timestamp: new Date().toISOString(),
+      toolInvocations: snapshot.toolInvocations.length > 0 ? snapshot.toolInvocations : undefined,
+      contextUsage: snapshot.contextUsage,
+      durationMs,
+    };
+  }
+
+  /**
    * Internal clear session logic. Terminates the SDK process, discards
    * pending prompts, resets all state, and emits session_cleared.
    *
@@ -244,18 +279,12 @@ export function createActiveSessionController(): ActiveSessionController {
   function performClearSession(): void {
     log.info("Clearing session");
 
-    // Abort any active streaming
-    if (abortController) {
-      abortController.abort();
-      abortController = null;
-    }
-
-    // Close the SDK query to terminate the child process
+    // Abort the pi-agent session to stop any in-progress turn
     if (queryResult) {
       try {
-        queryResult.close();
+        void queryResult.piSession.abort();
       } catch (err) {
-        log.warn("Failed to close query", err);
+        log.warn("Failed to abort pi-agent session", err);
       }
       queryResult = null;
     }
@@ -269,6 +298,7 @@ export function createActiveSessionController(): ActiveSessionController {
     currentVaultPath = null;
     streamerState.cumulativeTokens = 0;
     streamerState.contextWindow = null;
+    streamerState.activeModel = null;
     isStreamingActive = false;
     isProcessing = false;
     currentResponseChunks = [];
@@ -283,12 +313,10 @@ export function createActiveSessionController(): ActiveSessionController {
   }
 
   /**
-   * Runs the streaming loop for a query.
+   * Runs the streaming loop for a turn using the pi-agent session.
    *
-   * This is the single code path for both new and resumed sessions.
-   * The controller owns the for-await loop over SDK events, translates
-   * each via createStreamTranslator(), and processes the resulting
-   * SdkRunnerEvents inline (REQ-ESS-4).
+   * Subscribes to pi-agent events via createPiEventAdapter, appends the user
+   * message, then calls session.prompt(). Cleanup is handled in the finally block.
    */
   async function runStreaming(
     vaultId: string,
@@ -303,7 +331,6 @@ export function createActiveSessionController(): ActiveSessionController {
     currentVaultPath = vaultPath;
     isStreamingActive = true;
     isProcessing = true;
-    abortController = new AbortController();
     currentGeneration++;
     const gen = currentGeneration;
 
@@ -314,20 +341,11 @@ export function createActiveSessionController(): ActiveSessionController {
 
     let messageId = "";
     let queryStartTime = 0;
+    let unsubscribe: (() => void) | null = null;
 
     try {
-      // Fetch slash commands for both new and resumed sessions
-      try {
-        const sdkCommands = await result.supportedCommands();
-        slashCommands = sdkCommands.map((cmd) => ({
-          name: cmd.name.startsWith("/") ? cmd.name : `/${cmd.name}`,
-          description: cmd.description,
-          argumentHint: cmd.argumentHint || undefined,
-        }));
-      } catch (err) {
-        log.warn("Failed to fetch slash commands", err);
-        slashCommands = [];
-      }
+      // Pi-agent has no slash commands API — emit empty list (Phase 7 may revisit)
+      slashCommands = [];
 
       if (isNewSession) {
         // Reset cumulative tokens for new session
@@ -368,28 +386,13 @@ export function createActiveSessionController(): ActiveSessionController {
 
       emit({ type: "response_start", messageId });
 
-      // Stream SDK events through the translator (REQ-ESS-4)
-      const translate = createStreamTranslator();
-
-      for await (const sdkMessage of result.events) {
-        if (abortController.signal.aborted) {
-          log.debug("Streaming aborted");
-          // Mark any running tools as incomplete
-          for (const tool of currentToolsMap.values()) {
-            if (tool.status === "running") {
-              tool.status = "complete";
-              tool.output = "[Streaming aborted]";
-            }
-          }
-          break;
-        }
-
-        for (const event of translate(sdkMessage)) {
+      // Subscribe to pi-agent events through the adapter (REQ-ESS-4).
+      // Must subscribe before calling prompt() so no events are missed.
+      unsubscribe = result.piSession.subscribe(
+        createPiEventAdapter((event) => {
           switch (event.type) {
             case "session":
-              // Session ID already known from extractSessionId() in session-manager.
-              // The translator produces this for the first system init message;
-              // we can update activeModel tracking from it but otherwise ignore.
+              // Session ID comes from the factory. Ignore here.
               break;
 
             case "text_delta":
@@ -431,26 +434,8 @@ export function createActiveSessionController(): ActiveSessionController {
             }
 
             case "turn_end": {
-              // Compute context usage from turn usage data (REQ-ESS-13)
-              if (event.usage) {
-                const turnTokens = event.usage.inputTokens + event.usage.outputTokens;
-                streamerState.cumulativeTokens += turnTokens;
-
-                if (event.usage.model) {
-                  streamerState.activeModel = event.usage.model;
-                }
-                if (event.usage.contextWindow && event.usage.contextWindow > 0) {
-                  streamerState.contextWindow = event.usage.contextWindow;
-                  currentContextUsage = Math.round(
-                    (100 * streamerState.cumulativeTokens) / event.usage.contextWindow
-                  );
-                  currentContextUsage = Math.max(0, Math.min(100, currentContextUsage));
-                  log.debug(
-                    `Context usage: ${streamerState.cumulativeTokens}/${event.usage.contextWindow} = ${currentContextUsage}% ` +
-                    `(turn: +${turnTokens}, model: ${event.usage.model ?? "unknown"})`
-                  );
-                }
-              }
+              // Pi-agent does not expose per-turn token usage in subscription events.
+              // Context bar remains at zero until Phase 7 revisits this with extension hooks.
               break;
             }
 
@@ -474,8 +459,11 @@ export function createActiveSessionController(): ActiveSessionController {
               emit({ type: "aborted" });
               break;
           }
-        }
-      }
+        })
+      );
+
+      // Drive the turn. prompt() resolves when the agent finishes (all tool calls complete).
+      await result.piSession.prompt(prompt);
 
       const durationMs = Date.now() - queryStartTime;
       log.info(`Query completed in ${durationMs}ms`);
@@ -488,18 +476,8 @@ export function createActiveSessionController(): ActiveSessionController {
       });
 
       // Persist assistant message on normal completion
-      const content = currentResponseChunks.join("");
-      const toolInvocations = Array.from(currentToolsMap.values());
-      if (content.length > 0 || toolInvocations.length > 0) {
-        const assistantMessage: ConversationMessage = {
-          id: messageId,
-          role: "assistant",
-          content,
-          timestamp: new Date().toISOString(),
-          toolInvocations: toolInvocations.length > 0 ? toolInvocations : undefined,
-          contextUsage: currentContextUsage,
-          durationMs,
-        };
+      const assistantMessage = buildAssistantMessage(messageId, getStreamingSnapshot(), durationMs);
+      if (assistantMessage) {
         await sdkAppendMessage(vaultPath, result.sessionId, assistantMessage);
       }
     } catch (err) {
@@ -508,7 +486,7 @@ export function createActiveSessionController(): ActiveSessionController {
       discardPendingPrompts();
 
       if (hadPendingPrompts) {
-        log.error("Subprocess crashed while waiting for user response", err);
+        log.error("Pi-agent session crashed while waiting for user response", err);
         emit({
           type: "error",
           code: "SDK_ERROR",
@@ -525,23 +503,17 @@ export function createActiveSessionController(): ActiveSessionController {
 
       // Persist partial result from snapshot on error/abort
       if (messageId && queryStartTime) {
+        const durationMs = Date.now() - queryStartTime;
         const snapshot = getStreamingSnapshot();
-        if (snapshot.content.length > 0 || snapshot.toolInvocations.length > 0) {
+        const assistantMessage = buildAssistantMessage(messageId, snapshot, durationMs);
+        if (assistantMessage) {
           try {
-            const durationMs = Date.now() - queryStartTime;
-            emit({ type: "response_end", messageId, contextUsage: snapshot.contextUsage, durationMs });
-            const assistantMessage: ConversationMessage = {
-              id: messageId,
-              role: "assistant",
-              content: snapshot.content,
-              timestamp: new Date().toISOString(),
-              toolInvocations:
-                snapshot.toolInvocations.length > 0
-                  ? snapshot.toolInvocations
-                  : undefined,
+            emit({
+              type: "response_end",
+              messageId,
               contextUsage: snapshot.contextUsage,
               durationMs,
-            };
+            });
             await sdkAppendMessage(vaultPath, result.sessionId, assistantMessage);
           } catch (persistErr) {
             log.error("Failed to persist partial result", persistErr);
@@ -549,18 +521,15 @@ export function createActiveSessionController(): ActiveSessionController {
         }
       }
     } finally {
+      // Always unsubscribe from pi-agent events
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
+      }
+
       if (gen === currentGeneration) {
         isProcessing = false;
         isStreamingActive = false;
-        abortController = null;
-
-        if (queryResult) {
-          try {
-            queryResult.close();
-          } catch (err) {
-            log.warn("Failed to close query", err);
-          }
-        }
         queryResult = null;
       } else {
         log.warn(`Stale generation ${gen} (current: ${currentGeneration}), skipping cleanup`);
@@ -601,8 +570,6 @@ export function createActiveSessionController(): ActiveSessionController {
           result = await sdkResumeSession(
             vaultPath,
             sessionId,
-            prompt,
-            undefined,
             permCallback,
             questionCallback
           );
@@ -611,8 +578,6 @@ export function createActiveSessionController(): ActiveSessionController {
           const vault = { id: vaultId, path: vaultPath } as VaultInfo;
           result = await sdkCreateSession(
             vault,
-            prompt,
-            undefined,
             permCallback,
             questionCallback
           );
@@ -657,20 +622,15 @@ export function createActiveSessionController(): ActiveSessionController {
       // REQ-ESS-19: Check for pending prompts before aborting
       const hadPendingPrompts = hasPendingPrompts();
 
-      // Interrupt the SDK cleanly (not close, which kills the process)
+      // Abort the pi-agent session (graceful abort, not kill)
       if (queryResult) {
         try {
-          queryResult.interrupt().catch((err: unknown) => {
-            log.error("Async interrupt failed", err);
+          queryResult.piSession.abort().catch((err: unknown) => {
+            log.error("Async abort failed", err);
           });
         } catch (err) {
-          log.warn("Failed to interrupt query", err);
+          log.warn("Failed to abort pi-agent session", err);
         }
-      }
-
-      // Signal the streaming loop to exit
-      if (abortController) {
-        abortController.abort();
       }
 
       // Discard pending prompts
@@ -693,17 +653,7 @@ export function createActiveSessionController(): ActiveSessionController {
     },
 
     getPendingPrompts(): PendingPrompt[] {
-      const prompts: PendingPrompt[] = [];
-
-      for (const request of pendingPermissions.values()) {
-        prompts.push(request.prompt);
-      }
-
-      for (const request of pendingQuestions.values()) {
-        prompts.push(request.prompt);
-      }
-
-      return prompts;
+      return collectPendingPrompts();
     },
 
     getState(): SessionState {
@@ -719,20 +669,12 @@ export function createActiveSessionController(): ActiveSessionController {
 
     getSnapshot(): SessionSnapshot {
       const snapshot = getStreamingSnapshot();
-      const prompts: PendingPrompt[] = [];
-      for (const request of pendingPermissions.values()) {
-        prompts.push(request.prompt);
-      }
-      for (const request of pendingQuestions.values()) {
-        prompts.push(request.prompt);
-      }
-
       return {
         sessionId: currentSessionId,
         isProcessing,
         content: snapshot.content,
         toolInvocations: snapshot.toolInvocations,
-        pendingPrompts: prompts,
+        pendingPrompts: collectPendingPrompts(),
         contextUsage: snapshot.contextUsage,
         cumulativeTokens: streamerState.cumulativeTokens,
         contextWindow: streamerState.contextWindow,
@@ -746,36 +688,30 @@ export function createActiveSessionController(): ActiveSessionController {
     respondToPrompt(promptId: string, response: PromptResponse): void {
       log.info(`Responding to prompt: ${promptId}`);
 
+      // Resolve the matching pending request, then dispatch the response value.
+      // Each branch knows its own map and the shape of `pending.resolve`.
+      let resolved = false;
       if (response.type === "tool_permission") {
         const pending = pendingPermissions.get(promptId);
-        if (!pending) {
-          log.warn(`Prompt not found: ${promptId}`);
-          emit({
-            type: "prompt_response_rejected",
-            promptId,
-            reason: "not_found",
-          });
-          return;
+        if (pending) {
+          pendingPermissions.delete(promptId);
+          pending.resolve(response.allowed);
+          resolved = true;
         }
-
-        pendingPermissions.delete(promptId);
-        pending.resolve(response.allowed);
-        emit({ type: "prompt_resolved", promptId });
       } else if (response.type === "ask_user_question") {
         const pending = pendingQuestions.get(promptId);
-        if (!pending) {
-          log.warn(`Question not found: ${promptId}`);
-          emit({
-            type: "prompt_response_rejected",
-            promptId,
-            reason: "not_found",
-          });
-          return;
+        if (pending) {
+          pendingQuestions.delete(promptId);
+          pending.resolve(response.answers);
+          resolved = true;
         }
+      }
 
-        pendingQuestions.delete(promptId);
-        pending.resolve(response.answers);
+      if (resolved) {
         emit({ type: "prompt_resolved", promptId });
+      } else {
+        log.warn(`Prompt not found: ${promptId}`);
+        emit({ type: "prompt_response_rejected", promptId, reason: "not_found" });
       }
     },
   };

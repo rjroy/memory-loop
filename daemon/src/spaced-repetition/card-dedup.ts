@@ -20,8 +20,15 @@
 
 import type { Card } from "./card-schema";
 import { archiveCard, type VaultPathInfo } from "./card-storage";
-import { getSdkQuery, type QueryFunction } from "../sdk-provider";
 import { createLogger } from "@memory-loop/shared";
+import {
+  createPiSession,
+  extractFinalText,
+  SessionManager,
+  type CreateSessionFn,
+} from "../pi-session-factory";
+
+export type { CreateSessionFn };
 
 const log = createLogger("card-dedup");
 
@@ -87,11 +94,7 @@ export const STOPWORDS = new Set([
  */
 export const JACCARD_THRESHOLD = 0.5;
 
-/**
- * Model to use for duplicate verification.
- * Using same model as card generation for consistency.
- */
-const VERIFICATION_MODEL = "haiku";
+// Verification uses the pi-agent session's configured model (no hardcoded override).
 
 // =============================================================================
 // Types
@@ -258,71 +261,42 @@ Answer (YES or NO):`;
 }
 
 /**
- * Collect response from SDK query result.
- */
-async function collectResponse(queryResult: ReturnType<QueryFunction>): Promise<string> {
-  const responseParts: string[] = [];
-
-  for await (const event of queryResult) {
-    const rawEvent = event as unknown as Record<string, unknown>;
-    const eventType = rawEvent.type as string;
-
-    if (eventType === "assistant") {
-      const message = rawEvent.message as
-        | { content?: Array<{ type: string; text?: string }> }
-        | undefined;
-
-      if (message?.content) {
-        for (const block of message.content) {
-          if (block.type === "text" && block.text) {
-            responseParts.push(block.text);
-          }
-        }
-      }
-    }
-  }
-
-  return responseParts.join("");
-}
-
-/**
  * Verify if a candidate is a true duplicate using LLM.
  *
  * Fails open (returns false) on any error to avoid losing cards.
  *
  * @param newQuestion - The new question
  * @param candidate - The candidate duplicate
+ * @param createSessionFn - Session factory (injectable for testing)
  * @returns true if confirmed duplicate, false otherwise
  */
 export async function verifyDuplicateWithLLM(
   newQuestion: string,
-  candidate: DuplicateCandidate
+  candidate: DuplicateCandidate,
+  createSessionFn: CreateSessionFn = createPiSession
 ): Promise<boolean> {
-  const prompt = buildVerificationPrompt(newQuestion, candidate.existingCard.content.question);
+  const existingQuestion = candidate.existingCard.content.question;
+  const prompt = buildVerificationPrompt(newQuestion, existingQuestion);
+  const newPreview = newQuestion.slice(0, 50);
+  const existingPreview = existingQuestion.slice(0, 50);
 
   try {
-    const queryResult = getSdkQuery()({
-      prompt,
-      options: {
-        model: VERIFICATION_MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-      },
+    const { session } = await createSessionFn({
+      cwd: process.cwd(),
+      sessionManager: SessionManager.inMemory(),
     });
+    await session.prompt(prompt);
+    const answer = extractFinalText(session.messages).trim().toUpperCase();
 
-    const response = await collectResponse(queryResult);
-    const answer = response.trim().toUpperCase();
-
-    // Parse response - look for YES or NO
     if (answer.includes("YES")) {
       log.debug(
-        `LLM confirmed duplicate: "${newQuestion.slice(0, 50)}..." duplicates "${candidate.existingCard.content.question.slice(0, 50)}..."`
+        `LLM confirmed duplicate: "${newPreview}..." duplicates "${existingPreview}..."`
       );
       return true;
     }
 
     log.debug(
-      `LLM rejected duplicate: "${newQuestion.slice(0, 50)}..." vs "${candidate.existingCard.content.question.slice(0, 50)}..."`
+      `LLM rejected duplicate: "${newPreview}..." vs "${existingPreview}..."`
     );
     return false;
   } catch (error) {
@@ -341,15 +315,17 @@ export async function verifyDuplicateWithLLM(
  *
  * @param newQuestion - The new question
  * @param candidates - Candidates sorted by similarity descending
+ * @param createSessionFn - Session factory (injectable for testing)
  * @returns Object with duplicates array (empty if none, or single confirmed duplicate)
  */
 export async function verifyDuplicatesWithLLM(
   newQuestion: string,
-  candidates: DuplicateCandidate[]
+  candidates: DuplicateCandidate[],
+  createSessionFn: CreateSessionFn = createPiSession
 ): Promise<{ duplicates: Card[] }> {
   // Check each candidate in order of similarity
   for (const candidate of candidates) {
-    const isDuplicate = await verifyDuplicateWithLLM(newQuestion, candidate);
+    const isDuplicate = await verifyDuplicateWithLLM(newQuestion, candidate, createSessionFn);
     if (isDuplicate) {
       return { duplicates: [candidate.existingCard] };
     }
@@ -372,13 +348,15 @@ export async function verifyDuplicatesWithLLM(
  * @param answer - Answer text of the new card (for context)
  * @param context - Dedup context with existing and new cards
  * @param stats - Stats to update
+ * @param createSessionFn - Session factory (injectable for testing)
  * @returns Result indicating if duplicate was found
  */
 export async function checkAndHandleDuplicate(
   question: string,
   answer: string,
   context: DedupContext,
-  stats: DedupStats
+  stats: DedupStats,
+  createSessionFn: CreateSessionFn = createPiSession
 ): Promise<DedupCheckResult> {
   // Combine existing cards and new cards for checking
   const allCards = [...context.existingCards, ...context.newCards];
@@ -396,7 +374,7 @@ export async function checkAndHandleDuplicate(
   stats.duplicatesDetected += candidates.length;
 
   // Verify with LLM
-  const { duplicates } = await verifyDuplicatesWithLLM(question, candidates);
+  const { duplicates } = await verifyDuplicatesWithLLM(question, candidates, createSessionFn);
 
   if (duplicates.length === 0) {
     return { isDuplicate: false };

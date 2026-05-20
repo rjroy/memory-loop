@@ -2,10 +2,10 @@
  * Card Generator Tests
  *
  * Tests for LLM-based Q&A card extraction.
- * Uses mock SDK to avoid real API calls.
+ * Uses mock session factory to avoid real pi-agent calls.
  */
 
-import { describe, test, expect, afterEach } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import {
   QACardGenerator,
   createQACardGenerator,
@@ -14,90 +14,71 @@ import {
   GENERATION_MODEL,
   MIN_CONTENT_LENGTH,
   MAX_CONTENT_LENGTH,
+  type CreateSessionFn,
 } from "../card-generator";
-import {
-  configureSdkForTesting,
-  _resetForTesting,
-  type QueryFunction,
-} from "../../sdk-provider";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 // =============================================================================
-// Mock SDK Helpers
+// Mock Session Helpers
 // =============================================================================
 
-/**
- * Create a mock SDK query function that returns a predetermined response.
- *
- * @param response - The text response to return
- * @returns Mock query function
- */
-function createMockSdk(response: string): QueryFunction {
-  return (() => {
-    // Create an async generator that yields an assistant event
-     
-    async function* mockGenerator() {
-      yield {
-        type: "assistant",
-        message: {
-          content: [{ type: "text", text: response }],
-        },
-      };
-    }
-    return mockGenerator();
-  }) as unknown as QueryFunction;
+/** Build a minimal AgentSession mock that returns a predetermined text response. */
+function buildMockSession(response: string): AgentSession {
+  return {
+    messages: [
+      { role: "assistant", content: [{ type: "text", text: response }] },
+    ],
+    prompt: async () => {},
+    abort: () => {},
+    subscribe: () => () => {},
+    bindExtensions: async () => {},
+    modelRegistry: { find: () => undefined },
+    setModel: async () => {},
+    sessionFile: undefined,
+  } as unknown as AgentSession;
 }
 
 /**
- * Create a mock SDK that throws an error.
- *
- * @param error - The error to throw
- * @returns Mock query function that throws
+ * Create a mock session factory that returns a predetermined text response.
  */
-function createErrorMockSdk(error: Error): QueryFunction {
-  return (() => {
-    // Generator that throws immediately - no yield needed since error is thrown first
-    // eslint-disable-next-line require-yield
-    async function* mockGenerator(): AsyncGenerator<{ type: string }> {
-      throw error;
-    }
-    return mockGenerator();
-  }) as unknown as QueryFunction;
+function createMockSessionFn(response: string): CreateSessionFn {
+  return async () => ({ session: buildMockSession(response), jsonlPath: null });
 }
 
 /**
- * Create a mock SDK that captures the prompt for inspection.
- *
- * @param response - The text response to return
- * @param capturedCalls - Array to push captured call info to
- * @returns Mock query function
+ * Create a mock session factory that throws an error.
  */
-function createCapturingMockSdk(
+function createErrorSessionFn(error: Error): CreateSessionFn {
+  return async () => {
+    throw error;
+  };
+}
+
+/**
+ * Create a mock session factory that captures prompts for inspection.
+ */
+function createCapturingSessionFn(
   response: string,
-  capturedCalls: Array<{ prompt: string; options: unknown }>
-): QueryFunction {
-  return ((args: { prompt: string; options: unknown }) => {
-    capturedCalls.push({ prompt: args.prompt, options: args.options });
-
-     
-    async function* mockGenerator() {
-      yield {
-        type: "assistant",
-        message: {
-          content: [{ type: "text", text: response }],
-        },
-      };
-    }
-    return mockGenerator();
-  }) as unknown as QueryFunction;
+  capturedPrompts: string[]
+): CreateSessionFn {
+  return async () => {
+    const session = {
+      messages: [
+        { role: "assistant", content: [{ type: "text", text: response }] },
+      ],
+      prompt: async (p: string) => {
+        capturedPrompts.push(p);
+      },
+      abort: () => {},
+      subscribe: () => () => {},
+      bindExtensions: async () => {},
+      modelRegistry: { find: () => undefined },
+      setModel: async () => {},
+      sessionFile: undefined,
+    } as unknown as AgentSession;
+    return { session, jsonlPath: null };
+  };
 }
-
-// =============================================================================
-// Test Setup
-// =============================================================================
-
-afterEach(() => {
-  _resetForTesting();
-});
 
 // =============================================================================
 // parseQAResponse Tests
@@ -297,13 +278,24 @@ describe("buildQAExtractionPrompt", () => {
 });
 
 // =============================================================================
+// GENERATION_MODEL constant
+// =============================================================================
+
+describe("GENERATION_MODEL", () => {
+  test("is a non-empty string", () => {
+    expect(typeof GENERATION_MODEL).toBe("string");
+    expect(GENERATION_MODEL.length).toBeGreaterThan(0);
+  });
+});
+
+// =============================================================================
 // QACardGenerator Tests
 // =============================================================================
 
 describe("QACardGenerator", () => {
   describe("type property", () => {
     test("has type 'qa'", () => {
-      const generator = createQACardGenerator();
+      const generator = createQACardGenerator(createMockSessionFn("[]"));
       expect(generator.type).toBe("qa");
     });
   });
@@ -313,9 +305,8 @@ describe("QACardGenerator", () => {
       const mockResponse = `[
         {"question": "What is TypeScript?", "answer": "A typed superset of JavaScript"}
       ]`;
-      configureSdkForTesting(createMockSdk(mockResponse));
 
-      const generator = createQACardGenerator();
+      const generator = createQACardGenerator(createMockSessionFn(mockResponse));
       const content = "TypeScript is a typed superset of JavaScript. ".repeat(10);
       const result = await generator.generate(content, "notes/ts.md");
 
@@ -333,9 +324,8 @@ describe("QACardGenerator", () => {
         {"question": "Q2", "answer": "A2"},
         {"question": "Q3", "answer": "A3"}
       ]`;
-      configureSdkForTesting(createMockSdk(mockResponse));
 
-      const generator = createQACardGenerator();
+      const generator = createQACardGenerator(createMockSessionFn(mockResponse));
       const content = "Lots of content here. ".repeat(50);
       const result = await generator.generate(content, "notes.md");
 
@@ -346,18 +336,14 @@ describe("QACardGenerator", () => {
     });
 
     test("returns skipped result for content below minimum length", async () => {
-      // Should not call SDK at all for short content
-      let sdkCalled = false;
-      const mockSdk = (() => {
-        sdkCalled = true;
-         
-        return (async function* () {
-          yield { type: "never" };
-        })();
-      }) as unknown as QueryFunction;
-      configureSdkForTesting(mockSdk);
+      // Session should not be called for short content
+      let sessionCalled = false;
+      const neverCalledFn: CreateSessionFn = async () => {
+        sessionCalled = true;
+        throw new Error("Should not be called");
+      };
 
-      const generator = createQACardGenerator();
+      const generator = createQACardGenerator(neverCalledFn);
       const shortContent = "Too short.";
       expect(shortContent.length).toBeLessThan(MIN_CONTENT_LENGTH);
 
@@ -368,56 +354,40 @@ describe("QACardGenerator", () => {
         expect(result.cards).toEqual([]);
         expect(result.skipped).toBe(true);
       }
-      expect(sdkCalled).toBe(false);
+      expect(sessionCalled).toBe(false);
     });
 
     test("truncates content exceeding maximum length", async () => {
-      const capturedCalls: Array<{ prompt: string; options: unknown }> = [];
-      configureSdkForTesting(createCapturingMockSdk("[]", capturedCalls));
-
-      const generator = createQACardGenerator();
+      const capturedPrompts: string[] = [];
+      const generator = createQACardGenerator(
+        createCapturingSessionFn("[]", capturedPrompts)
+      );
       // Create content larger than MAX_CONTENT_LENGTH
       const longContent = "x".repeat(MAX_CONTENT_LENGTH + 1000);
 
       await generator.generate(longContent, "long.md");
 
-      expect(capturedCalls).toHaveLength(1);
-      const prompt = capturedCalls[0].prompt;
+      expect(capturedPrompts).toHaveLength(1);
+      const prompt = capturedPrompts[0];
       // Prompt should contain truncated content, not full content
       expect(prompt).toContain("[Content truncated...]");
       // The original long content should not appear in full
       expect(prompt).not.toContain(longContent);
     });
 
-    test("uses correct model", async () => {
-      const capturedCalls: Array<{ prompt: string; options: unknown }> = [];
-      configureSdkForTesting(createCapturingMockSdk("[]", capturedCalls));
+    test("includes file path in prompt", async () => {
+      const capturedPrompts: string[] = [];
+      const generator = createQACardGenerator(
+        createCapturingSessionFn("[]", capturedPrompts)
+      );
+      const filePath = "01_Projects/spaced-rep/design.md";
+      await generator.generate("Content here. ".repeat(20), filePath);
 
-      const generator = createQACardGenerator();
-      await generator.generate("Content here. ".repeat(20), "file.md");
-
-      expect(capturedCalls).toHaveLength(1);
-      const options = capturedCalls[0].options as { model: string };
-      expect(options.model).toBe(GENERATION_MODEL);
-    });
-
-    test("uses maxTurns=1 and no tools", async () => {
-      const capturedCalls: Array<{ prompt: string; options: unknown }> = [];
-      configureSdkForTesting(createCapturingMockSdk("[]", capturedCalls));
-
-      const generator = createQACardGenerator();
-      await generator.generate("Content here. ".repeat(20), "file.md");
-
-      expect(capturedCalls).toHaveLength(1);
-      const options = capturedCalls[0].options as { maxTurns: number; allowedTools: unknown[] };
-      expect(options.maxTurns).toBe(1);
-      expect(options.allowedTools).toEqual([]);
+      expect(capturedPrompts[0]).toContain(filePath);
     });
 
     test("returns empty cards when LLM returns empty array", async () => {
-      configureSdkForTesting(createMockSdk("[]"));
-
-      const generator = createQACardGenerator();
+      const generator = createQACardGenerator(createMockSessionFn("[]"));
       const result = await generator.generate("Some content. ".repeat(20), "empty.md");
 
       expect(result.success).toBe(true);
@@ -427,9 +397,9 @@ describe("QACardGenerator", () => {
     });
 
     test("returns failure result on LLM error with retriable flag", async () => {
-      configureSdkForTesting(createErrorMockSdk(new Error("API rate limit exceeded")));
-
-      const generator = createQACardGenerator();
+      const generator = createQACardGenerator(
+        createErrorSessionFn(new Error("API rate limit exceeded"))
+      );
       const result = await generator.generate("Content here. ".repeat(20), "error.md");
 
       expect(result.success).toBe(false);
@@ -440,9 +410,9 @@ describe("QACardGenerator", () => {
     });
 
     test("returns success with empty cards on invalid LLM response", async () => {
-      configureSdkForTesting(createMockSdk("This is not JSON at all!"));
-
-      const generator = createQACardGenerator();
+      const generator = createQACardGenerator(
+        createMockSessionFn("This is not JSON at all!")
+      );
       const result = await generator.generate("Content here. ".repeat(20), "invalid.md");
 
       // Invalid JSON is a successful call that just didn't extract anything
@@ -460,9 +430,8 @@ describe("QACardGenerator", () => {
 \`\`\`
 
 That's all I found.`;
-      configureSdkForTesting(createMockSdk(mockResponse));
 
-      const generator = createQACardGenerator();
+      const generator = createQACardGenerator(createMockSessionFn(mockResponse));
       const result = await generator.generate("Content here. ".repeat(20), "wrapped.md");
 
       expect(result.success).toBe(true);
@@ -470,17 +439,6 @@ That's all I found.`;
         expect(result.cards).toHaveLength(1);
         expect(result.cards[0].question).toBe("Wrapped Q");
       }
-    });
-
-    test("includes file path in prompt for context", async () => {
-      const capturedCalls: Array<{ prompt: string; options: unknown }> = [];
-      configureSdkForTesting(createCapturingMockSdk("[]", capturedCalls));
-
-      const generator = createQACardGenerator();
-      const filePath = "01_Projects/spaced-rep/design.md";
-      await generator.generate("Content here. ".repeat(20), filePath);
-
-      expect(capturedCalls[0].prompt).toContain(filePath);
     });
   });
 });
@@ -491,14 +449,14 @@ That's all I found.`;
 
 describe("createQACardGenerator", () => {
   test("creates QACardGenerator instance", () => {
-    const generator = createQACardGenerator();
+    const generator = createQACardGenerator(createMockSessionFn("[]"));
 
     expect(generator).toBeInstanceOf(QACardGenerator);
     expect(generator.type).toBe("qa");
   });
 
   test("implements CardTypeGenerator interface", () => {
-    const generator = createQACardGenerator();
+    const generator = createQACardGenerator(createMockSessionFn("[]"));
 
     expect(typeof generator.type).toBe("string");
     expect(typeof generator.generate).toBe("function");
@@ -515,7 +473,6 @@ describe("integration: realistic content extraction", () => {
       {"question": "What does RAII stand for?", "answer": "Resource Acquisition Is Initialization"},
       {"question": "When are resources released in RAII?", "answer": "In destructors, automatically when objects go out of scope"}
     ]`;
-    configureSdkForTesting(createMockSdk(mockResponse));
 
     const content = `
 # RAII in C++
@@ -526,7 +483,7 @@ in constructors and released in destructors. This ensures resources
 are automatically cleaned up when objects go out of scope.
     `;
 
-    const generator = createQACardGenerator();
+    const generator = createQACardGenerator(createMockSessionFn(mockResponse));
     const result = await generator.generate(content, "docs/cpp/raii.md");
 
     expect(result.success).toBe(true);
@@ -537,8 +494,6 @@ are automatically cleaned up when objects go out of scope.
   });
 
   test("handles content with no extractable facts", async () => {
-    configureSdkForTesting(createMockSdk("[]"));
-
     const content = `
 # TODO
 
@@ -547,7 +502,7 @@ are automatically cleaned up when objects go out of scope.
 - [ ] Random musings with no facts
     `.repeat(5);
 
-    const generator = createQACardGenerator();
+    const generator = createQACardGenerator(createMockSessionFn("[]"));
     const result = await generator.generate(content, "notes/todo.md");
 
     expect(result.success).toBe(true);

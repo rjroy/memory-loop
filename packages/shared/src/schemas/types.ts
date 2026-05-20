@@ -130,6 +130,7 @@ export interface ConversationMessage {
  * @property messages - Conversation history for this session
  * @property activeModel - Model identifier captured from SDK (optional)
  * @property transcriptPath - Path to transcript markdown file in vault (optional)
+ * @property piSessionPath - Absolute path to the pi-agent JSONL session file (optional)
  */
 export interface SessionMetadata {
   id: string;
@@ -140,14 +141,9 @@ export interface SessionMetadata {
   messages: ConversationMessage[];
   activeModel?: string;
   transcriptPath?: string;
+  piSessionPath?: string;
 }
 
-/**
- * Error codes for the WebSocket protocol.
- *
- * These codes provide structured error information for clients
- * to handle specific error conditions appropriately.
- */
 /**
  * Result type for vault config save operations.
  */
@@ -155,6 +151,12 @@ export type SaveConfigResult =
   | { success: true }
   | { success: false; error: string };
 
+/**
+ * Error codes for the WebSocket protocol.
+ *
+ * These codes provide structured error information for clients
+ * to handle specific error conditions appropriately.
+ */
 export type ErrorCode =
   | "VAULT_NOT_FOUND"
   | "VAULT_ACCESS_DENIED"

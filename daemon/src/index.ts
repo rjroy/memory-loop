@@ -10,7 +10,6 @@ import { createLogger } from "@memory-loop/shared";
 import { startServer } from "./server";
 import { initVaultCache } from "./vault";
 import { checkCwebpAvailability } from "./files/utils/image-converter";
-import { initializeSdkProvider } from "./sdk-provider";
 import {
   startScheduler as startExtractionScheduler,
   stopScheduler as stopExtractionScheduler,
@@ -35,9 +34,6 @@ function getDefaultSocketPath(): string {
 
 const socketPath = process.env.DAEMON_SOCKET ?? (process.env.DAEMON_PORT ? undefined : getDefaultSocketPath());
 const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : undefined;
-
-// Initialize SDK provider so schedulers can call getSdkQuery() on catch-up
-initializeSdkProvider();
 
 // Initialize vault cache before accepting requests to prevent
 // early requests hitting an empty cache.

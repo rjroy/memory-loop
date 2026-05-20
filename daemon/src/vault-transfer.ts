@@ -1,16 +1,16 @@
 /**
  * Vault Transfer
  *
- * Provides an SDK MCP tool for transferring files between vaults.
- * Claude can use this tool to move or copy files when content is ready
+ * Provides pi-agent tool definitions for transferring files between vaults.
+ * Claude can use these tools to move or copy files when content is ready
  * to be published from a private vault to a public one.
  */
 
-import { copyFile, stat, mkdir, unlink, lstat } from "node:fs/promises";
+import { copyFile, mkdir, unlink, lstat } from "node:fs/promises";
 import { join, dirname, extname } from "node:path";
-import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
-import { createLogger } from "@memory-loop/shared";
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { createLogger, type VaultInfo } from "@memory-loop/shared";
 import { discoverVaults, getVaultById } from "./vault/vault-manager";
 import { directoryExists } from "@memory-loop/shared/server";
 import { isPathWithinVault } from "./files/file-browser";
@@ -20,23 +20,22 @@ const log = createLogger("VaultTransfer");
 /**
  * Error thrown when vault transfer operations fail.
  */
-export class VaultTransferError extends Error {
-  readonly code:
-    | "SOURCE_VAULT_NOT_FOUND"
-    | "TARGET_VAULT_NOT_FOUND"
-    | "SOURCE_FILE_NOT_FOUND"
-    | "TARGET_EXISTS"
-    | "PATH_TRAVERSAL"
-    | "INVALID_FILE_TYPE"
-    | "TRANSFER_FAILED";
+export type VaultTransferErrorCode =
+  | "SOURCE_VAULT_NOT_FOUND"
+  | "TARGET_VAULT_NOT_FOUND"
+  | "SOURCE_FILE_NOT_FOUND"
+  | "TARGET_EXISTS"
+  | "PATH_TRAVERSAL"
+  | "INVALID_FILE_TYPE"
+  | "TRANSFER_FAILED";
 
+export class VaultTransferError extends Error {
   constructor(
     message: string,
-    code: VaultTransferError["code"]
+    public readonly code: VaultTransferErrorCode
   ) {
     super(message);
     this.name = "VaultTransferError";
-    this.code = code;
   }
 }
 
@@ -97,6 +96,23 @@ export interface TransferResult {
 }
 
 /**
+ * Resolves a vault by ID, throwing a typed VaultTransferError when missing.
+ */
+async function requireVault(
+  vaultId: string,
+  role: "source" | "target"
+): Promise<VaultInfo> {
+  const vault = await getVaultById(vaultId);
+  if (!vault) {
+    throw new VaultTransferError(
+      `${role === "source" ? "Source" : "Target"} vault "${vaultId}" not found`,
+      role === "source" ? "SOURCE_VAULT_NOT_FOUND" : "TARGET_VAULT_NOT_FOUND"
+    );
+  }
+  return vault;
+}
+
+/**
  * Transfers a file from one vault to another.
  */
 export async function transferFile(
@@ -119,55 +135,37 @@ export async function transferFile(
   validateMarkdownPath(sourcePath);
   validateMarkdownPath(targetPath);
 
-  // Get source vault
-  const sourceVault = await getVaultById(sourceVaultId);
-  if (!sourceVault) {
-    throw new VaultTransferError(
-      `Source vault "${sourceVaultId}" not found`,
-      "SOURCE_VAULT_NOT_FOUND"
-    );
-  }
-
-  // Get target vault
-  const targetVault = await getVaultById(targetVaultId);
-  if (!targetVault) {
-    throw new VaultTransferError(
-      `Target vault "${targetVaultId}" not found`,
-      "TARGET_VAULT_NOT_FOUND"
-    );
-  }
+  const sourceVault = await requireVault(sourceVaultId, "source");
+  const targetVault = await requireVault(targetVaultId, "target");
 
   // Validate paths are within vault boundaries
   const sourceFullPath = await validateSafePath(sourceVault.contentRoot, sourcePath);
   const targetFullPath = await validateSafePath(targetVault.contentRoot, targetPath);
 
   // Check source file exists and is not a symlink
-  try {
-    const sourceStats = await lstat(sourceFullPath);
-    if (sourceStats.isSymbolicLink()) {
-      log.warn(`Symlink rejected: ${sourcePath}`);
-      throw new VaultTransferError(
-        `Source path "${sourcePath}" is a symbolic link and cannot be transferred`,
-        "PATH_TRAVERSAL"
-      );
-    }
-    if (!sourceStats.isFile()) {
-      throw new VaultTransferError(
-        `Source path "${sourcePath}" is not a file`,
-        "SOURCE_FILE_NOT_FOUND"
-      );
-    }
-  } catch (error) {
-    if (error instanceof VaultTransferError) {
-      throw error;
-    }
+  const sourceLstat = await lstat(sourceFullPath).catch(() => null);
+  if (!sourceLstat) {
     throw new VaultTransferError(
       `Source file "${sourcePath}" does not exist in vault "${sourceVaultId}"`,
       "SOURCE_FILE_NOT_FOUND"
     );
   }
+  if (sourceLstat.isSymbolicLink()) {
+    log.warn(`Symlink rejected: ${sourcePath}`);
+    throw new VaultTransferError(
+      `Source path "${sourcePath}" is a symbolic link and cannot be transferred`,
+      "PATH_TRAVERSAL"
+    );
+  }
+  if (!sourceLstat.isFile()) {
+    throw new VaultTransferError(
+      `Source path "${sourcePath}" is not a file`,
+      "SOURCE_FILE_NOT_FOUND"
+    );
+  }
 
-  // Check if anything exists at target path (including broken symlinks)
+  // Check if anything exists at target path (including broken symlinks).
+  // ENOENT is expected; any other error is a real filesystem problem.
   let targetStats;
   try {
     targetStats = await lstat(targetFullPath);
@@ -202,9 +200,8 @@ export async function transferFile(
     log.debug(`Created target directory: ${targetDir}`);
   }
 
-  // Get file size before transfer
-  const sourceStats = await stat(sourceFullPath);
-  const bytesTransferred = sourceStats.size;
+  // Size from the lstat above — we've already verified it's a regular file.
+  const bytesTransferred = sourceLstat.size;
 
   // Perform the transfer
   if (mode === "copy") {
@@ -249,128 +246,114 @@ export async function listTransferableVaults(): Promise<
 }
 
 /**
- * Creates an SDK MCP server with vault transfer tools.
+ * Builds a tool error result shaped like a successful tool result so the agent
+ * can surface failure as text. Logs the message for operator visibility.
+ * `prefix` is used both for the log line and the user-facing message
+ * (e.g. "Transfer failed", "Failed to list vaults").
  */
-export function createVaultTransferServer() {
-  return createSdkMcpServer({
-    name: "vault-transfer",
-    version: "1.0.0",
-    tools: [
-      tool(
-        "transfer_file",
+function toolErrorResult(prefix: string, error: unknown): {
+  content: Array<{ type: "text"; text: string }>;
+  details: null;
+} {
+  const message = error instanceof Error ? error.message : String(error);
+  log.error(`${prefix}:`, message);
+  return {
+    content: [{ type: "text", text: `${prefix}: ${message}` }],
+    details: null,
+  };
+}
+
+/**
+ * Creates pi-agent tool definitions for vault transfer operations.
+ */
+export function createVaultTransferTools(): ToolDefinition[] {
+  return [
+    defineTool({
+      name: "transfer_file",
+      label: "Transfer File",
+      description:
         "Transfer a markdown file from one vault to another. Use this when content is ready to be published from a private vault to a public one, or to reorganize content between vaults.",
-        {
-          sourceVaultId: z
-            .string()
-            .describe("ID of the source vault (directory name in VAULTS_DIR)"),
-          targetVaultId: z
-            .string()
-            .describe("ID of the target vault (directory name in VAULTS_DIR)"),
-          sourcePath: z
-            .string()
-            .describe(
-              "Path to the file within the source vault (relative to vault root, must be .md)"
-            ),
-          targetPath: z
-            .string()
-            .optional()
-            .describe(
-              "Path for the file in target vault (defaults to same as source). Must be .md"
-            ),
-          mode: z
-            .enum(["copy", "move"])
-            .describe("Whether to copy (keep original) or move (delete original)"),
-          overwrite: z
-            .boolean()
-            .optional()
-            .default(false)
-            .describe("Whether to overwrite if target file already exists"),
-        },
-        async (args) => {
-          try {
-            const result = await transferFile({
-              sourceVaultId: args.sourceVaultId,
-              targetVaultId: args.targetVaultId,
-              sourcePath: args.sourcePath,
-              targetPath: args.targetPath,
-              mode: args.mode,
-              overwrite: args.overwrite ?? false,
-            });
+      parameters: Type.Object({
+        sourceVaultId: Type.String({
+          description: "ID of the source vault (directory name in VAULTS_DIR)",
+        }),
+        targetVaultId: Type.String({
+          description: "ID of the target vault (directory name in VAULTS_DIR)",
+        }),
+        sourcePath: Type.String({
+          description:
+            "Path to the file within the source vault (relative to vault root, must be .md)",
+        }),
+        targetPath: Type.Optional(
+          Type.String({
+            description:
+              "Path for the file in target vault (defaults to same as source). Must be .md",
+          })
+        ),
+        mode: Type.Union([Type.Literal("copy"), Type.Literal("move")], {
+          description: "Whether to copy (keep original) or move (delete original)",
+        }),
+        overwrite: Type.Optional(
+          Type.Boolean({
+            description: "Whether to overwrite if target file already exists",
+          })
+        ),
+      }),
+      async execute(_toolCallId, args) {
+        try {
+          const result = await transferFile({
+            sourceVaultId: args.sourceVaultId,
+            targetVaultId: args.targetVaultId,
+            sourcePath: args.sourcePath,
+            targetPath: args.targetPath,
+            mode: args.mode,
+            overwrite: args.overwrite ?? false,
+          });
 
-            const action = result.mode === "copy" ? "Copied" : "Moved";
-            return {
-              content: [
-                {
-                  type: "text",
-                  text:
-                    `${action} file successfully.\n\n` +
-                    `From: ${result.sourceVaultId}/${result.sourcePath}\n` +
-                    `To: ${result.targetVaultId}/${result.targetPath}\n` +
-                    `Size: ${result.bytesTransferred} bytes`,
-                },
-              ],
-            };
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            log.error("Transfer failed:", message);
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Transfer failed: ${message}`,
-                },
-              ],
-            };
-          }
+          const action = result.mode === "copy" ? "Copied" : "Moved";
+          const text =
+            `${action} file successfully.\n\n` +
+            `From: ${result.sourceVaultId}/${result.sourcePath}\n` +
+            `To: ${result.targetVaultId}/${result.targetPath}\n` +
+            `Size: ${result.bytesTransferred} bytes`;
+          return {
+            content: [{ type: "text", text }],
+            details: result,
+          };
+        } catch (error) {
+          return toolErrorResult("Transfer failed", error);
         }
-      ),
-      tool(
-        "list_vaults",
+      },
+    }),
+    defineTool({
+      name: "list_vaults",
+      label: "List Vaults",
+      description:
         "List all available vaults that can be used as source or target for file transfers.",
-        {},
-        async () => {
-          try {
-            const vaults = await listTransferableVaults();
+      parameters: Type.Object({}),
+      async execute() {
+        try {
+          const vaults = await listTransferableVaults();
 
-            if (vaults.length === 0) {
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: "No vaults found. Ensure VAULTS_DIR is configured and contains vaults with CLAUDE.md files.",
-                  },
-                ],
-              };
-            }
-
-            const vaultList = vaults
-              .map((v) => `- ${v.id}: ${v.name}`)
-              .join("\n");
-
+          if (vaults.length === 0) {
             return {
-              content: [
-                {
-                  type: "text",
-                  text: `Available vaults:\n\n${vaultList}`,
-                },
-              ],
-            };
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            log.error("Failed to list vaults:", message);
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Failed to list vaults: ${message}`,
-                },
-              ],
+              content: [{
+                type: "text",
+                text: "No vaults found. Ensure VAULTS_DIR is configured and contains vaults with CLAUDE.md files.",
+              }],
+              details: [],
             };
           }
+
+          const vaultList = vaults.map((v) => `- ${v.id}: ${v.name}`).join("\n");
+          return {
+            content: [{ type: "text", text: `Available vaults:\n\n${vaultList}` }],
+            details: vaults,
+          };
+        } catch (error) {
+          return toolErrorResult("Failed to list vaults", error);
         }
-      ),
-    ],
-  });
+      },
+    }),
+  ];
 }

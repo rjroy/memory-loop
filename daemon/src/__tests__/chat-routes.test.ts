@@ -8,9 +8,15 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../server";
 import { resetController } from "../session-controller";
-import { configureSdkForTesting, _resetForTesting } from "../sdk-provider";
+import {
+  configurePiSessionForTesting,
+  _resetPiSessionForTesting,
+  type PiSessionOptions,
+  type PiSessionResult,
+} from "../pi-session-factory";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
-let cleanupSdk: (() => void) | undefined;
+let cleanupSession: (() => void) | undefined;
 const startTime = Date.now();
 
 // Set up test environment
@@ -18,25 +24,29 @@ const originalVaultsDir = process.env.VAULTS_DIR;
 const originalMockSdk = process.env.MOCK_SDK;
 
 beforeEach(async () => {
-  // Configure mock SDK
-  const mockQuery = (async () => ({
-    content: [{ type: "text" as const, text: "Mock response" }],
-    model: "test",
-    id: "msg_test",
-    role: "assistant" as const,
-    stop_reason: "end_turn",
-    type: "message" as const,
-    usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
-  })) as never;
-  cleanupSdk = configureSdkForTesting(mockQuery);
+  // Inject a no-op session factory to prevent real pi-agent calls
+  const mockSession: (opts: PiSessionOptions) => Promise<PiSessionResult> = async () => {
+    const session = {
+      messages: [],
+      prompt: async () => {},
+      abort: () => {},
+      subscribe: () => () => {},
+      bindExtensions: async () => {},
+      modelRegistry: { find: () => undefined },
+      setModel: async () => {},
+      sessionFile: undefined,
+    } as unknown as AgentSession;
+    return { session, jsonlPath: null };
+  };
+  cleanupSession = configurePiSessionForTesting(mockSession);
 
   // Reset controller state
   resetController();
 });
 
 afterEach(() => {
-  cleanupSdk?.();
-  _resetForTesting();
+  cleanupSession?.();
+  _resetPiSessionForTesting();
   resetController();
 
   // Restore env

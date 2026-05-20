@@ -1,83 +1,71 @@
 /**
  * Session Manager
  *
- * Manages Claude Agent SDK session lifecycle: create, resume, and persistence.
+ * Manages pi-agent session lifecycle: create, resume, and persistence.
  * Sessions are stored in `.memory-loop/sessions/` as JSON files.
  */
 
 import { mkdir, readFile, writeFile, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type {
-  Query,
-  SDKMessage,
-  Options,
-  SlashCommand as SDKSlashCommand,
-} from "@anthropic-ai/claude-agent-sdk";
-import { getSdkQuery, type QueryFunction } from "./sdk-provider";
-
-// Re-export the SDK's SlashCommand type for use by other modules
-export type { SDKSlashCommand };
+import {
+  defineTool,
+  SessionManager,
+  type AgentSession,
+  type ExtensionFactory,
+  type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import {
+  createLogger,
+  formatDateForFilename,
+  formatTimeForTimestamp,
+  resolveDiscussionModel,
+  resolveRecentDiscussions,
+  type ConversationMessage,
+  type RecentDiscussionEntry,
+  type SessionMetadata,
+  type VaultInfo,
+} from "@memory-loop/shared";
+import { directoryExists, fileExists } from "@memory-loop/shared/server";
+import { getVaultById } from "./vault/vault-manager";
+import {
+  appendToTranscript,
+  formatAssistantMessage,
+  formatUserMessage,
+  initializeTranscript,
+} from "./files/transcript-manager";
+import { createVaultTransferTools } from "./vault-transfer";
+import { loadVaultConfig } from "./vault/vault-config";
+import { createPiSession } from "./pi-session-factory";
 
 // Re-export types from shared for convenience
 export type { SessionMetadata, ConversationMessage } from "@memory-loop/shared";
 
-// Re-export QueryFunction for backward compatibility
-export type { QueryFunction } from "./sdk-provider";
-import type { SessionMetadata, VaultInfo, RecentDiscussionEntry, ConversationMessage } from "@memory-loop/shared";
-import { directoryExists, fileExists } from "@memory-loop/shared/server";
-import { getVaultById } from "./vault/vault-manager";
-import {
-  initializeTranscript,
-  appendToTranscript,
-  formatUserMessage,
-  formatAssistantMessage,
-} from "./files/transcript-manager";
-import { formatDateForFilename, formatTimeForTimestamp } from "@memory-loop/shared";
-import { createLogger } from "@memory-loop/shared";
 const log = createLogger("Session");
-import { createVaultTransferServer } from "./vault-transfer";
-import { isSessionExpiryError } from "./streaming/event-translator";
-import { loadVaultConfig } from "./vault/vault-config";
-import { resolveRecentDiscussions, resolveDiscussionModel } from "@memory-loop/shared";
 
 /**
- * Default SDK options for Discussion mode.
+ * Built-in tool allowlist for Discussion mode.
  *
- * These options configure Claude for interactive vault exploration:
- * - allowedTools: Auto-allow read operations without user prompts
- * - permissionMode: Accept file edits in the vault automatically
- * - maxBudgetUsd: Hard cost cap as safety net
- * - includePartialMessages: Enable streaming for real-time responses
- *
- * Note: The model is configured per-vault via .memory-loop.json and
- * is set dynamically in createSession/resumeSession.
- *
- * Note: Task tool is intentionally excluded from allowedTools because
- * subagents inherit parent tools by default, which could bypass permission
- * checks for dangerous operations.
+ * Restricts to read-only operations and bash. Task/subagent tools are excluded
+ * because they inherit parent tools and could bypass permission checks.
+ * Web tools (WebFetch, WebSearch) are excluded because they require the
+ * pi-web-access extension which is not available to daemon sessions.
  */
-export const DISCUSSION_MODE_OPTIONS: Partial<Options> = {
-  // Auto-allow read-only operations without prompting user
-  // Task is excluded: subagents inherit tools and could bypass permissions
-  allowedTools: [
-    "Read",
-    "Glob",
-    "Grep",
-    "AskUserQuestion",
-    "WebFetch",
-    "WebSearch",
-    "Task",
-    "TodoWrite",
-    "TodoRead",
-  ],
-  // Model is set dynamically from vault config (default: "opus")
-  // Auto-accept file edits - the user is working in their own vault
-  permissionMode: "acceptEdits",
-  // Hard cost cap as safety net ($2 is generous for a single conversation)
-  maxBudgetUsd: 2.0,
-  // Enable streaming for real-time response display
-  includePartialMessages: true,
-  settingSources: ["local", "project", "user"],
+export const DISCUSSION_TOOLS = ["read", "grep", "bash"] as const;
+
+/**
+ * Pi-agent model coordinates. Matches the `model` field accepted by createPiSession.
+ */
+type PiAgentModel = { provider: string; modelId: string };
+
+/**
+ * Maps vault config discussion model names to pi-agent { provider, modelId } pairs.
+ * Used by createSession() and resumeSession() when building the createPiSession call.
+ */
+const DISCUSSION_MODEL_MAP: Record<string, PiAgentModel> = {
+  opus: { provider: "anthropic", modelId: "claude-opus-4-5" },
+  sonnet: { provider: "anthropic", modelId: "claude-sonnet-4-5" },
+  haiku: { provider: "anthropic", modelId: "claude-haiku-4-5" },
 };
 
 /**
@@ -104,39 +92,31 @@ export class SessionError extends Error {
 }
 
 /**
+ * Substrings that identify known SDK error categories, paired with a user-friendly
+ * explanation. First match wins; order matters only if patterns overlap.
+ */
+const SDK_ERROR_PATTERNS: ReadonlyArray<readonly [needle: string, message: string]> = [
+  ["ENOENT", "Claude Code executable not found. Please ensure Claude Code is installed."],
+  ["EACCES", "Permission denied. Unable to access required resources."],
+  ["authentication", "Authentication failed. Please check your Anthropic API key."],
+  ["rate_limit", "Rate limit exceeded. Please try again later."],
+  ["billing", "Billing error. Please check your Anthropic account."],
+  ["invalid_request", "Invalid request. The session or prompt may be malformed."],
+  ["server_error", "Server error. The Anthropic API is temporarily unavailable."],
+];
+
+/**
  * Maps SDK errors to user-friendly error messages.
  *
  * @param error - The error from the SDK
  * @returns User-friendly error message
  */
 export function mapSdkError(error: unknown): string {
-  if (error instanceof Error) {
-    // Handle known SDK error patterns
-    if (error.message.includes("ENOENT")) {
-      return "Claude Code executable not found. Please ensure Claude Code is installed.";
-    }
-    if (error.message.includes("EACCES")) {
-      return "Permission denied. Unable to access required resources.";
-    }
-    if (error.message.includes("authentication")) {
-      return "Authentication failed. Please check your Anthropic API key.";
-    }
-    if (error.message.includes("rate_limit")) {
-      return "Rate limit exceeded. Please try again later.";
-    }
-    if (error.message.includes("billing")) {
-      return "Billing error. Please check your Anthropic account.";
-    }
-    if (error.message.includes("invalid_request")) {
-      return "Invalid request. The session or prompt may be malformed.";
-    }
-    if (error.message.includes("server_error")) {
-      return "Server error. The Anthropic API is temporarily unavailable.";
-    }
-    // Return original message if no pattern matches
-    return error.message;
+  if (!(error instanceof Error)) {
+    return "An unknown error occurred while communicating with Claude.";
   }
-  return "An unknown error occurred while communicating with Claude.";
+  const match = SDK_ERROR_PATTERNS.find(([needle]) => error.message.includes(needle));
+  return match?.[1] ?? error.message;
 }
 
 /**
@@ -164,8 +144,9 @@ export async function getSessionsDir(vaultPath: string): Promise<string> {
  * @throws SessionError if invalid
  */
 export function validateSessionId(sessionId: string): boolean {
-  // Session IDs from SDK are typically UUIDs or similar safe formats
-  // Allow alphanumeric, hyphens, underscores, and periods (for UUIDs)
+  // Session IDs from SDK are typically UUIDs or similar safe formats.
+  // Allow alphanumeric, hyphens, underscores, and periods (for UUIDs).
+  // `/` and `\` cannot match this regex, so path traversal via separator is rejected here.
   const safePattern = /^[a-zA-Z0-9_.-]+$/;
 
   if (!sessionId || sessionId.length === 0) {
@@ -183,8 +164,8 @@ export function validateSessionId(sessionId: string): boolean {
     );
   }
 
-  // Explicitly reject path traversal attempts
-  if (sessionId.includes("..") || sessionId.includes("/") || sessionId.includes("\\")) {
+  // The regex permits `.`, so `..` survives the character check; reject explicitly.
+  if (sessionId.includes("..")) {
     throw new SessionError(
       "Session ID contains path traversal characters",
       "SESSION_INVALID"
@@ -305,6 +286,53 @@ export async function deleteSession(vaultPath: string, sessionId: string): Promi
 }
 
 /**
+ * Returns the session IDs corresponding to JSON files in the given sessions dir.
+ * Returns an empty array if the directory does not exist or cannot be read.
+ */
+async function readSessionIds(sessionsDir: string): Promise<string[]> {
+  if (!(await directoryExists(sessionsDir))) {
+    return [];
+  }
+  const files = await readdir(sessionsDir);
+  return files
+    .filter((file) => file.endsWith(".json"))
+    .map((file) => file.slice(0, -5));
+}
+
+/**
+ * Loads all sessions for a vault paired with their lastActive Date, sorted
+ * most-recent first. Skips files that fail to load or have invalid timestamps.
+ * Returns an empty array if anything fails (e.g. sessions dir cannot be read).
+ */
+async function loadSessionsSortedByActivity(
+  vaultPath: string
+): Promise<Array<{ metadata: SessionMetadata; lastActive: Date }>> {
+  try {
+    const sessionsDir = await getSessionsDir(vaultPath);
+    const sessionIds = await readSessionIds(sessionsDir);
+
+    const entries: Array<{ metadata: SessionMetadata; lastActive: Date }> = [];
+    for (const sessionId of sessionIds) {
+      try {
+        const metadata = await loadSession(vaultPath, sessionId);
+        if (!metadata) continue;
+        const lastActive = new Date(metadata.lastActiveAt);
+        if (Number.isNaN(lastActive.getTime())) continue;
+        entries.push({ metadata, lastActive });
+      } catch {
+        // Skip corrupted session files
+        log.debug(`Skipping corrupted session file: ${sessionId}.json`);
+      }
+    }
+
+    entries.sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime());
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Lists all session IDs for a given vault.
  *
  * @param vaultPath - Absolute path to the vault root directory
@@ -313,24 +341,7 @@ export async function deleteSession(vaultPath: string, sessionId: string): Promi
 export async function listSessionsByVault(vaultPath: string): Promise<string[]> {
   try {
     const sessionsDir = await getSessionsDir(vaultPath);
-
-    if (!(await directoryExists(sessionsDir))) {
-      return [];
-    }
-
-    const files = await readdir(sessionsDir);
-    const sessionIds: string[] = [];
-
-    for (const file of files) {
-      if (!file.endsWith(".json")) {
-        continue;
-      }
-
-      const sessionId = file.slice(0, -5); // Remove .json extension
-      sessionIds.push(sessionId);
-    }
-
-    return sessionIds;
+    return await readSessionIds(sessionsDir);
   } catch {
     return [];
   }
@@ -347,47 +358,12 @@ export async function getRecentSessions(
   vaultPath: string,
   limit = 5
 ): Promise<RecentDiscussionEntry[]> {
-  try {
-    const sessionsDir = await getSessionsDir(vaultPath);
+  const entries = await loadSessionsSortedByActivity(vaultPath);
 
-    if (!(await directoryExists(sessionsDir))) {
-      return [];
-    }
-
-    const files = await readdir(sessionsDir);
-    const sessions: { metadata: SessionMetadata; lastActive: Date }[] = [];
-
-    for (const file of files) {
-      if (!file.endsWith(".json")) {
-        continue;
-      }
-
-      const sessionId = file.slice(0, -5);
-      try {
-        const metadata = await loadSession(vaultPath, sessionId);
-
-        if (metadata && metadata.messages.length > 0) {
-          sessions.push({
-            metadata,
-            lastActive: new Date(metadata.lastActiveAt),
-          });
-        }
-      } catch {
-        // Skip corrupted session files
-        log.debug(`Skipping corrupted session file: ${file}`);
-      }
-    }
-
-    // Sort by last activity, most recent first
-    sessions.sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime());
-
-    // Take the top N sessions
-    const topSessions = sessions.slice(0, limit);
-
-    // Format for UI
-    return topSessions.map(({ metadata }) => {
-      const lastActive = new Date(metadata.lastActiveAt);
-      // Find first user message for preview
+  return entries
+    .filter(({ metadata }) => metadata.messages.length > 0)
+    .slice(0, limit)
+    .map(({ metadata, lastActive }) => {
       const firstUserMessage = metadata.messages.find((m) => m.role === "user");
       const preview = firstUserMessage
         ? truncatePreview(firstUserMessage.content, 100)
@@ -401,9 +377,6 @@ export async function getRecentSessions(
         messageCount: metadata.messages.length,
       };
     });
-  } catch {
-    return [];
-  }
 }
 
 /**
@@ -418,46 +391,15 @@ export async function pruneOldSessions(
 ): Promise<void> {
   try {
     const sessionsDir = await getSessionsDir(vaultPath);
+    const entries = await loadSessionsSortedByActivity(vaultPath);
 
-    if (!(await directoryExists(sessionsDir))) {
-      return;
-    }
-
-    const files = await readdir(sessionsDir);
-    const sessions: { sessionId: string; lastActive: Date; filePath: string }[] = [];
-
-    for (const file of files) {
-      if (!file.endsWith(".json")) {
-        continue;
-      }
-
-      const sessionId = file.slice(0, -5);
+    for (const { metadata } of entries.slice(keepCount)) {
+      const filePath = join(sessionsDir, `${metadata.id}.json`);
       try {
-        const metadata = await loadSession(vaultPath, sessionId);
-
-        if (metadata) {
-          sessions.push({
-            sessionId,
-            lastActive: new Date(metadata.lastActiveAt),
-            filePath: join(sessionsDir, file),
-          });
-        }
+        await unlink(filePath);
+        log.info(`Pruned old session: ${metadata.id}`);
       } catch {
-        // Skip corrupted session files
-      }
-    }
-
-    // Sort by last activity, most recent first
-    sessions.sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime());
-
-    // Delete sessions beyond the keep count
-    const sessionsToDelete = sessions.slice(keepCount);
-    for (const session of sessionsToDelete) {
-      try {
-        await unlink(session.filePath);
-        log.info(`Pruned old session: ${session.sessionId}`);
-      } catch {
-        log.warn(`Failed to delete session file: ${session.filePath}`);
+        log.warn(`Failed to delete session file: ${filePath}`);
       }
     }
   } catch (error) {
@@ -474,7 +416,7 @@ function truncatePreview(text: string, maxLength: number): string {
   if (firstLine.length <= maxLength) {
     return firstLine;
   }
-  return firstLine.slice(0, maxLength - 1) + "\u2026";
+  return firstLine.slice(0, maxLength - 1) + "…";
 }
 
 /**
@@ -500,48 +442,8 @@ export async function touchSession(vaultPath: string, sessionId: string): Promis
 export async function getSessionForVault(
   vaultPath: string
 ): Promise<string | null> {
-  try {
-    const sessionsDir = await getSessionsDir(vaultPath);
-
-    if (!(await directoryExists(sessionsDir))) {
-      return null;
-    }
-
-    const files = await readdir(sessionsDir);
-
-    let mostRecentSession: { id: string; lastActiveAt: Date } | null = null;
-
-    for (const file of files) {
-      if (!file.endsWith(".json")) {
-        continue;
-      }
-
-      const sessionId = file.slice(0, -5); // Remove .json extension
-
-      let metadata;
-      try {
-        metadata = await loadSession(vaultPath, sessionId);
-      } catch {
-        // Skip corrupted session files
-        continue;
-      }
-
-      if (metadata) {
-        const lastActiveAt = new Date(metadata.lastActiveAt);
-        if (Number.isNaN(lastActiveAt.getTime())) {
-          // Skip sessions with invalid timestamps
-          continue;
-        }
-        if (!mostRecentSession || lastActiveAt > mostRecentSession.lastActiveAt) {
-          mostRecentSession = { id: sessionId, lastActiveAt };
-        }
-      }
-    }
-
-    return mostRecentSession?.id ?? null;
-  } catch {
-    return null;
-  }
+  const entries = await loadSessionsSortedByActivity(vaultPath);
+  return entries[0]?.metadata.id ?? null;
 }
 
 /**
@@ -583,13 +485,13 @@ export async function appendMessage(
           message.content,
           timestamp
         );
-        log.info(`[Session] Created transcript: ${metadata.transcriptPath}`);
+        log.info(`Created transcript: ${metadata.transcriptPath}`);
       } else {
-        log.warn(`[Session] Vault "${metadata.vaultId}" not found, skipping transcript`);
+        log.warn(`Vault "${metadata.vaultId}" not found, skipping transcript`);
       }
     } catch (error) {
       // Log error but don't fail the message append
-      log.warn(`[Session] Failed to initialize transcript:`, error);
+      log.warn("Failed to initialize transcript:", error);
     }
   }
 
@@ -606,27 +508,21 @@ export async function appendMessage(
       await appendToTranscript(metadata.transcriptPath, formatted);
     } catch (error) {
       // Log error but don't fail the message append
-      log.warn(`[Session] Failed to append to transcript:`, error);
+      log.warn("Failed to append to transcript:", error);
     }
   }
 
-  log.info(`[Session] Appended ${message.role} message to session ${sessionId.slice(0, 8)}...`);
+  log.info(`Appended ${message.role} message to session ${sessionId.slice(0, 8)}...`);
 }
 
 /**
- * Result of a session query, wrapping the async generator.
+ * Result of a session creation or resume, wrapping the pi-agent session.
  */
 export interface SessionQueryResult {
-  /** The session ID */
+  /** The session ID (locally generated UUID) */
   sessionId: string;
-  /** Async generator for streaming SDK events */
-  events: AsyncGenerator<SDKMessage, void>;
-  /** Function to interrupt the query */
-  interrupt: () => Promise<void>;
-  /** Close the SDK query and terminate the child process. */
-  close: () => void;
-  /** Function to fetch supported slash commands */
-  supportedCommands: () => Promise<SDKSlashCommand[]>;
+  /** The live pi-agent session for streaming and control */
+  piSession: AgentSession;
   /** Conversation history from prior turns (populated on resume) */
   previousMessages?: ConversationMessage[];
 }
@@ -662,222 +558,189 @@ export type AskUserQuestionCallback = (
 ) => Promise<Record<string, string>>;
 
 /**
- * Extracts the session ID from the first event.
- * The session ID is available in every SDKMessage.
- *
- * @param generator - The query generator
- * @returns Promise that resolves to the session ID when first event arrives
+ * Builds a pi-agent ExtensionFactory that gates every tool call through
+ * the provided ToolPermissionCallback. When the user denies permission,
+ * the factory returns a block result so the tool is not executed.
  */
-async function extractSessionId(
-  generator: Query
-): Promise<{ sessionId: string; firstEvent: SDKMessage }> {
-  const result = await generator.next();
-
-  if (result.done) {
-    throw new SessionError(
-      "Query ended without producing any events",
-      "SDK_ERROR"
-    );
-  }
-
-  const firstEvent = result.value;
-  const sessionId = firstEvent.session_id;
-
-  if (!sessionId) {
-    throw new SessionError(
-      "First event did not contain session_id",
-      "SDK_ERROR"
-    );
-  }
-
-  return { sessionId, firstEvent };
-}
-
-/**
- * Creates a wrapper generator that yields the first event and then all subsequent events.
- */
-async function* wrapGenerator(
-  firstEvent: SDKMessage,
-  generator: Query
-): AsyncGenerator<SDKMessage, void> {
-  yield firstEvent;
-  for await (const event of generator) {
-    yield event;
-  }
-}
-
-/**
- * Creates the canUseTool callback for the SDK based on permission and question callbacks.
- * This wraps the simpler callbacks into the SDK's expected format.
- *
- * Special handling for AskUserQuestion tool:
- * - Uses askUserQuestion callback to get user answers
- * - Populates the answers field in updatedInput before allowing
- *
- * @param requestPermission - Callback to request permission from the user
- * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
- * @returns A canUseTool function for the SDK options
- */
-function createCanUseTool(
-  requestPermission: ToolPermissionCallback,
-  askUserQuestion?: AskUserQuestionCallback
-): (toolName: string, input: Record<string, unknown>) => Promise<{ behavior: "allow"; updatedInput: Record<string, unknown> } | { behavior: "deny"; message: string }> {
-  return async (toolName: string, input: Record<string, unknown>) => {
-    // Generate a unique ID for this tool use request
-    const toolUseId = `tool_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-
-    log.info(`Tool permission requested: ${toolName} (${toolUseId})`);
-
-    // Special handling for AskUserQuestion tool
-    if (toolName === "AskUserQuestion" && askUserQuestion) {
-      log.info(`AskUserQuestion tool detected, routing to question handler`);
-
-      // Extract questions from input
-      const questions = input.questions as AskUserQuestionItem[] | undefined;
-      if (!questions || !Array.isArray(questions)) {
-        log.warn(`AskUserQuestion called without valid questions array`);
-        return {
-          behavior: "deny" as const,
-          message: "AskUserQuestion requires a valid questions array",
-        };
-      }
-
+function createPermissionExtension(callback: ToolPermissionCallback): ExtensionFactory {
+  return (pi) => {
+    pi.on("tool_call", async (event) => {
       try {
-        // Get answers from user via callback
-        const answers = await askUserQuestion(toolUseId, questions);
-
-        log.info(`AskUserQuestion answers received for ${toolUseId}`);
-
-        // Return with answers populated in input
-        return {
-          behavior: "allow" as const,
-          updatedInput: { ...input, answers },
-        };
+        const allowed = await callback(event.toolCallId, event.toolName, event.input ?? {});
+        if (!allowed) {
+          return { block: true, reason: `User denied permission for ${event.toolName}` };
+        }
+        // Returning undefined allows the tool to proceed
+        return undefined;
       } catch (err) {
-        log.warn(`AskUserQuestion failed for ${toolUseId}:`, err);
-        return {
-          behavior: "deny" as const,
-          message: "User cancelled or failed to answer questions",
-        };
+        log.error(`Permission callback threw for ${event.toolName} — blocking tool call`, err);
+        return { block: true, reason: `Permission check failed for ${event.toolName}` };
       }
-    }
+    });
+  };
+}
 
-    // Standard permission flow for other tools
-    const allowed = await requestPermission(toolUseId, toolName, input);
-
-    if (allowed) {
-      log.info(`Tool permission granted: ${toolName} (${toolUseId})`);
-      return { behavior: "allow" as const, updatedInput: input };
-    } else {
-      log.info(`Tool permission denied: ${toolName} (${toolUseId})`);
+/**
+ * Builds the AskUserQuestion custom tool definition, wiring the provided
+ * callback so the agent can ask the user structured questions during a turn.
+ */
+function createAskUserQuestionTool(callback: AskUserQuestionCallback): ToolDefinition {
+  return defineTool({
+    name: "AskUserQuestion",
+    label: "Ask User Question",
+    description: "Ask the user a set of questions and receive their answers",
+    parameters: Type.Object({
+      questions: Type.Array(
+        Type.Object({
+          question: Type.String({ description: "The question text" }),
+          header: Type.String({ description: "Short header label for the question" }),
+          options: Type.Array(
+            Type.Object({
+              label: Type.String({ description: "Option label" }),
+              description: Type.String({ description: "Option description" }),
+            }),
+            { description: "Available options (2-4)" }
+          ),
+          multiSelect: Type.Boolean({ description: "Whether multiple options can be selected" }),
+        }),
+        { description: "List of questions to ask the user" }
+      ),
+    }),
+    async execute(toolCallId, args) {
+      const answers = await callback(toolCallId, args.questions as AskUserQuestionItem[]);
       return {
-        behavior: "deny" as const,
-        message: `User denied permission for ${toolName}`,
+        content: [{ type: "text", text: JSON.stringify({ answers }) }],
+        details: { answers },
       };
-    }
-  };
-}
-
-/**
- * Input for preparing per-turn SDK options.
- */
-export interface TurnPrepInput {
-  vaultPath: string;
-  resume?: string;
-  canUseTool?: Options["canUseTool"];
-  additionalOptions?: Partial<Options>;
-}
-
-/**
- * Assembles SDK options for a single turn. Handles vault config loading,
- * model resolution, and MCP server setup. Used by both createSession()
- * and resumeSession() to eliminate duplicated option construction.
- */
-export async function prepareTurnOptions(input: TurnPrepInput): Promise<Partial<Options>> {
-  const config = await loadVaultConfig(input.vaultPath);
-  const model = resolveDiscussionModel(config);
-  const vaultTransferServer = createVaultTransferServer();
-
-  return {
-    ...DISCUSSION_MODE_OPTIONS,
-    model,
-    ...input.additionalOptions,
-    cwd: input.vaultPath,
-    ...(input.resume ? { resume: input.resume } : {}),
-    mcpServers: {
-      ...input.additionalOptions?.mcpServers,
-      "vault-transfer": vaultTransferServer,
     },
-    ...(input.canUseTool ? { canUseTool: input.canUseTool } : {}),
-  };
+  });
 }
 
 /**
- * Creates a new Claude Agent SDK session for a vault.
+ * Maps a vault config discussion model name to a pi-agent { provider, modelId } pair.
+ * Returns undefined if the model name is not recognised (triggers fallback in the factory).
+ */
+function resolveModelForPiAgent(
+  vaultPath: string,
+  config: Awaited<ReturnType<typeof loadVaultConfig>>
+): PiAgentModel | undefined {
+  const modelName = resolveDiscussionModel(config);
+  const mapped = DISCUSSION_MODEL_MAP[modelName];
+  if (!mapped) {
+    log.warn(`Unknown discussion model "${modelName}" for vault at ${vaultPath}, using pi-agent fallback`);
+  }
+  return mapped;
+}
+
+/**
+ * Builds the discussion extension factories and custom tools shared by
+ * createSession() and resumeSession(). Both flows wire the same callbacks
+ * (tool permission gating, AskUserQuestion) and the same vault-transfer tools.
+ */
+function buildSessionExtensions(
+  requestToolPermission: ToolPermissionCallback | undefined,
+  askUserQuestion: AskUserQuestionCallback | undefined
+): { extensionFactories: ExtensionFactory[]; customTools: ToolDefinition[] } {
+  const extensionFactories: ExtensionFactory[] = [];
+  if (requestToolPermission) {
+    log.info("Tool permission callback configured");
+    extensionFactories.push(createPermissionExtension(requestToolPermission));
+  }
+
+  const customTools: ToolDefinition[] = [...createVaultTransferTools()];
+  if (askUserQuestion) {
+    log.info("AskUserQuestion callback configured");
+    customTools.push(createAskUserQuestionTool(askUserQuestion));
+  }
+
+  return { extensionFactories, customTools };
+}
+
+/**
+ * Opens a pi-agent session for the given vault using either a fresh `create`
+ * or a `resume` SessionManager. Loads vault config, resolves the discussion
+ * model, wires extensions, and logs the chosen tooling. Used by both
+ * createSession() and resumeSession() so the setup stays in one place.
+ *
+ * Returns the loaded config alongside the pi-session result so callers don't
+ * need a second loadVaultConfig() call (e.g. createSession uses it for pruning).
+ */
+async function openPiSessionForVault(
+  vaultPath: string,
+  sessionManager: ReturnType<typeof SessionManager.create>,
+  requestToolPermission: ToolPermissionCallback | undefined,
+  askUserQuestion: AskUserQuestionCallback | undefined
+): Promise<{
+  result: Awaited<ReturnType<typeof createPiSession>>;
+  config: Awaited<ReturnType<typeof loadVaultConfig>>;
+}> {
+  const config = await loadVaultConfig(vaultPath);
+  const model = resolveModelForPiAgent(vaultPath, config);
+  const { extensionFactories, customTools } = buildSessionExtensions(
+    requestToolPermission,
+    askUserQuestion
+  );
+
+  log.info(`Using discussion tools: ${DISCUSSION_TOOLS.join(", ")}`);
+  if (model) {
+    log.info(`Using vault model: provider="${model.provider}" modelId="${model.modelId}"`);
+  } else {
+    log.info("No vault model configured, using pi-agent fallback");
+  }
+
+  const result = await createPiSession({
+    cwd: vaultPath,
+    tools: [...DISCUSSION_TOOLS],
+    customTools,
+    extensionFactories,
+    sessionManager,
+    model,
+  });
+
+  return { result, config };
+}
+
+/**
+ * Wraps non-SessionError exceptions in a SessionError(SDK_ERROR). Logs context
+ * via the supplied `operation` label. Re-throws SessionError instances as-is so
+ * their original codes (e.g. RESUME_FAILED) survive.
+ */
+function wrapSdkFailure(operation: string, error: unknown): never {
+  log.error(`Failed to ${operation}`, error);
+  if (error instanceof SessionError) {
+    throw error;
+  }
+  throw new SessionError(mapSdkError(error), "SDK_ERROR");
+}
+
+/**
+ * Creates a new pi-agent session for a vault.
  *
  * @param vault - The vault to create a session for
- * @param prompt - The initial prompt to send
- * @param options - Additional SDK options
  * @param requestToolPermission - Optional callback to request tool permission from user
  * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
- * @param queryFn - Optional query function for testing (default: SDK query)
- * @returns SessionQueryResult with session ID and event stream
+ * @returns SessionQueryResult with session ID and pi-agent session
  */
 export async function createSession(
   vault: VaultInfo,
-  prompt: string,
-  options?: Partial<Options>,
   requestToolPermission?: ToolPermissionCallback,
-  askUserQuestion?: AskUserQuestionCallback,
-  queryFn?: QueryFunction
+  askUserQuestion?: AskUserQuestionCallback
 ): Promise<SessionQueryResult> {
-  // Use provided mock or fall back to centralized SDK provider
-  const query = queryFn ?? getSdkQuery();
-
   log.info(`Creating session for vault: ${vault.id}`);
   log.info(`Vault path: ${vault.path}`);
-  log.debug(`Prompt: ${prompt.slice(0, 100)}...`);
 
   try {
-    // Create SDK query with vault's cwd, project settings, and discussion mode defaults
-    log.info("Calling Claude Agent SDK query()...");
+    const { result, config } = await openPiSessionForVault(
+      vault.path,
+      SessionManager.create(vault.path),
+      requestToolPermission,
+      askUserQuestion
+    );
 
-    const canUseTool = requestToolPermission
-      ? createCanUseTool(requestToolPermission, askUserQuestion)
-      : undefined;
+    // Generate a locally-owned UUID — no longer extracted from the first event.
+    const sessionId = crypto.randomUUID();
 
-    const mergedOptions = await prepareTurnOptions({
-      vaultPath: vault.path,
-      canUseTool,
-      additionalOptions: options,
-    });
-
-    if (requestToolPermission) {
-      log.info("Tool permission callback configured");
-      if (askUserQuestion) {
-        log.info("AskUserQuestion callback configured");
-      }
-    }
-
-    log.info(`Using discussion model: ${mergedOptions.model}`);
-    log.debug("SDK options:", {
-      model: mergedOptions.model,
-      allowedTools: mergedOptions.allowedTools,
-      permissionMode: mergedOptions.permissionMode,
-      hasCanUseTool: !!mergedOptions.canUseTool,
-    });
-    const queryResult = query({
-      prompt,
-      options: mergedOptions,
-    });
-
-    // Extract session ID from first event
-    log.info("Waiting for first SDK event...");
-    const { sessionId, firstEvent } = await extractSessionId(queryResult);
-    log.info(`Session created: ${sessionId}`);
-    log.debug("First event type:", firstEvent.type);
-
-    // Create and save session metadata
+    // Persist session metadata, including the JSONL path for future resume.
     const now = new Date().toISOString();
     const metadata: SessionMetadata = {
       id: sessionId,
@@ -886,58 +749,38 @@ export async function createSession(
       createdAt: now,
       lastActiveAt: now,
       messages: [],
+      piSessionPath: result.jsonlPath ?? undefined,
     };
     await saveSession(metadata);
-    log.info("Session metadata saved");
+    log.info(`Session created: ${sessionId}, piSessionPath=${result.jsonlPath ?? "(none)"}`);
 
     // Prune old sessions in background (non-blocking, errors logged internally)
-    void (async () => {
-      const config = await loadVaultConfig(vault.path);
-      const keepCount = resolveRecentDiscussions(config);
-      await pruneOldSessions(vault.path, keepCount);
-    })();
+    void pruneOldSessions(vault.path, resolveRecentDiscussions(config));
 
-    // Return wrapped result
     return {
       sessionId,
-      events: wrapGenerator(firstEvent, queryResult),
-      interrupt: () => queryResult.interrupt(),
-      close: () => queryResult.close(),
-      supportedCommands: () => queryResult.supportedCommands(),
+      piSession: result.session,
     };
   } catch (error) {
-    log.error("Failed to create session", error);
-    if (error instanceof SessionError) {
-      throw error;
-    }
-    throw new SessionError(mapSdkError(error), "SDK_ERROR");
+    wrapSdkFailure("create session", error);
   }
 }
 
 /**
- * Resumes an existing Claude Agent SDK session.
+ * Resumes an existing pi-agent session.
  *
  * @param vaultPath - Absolute path to the vault root directory
  * @param sessionId - The session ID to resume
- * @param prompt - The prompt to send
- * @param options - Additional SDK options
  * @param requestToolPermission - Optional callback to request tool permission from user
  * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
- * @param queryFn - Optional query function for testing (default: SDK query)
- * @returns SessionQueryResult with session ID and event stream
+ * @returns SessionQueryResult with session ID and pi-agent session
  */
 export async function resumeSession(
   vaultPath: string,
   sessionId: string,
-  prompt: string,
-  options?: Partial<Options>,
   requestToolPermission?: ToolPermissionCallback,
-  askUserQuestion?: AskUserQuestionCallback,
-  queryFn?: QueryFunction
+  askUserQuestion?: AskUserQuestionCallback
 ): Promise<SessionQueryResult> {
-  // Use provided mock or fall back to centralized SDK provider
-  const query = queryFn ?? getSdkQuery();
-
   log.info(`Resuming session: ${sessionId}`);
 
   // Load existing session metadata
@@ -953,111 +796,33 @@ export async function resumeSession(
 
   log.info(`Session metadata loaded: vault=${metadata.vaultId}`);
 
+  if (!metadata.piSessionPath) {
+    log.error(`Session ${sessionId} has no piSessionPath — cannot resume via pi-agent`);
+    throw new SessionError(
+      "Cannot resume: no pi-agent session path stored",
+      "RESUME_FAILED"
+    );
+  }
+
   try {
-    // Create SDK query with resume option and discussion mode defaults
-    log.info("Calling Claude Agent SDK query() with resume...");
+    log.info(`Resuming pi-agent session from: ${metadata.piSessionPath}`);
+    const { result } = await openPiSessionForVault(
+      vaultPath,
+      SessionManager.open(metadata.piSessionPath),
+      requestToolPermission,
+      askUserQuestion
+    );
 
-    const canUseTool = requestToolPermission
-      ? createCanUseTool(requestToolPermission, askUserQuestion)
-      : undefined;
-
-    const mergedOptions = await prepareTurnOptions({
-      vaultPath: metadata.vaultPath,
-      resume: sessionId,
-      canUseTool,
-      additionalOptions: options,
-    });
-
-    if (requestToolPermission) {
-      log.info("Tool permission callback configured");
-      if (askUserQuestion) {
-        log.info("AskUserQuestion callback configured");
-      }
-    }
-
-    log.info(`Using discussion model: ${mergedOptions.model}`);
-    log.debug("SDK options:", {
-      model: mergedOptions.model,
-      allowedTools: mergedOptions.allowedTools,
-      permissionMode: mergedOptions.permissionMode,
-      hasCanUseTool: !!mergedOptions.canUseTool,
-    });
-    const queryResult = query({
-      prompt,
-      options: mergedOptions,
-    });
-
-    // Extract session ID from first event (should match)
-    log.info("Waiting for first SDK event...");
-    const { sessionId: resumedId, firstEvent } =
-      await extractSessionId(queryResult);
-    log.info(`Session resumed: ${resumedId}`);
-
-    // If the SDK returns a different session ID, the original session
-    // wasn't found. Don't adapt to the mismatch (see retro:
-    // .lore/retros/discussion-multi-turn-resume.md). Close the query
-    // and surface the failure so the caller can start fresh.
-    if (resumedId !== sessionId) {
-      log.error(
-        `SDK could not find session ${sessionId}, created new session ${resumedId} instead. ` +
-        `This usually means the previous SDK subprocess was killed before it could persist session data.`
-      );
-      queryResult.close();
-      throw new SessionError(
-        "Could not resume previous session. Starting a new conversation.",
-        "RESUME_FAILED"
-      );
-    }
-
-    // Save metadata with updated timestamp
+    // Update last-active timestamp
     metadata.lastActiveAt = new Date().toISOString();
     await saveSession(metadata);
 
     return {
-      sessionId: resumedId,
-      events: wrapGenerator(firstEvent, queryResult),
-      interrupt: () => queryResult.interrupt(),
-      close: () => queryResult.close(),
-      supportedCommands: () => queryResult.supportedCommands(),
+      sessionId,
+      piSession: result.session,
       previousMessages: metadata.messages,
     };
   } catch (error) {
-    log.error("Failed to resume session", error);
-    if (error instanceof SessionError) {
-      throw error;
-    }
-    // Check if the SDK threw a session expiry error
-    if (error instanceof Error && isSessionExpiryError(error.message)) {
-      throw new SessionError(
-        "Could not resume previous session. The session may have expired.",
-        "RESUME_FAILED"
-      );
-    }
-    throw new SessionError(mapSdkError(error), "SDK_ERROR");
+    wrapSdkFailure("resume session", error);
   }
-}
-
-/**
- * Creates or resumes a session based on whether a session ID is provided.
- *
- * @param vault - The vault info
- * @param prompt - The prompt to send
- * @param sessionId - Optional session ID to resume
- * @param options - Additional SDK options
- * @param requestToolPermission - Optional callback to request tool permission from user
- * @param queryFn - Optional query function for testing (default: SDK query)
- * @returns SessionQueryResult
- */
-export async function querySession(
-  vault: VaultInfo,
-  prompt: string,
-  sessionId?: string,
-  options?: Partial<Options>,
-  requestToolPermission?: ToolPermissionCallback,
-  queryFn?: QueryFunction
-): Promise<SessionQueryResult> {
-  if (sessionId) {
-    return resumeSession(vault.path, sessionId, prompt, options, requestToolPermission, undefined, queryFn);
-  }
-  return createSession(vault, prompt, options, requestToolPermission, undefined, queryFn);
 }

@@ -24,9 +24,36 @@ import {
   type VaultConfig,
 } from "@memory-loop/shared";
 import { resolveContentRoot } from "@memory-loop/shared/server";
-import { getSdkQuery } from "./sdk-provider";
+import {
+  createPiSession,
+  SessionManager,
+} from "./pi-session-factory";
 
 const log = createLogger("VaultSetup");
+
+/**
+ * Coerce an unknown thrown value to a human-readable string.
+ * Centralizes the `instanceof Error` check used in every setup step.
+ */
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Build a "Installed N command(s), Updated M command(s)" style message by
+ * joining only the non-zero phrases. Returns `fallback` when all counts are
+ * zero. The noun is used as-is (caller picks "command(s)", "skill(s)", etc.).
+ */
+function buildCountSummary(
+  parts: Array<{ count: number; label: string }>,
+  noun: string,
+  fallback: string
+): string {
+  const phrases = parts
+    .filter((p) => p.count > 0)
+    .map((p) => `${p.label} ${p.count} ${noun}`);
+  return phrases.length > 0 ? phrases.join(", ") : fallback;
+}
 
 // =============================================================================
 // Types
@@ -157,7 +184,7 @@ export async function installCommands(
   try {
     await validatePath(vaultPath, COMMANDS_DEST_PATH);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to validate commands destination path",
@@ -171,7 +198,7 @@ export async function installCommands(
     await mkdir(destDir, { recursive: true });
     log.debug(`Created commands directory: ${destDir}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to create .claude/commands directory",
@@ -186,7 +213,7 @@ export async function installCommands(
     templates = await readdir(templatesDir);
     templates = templates.filter((f) => f.endsWith(".md"));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to read command templates",
@@ -214,22 +241,20 @@ export async function installCommands(
         installed.push(template);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       log.warn(`Failed to install ${template}: ${message}`);
       errors.push(`${template}: ${message}`);
     }
   }
 
-  // Build result message
-  const parts: string[] = [];
-  if (installed.length > 0) {
-    parts.push(`Installed ${installed.length} command(s)`);
-  }
-  if (updated.length > 0) {
-    parts.push(`Updated ${updated.length} command(s)`);
-  }
-
-  const resultMessage = parts.join(", ") || "No commands to install";
+  const resultMessage = buildCountSummary(
+    [
+      { count: installed.length, label: "Installed" },
+      { count: updated.length, label: "Updated" },
+    ],
+    "command(s)",
+    "No commands to install"
+  );
 
   if (errors.length > 0) {
     return {
@@ -322,7 +347,7 @@ export async function installSkills(
   try {
     await validatePath(vaultPath, SKILLS_DEST_PATH);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to validate skills destination path",
@@ -336,7 +361,7 @@ export async function installSkills(
     await mkdir(destDir, { recursive: true });
     log.debug(`Created skills directory: ${destDir}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to create .claude/skills directory",
@@ -351,7 +376,7 @@ export async function installSkills(
     const entries = await readdir(templatesDir, { withFileTypes: true });
     skillDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to read skill templates",
@@ -373,7 +398,7 @@ export async function installSkills(
       try {
         await rm(destPath, { recursive: true });
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         log.warn(`Failed to remove existing skill ${skillName}: ${message}`);
         errors.push(`${skillName}: failed to remove existing: ${message}`);
         continue;
@@ -391,22 +416,20 @@ export async function installSkills(
         installed.push(skillName);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       log.warn(`Failed to install skill ${skillName}: ${message}`);
       errors.push(`${skillName}: ${message}`);
     }
   }
 
-  // Build result message
-  const parts: string[] = [];
-  if (installed.length > 0) {
-    parts.push(`Installed ${installed.length} skill(s)`);
-  }
-  if (updated.length > 0) {
-    parts.push(`Updated ${updated.length} skill(s)`);
-  }
-
-  const resultMessage = parts.join(", ") || "No skills to install";
+  const resultMessage = buildCountSummary(
+    [
+      { count: installed.length, label: "Installed" },
+      { count: updated.length, label: "Updated" },
+    ],
+    "skill(s)",
+    "No skills to install"
+  );
 
   if (errors.length > 0) {
     return {
@@ -459,18 +482,16 @@ export async function createParaDirectories(
   ];
 
   for (const dir of paraDirs) {
-
     const absolutePath = join(contentRoot, dir.relativePath);
 
     // Validate path is within vault boundary
     try {
       await validatePath(vaultPath, absolutePath);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       errors.push(`${dir.name} (${dir.relativePath}): ${message}`);
       continue;
     }
-
 
     // Check if directory exists
     if (await directoryExists(absolutePath)) {
@@ -485,7 +506,7 @@ export async function createParaDirectories(
       log.info(`Created: ${dir.relativePath}`);
       created.push(dir.name);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       log.warn(`Failed to create ${dir.relativePath}: ${message}`);
       errors.push(`${dir.name}: ${message}`);
     }
@@ -550,7 +571,7 @@ export async function createClaudeMdBackup(
   try {
     await validatePath(vaultPath, CLAUDEMD_BACKUP_PATH);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to validate backup path",
@@ -562,7 +583,7 @@ export async function createClaudeMdBackup(
   try {
     await mkdir(backupDir, { recursive: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to create backup directory",
@@ -579,7 +600,7 @@ export async function createClaudeMdBackup(
       message: "CLAUDE.md backed up",
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to create backup",
@@ -636,12 +657,9 @@ Steps:
 6. Keep the update concise and focused on operational information`;
 }
 
-/** Model to use for setup (balanced) */
-export const SETUP_MODEL = "sonnet";
-
 /**
- * Updates CLAUDE.md with Memory Loop context using the Claude Agent SDK.
- * The LLM uses Read and Edit tools to make targeted changes.
+ * Updates CLAUDE.md with Memory Loop context using a pi-agent session.
+ * The agent uses read and edit tools to make targeted changes.
  *
  * @param vaultPath - Absolute path to the vault root
  * @param config - Vault configuration
@@ -663,43 +681,33 @@ export async function updateClaudeMd(
     };
   }
 
-  // Step 2: Build prompt and call SDK with tools
+  // Step 2: Build prompt and run pi-agent session with read/edit tools
   const prompt = buildClaudeMdPrompt(config, vaultPath);
 
   try {
-    log.info("Calling SDK to update CLAUDE.md...");
+    log.info("Calling pi-agent to update CLAUDE.md...");
 
-    const queryResult = getSdkQuery()({
-      prompt,
-      options: {
-        cwd: vaultPath,
-        model: SETUP_MODEL,
-        maxTurns: 10,
-        allowedTools: ["Read", "Edit"],
-        permissionMode: "acceptEdits",
-        settingSources: ["local", "project", "user"],
-      },
+    const { session } = await createPiSession({
+      cwd: vaultPath,
+      tools: ["read", "edit"],
+      sessionManager: SessionManager.inMemory(vaultPath),
     });
 
-    // Process events and check for completion
-    let resultReceived = false;
-    for await (const event of queryResult) {
-      const rawEvent = event as unknown as Record<string, unknown>;
-      const eventType = rawEvent.type as string;
+    await session.prompt(prompt);
 
-      if (eventType === "result") {
-        resultReceived = true;
-        log.info("SDK completed CLAUDE.md update");
-      }
-    }
-
-    if (!resultReceived) {
+    // Verify the agent produced some output (an assistant message exists).
+    const hasAssistantMessage = session.messages.some(
+      (m) => "role" in m && m.role === "assistant"
+    );
+    if (!hasAssistantMessage) {
       return {
         success: false,
-        message: "SDK did not complete",
-        error: "No result event received from SDK",
+        message: "Agent did not complete",
+        error: "No assistant message received from pi-agent session",
       };
     }
+
+    log.info("Pi-agent completed CLAUDE.md update");
 
     return {
       success: true,
@@ -707,10 +715,10 @@ export async function updateClaudeMd(
     };
   } catch (error) {
     const message = mapSdkError(error);
-    log.error(`SDK error: ${message}`);
+    log.error(`Pi-agent error: ${message}`);
     return {
       success: false,
-      message: "SDK call failed",
+      message: "Pi-agent call failed",
       error: message,
     };
   }
@@ -739,7 +747,7 @@ export async function updateGitignore(
   try {
     await validatePath(vaultPath, MEMORY_LOOP_GITIGNORE_PATH);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to validate .gitignore path",
@@ -751,7 +759,7 @@ export async function updateGitignore(
   try {
     await mkdir(gitignoreDir, { recursive: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to create .memory-loop directory",
@@ -767,7 +775,7 @@ export async function updateGitignore(
     try {
       existingContent = await readFile(gitignorePath, "utf-8");
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       return {
         success: false,
         message: "Failed to read existing .gitignore",
@@ -816,7 +824,7 @@ ${missingPatterns.join("\n")}
         : `Created .memory-loop/.gitignore with ${missingPatterns.length} pattern(s)`,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to write .memory-loop/.gitignore",
@@ -848,7 +856,7 @@ export async function writeSetupMarker(
   try {
     await validatePath(vaultPath, SETUP_MARKER_PATH);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to validate marker path",
@@ -860,7 +868,7 @@ export async function writeSetupMarker(
   try {
     await mkdir(markerDir, { recursive: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to create .memory-loop directory",
@@ -878,7 +886,7 @@ export async function writeSetupMarker(
       message: "Setup marker written",
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     return {
       success: false,
       message: "Failed to write setup marker",
@@ -976,7 +984,7 @@ export async function runVaultSetup(vaultId: string): Promise<SetupResult> {
       }
     })
     .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       log.error(`CLAUDE.md update threw for ${vaultId}: ${message}`);
     });
   summary.push("CLAUDE.md update started (background)");

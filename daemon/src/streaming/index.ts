@@ -16,4 +16,4 @@ export type {
   TurnUsageData,
 } from "./types";
 
-export { createStreamTranslator, isSessionExpiryError } from "./event-translator";
+export { createPiEventAdapter, isSessionExpiryError } from "./event-translator";

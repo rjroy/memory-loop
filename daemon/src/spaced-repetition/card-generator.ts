@@ -13,12 +13,19 @@
  * - TASK-009: LLM Card Generator
  */
 
-import { getSdkQuery, type QueryFunction } from "../sdk-provider";
 import { createLogger } from "@memory-loop/shared";
 import {
   DEFAULT_REQUIREMENTS,
   loadRequirements,
 } from "./card-generator-config";
+import {
+  createPiSession,
+  extractFinalText,
+  SessionManager,
+  type CreateSessionFn,
+} from "../pi-session-factory";
+
+export type { CreateSessionFn };
 
 // Re-export DEFAULT_REQUIREMENTS for convenience
 export { DEFAULT_REQUIREMENTS };
@@ -202,45 +209,6 @@ export function parseQAResponse(response: string): CardContent[] {
 }
 
 // =============================================================================
-// SDK Response Collection
-// =============================================================================
-
-/**
- * Collect full text response from an SDK query result.
- * Iterates through all events and extracts text from assistant messages.
- *
- * @param queryResult - The async generator from query()
- * @returns Full text response
- */
-async function collectResponse(queryResult: ReturnType<QueryFunction>): Promise<string> {
-  const responseParts: string[] = [];
-
-  for await (const event of queryResult) {
-    // Cast to unknown for flexible property checking
-    // The SDK types are more constrained than runtime events
-    const rawEvent = event as unknown as Record<string, unknown>;
-    const eventType = rawEvent.type as string;
-
-    if (eventType === "assistant") {
-      // Extract text from assistant message content blocks
-      const message = rawEvent.message as
-        | { content?: Array<{ type: string; text?: string }> }
-        | undefined;
-
-      if (message?.content) {
-        for (const block of message.content) {
-          if (block.type === "text" && block.text) {
-            responseParts.push(block.text);
-          }
-        }
-      }
-    }
-  }
-
-  return responseParts.join("");
-}
-
-// =============================================================================
 // Error Classification
 // =============================================================================
 
@@ -285,7 +253,7 @@ function isRetriableError(message: string): boolean {
 /**
  * Q&A card generator implementation.
  *
- * Extracts factual Q&A pairs from markdown content using Claude Haiku.
+ * Extracts factual Q&A pairs from markdown content using a pi-agent session.
  * Returns 0-N cards per file depending on content quality.
  */
 export class QACardGenerator implements CardTypeGenerator {
@@ -294,6 +262,14 @@ export class QACardGenerator implements CardTypeGenerator {
   /** Cached custom requirements (loaded once on first generate call) */
   private customRequirements: string | null = null;
   private requirementsLoaded = false;
+  private readonly createSessionFn: CreateSessionFn;
+
+  /**
+   * @param createSessionFn - Session factory (injectable for testing)
+   */
+  constructor(createSessionFn: CreateSessionFn = createPiSession) {
+    this.createSessionFn = createSessionFn;
+  }
 
   /**
    * Load custom requirements if not already loaded.
@@ -338,18 +314,13 @@ export class QACardGenerator implements CardTypeGenerator {
     const prompt = buildQAExtractionPrompt(truncatedContent, filePath, customRequirements);
 
     try {
-      // Call the LLM
-      const queryResult = getSdkQuery()({
-        prompt,
-        options: {
-          model: GENERATION_MODEL,
-          maxTurns: 1,
-          allowedTools: [], // No tools needed for extraction
-        },
+      // Run a single-turn session to extract Q&A pairs
+      const { session } = await this.createSessionFn({
+        cwd: process.cwd(),
+        sessionManager: SessionManager.inMemory(),
       });
-
-      // Collect the response
-      const response = await collectResponse(queryResult);
+      await session.prompt(prompt);
+      const response = extractFinalText(session.messages);
 
       // Parse the response
       const cards = parseQAResponse(response);
@@ -382,7 +353,11 @@ export class QACardGenerator implements CardTypeGenerator {
  * Create a new QA card generator instance.
  *
  * Returns CardTypeGenerator interface to allow for mock implementations in tests.
+ *
+ * @param createSessionFn - Session factory (injectable for testing)
  */
-export function createQACardGenerator(): CardTypeGenerator {
-  return new QACardGenerator();
+export function createQACardGenerator(
+  createSessionFn: CreateSessionFn = createPiSession
+): CardTypeGenerator {
+  return new QACardGenerator(createSessionFn);
 }

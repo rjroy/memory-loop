@@ -1,97 +1,114 @@
 /**
  * Fact Extractor Tests
  *
- * Tests for the Claude Agent SDK-based fact extraction.
- * Uses mocked SDK responses to avoid real API calls.
+ * Tests for the pi-agent-based fact extraction.
+ * Injects a mock session factory to avoid real API calls.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { SDKMessage, Query } from "@anthropic-ai/claude-agent-sdk";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   loadExtractionPrompt,
   hasPromptOverride,
   buildExtractionPrompt,
   extractFacts,
-  EXTRACTION_SDK_OPTIONS,
-  type QueryFunction,
+  _finalText,
+  type CreateSessionFn,
 } from "../fact-extractor";
 import type { DiscoveredTranscript } from "../transcript-reader";
+import type { PiSessionOptions, PiSessionResult } from "../../pi-session-factory";
 
 // =============================================================================
-// Mock SDK
+// Mock helpers
 // =============================================================================
 
 /**
- * Creates a mock Query object that satisfies the interface for testing.
- * Uses type assertion since we only need the iterator functionality.
+ * Build an AgentMessage shaped like a real assistant message with text content.
  */
-function createMockQueryResult(generator: AsyncGenerator<SDKMessage, void>): Query {
-  // The fact extractor only iterates over the generator, so we just need
-  // to provide the async iterator interface. Cast through unknown to bypass
-  // strict type checking for test mocks.
-  return generator as unknown as Query;
+function makeAssistantMessage(text: string): AgentMessage {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text }],
+  } as AgentMessage;
 }
 
 /**
- * Creates a mock query function that yields success events.
+ * Build a mock AgentSession with controllable messages and a prompt()
+ * implementation. By default prompt() resolves immediately; pass `prompt`
+ * to override (e.g. to throw or capture the argument).
  */
-function createMockQuery(events: SDKMessage[] = []): QueryFunction {
-  return () => {
-    const generator = (async function* () {
-      await Promise.resolve();
-      for (const event of events) {
-        yield event;
-      }
-    })();
-    return createMockQueryResult(generator);
+function makeMockSession(
+  messages: AgentMessage[] = [],
+  prompt: (text: string) => Promise<void> = async () => {}
+): AgentSession {
+  return {
+    messages,
+    prompt,
+    bindExtensions: async () => {},
+    setModel: async () => {},
+    dispose: () => {},
+    sessionFile: undefined,
+    modelRegistry: { find: () => undefined },
+  } as unknown as AgentSession;
+}
+
+/**
+ * Wrap a session in the PiSessionResult shape expected by CreateSessionFn.
+ */
+function asSessionResult(session: AgentSession): PiSessionResult {
+  return { session, jsonlPath: null };
+}
+
+/**
+ * Create a session factory that returns a controlled session.
+ * Optionally captures the options passed to it.
+ */
+function makeSuccessFactory(
+  messages: AgentMessage[] = [],
+  capturedOpts?: { value?: PiSessionOptions }
+): CreateSessionFn {
+  return async (opts) => {
+    if (capturedOpts) capturedOpts.value = opts;
+    return asSessionResult(makeMockSession(messages));
   };
 }
 
 /**
- * Creates a mock query function that throws an error.
+ * Create a session factory whose prompt() throws on every call.
  */
-function createFailingMockQuery(errorMessage: string): QueryFunction {
-  return () => {
-    // eslint-disable-next-line require-yield
-    const generator = (async function* (): AsyncGenerator<SDKMessage, void> {
-      await Promise.resolve();
-      throw new Error(errorMessage);
-    })();
-    return createMockQueryResult(generator);
-  };
+function makeFailingFactory(errorMessage: string): CreateSessionFn {
+  return async () =>
+    asSessionResult(
+      makeMockSession([], async () => {
+        throw new Error(errorMessage);
+      })
+    );
 }
 
 /**
- * Creates a mock query function that fails once then succeeds.
+ * Create a session factory that fails the first call then succeeds.
  */
-function createRetryMockQuery(): QueryFunction {
+function makeRetryFactory(successMessages: AgentMessage[] = []): CreateSessionFn {
   let callCount = 0;
-
-  return () => {
+  return async () => {
     callCount++;
-
     if (callCount === 1) {
-      // eslint-disable-next-line require-yield
-      const generator = (async function* (): AsyncGenerator<SDKMessage, void> {
-        await Promise.resolve();
-        throw new Error("First attempt failed");
-      })();
-      return createMockQueryResult(generator);
+      return asSessionResult(
+        makeMockSession([], async () => {
+          throw new Error("First attempt failed");
+        })
+      );
     }
-
-    const generator = (async function* () {
-      await Promise.resolve();
-      yield { type: "result", result: "Success on retry" } as SDKMessage;
-    })();
-    return createMockQueryResult(generator);
+    return asSessionResult(makeMockSession(successMessages));
   };
 }
 
 // =============================================================================
-// Test Fixtures
+// Test fixtures
 // =============================================================================
 
 function createMockTranscript(
@@ -110,12 +127,11 @@ function createMockTranscript(
 }
 
 // =============================================================================
-// loadExtractionPrompt Tests
+// loadExtractionPrompt tests
 // =============================================================================
 
 describe("loadExtractionPrompt", () => {
   it("loads the default prompt from codebase", async () => {
-    // This test relies on the actual default prompt file existing
     const result = await loadExtractionPrompt();
 
     expect(result.isOverride).toBe(false);
@@ -128,25 +144,21 @@ describe("loadExtractionPrompt", () => {
 });
 
 describe("hasPromptOverride", () => {
-  it("returns false when no override exists", async () => {
-    // Assumes no override file exists in test environment
-    // This could be flaky if a real override exists
+  it("returns a boolean without error", async () => {
     const result = await hasPromptOverride();
-    // Just verify it returns a boolean without error
     expect(typeof result).toBe("boolean");
   });
 });
 
 // =============================================================================
-// buildExtractionPrompt Tests
+// buildExtractionPrompt tests
 // =============================================================================
 
 describe("buildExtractionPrompt", () => {
   const basePrompt = "# Extraction Prompt\n\nExtract facts from transcripts.";
 
   it("includes base prompt content", () => {
-    const transcripts: DiscoveredTranscript[] = [];
-    const result = buildExtractionPrompt(basePrompt, transcripts, "/vaults");
+    const result = buildExtractionPrompt(basePrompt, [], "/vaults");
 
     expect(result).toContain("# Extraction Prompt");
     expect(result).toContain("Extract facts from transcripts.");
@@ -160,7 +172,6 @@ describe("buildExtractionPrompt", () => {
 
     const result = buildExtractionPrompt(basePrompt, transcripts, "/vaults");
 
-    // Uses absolutePath from DiscoveredTranscript
     expect(result).toContain("/vaults/vault1/00_Inbox/chats/chat1.md");
     expect(result).toContain("/vaults/vault2/00_Inbox/chats/chat2.md");
   });
@@ -180,7 +191,6 @@ describe("buildExtractionPrompt", () => {
   it("includes operational instructions with memory path", () => {
     const result = buildExtractionPrompt(basePrompt, [], "/my/vaults/dir");
 
-    // Operational instructions are added by buildExtractionPrompt
     expect(result).toContain("## Task");
     expect(result).toContain("/my/vaults/dir/.memory-extraction/memory.md");
     expect(result).toContain("### Process");
@@ -194,91 +204,119 @@ describe("buildExtractionPrompt", () => {
 });
 
 // =============================================================================
-// EXTRACTION_SDK_OPTIONS Tests
-// =============================================================================
-
-describe("EXTRACTION_SDK_OPTIONS", () => {
-  it("uses haiku model", () => {
-    expect(EXTRACTION_SDK_OPTIONS.model).toBe("haiku");
-  });
-
-  it("includes required tools", () => {
-    const tools = EXTRACTION_SDK_OPTIONS.allowedTools;
-    expect(tools).toContain("Glob");
-    expect(tools).toContain("Grep");
-    expect(tools).toContain("Read");
-    expect(tools).toContain("Edit");
-    expect(tools).toContain("Write");
-    expect(tools).toContain("Task");
-  });
-
-  it("accepts edits automatically", () => {
-    expect(EXTRACTION_SDK_OPTIONS.permissionMode).toBe("acceptEdits");
-  });
-
-  it("has conservative budget", () => {
-    expect(EXTRACTION_SDK_OPTIONS.maxBudgetUsd).toBeLessThanOrEqual(1.0);
-  });
-});
-
-// =============================================================================
-// extractFacts Tests
+// extractFacts tests
 // =============================================================================
 
 describe("extractFacts", () => {
   describe("with no transcripts", () => {
-    it("returns success immediately", async () => {
-      const mockQuery = createMockQuery();
-      const result = await extractFacts([], "/vaults", mockQuery);
+    it("returns success immediately without calling the factory", async () => {
+      let factoryCalled = false;
+      const factory: CreateSessionFn = async () => {
+        factoryCalled = true;
+        return { session: makeMockSession() as unknown as AgentSession, jsonlPath: null };
+      };
+
+      const result = await extractFacts([], "/vaults", factory);
 
       expect(result.success).toBe(true);
       expect(result.transcriptsProcessed).toBe(0);
       expect(result.wasRetry).toBe(false);
+      expect(factoryCalled).toBe(false);
     });
   });
 
   describe("with successful extraction", () => {
     it("returns success with transcript count", async () => {
-      const mockQuery = createMockQuery([
-        { type: "result", result: "Extraction complete" } as SDKMessage,
-      ]);
+      const messages = [makeAssistantMessage("Extraction complete")];
+      const factory = makeSuccessFactory(messages);
 
       const transcripts = [
         createMockTranscript("vault1", "chat1.md", "User: Hello"),
         createMockTranscript("vault1", "chat2.md", "User: Hi there"),
       ];
 
-      const result = await extractFacts(transcripts, "/vaults", mockQuery);
+      const result = await extractFacts(transcripts, "/vaults", factory);
 
       expect(result.success).toBe(true);
       expect(result.transcriptsProcessed).toBe(2);
       expect(result.wasRetry).toBe(false);
       expect(result.error).toBeUndefined();
     });
-  });
 
-  describe("with SDK errors", () => {
-    it("retries once on failure", async () => {
-      const mockQuery = createRetryMockQuery();
+    it("passes vaultsDir as cwd to the session factory", async () => {
+      const captured: { value?: PiSessionOptions } = {};
+      const factory = makeSuccessFactory([], captured);
+
+      const transcripts = [createMockTranscript("v1", "c.md", "x")];
+      await extractFacts(transcripts, "/my/vaults", factory);
+
+      expect(captured.value?.cwd).toBe("/my/vaults");
+    });
+
+    it("uses an inMemory session manager", async () => {
+      const captured: { value?: PiSessionOptions } = {};
+      const factory = makeSuccessFactory([], captured);
+
+      const transcripts = [createMockTranscript("v1", "c.md", "x")];
+      await extractFacts(transcripts, "/my/vaults", factory);
+
+      // SessionManager.inMemory() returns a manager object; confirm it's truthy
+      expect(captured.value?.sessionManager).toBeTruthy();
+    });
+
+    it("passes the extraction prompt as systemPrompt to the session factory", async () => {
+      const captured: { value?: PiSessionOptions } = {};
+      const factory = makeSuccessFactory([], captured);
+
+      const transcripts = [createMockTranscript("v1", "c.md", "x")];
+      await extractFacts(transcripts, "/my/vaults", factory);
+
+      expect(captured.value?.systemPrompt).toBeTruthy();
+      expect(captured.value?.systemPrompt).toContain("Memory Extraction");
+    });
+
+    it("passes the extraction prompt to the session", async () => {
+      let receivedPrompt: string | undefined;
+      const factory: CreateSessionFn = async () => {
+        return {
+          session: {
+            ...makeMockSession(),
+            prompt: async (text: string) => {
+              receivedPrompt = text;
+            },
+          } as unknown as AgentSession,
+          jsonlPath: null,
+        };
+      };
 
       const transcripts = [
-        createMockTranscript("vault1", "chat1.md", "content"),
+        createMockTranscript("test-vault", "00_Inbox/chats/discussion.md", "Hello world"),
       ];
 
-      const result = await extractFacts(transcripts, "/vaults", mockQuery);
+      await extractFacts(transcripts, "/my/vaults", factory);
+
+      expect(receivedPrompt).toContain("Memory Extraction");
+      expect(receivedPrompt).toContain("test-vault");
+      expect(receivedPrompt).toContain("discussion.md");
+    });
+  });
+
+  describe("with session errors", () => {
+    it("retries once on failure", async () => {
+      const factory = makeRetryFactory([makeAssistantMessage("Success on retry")]);
+
+      const transcripts = [createMockTranscript("vault1", "chat1.md", "content")];
+      const result = await extractFacts(transcripts, "/vaults", factory);
 
       expect(result.success).toBe(true);
       expect(result.wasRetry).toBe(true);
     });
 
-    it("returns error after retry fails", async () => {
-      const mockQuery = createFailingMockQuery("API unavailable");
+    it("returns error after both attempts fail", async () => {
+      const factory = makeFailingFactory("API unavailable");
 
-      const transcripts = [
-        createMockTranscript("vault1", "chat1.md", "content"),
-      ];
-
-      const result = await extractFacts(transcripts, "/vaults", mockQuery);
+      const transcripts = [createMockTranscript("vault1", "chat1.md", "content")];
+      const result = await extractFacts(transcripts, "/vaults", factory);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("API unavailable");
@@ -287,18 +325,26 @@ describe("extractFacts", () => {
     });
   });
 
-  describe("event consumption", () => {
-    it("processes all SDK events", async () => {
-      // Cast through unknown for test mocks
-      const events: SDKMessage[] = [
-        { type: "system", session_id: "test-123" } as unknown as SDKMessage,
-        { type: "result", result: "Done" } as unknown as SDKMessage,
+  describe("finalText extraction", () => {
+    it("does not crash with multiple assistant messages", async () => {
+      const messages = [
+        makeAssistantMessage("First response"),
+        makeAssistantMessage("Final response"),
       ];
+      const factory = makeSuccessFactory(messages);
 
-      const mockQuery = createMockQuery(events);
       const transcripts = [createMockTranscript("v1", "c.md", "x")];
+      const result = await extractFacts(transcripts, "/vaults", factory);
 
-      const result = await extractFacts(transcripts, "/vaults", mockQuery);
+      expect(result.success).toBe(true);
+    });
+
+    it("handles sessions with no assistant messages", async () => {
+      // No assistant messages: finalText returns "". Extraction still reports success.
+      const factory = makeSuccessFactory([]);
+
+      const transcripts = [createMockTranscript("v1", "c.md", "x")];
+      const result = await extractFacts(transcripts, "/vaults", factory);
 
       expect(result.success).toBe(true);
     });
@@ -306,7 +352,60 @@ describe("extractFacts", () => {
 });
 
 // =============================================================================
-// Integration-style Tests (with temp directories)
+// _finalText unit tests
+// =============================================================================
+
+describe("_finalText", () => {
+  it("returns empty string when there are no messages", () => {
+    expect(_finalText([])).toBe("");
+  });
+
+  it("returns empty string when there are no assistant messages", () => {
+    const messages = [
+      { role: "user", content: [{ type: "text", text: "Hello" }] },
+    ] as AgentMessage[];
+    expect(_finalText(messages)).toBe("");
+  });
+
+  it("returns text from a single assistant message", () => {
+    const messages = [makeAssistantMessage("Hello from assistant")];
+    expect(_finalText(messages)).toBe("Hello from assistant");
+  });
+
+  it("returns text from the LAST assistant message, not the first", () => {
+    const messages = [
+      makeAssistantMessage("First response"),
+      makeAssistantMessage("Final response"),
+    ];
+    expect(_finalText(messages)).toBe("Final response");
+  });
+
+  it("ignores non-assistant messages that follow the last assistant message", () => {
+    const messages = [
+      makeAssistantMessage("First response"),
+      { role: "user", content: [{ type: "text", text: "Thanks" }] } as AgentMessage,
+      makeAssistantMessage("Second response"),
+      { role: "user", content: [{ type: "text", text: "Done" }] } as AgentMessage,
+    ];
+    // The last assistant message is "Second response"; the trailing user turn is ignored
+    expect(_finalText(messages)).toBe("Second response");
+  });
+
+  it("concatenates multiple text blocks in the last assistant message", () => {
+    const multiBlockMessage = {
+      role: "assistant",
+      content: [
+        { type: "text", text: "Part one" },
+        { type: "tool_use", id: "t1", name: "read", input: {} },
+        { type: "text", text: "Part two" },
+      ],
+    } as AgentMessage;
+    expect(_finalText([multiBlockMessage])).toBe("Part one\nPart two");
+  });
+});
+
+// =============================================================================
+// Integration-style tests (with temp directories)
 // =============================================================================
 
 describe("fact extraction integration", () => {
@@ -320,44 +419,38 @@ describe("fact extraction integration", () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it("uses vaultsDir as cwd for SDK", async () => {
-    let capturedOptions: { cwd?: string } | undefined;
-
-    const mockQuery: QueryFunction = (params) => {
-      capturedOptions = params.options;
-      const generator = (async function* () {
-        await Promise.resolve();
-        yield { type: "result", result: "ok" } as SDKMessage;
-      })();
-      return createMockQueryResult(generator);
-    };
+  it("uses tempDir as cwd for the session", async () => {
+    const captured: { value?: PiSessionOptions } = {};
+    const factory = makeSuccessFactory([], captured);
 
     const transcripts = [createMockTranscript("v1", "c.md", "x")];
-    await extractFacts(transcripts, tempDir, mockQuery);
+    await extractFacts(transcripts, tempDir, factory);
 
-    expect(capturedOptions?.cwd).toBe(tempDir);
+    expect(captured.value?.cwd).toBe(tempDir);
   });
 
-  it("passes extraction prompt to SDK", async () => {
-    let capturedPrompt: string | undefined;
-
-    const mockQuery: QueryFunction = (params) => {
-      capturedPrompt = typeof params.prompt === "string" ? params.prompt : undefined;
-      const generator = (async function* () {
-        await Promise.resolve();
-        yield { type: "result", result: "ok" } as SDKMessage;
-      })();
-      return createMockQueryResult(generator);
+  it("includes transcript paths in the prompt sent to the session", async () => {
+    let receivedPrompt: string | undefined;
+    const factory: CreateSessionFn = async () => {
+      return {
+        session: {
+          ...makeMockSession(),
+          prompt: async (text: string) => {
+            receivedPrompt = text;
+          },
+        } as unknown as AgentSession,
+        jsonlPath: null,
+      };
     };
 
     const transcripts = [
       createMockTranscript("test-vault", "00_Inbox/chats/discussion.md", "Hello world"),
     ];
 
-    await extractFacts(transcripts, tempDir, mockQuery);
+    await extractFacts(transcripts, tempDir, factory);
 
-    expect(capturedPrompt).toContain("Memory Extraction");
-    expect(capturedPrompt).toContain("test-vault");
-    expect(capturedPrompt).toContain("discussion.md");
+    expect(receivedPrompt).toContain("Memory Extraction");
+    expect(receivedPrompt).toContain("test-vault");
+    expect(receivedPrompt).toContain("discussion.md");
   });
 });

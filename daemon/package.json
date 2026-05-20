@@ -16,11 +16,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.112",
+    "@earendil-works/pi-agent-core": "^0.75.3",
+    "@earendil-works/pi-coding-agent": "^0.75.3",
     "@memory-loop/shared": "workspace:*",
     "cron": "^4.4.0",
     "hono": "^4.7.11",
     "minisearch": "^7.1.1",
+    "typebox": "^1.1.38",
     "yaml": "^2.8.2",
     "zod": "^4.0.0"
   },

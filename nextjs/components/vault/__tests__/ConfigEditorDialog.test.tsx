@@ -1,17 +1,28 @@
-/**
- * Tests for ConfigEditorDialog component
- *
- * Tests rendering, field population, slider interactions, badge management,
- * change detection, and save/cancel behavior.
- */
-
-import { describe, it, expect, afterEach, mock, beforeEach } from "bun:test";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { describe, it, expect, afterEach, mock, beforeEach, beforeAll, afterAll } from "bun:test";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import {
   ConfigEditorDialog,
   type EditableVaultConfig,
   type ConfigEditorDialogProps,
 } from "../ConfigEditorDialog";
+
+const MOCK_MODELS = [
+  { name: "opus", provider: "anthropic", modelId: "claude-opus-4-7" },
+  { name: "sonnet", provider: "anthropic", modelId: "claude-sonnet-4-6" },
+  { name: "haiku", provider: "anthropic", modelId: "claude-haiku-4-5" },
+];
+
+const mockFetch = mock(async (url: string) => {
+  if (url === "/api/models") {
+    return new Response(JSON.stringify({ models: MOCK_MODELS }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  throw new Error(`Unexpected fetch: ${url}`);
+});
+
+beforeAll(() => { global.fetch = mockFetch as typeof fetch; });
+afterAll(() => { mockFetch.mockRestore(); });
 
 afterEach(() => {
   cleanup();
@@ -38,7 +49,6 @@ describe("ConfigEditorDialog", () => {
   };
 
   beforeEach(() => {
-    // Reset mocks before each test
     (defaultProps.onSave as ReturnType<typeof mock>).mockClear?.();
     (defaultProps.onCancel as ReturnType<typeof mock>).mockClear?.();
   });
@@ -90,11 +100,13 @@ describe("ConfigEditorDialog", () => {
       expect(subtitleInput.value).toBe("Test subtitle");
     });
 
-    it("discussion model dropdown shows value from initialConfig.discussionModel", () => {
+    it("discussion model dropdown shows value from initialConfig.discussionModel", async () => {
       render(<ConfigEditorDialog {...defaultProps} />);
 
-      const modelSelect = screen.getByLabelText<HTMLSelectElement>("AI Model");
-      expect(modelSelect.value).toBe("sonnet");
+      await waitFor(() => {
+        const modelSelect = screen.getByLabelText<HTMLSelectElement>("AI Model");
+        expect(modelSelect.value).toBe("sonnet");
+      });
     });
 
     it("promptsPerGeneration slider shows value from initialConfig", () => {
@@ -788,30 +800,50 @@ describe("ConfigEditorDialog", () => {
   });
 
   describe("dropdown interactions", () => {
-    it("discussion model can be changed to opus", () => {
+    it("discussion model can be changed to opus", async () => {
       render(<ConfigEditorDialog {...defaultProps} />);
 
-      const modelSelect = screen.getByLabelText<HTMLSelectElement>("AI Model");
-      fireEvent.change(modelSelect, { target: { value: "opus" } });
-
-      expect(modelSelect.value).toBe("opus");
+      await waitFor(() => {
+        const modelSelect = screen.getByLabelText<HTMLSelectElement>("AI Model");
+        fireEvent.change(modelSelect, { target: { value: "opus" } });
+        expect(modelSelect.value).toBe("opus");
+      });
     });
 
-    it("discussion model can be changed to haiku", () => {
+    it("discussion model can be changed to haiku", async () => {
       render(<ConfigEditorDialog {...defaultProps} />);
 
-      const modelSelect = screen.getByLabelText<HTMLSelectElement>("AI Model");
-      fireEvent.change(modelSelect, { target: { value: "haiku" } });
-
-      expect(modelSelect.value).toBe("haiku");
+      await waitFor(() => {
+        const modelSelect = screen.getByLabelText<HTMLSelectElement>("AI Model");
+        fireEvent.change(modelSelect, { target: { value: "haiku" } });
+        expect(modelSelect.value).toBe("haiku");
+      });
     });
 
-    it("displays all model options", () => {
+    it("displays all model options", async () => {
       render(<ConfigEditorDialog {...defaultProps} />);
 
-      expect(screen.getByText("Opus (Most capable)")).toBeDefined();
-      expect(screen.getByText("Sonnet (Balanced)")).toBeDefined();
-      expect(screen.getByText("Haiku (Fastest)")).toBeDefined();
+      await waitFor(() => {
+        expect(screen.getByRole("option", { name: "opus" })).toBeDefined();
+        expect(screen.getByRole("option", { name: "sonnet" })).toBeDefined();
+        expect(screen.getByRole("option", { name: "haiku" })).toBeDefined();
+      });
+    });
+
+    it("shows unknown model option and selects it when initialConfig has an unrecognised model", async () => {
+      render(
+        <ConfigEditorDialog
+          {...defaultProps}
+          initialConfig={{ ...defaultConfig, discussionModel: "unknown-model" }}
+        />
+      );
+
+      await waitFor(() => {
+        const unknownOption = screen.getByRole("option", { name: "unknown-model (unknown)" });
+        expect(unknownOption).toBeDefined();
+        const modelSelect = screen.getByLabelText<HTMLSelectElement>("AI Model");
+        expect(modelSelect.value).toBe("unknown-model");
+      });
     });
   });
 

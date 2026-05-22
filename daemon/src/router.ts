@@ -1,9 +1,3 @@
-/**
- * Request router for the daemon API.
- *
- * Registers all routes on a Hono app instance.
- */
-
 import type { Hono } from "hono";
 import { healthHandler } from "./routes/health";
 import { helpHandler } from "./routes/help";
@@ -80,6 +74,7 @@ import {
 import { assetHandler } from "./routes/assets";
 import { setupHandler } from "./routes/setup";
 import { inspirationHandler } from "./routes/inspiration";
+import { getModelsHandler } from "./routes/models";
 import {
   chatSendHandler,
   chatStreamHandler,
@@ -97,6 +92,7 @@ export function registerRoutes(app: Hono, startTime: number): void {
   // Health and help
   app.get("/health", (c) => healthHandler(c, startTime));
   app.get("/help", (c) => helpHandler(c));
+  app.get("/models", (c) => getModelsHandler(c));
 
   // Vault routes (order matters: /vaults/help before /vaults/:id)
   app.get("/vaults", (c) => listVaultsHandler(c));

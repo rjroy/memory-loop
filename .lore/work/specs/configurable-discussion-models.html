@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Configurable discussion model registry</title>
+  <meta name="date" content="2026-05-21">
+  <meta name="status" content="draft">
+  <meta name="tags" content="model-config, global-config, discussion, pi-agent, session-manager">
+  <meta name="modules" content="session-manager, daemon-config, vault-config, config-editor-dialog">
+  <meta name="related" content=".lore/reference/_infrastructure/configuration.md, .lore/reference/think.md, .lore/research/pi-agent-sdk.md">
+  <meta name="req-prefix" content="MODELS">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #1a1a1a;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+    h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.2rem; margin-top: 2.5rem; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem; }
+    h3 { font-size: 1rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+
+    /* Sticky header */
+    .spec-header {
+      position: sticky;
+      top: 0;
+      background: #fff;
+      border-bottom: 1px solid #e5e5e5;
+      padding: 0.5rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      z-index: 100;
+      margin-bottom: 2rem;
+    }
+    .spec-title { font-weight: 600; font-size: 0.9rem; color: #333; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-draft { background: #fef3c7; color: #92400e; }
+    .badge-approved { background: #d1fae5; color: #065f46; }
+    .badge-req { background: #eff6ff; color: #1e40af; font-family: monospace; font-size: 0.8rem; }
+    .prefix-label { font-size: 0.8rem; color: #666; }
+
+    /* Requirements */
+    .req {
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      margin: 1rem 0;
+      overflow: hidden;
+    }
+    .req-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: #fafafa;
+      cursor: pointer;
+      user-select: none;
+    }
+    .req-header:hover { background: #f3f4f6; }
+    .req-id {
+      font-family: monospace;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #1e40af;
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+    .req-status { margin-left: auto; white-space: nowrap; }
+    .req-status .badge { font-size: 0.7rem; }
+    .badge-pending { background: #f1f5f9; color: #475569; }
+    .req-text { font-weight: 500; flex: 1; }
+    .req-body {
+      padding: 0.75rem 1rem;
+      border-top: 1px solid #e5e5e5;
+      background: #fff;
+      display: none;
+    }
+    .req-body.open { display: block; }
+    .req-body p { margin: 0.5rem 0; font-size: 0.9rem; color: #444; }
+    .req-body code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 0.85rem; }
+    .req-body pre {
+      background: #f8fafc;
+      border: 1px solid #e5e5e5;
+      border-radius: 4px;
+      padding: 0.75rem;
+      font-size: 0.82rem;
+      overflow-x: auto;
+    }
+
+    /* Validation section */
+    .validation {
+      background: #fffbeb;
+      border: 2px solid #f59e0b;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-top: 2.5rem;
+    }
+    .validation h2 {
+      color: #92400e;
+      border-bottom-color: #f59e0b;
+      margin-top: 0;
+    }
+    .validation ol { padding-left: 1.25rem; }
+    .validation li { margin: 0.5rem 0; font-size: 0.92rem; }
+    .validation code { background: #fef3c7; padding: 1px 5px; border-radius: 3px; font-size: 0.85rem; }
+
+    /* Context / rationale boxes */
+    .context {
+      background: #f8fafc;
+      border-left: 3px solid #94a3b8;
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+      color: #444;
+    }
+
+    /* Anchor links */
+    .req-id a { color: inherit; text-decoration: none; }
+    .req-id a:hover { text-decoration: underline; }
+
+    /* Toggle chevron */
+    .chevron { font-size: 0.75rem; margin-top: 3px; transition: transform 0.15s; color: #888; }
+    .chevron.open { transform: rotate(90deg); }
+  </style>
+</head>
+<body>
+
+<div class="spec-header">
+  <span class="spec-title">Configurable discussion model registry</span>
+  <span class="badge badge-draft">draft</span>
+  <span class="prefix-label">prefix:</span>
+  <span class="badge badge-req">MODELS</span>
+</div>
+
+<h1>Configurable discussion model registry</h1>
+
+<p>
+  Model names like <code>"opus"</code>, <code>"sonnet"</code>, <code>"haiku"</code> are currently hardcoded in two places:
+  a Zod enum in <code>packages/shared</code> and a translation map in <code>daemon/src/session-manager.ts</code>.
+  Adding, renaming, or repointing a model (e.g. to a different provider) requires a code change and a redeploy.
+</p>
+<p>
+  This spec replaces those hardcoded structures with a runtime registry loaded from a global config file.
+  The config file maps arbitrary names to <code>{ provider, modelId }</code> pairs. The daemon reads it on startup.
+  Per-vault config continues to reference models by name; the dropdown in the UI is populated from whatever
+  names are in the registry at runtime.
+</p>
+
+<div class="context">
+  <strong>Behavior change:</strong> Vaults with no <code>discussionModel</code> set currently use Opus
+  (the hardcoded default). After this change they use the pi-agent fallback. Sites that want Opus as
+  the default must configure their vaults or set <code>discussionModel</code> explicitly in
+  <code>.memory-loop.json</code>.
+</div>
+
+<div class="context">
+  <strong>Out of scope:</strong> Hot-reloading the model registry without a daemon restart. The registry is
+  read once on startup. A restart is acceptable and already required for other daemon config changes.
+</div>
+
+<h2>Requirements</h2>
+
+<!-- REQ-MODELS-1 -->
+<div class="req" id="REQ-MODELS-1">
+  <div class="req-header" onclick="toggle('REQ-MODELS-1')">
+    <span class="req-id"><a href="#REQ-MODELS-1">REQ-MODELS-1</a></span>
+    <span class="req-text">Global config file defines the model registry</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-1">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-1">
+    <p>
+      A global config file for the memory-loop daemon defines a <code>models</code> object.
+      Each key is a model name (arbitrary string); each value is a <code>{ provider, modelId }</code> pair.
+    </p>
+    <pre>{
+  "models": {
+    "opus":   { "provider": "anthropic", "modelId": "claude-opus-4-7" },
+    "sonnet": { "provider": "anthropic", "modelId": "claude-sonnet-4-6" },
+    "haiku":  { "provider": "anthropic", "modelId": "claude-haiku-4-5" }
+  }
+}</pre>
+    <p>
+      The file path is determined by the env var <code>MEMORY_LOOP_CONFIG</code>, defaulting to
+      <code>${VAULTS_DIR}/memory-loop-config.json</code> when unset. The path is resolved when
+      <code>loadGlobalConfig()</code> is called, not at module import time — mirroring the pattern
+      in <code>vault-manager.ts</code> where <code>getVaultsDir()</code> is called inside functions
+      so that test <code>beforeEach</code> can set <code>VAULTS_DIR</code> before the path is resolved.
+    </p>
+    <p>
+      The file is optional: if absent, the model registry is empty and all sessions fall back
+      to the pi-agent default (REQ-MODELS-7).
+    </p>
+    <p>Unknown top-level keys in the file are ignored (forward-compatible).</p>
+  </div>
+</div>
+
+<!-- REQ-MODELS-2 -->
+<div class="req" id="REQ-MODELS-2">
+  <div class="req-header" onclick="toggle('REQ-MODELS-2')">
+    <span class="req-id"><a href="#REQ-MODELS-2">REQ-MODELS-2</a></span>
+    <span class="req-text">Daemon loads the model registry once on startup</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-2">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-2">
+    <p>
+      During daemon startup (<code>daemon/src/index.ts</code>), the global config is loaded before
+      the HTTP server accepts requests. The loaded model registry is stored as module-level state
+      in a new <code>daemon/src/global-config.ts</code> module, accessed via a <code>getRegistry()</code>
+      export.
+    </p>
+    <p>
+      The module exports a <code>configureRegistryForTesting(registry)</code> /
+      <code>_resetRegistryForTesting()</code> pair following the same pattern as
+      <code>pi-session-factory.ts</code>. This allows tests to inject a mock registry without
+      using <code>mock.module()</code>, which is prohibited in this codebase.
+    </p>
+    <p>
+      A missing or malformed config file is not a fatal error. The daemon logs a warning and
+      continues with an empty registry. A valid file with zero model entries is also accepted.
+    </p>
+    <p>
+      Individual model entries with an invalid shape (missing <code>provider</code> or <code>modelId</code>,
+      non-string values) are skipped with a warning; valid entries in the same file are retained.
+    </p>
+  </div>
+</div>
+
+<!-- REQ-MODELS-3 -->
+<div class="req" id="REQ-MODELS-3">
+  <div class="req-header" onclick="toggle('REQ-MODELS-3')">
+    <span class="req-id"><a href="#REQ-MODELS-3">REQ-MODELS-3</a></span>
+    <span class="req-text">Model registry exposed via REST API</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-3">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-3">
+    <p>
+      A new daemon endpoint <code>GET /api/models</code> returns the runtime model registry as a
+      JSON array of entries, suitable for populating a dropdown. Order matches the insertion order
+      of keys as parsed by <code>JSON.parse</code> (preserved by V8/Bun for non-integer keys).
+    </p>
+    <pre>// Response shape
+{
+  "models": [
+    { "name": "opus",   "provider": "anthropic", "modelId": "claude-opus-4-7" },
+    { "name": "sonnet", "provider": "anthropic", "modelId": "claude-sonnet-4-6" },
+    { "name": "haiku",  "provider": "anthropic", "modelId": "claude-haiku-4-5" }
+  ]
+}</pre>
+    <p>
+      When the registry is empty (no config file or empty <code>models</code> object), the response
+      is <code>{ "models": [] }</code>. The frontend handles this gracefully (REQ-MODELS-6).
+    </p>
+    <p>
+      A Next.js proxy route <code>nextjs/app/api/models/route.ts</code> forwards
+      <code>GET /api/models</code> to the daemon, consistent with all other daemon-proxied
+      endpoints. The browser calls the Next.js proxy; the proxy calls the daemon via Unix socket.
+    </p>
+  </div>
+</div>
+
+<!-- REQ-MODELS-4 -->
+<div class="req" id="REQ-MODELS-4">
+  <div class="req-header" onclick="toggle('REQ-MODELS-4')">
+    <span class="req-id"><a href="#REQ-MODELS-4">REQ-MODELS-4</a></span>
+    <span class="req-text">Remove hardcoded model enum and translation map</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-4">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-4">
+    <p>The following hardcoded structures are removed:</p>
+    <ul>
+      <li><code>VALID_DISCUSSION_MODELS</code> constant in <code>packages/shared/src/vault-config.ts</code></li>
+      <li><code>DiscussionModelLocal</code> type alias (<code>"opus" | "sonnet" | "haiku"</code>)</li>
+      <li><code>DEFAULT_DISCUSSION_MODEL</code> constant (no longer meaningful without a fixed set)</li>
+      <li><code>DISCUSSION_MODEL_MAP</code> in <code>daemon/src/session-manager.ts</code>, including
+          its <code>"basic"</code> and <code>"text"</code> fallback-provider entries. Those entries
+          mapped to <code>("fallback", "basic")</code> and <code>("fallback", "text")</code> respectively.
+          Any vault that stored <code>discussionModel: "text"</code> will now hit the warning-then-fallback
+          path in REQ-MODELS-5, which resolves to <code>("fallback", "text")</code> anyway — functionally
+          equivalent, one extra warning log line.</li>
+      <li>The <code>DiscussionModelSchema</code> Zod enum in <code>packages/shared/src/schemas/protocol.ts</code></li>
+      <li>The <code>DiscussionModel</code> type export from shared</li>
+    </ul>
+    <p>
+      <code>VaultConfig.discussionModel</code> and <code>EditableVaultConfig.discussionModel</code>
+      both become <code>string | undefined</code> (or <code>z.string().optional()</code> in Zod).
+      The per-vault config stores the model name as a plain string. Validation against the registry
+      happens at session-creation time, not at config-save time (REQ-MODELS-5).
+    </p>
+    <p>
+      <code>resolveDiscussionModel(config)</code> is removed. Call sites read
+      <code>config.discussionModel</code> directly, treating <code>undefined</code> as "use fallback."
+    </p>
+  </div>
+</div>
+
+<!-- REQ-MODELS-5 -->
+<div class="req" id="REQ-MODELS-5">
+  <div class="req-header" onclick="toggle('REQ-MODELS-5')">
+    <span class="req-id"><a href="#REQ-MODELS-5">REQ-MODELS-5</a></span>
+    <span class="req-text">Session creation resolves model from runtime registry</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-5">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-5">
+    <p>
+      In <code>session-manager.ts</code>, <code>resolveModelForPiAgent()</code> is rewritten to
+      look up the vault config's <code>discussionModel</code> name in the runtime registry loaded
+      by <code>global-config.ts</code>.
+    </p>
+    <p>If the name is found, its <code>{ provider, modelId }</code> is passed to <code>createPiSession()</code>.</p>
+    <p>
+      If the name is not found in the registry (unknown name, or registry is empty), a warning is
+      logged and <code>undefined</code> is passed as the <code>model</code> option to
+      <code>createPiSession()</code>. The existing fallback in <code>pi-session-factory.ts</code>
+      then applies: pi-agent tries <code>("fallback", "text")</code> and throws only if that is also
+      unavailable.
+    </p>
+    <p>
+      If <code>discussionModel</code> is unset on the vault config, the same fallback path applies
+      without logging a warning.
+    </p>
+  </div>
+</div>
+
+<!-- REQ-MODELS-6 -->
+<div class="req" id="REQ-MODELS-6">
+  <div class="req-header" onclick="toggle('REQ-MODELS-6')">
+    <span class="req-id"><a href="#REQ-MODELS-6">REQ-MODELS-6</a></span>
+    <span class="req-text">Frontend model dropdown populated from API</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-6">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-6">
+    <p>
+      The model dropdown in <code>ConfigEditorDialog.tsx</code> is populated by fetching
+      <code>GET /api/models</code> rather than from a hardcoded list. The display label for each
+      option is the model name key (e.g. <code>"opus"</code>). No user-friendly description is
+      generated — the name is the label.
+    </p>
+    <p>
+      When the API returns an empty list, the dropdown shows a single disabled option:
+      "No models configured." Saving the vault config with no model selected sets
+      <code>discussionModel</code> to <code>undefined</code>.
+    </p>
+    <p>
+      If a vault's stored <code>discussionModel</code> value is not present in the list returned
+      by the API (e.g. registry was edited since the vault was configured), the dropdown shows
+      the stored value as the currently selected option, styled to indicate it is unrecognized
+      (e.g. appended with " (unknown)"). It remains selectable and saveable without change.
+    </p>
+    <p>
+      The daemon client in <code>nextjs/lib/daemon/</code> gains a <code>getModels()</code> function.
+    </p>
+  </div>
+</div>
+
+<!-- REQ-MODELS-7 -->
+<div class="req" id="REQ-MODELS-7">
+  <div class="req-header" onclick="toggle('REQ-MODELS-7')">
+    <span class="req-id"><a href="#REQ-MODELS-7">REQ-MODELS-7</a></span>
+    <span class="req-text">Fallback is pi-agent default, not a hardcoded pair</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-7">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-7">
+    <p>
+      When no model is resolved from the registry, <code>undefined</code> is passed as the
+      <code>model</code> option to <code>createPiSession()</code>. The factory's existing fallback
+      (<code>FALLBACK_MODEL = { provider: "fallback", modelId: "text" }</code>) handles the rest.
+    </p>
+    <p>
+      The <code>FALLBACK_MODEL</code> constant in <code>pi-session-factory.ts</code> is not removed
+      or changed. It remains the last-resort safety net inside the factory, independent of whether
+      the model registry is populated.
+    </p>
+    <p>
+      No default model name is baked into the daemon. If a site wants Opus as the default,
+      it configures vaults accordingly. If all vaults are unconfigured, they all fall back to
+      the pi-agent default silently.
+    </p>
+  </div>
+</div>
+
+<!-- REQ-MODELS-8 -->
+<div class="req" id="REQ-MODELS-8">
+  <div class="req-header" onclick="toggle('REQ-MODELS-8')">
+    <span class="req-id"><a href="#REQ-MODELS-8">REQ-MODELS-8</a></span>
+    <span class="req-text">VaultInfo no longer carries discussionModel as a typed enum</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-8">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-8">
+    <p>
+      <code>VaultInfoSchema</code> in <code>packages/shared/src/schemas/protocol.ts</code> changes
+      <code>discussionModel</code> from a <code>DiscussionModelSchema</code> enum to
+      <code>z.string().optional()</code>.
+    </p>
+    <p>
+      <code>parseVault()</code> in <code>vault-manager.ts</code> passes the raw string through
+      directly rather than calling <code>resolveDiscussionModel()</code>. A vault with no
+      <code>discussionModel</code> set sends <code>undefined</code> in the VaultInfo response.
+    </p>
+    <p>
+      The frontend stores and displays the vault's <code>discussionModel</code> as a string.
+      The typed <code>DiscussionModel</code> type export from shared is removed.
+    </p>
+  </div>
+</div>
+
+<!-- REQ-MODELS-9 -->
+<div class="req" id="REQ-MODELS-9">
+  <div class="req-header" onclick="toggle('REQ-MODELS-9')">
+    <span class="req-id"><a href="#REQ-MODELS-9">REQ-MODELS-9</a></span>
+    <span class="req-text">Tests cover the new global config module</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-9">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-9">
+    <p>Unit tests for <code>daemon/src/global-config.ts</code> cover:</p>
+    <ul>
+      <li>File not found → empty registry, no throw</li>
+      <li>Malformed JSON → empty registry, no throw</li>
+      <li>Valid file → registry populated correctly</li>
+      <li>File with some invalid entries → valid entries retained, invalid entries skipped</li>
+      <li>Empty <code>models</code> object → empty registry</li>
+    </ul>
+    <p>
+      Existing session-manager tests are updated to inject a mock registry via
+      <code>configureRegistryForTesting()</code>. One existing test requires a semantic assertion
+      change: the test currently named "passes no model when vault config has no discussionModel"
+      currently asserts <code>capturedOpts.model</code> equals the Opus mapping (because
+      <code>resolveDiscussionModel</code> fills in the default). After this change, when
+      <code>discussionModel</code> is <code>undefined</code>, no registry lookup occurs and
+      <code>capturedOpts.model</code> must be <code>undefined</code>. Update the assertion
+      accordingly — this is a deliberate behavior change, not a bug.
+    </p>
+    <p>
+      A unit test for the <code>GET /api/models</code> route covers empty registry and populated registry responses.
+    </p>
+  </div>
+</div>
+
+<!-- REQ-MODELS-10 -->
+<div class="req" id="REQ-MODELS-10">
+  <div class="req-header" onclick="toggle('REQ-MODELS-10')">
+    <span class="req-id"><a href="#REQ-MODELS-10">REQ-MODELS-10</a></span>
+    <span class="req-text">Reference documentation updated</span>
+    <span class="req-status"><span class="badge badge-pending">pending</span></span>
+    <span class="chevron" id="chevron-REQ-MODELS-10">▶</span>
+  </div>
+  <div class="req-body" id="body-REQ-MODELS-10">
+    <p>The following reference docs are updated to reflect the new behavior:</p>
+    <ul>
+      <li>
+        <code>.lore/reference/_infrastructure/configuration.md</code>: add the global config file,
+        its location, format, and the new <code>GET /api/models</code> endpoint. Update the
+        <code>discussionModel</code> field description from "enum" to "string key from global registry."
+      </li>
+      <li>
+        <code>.lore/reference/think.md</code>: update the Model Selection section to describe
+        runtime registry lookup rather than enum validation.
+      </li>
+    </ul>
+  </div>
+</div>
+
+<div class="validation">
+  <h2>AI Validation</h2>
+  <p>After implementation, verify correctness by running the following checks in order.</p>
+
+  <h3>Static checks</h3>
+  <ol>
+    <li>
+      <code>bun run typecheck</code> passes with zero errors. Confirm <code>DiscussionModelLocal</code>,
+      <code>DiscussionModelSchema</code>, and <code>VALID_DISCUSSION_MODELS</code> no longer exist
+      anywhere in the codebase: <code>grep -r "DiscussionModelLocal\|DiscussionModelSchema\|VALID_DISCUSSION_MODELS\|DISCUSSION_MODEL_MAP" packages/ daemon/src/</code> → no matches.
+    </li>
+    <li>
+      <code>bun run lint</code> passes with zero errors.
+    </li>
+    <li>
+      <code>bun run test</code> passes. All existing tests that depended on the hardcoded
+      map/enum are updated (not deleted) and still test the same behavior via the injectable registry.
+    </li>
+  </ol>
+
+  <h3>Config load behavior</h3>
+  <ol start="4">
+    <li>
+      Start the daemon with no global config file present. Confirm in the logs:
+      no fatal error, warning is logged about missing config, daemon accepts requests normally.
+    </li>
+    <li>
+      Write a valid <code>memory-loop-config.json</code> with two model entries.
+      Restart the daemon. Confirm <code>GET /api/models</code> returns both entries in order.
+    </li>
+    <li>
+      Add an entry with a missing <code>modelId</code> field to the config file.
+      Restart. Confirm the bad entry is skipped (warning in logs), valid entries still present
+      in <code>GET /api/models</code>.
+    </li>
+  </ol>
+
+  <h3>Session behavior</h3>
+  <ol start="7">
+    <li>
+      Configure a vault with a model name that exists in the registry. Start a discussion session.
+      Confirm a log line from <code>[Session]</code> or <code>[PiSessionFactory]</code> contains
+      the expected <code>provider</code> and <code>modelId</code> values.
+    </li>
+    <li>
+      Configure a vault with a model name that does NOT exist in the registry. Start a discussion.
+      Confirm: a warning containing "Unknown discussion model" appears in daemon logs; session
+      completes without error (falls through to pi-agent default).
+    </li>
+    <li>
+      Leave <code>discussionModel</code> unset on a vault. Start a discussion.
+      Confirm: no "Unknown discussion model" warning in daemon logs; session completes.
+    </li>
+  </ol>
+
+  <h3>Frontend behavior</h3>
+  <ol start="10">
+    <li>
+      Open the vault settings dialog. Confirm the model dropdown options match exactly
+      the names returned by <code>GET /api/models</code>.
+    </li>
+    <li>
+      With an empty registry (<code>{ "models": {} }</code> or no config file), open the dialog.
+      Confirm the dropdown shows "No models configured." and saving leaves the vault with
+      <code>discussionModel: undefined</code>.
+    </li>
+    <li>
+      Manually set a vault's <code>discussionModel</code> in its <code>.memory-loop.json</code>
+      to a name not in the registry. Open vault settings. Confirm the stored name is shown in
+      the dropdown with an "(unknown)" indicator.
+    </li>
+  </ol>
+</div>
+
+<script>
+  function toggle(id) {
+    const body = document.getElementById('body-' + id);
+    const chevron = document.getElementById('chevron-' + id);
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    chevron.classList.toggle('open', !isOpen);
+  }
+</script>
+
+</body>
+</html>

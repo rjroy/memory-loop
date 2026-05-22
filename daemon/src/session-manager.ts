@@ -1,9 +1,5 @@
-/**
- * Session Manager
- *
- * Manages pi-agent session lifecycle: create, resume, and persistence.
- * Sessions are stored in `.memory-loop/sessions/` as JSON files.
- */
+// Pi-agent session lifecycle: create, resume, persistence.
+// Sessions are stored in `.memory-loop/sessions/<id>.json`.
 
 import { mkdir, readFile, writeFile, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -19,7 +15,6 @@ import {
   createLogger,
   formatDateForFilename,
   formatTimeForTimestamp,
-  resolveDiscussionModel,
   resolveRecentDiscussions,
   type ConversationMessage,
   type RecentDiscussionEntry,
@@ -37,8 +32,8 @@ import {
 import { createVaultTransferTools } from "./vault-transfer";
 import { loadVaultConfig } from "./vault/vault-config";
 import { createPiSession } from "./pi-session-factory";
+import { getRegistry } from "./global-config";
 
-// Re-export types from shared for convenience
 export type { SessionMetadata, ConversationMessage } from "@memory-loop/shared";
 
 const log = createLogger("Session");
@@ -46,55 +41,32 @@ const log = createLogger("Session");
 /**
  * Built-in tool allowlist for Discussion mode.
  *
- * Restricts to read-only operations and bash. Task/subagent tools are excluded
- * because they inherit parent tools and could bypass permission checks.
- * Web tools (WebFetch, WebSearch) are excluded because they require the
- * pi-web-access extension which is not available to daemon sessions.
+ * Read-only operations plus bash. Task/subagent tools are excluded because they
+ * inherit parent tools and could bypass permission checks. Web tools (WebFetch,
+ * WebSearch) require the pi-web-access extension, which isn't wired in here.
  */
 export const DISCUSSION_TOOLS = ["read", "grep", "bash"] as const;
 
-/**
- * Pi-agent model coordinates. Matches the `model` field accepted by createPiSession.
- */
 type PiAgentModel = { provider: string; modelId: string };
 
-/**
- * Maps vault config discussion model names to pi-agent { provider, modelId } pairs.
- * Used by createSession() and resumeSession() when building the createPiSession call.
- */
-const DISCUSSION_MODEL_MAP: Record<string, PiAgentModel> = {
-  opus: { provider: "anthropic", modelId: "claude-opus-4-5" },
-  sonnet: { provider: "anthropic", modelId: "claude-sonnet-4-5" },
-  haiku: { provider: "anthropic", modelId: "claude-haiku-4-5" },
-};
-
-/**
- * Relative path within vault for storing session metadata.
- */
 export const SESSIONS_DIR = ".memory-loop/sessions";
 
-/**
- * Error thrown when session operations fail.
- */
+type SessionErrorCode =
+  | "SESSION_NOT_FOUND"
+  | "SESSION_INVALID"
+  | "SDK_ERROR"
+  | "STORAGE_ERROR"
+  | "RESUME_FAILED";
+
 export class SessionError extends Error {
-  constructor(
-    message: string,
-    public readonly code:
-      | "SESSION_NOT_FOUND"
-      | "SESSION_INVALID"
-      | "SDK_ERROR"
-      | "STORAGE_ERROR"
-      | "RESUME_FAILED"
-  ) {
+  constructor(message: string, public readonly code: SessionErrorCode) {
     super(message);
     this.name = "SessionError";
   }
 }
 
-/**
- * Substrings that identify known SDK error categories, paired with a user-friendly
- * explanation. First match wins; order matters only if patterns overlap.
- */
+// Substrings that identify known SDK error categories, paired with user-friendly
+// explanations. First match wins; order matters only when patterns overlap.
 const SDK_ERROR_PATTERNS: ReadonlyArray<readonly [needle: string, message: string]> = [
   ["ENOENT", "Claude Code executable not found. Please ensure Claude Code is installed."],
   ["EACCES", "Permission denied. Unable to access required resources."],
@@ -105,12 +77,6 @@ const SDK_ERROR_PATTERNS: ReadonlyArray<readonly [needle: string, message: strin
   ["server_error", "Server error. The Anthropic API is temporarily unavailable."],
 ];
 
-/**
- * Maps SDK errors to user-friendly error messages.
- *
- * @param error - The error from the SDK
- * @returns User-friendly error message
- */
 export function mapSdkError(error: unknown): string {
   if (!(error instanceof Error)) {
     return "An unknown error occurred while communicating with Claude.";
@@ -119,51 +85,31 @@ export function mapSdkError(error: unknown): string {
   return match?.[1] ?? error.message;
 }
 
-/**
- * Gets the absolute path to the sessions directory for a vault.
- * Creates the directory if it doesn't exist.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @returns Absolute path to sessions directory within the vault
- */
 export async function getSessionsDir(vaultPath: string): Promise<string> {
   const sessionsDir = join(vaultPath, SESSIONS_DIR);
-
-  // Ensure directory exists
   await mkdir(sessionsDir, { recursive: true });
-
   return sessionsDir;
 }
 
 /**
- * Validates a session ID to prevent path traversal attacks.
- * Session IDs must contain only alphanumeric characters, hyphens, and underscores.
- *
- * @param sessionId - The session ID to validate
- * @returns true if valid
- * @throws SessionError if invalid
+ * Throws SessionError if `sessionId` is unsafe to use as a filesystem path
+ * segment. Returns true on success so callers can use it as a guard.
  */
 export function validateSessionId(sessionId: string): boolean {
-  // Session IDs from SDK are typically UUIDs or similar safe formats.
-  // Allow alphanumeric, hyphens, underscores, and periods (for UUIDs).
+  // Session IDs from the SDK are typically UUIDs. Permit alphanumeric,
+  // hyphen, underscore, and period (UUIDs use hyphens; periods seen in some IDs).
   // `/` and `\` cannot match this regex, so path traversal via separator is rejected here.
   const safePattern = /^[a-zA-Z0-9_.-]+$/;
 
   if (!sessionId || sessionId.length === 0) {
     throw new SessionError("Session ID cannot be empty", "SESSION_INVALID");
   }
-
   if (sessionId.length > 256) {
     throw new SessionError("Session ID is too long", "SESSION_INVALID");
   }
-
   if (!safePattern.test(sessionId)) {
-    throw new SessionError(
-      "Session ID contains invalid characters",
-      "SESSION_INVALID"
-    );
+    throw new SessionError("Session ID contains invalid characters", "SESSION_INVALID");
   }
-
   // The regex permits `.`, so `..` survives the character check; reject explicitly.
   if (sessionId.includes("..")) {
     throw new SessionError(
@@ -175,32 +121,19 @@ export function validateSessionId(sessionId: string): boolean {
   return true;
 }
 
-/**
- * Gets the absolute path to a session file.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @param sessionId - The session ID
- * @returns Absolute path to session JSON file
- * @throws SessionError if session ID is invalid
- */
-export async function getSessionFilePath(vaultPath: string, sessionId: string): Promise<string> {
+export async function getSessionFilePath(
+  vaultPath: string,
+  sessionId: string
+): Promise<string> {
   validateSessionId(sessionId);
   const sessionsDir = await getSessionsDir(vaultPath);
   return join(sessionsDir, `${sessionId}.json`);
 }
 
-/**
- * Saves session metadata to disk.
- * Uses metadata.vaultPath to determine storage location.
- *
- * @param metadata - The session metadata to save
- * @throws SessionError if storage fails
- */
 export async function saveSession(metadata: SessionMetadata): Promise<void> {
   try {
     const filePath = await getSessionFilePath(metadata.vaultPath, metadata.id);
-    const content = JSON.stringify(metadata, null, 2);
-    await writeFile(filePath, content, "utf-8");
+    await writeFile(filePath, JSON.stringify(metadata, null, 2), "utf-8");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new SessionError(
@@ -210,14 +143,6 @@ export async function saveSession(metadata: SessionMetadata): Promise<void> {
   }
 }
 
-/**
- * Loads session metadata from disk.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @param sessionId - The session ID to load
- * @returns SessionMetadata or null if not found
- * @throws SessionError if the file exists but is invalid
- */
 export async function loadSession(
   vaultPath: string,
   sessionId: string
@@ -225,7 +150,6 @@ export async function loadSession(
   try {
     const filePath = await getSessionFilePath(vaultPath, sessionId);
 
-    // Check if file exists
     if (!(await fileExists(filePath))) {
       return null;
     }
@@ -233,15 +157,11 @@ export async function loadSession(
     const content = await readFile(filePath, "utf-8");
     const metadata = JSON.parse(content) as SessionMetadata;
 
-    // Validate required fields
     if (!metadata.id || !metadata.vaultId || !metadata.vaultPath) {
-      throw new SessionError(
-        `Session file is missing required fields`,
-        "SESSION_INVALID"
-      );
+      throw new SessionError(`Session file is missing required fields`, "SESSION_INVALID");
     }
 
-    // Migration: default messages to empty array for old session files
+    // Older session files predate the `messages` array. Default it so callers don't crash.
     metadata.messages = metadata.messages ?? [];
 
     return metadata;
@@ -250,10 +170,7 @@ export async function loadSession(
       throw error;
     }
     if (error instanceof SyntaxError) {
-      throw new SessionError(
-        `Session file contains invalid JSON`,
-        "SESSION_INVALID"
-      );
+      throw new SessionError(`Session file contains invalid JSON`, "SESSION_INVALID");
     }
     const message = error instanceof Error ? error.message : String(error);
     throw new SessionError(
@@ -263,21 +180,12 @@ export async function loadSession(
   }
 }
 
-/**
- * Deletes session metadata from disk.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @param sessionId - The session ID to delete
- * @returns true if deleted, false if not found
- */
 export async function deleteSession(vaultPath: string, sessionId: string): Promise<boolean> {
   try {
     const filePath = await getSessionFilePath(vaultPath, sessionId);
-
     if (!(await fileExists(filePath))) {
       return false;
     }
-
     await unlink(filePath);
     return true;
   } catch {
@@ -302,7 +210,6 @@ async function readSessionIds(sessionsDir: string): Promise<string[]> {
 /**
  * Loads all sessions for a vault paired with their lastActive Date, sorted
  * most-recent first. Skips files that fail to load or have invalid timestamps.
- * Returns an empty array if anything fails (e.g. sessions dir cannot be read).
  */
 async function loadSessionsSortedByActivity(
   vaultPath: string
@@ -320,7 +227,6 @@ async function loadSessionsSortedByActivity(
         if (Number.isNaN(lastActive.getTime())) continue;
         entries.push({ metadata, lastActive });
       } catch {
-        // Skip corrupted session files
         log.debug(`Skipping corrupted session file: ${sessionId}.json`);
       }
     }
@@ -332,12 +238,6 @@ async function loadSessionsSortedByActivity(
   }
 }
 
-/**
- * Lists all session IDs for a given vault.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @returns Array of session IDs
- */
 export async function listSessionsByVault(vaultPath: string): Promise<string[]> {
   try {
     const sessionsDir = await getSessionsDir(vaultPath);
@@ -347,13 +247,14 @@ export async function listSessionsByVault(vaultPath: string): Promise<string[]> 
   }
 }
 
-/**
- * Gets recent discussion sessions for a vault, sorted by last activity.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @param limit - Maximum number of discussions to return (default 5)
- * @returns Array of RecentDiscussionEntry objects, sorted by most recent first
- */
+function truncatePreview(text: string, maxLength: number): string {
+  const firstLine = text.split("\n")[0].trim();
+  if (firstLine.length <= maxLength) {
+    return firstLine;
+  }
+  return firstLine.slice(0, maxLength - 1) + "…";
+}
+
 export async function getRecentSessions(
   vaultPath: string,
   limit = 5
@@ -379,12 +280,6 @@ export async function getRecentSessions(
     });
 }
 
-/**
- * Prunes old sessions for a vault, keeping only the most recent ones.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @param keepCount - Number of sessions to keep (default: 5)
- */
 export async function pruneOldSessions(
   vaultPath: string,
   keepCount = 5
@@ -407,24 +302,6 @@ export async function pruneOldSessions(
   }
 }
 
-/**
- * Truncates a string to a maximum length, adding ellipsis if truncated.
- */
-function truncatePreview(text: string, maxLength: number): string {
-  // Take first line only
-  const firstLine = text.split("\n")[0].trim();
-  if (firstLine.length <= maxLength) {
-    return firstLine;
-  }
-  return firstLine.slice(0, maxLength - 1) + "…";
-}
-
-/**
- * Updates the lastActiveAt timestamp for a session.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @param sessionId - The session ID to update
- */
 export async function touchSession(vaultPath: string, sessionId: string): Promise<void> {
   const metadata = await loadSession(vaultPath, sessionId);
   if (metadata) {
@@ -433,28 +310,11 @@ export async function touchSession(vaultPath: string, sessionId: string): Promis
   }
 }
 
-/**
- * Gets the most recent session ID for a vault, if one exists.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @returns The most recent session ID, or null if no session exists for this vault
- */
-export async function getSessionForVault(
-  vaultPath: string
-): Promise<string | null> {
+export async function getSessionForVault(vaultPath: string): Promise<string | null> {
   const entries = await loadSessionsSortedByActivity(vaultPath);
   return entries[0]?.metadata.id ?? null;
 }
 
-/**
- * Appends a message to a session's conversation history.
- * Also writes to the transcript file for Obsidian searchability.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @param sessionId - The session ID
- * @param message - The message to append
- * @throws SessionError if session not found
- */
 export async function appendMessage(
   vaultPath: string,
   sessionId: string,
@@ -464,16 +324,13 @@ export async function appendMessage(
   if (!metadata) {
     const filePath = await getSessionFilePath(vaultPath, sessionId);
     log.error(`Session file not found at: ${filePath}`);
-    throw new SessionError(
-      `Session "${sessionId}" not found`,
-      "SESSION_NOT_FOUND"
-    );
+    throw new SessionError(`Session "${sessionId}" not found`, "SESSION_NOT_FOUND");
   }
 
   metadata.messages.push(message);
   metadata.lastActiveAt = new Date().toISOString();
 
-  // Initialize transcript on first user message
+  // Initialize transcript on the first user message of a session.
   if (message.role === "user" && !metadata.transcriptPath) {
     try {
       const vault = await getVaultById(metadata.vaultId);
@@ -490,14 +347,13 @@ export async function appendMessage(
         log.warn(`Vault "${metadata.vaultId}" not found, skipping transcript`);
       }
     } catch (error) {
-      // Log error but don't fail the message append
+      // Transcript is best-effort; never block message append on it.
       log.warn("Failed to initialize transcript:", error);
     }
   }
 
   await saveSession(metadata);
 
-  // Append to transcript if path exists
   if (metadata.transcriptPath) {
     try {
       const timestamp = new Date(message.timestamp);
@@ -507,7 +363,6 @@ export async function appendMessage(
           : formatAssistantMessage(message.content, message.toolInvocations, timestamp);
       await appendToTranscript(metadata.transcriptPath, formatted);
     } catch (error) {
-      // Log error but don't fail the message append
       log.warn("Failed to append to transcript:", error);
     }
   }
@@ -515,32 +370,20 @@ export async function appendMessage(
   log.info(`Appended ${message.role} message to session ${sessionId.slice(0, 8)}...`);
 }
 
-/**
- * Result of a session creation or resume, wrapping the pi-agent session.
- */
 export interface SessionQueryResult {
-  /** The session ID (locally generated UUID) */
   sessionId: string;
-  /** The live pi-agent session for streaming and control */
   piSession: AgentSession;
-  /** Conversation history from prior turns (populated on resume) */
+  /** Conversation history from prior turns (populated on resume). */
   previousMessages?: ConversationMessage[];
 }
 
-/**
- * Callback to request tool permission from the user.
- * Returns true if the user allows the tool, false otherwise.
- */
+/** Returns true to allow the tool, false to block it. */
 export type ToolPermissionCallback = (
   toolUseId: string,
   toolName: string,
   input: unknown
 ) => Promise<boolean>;
 
-/**
- * Schema for a single question in an AskUserQuestion request.
- * Matches the AskUserQuestionItemSchema from the shared protocol.
- */
 export interface AskUserQuestionItem {
   question: string;
   header: string;
@@ -548,20 +391,12 @@ export interface AskUserQuestionItem {
   multiSelect: boolean;
 }
 
-/**
- * Callback to handle AskUserQuestion tool.
- * Receives questions and returns a map of question text to selected answer(s).
- */
+/** Receives questions and returns a map of question text to selected answer(s). */
 export type AskUserQuestionCallback = (
   toolUseId: string,
   questions: AskUserQuestionItem[]
 ) => Promise<Record<string, string>>;
 
-/**
- * Builds a pi-agent ExtensionFactory that gates every tool call through
- * the provided ToolPermissionCallback. When the user denies permission,
- * the factory returns a block result so the tool is not executed.
- */
 function createPermissionExtension(callback: ToolPermissionCallback): ExtensionFactory {
   return (pi) => {
     pi.on("tool_call", async (event) => {
@@ -570,7 +405,6 @@ function createPermissionExtension(callback: ToolPermissionCallback): ExtensionF
         if (!allowed) {
           return { block: true, reason: `User denied permission for ${event.toolName}` };
         }
-        // Returning undefined allows the tool to proceed
         return undefined;
       } catch (err) {
         log.error(`Permission callback threw for ${event.toolName} — blocking tool call`, err);
@@ -580,10 +414,6 @@ function createPermissionExtension(callback: ToolPermissionCallback): ExtensionF
   };
 }
 
-/**
- * Builds the AskUserQuestion custom tool definition, wiring the provided
- * callback so the agent can ask the user structured questions during a turn.
- */
 function createAskUserQuestionTool(callback: AskUserQuestionCallback): ToolDefinition {
   return defineTool({
     name: "AskUserQuestion",
@@ -601,7 +431,9 @@ function createAskUserQuestionTool(callback: AskUserQuestionCallback): ToolDefin
             }),
             { description: "Available options (2-4)" }
           ),
-          multiSelect: Type.Boolean({ description: "Whether multiple options can be selected" }),
+          multiSelect: Type.Boolean({
+            description: "Whether multiple options can be selected",
+          }),
         }),
         { description: "List of questions to ask the user" }
       ),
@@ -616,27 +448,23 @@ function createAskUserQuestionTool(callback: AskUserQuestionCallback): ToolDefin
   });
 }
 
-/**
- * Maps a vault config discussion model name to a pi-agent { provider, modelId } pair.
- * Returns undefined if the model name is not recognised (triggers fallback in the factory).
- */
 function resolveModelForPiAgent(
   vaultPath: string,
   config: Awaited<ReturnType<typeof loadVaultConfig>>
 ): PiAgentModel | undefined {
-  const modelName = resolveDiscussionModel(config);
-  const mapped = DISCUSSION_MODEL_MAP[modelName];
-  if (!mapped) {
-    log.warn(`Unknown discussion model "${modelName}" for vault at ${vaultPath}, using pi-agent fallback`);
+  const modelName = config.discussionModel;
+  if (!modelName) return undefined;
+
+  const entry = getRegistry()[modelName];
+  if (!entry) {
+    log.warn(
+      `Unknown discussion model "${modelName}" for vault at ${vaultPath}, using pi-agent fallback`
+    );
+    return undefined;
   }
-  return mapped;
+  return entry;
 }
 
-/**
- * Builds the discussion extension factories and custom tools shared by
- * createSession() and resumeSession(). Both flows wire the same callbacks
- * (tool permission gating, AskUserQuestion) and the same vault-transfer tools.
- */
 function buildSessionExtensions(
   requestToolPermission: ToolPermissionCallback | undefined,
   askUserQuestion: AskUserQuestionCallback | undefined
@@ -657,13 +485,10 @@ function buildSessionExtensions(
 }
 
 /**
- * Opens a pi-agent session for the given vault using either a fresh `create`
- * or a `resume` SessionManager. Loads vault config, resolves the discussion
- * model, wires extensions, and logs the chosen tooling. Used by both
- * createSession() and resumeSession() so the setup stays in one place.
- *
- * Returns the loaded config alongside the pi-session result so callers don't
- * need a second loadVaultConfig() call (e.g. createSession uses it for pruning).
+ * Opens a pi-agent session for the given vault. Used by createSession() (with a
+ * fresh SessionManager) and resumeSession() (with an open one) so the wiring stays
+ * in one place. Returns the loaded vault config alongside the result so callers
+ * don't need a second loadVaultConfig() call.
  */
 async function openPiSessionForVault(
   vaultPath: string,
@@ -701,9 +526,8 @@ async function openPiSessionForVault(
 }
 
 /**
- * Wraps non-SessionError exceptions in a SessionError(SDK_ERROR). Logs context
- * via the supplied `operation` label. Re-throws SessionError instances as-is so
- * their original codes (e.g. RESUME_FAILED) survive.
+ * Wraps non-SessionError exceptions in a SessionError(SDK_ERROR). Re-throws
+ * existing SessionError instances unchanged so codes like RESUME_FAILED survive.
  */
 function wrapSdkFailure(operation: string, error: unknown): never {
   log.error(`Failed to ${operation}`, error);
@@ -713,14 +537,6 @@ function wrapSdkFailure(operation: string, error: unknown): never {
   throw new SessionError(mapSdkError(error), "SDK_ERROR");
 }
 
-/**
- * Creates a new pi-agent session for a vault.
- *
- * @param vault - The vault to create a session for
- * @param requestToolPermission - Optional callback to request tool permission from user
- * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
- * @returns SessionQueryResult with session ID and pi-agent session
- */
 export async function createSession(
   vault: VaultInfo,
   requestToolPermission?: ToolPermissionCallback,
@@ -737,10 +553,7 @@ export async function createSession(
       askUserQuestion
     );
 
-    // Generate a locally-owned UUID — no longer extracted from the first event.
     const sessionId = crypto.randomUUID();
-
-    // Persist session metadata, including the JSONL path for future resume.
     const now = new Date().toISOString();
     const metadata: SessionMetadata = {
       id: sessionId,
@@ -752,9 +565,11 @@ export async function createSession(
       piSessionPath: result.jsonlPath ?? undefined,
     };
     await saveSession(metadata);
-    log.info(`Session created: ${sessionId}, piSessionPath=${result.jsonlPath ?? "(none)"}`);
+    log.info(
+      `Session created: ${sessionId}, piSessionPath=${result.jsonlPath ?? "(none)"}`
+    );
 
-    // Prune old sessions in background (non-blocking, errors logged internally)
+    // Prune in background; errors are logged inside pruneOldSessions.
     void pruneOldSessions(vault.path, resolveRecentDiscussions(config));
 
     return {
@@ -766,15 +581,6 @@ export async function createSession(
   }
 }
 
-/**
- * Resumes an existing pi-agent session.
- *
- * @param vaultPath - Absolute path to the vault root directory
- * @param sessionId - The session ID to resume
- * @param requestToolPermission - Optional callback to request tool permission from user
- * @param askUserQuestion - Optional callback to handle AskUserQuestion tool
- * @returns SessionQueryResult with session ID and pi-agent session
- */
 export async function resumeSession(
   vaultPath: string,
   sessionId: string,
@@ -783,15 +589,11 @@ export async function resumeSession(
 ): Promise<SessionQueryResult> {
   log.info(`Resuming session: ${sessionId}`);
 
-  // Load existing session metadata
   const metadata = await loadSession(vaultPath, sessionId);
 
   if (!metadata) {
     log.warn(`Session not found: ${sessionId}`);
-    throw new SessionError(
-      `Session "${sessionId}" not found`,
-      "SESSION_NOT_FOUND"
-    );
+    throw new SessionError(`Session "${sessionId}" not found`, "SESSION_NOT_FOUND");
   }
 
   log.info(`Session metadata loaded: vault=${metadata.vaultId}`);
@@ -813,7 +615,6 @@ export async function resumeSession(
       askUserQuestion
     );
 
-    // Update last-active timestamp
     metadata.lastActiveAt = new Date().toISOString();
     await saveSession(metadata);
 

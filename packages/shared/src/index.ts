@@ -1,21 +1,18 @@
 /**
  * @memory-loop/shared
  *
- * Shared types, schemas, and utilities for Memory Loop.
- * Used by both the Next.js web app and the daemon process.
+ * Shared types, schemas, and utilities used by both the Next.js web app
+ * and the daemon process.
  */
 
-// Schemas and types
 export * from "./schemas/index";
 
-// Logger
 export { createLogger, setLogLevel } from "./logger";
 export type { LogLevel } from "./logger";
 
-// Vault configuration types and resolvers
-// NOTE: fileExists/directoryExists and resolveContentRoot are server-only.
-// Import from "@memory-loop/shared/server" for those.
-export type { VaultConfig, DiscussionModelLocal } from "./vault-config";
+// fileExists/directoryExists and resolveContentRoot are server-only.
+// Import them from "@memory-loop/shared/server".
+export type { VaultConfig } from "./vault-config";
 export {
   CONFIG_FILE_NAME,
   SLASH_COMMANDS_FILE,
@@ -28,8 +25,6 @@ export {
   DEFAULT_QUOTES_PER_WEEK,
   DEFAULT_RECENT_CAPTURES,
   DEFAULT_RECENT_DISCUSSIONS,
-  VALID_DISCUSSION_MODELS,
-  DEFAULT_DISCUSSION_MODEL,
   DEFAULT_ORDER,
   DEFAULT_CARDS_ENABLED,
   DEFAULT_VI_MODE,
@@ -48,14 +43,12 @@ export {
   resolvePinnedAssets,
   resolveRecentCaptures,
   resolveRecentDiscussions,
-  resolveDiscussionModel,
   resolveOrder,
   resolveCardsEnabled,
   resolveViMode,
   slashCommandsEqual,
 } from "./vault-config";
 
-// File type utilities
 export {
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
@@ -70,14 +63,12 @@ export {
   encodeAssetPath,
 } from "./file-types";
 
-// Date formatting utilities
 export {
   formatDateForFilename,
   formatTimeForTimestamp,
   getDailyNoteFilename,
 } from "./date-utils";
 
-// Session types
 export type {
   SessionEvent,
   PendingPrompt,
@@ -88,7 +79,6 @@ export type {
 } from "./session-types";
 export { AlreadyProcessingError } from "./session-types";
 
-// Pair writing prompts
 export type {
   QuickActionType,
   AdvisoryActionType,
@@ -111,7 +101,6 @@ export {
   buildDiscussPrompt,
 } from "./pair-writing-prompts";
 
-// Vault path helpers
 export type { ExtractedTitle } from "./vault-paths";
 export {
   DEFAULT_INBOX_PATH,

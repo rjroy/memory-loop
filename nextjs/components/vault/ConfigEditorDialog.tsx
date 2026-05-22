@@ -1,9 +1,6 @@
 /**
- * ConfigEditorDialog Component
- *
- * Portal-based modal dialog for editing vault configuration settings.
- * Displays a form with all editable config fields and handles change detection.
- * Uses ConfirmDialog for unsaved changes confirmation.
+ * Portal-based modal dialog for editing vault configuration. Uses
+ * ConfirmDialog for unsaved-changes confirmation.
  */
 
 import {
@@ -16,11 +13,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
+import type { ModelEntry } from "@/lib/daemon/models";
 import "./ConfigEditorDialog.css";
 
-/**
- * Valid badge colors (matches BadgeColorSchema from protocol.ts)
- */
+// Matches BadgeColorSchema from packages/shared protocol.
 export type BadgeColor =
   | "black"
   | "purple"
@@ -31,31 +27,25 @@ export type BadgeColor =
   | "green"
   | "yellow";
 
-/**
- * Badge configuration
- */
 export interface Badge {
   text: string;
   color: BadgeColor;
 }
 
-/**
- * Editable vault configuration fields.
- * This represents the subset of vault config that users can modify.
- */
+// Subset of vault config users can modify. Bounds enforced by sliders/inputs.
 export interface EditableVaultConfig {
   title?: string;
   subtitle?: string;
-  discussionModel?: "opus" | "sonnet" | "haiku";
+  discussionModel?: string;
   promptsPerGeneration?: number; // 1-20
   maxPoolSize?: number; // 10-200
   quotesPerWeek?: number; // 0-7
   recentCaptures?: number; // 1-20
   recentDiscussions?: number; // 1-20
   badges?: Badge[]; // max 5
-  order?: number; // display order on vault selection screen
-  cardsEnabled?: boolean; // whether spaced repetition card discovery is enabled
-  viMode?: boolean; // whether vi-style editing is enabled in Pair Writing
+  order?: number;
+  cardsEnabled?: boolean;
+  viMode?: boolean;
 }
 
 export interface ConfigEditorDialogProps {
@@ -63,68 +53,41 @@ export interface ConfigEditorDialogProps {
   initialConfig: EditableVaultConfig;
   onSave: (config: EditableVaultConfig) => void | Promise<void>;
   onCancel: () => void;
-  /** Show loading indicator during save (TASK-010) */
   isSaving?: boolean;
-  /** Show inline error message if save failed (TASK-010) */
   saveError?: string | null;
 }
 
-/**
- * Deep comparison of two config objects.
- * Returns true if they differ.
- */
 function hasConfigChanged(
   initial: EditableVaultConfig,
   current: EditableVaultConfig
 ): boolean {
-  // Compare primitive fields
-  if (initial.title !== current.title) return true;
-  if (initial.subtitle !== current.subtitle) return true;
-  if (initial.discussionModel !== current.discussionModel) return true;
-  if (initial.promptsPerGeneration !== current.promptsPerGeneration) return true;
-  if (initial.maxPoolSize !== current.maxPoolSize) return true;
-  if (initial.quotesPerWeek !== current.quotesPerWeek) return true;
-  if (initial.recentCaptures !== current.recentCaptures) return true;
-  if (initial.recentDiscussions !== current.recentDiscussions) return true;
-  if (initial.order !== current.order) return true;
-  if (initial.cardsEnabled !== current.cardsEnabled) return true;
-  if (initial.viMode !== current.viMode) return true;
-
-  // Compare badges array
-  const initialBadges = initial.badges ?? [];
-  const currentBadges = current.badges ?? [];
-
-  if (initialBadges.length !== currentBadges.length) return true;
-
-  for (let i = 0; i < initialBadges.length; i++) {
-    if (
-      initialBadges[i].text !== currentBadges[i].text ||
-      initialBadges[i].color !== currentBadges[i].color
-    ) {
-      return true;
-    }
+  if (
+    initial.title !== current.title ||
+    initial.subtitle !== current.subtitle ||
+    initial.discussionModel !== current.discussionModel ||
+    initial.promptsPerGeneration !== current.promptsPerGeneration ||
+    initial.maxPoolSize !== current.maxPoolSize ||
+    initial.quotesPerWeek !== current.quotesPerWeek ||
+    initial.recentCaptures !== current.recentCaptures ||
+    initial.recentDiscussions !== current.recentDiscussions ||
+    initial.order !== current.order ||
+    initial.cardsEnabled !== current.cardsEnabled ||
+    initial.viMode !== current.viMode
+  ) {
+    return true;
   }
 
-  return false;
+  const initialBadges = initial.badges ?? [];
+  const currentBadges = current.badges ?? [];
+  if (initialBadges.length !== currentBadges.length) return true;
+
+  return initialBadges.some(
+    (badge, i) =>
+      badge.text !== currentBadges[i].text ||
+      badge.color !== currentBadges[i].color
+  );
 }
 
-/**
- * Predefined badge colors available for selection
- */
-const BADGE_COLORS: BadgeColor[] = [
-  "black",
-  "purple",
-  "red",
-  "cyan",
-  "orange",
-  "blue",
-  "green",
-  "yellow",
-];
-
-/**
- * CSS color values for badge backgrounds
- */
 const BADGE_COLOR_VALUES: Record<BadgeColor, string> = {
   black: "var(--color-badge-black, #333)",
   purple: "var(--color-badge-purple, #9b59b6)",
@@ -136,33 +99,24 @@ const BADGE_COLOR_VALUES: Record<BadgeColor, string> = {
   yellow: "var(--color-badge-yellow, #f1c40f)",
 };
 
-/**
- * Maximum character length for badge text (REQ-F-20)
- */
+const BADGE_COLORS = Object.keys(BADGE_COLOR_VALUES) as BadgeColor[];
+
+// REQ-F-20: 20-character cap on badge text.
 const MAX_BADGE_TEXT_LENGTH = 20;
 
-/**
- * Props for the BadgeEditor subcomponent
- */
 interface BadgeEditorProps {
   badges: Badge[];
   onChange: (badges: Badge[]) => void;
+  // REQ-F-21: at most 5 badges.
   maxBadges?: number;
 }
 
-/**
- * BadgeEditor Component
- *
- * Allows users to add, remove, and customize badge chips with color selection.
- * Enforces a maximum of 5 badges (REQ-F-21) and 20-character text limit (REQ-F-20).
- */
 function BadgeEditor({ badges, onChange, maxBadges = 5 }: BadgeEditorProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [newBadgeText, setNewBadgeText] = useState("");
   const [newBadgeColor, setNewBadgeColor] = useState<BadgeColor>("purple");
   const textInputRef = useRef<HTMLInputElement>(null);
 
-  // Focus input when add form opens
   useEffect(() => {
     if (isAdding && textInputRef.current) {
       textInputRef.current.focus();
@@ -209,7 +163,6 @@ function BadgeEditor({ badges, onChange, maxBadges = 5 }: BadgeEditorProps) {
 
   const handleTextChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      // Enforce max length at input level
       const value = e.target.value;
       if (value.length <= MAX_BADGE_TEXT_LENGTH) {
         setNewBadgeText(value);
@@ -233,7 +186,6 @@ function BadgeEditor({ badges, onChange, maxBadges = 5 }: BadgeEditorProps) {
 
   return (
     <div className="badge-editor">
-      {/* Existing badges list */}
       {badges.length > 0 && (
         <div className="badge-editor__list">
           {badges.map((badge, index) => (
@@ -256,10 +208,8 @@ function BadgeEditor({ badges, onChange, maxBadges = 5 }: BadgeEditorProps) {
         </div>
       )}
 
-      {/* Add badge form or button */}
       {isAdding ? (
         <div className="badge-editor__add-form">
-          {/* Color palette */}
           <div className="badge-editor__color-palette">
             {BADGE_COLORS.map((color) => (
               <button
@@ -273,7 +223,6 @@ function BadgeEditor({ badges, onChange, maxBadges = 5 }: BadgeEditorProps) {
             ))}
           </div>
 
-          {/* Text input */}
           <input
             ref={textInputRef}
             type="text"
@@ -285,12 +234,10 @@ function BadgeEditor({ badges, onChange, maxBadges = 5 }: BadgeEditorProps) {
             maxLength={MAX_BADGE_TEXT_LENGTH}
           />
 
-          {/* Character count */}
           <div className="badge-editor__char-count">
             {newBadgeText.length}/{MAX_BADGE_TEXT_LENGTH}
           </div>
 
-          {/* Actions */}
           <div className="badge-editor__add-actions">
             <button
               type="button"
@@ -336,8 +283,6 @@ export function ConfigEditorDialog({
   const subtitleInputId = useId();
   const orderInputId = useId();
   const discussionModelId = useId();
-
-  // Slider field IDs for accessibility
   const promptsPerGenerationId = useId();
   const maxPoolSizeId = useId();
   const quotesPerWeekId = useId();
@@ -346,29 +291,31 @@ export function ConfigEditorDialog({
   const cardsEnabledId = useId();
   const viModeId = useId();
 
-  // Form state - initialized from initialConfig
   const [formState, setFormState] = useState<EditableVaultConfig>(initialConfig);
-
-  // Track if confirm dialog for unsaved changes is shown
+  const [availableModels, setAvailableModels] = useState<ModelEntry[]>([]);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
 
-  // Reset form state when dialog opens with new config
+  useEffect(() => {
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((data: { models: ModelEntry[] }) => setAvailableModels(data.models))
+      .catch(() => setAvailableModels([]));
+  }, []);
+
+  // Reset to initialConfig each time the dialog opens.
   useEffect(() => {
     if (isOpen) {
       setFormState(initialConfig);
     }
   }, [isOpen, initialConfig]);
 
-  // Compute if form has unsaved changes
   const hasChanges = useMemo(
     () => hasConfigChanged(initialConfig, formState),
     [initialConfig, formState]
   );
 
-  // Cancel attempt - show confirmation if there are changes
-  // Disable cancel while saving (TASK-010)
   const handleCancelAttempt = useCallback(() => {
-    if (isSaving) return; // Prevent cancel during save
+    if (isSaving) return;
     if (hasChanges) {
       setShowUnsavedConfirm(true);
     } else {
@@ -376,7 +323,6 @@ export function ConfigEditorDialog({
     }
   }, [hasChanges, onCancel, isSaving]);
 
-  // Handle backdrop click - trigger cancel behavior
   const handleBackdropClick = useCallback(
     (e: React.MouseEvent) => {
       if (e.target === e.currentTarget) {
@@ -386,7 +332,6 @@ export function ConfigEditorDialog({
     [handleCancelAttempt]
   );
 
-  // Handle Escape key - trigger cancel behavior
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -397,23 +342,26 @@ export function ConfigEditorDialog({
     [handleCancelAttempt]
   );
 
-  // Confirm discard changes
   const handleConfirmDiscard = useCallback(() => {
     setShowUnsavedConfirm(false);
     onCancel();
   }, [onCancel]);
 
-  // Cancel discard (keep editing)
   const handleCancelDiscard = useCallback(() => {
     setShowUnsavedConfirm(false);
   }, []);
 
-  // Handle save button click
   const handleSave = useCallback(() => {
     void onSave(formState);
   }, [onSave, formState]);
 
   if (!isOpen) return null;
+
+  const selectedModel = formState.discussionModel;
+  const hasUnknownModel =
+    selectedModel !== undefined &&
+    selectedModel !== "" &&
+    !availableModels.some((m) => m.name === selectedModel);
 
   return createPortal(
     <>
@@ -428,7 +376,6 @@ export function ConfigEditorDialog({
           aria-modal="true"
           aria-labelledby={dialogTitleId}
         >
-          {/* Header */}
           <div className="config-editor__header">
             <h2 id={dialogTitleId} className="config-editor__title">
               Vault Settings
@@ -455,9 +402,7 @@ export function ConfigEditorDialog({
             </button>
           </div>
 
-          {/* Scrollable content area */}
           <div className="config-editor__content">
-            {/* Identity Settings Section */}
             <section className="config-editor__section">
               <h3 className="config-editor__section-title">Identity</h3>
               <p className="config-editor__section-description">
@@ -538,7 +483,6 @@ export function ConfigEditorDialog({
               </div>
             </section>
 
-            {/* Discussion Settings Section */}
             <section className="config-editor__section">
               <h3 className="config-editor__section-title">Discussion</h3>
               <p className="config-editor__section-description">
@@ -558,22 +502,30 @@ export function ConfigEditorDialog({
                   onChange={(e) =>
                     setFormState((prev) => ({
                       ...prev,
-                      discussionModel:
-                        (e.target.value as "opus" | "sonnet" | "haiku") ||
-                        undefined,
+                      discussionModel: e.target.value || undefined,
                     }))
                   }
                 >
-                  <option value="" disabled>
-                    Select model
-                  </option>
-                  <option value="opus">Opus (Most capable)</option>
-                  <option value="sonnet">Sonnet (Balanced)</option>
-                  <option value="haiku">Haiku (Fastest)</option>
+                  {availableModels.length === 0 ? (
+                    <option value="" disabled>No models configured.</option>
+                  ) : (
+                    <>
+                      <option value="">— unset —</option>
+                      {hasUnknownModel && (
+                        <option value={selectedModel}>
+                          {selectedModel} (unknown)
+                        </option>
+                      )}
+                      {availableModels.map((m) => (
+                        <option key={m.name} value={m.name}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </>
+                  )}
                 </select>
               </div>
 
-              {/* Recent Discussions slider */}
               <div className="config-editor__slider-field">
                 <label
                   htmlFor={recentDiscussionsId}
@@ -607,14 +559,12 @@ export function ConfigEditorDialog({
               </div>
             </section>
 
-            {/* Inspiration Settings Section */}
             <section className="config-editor__section">
               <h3 className="config-editor__section-title">Inspiration</h3>
               <p className="config-editor__section-description">
                 Control contextual prompts and quotes on the home screen.
               </p>
 
-              {/* Prompts per Generation slider */}
               <div className="config-editor__slider-field">
                 <label
                   htmlFor={promptsPerGenerationId}
@@ -647,7 +597,6 @@ export function ConfigEditorDialog({
                 </div>
               </div>
 
-              {/* Prompt Pool Size slider */}
               <div className="config-editor__slider-field">
                 <label htmlFor={maxPoolSizeId} className="config-editor__label">
                   Prompt Pool Size
@@ -677,7 +626,6 @@ export function ConfigEditorDialog({
                 </div>
               </div>
 
-              {/* Quotes per Week slider */}
               <div className="config-editor__slider-field">
                 <label
                   htmlFor={quotesPerWeekId}
@@ -711,14 +659,12 @@ export function ConfigEditorDialog({
               </div>
             </section>
 
-            {/* Recent Activity Settings Section */}
             <section className="config-editor__section">
               <h3 className="config-editor__section-title">Recent Activity</h3>
               <p className="config-editor__section-description">
                 Configure how many recent captures to display.
               </p>
 
-              {/* Recent Captures slider */}
               <div className="config-editor__slider-field">
                 <label
                   htmlFor={recentCapturesId}
@@ -752,7 +698,6 @@ export function ConfigEditorDialog({
               </div>
             </section>
 
-            {/* Spaced Repetition Settings Section */}
             <section className="config-editor__section">
               <h3 className="config-editor__section-title">Spaced Repetition</h3>
               <p className="config-editor__section-description">
@@ -781,7 +726,6 @@ export function ConfigEditorDialog({
               </div>
             </section>
 
-            {/* Editing Settings Section */}
             <section className="config-editor__section">
               <h3 className="config-editor__section-title">Editing</h3>
               <p className="config-editor__section-description">
@@ -811,9 +755,7 @@ export function ConfigEditorDialog({
             </section>
           </div>
 
-          {/* Footer with actions */}
           <div className="config-editor__footer">
-            {/* Save error display (TASK-010) */}
             {saveError && (
               <div className="config-editor__error" role="alert">
                 {saveError}
@@ -841,7 +783,6 @@ export function ConfigEditorDialog({
         </div>
       </div>
 
-      {/* Unsaved changes confirmation dialog */}
       <ConfirmDialog
         isOpen={showUnsavedConfirm}
         title="Discard Changes?"

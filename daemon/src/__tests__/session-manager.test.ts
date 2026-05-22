@@ -1,11 +1,3 @@
-/**
- * Session Manager Tests
- *
- * Tests session lifecycle, resume failure handling, and piSessionPath storage.
- * Uses real filesystem (temp dirs) for vault config and session metadata.
- * Uses mock pi-session factory via configurePiSessionForTesting.
- */
-
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -22,15 +14,15 @@ import {
   _resetPiSessionForTesting,
   type PiSessionResult,
 } from "../pi-session-factory";
+import {
+  configureRegistryForTesting,
+  _resetRegistryForTesting,
+} from "../global-config";
 import type { SessionMetadata, VaultInfo } from "@memory-loop/shared";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 let tempDir: string;
 
-/**
- * Minimal AgentSession mock that satisfies the interface shape.
- * Only the fields actually accessed by session-manager are needed.
- */
 function makeMockAgentSession(): AgentSession {
   return {
     sessionFile: undefined,
@@ -49,9 +41,6 @@ function makeMockAgentSession(): AgentSession {
   } as unknown as AgentSession;
 }
 
-/**
- * Builds a PiSessionResult for injection into the mock factory.
- */
 function makeMockPiSessionResult(jsonlPath: string | null = "/tmp/test.jsonl"): PiSessionResult {
   return {
     session: makeMockAgentSession(),
@@ -65,12 +54,9 @@ beforeEach(async () => {
 
 afterEach(async () => {
   _resetPiSessionForTesting();
+  _resetRegistryForTesting();
   await rm(tempDir, { recursive: true, force: true });
 });
-
-// =============================================================================
-// DISCUSSION_TOOLS constant
-// =============================================================================
 
 describe("DISCUSSION_TOOLS", () => {
   test("contains the expected pi-agent built-in tool names", () => {
@@ -80,7 +66,6 @@ describe("DISCUSSION_TOOLS", () => {
   });
 
   test("does not contain legacy SDK tool names", () => {
-    // These were in DISCUSSION_MODE_OPTIONS.allowedTools but have no pi-agent equivalent
     expect(DISCUSSION_TOOLS).not.toContain("WebFetch");
     expect(DISCUSSION_TOOLS).not.toContain("WebSearch");
     expect(DISCUSSION_TOOLS).not.toContain("Task");
@@ -88,147 +73,127 @@ describe("DISCUSSION_TOOLS", () => {
   });
 });
 
-// =============================================================================
-// createSession
-// =============================================================================
-
 describe("createSession", () => {
   const mockVault: VaultInfo = {
     id: "test-vault",
-    path: "",       // set in beforeEach
+    path: "",
     name: "Test Vault",
     contentRoot: "",
   } as VaultInfo;
+
+  let cleanupPiSession: (() => void) | undefined;
 
   beforeEach(() => {
     mockVault.path = tempDir;
     mockVault.contentRoot = tempDir;
   });
 
+  afterEach(() => {
+    cleanupPiSession?.();
+    cleanupPiSession = undefined;
+  });
+
+  function mockPiSession(factory: Parameters<typeof configurePiSessionForTesting>[0]): void {
+    cleanupPiSession = configurePiSessionForTesting(factory);
+  }
+
   test("stores piSessionPath in metadata when factory returns a path", async () => {
-    const mockResult = makeMockPiSessionResult("/tmp/pi-sessions/test.jsonl");
-    const cleanup = configurePiSessionForTesting(async () => mockResult);
+    mockPiSession(async () => makeMockPiSessionResult("/tmp/pi-sessions/test.jsonl"));
 
-    try {
-      const result = await createSession(mockVault);
+    const result = await createSession(mockVault);
 
-      const metadata = await loadSession(tempDir, result.sessionId);
-      expect(metadata).not.toBeNull();
-      expect(metadata!.piSessionPath).toBe("/tmp/pi-sessions/test.jsonl");
-    } finally {
-      cleanup();
-    }
+    const metadata = await loadSession(tempDir, result.sessionId);
+    expect(metadata).not.toBeNull();
+    expect(metadata!.piSessionPath).toBe("/tmp/pi-sessions/test.jsonl");
   });
 
   test("stores undefined piSessionPath when factory returns null jsonlPath", async () => {
-    const mockResult = makeMockPiSessionResult(null);
-    const cleanup = configurePiSessionForTesting(async () => mockResult);
+    mockPiSession(async () => makeMockPiSessionResult(null));
 
-    try {
-      const result = await createSession(mockVault);
+    const result = await createSession(mockVault);
 
-      const metadata = await loadSession(tempDir, result.sessionId);
-      expect(metadata).not.toBeNull();
-      expect(metadata!.piSessionPath).toBeUndefined();
-    } finally {
-      cleanup();
-    }
+    const metadata = await loadSession(tempDir, result.sessionId);
+    expect(metadata).not.toBeNull();
+    expect(metadata!.piSessionPath).toBeUndefined();
   });
 
   test("returns the session ID and piSession from the factory result", async () => {
     const fakeSession = makeMockAgentSession();
-    const cleanup = configurePiSessionForTesting(async () => ({
-      session: fakeSession,
-      jsonlPath: "/tmp/pi-sessions/test.jsonl",
-    }));
+    mockPiSession(async () => ({ session: fakeSession, jsonlPath: "/tmp/pi-sessions/test.jsonl" }));
 
-    try {
-      const result = await createSession(mockVault);
+    const result = await createSession(mockVault);
 
-      expect(result.sessionId).toBeTruthy();
-      expect(result.piSession).toBe(fakeSession);
-      expect(result.previousMessages).toBeUndefined();
-    } finally {
-      cleanup();
-    }
+    expect(result.sessionId).toBeTruthy();
+    expect(result.piSession).toBe(fakeSession);
+    expect(result.previousMessages).toBeUndefined();
   });
 
   test("session metadata is persisted on disk", async () => {
-    const cleanup = configurePiSessionForTesting(async () => makeMockPiSessionResult());
+    mockPiSession(async () => makeMockPiSessionResult());
 
-    try {
-      const result = await createSession(mockVault);
+    const result = await createSession(mockVault);
 
-      const loaded = await loadSession(tempDir, result.sessionId);
-      expect(loaded).not.toBeNull();
-      expect(loaded!.id).toBe(result.sessionId);
-      expect(loaded!.vaultId).toBe(mockVault.id);
-      expect(loaded!.vaultPath).toBe(tempDir);
-      expect(loaded!.messages).toEqual([]);
-    } finally {
-      cleanup();
-    }
+    const loaded = await loadSession(tempDir, result.sessionId);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.id).toBe(result.sessionId);
+    expect(loaded!.vaultId).toBe(mockVault.id);
+    expect(loaded!.vaultPath).toBe(tempDir);
+    expect(loaded!.messages).toEqual([]);
   });
 
   test("uses vault config model when present", async () => {
+    configureRegistryForTesting({
+      haiku: { provider: "anthropic", modelId: "claude-haiku-4-5" },
+    });
     await writeFile(
       join(tempDir, ".memory-loop.json"),
       JSON.stringify({ discussionModel: "haiku" })
     );
 
     let capturedOpts: { model?: { provider: string; modelId: string } } = {};
-    const cleanup = configurePiSessionForTesting(async (opts) => {
+    mockPiSession(async (opts) => {
       capturedOpts = opts;
       return makeMockPiSessionResult();
     });
 
-    try {
-      await createSession(mockVault);
-      expect(capturedOpts.model).toEqual({ provider: "anthropic", modelId: "claude-haiku-4-5" });
-    } finally {
-      cleanup();
-    }
+    await createSession(mockVault);
+    expect(capturedOpts.model).toEqual({ provider: "anthropic", modelId: "claude-haiku-4-5" });
   });
 
   test("passes no model when vault config has no discussionModel", async () => {
-    // No .memory-loop.json — uses default "opus" which maps to anthropic/claude-opus-4-5
     let capturedOpts: { model?: { provider: string; modelId: string } } = {};
-    const cleanup = configurePiSessionForTesting(async (opts) => {
+    mockPiSession(async (opts) => {
       capturedOpts = opts;
       return makeMockPiSessionResult();
     });
 
-    try {
-      await createSession(mockVault);
-      // Default is "opus"
-      expect(capturedOpts.model).toEqual({ provider: "anthropic", modelId: "claude-opus-4-5" });
-    } finally {
-      cleanup();
-    }
+    await createSession(mockVault);
+    expect(capturedOpts.model).toBeUndefined();
   });
 
   test("wraps factory errors in SessionError with SDK_ERROR code", async () => {
-    const cleanup = configurePiSessionForTesting(async () => {
+    mockPiSession(async () => {
       throw new Error("rate_limit exceeded");
     });
 
-    try {
-      await createSession(mockVault);
-      expect(true).toBe(false); // should not reach here
-    } catch (err) {
-      expect(err).toBeInstanceOf(SessionError);
-      expect((err as SessionError).code).toBe("SDK_ERROR");
-    } finally {
-      cleanup();
-    }
+    const promise = createSession(mockVault);
+    await expect(promise).rejects.toBeInstanceOf(SessionError);
+    await expect(promise).rejects.toMatchObject({ code: "SDK_ERROR" });
   });
 });
 
-// =============================================================================
-// resumeSession failure detection
-// =============================================================================
-
 describe("resumeSession failure detection", () => {
+  let cleanupPiSession: (() => void) | undefined;
+
+  afterEach(() => {
+    cleanupPiSession?.();
+    cleanupPiSession = undefined;
+  });
+
+  function mockPiSession(factory: Parameters<typeof configurePiSessionForTesting>[0]): void {
+    cleanupPiSession = configurePiSessionForTesting(factory);
+  }
+
   async function createTestSession(sessionId: string, piSessionPath?: string): Promise<void> {
     const sessionsDir = join(tempDir, ".memory-loop", "sessions");
     await mkdir(sessionsDir, { recursive: true });
@@ -245,81 +210,56 @@ describe("resumeSession failure detection", () => {
   }
 
   test("throws RESUME_FAILED when piSessionPath is absent from metadata", async () => {
-    await createTestSession("sess-no-path"); // no piSessionPath
+    await createTestSession("sess-no-path");
 
-    try {
-      await resumeSession(tempDir, "sess-no-path");
-      expect(true).toBe(false); // should not reach here
-    } catch (err) {
-      expect(err).toBeInstanceOf(SessionError);
-      const sessionErr = err as SessionError;
-      expect(sessionErr.code).toBe("RESUME_FAILED");
-      expect(sessionErr.message).toContain("no pi-agent session path");
-    }
+    const promise = resumeSession(tempDir, "sess-no-path");
+    await expect(promise).rejects.toBeInstanceOf(SessionError);
+    await expect(promise).rejects.toMatchObject({
+      code: "RESUME_FAILED",
+      message: expect.stringContaining("no pi-agent session path"),
+    });
   });
 
   test("throws SESSION_NOT_FOUND when session metadata does not exist", async () => {
-    try {
-      await resumeSession(tempDir, "nonexistent-session");
-      expect(true).toBe(false);
-    } catch (err) {
-      expect(err).toBeInstanceOf(SessionError);
-      expect((err as SessionError).code).toBe("SESSION_NOT_FOUND");
-    }
+    const promise = resumeSession(tempDir, "nonexistent-session");
+    await expect(promise).rejects.toBeInstanceOf(SessionError);
+    await expect(promise).rejects.toMatchObject({ code: "SESSION_NOT_FOUND" });
   });
 
   test("returns piSession and previousMessages on successful resume", async () => {
     await createTestSession("sess-with-path", "/tmp/pi-sessions/existing.jsonl");
 
     const fakeSession = makeMockAgentSession();
-    const cleanup = configurePiSessionForTesting(async () => ({
+    mockPiSession(async () => ({
       session: fakeSession,
       jsonlPath: "/tmp/pi-sessions/existing.jsonl",
     }));
 
-    try {
-      const result = await resumeSession(tempDir, "sess-with-path");
-      expect(result.sessionId).toBe("sess-with-path");
-      expect(result.piSession).toBe(fakeSession);
-      expect(result.previousMessages).toEqual([]);
-    } finally {
-      cleanup();
-    }
+    const result = await resumeSession(tempDir, "sess-with-path");
+    expect(result.sessionId).toBe("sess-with-path");
+    expect(result.piSession).toBe(fakeSession);
+    expect(result.previousMessages).toEqual([]);
   });
 
   test("wraps factory errors in SessionError with SDK_ERROR code", async () => {
     await createTestSession("sess-factory-error", "/tmp/pi-sessions/missing.jsonl");
-
-    const cleanup = configurePiSessionForTesting(async () => {
+    mockPiSession(async () => {
       throw new Error("ENOENT: file not found");
     });
 
-    try {
-      await resumeSession(tempDir, "sess-factory-error");
-      expect(true).toBe(false);
-    } catch (err) {
-      expect(err).toBeInstanceOf(SessionError);
-      expect((err as SessionError).code).toBe("SDK_ERROR");
-    } finally {
-      cleanup();
-    }
+    const promise = resumeSession(tempDir, "sess-factory-error");
+    await expect(promise).rejects.toBeInstanceOf(SessionError);
+    await expect(promise).rejects.toMatchObject({ code: "SDK_ERROR" });
   });
 
   test("SessionError thrown by factory propagates unchanged", async () => {
     await createTestSession("sess-session-error", "/tmp/pi-sessions/test.jsonl");
-
-    const cleanup = configurePiSessionForTesting(async () => {
+    mockPiSession(async () => {
       throw new SessionError("internal failure", "STORAGE_ERROR");
     });
 
-    try {
-      await resumeSession(tempDir, "sess-session-error");
-      expect(true).toBe(false);
-    } catch (err) {
-      expect(err).toBeInstanceOf(SessionError);
-      expect((err as SessionError).code).toBe("STORAGE_ERROR");
-    } finally {
-      cleanup();
-    }
+    const promise = resumeSession(tempDir, "sess-session-error");
+    await expect(promise).rejects.toBeInstanceOf(SessionError);
+    await expect(promise).rejects.toMatchObject({ code: "STORAGE_ERROR" });
   });
 });

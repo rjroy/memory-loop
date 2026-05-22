@@ -1,9 +1,4 @@
-/**
- * Vault Manager (Daemon)
- *
- * Vault discovery, creation, and filesystem operations.
- * This is the authoritative implementation per REQ-DAB-1.
- */
+// Vault discovery, creation, and filesystem operations. Authoritative per REQ-DAB-1.
 
 import { readdir, readFile, mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
@@ -23,7 +18,6 @@ import {
   resolveQuotesPerWeek,
   resolveRecentCaptures,
   resolveRecentDiscussions,
-  resolveDiscussionModel,
   resolveBadges,
   resolveOrder,
   resolveCardsEnabled,
@@ -43,10 +37,6 @@ export class VaultsDirError extends Error {
 
 export const DEFAULT_VAULTS_DIR_NAME = "vaults";
 
-/**
- * Gets the daemon's root directory.
- * Uses DAEMON_ROOT env var or falls back to the daemon package's parent directory.
- */
 function getDaemonRoot(): string {
   if (process.env.DAEMON_ROOT) {
     return process.env.DAEMON_ROOT;
@@ -126,6 +116,7 @@ export async function parseVault(
   const config = await loadVaultConfig(vaultPath);
   const contentRoot = resolveContentRoot(vaultPath, config);
 
+  // Resolution order: vault config > CLAUDE.md extraction > directory name.
   let name = dirName;
   let subtitle: string | undefined;
   try {
@@ -136,7 +127,7 @@ export async function parseVault(
       subtitle = extracted.subtitle;
     }
   } catch {
-    // Failed to read CLAUDE.md, use directory name
+    // Fall through; use directory name.
   }
 
   if (config.title) {
@@ -166,7 +157,7 @@ export async function parseVault(
     goalsPath,
     attachmentPath,
     setupComplete,
-    discussionModel: resolveDiscussionModel(config),
+    discussionModel: config.discussionModel,
     promptsPerGeneration: resolvePromptsPerGeneration(config),
     maxPoolSize: resolveMaxPoolSize(config),
     quotesPerWeek: resolveQuotesPerWeek(config),

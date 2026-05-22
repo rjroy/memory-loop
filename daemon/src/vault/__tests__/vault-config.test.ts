@@ -1,11 +1,6 @@
-/**
- * Vault Configuration Tests
- *
- * Tests for per-vault configuration loading and path resolution.
- */
-
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -24,10 +19,8 @@ import {
   DEFAULT_PROMPTS_PER_GENERATION,
   DEFAULT_MAX_POOL_SIZE,
   DEFAULT_QUOTES_PER_WEEK,
-  DEFAULT_DISCUSSION_MODEL,
   DEFAULT_CARDS_ENABLED,
   DEFAULT_VI_MODE,
-  VALID_DISCUSSION_MODELS,
   resolveMetadataPath,
   resolveGoalsPath,
   resolveContextualPromptsPath,
@@ -39,7 +32,6 @@ import {
   resolveQuotesPerWeek,
   resolveBadges,
   resolvePinnedAssets,
-  resolveDiscussionModel,
   resolveCardsEnabled,
   resolveViMode,
   slashCommandsEqual,
@@ -47,7 +39,6 @@ import {
 import { resolveContentRoot } from "@memory-loop/shared/server";
 import type { VaultConfig, SlashCommand, EditableVaultConfig } from "@memory-loop/shared";
 
-// Test helpers
 async function writeConfig(dir: string, data: unknown): Promise<void> {
   await writeFile(join(dir, CONFIG_FILE_NAME), JSON.stringify(data));
 }
@@ -69,11 +60,7 @@ describe("vault-config", () => {
   });
 
   afterEach(async () => {
-    try {
-      await rm(testDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
+    await rm(testDir, { recursive: true, force: true }).catch(() => {});
   });
 
   describe("exported constants", () => {
@@ -85,10 +72,8 @@ describe("vault-config", () => {
       expect(DEFAULT_PROMPTS_PER_GENERATION).toBe(5);
       expect(DEFAULT_MAX_POOL_SIZE).toBe(50);
       expect(DEFAULT_QUOTES_PER_WEEK).toBe(1);
-      expect(DEFAULT_DISCUSSION_MODEL).toBe("opus");
       expect(DEFAULT_CARDS_ENABLED).toBe(true);
       expect(DEFAULT_VI_MODE).toBe(false);
-      expect(VALID_DISCUSSION_MODELS).toEqual(["opus", "sonnet", "haiku"]);
     });
   });
 
@@ -242,8 +227,8 @@ describe("vault-config", () => {
     });
 
     describe("discussionModel", () => {
-      test.each(["opus", "sonnet", "haiku"] as const)(
-        "loads valid discussionModel %s",
+      test.each(["opus", "sonnet", "haiku", "custom-model", "my-provider/my-model"])(
+        "loads discussionModel %s",
         async (model) => {
           await writeConfig(testDir, { discussionModel: model });
 
@@ -251,13 +236,6 @@ describe("vault-config", () => {
           expect(config.discussionModel).toBe(model);
         }
       );
-
-      test("ignores invalid discussionModel value", async () => {
-        await writeConfig(testDir, { discussionModel: "invalid-model" });
-
-        const config = await loadVaultConfig(testDir);
-        expect(config.discussionModel).toBeUndefined();
-      });
 
       test("ignores non-string discussionModel value", async () => {
         await writeConfig(testDir, { discussionModel: 123 });
@@ -327,9 +305,9 @@ describe("vault-config", () => {
           badges: [
             { text: "Valid", color: "blue" },
             { text: "Invalid Color", color: "pink" },
-            { color: "red" }, // missing text
-            { text: "", color: "green" }, // empty text
-            { text: "No Color" }, // missing color
+            { color: "red" },
+            { text: "", color: "green" },
+            { text: "No Color" },
             null,
             "string",
             42,
@@ -494,17 +472,6 @@ describe("vault-config", () => {
       expect(resolveQuotesPerWeek({})).toBe(DEFAULT_QUOTES_PER_WEEK);
       expect(resolveQuotesPerWeek({ quotesPerWeek: undefined })).toBe(DEFAULT_QUOTES_PER_WEEK);
       expect(resolveQuotesPerWeek({ quotesPerWeek: 3 })).toBe(3);
-    });
-  });
-
-  describe("resolveDiscussionModel", () => {
-    test("returns default when not configured", () => {
-      expect(resolveDiscussionModel({})).toBe(DEFAULT_DISCUSSION_MODEL);
-      expect(resolveDiscussionModel({ discussionModel: undefined })).toBe(DEFAULT_DISCUSSION_MODEL);
-    });
-
-    test.each(["opus", "sonnet", "haiku"] as const)("returns configured model %s", (model) => {
-      expect(resolveDiscussionModel({ discussionModel: model })).toBe(model);
     });
   });
 
@@ -865,30 +832,14 @@ describe("vault-config", () => {
       const result = await saveVaultConfig(testDir, {});
 
       expect(result).toEqual({ success: true });
-
-      const configPath = join(testDir, CONFIG_FILE_NAME);
-      let fileExists = true;
-      try {
-        await readFile(configPath, "utf-8");
-      } catch {
-        fileExists = false;
-      }
-      expect(fileExists).toBe(false);
+      expect(existsSync(join(testDir, CONFIG_FILE_NAME))).toBe(false);
     });
 
     test("does NOT create file if only empty badges array provided", async () => {
       const result = await saveVaultConfig(testDir, { badges: [] });
 
       expect(result).toEqual({ success: true });
-
-      const configPath = join(testDir, CONFIG_FILE_NAME);
-      let fileExists = true;
-      try {
-        await readFile(configPath, "utf-8");
-      } catch {
-        fileExists = false;
-      }
-      expect(fileExists).toBe(false);
+      expect(existsSync(join(testDir, CONFIG_FILE_NAME))).toBe(false);
     });
 
     test("merges only editable fields over existing config", async () => {

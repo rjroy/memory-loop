@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notes: configurable discussion model registry</title>
+  <meta name="date" content="2026-05-21">
+  <meta name="status" content="complete">
+  <meta name="tags" content="notes, model-config, global-config, discussion, pi-agent">
+  <meta name="modules" content="session-manager, daemon-config, vault-config, config-editor-dialog">
+  <meta name="related" content=".lore/work/plans/configurable-discussion-models.html, .lore/work/specs/configurable-discussion-models.html">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #1a1a1a;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 5rem;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem; }
+
+    .banner {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      margin: 1.5rem 0;
+      font-size: 0.9rem;
+    }
+    .banner.in-progress { background: #eff6ff; border: 2px solid #3b82f6; }
+    .banner.complete { background: #f0fdf4; border: 2px solid #22c55e; }
+    .banner.failed { background: #fef2f2; border: 2px solid #ef4444; }
+    .banner-state {
+      font-weight: 700;
+      font-size: 1rem;
+      white-space: nowrap;
+    }
+
+    .phase-list { list-style: none; padding: 0; margin: 1rem 0; }
+    .phase-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      margin: 0.4rem 0;
+      cursor: pointer;
+      user-select: none;
+    }
+    .phase-item:hover { background: #f9fafb; }
+    .chip {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .chip-pending  { background: #f3f4f6; color: #6b7280; }
+    .chip-progress { background: #dbeafe; color: #1d4ed8; }
+    .chip-done     { background: #d1fae5; color: #065f46; }
+    .chip-failed   { background: #fee2e2; color: #991b1b; }
+
+    .phase-label { flex: 1; font-size: 0.9rem; }
+
+    .log-panel {
+      display: none;
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-top: none;
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+      color: #374151;
+      border-radius: 0 0 6px 6px;
+      margin-top: -4px;
+    }
+    .log-panel.open { display: block; }
+    .log-panel p { margin: 0.35rem 0; }
+    .log-panel code { background: #e5e7eb; padding: 1px 4px; border-radius: 3px; font-size: 0.8rem; }
+    .log-panel ul { padding-left: 1.2rem; margin: 0.35rem 0; }
+    .log-panel li { margin: 0.2rem 0; }
+
+    .empty { color: #9ca3af; font-style: italic; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+
+<h1>Notes: configurable discussion model registry</h1>
+<p style="color:#888;font-size:0.85rem;">Plan: <a href="../plans/configurable-discussion-models.html">configurable-discussion-models.html</a></p>
+
+<div class="banner complete" id="banner">
+  <div class="banner-state">COMPLETE</div>
+  <div>All 6 phases done. 2042 tests pass, 0 failures. Typecheck and lint clean. No non-conformances against spec.</div>
+</div>
+
+<h2>Phase Progress</h2>
+
+<ul class="phase-list">
+  <li>
+    <div class="phase-item" onclick="toggle('log-1')">
+      <span class="chip chip-done" id="chip-1">done</span>
+      <span class="phase-label">Phase 1 — Create <code>global-config.ts</code> + tests</span>
+    </div>
+    <div class="log-panel" id="log-1">
+      <p>✓ Created <code>daemon/src/global-config.ts</code> — registry with loadGlobalConfig, getRegistry, configureRegistryForTesting, _resetRegistryForTesting.</p>
+      <p>✓ Created <code>daemon/src/__tests__/global-config.test.ts</code> — 5/5 tests pass.</p>
+      <p>✓ Typecheck clean.</p>
+    </div>
+  </li>
+  <li>
+    <div class="phase-item" onclick="toggle('log-2')">
+      <span class="chip chip-done" id="chip-2">done</span>
+      <span class="phase-label">Phase 2 — Daemon startup wiring + <code>GET /models</code> route</span>
+    </div>
+    <div class="log-panel" id="log-2">
+      <p>✓ Wired <code>await loadGlobalConfig()</code> after <code>initVaultCache()</code> in <code>daemon/src/index.ts</code>.</p>
+      <p>✓ Created <code>daemon/src/routes/models.ts</code> with <code>getModelsHandler</code>.</p>
+      <p>✓ Registered <code>GET /models</code> in <code>daemon/src/router.ts</code>.</p>
+      <p>✓ Created <code>daemon/src/routes/__tests__/models.test.ts</code> — 2/2 tests pass.</p>
+      <p>✓ Typecheck clean.</p>
+    </div>
+  </li>
+  <li>
+    <div class="phase-item" onclick="toggle('log-3')">
+      <span class="chip chip-done" id="chip-3">done</span>
+      <span class="phase-label">Phase 3 — Shared type purge (atomic breaking change)</span>
+    </div>
+    <div class="log-panel" id="log-3">
+      <p>✓ Removed VALID_DISCUSSION_MODELS, DiscussionModelLocal, DEFAULT_DISCUSSION_MODEL, resolveDiscussionModel() from packages/shared/src/vault-config.ts.</p>
+      <p>✓ Removed their exports from packages/shared/src/index.ts.</p>
+      <p>✓ Removed DiscussionModelSchema, DiscussionModel from packages/shared/src/schemas/protocol.ts; updated both fields to z.string().optional().</p>
+      <p>✓ Cascading: removed re-exports from packages/shared/src/schemas/index.ts; updated VaultInfo.discussionModel type in schemas/types.ts.</p>
+      <p>✓ Simplified vault-config.ts enum guard to plain string check; updated vault-manager.ts to pass config.discussionModel directly.</p>
+      <p>✓ Rewrote resolveModelForPiAgent() in session-manager.ts to use getRegistry() lookup; removed DISCUSSION_MODEL_MAP.</p>
+      <p>✓ Cascading: Phase 3 agent also fixed vault-config.test.ts (removed deleted imports, updated discussionModel tests) and fixed ConfigEditorDialog.tsx local type.</p>
+      <p>✓ Typecheck clean. grep shows zero matches for all removed symbols.</p>
+    </div>
+  </li>
+  <li>
+    <div class="phase-item" onclick="toggle('log-4')">
+      <span class="chip chip-done" id="chip-4">done</span>
+      <span class="phase-label">Phase 4 — Next.js layer (proxy route, daemon client, frontend)</span>
+    </div>
+    <div class="log-panel" id="log-4">
+      <p>✓ Created nextjs/app/api/models/route.ts — proxy to daemon /models.</p>
+      <p>✓ Created nextjs/lib/daemon/models.ts — ModelEntry interface + getModels().</p>
+      <p>✓ Updated nextjs/lib/daemon/index.ts barrel export.</p>
+      <p>✓ Updated ConfigEditorDialog.tsx: added availableModels state + useEffect fetch, dynamic select with unknown-model handling.</p>
+      <p>✓ Typecheck clean.</p>
+    </div>
+  </li>
+  <li>
+    <div class="phase-item" onclick="toggle('log-5')">
+      <span class="chip chip-done" id="chip-5">done</span>
+      <span class="phase-label">Phase 5 — Update existing tests</span>
+    </div>
+    <div class="log-panel" id="log-5">
+      <p>✓ session-manager.test.ts: added registry imports + _resetRegistryForTesting to afterEach; injected haiku registry for "uses vault config model" test; updated "no discussionModel" assertion to toBeUndefined().</p>
+      <p>✓ ConfigEditorDialog.test.tsx: added global fetch mock (opus/sonnet/haiku); updated assertions from descriptive labels to plain name keys; added waitFor for async useEffect; added unknown-model test.</p>
+      <p>✓ vault-config.test.ts already done by Phase 3 agent.</p>
+      <p>✓ Full suite: 2042 tests, 0 failures.</p>
+    </div>
+  </li>
+  <li>
+    <div class="phase-item" onclick="toggle('log-6')">
+      <span class="chip chip-done" id="chip-6">done</span>
+      <span class="phase-label">Phase 6 — Documentation updates</span>
+    </div>
+    <div class="log-panel" id="log-6">
+      <p>✓ configuration.md: updated discussionModel type/default, updated validation note, added Global Config File section.</p>
+      <p>✓ think.md: updated Model Selection section to reference registry instead of hardcoded enum.</p>
+      <p>✓ Typecheck clean.</p>
+    </div>
+  </li>
+</ul>
+
+<h2>Decisions &amp; Divergences</h2>
+<ul>
+  <li>Pre-existing change to <code>session-manager.ts</code>: DISCUSSION_MODEL_MAP had model IDs updated (claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-6) and two fallback entries added (basic, text). Phase 3 removes DISCUSSION_MODEL_MAP entirely, so these changes are subsumed.</li>
+</ul>
+
+<script>
+  function toggle(id) {
+    const panel = document.getElementById(id);
+    panel.classList.toggle('open');
+  }
+</script>
+</body>
+</html>

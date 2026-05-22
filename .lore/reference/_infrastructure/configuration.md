@@ -44,7 +44,7 @@ Configuration manages per-vault settings via `.memory-loop.json`. Each vault can
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `discussionModel` | "opus" \| "sonnet" \| "haiku" | "opus" | Model for conversations |
+| `discussionModel` | string (key from global model registry) | undefined (uses pi-agent fallback) | Model for conversations |
 
 ### Inspiration
 
@@ -166,7 +166,7 @@ Zod schema enforces:
 - `recentDiscussions`: int, 1-20
 - `badges`: array max 5, text max 20 chars
 - `order`: int, min 1
-- `discussionModel`: enum ["opus", "sonnet", "haiku"]
+- `discussionModel`: any string; validation against registry happens at session creation.
 
 Invalid values return 400 error with message displayed inline in dialog.
 
@@ -191,6 +191,25 @@ This means `VaultInfo` always has resolved values; the frontend doesn't need to 
 | [Ground](../home-dashboard.md) | recentCaptures, recentDiscussions |
 | [Spaced Repetition](../spaced-repetition.md) | cardsEnabled |
 | [Think](../think.md) | discussionModel |
+
+## Global Config File
+
+A daemon-level config file defines the model registry available across all vaults.
+
+**Path**: `MEMORY_LOOP_CONFIG` env var overrides, otherwise `${VAULTS_DIR}/memory-loop-config.json`
+
+**Format**:
+```json
+{
+  "models": {
+    "<name>": { "provider": "...", "modelId": "..." }
+  }
+}
+```
+
+**Endpoint**: `GET /api/models` returns `{ "models": [{ "name": "...", "provider": "...", "modelId": "..." }] }`
+
+**Behavior when absent or malformed**: daemon logs a warning, continues with empty registry. `GET /api/models` returns `{ "models": [] }`.
 
 ## Notes
 

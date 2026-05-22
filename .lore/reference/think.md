@@ -183,8 +183,9 @@ Claude can ask structured questions:
 ## Model Selection
 
 **Config**: `.memory-loop.json` → `discussionModel`
-**Options**: `"opus"` | `"sonnet"` | `"haiku"`
-**Default**: `"opus"`
+**Options**: any key defined in the global model registry (see Global Config)
+**Default**: none — unset vaults fall back to the pi-agent default
+**Resolution**: at session creation, the daemon looks up the vault's `discussionModel` string in the runtime registry. Unknown names log a warning and fall back to pi-agent default.
 
 Passed to Claude SDK when creating session.
 

@@ -15,3 +15,4 @@ export {
 export * as vaultClient from "./vaults";
 export * as fileClient from "./files";
 export * as sessionClient from "./sessions";
+export * from "./models";

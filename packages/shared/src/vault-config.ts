@@ -1,15 +1,18 @@
 /**
  * Vault Configuration Types and Resolvers
  *
- * Pure types and derivation functions for vault configuration.
- * No I/O operations. Used by both daemon and nextjs.
+ * Pure types and derivation functions for vault configuration. No I/O.
+ * Used by both daemon and nextjs.
+ *
+ * NOTE: resolveContentRoot uses node:path for security (normalize/join) and
+ * lives in vault-config-server.ts, exported from "@memory-loop/shared/server".
  */
 
 import type { Badge, BadgeColor } from "./schemas/types";
+import type { SlashCommand } from "./schemas/protocol";
 
 /**
- * Per-vault configuration options.
- * All paths are relative to the vault root directory.
+ * Per-vault configuration. All paths are relative to the vault root.
  */
 export interface VaultConfig {
   title?: string;
@@ -33,8 +36,6 @@ export interface VaultConfig {
   viMode?: boolean;
 }
 
-// --- Constants ---
-
 export const CONFIG_FILE_NAME = ".memory-loop.json";
 export const SLASH_COMMANDS_FILE = ".memory-loop/slash-commands.json";
 export const DEFAULT_METADATA_PATH = "06_Metadata/memory-loop";
@@ -46,9 +47,6 @@ export const DEFAULT_MAX_POOL_SIZE = 50;
 export const DEFAULT_QUOTES_PER_WEEK = 1;
 export const DEFAULT_RECENT_CAPTURES = 5;
 export const DEFAULT_RECENT_DISCUSSIONS = 5;
-export const VALID_DISCUSSION_MODELS = ["opus", "sonnet", "haiku"] as const;
-export type DiscussionModelLocal = (typeof VALID_DISCUSSION_MODELS)[number];
-export const DEFAULT_DISCUSSION_MODEL: DiscussionModelLocal = "opus";
 export const DEFAULT_ORDER = 999999;
 export const DEFAULT_CARDS_ENABLED = true;
 export const DEFAULT_VI_MODE = false;
@@ -63,10 +61,6 @@ export const VALID_BADGE_COLORS: BadgeColor[] = [
   "green",
   "yellow",
 ];
-
-// --- Resolver functions ---
-// NOTE: resolveContentRoot uses node:path for security (normalize/join).
-// It lives in vault-config-server.ts and is exported from @memory-loop/shared/server.
 
 export function resolveMetadataPath(config: VaultConfig): string {
   return config.metadataPath ?? DEFAULT_METADATA_PATH;
@@ -124,10 +118,6 @@ export function resolveRecentDiscussions(config: VaultConfig): number {
   return config.recentDiscussions ?? DEFAULT_RECENT_DISCUSSIONS;
 }
 
-export function resolveDiscussionModel(config: VaultConfig): DiscussionModelLocal {
-  return (config.discussionModel as DiscussionModelLocal | undefined) ?? DEFAULT_DISCUSSION_MODEL;
-}
-
 export function resolveOrder(config: VaultConfig): number {
   return config.order ?? DEFAULT_ORDER;
 }
@@ -139,10 +129,6 @@ export function resolveCardsEnabled(config: VaultConfig): boolean {
 export function resolveViMode(config: VaultConfig): boolean {
   return config.viMode ?? DEFAULT_VI_MODE;
 }
-
-// --- Utility functions ---
-
-import type { SlashCommand } from "./schemas/protocol";
 
 export function slashCommandsEqual(
   a: SlashCommand[] | undefined,

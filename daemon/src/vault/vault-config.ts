@@ -1,27 +1,64 @@
-/**
- * Vault Configuration I/O (Daemon)
- *
- * Filesystem operations for loading and saving vault configuration.
- * Types and resolver functions are in @memory-loop/shared.
- */
-
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import type { SlashCommand, Badge, BadgeColor, EditableVaultConfig, VaultConfig, SaveConfigResult } from "@memory-loop/shared";
+import type {
+  SlashCommand,
+  Badge,
+  BadgeColor,
+  EditableVaultConfig,
+  VaultConfig,
+  SaveConfigResult,
+} from "@memory-loop/shared";
 import {
   createLogger,
   CONFIG_FILE_NAME,
   SLASH_COMMANDS_FILE,
-  VALID_DISCUSSION_MODELS,
   VALID_BADGE_COLORS,
 } from "@memory-loop/shared";
 import { fileExists } from "@memory-loop/shared/server";
 
 const log = createLogger("VaultConfig");
 
+export type { SaveConfigResult };
+
 /**
- * Loads vault configuration from .memory-loop.json if it exists.
+ * Reads a JSON file and returns its parsed object form. Returns an empty object
+ * if the file is missing, unreadable, or doesn't parse to a plain object.
  */
+async function readJsonObject(path: string): Promise<Record<string, unknown>> {
+  if (!(await fileExists(path))) {
+    return {};
+  }
+  try {
+    const content = await readFile(path, "utf-8");
+    const parsed = JSON.parse(content) as unknown;
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Fall through to empty object below.
+  }
+  return {};
+}
+
+async function writeJsonFile(path: string, data: unknown): Promise<void> {
+  await writeFile(path, JSON.stringify(data, null, 2) + "\n", "utf-8");
+}
+
+function isPositiveInt(value: unknown): value is number {
+  return typeof value === "number" && value > 0;
+}
+
+function isBadge(value: unknown): value is Badge {
+  if (typeof value !== "object" || value === null) return false;
+  const badge = value as Record<string, unknown>;
+  return (
+    typeof badge.text === "string" &&
+    badge.text !== "" &&
+    typeof badge.color === "string" &&
+    VALID_BADGE_COLORS.includes(badge.color as BadgeColor)
+  );
+}
+
 export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
   const configPath = join(vaultPath, CONFIG_FILE_NAME);
 
@@ -29,83 +66,72 @@ export async function loadVaultConfig(vaultPath: string): Promise<VaultConfig> {
     return {};
   }
 
+  let obj: Record<string, unknown>;
   try {
     const content = await readFile(configPath, "utf-8");
     const parsed = JSON.parse(content) as unknown;
-
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       log.warn(`Invalid config format in ${configPath}: expected object`);
       return {};
     }
-
-    const config: VaultConfig = {};
-    const obj = parsed as Record<string, unknown>;
-
-    if (typeof obj.title === "string") config.title = obj.title;
-    if (typeof obj.subtitle === "string") config.subtitle = obj.subtitle;
-    if (typeof obj.contentRoot === "string") config.contentRoot = obj.contentRoot;
-    if (typeof obj.inboxPath === "string") config.inboxPath = obj.inboxPath;
-    if (typeof obj.metadataPath === "string") config.metadataPath = obj.metadataPath;
-    if (typeof obj.projectPath === "string") config.projectPath = obj.projectPath;
-    if (typeof obj.areaPath === "string") config.areaPath = obj.areaPath;
-    if (typeof obj.attachmentPath === "string") config.attachmentPath = obj.attachmentPath;
-
-    if (typeof obj.promptsPerGeneration === "number" && obj.promptsPerGeneration > 0) {
-      config.promptsPerGeneration = Math.floor(obj.promptsPerGeneration);
-    }
-    if (typeof obj.maxPoolSize === "number" && obj.maxPoolSize > 0) {
-      config.maxPoolSize = Math.floor(obj.maxPoolSize);
-    }
-    if (typeof obj.quotesPerWeek === "number" && obj.quotesPerWeek > 0) {
-      config.quotesPerWeek = Math.floor(obj.quotesPerWeek);
-    }
-    if (typeof obj.recentCaptures === "number" && obj.recentCaptures > 0) {
-      config.recentCaptures = Math.floor(obj.recentCaptures);
-    }
-    if (typeof obj.recentDiscussions === "number" && obj.recentDiscussions > 0) {
-      config.recentDiscussions = Math.floor(obj.recentDiscussions);
-    }
-
-    if (
-      typeof obj.discussionModel === "string" &&
-      VALID_DISCUSSION_MODELS.includes(obj.discussionModel as typeof VALID_DISCUSSION_MODELS[number])
-    ) {
-      config.discussionModel = obj.discussionModel;
-    }
-
-    if (typeof obj.order === "number" && Number.isFinite(obj.order)) {
-      config.order = obj.order;
-    }
-    if (typeof obj.cardsEnabled === "boolean") config.cardsEnabled = obj.cardsEnabled;
-    if (typeof obj.viMode === "boolean") config.viMode = obj.viMode;
-
-    if (Array.isArray(obj.badges)) {
-      config.badges = obj.badges.filter(
-        (badge): badge is Badge =>
-          typeof badge === "object" &&
-          badge !== null &&
-          typeof (badge as Record<string, unknown>).text === "string" &&
-          (badge as Record<string, unknown>).text !== "" &&
-          typeof (badge as Record<string, unknown>).color === "string" &&
-          VALID_BADGE_COLORS.includes((badge as Record<string, unknown>).color as BadgeColor)
-      );
-    }
-
-    if (Array.isArray(obj.pinnedAssets)) {
-      config.pinnedAssets = obj.pinnedAssets.filter(
-        (path): path is string => typeof path === "string" && path.length > 0
-      );
-    }
-
-    return config;
+    obj = parsed as Record<string, unknown>;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.warn(`Failed to load config from ${configPath}: ${message}`);
     return {};
   }
-}
 
-export type { SaveConfigResult };
+  const config: VaultConfig = {};
+
+  const stringFields = [
+    "title",
+    "subtitle",
+    "contentRoot",
+    "inboxPath",
+    "metadataPath",
+    "projectPath",
+    "areaPath",
+    "attachmentPath",
+    "discussionModel",
+  ] as const;
+  for (const field of stringFields) {
+    if (typeof obj[field] === "string") {
+      (config as Record<string, unknown>)[field] = obj[field];
+    }
+  }
+
+  const positiveIntFields = [
+    "promptsPerGeneration",
+    "maxPoolSize",
+    "quotesPerWeek",
+    "recentCaptures",
+    "recentDiscussions",
+  ] as const;
+  for (const field of positiveIntFields) {
+    const value = obj[field];
+    if (isPositiveInt(value)) {
+      (config as Record<string, number>)[field] = Math.floor(value);
+    }
+  }
+
+  if (typeof obj.order === "number" && Number.isFinite(obj.order)) {
+    config.order = obj.order;
+  }
+  if (typeof obj.cardsEnabled === "boolean") config.cardsEnabled = obj.cardsEnabled;
+  if (typeof obj.viMode === "boolean") config.viMode = obj.viMode;
+
+  if (Array.isArray(obj.badges)) {
+    config.badges = obj.badges.filter(isBadge);
+  }
+
+  if (Array.isArray(obj.pinnedAssets)) {
+    config.pinnedAssets = obj.pinnedAssets.filter(
+      (path): path is string => typeof path === "string" && path.length > 0
+    );
+  }
+
+  return config;
+}
 
 function isAllDefaults(config: EditableVaultConfig): boolean {
   return (
@@ -138,37 +164,19 @@ export async function saveVaultConfig(
       return { success: true };
     }
 
-    let existingConfig: Record<string, unknown> = {};
+    const mergedConfig: Record<string, unknown> = configExists
+      ? await readJsonObject(configPath)
+      : {};
 
-    if (configExists) {
-      try {
-        const content = await readFile(configPath, "utf-8");
-        const parsed = JSON.parse(content) as unknown;
-        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-          existingConfig = parsed as Record<string, unknown>;
-        }
-      } catch {
-        log.warn(`Could not parse existing config at ${configPath}, will overwrite`);
+    // Copy every defined field from the editable config onto the merged config.
+    // Undefined fields are skipped so existing values survive partial updates.
+    for (const [key, value] of Object.entries(editableConfig)) {
+      if (value !== undefined) {
+        mergedConfig[key] = value;
       }
     }
 
-    const mergedConfig: Record<string, unknown> = { ...existingConfig };
-
-    if (editableConfig.title !== undefined) mergedConfig.title = editableConfig.title;
-    if (editableConfig.subtitle !== undefined) mergedConfig.subtitle = editableConfig.subtitle;
-    if (editableConfig.discussionModel !== undefined) mergedConfig.discussionModel = editableConfig.discussionModel;
-    if (editableConfig.promptsPerGeneration !== undefined) mergedConfig.promptsPerGeneration = editableConfig.promptsPerGeneration;
-    if (editableConfig.maxPoolSize !== undefined) mergedConfig.maxPoolSize = editableConfig.maxPoolSize;
-    if (editableConfig.quotesPerWeek !== undefined) mergedConfig.quotesPerWeek = editableConfig.quotesPerWeek;
-    if (editableConfig.recentCaptures !== undefined) mergedConfig.recentCaptures = editableConfig.recentCaptures;
-    if (editableConfig.recentDiscussions !== undefined) mergedConfig.recentDiscussions = editableConfig.recentDiscussions;
-    if (editableConfig.badges !== undefined) mergedConfig.badges = editableConfig.badges;
-    if (editableConfig.order !== undefined) mergedConfig.order = editableConfig.order;
-    if (editableConfig.cardsEnabled !== undefined) mergedConfig.cardsEnabled = editableConfig.cardsEnabled;
-    if (editableConfig.viMode !== undefined) mergedConfig.viMode = editableConfig.viMode;
-
-    await writeFile(configPath, JSON.stringify(mergedConfig, null, 2) + "\n", "utf-8");
-
+    await writeJsonFile(configPath, mergedConfig);
     log.info(`Saved vault config to ${configPath}`);
     return { success: true };
   } catch (error) {
@@ -178,29 +186,11 @@ export async function saveVaultConfig(
   }
 }
 
-export async function savePinnedAssets(
-  vaultPath: string,
-  paths: string[]
-): Promise<void> {
+export async function savePinnedAssets(vaultPath: string, paths: string[]): Promise<void> {
   const configPath = join(vaultPath, CONFIG_FILE_NAME);
-
-  let existingConfig: Record<string, unknown> = {};
-
-  if (await fileExists(configPath)) {
-    try {
-      const content = await readFile(configPath, "utf-8");
-      const parsed = JSON.parse(content) as unknown;
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        existingConfig = parsed as Record<string, unknown>;
-      }
-    } catch {
-      // If we can't read existing config, start fresh
-    }
-  }
-
+  const existingConfig = await readJsonObject(configPath);
   existingConfig.pinnedAssets = paths;
-
-  await writeFile(configPath, JSON.stringify(existingConfig, null, 2) + "\n", "utf-8");
+  await writeJsonFile(configPath, existingConfig);
   log.info(`Saved ${paths.length} pinned assets to ${configPath}`);
 }
 
@@ -249,9 +239,7 @@ export async function saveSlashCommands(
   commands: SlashCommand[]
 ): Promise<void> {
   const cachePath = join(vaultPath, SLASH_COMMANDS_FILE);
-
   await mkdir(dirname(cachePath), { recursive: true });
-
-  await writeFile(cachePath, JSON.stringify(commands, null, 2) + "\n", "utf-8");
+  await writeJsonFile(cachePath, commands);
   log.info(`Cached ${commands.length} slash commands to ${cachePath}`);
 }

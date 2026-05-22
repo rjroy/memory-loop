@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Simplify: configurable discussion model registry</title>
+  <meta name="date" content="2026-05-21">
+  <meta name="status" content="complete">
+  <meta name="tags" content="simplify, model-config, global-config, discussion">
+  <meta name="modules" content="session-manager, daemon-config, vault-config, config-editor-dialog">
+  <meta name="related" content=".lore/work/notes/configurable-discussion-models.html">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px; line-height: 1.6; color: #1a1a1a;
+      max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem 5rem;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.05rem; margin-top: 1.8rem; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+
+    .banner {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.85rem 1.1rem; border-radius: 7px; margin: 1.25rem 0; font-size: 0.9rem;
+    }
+    .banner.in-progress { background: #eff6ff; border: 2px solid #3b82f6; }
+    .banner.complete    { background: #f0fdf4; border: 2px solid #22c55e; }
+    .banner-state { font-weight: 700; font-size: 0.95rem; white-space: nowrap; }
+
+    .file-list { list-style: none; padding: 0; margin: 0.75rem 0; }
+    .file-row {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.4rem 0.7rem; border: 1px solid #e5e7eb; border-radius: 5px;
+      margin: 0.3rem 0; cursor: pointer; user-select: none; font-size: 0.88rem;
+    }
+    .file-row:hover { background: #f9fafb; }
+    .file-name { flex: 1; font-family: monospace; font-size: 0.82rem; }
+
+    .chip {
+      display: inline-block; padding: 1px 9px; border-radius: 10px;
+      font-size: 0.69rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
+    }
+    .chip-pending    { background: #f3f4f6; color: #6b7280; }
+    .chip-simplified { background: #d1fae5; color: #065f46; }
+    .chip-unchanged  { background: #f0f9ff; color: #0369a1; }
+    .chip-failed     { background: #fee2e2; color: #991b1b; }
+    .chip-running    { background: #dbeafe; color: #1d4ed8; }
+
+    .detail {
+      display: none; background: #f8fafc; border: 1px solid #e5e7eb; border-top: none;
+      padding: 0.6rem 0.9rem; font-size: 0.83rem; color: #374151;
+      border-radius: 0 0 5px 5px; margin-top: -3px;
+    }
+    .detail.open { display: block; }
+    .detail p { margin: 0.25rem 0; }
+
+    .escalation { background: #fef2f2; border: 2px solid #ef4444; border-radius: 6px; padding: 0.8rem 1rem; margin: 1rem 0; font-size: 0.88rem; }
+  </style>
+</head>
+<body>
+
+<h1>Simplify: configurable discussion model registry</h1>
+
+<div class="banner in-progress" id="banner">
+  <div class="banner-state">IN PROGRESS</div>
+  <div>Cleanup pass on all 23 changed files from the implementation. Three parallel simplifier groups, then test and review.</div>
+</div>
+
+<h2>Group A — Daemon core (7 files)</h2>
+<ul class="file-list">
+  <li><div class="file-row" onclick="toggle('d-global-config')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/global-config.ts</span></div><div class="detail" id="d-global-config"></div></li>
+  <li><div class="file-row" onclick="toggle('d-index')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/index.ts</span></div><div class="detail" id="d-index"></div></li>
+  <li><div class="file-row" onclick="toggle('d-router')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/router.ts</span></div><div class="detail" id="d-router"></div></li>
+  <li><div class="file-row" onclick="toggle('d-session-manager')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/session-manager.ts</span></div><div class="detail" id="d-session-manager"></div></li>
+  <li><div class="file-row" onclick="toggle('d-routes-models')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/routes/models.ts</span></div><div class="detail" id="d-routes-models"></div></li>
+  <li><div class="file-row" onclick="toggle('d-vault-config')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/vault/vault-config.ts</span></div><div class="detail" id="d-vault-config"></div></li>
+  <li><div class="file-row" onclick="toggle('d-vault-manager')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/vault/vault-manager.ts</span></div><div class="detail" id="d-vault-manager"></div></li>
+</ul>
+
+<h2>Group B — Daemon tests (4 files)</h2>
+<ul class="file-list">
+  <li><div class="file-row" onclick="toggle('t-global-config')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/__tests__/global-config.test.ts</span></div><div class="detail" id="t-global-config"></div></li>
+  <li><div class="file-row" onclick="toggle('t-session-manager')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/__tests__/session-manager.test.ts</span></div><div class="detail" id="t-session-manager"></div></li>
+  <li><div class="file-row" onclick="toggle('t-vault-config')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/vault/__tests__/vault-config.test.ts</span></div><div class="detail" id="t-vault-config"></div></li>
+  <li><div class="file-row" onclick="toggle('t-models-route')"><span class="chip chip-running">running</span><span class="file-name">daemon/src/routes/__tests__/models.test.ts</span></div><div class="detail" id="t-models-route"></div></li>
+</ul>
+
+<h2>Group C — Shared + Next.js (12 files)</h2>
+<ul class="file-list">
+  <li><div class="file-row" onclick="toggle('s-shared-index')"><span class="chip chip-running">running</span><span class="file-name">packages/shared/src/index.ts</span></div><div class="detail" id="s-shared-index"></div></li>
+  <li><div class="file-row" onclick="toggle('s-schemas-index')"><span class="chip chip-running">running</span><span class="file-name">packages/shared/src/schemas/index.ts</span></div><div class="detail" id="s-schemas-index"></div></li>
+  <li><div class="file-row" onclick="toggle('s-protocol')"><span class="chip chip-running">running</span><span class="file-name">packages/shared/src/schemas/protocol.ts</span></div><div class="detail" id="s-protocol"></div></li>
+  <li><div class="file-row" onclick="toggle('s-types')"><span class="chip chip-running">running</span><span class="file-name">packages/shared/src/schemas/types.ts</span></div><div class="detail" id="s-types"></div></li>
+  <li><div class="file-row" onclick="toggle('s-vault-config')"><span class="chip chip-running">running</span><span class="file-name">packages/shared/src/vault-config.ts</span></div><div class="detail" id="s-vault-config"></div></li>
+  <li><div class="file-row" onclick="toggle('n-config-editor')"><span class="chip chip-running">running</span><span class="file-name">nextjs/components/vault/ConfigEditorDialog.tsx</span></div><div class="detail" id="n-config-editor"></div></li>
+  <li><div class="file-row" onclick="toggle('n-config-editor-test')"><span class="chip chip-running">running</span><span class="file-name">nextjs/components/vault/__tests__/ConfigEditorDialog.test.tsx</span></div><div class="detail" id="n-config-editor-test"></div></li>
+  <li><div class="file-row" onclick="toggle('n-daemon-index')"><span class="chip chip-running">running</span><span class="file-name">nextjs/lib/daemon/index.ts</span></div><div class="detail" id="n-daemon-index"></div></li>
+  <li><div class="file-row" onclick="toggle('n-daemon-models')"><span class="chip chip-running">running</span><span class="file-name">nextjs/lib/daemon/models.ts</span></div><div class="detail" id="n-daemon-models"></div></li>
+  <li><div class="file-row" onclick="toggle('n-api-models')"><span class="chip chip-running">running</span><span class="file-name">nextjs/app/api/models/route.ts</span></div><div class="detail" id="n-api-models"></div></li>
+</ul>
+
+<h2>Test &amp; Review</h2>
+<ul class="file-list">
+  <li><div class="file-row"><span class="chip chip-pending">pending</span><span class="file-name">bun run test (full suite)</span></div></li>
+  <li><div class="file-row"><span class="chip chip-pending">pending</span><span class="file-name">code review — behavior preservation check</span></div></li>
+</ul>
+
+<script>
+  function toggle(id) {
+    document.getElementById(id).classList.toggle('open');
+  }
+</script>
+</body>
+</html>

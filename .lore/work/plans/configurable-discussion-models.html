@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Implementation plan: configurable discussion model registry</title>
+  <meta name="date" content="2026-05-21">
+  <meta name="status" content="draft">
+  <meta name="tags" content="plan, model-config, global-config, discussion, pi-agent">
+  <meta name="modules" content="session-manager, daemon-config, vault-config, config-editor-dialog">
+  <meta name="related" content=".lore/work/specs/configurable-discussion-models.html">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #1a1a1a;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 5rem;
+    }
+
+    h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.15rem; margin-top: 2.5rem; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem; }
+    h3 { font-size: 0.95rem; margin-top: 1.2rem; margin-bottom: 0.4rem; }
+
+    .spec-link {
+      display: inline-block;
+      font-size: 0.82rem;
+      color: #555;
+      margin-bottom: 1.5rem;
+      background: #f1f5f9;
+      padding: 3px 10px;
+      border-radius: 3px;
+      text-decoration: none;
+    }
+    .spec-link:hover { background: #e2e8f0; }
+
+    /* Phase track */
+    .phase-track {
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+      margin: 2rem 0 0.5rem;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid #ddd;
+    }
+    .phase-tab {
+      flex: 1;
+      min-width: 90px;
+      padding: 0.5rem 0.4rem;
+      text-align: center;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: #f8fafc;
+      border-right: 1px solid #ddd;
+      user-select: none;
+      color: #555;
+      transition: background 0.1s;
+    }
+    .phase-tab:last-child { border-right: none; }
+    .phase-tab:hover { background: #e2e8f0; }
+    .phase-tab.active { background: #1e40af; color: #fff; }
+
+    /* Phase panels */
+    .phase-panel { display: none; }
+    .phase-panel.active { display: block; }
+
+    /* Steps */
+    .step {
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      margin: 1rem 0;
+      overflow: hidden;
+    }
+    .step-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: #fafafa;
+      cursor: pointer;
+      user-select: none;
+    }
+    .step-header:hover { background: #f3f4f6; }
+    .step-num {
+      font-family: monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #fff;
+      background: #1e40af;
+      border-radius: 3px;
+      padding: 1px 6px;
+      white-space: nowrap;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    .step-num.gate { background: #d97706; }
+    .step-num.test { background: #059669; }
+    .step-num.doc { background: #7c3aed; }
+    .step-title { font-weight: 500; flex: 1; }
+    .step-files { font-size: 0.78rem; color: #888; margin-top: 2px; font-family: monospace; }
+    .chevron { font-size: 0.75rem; margin-top: 3px; color: #888; transition: transform 0.15s; flex-shrink: 0; }
+    .chevron.open { transform: rotate(90deg); }
+    .step-body {
+      display: none;
+      padding: 0.85rem 1rem;
+      border-top: 1px solid #e5e5e5;
+      background: #fff;
+    }
+    .step-body.open { display: block; }
+    .step-body p { margin: 0.5rem 0; font-size: 0.9rem; color: #333; }
+    .step-body ul, .step-body ol { padding-left: 1.25rem; font-size: 0.9rem; color: #333; }
+    .step-body li { margin: 0.3rem 0; }
+    .step-body code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 0.83rem; font-family: monospace; }
+    .step-body pre {
+      background: #f8fafc;
+      border: 1px solid #e5e5e5;
+      border-radius: 4px;
+      padding: 0.75rem 1rem;
+      font-size: 0.81rem;
+      overflow-x: auto;
+      margin: 0.6rem 0;
+    }
+    .step-body strong { font-weight: 600; }
+
+    /* Gate box */
+    .gate-box {
+      background: #fffbeb;
+      border: 2px solid #f59e0b;
+      border-radius: 6px;
+      padding: 0.9rem 1.1rem;
+      margin: 1.2rem 0;
+    }
+    .gate-box h4 { margin: 0 0 0.4rem; font-size: 0.9rem; color: #92400e; }
+    .gate-box ol { padding-left: 1.2rem; margin: 0; font-size: 0.87rem; color: #555; }
+    .gate-box li { margin: 0.25rem 0; }
+    .gate-box code { background: #fef3c7; padding: 1px 5px; border-radius: 3px; font-size: 0.82rem; }
+
+    /* Context callout */
+    .context {
+      background: #f0f9ff;
+      border-left: 3px solid #38bdf8;
+      padding: 0.65rem 0.9rem;
+      margin: 0.8rem 0;
+      font-size: 0.88rem;
+      color: #333;
+    }
+
+    /* Summary table */
+    table { border-collapse: collapse; width: 100%; font-size: 0.87rem; margin: 1rem 0; }
+    th { background: #f1f5f9; text-align: left; padding: 6px 10px; border: 1px solid #ddd; font-weight: 600; }
+    td { padding: 6px 10px; border: 1px solid #ddd; vertical-align: top; }
+    td code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-size: 0.8rem; }
+
+    /* Badge */
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-new  { background: #d1fae5; color: #065f46; }
+    .badge-mod  { background: #dbeafe; color: #1e40af; }
+    .badge-del  { background: #fee2e2; color: #991b1b; }
+    .badge-test { background: #ede9fe; color: #6d28d9; }
+    .badge-doc  { background: #fef3c7; color: #92400e; }
+
+    /* Validation section */
+    .final-validation {
+      background: #fffbeb;
+      border: 2px solid #f59e0b;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-top: 2.5rem;
+    }
+    .final-validation h2 { color: #92400e; border-bottom-color: #f59e0b; margin-top: 0; }
+    .final-validation ol { padding-left: 1.25rem; }
+    .final-validation li { margin: 0.4rem 0; font-size: 0.9rem; }
+    .final-validation code { background: #fef3c7; padding: 1px 5px; border-radius: 3px; font-size: 0.83rem; }
+  </style>
+</head>
+<body>
+
+<h1>Implementation plan: configurable discussion model registry</h1>
+<a class="spec-link" href="../specs/configurable-discussion-models.html">Source spec: REQ-MODELS-1 through REQ-MODELS-10</a>
+
+<p>
+  Six phases. The first three are additive (new files, no deletions). Phase 3 is the breaking change:
+  it removes the shared enum and all its callers atomically. Run <code>bun run typecheck</code> after
+  each phase to confirm clean output before moving on.
+</p>
+
+<h2>Affected files at a glance</h2>
+
+<table>
+  <tr>
+    <th>File</th>
+    <th>Action</th>
+    <th>Phase</th>
+  </tr>
+  <tr><td><code>daemon/src/global-config.ts</code></td><td><span class="badge badge-new">new</span></td><td>1</td></tr>
+  <tr><td><code>daemon/src/__tests__/global-config.test.ts</code></td><td><span class="badge badge-new">new</span></td><td>1</td></tr>
+  <tr><td><code>daemon/src/index.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>2</td></tr>
+  <tr><td><code>daemon/src/routes/models.ts</code></td><td><span class="badge badge-new">new</span></td><td>2</td></tr>
+  <tr><td><code>daemon/src/routes/__tests__/models.test.ts</code></td><td><span class="badge badge-new">new</span></td><td>2</td></tr>
+  <tr><td><code>daemon/src/router.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>2</td></tr>
+  <tr><td><code>packages/shared/src/schemas/protocol.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>3</td></tr>
+  <tr><td><code>packages/shared/src/vault-config.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>3</td></tr>
+  <tr><td><code>packages/shared/src/index.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>3</td></tr>
+  <tr><td><code>daemon/src/vault/vault-config.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>3</td></tr>
+  <tr><td><code>daemon/src/vault/vault-manager.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>3</td></tr>
+  <tr><td><code>daemon/src/session-manager.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>3</td></tr>
+  <tr><td><code>nextjs/app/api/models/route.ts</code></td><td><span class="badge badge-new">new</span></td><td>4</td></tr>
+  <tr><td><code>nextjs/lib/daemon/models.ts</code></td><td><span class="badge badge-new">new</span></td><td>4</td></tr>
+  <tr><td><code>nextjs/lib/daemon/index.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>4</td></tr>
+  <tr><td><code>nextjs/components/vault/ConfigEditorDialog.tsx</code></td><td><span class="badge badge-mod">mod</span></td><td>4</td></tr>
+  <tr><td><code>daemon/src/__tests__/session-manager.test.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>5</td></tr>
+  <tr><td><code>daemon/src/vault/__tests__/vault-config.test.ts</code></td><td><span class="badge badge-mod">mod</span></td><td>5</td></tr>
+  <tr><td><code>nextjs/components/vault/__tests__/ConfigEditorDialog.test.tsx</code></td><td><span class="badge badge-mod">mod</span></td><td>5</td></tr>
+  <tr><td><code>.lore/reference/_infrastructure/configuration.md</code></td><td><span class="badge badge-doc">doc</span></td><td>6</td></tr>
+  <tr><td><code>.lore/reference/think.md</code></td><td><span class="badge badge-doc">doc</span></td><td>6</td></tr>
+</table>
+
+<!-- ═══════════════ PHASE TABS ═══════════════ -->
+
+<div class="phase-track">
+  <div class="phase-tab active" onclick="showPhase(1)">Phase 1<br>global-config</div>
+  <div class="phase-tab" onclick="showPhase(2)">Phase 2<br>startup + route</div>
+  <div class="phase-tab" onclick="showPhase(3)">Phase 3<br>shared purge</div>
+  <div class="phase-tab" onclick="showPhase(4)">Phase 4<br>Next.js</div>
+  <div class="phase-tab" onclick="showPhase(5)">Phase 5<br>test updates</div>
+  <div class="phase-tab" onclick="showPhase(6)">Phase 6<br>docs</div>
+</div>
+
+<!-- ═══════════════ PHASE 1 ═══════════════ -->
+
+<div class="phase-panel active" id="phase-1">
+  <h2>Phase 1 — Create <code>global-config.ts</code></h2>
+  <p>
+    New isolated module. No existing code is touched. All subsequent phases depend on it.
+  </p>
+
+  <div class="step" id="step-1-1">
+    <div class="step-header" onclick="toggle('step-1-1')">
+      <span class="step-num">1.1</span>
+      <div>
+        <div class="step-title">Write <code>daemon/src/global-config.ts</code></div>
+        <div class="step-files">daemon/src/global-config.ts (new)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>Create the module with these exports:</p>
+      <ul>
+        <li><code>ModelEntry = { provider: string; modelId: string }</code> — interface for one registry entry.</li>
+        <li><code>ModelRegistry = Record&lt;string, ModelEntry&gt;</code> — the full registry map.</li>
+        <li>Module-level <code>let registry: ModelRegistry = {}</code> — mutable state, not exported directly.</li>
+        <li><code>getRegistry(): ModelRegistry</code> — returns current registry. Called by <code>resolveModelForPiAgent()</code> and the models route handler.</li>
+        <li><code>loadGlobalConfig(): Promise&lt;void&gt;</code> — called once at startup. Reads the config file, populates registry.</li>
+        <li><code>configureRegistryForTesting(r: ModelRegistry): () =&gt; void</code> — sets registry, returns cleanup function that resets it. Follows <code>configurePiSessionForTesting</code> pattern.</li>
+        <li><code>_resetRegistryForTesting(): void</code> — direct reset to <code>{}</code>. Called in <code>afterEach</code>.</li>
+      </ul>
+      <h3>Config file resolution (inside <code>loadGlobalConfig</code>, not at module top)</h3>
+      <pre>function getConfigFilePath(): string {
+  return (
+    process.env.MEMORY_LOOP_CONFIG ??
+    join(getVaultsDir(), "memory-loop-config.json")
+  );
+}</pre>
+      <p>
+        <code>getVaultsDir()</code> is imported from the vault module (already exported). Call it inside the function, not at module import time — matching the pattern in <code>vault-manager.ts</code> so tests can set <code>VAULTS_DIR</code> in <code>beforeEach</code>.
+      </p>
+      <h3>loadGlobalConfig logic</h3>
+      <pre>export async function loadGlobalConfig(): Promise&lt;void&gt; {
+  const path = getConfigFilePath();
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf-8");
+  } catch {
+    log.warn(`Global config not found at ${path}, model registry is empty`);
+    registry = {};
+    return;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    log.warn(`Global config at ${path} is not valid JSON, model registry is empty`);
+    registry = {};
+    return;
+  }
+  if (typeof parsed !== "object" || parsed === null || !("models" in parsed)) {
+    registry = {};
+    return;
+  }
+  const modelsRaw = (parsed as Record&lt;string, unknown&gt;).models;
+  if (typeof modelsRaw !== "object" || modelsRaw === null) {
+    registry = {};
+    return;
+  }
+  const result: ModelRegistry = {};
+  for (const [name, entry] of Object.entries(modelsRaw)) {
+    if (
+      typeof entry === "object" && entry !== null &&
+      "provider" in entry && typeof (entry as Record&lt;string, unknown&gt;).provider === "string" &&
+      "modelId" in entry && typeof (entry as Record&lt;string, unknown&gt;).modelId === "string"
+    ) {
+      result[name] = entry as ModelEntry;
+    } else {
+      log.warn(`Skipping invalid model entry "${name}" in global config`);
+    }
+  }
+  registry = result;
+  log.info(`Loaded ${Object.keys(registry).length} model(s) from global config`);
+}</pre>
+      <div class="context">
+        Unknown top-level keys (anything other than <code>models</code>) are silently ignored per REQ-MODELS-1.
+      </div>
+    </div>
+  </div>
+
+  <div class="step" id="step-1-2">
+    <div class="step-header" onclick="toggle('step-1-2')">
+      <span class="step-num test">1.2</span>
+      <div>
+        <div class="step-title">Write <code>daemon/src/__tests__/global-config.test.ts</code></div>
+        <div class="step-files">daemon/src/__tests__/global-config.test.ts (new)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>Five test cases matching REQ-MODELS-9:</p>
+      <ol>
+        <li>File not found → <code>getRegistry()</code> returns <code>{}</code>, no throw.</li>
+        <li>Malformed JSON → <code>getRegistry()</code> returns <code>{}</code>, no throw.</li>
+        <li>Valid file with three entries → registry populated with all three, correct shape.</li>
+        <li>File with one malformed entry (missing <code>modelId</code>) and one valid → valid entry retained, malformed skipped.</li>
+        <li>Empty <code>models</code> object (<code>{"models":{}}</code>) → registry is <code>{}</code>.</li>
+      </ol>
+      <p>
+        Use a temp dir for config file writes. Set <code>MEMORY_LOOP_CONFIG</code> env var in <code>beforeEach</code> to point at the temp file path, clear it in <code>afterEach</code>. Call <code>_resetRegistryForTesting()</code> in every <code>afterEach</code>.
+      </p>
+    </div>
+  </div>
+
+  <div class="gate-box">
+    <h4>Phase 1 gate</h4>
+    <ol>
+      <li><code>bun run --cwd daemon test src/__tests__/global-config.test.ts</code> — all 5 tests pass.</li>
+      <li><code>bun run typecheck</code> — zero errors.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ═══════════════ PHASE 2 ═══════════════ -->
+
+<div class="phase-panel" id="phase-2">
+  <h2>Phase 2 — Daemon startup wiring and <code>GET /models</code> route</h2>
+  <p>
+    Still additive. No existing behavior is removed. After this phase, <code>GET /api/models</code>
+    is functional even before the shared type purge.
+  </p>
+
+  <div class="step" id="step-2-1">
+    <div class="step-header" onclick="toggle('step-2-1')">
+      <span class="step-num">2.1</span>
+      <div>
+        <div class="step-title">Wire <code>loadGlobalConfig()</code> into daemon startup</div>
+        <div class="step-files">daemon/src/index.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>
+        In <code>daemon/src/index.ts</code>, add an <code>import { loadGlobalConfig } from "./global-config"</code>.
+      </p>
+      <p>
+        Call <code>await loadGlobalConfig()</code> after <code>await initVaultCache()</code> (line ~40) and before <code>startServer()</code> (line ~70). Position matters: the registry must be populated before the HTTP server accepts requests.
+      </p>
+      <pre>await initVaultCache();
+await loadGlobalConfig();   // ← add this line
+// ... background schedulers ...
+startServer();</pre>
+      <p>
+        The call is fire-and-forget-safe: <code>loadGlobalConfig()</code> never throws; a missing or bad config file is handled internally with a warning log.
+      </p>
+    </div>
+  </div>
+
+  <div class="step" id="step-2-2">
+    <div class="step-header" onclick="toggle('step-2-2')">
+      <span class="step-num">2.2</span>
+      <div>
+        <div class="step-title">Create <code>daemon/src/routes/models.ts</code></div>
+        <div class="step-files">daemon/src/routes/models.ts (new)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>Single exported handler:</p>
+      <pre>import type { Context } from "hono";
+import { getRegistry } from "../global-config";
+
+export function getModelsHandler(c: Context) {
+  const registry = getRegistry();
+  const models = Object.entries(registry).map(([name, entry]) => ({
+    name,
+    provider: entry.provider,
+    modelId: entry.modelId,
+  }));
+  return c.json({ models });
+}</pre>
+      <p>
+        Order matches V8/Bun insertion order of JSON.parse keys (non-integer string keys preserve insertion order). No sorting needed per REQ-MODELS-3.
+      </p>
+    </div>
+  </div>
+
+  <div class="step" id="step-2-3">
+    <div class="step-header" onclick="toggle('step-2-3')">
+      <span class="step-num">2.3</span>
+      <div>
+        <div class="step-title">Register <code>GET /models</code> in router</div>
+        <div class="step-files">daemon/src/router.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>
+        Add the import and registration to <code>registerRoutes()</code>. Follow the existing pattern (other GET routes near the top of the function):
+      </p>
+      <pre>import { getModelsHandler } from "./routes/models";
+
+// inside registerRoutes():
+app.get("/models", getModelsHandler);</pre>
+      <p>Place it near the other resource-listing GET routes (e.g., alongside <code>GET /vaults</code>).</p>
+    </div>
+  </div>
+
+  <div class="step" id="step-2-4">
+    <div class="step-header" onclick="toggle('step-2-4')">
+      <span class="step-num test">2.4</span>
+      <div>
+        <div class="step-title">Write <code>daemon/src/routes/__tests__/models.test.ts</code></div>
+        <div class="step-files">daemon/src/routes/__tests__/models.test.ts (new)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>Two test cases per REQ-MODELS-9:</p>
+      <ol>
+        <li>
+          Empty registry (<code>_resetRegistryForTesting()</code> only) → <code>GET /models</code> returns
+          <code>200</code> with <code>{ models: [] }</code>.
+        </li>
+        <li>
+          Registry populated via <code>configureRegistryForTesting({ opus: { provider: "anthropic", modelId: "claude-opus-4-7" } })</code>
+          → response is <code>{ models: [{ name: "opus", provider: "anthropic", modelId: "claude-opus-4-7" }] }</code>.
+        </li>
+      </ol>
+      <p>
+        Follow the pattern in <code>daemon/src/routes/__tests__/health.test.ts</code>: create a Hono test app,
+        register just the models route, hit it with a <code>Request</code> object.
+      </p>
+      <p>Call <code>_resetRegistryForTesting()</code> in <code>afterEach</code>.</p>
+    </div>
+  </div>
+
+  <div class="gate-box">
+    <h4>Phase 2 gate</h4>
+    <ol>
+      <li><code>bun run --cwd daemon test src/routes/__tests__/models.test.ts</code> — both tests pass.</li>
+      <li><code>bun run typecheck</code> — zero errors.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ═══════════════ PHASE 3 ═══════════════ -->
+
+<div class="phase-panel" id="phase-3">
+  <h2>Phase 3 — Shared type purge (breaking change, all callers fixed atomically)</h2>
+  <p>
+    This phase removes the hardcoded enum and updates every caller. Do all steps before running typecheck;
+    the intermediate state will not compile.
+  </p>
+  <div class="context">
+    REQ-MODELS-4 drives steps 3.1 and 3.2. REQ-MODELS-5 and REQ-MODELS-8 drive steps 3.3 through 3.5.
+  </div>
+
+  <div class="step" id="step-3-1">
+    <div class="step-header" onclick="toggle('step-3-1')">
+      <span class="step-num">3.1</span>
+      <div>
+        <div class="step-title">Remove enum, type, and helpers from <code>packages/shared/src/vault-config.ts</code></div>
+        <div class="step-files">packages/shared/src/vault-config.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>Remove the following from <code>packages/shared/src/vault-config.ts</code>:</p>
+      <ul>
+        <li><code>VALID_DISCUSSION_MODELS</code> constant (line ~49)</li>
+        <li><code>type DiscussionModelLocal</code> (line ~50)</li>
+        <li><code>DEFAULT_DISCUSSION_MODEL</code> constant (line ~51)</li>
+        <li><code>resolveDiscussionModel()</code> function (lines ~127-129)</li>
+      </ul>
+      <p>
+        The <code>VaultConfig</code> interface's <code>discussionModel?: string</code> field
+        stays as-is — it's already typed as plain <code>string | undefined</code>.
+      </p>
+      <p>
+        Also edit <code>packages/shared/src/index.ts</code> (the barrel export) to remove
+        the named exports for all four deleted symbols:
+        <code>VALID_DISCUSSION_MODELS</code>, <code>DiscussionModelLocal</code>,
+        <code>DEFAULT_DISCUSSION_MODEL</code>, and <code>resolveDiscussionModel</code>.
+        Leaving them in the barrel export while deleting the definitions will cause a typecheck error.
+      </p>
+    </div>
+  </div>
+
+  <div class="step" id="step-3-2">
+    <div class="step-header" onclick="toggle('step-3-2')">
+      <span class="step-num">3.2</span>
+      <div>
+        <div class="step-title">Remove enum and type from <code>packages/shared/src/schemas/protocol.ts</code></div>
+        <div class="step-files">packages/shared/src/schemas/protocol.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>Three changes:</p>
+      <ol>
+        <li>
+          Delete <code>DiscussionModelSchema = z.enum(["opus", "sonnet", "haiku"])</code> (line ~52).
+        </li>
+        <li>
+          In <code>EditableVaultConfigSchema</code>: change <code>discussionModel: DiscussionModelSchema.optional()</code>
+          to <code>discussionModel: z.string().optional()</code>.
+        </li>
+        <li>
+          In <code>VaultInfoSchema</code>: change <code>discussionModel: DiscussionModelSchema.optional()</code>
+          to <code>discussionModel: z.string().optional()</code>.
+        </li>
+        <li>
+          Delete the exported type <code>type DiscussionModel = z.infer&lt;typeof DiscussionModelSchema&gt;</code>
+          (line ~1082).
+        </li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="step" id="step-3-3">
+    <div class="step-header" onclick="toggle('step-3-3')">
+      <span class="step-num">3.3</span>
+      <div>
+        <div class="step-title">Remove enum validation from <code>daemon/src/vault/vault-config.ts</code></div>
+        <div class="step-files">daemon/src/vault/vault-config.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>
+        In <code>loadVaultConfig()</code>, the block at lines ~69-74 currently does this:
+      </p>
+      <pre>if (
+  typeof obj.discussionModel === "string" &&
+  VALID_DISCUSSION_MODELS.includes(obj.discussionModel as ...)
+) {
+  config.discussionModel = obj.discussionModel;
+}</pre>
+      <p>
+        <strong>Replace</strong> this block (do not delete it) with a simpler check that accepts any string:
+      </p>
+      <pre>if (typeof obj.discussionModel === "string") {
+  config.discussionModel = obj.discussionModel;
+}</pre>
+      <p>
+        Deleting the block entirely would silently drop <code>discussionModel</code> from all loaded
+        vault configs. Non-string values (e.g. <code>123</code>) are still ignored — the <code>z.string()</code>
+        guard does that job. The enum whitelist check is the only thing removed.
+      </p>
+      <p>Remove the import of <code>VALID_DISCUSSION_MODELS</code> from shared.</p>
+      <div class="context">
+        The vault-config test currently has a test "ignores invalid discussionModel value" that
+        expects non-enum strings to be rejected. After this change, any string is valid; update
+        that test to confirm the string is passed through rather than dropped. The test "ignores
+        non-string discussionModel value" (e.g. <code>123</code>) remains correct — <code>z.string()</code>
+        still rejects non-strings. See Phase 5 for exact test edits.
+      </div>
+    </div>
+  </div>
+
+  <div class="step" id="step-3-4">
+    <div class="step-header" onclick="toggle('step-3-4')">
+      <span class="step-num">3.4</span>
+      <div>
+        <div class="step-title">Update <code>parseVault()</code> in <code>daemon/src/vault/vault-manager.ts</code></div>
+        <div class="step-files">daemon/src/vault/vault-manager.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>
+        In <code>parseVault()</code> at line ~169, change:
+      </p>
+      <pre>// before
+discussionModel: resolveDiscussionModel(config),
+
+// after
+discussionModel: config.discussionModel,</pre>
+      <p>
+        Remove the <code>import { resolveDiscussionModel }</code> from <code>@memory-loop/shared</code>.
+        A vault with no <code>discussionModel</code> set now returns <code>undefined</code> in the
+        <code>VaultInfo</code> response instead of the hardcoded <code>"opus"</code> default.
+        This is the intentional behavior change described in the spec.
+      </p>
+    </div>
+  </div>
+
+  <div class="step" id="step-3-5">
+    <div class="step-header" onclick="toggle('step-3-5')">
+      <span class="step-num">3.5</span>
+      <div>
+        <div class="step-title">Rewrite <code>resolveModelForPiAgent()</code> in <code>daemon/src/session-manager.ts</code></div>
+        <div class="step-files">daemon/src/session-manager.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>Two deletions and one rewrite:</p>
+      <ol>
+        <li>Delete <code>DISCUSSION_MODEL_MAP</code> constant (lines ~65-71).</li>
+        <li>Remove the import of <code>resolveDiscussionModel</code> from <code>@memory-loop/shared</code>.</li>
+        <li>Rewrite <code>resolveModelForPiAgent()</code>:</li>
+      </ol>
+      <pre>function resolveModelForPiAgent(
+  vaultPath: string,
+  config: Awaited&lt;ReturnType&lt;typeof loadVaultConfig&gt;&gt;
+): PiAgentModel | undefined {
+  const modelName = config.discussionModel;
+  if (!modelName) return undefined;
+
+  const entry = getRegistry()[modelName];
+  if (!entry) {
+    log.warn(`Unknown discussion model "${modelName}" for vault at ${vaultPath}, using pi-agent fallback`);
+    return undefined;
+  }
+  return entry;
+}</pre>
+      <p>Add import at top of file:</p>
+      <pre>import { getRegistry } from "./global-config";</pre>
+      <p>
+        The <code>openPiSessionForVault()</code> caller (lines ~679-701) needs no changes — it already
+        handles <code>model</code> being <code>undefined</code> and logs appropriately.
+      </p>
+    </div>
+  </div>
+
+  <div class="gate-box">
+    <h4>Phase 3 gate</h4>
+    <ol>
+      <li><code>bun run typecheck</code> — zero errors. Confirm with grep:
+        <code>grep -r "DiscussionModelLocal\|DiscussionModelSchema\|VALID_DISCUSSION_MODELS\|DISCUSSION_MODEL_MAP" packages/ daemon/src/</code>
+        → zero matches.
+      </li>
+      <li><code>bun run lint</code> — zero errors.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ═══════════════ PHASE 4 ═══════════════ -->
+
+<div class="phase-panel" id="phase-4">
+  <h2>Phase 4 — Next.js layer (proxy route, daemon client, frontend)</h2>
+  <p>Three independent changes that can be written in any order within the phase.</p>
+
+  <div class="step" id="step-4-1">
+    <div class="step-header" onclick="toggle('step-4-1')">
+      <span class="step-num">4.1</span>
+      <div>
+        <div class="step-title">Create <code>nextjs/app/api/models/route.ts</code></div>
+        <div class="step-files">nextjs/app/api/models/route.ts (new)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>Minimal proxy following the pattern in <code>nextjs/app/api/vaults/[vaultId]/config/route.ts</code>:</p>
+      <pre>import { NextResponse } from "next/server";
+import { daemonFetch } from "@/lib/daemon/fetch";
+
+export async function GET() {
+  const res = await daemonFetch("/models");
+  return NextResponse.json(await res.json(), { status: res.status });
+}</pre>
+      <p>
+        No auth wrapper needed — consistent with other read-only daemon proxy routes. The browser calls
+        <code>GET /api/models</code>; this handler forwards to the daemon and relays the response.
+      </p>
+    </div>
+  </div>
+
+  <div class="step" id="step-4-2">
+    <div class="step-header" onclick="toggle('step-4-2')">
+      <span class="step-num">4.2</span>
+      <div>
+        <div class="step-title">Create <code>nextjs/lib/daemon/models.ts</code> and update barrel export</div>
+        <div class="step-files">nextjs/lib/daemon/models.ts (new), nextjs/lib/daemon/index.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>New file <code>nextjs/lib/daemon/models.ts</code>:</p>
+      <pre>import { daemonFetch } from "./fetch";
+
+export interface ModelEntry {
+  name: string;
+  provider: string;
+  modelId: string;
+}
+
+export async function getModels(): Promise&lt;ModelEntry[]&gt; {
+  const res = await daemonFetch("/models");
+  const json = await res.json() as { models: ModelEntry[] };
+  return json.models;
+}</pre>
+      <p>
+        Add to <code>nextjs/lib/daemon/index.ts</code>:
+      </p>
+      <pre>export * from "./models";</pre>
+    </div>
+  </div>
+
+  <div class="step" id="step-4-3">
+    <div class="step-header" onclick="toggle('step-4-3')">
+      <span class="step-num">4.3</span>
+      <div>
+        <div class="step-title">Update model dropdown in <code>ConfigEditorDialog.tsx</code></div>
+        <div class="step-files">nextjs/components/vault/ConfigEditorDialog.tsx (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>The current dropdown (lines ~547-574) is hardcoded. Replace with a dynamic fetch.</p>
+
+      <h3>State and fetch</h3>
+      <pre>const [availableModels, setAvailableModels] = useState&lt;ModelEntry[]&gt;([]);
+
+useEffect(() =&gt; {
+  fetch("/api/models")
+    .then((r) =&gt; r.json())
+    .then((data: { models: ModelEntry[] }) =&gt; setAvailableModels(data.models))
+    .catch(() =&gt; setAvailableModels([]));
+}, []);</pre>
+      <p>Import <code>ModelEntry</code> from <code>@/lib/daemon/models</code>.</p>
+
+      <h3>Dropdown markup</h3>
+      <pre>&lt;select
+  id={discussionModelId}
+  className="config-editor__select"
+  value={formState.discussionModel ?? ""}
+  onChange={(e) =&gt; setFormState(prev =&gt; ({
+    ...prev,
+    discussionModel: e.target.value || undefined,
+  }))}
+&gt;
+  {availableModels.length === 0 ? (
+    &lt;option value="" disabled&gt;No models configured.&lt;/option&gt;
+  ) : (
+    &lt;&gt;
+      &lt;option value=""&gt;— unset —&lt;/option&gt;
+      {/* Current value not in list: show it with (unknown) indicator */}
+      {formState.discussionModel &amp;&amp;
+        !availableModels.some(m =&gt; m.name === formState.discussionModel) &amp;&amp; (
+        &lt;option value={formState.discussionModel}&gt;
+          {formState.discussionModel} (unknown)
+        &lt;/option&gt;
+      )}
+      {availableModels.map(m =&gt; (
+        &lt;option key={m.name} value={m.name}&gt;{m.name}&lt;/option&gt;
+      ))}
+    &lt;/&gt;
+  )}
+&lt;/select&gt;</pre>
+
+      <h3>Type cleanup</h3>
+      <p>
+        Remove any remaining references to the <code>"opus" | "sonnet" | "haiku"</code> literal type
+        cast in the <code>onChange</code> handler (the current cast on line ~570). The field is now
+        <code>string | undefined</code> per the updated schema.
+      </p>
+
+      <div class="context">
+        REQ-MODELS-6: when the stored value is not in the API list, it renders with " (unknown)" and
+        remains selectable and saveable. The select's <code>value</code> will match the option
+        added above, so the browser renders it correctly without custom styling.
+      </div>
+    </div>
+  </div>
+
+  <div class="gate-box">
+    <h4>Phase 4 gate</h4>
+    <ol>
+      <li><code>bun run typecheck</code> — zero errors.</li>
+      <li><code>bun run lint</code> — zero errors.</li>
+      <li>Manual smoke test: <code>bun run daemon:dev</code> + <code>bun run --cwd nextjs dev</code>.
+        Open vault settings. Confirm dropdown is empty ("No models configured.") when no config file is present.</li>
+      <li>Write <code>${VAULTS_DIR}/memory-loop-config.json</code> with two model entries, restart daemon.
+        Reopen vault settings. Confirm dropdown shows both model names.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ═══════════════ PHASE 5 ═══════════════ -->
+
+<div class="phase-panel" id="phase-5">
+  <h2>Phase 5 — Update existing tests</h2>
+  <p>
+    Two existing test files need updates. No new behavior is tested here — only the tests that
+    depended on the removed constants and the old default-model behavior.
+  </p>
+
+  <div class="step" id="step-5-1">
+    <div class="step-header" onclick="toggle('step-5-1')">
+      <span class="step-num test">5.1</span>
+      <div>
+        <div class="step-title">Update <code>daemon/src/__tests__/session-manager.test.ts</code></div>
+        <div class="step-files">daemon/src/__tests__/session-manager.test.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <h3>Imports</h3>
+      <p>Add to the import block:</p>
+      <pre>import {
+  configureRegistryForTesting,
+  _resetRegistryForTesting,
+} from "../global-config";</pre>
+
+      <h3>afterEach</h3>
+      <p>Add <code>_resetRegistryForTesting()</code> to the existing <code>afterEach</code>:</p>
+      <pre>afterEach(async () =&gt; {
+  _resetPiSessionForTesting();
+  _resetRegistryForTesting();   // ← add this
+  await rm(tempDir, { recursive: true, force: true });
+});</pre>
+
+      <h3>Test: "uses vault config model when present" (line ~173)</h3>
+      <p>
+        Before the test body, inject a registry with the haiku entry. The assertion value must match
+        whatever is in the injected registry (not the old hardcoded map):
+      </p>
+      <pre>test("uses vault config model when present", async () =&gt; {
+  configureRegistryForTesting({
+    haiku: { provider: "anthropic", modelId: "claude-haiku-4-5" },
+  });
+  await writeFile(
+    join(tempDir, ".memory-loop.json"),
+    JSON.stringify({ discussionModel: "haiku" })
+  );
+  // ... rest of test unchanged ...
+  expect(capturedOpts.model).toEqual({ provider: "anthropic", modelId: "claude-haiku-4-5" });
+});</pre>
+
+      <h3>Test: "passes no model when vault config has no discussionModel" (line ~193)</h3>
+      <p>
+        This is the deliberate behavior change per REQ-MODELS-9. No registry injection needed
+        (empty registry by default). Update the assertion:
+      </p>
+      <pre>// before
+expect(capturedOpts.model).toEqual({ provider: "anthropic", modelId: "claude-opus-4-5" });
+
+// after
+expect(capturedOpts.model).toBeUndefined();</pre>
+      <p>Also update the test name to reflect the new behavior (optional but keeps the comment accurate).</p>
+    </div>
+  </div>
+
+  <div class="step" id="step-5-2">
+    <div class="step-header" onclick="toggle('step-5-2')">
+      <span class="step-num test">5.2</span>
+      <div>
+        <div class="step-title">Update <code>daemon/src/vault/__tests__/vault-config.test.ts</code></div>
+        <div class="step-files">daemon/src/vault/__tests__/vault-config.test.ts (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <h3>Remove deleted imports</h3>
+      <pre>// Remove these imports (line 30, 42):
+import { VALID_DISCUSSION_MODELS } from "@memory-loop/shared";
+import { resolveDiscussionModel } from "@memory-loop/shared";</pre>
+
+      <h3>Remove test for <code>VALID_DISCUSSION_MODELS</code> constant (line ~91)</h3>
+      <p>Delete the entire test block that asserts the constant equals <code>["opus", "sonnet", "haiku"]</code>.</p>
+
+      <h3>Update "discussionModel" test suite (lines ~244-266)</h3>
+      <p>Three specific changes:</p>
+      <ol>
+        <li>
+          <strong>"loads valid discussionModel"</strong> parameterized test: the current set of valid values
+          is just <code>["opus", "sonnet", "haiku"]</code>. After the change, any string is valid.
+          Keep the test but expand or simplify to test a couple of arbitrary strings (e.g. <code>"opus"</code>,
+          <code>"custom-model"</code>, <code>"some-other-string"</code>).
+        </li>
+        <li>
+          <strong>"ignores invalid discussionModel value"</strong>: remove this test entirely.
+          A string that was previously "invalid" (i.e., not in the enum) is now a valid string.
+          There is no longer a concept of an invalid string value.
+        </li>
+        <li>
+          <strong>"ignores non-string discussionModel value"</strong> (line ~262): keep as-is.
+          The Zod schema still rejects non-strings (e.g. <code>123</code>).
+        </li>
+      </ol>
+
+      <h3>Remove <code>resolveDiscussionModel</code> test suite (lines ~500-507)</h3>
+      <p>Delete the entire <code>describe("resolveDiscussionModel", ...)</code> block. The function no longer exists.</p>
+    </div>
+  </div>
+
+  <div class="step" id="step-5-3">
+    <div class="step-header" onclick="toggle('step-5-3')">
+      <span class="step-num test">5.3</span>
+      <div>
+        <div class="step-title">Update <code>nextjs/components/vault/__tests__/ConfigEditorDialog.test.tsx</code></div>
+        <div class="step-files">nextjs/components/vault/__tests__/ConfigEditorDialog.test.tsx (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>
+        The dialog's dropdown now fetches from <code>/api/models</code> in a <code>useEffect</code>.
+        In a jsdom test environment, <code>fetch</code> either fails or needs to be mocked.
+        Without a mock, <code>availableModels</code> will be <code>[]</code> and the dropdown
+        renders "No models configured." rather than the hardcoded options. All existing assertions
+        about the model select element will fail.
+      </p>
+
+      <h3>Mock strategy</h3>
+      <p>
+        Use a global <code>fetch</code> mock at the top of the test file. The dialog fetches
+        <code>/api/models</code> once on mount. Intercept it and return a controlled model list:
+      </p>
+      <pre>const mockFetch = mock(async (url: string) =&gt; {
+  if (url === "/api/models") {
+    return new Response(
+      JSON.stringify({ models: [
+        { name: "opus",   provider: "anthropic", modelId: "claude-opus-4-7" },
+        { name: "sonnet", provider: "anthropic", modelId: "claude-sonnet-4-6" },
+        { name: "haiku",  provider: "anthropic", modelId: "claude-haiku-4-5" },
+      ]}),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+  throw new Error(`Unexpected fetch: ${url}`);
+});
+
+beforeAll(() =&gt; { global.fetch = mockFetch as typeof fetch; });
+afterAll(() =&gt; { jest.restoreAllMocks(); });</pre>
+
+      <h3>Assertion updates</h3>
+      <ul>
+        <li>
+          Any assertion like <code>expect(modelSelect.value).toBe("sonnet")</code> remains valid if
+          the mock returns "sonnet" as an available option and the initial config has <code>discussionModel: "sonnet"</code>.
+          The select value comes from <code>formState.discussionModel</code> (unchanged), and the matching
+          option will be present because the mock returns it.
+        </li>
+        <li>
+          Remove assertions like <code>expect(screen.getByText("Opus (Most capable)")).toBeDefined()</code>.
+          The new option labels are plain model name keys (e.g. <code>"opus"</code>), not descriptive strings.
+          Replace with <code>expect(screen.getByRole("option", { name: "opus" })).toBeDefined()</code>.
+        </li>
+        <li>
+          Any test that changes the select to a model name (e.g. "opus") and saves should still pass
+          because the option exists in the mocked list.
+        </li>
+        <li>
+          Add one new test: render with <code>initialConfig.discussionModel: "unknown-model"</code>,
+          confirm the select shows "unknown-model (unknown)" as an option and it is selected.
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="gate-box">
+    <h4>Phase 5 gate</h4>
+    <ol>
+      <li><code>bun run test</code> — full suite passes. All existing tests that depended on the
+        hardcoded structures are updated, not deleted.</li>
+      <li>Confirm zero skipped tests related to model resolution.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ═══════════════ PHASE 6 ═══════════════ -->
+
+<div class="phase-panel" id="phase-6">
+  <h2>Phase 6 — Documentation updates</h2>
+
+  <div class="step" id="step-6-1">
+    <div class="step-header" onclick="toggle('step-6-1')">
+      <span class="step-num doc">6.1</span>
+      <div>
+        <div class="step-title">Update <code>.lore/reference/_infrastructure/configuration.md</code></div>
+        <div class="step-files">.lore/reference/_infrastructure/configuration.md (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>Three edits:</p>
+      <ol>
+        <li>
+          In the "AI Model" settings table, change the <code>discussionModel</code> type from
+          <code>"opus" | "sonnet" | "haiku"</code> and default <code>"opus"</code> to
+          <code>string (key from global model registry)</code> and default
+          <code>undefined (uses pi-agent fallback)</code>.
+        </li>
+        <li>
+          In the "Validation" section, remove the line that lists <code>discussionModel: enum ["opus", "sonnet", "haiku"]</code>.
+          Replace with: <code>discussionModel: any string; validation against registry happens at session creation.</code>
+        </li>
+        <li>
+          Add a new section "Global Config File" describing:
+          <ul>
+            <li>Path: <code>MEMORY_LOOP_CONFIG</code> env var, or <code>${VAULTS_DIR}/memory-loop-config.json</code></li>
+            <li>Format: <code>{ "models": { "name": { "provider": "...", "modelId": "..." } } }</code></li>
+            <li>The new <code>GET /api/models</code> endpoint and its response shape</li>
+            <li>Behavior when the file is absent or malformed</li>
+          </ul>
+        </li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="step" id="step-6-2">
+    <div class="step-header" onclick="toggle('step-6-2')">
+      <span class="step-num doc">6.2</span>
+      <div>
+        <div class="step-title">Update <code>.lore/reference/think.md</code></div>
+        <div class="step-files">.lore/reference/think.md (mod)</div>
+      </div>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="step-body">
+      <p>In the "Model Selection" section:</p>
+      <pre># before
+**Options**: `"opus"` | `"sonnet"` | `"haiku"`
+**Default**: `"opus"`
+Passed to Claude SDK when creating session.
+
+# after
+**Options**: any key defined in the global model registry (see Global Config)
+**Default**: none — unset vaults fall back to the pi-agent default (`("fallback", "text")`)
+**Resolution**: at session creation time, the daemon looks up the vault's `discussionModel`
+string in the runtime registry. Unknown names log a warning and fall back to pi-agent default.</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ FINAL VALIDATION ═══════════════ -->
+
+<div class="final-validation">
+  <h2>Final validation (mirrors spec validation section)</h2>
+  <p>Run these after all six phases are complete. They are drawn from the spec's AI Validation checklist.</p>
+
+  <h3>Static checks</h3>
+  <ol>
+    <li>
+      <code>bun run typecheck</code> passes with zero errors.
+    </li>
+    <li>
+      <code>grep -r "DiscussionModelLocal\|DiscussionModelSchema\|VALID_DISCUSSION_MODELS\|DISCUSSION_MODEL_MAP" packages/ daemon/src/</code>
+      → zero matches.
+    </li>
+    <li><code>bun run lint</code> passes with zero errors.</li>
+    <li><code>bun run test</code> passes. No tests deleted; the two modified session-manager tests
+      still cover the same behavior via the injectable registry.</li>
+  </ol>
+
+  <h3>Runtime behavior</h3>
+  <ol start="5">
+    <li>Start the daemon with no global config file. Logs show a warning about missing config,
+      no fatal error, daemon accepts requests. <code>GET /api/models</code> returns <code>{ "models": [] }</code>.</li>
+    <li>Write a valid <code>memory-loop-config.json</code> with two model entries.
+      Restart daemon. <code>GET /api/models</code> returns both entries in insertion order.</li>
+    <li>Add an entry with a missing <code>modelId</code> to the config. Restart.
+      Logs show one "Skipping invalid model entry" warning. Valid entries still appear in <code>GET /api/models</code>.</li>
+    <li>Configure a vault with a model name in the registry. Start a discussion.
+      Logs contain <code>provider</code> and <code>modelId</code> from the registry entry.</li>
+    <li>Configure a vault with a model name NOT in the registry. Start a discussion.
+      Logs show "Unknown discussion model" warning. Session completes without error.</li>
+    <li>Leave <code>discussionModel</code> unset on a vault. Start a discussion.
+      No "Unknown discussion model" warning in logs. Session completes.</li>
+  </ol>
+
+  <h3>Frontend</h3>
+  <ol start="11">
+    <li>Open vault settings. Dropdown options match exactly what <code>GET /api/models</code> returns.</li>
+    <li>With empty registry, open vault settings. Dropdown shows "No models configured." Saving
+      leaves the vault with <code>discussionModel: undefined</code>.</li>
+    <li>Manually set a vault's <code>.memory-loop.json</code> to a model name not in the registry.
+      Open vault settings. The stored name appears with "(unknown)" appended.</li>
+  </ol>
+</div>
+
+<script>
+  function showPhase(n) {
+    document.querySelectorAll(".phase-panel").forEach(p => p.classList.remove("active"));
+    document.querySelectorAll(".phase-tab").forEach(t => t.classList.remove("active"));
+    document.getElementById("phase-" + n).classList.add("active");
+    document.querySelectorAll(".phase-tab")[n - 1].classList.add("active");
+  }
+
+  function toggle(id) {
+    const body = document.querySelector(`#${id} .step-body`);
+    const chevron = document.querySelector(`#${id} .chevron`);
+    const isOpen = body.classList.contains("open");
+    body.classList.toggle("open", !isOpen);
+    chevron.classList.toggle("open", !isOpen);
+  }
+</script>
+</body>
+</html>

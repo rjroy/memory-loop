@@ -1,10 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
+<!DOCTYPE html><html lang="en"><head>
   <meta charset="UTF-8">
   <title>Implementation plan: configurable discussion model registry</title>
   <meta name="date" content="2026-05-21">
-  <meta name="status" content="draft">
+  <meta name="status" content="approved">
   <meta name="tags" content="plan, model-config, global-config, discussion, pi-agent">
   <meta name="modules" content="session-manager, daemon-config, vault-config, config-editor-dialog">
   <meta name="related" content=".lore/work/specs/configurable-discussion-models.html">
@@ -199,7 +197,7 @@
 <h2>Affected files at a glance</h2>
 
 <table>
-  <tr>
+  <tbody><tr>
     <th>File</th>
     <th>Action</th>
     <th>Phase</th>
@@ -225,7 +223,7 @@
   <tr><td><code>nextjs/components/vault/__tests__/ConfigEditorDialog.test.tsx</code></td><td><span class="badge badge-mod">mod</span></td><td>5</td></tr>
   <tr><td><code>.lore/reference/_infrastructure/configuration.md</code></td><td><span class="badge badge-doc">doc</span></td><td>6</td></tr>
   <tr><td><code>.lore/reference/think.md</code></td><td><span class="badge badge-doc">doc</span></td><td>6</td></tr>
-</table>
+</tbody></table>
 
 <!-- ═══════════════ PHASE TABS ═══════════════ -->
 
@@ -307,9 +305,9 @@
   const result: ModelRegistry = {};
   for (const [name, entry] of Object.entries(modelsRaw)) {
     if (
-      typeof entry === "object" && entry !== null &&
-      "provider" in entry && typeof (entry as Record&lt;string, unknown&gt;).provider === "string" &&
-      "modelId" in entry && typeof (entry as Record&lt;string, unknown&gt;).modelId === "string"
+      typeof entry === "object" &amp;&amp; entry !== null &amp;&amp;
+      "provider" in entry &amp;&amp; typeof (entry as Record&lt;string, unknown&gt;).provider === "string" &amp;&amp;
+      "modelId" in entry &amp;&amp; typeof (entry as Record&lt;string, unknown&gt;).modelId === "string"
     ) {
       result[name] = entry as ModelEntry;
     } else {
@@ -409,7 +407,7 @@ import { getRegistry } from "../global-config";
 
 export function getModelsHandler(c: Context) {
   const registry = getRegistry();
-  const models = Object.entries(registry).map(([name, entry]) => ({
+  const models = Object.entries(registry).map(([name, entry]) =&gt; ({
     name,
     provider: entry.provider,
     modelId: entry.modelId,
@@ -569,7 +567,7 @@ app.get("/models", getModelsHandler);</pre>
         In <code>loadVaultConfig()</code>, the block at lines ~69-74 currently does this:
       </p>
       <pre>if (
-  typeof obj.discussionModel === "string" &&
+  typeof obj.discussionModel === "string" &amp;&amp;
   VALID_DISCUSSION_MODELS.includes(obj.discussionModel as ...)
 ) {
   config.discussionModel = obj.discussionModel;
@@ -1126,5 +1124,6 @@ string in the runtime registry. Unknown names log a warning and fall back to pi-
     chevron.classList.toggle("open", !isOpen);
   }
 </script>
-</body>
-</html>
+
+
+</body></html>

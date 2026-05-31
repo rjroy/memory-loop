@@ -180,6 +180,73 @@ describe("createSession", () => {
     await expect(promise).rejects.toBeInstanceOf(SessionError);
     await expect(promise).rejects.toMatchObject({ code: "SDK_ERROR" });
   });
+
+  describe("client-minted sessionId (4th param)", () => {
+    // A UUID-shaped id; validateSessionId requires a path-safe id.
+    const SUPPLIED_ID = "33333333-3333-3333-3333-333333333333";
+
+    test("writes metadata under the supplied id and returns it unchanged", async () => {
+      mockPiSession(async () => makeMockPiSessionResult("/tmp/pi-sessions/minted.jsonl"));
+
+      const result = await createSession(mockVault, undefined, undefined, SUPPLIED_ID);
+
+      // The returned id is exactly the supplied one (not a generated UUID).
+      expect(result.sessionId).toBe(SUPPLIED_ID);
+
+      // Metadata is stored under that id.
+      const metadata = await loadSession(tempDir, SUPPLIED_ID);
+      expect(metadata).not.toBeNull();
+      expect(metadata!.id).toBe(SUPPLIED_ID);
+    });
+
+    test("rejects with SESSION_INVALID and does not clobber when the id already exists", async () => {
+      // Pre-seed an existing session file under the supplied id.
+      const existing: SessionMetadata = {
+        id: SUPPLIED_ID,
+        vaultId: mockVault.id,
+        vaultPath: tempDir,
+        createdAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+        lastActiveAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+        piSessionPath: "/tmp/pi-sessions/original.jsonl",
+        messages: [
+          { id: "m1", role: "user", content: "original", timestamp: new Date().toISOString() },
+        ],
+      };
+      await saveSession(existing);
+
+      // The factory must NOT be reached on a collision; flag if it is.
+      let factoryCalled = false;
+      mockPiSession(async () => {
+        factoryCalled = true;
+        return makeMockPiSessionResult();
+      });
+
+      const promise = createSession(mockVault, undefined, undefined, SUPPLIED_ID);
+      await expect(promise).rejects.toBeInstanceOf(SessionError);
+      await expect(promise).rejects.toMatchObject({ code: "SESSION_INVALID" });
+
+      expect(factoryCalled).toBe(false);
+
+      // The existing file is untouched (messages and path preserved).
+      const after = await loadSession(tempDir, SUPPLIED_ID);
+      expect(after!.messages).toHaveLength(1);
+      expect(after!.messages[0].content).toBe("original");
+      expect(after!.piSessionPath).toBe("/tmp/pi-sessions/original.jsonl");
+    });
+
+    test("generates a UUID when no id is supplied (legacy path)", async () => {
+      mockPiSession(async () => makeMockPiSessionResult());
+
+      const result = await createSession(mockVault);
+
+      // UUID v4 shape, and metadata is stored under the generated id.
+      expect(result.sessionId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      );
+      const metadata = await loadSession(tempDir, result.sessionId);
+      expect(metadata!.id).toBe(result.sessionId);
+    });
+  });
 });
 
 describe("resumeSession failure detection", () => {

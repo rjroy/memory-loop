@@ -537,13 +537,40 @@ function wrapSdkFailure(operation: string, error: unknown): never {
   throw new SessionError(mapSdkError(error), "SDK_ERROR");
 }
 
+/**
+ * Creates a new persisted pi-agent session for the vault.
+ *
+ * The session id can be client-minted (passed via `sessionId`) or, when omitted,
+ * generated here as before. This keeps the legacy daemon-minted path working
+ * (the old active-session-controller still calls createSession without an id)
+ * while letting the keyed live-session-controller supply an id up front.
+ *
+ * When an id IS supplied it is validated and collision-checked: a "create" call
+ * for an id whose session file already exists is a caller error (the caller is
+ * expected to decide create-vs-resume before calling), so we reject rather than
+ * clobber existing metadata.
+ */
 export async function createSession(
   vault: VaultInfo,
   requestToolPermission?: ToolPermissionCallback,
-  askUserQuestion?: AskUserQuestionCallback
+  askUserQuestion?: AskUserQuestionCallback,
+  sessionId?: string
 ): Promise<SessionQueryResult> {
   log.info(`Creating session for vault: ${vault.id}`);
   log.info(`Vault path: ${vault.path}`);
+
+  // Validate and collision-check a client-minted id before opening the pi
+  // session, so we fail fast without leaving a dangling pi-agent process.
+  if (sessionId !== undefined) {
+    validateSessionId(sessionId);
+    const existing = await loadSession(vault.path, sessionId);
+    if (existing) {
+      throw new SessionError(
+        `Session "${sessionId}" already exists; cannot create`,
+        "SESSION_INVALID"
+      );
+    }
+  }
 
   try {
     const { result, config } = await openPiSessionForVault(
@@ -553,10 +580,10 @@ export async function createSession(
       askUserQuestion
     );
 
-    const sessionId = crypto.randomUUID();
+    const resolvedSessionId = sessionId ?? crypto.randomUUID();
     const now = new Date().toISOString();
     const metadata: SessionMetadata = {
-      id: sessionId,
+      id: resolvedSessionId,
       vaultId: vault.id,
       vaultPath: vault.path,
       createdAt: now,
@@ -566,14 +593,14 @@ export async function createSession(
     };
     await saveSession(metadata);
     log.info(
-      `Session created: ${sessionId}, piSessionPath=${result.jsonlPath ?? "(none)"}`
+      `Session created: ${resolvedSessionId}, piSessionPath=${result.jsonlPath ?? "(none)"}`
     );
 
     // Prune in background; errors are logged inside pruneOldSessions.
     void pruneOldSessions(vault.path, resolveRecentDiscussions(config));
 
     return {
-      sessionId,
+      sessionId: resolvedSessionId,
       piSession: result.session,
     };
   } catch (error) {

@@ -541,9 +541,9 @@ function wrapSdkFailure(operation: string, error: unknown): never {
  * Creates a new persisted pi-agent session for the vault.
  *
  * The session id can be client-minted (passed via `sessionId`) or, when omitted,
- * generated here as before. This keeps the legacy daemon-minted path working
- * (the old active-session-controller still calls createSession without an id)
- * while letting the keyed live-session-controller supply an id up front.
+ * generated here. The keyed live-session-controller always supplies an id up
+ * front; the omitted-id path is retained for callers/tests that let the manager
+ * mint the id.
  *
  * When an id IS supplied it is validated and collision-checked: a "create" call
  * for an id whose session file already exists is a caller error (the caller is

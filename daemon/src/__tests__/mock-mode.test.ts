@@ -7,7 +7,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../server";
-import { resetController } from "../session-controller";
+import { resetForTesting } from "../streaming/live-session-registry";
 import {
   configurePiSessionForTesting,
   _resetPiSessionForTesting,
@@ -19,6 +19,9 @@ import { isMockMode } from "../mock-sdk";
 
 let cleanupSession: (() => void) | undefined;
 const startTime = Date.now();
+
+// UUID-shaped id for keyed routes.
+const ID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
 const originalMockSdk = process.env.MOCK_SDK;
 
@@ -38,13 +41,13 @@ beforeEach(() => {
     return { session, jsonlPath: null };
   };
   cleanupSession = configurePiSessionForTesting(mockSession);
-  resetController();
+  resetForTesting();
 });
 
 afterEach(() => {
   cleanupSession?.();
   _resetPiSessionForTesting();
-  resetController();
+  resetForTesting();
 
   if (originalMockSdk !== undefined) {
     process.env.MOCK_SDK = originalMockSdk;
@@ -96,33 +99,33 @@ describe("mock mode API surface", () => {
     expect(res.status).toBe(200);
   });
 
-  test("session state returns idle in mock mode", async () => {
+  test("session state returns idle for an unknown session in mock mode", async () => {
     process.env.MOCK_SDK = "true";
     const app = createApp(startTime);
-    const res = await app.request("/session/state");
+    const res = await app.request(`/session/${ID_A}/state`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { sessionId: string | null; isStreaming: boolean };
     expect(body.isStreaming).toBe(false);
     expect(body.sessionId).toBeNull();
   });
 
-  test("SSE stream returns snapshot in mock mode", async () => {
+  test("SSE stream returns an empty stream for an idle session in mock mode", async () => {
     process.env.MOCK_SDK = "true";
     const app = createApp(startTime);
-    const res = await app.request("/session/chat/stream");
+    const res = await app.request(`/session/${ID_A}/chat`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/event-stream");
 
     const text = await res.text();
     const events = parseSSEEvents(text);
-    expect(events.length).toBeGreaterThanOrEqual(1);
-    expect(events[0]).toHaveProperty("type", "snapshot");
+    // No active turn → empty replay → no events, no snapshot wrapper.
+    expect(events).toHaveLength(0);
   });
 
   test("clear session succeeds in mock mode", async () => {
     process.env.MOCK_SDK = "true";
     const app = createApp(startTime);
-    const res = await app.request("/session/clear", { method: "POST" });
+    const res = await app.request(`/session/${ID_A}/clear`, { method: "POST" });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { success: boolean };
     expect(body.success).toBe(true);
@@ -131,7 +134,7 @@ describe("mock mode API surface", () => {
   test("chat send validates request body in mock mode", async () => {
     process.env.MOCK_SDK = "true";
     const app = createApp(startTime);
-    const res = await app.request("/session/chat/send", {
+    const res = await app.request(`/session/${ID_A}/chat`, {
       method: "POST",
       body: JSON.stringify({ vaultId: "test" }),
       headers: { "Content-Type": "application/json" },

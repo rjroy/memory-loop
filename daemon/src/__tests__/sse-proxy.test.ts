@@ -1,14 +1,16 @@
 /**
- * SSE Event Ordering Tests
+ * SSE Event Ordering Tests (keyed)
  *
- * Verifies that events emitted by the controller arrive at the SSE
- * stream endpoint in the correct order and within a reasonable timeout.
+ * Verifies that the keyed SSE stream replays a session's buffered events in
+ * order and that events emitted to a session reach that session's subscribers.
  * Uses real timers (async generators are incompatible with fake timers).
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../server";
-import { getController, resetController } from "../session-controller";
+import { resetForTesting, createLiveSession } from "../streaming/live-session-registry";
+import { subscribe, clearSession } from "../streaming/live-session-controller";
+import { emitToSession } from "../streaming/live-session-registry";
 import {
   configurePiSessionForTesting,
   _resetPiSessionForTesting,
@@ -20,6 +22,8 @@ import type { SessionEvent } from "@memory-loop/shared";
 
 let cleanupSession: (() => void) | undefined;
 const startTime = Date.now();
+
+const ID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
 beforeEach(() => {
   // Inject a no-op session factory to prevent real pi-agent calls
@@ -37,13 +41,13 @@ beforeEach(() => {
     return { session, jsonlPath: null };
   };
   cleanupSession = configurePiSessionForTesting(mockSession);
-  resetController();
+  resetForTesting();
 });
 
 afterEach(() => {
   cleanupSession?.();
   _resetPiSessionForTesting();
-  resetController();
+  resetForTesting();
 });
 
 /**
@@ -69,79 +73,66 @@ function parseSSEEvents(text: string): SessionEvent[] {
 }
 
 describe("SSE event ordering", () => {
-  test("snapshot is always the first event", async () => {
+  test("an idle (unknown) session yields an empty stream", async () => {
     const app = createApp(startTime);
-    const res = await app.request("/session/chat/stream");
+    const res = await app.request(`/session/${ID_A}/chat`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/event-stream");
 
     const text = await res.text();
     const events = parseSSEEvents(text);
 
-    expect(events.length).toBeGreaterThanOrEqual(1);
-    expect(events[0]).toHaveProperty("type", "snapshot");
+    // No snapshot wrapper and no buffered events for a session that never ran.
+    expect(events).toHaveLength(0);
   });
 
-  test("snapshot includes isProcessing field", async () => {
+  test("buffered events replay in emit order, then the stream closes", async () => {
+    // Build a buffer for a non-processing session, then connect and replay.
+    createLiveSession(ID_A, "v1", "/tmp/x");
+    emitToSession(ID_A, { type: "response_start", messageId: "m1" });
+    emitToSession(ID_A, { type: "response_chunk", messageId: "m1", content: "one" });
+    emitToSession(ID_A, { type: "response_chunk", messageId: "m1", content: "two" });
+    emitToSession(ID_A, { type: "response_end", messageId: "m1", durationMs: 1 });
+
     const app = createApp(startTime);
-    const res = await app.request("/session/chat/stream");
-    const text = await res.text();
-    const events = parseSSEEvents(text);
+    const res = await app.request(`/session/${ID_A}/chat`);
+    const events = parseSSEEvents(await res.text());
 
-    expect(events[0]).toHaveProperty("isProcessing", false);
+    expect(events.map((e) => e.type)).toEqual([
+      "response_start",
+      "response_chunk",
+      "response_chunk",
+      "response_end",
+    ]);
   });
 
-  test("snapshot includes sessionId field", async () => {
-    const app = createApp(startTime);
-    const res = await app.request("/session/chat/stream");
-    const text = await res.text();
-    const events = parseSSEEvents(text);
+  test("events emitted to a session arrive at its subscribers", async () => {
+    createLiveSession(ID_A, "v1", "/tmp/x");
 
-    expect(events[0]).toHaveProperty("sessionId");
-  });
-
-  test("stream closes after snapshot when not processing", async () => {
-    const app = createApp(startTime);
-    const res = await app.request("/session/chat/stream");
-    const text = await res.text();
-    const events = parseSSEEvents(text);
-
-    // When not processing, only the snapshot event should be emitted
-    expect(events.length).toBe(1);
-    expect(events[0]).toHaveProperty("type", "snapshot");
-  });
-
-  test("events emitted by controller arrive at stream output", async () => {
-    createApp(startTime);
-    const controller = getController();
-
-    // Manually emit events via the controller's subscriber mechanism
     const receivedEvents: SessionEvent[] = [];
-    const unsubscribe = controller.subscribe((event) => {
+    subscribe(ID_A, "watch", (event) => {
       receivedEvents.push(event);
     });
 
-    // Emit a session_cleared event (a terminal event the controller can emit)
-    controller.clearSession();
+    // session_cleared is a terminal event the controller emits on clear.
+    clearSession(ID_A);
 
     expect(receivedEvents.length).toBeGreaterThanOrEqual(1);
     expect(receivedEvents.some((e) => e.type === "session_cleared")).toBe(true);
-
-    unsubscribe();
   });
 
-  test("all events arrive within 1s timeout (no accidental buffering)", async () => {
+  test("replay completes within 1s for a non-processing session (no buffering)", async () => {
+    createLiveSession(ID_A, "v1", "/tmp/x");
+    emitToSession(ID_A, { type: "response_end", messageId: "m1", durationMs: 1 });
+
     const app = createApp(startTime);
     const start = Date.now();
-    const res = await app.request("/session/chat/stream");
-
-    // Reading the full text should complete quickly when not processing
+    const res = await app.request(`/session/${ID_A}/chat`);
     const text = await res.text();
     const elapsed = Date.now() - start;
 
     const events = parseSSEEvents(text);
     expect(events.length).toBeGreaterThanOrEqual(1);
-    // Should complete well within 1 second for non-processing state
     expect(elapsed).toBeLessThan(1000);
   });
 });

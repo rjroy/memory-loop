@@ -9,9 +9,9 @@
  * stream for session X always reflects X's state.
  *
  * This module is a set of plain exported functions (NOT a singleton object): the
- * registry holds all state, so there is no per-controller closure. It lives
- * beside the old active-session-controller.ts; Phase 2's routes call these
- * functions and Phase 2 deletes the old controller.
+ * registry holds all state, so there is no per-controller closure. The keyed
+ * session routes call these functions directly; the single-slot
+ * ActiveSessionController it replaced has been removed.
  *
  * Behavior is ported faithfully from active-session-controller.ts, re-keyed:
  * - REQ-SDC-2: a message for a session already processing throws AlreadyProcessingError.

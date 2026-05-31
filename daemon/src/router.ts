@@ -180,14 +180,25 @@ export function registerRoutes(app: Hono, startTime: number): void {
   app.get("/inspiration", (c) => inspirationHandler(c));
 
   // Session / Chat
-  app.post("/session/chat/send", (c) => chatSendHandler(c));
-  app.get("/session/chat/stream", (c) => chatStreamHandler(c));
-  app.post("/session/chat/abort", (c) => chatAbortHandler(c));
-  app.post("/session/chat/permission", (c) => chatPermissionHandler(c));
-  app.post("/session/chat/answer", (c) => chatAnswerHandler(c));
-  app.post("/session/clear", (c) => sessionClearHandler(c));
-  app.get("/session/state", (c) => sessionStateHandler(c));
+  //
+  // Routing precedence (Hono's trie matches static segments before params, so
+  // these coexist without shadowing one another):
+  // - Metadata ops use a STATIC second segment (`lookup`, `init`) or are scoped
+  //   to a method the keyed live ops never use at that shape (DELETE
+  //   /session/:vaultId/:sessionId has no static third segment).
+  // - Live ops use `:sessionId` as the second segment plus a STATIC third
+  //   segment (`/chat`, `/abort`, `/permission`, `/answer`, `/clear`, `/state`).
+  // Registering the metadata routes first keeps the intent explicit.
   app.get("/session/lookup/:vaultId", (c) => sessionLookupHandler(c));
   app.post("/session/init/:vaultId", (c) => sessionInitHandler(c));
   app.delete("/session/:vaultId/:sessionId", (c) => sessionDeleteHandler(c));
+
+  // Keyed live-session ops (session id in the path).
+  app.post("/session/:sessionId/chat", (c) => chatSendHandler(c));
+  app.get("/session/:sessionId/chat", (c) => chatStreamHandler(c));
+  app.post("/session/:sessionId/abort", (c) => chatAbortHandler(c));
+  app.post("/session/:sessionId/permission", (c) => chatPermissionHandler(c));
+  app.post("/session/:sessionId/answer", (c) => chatAnswerHandler(c));
+  app.post("/session/:sessionId/clear", (c) => sessionClearHandler(c));
+  app.get("/session/:sessionId/state", (c) => sessionStateHandler(c));
 }

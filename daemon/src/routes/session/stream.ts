@@ -1,109 +1,150 @@
 /**
- * Chat Stream Endpoint (SSE viewport)
+ * Chat Stream Endpoint (SSE viewport, keyed)
  *
- * GET /session/chat/stream - Connect to receive session events via SSE
+ * GET /session/:sessionId/chat - Connect to receive a session's events via SSE.
  *
- * Uses Hono's streamSSE helper for proper SSE delivery.
- * Sends a snapshot event first with current controller state, then
- * subscribes to live events if processing is in progress.
+ * This is the single code path for both the initial view of a turn and a
+ * reconnect; there is no separate "snapshot" event wrapper anymore. The handler
+ * mirrors oracle-keep's buffer-replay order:
  *
- * Stream closes on terminal events (response_end, error, aborted, session_cleared)
- * or when the client disconnects. Client disconnect does NOT abort
- * processing; the controller continues independently (REQ-SDC-4).
+ *   1. Register the subscriber FIRST (so no event fired between replay and live
+ *      dispatch is lost — JS is single-threaded, so this is airtight).
+ *   2. Replay the session's event buffer, writing each buffered event as its own
+ *      SSE data line.
+ *   3. If the session is not processing, the terminal event is already in the
+ *      replay, so unsubscribe and close.
+ *   4. Otherwise stay live: write events as they arrive, closing on terminal
+ *      events (response_end / error / aborted / session_cleared) after the write
+ *      flushes.
+ *
+ * Replay/live ordering: the subscriber is registered before replay, but the
+ * replay loop awaits each write, which yields to the event loop. A live event
+ * arriving mid-replay would otherwise be written BETWEEN two replayed events,
+ * scrambling order (e1, eLive, e2 instead of e1, e2, eLive). To guarantee
+ * strict, non-interleaved order, the subscriber ENQUEUES live events into a
+ * local buffer while `replaying` is true. After the replay loop finishes, the
+ * queue is drained in arrival order, then `replaying` clears so subsequent live
+ * events write directly. This is correct regardless of Hono's write-ordering
+ * semantics for awaited vs non-awaited writes.
+ *
+ * A 15s keep-alive runs while live. On client disconnect (onAbort) the handler
+ * unsubscribes but does NOT abort the turn — the controller keeps running and
+ * buffering (REQ-SDC-4).
  */
 
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { getController } from "../../session-controller";
+import {
+  subscribe,
+  unsubscribe,
+  getReplayBuffer,
+  isProcessing,
+} from "../../streaming/live-session-controller";
 import { createLogger } from "@memory-loop/shared";
+import type { SessionEvent } from "@memory-loop/shared";
 
 const log = createLogger("session/chat/stream");
 
 /** Keep-alive interval in milliseconds */
 const KEEPALIVE_INTERVAL_MS = 15_000;
 
+/** Unique subscriber id for this stream connection. */
+function makeSubscriberId(): string {
+  return `sse_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function isTerminalEvent(event: SessionEvent): boolean {
+  return (
+    event.type === "response_end" ||
+    event.type === "error" ||
+    event.type === "aborted" ||
+    event.type === "session_cleared"
+  );
+}
+
 export function chatStreamHandler(c: Context): Response {
-  // Optional session scoping. The daemon holds a single active session, so a
-  // caller can pass ?sessionId=X to assert "I want the stream for X". If X is
-  // not the session the controller currently holds, X is by definition not the
-  // active/processing session, so we must not leak the active session's state
-  // into a different conversation (e.g. after resuming an older session from
-  // the Ground tab).
-  const requestedSessionId = c.req.query("sessionId");
+  const sessionId = c.req.param("sessionId");
 
   return streamSSE(c, async (stream) => {
-    const controller = getController();
-
-    // Send snapshot as first event
-    const snapshot = controller.getSnapshot();
-
-    if (
-      requestedSessionId &&
-      snapshot.sessionId &&
-      requestedSessionId !== snapshot.sessionId
-    ) {
-      // Requested session is not the active one. Return an idle snapshot for
-      // the requested session and close, rather than the active session's.
-      await stream.writeSSE({
-        data: JSON.stringify({
-          type: "snapshot",
-          sessionId: requestedSessionId,
-          isProcessing: false,
-          content: "",
-          toolInvocations: [],
-          pendingPrompts: [],
-        }),
-      });
+    if (!sessionId) {
+      // No id in the path: nothing to view. Close immediately.
       return;
     }
 
-    await stream.writeSSE({
-      data: JSON.stringify({ type: "snapshot", ...snapshot }),
-    });
+    const subscriberId = makeSubscriberId();
 
-    // If not processing, snapshot has the final state. Close immediately.
-    if (!snapshot.isProcessing) {
-      return;
-    }
-
-    // Promise resolve function, called by subscriber on terminal events or by onAbort
     let resolveWait: (() => void) | null = null;
     let cleaned = false;
+    let keepAlive: ReturnType<typeof setInterval> | null = null;
+
+    // While replaying the buffer, live events are queued here instead of written
+    // directly, so they cannot interleave with replayed events. Drained in order
+    // after replay finishes, then cleared so later live events write directly.
+    let replaying = true;
+    const liveQueue: SessionEvent[] = [];
 
     function cleanup() {
       if (cleaned) return;
       cleaned = true;
-      clearInterval(keepAlive);
-      unsubscribe();
+      if (keepAlive) clearInterval(keepAlive);
+      unsubscribe(sessionId!, subscriberId);
       resolveWait?.();
     }
 
-    // Subscribe to live events while processing continues
-    const unsubscribe = controller.subscribe((event) => {
+    /**
+     * Writes a single event as an SSE data line. Terminal events trigger
+     * cleanup after the write flushes so the client receives them before close.
+     */
+    function writeEvent(event: SessionEvent): void {
       if (cleaned) return;
 
-      const isTerminal =
-        event.type === "response_end" ||
-        event.type === "error" ||
-        event.type === "aborted" ||
-        event.type === "session_cleared";
+      const writePromise = stream.writeSSE({ data: JSON.stringify(event) });
 
-      const writePromise = stream.writeSSE({
-        data: JSON.stringify(event),
-      });
-
-      if (isTerminal) {
-        // Wait for the write to flush before closing so the client receives the terminal event
+      if (isTerminalEvent(event)) {
+        // Wait for the write to flush before closing so the client receives the
+        // terminal event.
         writePromise.then(() => cleanup()).catch(() => cleanup());
       } else {
         writePromise.catch(() => cleanup());
       }
+    }
+
+    // 1. Register the subscriber BEFORE replaying the buffer so no live event is
+    // lost in the gap between replay and live dispatch. While replaying, live
+    // events are queued (not written) to preserve strict buffer-then-live order.
+    subscribe(sessionId, subscriberId, (event) => {
+      if (cleaned) return;
+      if (replaying) {
+        liveQueue.push(event);
+        return;
+      }
+      writeEvent(event);
     });
 
-    // Keep-alive every 15 seconds
-    const keepAlive = setInterval(() => {
+    // 2. Replay the buffer (events that fired before this stream connected).
+    for (const event of getReplayBuffer(sessionId)) {
+      await stream.writeSSE({ data: JSON.stringify(event) });
+    }
+
+    // 2b. Drain any live events that arrived during replay, in arrival order,
+    // then leave replay mode so subsequent live events write directly.
+    for (const event of liveQueue) {
+      writeEvent(event);
+    }
+    liveQueue.length = 0;
+    replaying = false;
+
+    // 3. If the turn already finished, the terminal event is already in the
+    // replay, so unsubscribe and close now.
+    if (!isProcessing(sessionId)) {
+      cleanup();
+      return;
+    }
+
+    // 4. Stay live. Keep-alive every 15 seconds.
+    keepAlive = setInterval(() => {
       if (cleaned) {
-        clearInterval(keepAlive);
+        if (keepAlive) clearInterval(keepAlive);
         return;
       }
       stream.writeSSE({ data: "", event: "keep-alive" }).catch(() => {
@@ -111,17 +152,15 @@ export function chatStreamHandler(c: Context): Response {
       });
     }, KEEPALIVE_INTERVAL_MS);
 
-    // Single onAbort handler for client disconnect (REQ-SDC-4)
+    // Client disconnect: unsubscribe but do NOT abort the turn (REQ-SDC-4).
     stream.onAbort(() => {
       log.debug("Client disconnected from stream");
       cleanup();
-      // Do NOT abort processing (REQ-SDC-4)
     });
 
-    // Wait until a terminal event or client disconnect triggers cleanup
+    // Wait until a terminal event or client disconnect triggers cleanup.
     await new Promise<void>((resolve) => {
       resolveWait = resolve;
-      // If cleanup already happened (race), resolve immediately
       if (cleaned) resolve();
     });
   });

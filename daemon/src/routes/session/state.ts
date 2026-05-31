@@ -1,14 +1,21 @@
 /**
- * Session State Endpoint
+ * Session State Endpoint (keyed)
  *
- * GET /session/state - Get current session state
+ * GET /session/:sessionId/state - Get the live state for a session. An unknown
+ * id returns an idle state (sessionId: null, isStreaming: false).
  */
 
 import type { Context } from "hono";
-import { getController } from "../../session-controller";
+import { getState } from "../../streaming/live-session-controller";
 
 export function sessionStateHandler(c: Context): Response {
-  const controller = getController();
-  const state = controller.getState();
-  return c.json(state);
+  const sessionId = c.req.param("sessionId");
+  if (!sessionId) {
+    return c.json(
+      { error: { code: "MISSING_PARAM", message: "sessionId is required" } },
+      400
+    );
+  }
+
+  return c.json(getState(sessionId));
 }

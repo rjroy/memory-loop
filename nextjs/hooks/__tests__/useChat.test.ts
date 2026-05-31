@@ -74,7 +74,7 @@ function setupTwoPhaseResponse(
   mockFetch.mockImplementation((...args: unknown[]) => {
     callCount++;
     const url = args[0] as string;
-    if (url.endsWith("/chat/stream")) {
+    if (url.includes("/chat/stream")) {
       return Promise.resolve(createSSEResponse(sseEvents));
     }
     // POST /api/chat
@@ -433,7 +433,7 @@ describe("useChat", () => {
       // Set up a long-running stream
       mockFetch.mockImplementation((...args: unknown[]) => {
         const url = args[0] as string;
-        if (url.endsWith("/chat/stream")) {
+        if (url.includes("/chat/stream")) {
           return new Promise<Response>((resolve) => {
             setTimeout(
               () =>
@@ -640,7 +640,7 @@ describe("useChat", () => {
           return Promise.resolve(createPostResponse("sess_reconnect"));
         }
 
-        if (url.endsWith("/chat/stream")) {
+        if (url.includes("/chat/stream")) {
           streamCallCount++;
           if (streamCallCount <= 1) {
             // First stream: error after snapshot
@@ -726,7 +726,7 @@ describe("useChat", () => {
           return Promise.resolve(new Response(JSON.stringify({ ok: true })));
         }
 
-        if (url.endsWith("/chat/stream")) {
+        if (url.includes("/chat/stream")) {
           // Slow stream that gives us time to abort
           return Promise.resolve(
             createSSEResponse([
@@ -761,7 +761,7 @@ describe("useChat", () => {
       // Wait a bit to verify no reconnect attempt
       await new Promise((r) => setTimeout(r, 100));
       const streamCalls = mockFetch.mock.calls.filter(
-        (c) => (c as unknown as [string])[0].endsWith("/chat/stream")
+        (c) => (c as unknown as [string])[0].includes("/chat/stream")
       );
       // Should only have 1 stream call (no reconnect after abort)
       expect(streamCalls.length).toBe(1);

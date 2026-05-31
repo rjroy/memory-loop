@@ -254,7 +254,8 @@ export function useChat(
 
     reconnectTimerRef.current = setTimeout(() => {
       reconnectTimerRef.current = null;
-      connectToStream();
+      // Reconnect to the session we are currently attached to.
+      connectToStream(sessionIdRef.current ?? undefined);
     }, delay);
   }
 
@@ -272,7 +273,7 @@ export function useChat(
    * This is fire-and-forget: it launches an async reader internally.
    * The AbortController in abortControllerRef controls its lifecycle.
    */
-  function connectToStream(): void {
+  function connectToStream(expectSession?: string): void {
     // Abort any existing stream connection
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -290,7 +291,14 @@ export function useChat(
       let receivedSnapshot = false;
 
       try {
-        const response = await fetch(`${apiBase}/chat/stream`, {
+        // Scope the stream to the expected session when known, so the daemon
+        // returns this session's state rather than whichever session was most
+        // recently active. Omitted on the send path, where we deliberately
+        // attach to the session we just started.
+        const streamUrl = expectSession
+          ? `${apiBase}/chat/stream?sessionId=${encodeURIComponent(expectSession)}`
+          : `${apiBase}/chat/stream`;
+        const response = await fetch(streamUrl, {
           signal: controller.signal,
         });
 
@@ -556,7 +564,9 @@ export function useChat(
 
     mountReconnectedRef.current = true;
     log.info(`Mount reconnect: probing stream for session ${sessionId}`);
-    connectToStream();
+    // Scope to this session so a probe after resuming an older session does
+    // not pull the previously-active session's snapshot.
+    connectToStream(sessionId);
   }, [sessionId, vault]);
 
   // Cleanup on unmount

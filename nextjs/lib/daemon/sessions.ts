@@ -52,8 +52,13 @@ export async function sendMessage(params: {
   return (await res.json()) as { sessionId: string };
 }
 
-export async function getChatStream(): Promise<Response> {
-  return daemonFetch("/session/chat/stream");
+export async function getChatStream(sessionId?: string): Promise<Response> {
+  // When a session id is provided, scope the stream to it so the daemon does
+  // not hand back a different (still-active) session's snapshot.
+  const path = sessionId
+    ? `/session/chat/stream?sessionId=${encodeURIComponent(sessionId)}`
+    : "/session/chat/stream";
+  return daemonFetch(path);
 }
 
 export async function abortProcessing(sessionId: string): Promise<void> {

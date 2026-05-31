@@ -23,11 +23,40 @@ const log = createLogger("session/chat/stream");
 const KEEPALIVE_INTERVAL_MS = 15_000;
 
 export function chatStreamHandler(c: Context): Response {
+  // Optional session scoping. The daemon holds a single active session, so a
+  // caller can pass ?sessionId=X to assert "I want the stream for X". If X is
+  // not the session the controller currently holds, X is by definition not the
+  // active/processing session, so we must not leak the active session's state
+  // into a different conversation (e.g. after resuming an older session from
+  // the Ground tab).
+  const requestedSessionId = c.req.query("sessionId");
+
   return streamSSE(c, async (stream) => {
     const controller = getController();
 
     // Send snapshot as first event
     const snapshot = controller.getSnapshot();
+
+    if (
+      requestedSessionId &&
+      snapshot.sessionId &&
+      requestedSessionId !== snapshot.sessionId
+    ) {
+      // Requested session is not the active one. Return an idle snapshot for
+      // the requested session and close, rather than the active session's.
+      await stream.writeSSE({
+        data: JSON.stringify({
+          type: "snapshot",
+          sessionId: requestedSessionId,
+          isProcessing: false,
+          content: "",
+          toolInvocations: [],
+          pendingPrompts: [],
+        }),
+      });
+      return;
+    }
+
     await stream.writeSSE({
       data: JSON.stringify({ type: "snapshot", ...snapshot }),
     });

@@ -26,9 +26,11 @@ function errorSSEResponse(code: string, message: string): Response {
   return new Response(body, { headers: SSE_HEADERS });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const daemonResponse = await sessionClient.getChatStream();
+    const sessionId =
+      new URL(request.url).searchParams.get("sessionId") ?? undefined;
+    const daemonResponse = await sessionClient.getChatStream(sessionId);
     if (!daemonResponse.ok || !daemonResponse.body) {
       log.error(`Daemon stream returned ${daemonResponse.status}`);
       return errorSSEResponse(

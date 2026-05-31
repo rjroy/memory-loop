@@ -168,24 +168,6 @@ export function useChat(
   function handleStreamEvent(event: SSEEvent): void {
     // Handle snapshot event (first event from stream)
     if (event.type === "snapshot") {
-      // The daemon's stream is backed by a single global session controller.
-      // Probing it (e.g. the mount reconnect after loading an older session)
-      // can surface a snapshot for a different, still-active session than the
-      // one the UI is showing. Merging it would inject that session's last
-      // message (and hijack the session id). Reject the whole stream so neither
-      // the snapshot nor any subsequent live events leak into this conversation.
-      const snapSession =
-        typeof event.sessionId === "string" ? event.sessionId : "";
-      const currentSession = sessionIdRef.current;
-      if (snapSession && currentSession && snapSession !== currentSession) {
-        log.info(
-          `Ignoring stream for session ${snapSession}; UI is on ${currentSession}`
-        );
-        // Aborting surfaces as AbortError in the reader, which exits cleanly
-        // without scheduling a reconnect.
-        abortControllerRef.current?.abort();
-        return;
-      }
       onEventRef.current?.(event as unknown as ServerMessage);
       return;
     }

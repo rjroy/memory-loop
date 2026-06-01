@@ -269,6 +269,16 @@ Docs:
 **Verification (all green, 2026-06-01):** typecheck clean (4 pkgs); nextjs `1966 pass / 0 fail` (down 4 —
 removed `replaceLastMessageContent` tests); daemon `1994 pass / 0 fail`; lint clean.
 
+**Manual smoke test finding #1 (secure-context UUID bug).** First smoke run threw
+`TypeError: crypto.randomUUID is not a function` on send. Root cause: `crypto.randomUUID()` is only defined
+in a *secure context* (HTTPS / http://localhost); the app is served over plain HTTP on a LAN IP, where it
+is undefined. Exactly the environment-specific bug unit tests can't catch — the whole reason the smoke test
+is mandatory. Fix: new `nextjs/lib/uuid.ts` `randomUUID()` uses `crypto.randomUUID()` when available and
+falls back to a v4 UUID built from `crypto.getRandomValues()` (available in non-secure contexts); generated
+ids pass the daemon's `validateSessionId`. `useChat` now imports it instead of calling `crypto.randomUUID`
+directly. Added `lib/__tests__/uuid.test.ts` (covers the fallback branch). nextjs now `1969 pass`. Smoke
+test must be re-run from step 1.
+
 ## >>> RESUME HERE (state as of mid-Phase-5 — cleanup+docs committed, smoke test pending) <<<
 
 **Branch:** `fix/think-tab-keyed-sessions`. Phases 0–4 committed (3+4 in commit `fae4997`). Phase 5

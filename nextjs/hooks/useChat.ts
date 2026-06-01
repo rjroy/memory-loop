@@ -26,6 +26,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { ServerMessage, VaultInfo } from "@memory-loop/shared";
 import { createLogger } from "@memory-loop/shared";
+import { randomUUID } from "@/lib/uuid";
 
 const log = createLogger("useChat");
 
@@ -399,7 +400,7 @@ export function useChat(
       onStreamStartRef.current?.();
 
       const isNewSession = !sessionIdRef.current;
-      const currentSessionId = sessionIdRef.current ?? crypto.randomUUID();
+      const currentSessionId = sessionIdRef.current ?? randomUUID();
       // Seed the ref so stream/abort within this turn use the minted id without
       // waiting for the session_ready round-trip to update context.
       sessionIdRef.current = currentSessionId;

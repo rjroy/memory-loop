@@ -348,13 +348,6 @@ export function SessionProvider({
     dispatch({ type: "SET_LAST_MESSAGE_DURATION", durationMs });
   }, []);
 
-  const replaceLastMessageContent = useCallback(
-    (content: string, isStreaming: boolean) => {
-      dispatch({ type: "REPLACE_LAST_MESSAGE_CONTENT", content, isStreaming });
-    },
-    []
-  );
-
   const ensureStreamingMessage = useCallback(() => {
     dispatch({ type: "ENSURE_STREAMING_MESSAGE" });
   }, []);
@@ -477,7 +470,6 @@ export function SessionProvider({
     setSlashCommands,
     setLastMessageContextUsage,
     setLastMessageDuration,
-    replaceLastMessageContent,
     ensureStreamingMessage,
     appendStreamingChunk,
     setMessagesIfEmpty,

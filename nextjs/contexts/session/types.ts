@@ -260,8 +260,6 @@ export interface SessionActions {
   setLastMessageContextUsage: (contextUsage: number) => void;
   /** Set turn duration on the last assistant message */
   setLastMessageDuration: (durationMs: number) => void;
-  /** Replace (not append) content of the last assistant message. Used by snapshot restore. */
-  replaceLastMessageContent: (content: string, isStreaming: boolean) => void;
   /** Ensure a streaming assistant message exists (no-op if one already exists). Race-safe. */
   ensureStreamingMessage: () => void;
   /** Append a text chunk to the streaming assistant message (creates one if needed). Race-safe. */

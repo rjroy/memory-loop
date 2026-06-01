@@ -29,7 +29,7 @@ Started: 2026-05-31
 | 2 | Rewrite daemon session routes keyed by `:sessionId` in path; buffer-replay stream; delete singleton | done |
 | 3 | Next.js proxy + daemon client keyed by sessionId | done (uncommitted; ships with Phase 4) |
 | 4 | Frontend useChat/reducer simplification; delete handleSnapshot + pendingSessionId | done (uncommitted; ships with Phase 3) |
-| 5 | Cleanup, docs/ADR, manual smoke test | pending |
+| 5 | Cleanup, docs/ADR, manual smoke test | in-progress (cleanup + docs done; manual smoke test pending) |
 | V | Holistic validation against the plan | pending |
 
 Status legend: pending / in-progress / done / failed
@@ -226,7 +226,7 @@ Source changes (already on disk before this entry, confirmed green):
   error if no id.
 - `reducer.ts` / `types.ts` / `initial-state.ts` / `SessionContext.tsx`: deleted `HANDLE_SNAPSHOT` +
   `handleSnapshot` + `SET_PENDING_SESSION_ID` + `pendingSessionId`. `REPLACE_LAST_MESSAGE_CONTENT` /
-  `replaceLastMessageContent` is now dead (snapshot-only) — flagged for Phase 5, NOT yet removed.
+  `replaceLastMessageContent` was left dead (snapshot-only) — removed in Phase 5 (see below).
 - `RecentActivity.tsx`: resume calls `setSessionId(data.sessionId)` directly + navigates; no pendingSessionId.
 
 Test changes (this session): updated the 5 test files that asserted the old API.
@@ -244,23 +244,51 @@ Test changes (this session): updated the 5 test files that asserted the old API.
 `1994 pass / 0 fail`; lint clean. (nextjs dropped from 1986 → 1970 because obsolete snapshot/pendingSessionId
 tests were removed.) No stale `/api/chat` / `pendingSessionId` / `HANDLE_SNAPSHOT` refs remain in any test.
 
-## >>> RESUME HERE (state as of end of Phase 4 — uncommitted, verified green) <<<
+### Phase 5 (2026-06-01) — cleanup + docs done; manual smoke test pending
 
-**Branch:** `fix/think-tab-keyed-sessions`. **HEAD = `23324d5` (Phase 2).** Phases **3 AND 4** are in the
-working tree, **uncommitted** and fully green (typecheck + nextjs 1970 + daemon 1994 + lint all pass). The
-app is now whole end-to-end (browser uses keyed `/api/chat/{id}` + `/api/chat/{id}/stream`). Per the plan's
-atomicity decision, Phases 2–4 land together, so commit Phases 3+4 as one unit.
+Code cleanup:
+- Removed dead `replaceLastMessageContent` / `REPLACE_LAST_MESSAGE_CONTENT` / `handleReplaceLastMessageContent`
+  (snapshot-only leftover) from `reducer.ts`, `SessionContext.tsx`, `types.ts`, and its 4 tests in
+  `SessionContext.test.tsx`.
+- `daemon/src/routes/help.ts`: replaced the stale singleton API listing (`/session/chat/send`,
+  `/session/chat/stream` "snapshot-first", body sessionId, unkeyed clear/state) with the actual keyed routes
+  (`/session/:sessionId/chat` POST+GET, abort/permission/answer/clear/state, plus lookup/init/delete).
+- `currentVaultPath` dead field: already absent — nothing to remove.
+- Proxy route doc comments were already accurate (written fresh in Phase 3) — no change.
 
-**NEXT: commit Phases 3+4** (only on user go-ahead). The pre-commit hook runs the full
-typecheck/lint/test/build across all 4 packages — it must pass. Suggested message theme: "Re-key Think-tab
-frontend onto client-minted session ids + event-buffer replay (phases 3+4)".
+Docs:
+- `.lore/reference/think.md`: rewrote the message-flow + SSE-protocol sections for the two-phase keyed
+  model (mint id → POST `/api/chat/{id}` → GET `/api/chat/{id}/stream`, replay-then-live, no snapshot
+  wrapper); added `session_ready` to the event table; corrected the stale file map (was `nextjs/lib/
+  controller.ts` + `backend/...`) to the real daemon/registry/proxy modules.
+- `.lore/reference/pair-writing.md`: action-delivery line now names the two-phase keyed flow.
+- `docs/usage/think.md`: no change needed (user-facing, doesn't describe the API; the fix just restores
+  the correct behavior the doc already describes).
+- New ADR `docs/adr/0002-keyed-live-sessions.md` (first file in `docs/adr/`).
 
-**ORCHESTRATION NOTE:** earlier this session a flaky tool-output channel replayed stale `git status`/test
-output and led to false "sub-agents didn't persist" + hallucinated-file conclusions. Sub-agent persistence
-works fine. Verify any agent report against a direct `git status` / direct test run, OR use direct tools.
+**Verification (all green, 2026-06-01):** typecheck clean (4 pkgs); nextjs `1966 pass / 0 fail` (down 4 —
+removed `replaceLastMessageContent` tests); daemon `1994 pass / 0 fail`; lint clean.
 
-**THEN Phase 5 — cleanup + docs/ADR + MANDATORY manual smoke test** (the A/B resume reproduction; see
-plan "Phase 5"). **THEN V — holistic validation agent** against `.lore/plans/think-tab-keyed-sessions.md`.
+## >>> RESUME HERE (state as of mid-Phase-5 — cleanup+docs committed, smoke test pending) <<<
+
+**Branch:** `fix/think-tab-keyed-sessions`. Phases 0–4 committed (3+4 in commit `fae4997`). Phase 5
+cleanup + docs committed on top. The app is whole end-to-end and the full suite is green.
+
+**NEXT: the MANDATORY manual smoke test** (per CLAUDE.md — tests verify correctness, not assembly). Start
+daemon + Next.js, open a browser, and run the plan's "Phase 5" script:
+  1. New conversation A, send a message, watch it stream.
+  2. Go to Ground, resume older conversation B, return to Think. Confirm B's history ONLY — no A message,
+     correct id (this is the original bug; it must be dead).
+  3. Two tabs, two sessions, both mid-turn: confirm independent streaming.
+  4. Disconnect mid-turn (reload) and confirm reconnect resumes the same turn.
+  5. Tool permission + AskUserQuestion prompts still resolve.
+Can be driven by the user, or via the claude-in-chrome browser tools.
+
+**ORCHESTRATION NOTE:** earlier this branch's work a flaky tool-output channel replayed stale `git status`/
+test output and led to false "sub-agents didn't persist" + hallucinated-file conclusions. Sub-agent
+persistence works fine. Verify any agent report against a direct `git status` / direct test run.
+
+**THEN V — holistic validation agent** against `.lore/plans/think-tab-keyed-sessions.md`.
 
 **Orchestration reminder:** per-phase implement → review → resolve via `general-purpose` sub-agents
 (pr-review-toolkit agents are NOT installed). Commit each green phase. Pre-commit hook runs the full

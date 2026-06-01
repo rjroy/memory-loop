@@ -42,28 +42,34 @@ Think is the AI conversation interface. Chat with Claude about your vault, ask q
 ```
 User types message
       ↓
-Frontend: addMessage(user), POST /api/chat
+Frontend: mint sessionId (new chats), addMessage(user), POST /api/chat/{sessionId}
       ↓
-Controller: create/resume session with Claude SDK
+Daemon: create/resume the keyed live session with Claude SDK
       ↓
 Claude SDK: generates response
       ↓
-Controller: streams SessionEvents via SSE
+Daemon: buffers + emits the turn's events to that session's subscribers
       ↓
-Frontend (useChat): renders incrementally
+Frontend (useChat): GET /api/chat/{sessionId}/stream, renders incrementally
       ↓
-Controller: saves to session metadata + transcript
+Daemon: saves to session metadata + transcript
 ```
 
 ## SSE Streaming Protocol
 
-The frontend sends a prompt via `POST /api/chat` with vaultId, optional sessionId, and the prompt text. The response is an SSE stream of typed events.
+Chat is two-phase and keyed by session id in the URL path:
+
+1. **Submit** — `POST /api/chat/{sessionId}` with `{ vaultId, vaultPath, prompt }`. For a new conversation the frontend mints the session id (`crypto.randomUUID()`) up front so it is in the path on the very first message; for a resume the id is already known. The id is never in the body or a query string. Returns `{ sessionId }` (a 409 with `ALREADY_PROCESSING` if that session is already mid-turn).
+2. **View** — `GET /api/chat/{sessionId}/stream` attaches an SSE viewport. The daemon replays the turn's buffered events (so a reconnect restores full state), then streams live events until the terminal event. There is no separate snapshot wrapper; replayed and live events are identical. The server processes the turn to completion regardless of client connectivity, so clients may disconnect and reconnect freely.
+
+Because every route is keyed by session id, two Think tabs on different sessions stream independently; neither can pull the other's events.
 
 ### REST Endpoints
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| POST | `/api/chat` | Send message, receive SSE stream |
+| POST | `/api/chat/{sessionId}` | Start a turn (body: vaultId, vaultPath, prompt) |
+| GET | `/api/chat/{sessionId}/stream` | Attach SSE viewport (replay + live events) |
 | POST | `/api/chat/{sessionId}/abort` | Stop current response |
 | POST | `/api/chat/{sessionId}/permission/{toolUseId}` | Allow/deny tool execution |
 | POST | `/api/chat/{sessionId}/answer/{toolUseId}` | Answer Claude's questions |
@@ -73,6 +79,7 @@ The frontend sends a prompt via `POST /api/chat` with vaultId, optional sessionI
 
 | Event | Purpose |
 |-------|---------|
+| `session_ready` | First event on connect; carries the (client-minted) session id |
 | `response_start` | Claude started responding |
 | `response_chunk` | Incremental text content |
 | `response_end` | Response complete, includes context usage |
@@ -218,12 +225,14 @@ Passed to Claude SDK when creating session.
 | `nextjs/components/discussion/SlashCommandAutocomplete.tsx` | Command popup |
 | `nextjs/components/discussion/ToolDisplay.tsx` | Tool invocation cards |
 | `nextjs/components/discussion/FileAttachButton.tsx` | Attachment UI |
-| `nextjs/hooks/useChat.ts` | SSE chat client |
-| `nextjs/lib/controller.ts` | Active Session Controller (SDK orchestration) |
-| `nextjs/app/api/chat/route.ts` | SSE chat endpoint |
-| `backend/src/session-manager.ts` | Session CRUD, SDK integration |
-| `backend/src/transcript-manager.ts` | Transcript file writing |
-| `shared/src/types.ts` | Zod schemas |
+| `nextjs/hooks/useChat.ts` | Two-phase SSE chat client (mints ids, POST then stream) |
+| `nextjs/app/api/chat/[sessionId]/route.ts` | Keyed chat-submit proxy to daemon |
+| `nextjs/app/api/chat/[sessionId]/stream/route.ts` | Keyed SSE viewport proxy to daemon |
+| `nextjs/lib/daemon/sessions.ts` | Browser-side daemon client (keyed session calls) |
+| `daemon/src/streaming/live-session-registry.ts` | Per-session live state, keyed by id |
+| `daemon/src/streaming/live-session-controller.ts` | Per-session SDK orchestration + event buffer |
+| `daemon/src/routes/session/` | Keyed daemon session routes (chat, abort, permission, answer, state) |
+| `packages/shared/src/` | Zod schemas, logger |
 
 ### Claude SDK Integration
 

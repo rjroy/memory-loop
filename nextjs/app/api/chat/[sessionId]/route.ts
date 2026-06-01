@@ -1,7 +1,12 @@
 /**
  * Chat Send Endpoint (Proxy)
  *
- * POST /api/chat - Proxies to daemon POST /session/chat/send
+ * POST /api/chat/[sessionId] - Proxies to daemon POST /session/:sessionId/chat
+ *
+ * The sessionId is client-minted and carried in the path. The body carries
+ * vaultId, vaultPath, and prompt. A 409 from the daemon (ALREADY_PROCESSING)
+ * is forwarded as-is so the browser can display it without treating it as an
+ * unexpected error.
  */
 
 import { NextRequest } from "next/server";
@@ -9,9 +14,17 @@ import * as sessionClient from "@/lib/daemon/sessions";
 import { DaemonUnavailableError } from "@/lib/daemon/fetch";
 import { createLogger } from "@memory-loop/shared";
 
-const log = createLogger("api/chat");
+const log = createLogger("api/chat/[sessionId]");
 
-export async function POST(request: NextRequest) {
+interface RouteParams {
+  params: Promise<{
+    sessionId: string;
+  }>;
+}
+
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  const { sessionId } = await params;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -23,14 +36,17 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await sessionClient.sendMessage(
-      body as {
-        vaultId: string;
-        vaultPath: string;
-        sessionId?: string;
-        prompt: string;
-      },
-    );
+    const { vaultId, vaultPath, prompt } = body as {
+      vaultId: string;
+      vaultPath: string;
+      prompt: string;
+    };
+    const result = await sessionClient.sendMessage({
+      vaultId,
+      vaultPath,
+      sessionId,
+      prompt,
+    });
     return Response.json(result);
   } catch (err) {
     if (err instanceof DaemonUnavailableError) {

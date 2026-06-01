@@ -210,7 +210,8 @@ describe("Discussion", () => {
       });
 
       const call = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
-      expect(call[0]).toBe("/api/chat");
+      // The POST mints a session id and targets /api/chat/:sessionId (keyed path).
+      expect(call[0]).toMatch(/^\/api\/chat\/[^/]+$/);
       expect(call[1].method).toBe("POST");
 
       const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
@@ -634,17 +635,23 @@ describe("Discussion", () => {
     });
 
     it("reverts to send button after abort", async () => {
-      // Use a delayed response
-      mockFetch.mockImplementation(
-        () => new Promise((resolve) => {
+      // The SSE stream stays open (delayed) while the message is processing, but
+      // the abort endpoint responds promptly like the real daemon does. With
+      // client-minted session ids, abort() always calls /chat/:id/abort, so the
+      // mock must distinguish it from the long-lived stream to model reality.
+      mockFetch.mockImplementation((url: string | URL | Request) => {
+        if (url.toString().includes("/abort")) {
+          return Promise.resolve(new Response(null, { status: 200 }));
+        }
+        return new Promise((resolve) => {
           setTimeout(
             () => resolve(createSSEResponse([
               { type: "response_end", messageId: "msg-1", durationMs: 100 },
             ])),
             5000
           );
-        })
-      );
+        });
+      });
 
       render(<Discussion />, { wrapper: TestWrapper });
 

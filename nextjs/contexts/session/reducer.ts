@@ -70,7 +70,6 @@ export type SessionAction =
   | { type: "SET_PINNED_FOLDERS"; paths: string[] }
   | { type: "SET_GOALS"; goals: string | null }
   | { type: "SET_DISCUSSION_PREFILL"; text: string | null }
-  | { type: "SET_PENDING_SESSION_ID"; sessionId: string | null }
   | { type: "SET_SHOW_NEW_SESSION_DIALOG"; show: boolean }
   | { type: "START_ADJUST" }
   | { type: "UPDATE_ADJUST_CONTENT"; content: string }
@@ -89,7 +88,6 @@ export type SessionAction =
   | { type: "SET_SLASH_COMMANDS"; commands: SlashCommand[] }
   | { type: "SET_LAST_MESSAGE_CONTEXT_USAGE"; contextUsage: number }
   | { type: "SET_LAST_MESSAGE_DURATION"; durationMs: number }
-  | { type: "REPLACE_LAST_MESSAGE_CONTENT"; content: string; isStreaming: boolean }
   | { type: "SET_SEARCH_ACTIVE"; isActive: boolean }
   | { type: "SET_SEARCH_MODE"; mode: SearchMode }
   | { type: "SET_SEARCH_QUERY"; query: string }
@@ -105,7 +103,6 @@ export type SessionAction =
   | { type: "ENSURE_STREAMING_MESSAGE" }
   | { type: "APPEND_STREAMING_CHUNK"; content: string }
   | { type: "SET_MESSAGES_IF_EMPTY"; messages: ConversationMessageProtocol[] }
-  | { type: "HANDLE_SNAPSHOT"; sessionId?: string; content: string; isProcessing: boolean; contextUsage?: number }
   // Safety net: clear isStreaming on any message when the SSE stream closes
   | { type: "FINALIZE_STREAMING" }
   // Vault config update
@@ -383,28 +380,6 @@ function handleSetLastMessageDuration(
 }
 
 /**
- * Replaces (not appends) the content of the last assistant message.
- * Used by snapshot restore where the server sends accumulated content
- * that should overwrite rather than append to the existing message.
- */
-function handleReplaceLastMessageContent(
-  state: SessionState,
-  content: string,
-  isStreaming: boolean
-): SessionState {
-  if (state.messages.length === 0) return state;
-  const messages = [...state.messages];
-  const lastMessage = messages[messages.length - 1];
-  if (lastMessage.role !== "assistant") return state;
-  messages[messages.length - 1] = {
-    ...lastMessage,
-    content,
-    isStreaming,
-  };
-  return { ...state, messages };
-}
-
-/**
  * Ensures a streaming assistant message exists. If the last message is already
  * a streaming assistant message, this is a no-op. Otherwise, adds a new one.
  * Replaces the messagesRef-based check that was in useServerMessageHandler's
@@ -502,67 +477,6 @@ function handleFinalizeStreaming(state: SessionState): SessionState {
     isStreaming: false,
   };
   return { ...state, messages };
-}
-
-/**
- * Handles a snapshot event from SSE reconnection. The server sends accumulated
- * content that should replace or create the streaming assistant message.
- */
-function handleSnapshot(
-  state: SessionState,
-  sessionId: string | undefined,
-  content: string,
-  isProcessing: boolean,
-  contextUsage: number | undefined
-): SessionState {
-  let newState = state;
-
-  if (sessionId) {
-    newState = {
-      ...newState,
-      sessionId,
-      pendingSessionId: null,
-    };
-  }
-
-  if (content) {
-    const lastMessage = newState.messages[newState.messages.length - 1];
-
-    if (lastMessage?.role === "assistant" && lastMessage.isStreaming) {
-      const messages = [...newState.messages];
-      messages[messages.length - 1] = {
-        ...lastMessage,
-        content,
-        isStreaming: isProcessing,
-      };
-      newState = { ...newState, messages };
-    } else {
-      newState = {
-        ...newState,
-        messages: [
-          ...newState.messages,
-          {
-            id: generateMessageId(),
-            role: "assistant",
-            content,
-            timestamp: new Date(),
-            isStreaming: isProcessing,
-          },
-        ],
-      };
-    }
-  }
-
-  if (contextUsage !== undefined) {
-    const messages = [...newState.messages];
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.role === "assistant") {
-      messages[messages.length - 1] = { ...lastMessage, contextUsage };
-      newState = { ...newState, messages };
-    }
-  }
-
-  return newState;
 }
 
 // ----------------------------------------------------------------------------
@@ -707,13 +621,6 @@ export function sessionReducer(
     case "SET_DISCUSSION_PREFILL":
       return { ...state, discussionPrefill: action.text };
 
-    case "SET_PENDING_SESSION_ID":
-      return {
-        ...state,
-        pendingSessionId: action.sessionId,
-        wantsNewSession: action.sessionId ? false : state.wantsNewSession,
-      };
-
     case "SET_SHOW_NEW_SESSION_DIALOG":
       return { ...state, showNewSessionDialog: action.show };
 
@@ -799,9 +706,6 @@ export function sessionReducer(
     case "SET_LAST_MESSAGE_DURATION":
       return handleSetLastMessageDuration(state, action.durationMs);
 
-    case "REPLACE_LAST_MESSAGE_CONTENT":
-      return handleReplaceLastMessageContent(state, action.content, action.isStreaming);
-
     // Search actions
     case "SET_SEARCH_ACTIVE":
       if (action.isActive) {
@@ -883,15 +787,6 @@ export function sessionReducer(
 
     case "FINALIZE_STREAMING":
       return handleFinalizeStreaming(state);
-
-    case "HANDLE_SNAPSHOT":
-      return handleSnapshot(
-        state,
-        action.sessionId,
-        action.content,
-        action.isProcessing,
-        action.contextUsage
-      );
 
     // Vault config update - merges editable config fields into current vault
     case "UPDATE_VAULT_CONFIG":

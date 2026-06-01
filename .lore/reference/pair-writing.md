@@ -120,7 +120,7 @@ This means Quick/Advisory Actions are visible in your conversation history along
 
 ### Action Delivery
 
-Actions are formatted as chat messages and sent through the regular SSE chat stream (POST `/api/chat`). The component formats the action type, selected text, and surrounding context into a structured prompt, then sends it via `sendMessageRef`. Claude responds through the same SSE stream used for normal conversations.
+Actions are formatted as chat messages and sent through the regular two-phase chat flow (POST `/api/chat/{sessionId}`, then the keyed SSE stream). The component formats the action type, selected text, and surrounding context into a structured prompt, then sends it via `sendMessageRef`. Claude responds through the same SSE stream used for normal conversations.
 
 **Server → Client**: Standard SSE streaming events (response_start, response_chunk, tool_start, etc.)
 

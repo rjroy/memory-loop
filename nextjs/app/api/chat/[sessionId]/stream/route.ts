@@ -1,17 +1,22 @@
 /**
  * Chat Stream Endpoint (SSE Proxy)
  *
- * GET /api/chat/stream - Proxies SSE stream from daemon GET /session/chat/stream
+ * GET /api/chat/[sessionId]/stream - Proxies SSE from daemon GET /session/:sessionId/chat
  *
  * Byte-transparent: the daemon's SSE bytes flow through unchanged.
- * On daemon connection failure, returns an SSE error event so the
- * client handles it uniformly.
+ * The sessionId is in the path (no query string). On daemon connection
+ * failure, returns an SSE error event so the client handles it uniformly.
+ *
+ * The daemon replays raw turn events (session_ready, response_start,
+ * response_chunk..., tool events, response_end | error | aborted).
+ * There is no snapshot wrapper event — the proxy passes bytes through as-is.
  */
 
+import { NextRequest } from "next/server";
 import * as sessionClient from "@/lib/daemon/sessions";
 import { createLogger } from "@memory-loop/shared";
 
-const log = createLogger("api/chat/stream");
+const log = createLogger("api/chat/[sessionId]/stream");
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -26,11 +31,19 @@ function errorSSEResponse(code: string, message: string): Response {
   return new Response(body, { headers: SSE_HEADERS });
 }
 
-export async function GET() {
+interface RouteParams {
+  params: Promise<{
+    sessionId: string;
+  }>;
+}
+
+export async function GET(_request: NextRequest, { params }: RouteParams) {
+  const { sessionId } = await params;
+
   try {
-    const daemonResponse = await sessionClient.getChatStream();
+    const daemonResponse = await sessionClient.getChatStream(sessionId);
     if (!daemonResponse.ok || !daemonResponse.body) {
-      log.error(`Daemon stream returned ${daemonResponse.status}`);
+      log.error(`Daemon stream returned ${daemonResponse.status} for session ${sessionId}`);
       return errorSSEResponse(
         "DAEMON_ERROR",
         "Could not connect to daemon stream",

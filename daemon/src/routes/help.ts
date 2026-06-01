@@ -114,15 +114,17 @@ export function helpHandler(c: Context): Response {
       { path: "/config/setup", method: "POST", description: "Run vault setup (body: { vaultId })" },
       { path: "/inspiration", method: "GET", description: "Get inspiration data (query: vaultId)" },
 
-      // Session / Chat
-      { path: "/session/chat/send", method: "POST", description: "Submit a message (body: { vaultId, vaultPath, prompt, sessionId? })" },
-      { path: "/session/chat/stream", method: "GET", description: "SSE stream of session events (snapshot-first)" },
-      { path: "/session/chat/abort", method: "POST", description: "Abort current streaming (body: { sessionId })" },
-      { path: "/session/chat/permission", method: "POST", description: "Respond to tool permission (body: { sessionId, toolUseId, allowed })" },
-      { path: "/session/chat/answer", method: "POST", description: "Respond to AskUserQuestion (body: { sessionId, toolUseId, answers })" },
-      { path: "/session/clear", method: "POST", description: "Clear the current session" },
-      { path: "/session/state", method: "GET", description: "Get current session state" },
+      // Session / Chat (keyed by sessionId in the path; ids are client-minted)
       { path: "/session/lookup/:vaultId", method: "GET", description: "Look up existing session for a vault" },
+      { path: "/session/init/:vaultId", method: "POST", description: "Initialize session metadata (body: { sessionId })" },
+      { path: "/session/:vaultId/:sessionId", method: "DELETE", description: "Delete a session" },
+      { path: "/session/:sessionId/chat", method: "POST", description: "Submit a message (body: { vaultId, vaultPath, prompt })" },
+      { path: "/session/:sessionId/chat", method: "GET", description: "SSE stream of the session's turn events (replays buffered events, then live)" },
+      { path: "/session/:sessionId/abort", method: "POST", description: "Abort the session's current turn" },
+      { path: "/session/:sessionId/permission", method: "POST", description: "Respond to tool permission (body: { toolUseId, allowed })" },
+      { path: "/session/:sessionId/answer", method: "POST", description: "Respond to AskUserQuestion (body: { toolUseId, answers })" },
+      { path: "/session/:sessionId/clear", method: "POST", description: "Clear the session" },
+      { path: "/session/:sessionId/state", method: "GET", description: "Get the session's current state" },
     ],
   };
 

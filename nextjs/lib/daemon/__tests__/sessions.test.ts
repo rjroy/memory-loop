@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe("sendMessage", () => {
-  test("POSTs to /session/chat/send with body", async () => {
+  test("POSTs to /session/:sessionId/chat with body (no sessionId in body)", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
       mockFetch({ sessionId: "sess-123" }),
     );
@@ -55,18 +55,21 @@ describe("sendMessage", () => {
     const result = await sendMessage({
       vaultId: "v1",
       vaultPath: "/vaults/v1",
+      sessionId: "sess-123",
       prompt: "Hello",
     });
 
-    expect(lastRequest?.path).toBe("/session/chat/send");
+    expect(lastRequest?.path).toBe("/session/sess-123/chat");
     expect(lastRequest?.init?.method).toBe("POST");
     const body = JSON.parse(lastRequest?.init?.body as string);
     expect(body.vaultId).toBe("v1");
     expect(body.prompt).toBe("Hello");
+    // sessionId must NOT be in the body (it is in the path)
+    expect(body.sessionId).toBeUndefined();
     expect(result.sessionId).toBe("sess-123");
   });
 
-  test("throws on non-200 response with error details", async () => {
+  test("throws on 409 with ALREADY_PROCESSING code", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
       mockFetch(
         { error: { code: "ALREADY_PROCESSING", message: "Busy" } },
@@ -78,6 +81,7 @@ describe("sendMessage", () => {
       await sendMessage({
         vaultId: "v1",
         vaultPath: "/vaults/v1",
+        sessionId: "sess-123",
         prompt: "Hello",
       });
       expect.unreachable("Should have thrown");
@@ -87,87 +91,107 @@ describe("sendMessage", () => {
       expect((err as Record<string, unknown>).status).toBe(409);
     }
   });
+
+  test("URL-encodes sessionId in path", async () => {
+    cleanupFetch = configureDaemonFetchForTesting(
+      mockFetch({ sessionId: "sess/with/slashes" }),
+    );
+
+    await sendMessage({
+      vaultId: "v1",
+      vaultPath: "/vaults/v1",
+      sessionId: "sess/with/slashes",
+      prompt: "Hello",
+    });
+
+    expect(lastRequest?.path).toBe("/session/sess%2Fwith%2Fslashes/chat");
+  });
 });
 
 describe("getChatStream", () => {
-  test("GETs /session/chat/stream", async () => {
+  test("GETs /session/:sessionId/chat (sessionId in path, no query string)", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
-      mockFetch({ type: "snapshot" }),
+      mockFetch({}),
     );
 
-    const res = await getChatStream();
-    expect(lastRequest?.path).toBe("/session/chat/stream");
+    const res = await getChatStream("sess-123");
+    expect(lastRequest?.path).toBe("/session/sess-123/chat");
     expect(res.status).toBe(200);
   });
 });
 
 describe("abortProcessing", () => {
-  test("POSTs sessionId to /session/chat/abort", async () => {
+  test("POSTs to /session/:sessionId/abort (no body)", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
       mockFetch({ success: true }),
     );
 
     await abortProcessing("sess-123");
-    expect(lastRequest?.path).toBe("/session/chat/abort");
-    const body = JSON.parse(lastRequest?.init?.body as string);
-    expect(body.sessionId).toBe("sess-123");
+    expect(lastRequest?.path).toBe("/session/sess-123/abort");
+    expect(lastRequest?.init?.method).toBe("POST");
+    // No body expected
+    expect(lastRequest?.init?.body).toBeUndefined();
   });
 });
 
 describe("respondToPermission", () => {
-  test("POSTs to /session/chat/permission", async () => {
+  test("POSTs to /session/:sessionId/permission with toolUseId and allowed in body", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
       mockFetch({ success: true }),
     );
 
     await respondToPermission("sess-123", "tool-1", true);
-    expect(lastRequest?.path).toBe("/session/chat/permission");
+    expect(lastRequest?.path).toBe("/session/sess-123/permission");
     const body = JSON.parse(lastRequest?.init?.body as string);
-    expect(body.sessionId).toBe("sess-123");
+    // sessionId must NOT be in the body (it is in the path)
+    expect(body.sessionId).toBeUndefined();
     expect(body.toolUseId).toBe("tool-1");
     expect(body.allowed).toBe(true);
   });
 });
 
 describe("respondToAnswer", () => {
-  test("POSTs to /session/chat/answer", async () => {
+  test("POSTs to /session/:sessionId/answer with toolUseId and answers in body", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
       mockFetch({ success: true }),
     );
 
     await respondToAnswer("sess-123", "tool-1", { q1: "a1" });
-    expect(lastRequest?.path).toBe("/session/chat/answer");
+    expect(lastRequest?.path).toBe("/session/sess-123/answer");
     const body = JSON.parse(lastRequest?.init?.body as string);
+    // sessionId must NOT be in the body (it is in the path)
+    expect(body.sessionId).toBeUndefined();
+    expect(body.toolUseId).toBe("tool-1");
     expect(body.answers).toEqual({ q1: "a1" });
   });
 });
 
 describe("clearSession", () => {
-  test("POSTs to /session/clear", async () => {
+  test("POSTs to /session/:sessionId/clear", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
       mockFetch({ success: true }),
     );
 
-    await clearSession();
-    expect(lastRequest?.path).toBe("/session/clear");
+    await clearSession("sess-123");
+    expect(lastRequest?.path).toBe("/session/sess-123/clear");
     expect(lastRequest?.init?.method).toBe("POST");
   });
 });
 
 describe("getSessionState", () => {
-  test("GETs /session/state", async () => {
+  test("GETs /session/:sessionId/state", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
-      mockFetch({ sessionId: null, isProcessing: false }),
+      mockFetch({ sessionId: "sess-123", isProcessing: false }),
     );
 
-    const state = await getSessionState();
-    expect(lastRequest?.path).toBe("/session/state");
+    const state = await getSessionState("sess-123");
+    expect(lastRequest?.path).toBe("/session/sess-123/state");
     expect(state.isProcessing).toBe(false);
   });
 });
 
 describe("lookupSession", () => {
-  test("GETs /session/lookup/:vaultId", async () => {
+  test("GETs /session/lookup/:vaultId (unchanged)", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
       mockFetch({ sessionId: "sess-456" }),
     );
@@ -222,7 +246,7 @@ describe("getInspiration", () => {
 });
 
 describe("initSession", () => {
-  test("POSTs to /session/init/:vaultId", async () => {
+  test("POSTs to /session/init/:vaultId (unchanged)", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
       mockFetch({ sessionId: "", vaultId: "v1", messages: [] }),
     );
@@ -244,7 +268,7 @@ describe("initSession", () => {
 });
 
 describe("deleteSessionById", () => {
-  test("DELETEs /session/:vaultId/:sessionId", async () => {
+  test("DELETEs /session/:vaultId/:sessionId (unchanged)", async () => {
     cleanupFetch = configureDaemonFetchForTesting(
       mockFetch({ success: true, deleted: true }),
     );

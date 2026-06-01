@@ -1,8 +1,12 @@
 /**
  * Chat Route Proxy Tests
  *
- * Tests that the SSE proxy route handles daemon connection failure
- * gracefully (returns error SSE event, not a 500 HTML page).
+ * Tests that the SSE proxy (getChatStream) handles daemon connection failure
+ * gracefully (DaemonUnavailableError) and passes bytes through unchanged.
+ *
+ * Note: The daemon no longer wraps the stream in a {type:"snapshot"} event.
+ * Raw turn events (session_ready, response_start, response_chunk, etc.) are
+ * replayed directly. The proxy is byte-transparent — it does not inspect them.
  */
 
 import { describe, test, expect, afterEach } from "bun:test";
@@ -16,50 +20,42 @@ afterEach(() => {
   cleanupFetch = undefined;
 });
 
-// Import the route handler dynamically to test it
-// Note: Next.js route handlers are plain async functions
-async function importStreamRoute() {
-  // We can't import the route directly due to Next.js module resolution.
-  // Instead, test the session-client + error handling pattern.
+async function importStreamClient() {
   const { getChatStream } = await import("../sessions");
   return { getChatStream };
 }
 
 describe("SSE proxy error handling", () => {
-  test("daemon connection failure produces SSE-compatible error", async () => {
-    // Simulate daemon being down
+  test("daemon connection failure throws DaemonUnavailableError", async () => {
     const failingFetch: FetchFn = async () => {
       throw new Error("Connection refused");
     };
     cleanupFetch = configureDaemonFetchForTesting(failingFetch);
 
-    const { getChatStream } = await importStreamRoute();
+    const { getChatStream } = await importStreamClient();
 
-    // getChatStream wraps errors as DaemonUnavailableError
     try {
-      await getChatStream();
+      await getChatStream("sess-123");
       expect.unreachable("Should have thrown");
     } catch (err) {
       expect(err).toBeTruthy();
-      // The error should be a DaemonUnavailableError
       expect((err as Error).name).toBe("DaemonUnavailableError");
     }
   });
 
   test("daemon non-200 response is passed through", async () => {
-    // Simulate daemon returning an error
     cleanupFetch = configureDaemonFetchForTesting(async () => {
       return new Response("Internal Server Error", { status: 500 });
     });
 
-    const { getChatStream } = await importStreamRoute();
-    const res = await getChatStream();
+    const { getChatStream } = await importStreamClient();
+    const res = await getChatStream("sess-123");
     expect(res.status).toBe(500);
   });
 
-  test("daemon SSE response body is passable to client", async () => {
-    // Simulate daemon returning SSE
-    const sseData = 'data: {"type":"snapshot","isProcessing":false}\n\n';
+  test("daemon SSE response body is passable to client (raw turn events, no snapshot wrapper)", async () => {
+    // Phase 2 daemon emits raw turn events — no {type:"snapshot"} wrapper.
+    const sseData = 'data: {"type":"session_ready","sessionId":"sess-123"}\n\ndata: {"type":"response_start"}\n\n';
     cleanupFetch = configureDaemonFetchForTesting(async () => {
       return new Response(sseData, {
         status: 200,
@@ -69,14 +65,27 @@ describe("SSE proxy error handling", () => {
       });
     });
 
-    const { getChatStream } = await importStreamRoute();
-    const res = await getChatStream();
+    const { getChatStream } = await importStreamClient();
+    const res = await getChatStream("sess-123");
 
     expect(res.status).toBe(200);
     expect(res.body).toBeTruthy();
 
-    // Read the body to verify it matches
     const text = await res.text();
     expect(text).toBe(sseData);
+  });
+
+  test("uses sessionId in path (not query string)", async () => {
+    let capturedPath: string | undefined;
+    cleanupFetch = configureDaemonFetchForTesting(async (path: string) => {
+      capturedPath = path;
+      return new Response("", { status: 200 });
+    });
+
+    const { getChatStream } = await importStreamClient();
+    await getChatStream("sess-abc");
+
+    expect(capturedPath).toBe("/session/sess-abc/chat");
+    expect(capturedPath).not.toContain("?");
   });
 });

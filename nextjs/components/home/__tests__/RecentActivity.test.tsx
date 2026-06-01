@@ -15,12 +15,12 @@ import { useEffect } from "react";
 
 // Helper component to capture context state changes
 let capturedMode: string | null = null;
-let capturedPendingSessionId: string | null = null;
+let capturedSessionId: string | null = null;
 
 function ContextCapture(): null {
-  const { mode, pendingSessionId } = useSession();
+  const { mode, sessionId } = useSession();
   capturedMode = mode;
-  capturedPendingSessionId = pendingSessionId;
+  capturedSessionId = sessionId;
   return null;
 }
 
@@ -96,7 +96,7 @@ beforeEach(() => {
   localStorage.clear();
   // Reset captured context values
   capturedMode = null;
-  capturedPendingSessionId = null;
+  capturedSessionId = null;
   // Don't pre-select vault for these tests - we want to test RecentActivity
   // rendering with data, not vault selection behavior
   mockFetch.mockReset();
@@ -309,8 +309,8 @@ describe("RecentActivity", () => {
       const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
       expect(body.sessionId).toBe("session-1");
 
-      // pendingSessionId is set so useChat can use it for resume
-      expect(capturedPendingSessionId).toBe("session-1");
+      // sessionId is set directly so a fresh Discussion mount resumes it.
+      expect(capturedSessionId).toBe("session-1");
     });
   });
 

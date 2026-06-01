@@ -1,33 +1,43 @@
 /**
- * Chat Send Endpoint
+ * Chat Send Endpoint (keyed)
  *
- * POST /session/chat/send - Submit a message to the controller (fire-and-forget)
+ * POST /session/:sessionId/chat - Start a turn for a session (fire-and-forget).
+ *
+ * The session id comes from the PATH (client-minted), not the body.
  *
  * Request body:
  * - vaultId: string (required)
  * - vaultPath: string (required)
- * - sessionId: string (optional, resume if provided)
  * - prompt: string (required)
  *
- * Response: JSON with { sessionId } on success.
+ * Response: JSON with { sessionId } on success. AlreadyProcessingError → 409
+ * (preserving its code/message); any other error → 500. The error event is
+ * already emitted to the session's subscribers by the controller; the POST still
+ * returns an HTTP error so the proxy/frontend surface it.
  */
 
 import type { Context } from "hono";
 import { z } from "zod";
-import { getController } from "../../session-controller";
-import { AlreadyProcessingError } from "@memory-loop/shared";
-import { createLogger } from "@memory-loop/shared";
+import { sendMessage } from "../../streaming/live-session-controller";
+import { AlreadyProcessingError, createLogger } from "@memory-loop/shared";
 
 const log = createLogger("session/chat/send");
 
 const ChatRequestSchema = z.object({
   vaultId: z.string().min(1, "vaultId is required"),
   vaultPath: z.string().min(1, "vaultPath is required"),
-  sessionId: z.string().optional(),
   prompt: z.string().min(1, "Prompt is required"),
 });
 
 export async function chatSendHandler(c: Context): Promise<Response> {
+  const sessionId = c.req.param("sessionId");
+  if (!sessionId) {
+    return c.json(
+      { error: { code: "MISSING_PARAM", message: "sessionId is required" } },
+      400
+    );
+  }
+
   let body: unknown;
   try {
     body = await c.req.json();
@@ -51,20 +61,13 @@ export async function chatSendHandler(c: Context): Promise<Response> {
     );
   }
 
-  const { vaultId, vaultPath, sessionId, prompt } = result.data;
-  const controller = getController();
+  const { vaultId, vaultPath, prompt } = result.data;
 
   try {
-    await controller.sendMessage({
-      vaultId,
-      vaultPath,
-      sessionId: sessionId ?? null,
-      prompt,
-    });
-
-    // sendMessage returns immediately (fire-and-forget). Get state for response.
-    const state = controller.getState();
-    return c.json({ sessionId: state.sessionId });
+    // Fire-and-forget: sendMessage starts the turn and returns immediately. The
+    // turn runs to completion regardless of client connectivity.
+    await sendMessage({ vaultId, vaultPath, sessionId, prompt });
+    return c.json({ sessionId });
   } catch (err) {
     if (err instanceof AlreadyProcessingError) {
       return c.json(

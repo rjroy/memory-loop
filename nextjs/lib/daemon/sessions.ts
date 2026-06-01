@@ -28,40 +28,43 @@ class DaemonError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Chat operations
+// Chat operations (live routes — all keyed by sessionId in the path)
 // ---------------------------------------------------------------------------
 
 export async function sendMessage(params: {
   vaultId: string;
   vaultPath: string;
-  sessionId?: string;
+  sessionId: string;
   prompt: string;
 }): Promise<{ sessionId: string }> {
-  const res = await daemonFetch("/session/chat/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
+  const { sessionId, ...body } = params;
+  const res = await daemonFetch(
+    `/session/${encodeURIComponent(sessionId)}/chat`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
   if (!res.ok) {
-    const body = (await res.json()) as { error: { code: string; message: string } };
-    throw new DaemonError(body.error.message, {
-      code: body.error.code,
+    const resBody = (await res.json()) as { error: { code: string; message: string } };
+    throw new DaemonError(resBody.error.message, {
+      code: resBody.error.code,
       status: res.status,
     });
   }
   return (await res.json()) as { sessionId: string };
 }
 
-export async function getChatStream(): Promise<Response> {
-  return daemonFetch("/session/chat/stream");
+export async function getChatStream(sessionId: string): Promise<Response> {
+  return daemonFetch(`/session/${encodeURIComponent(sessionId)}/chat`);
 }
 
 export async function abortProcessing(sessionId: string): Promise<void> {
-  const res = await daemonFetch("/session/chat/abort", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId }),
-  });
+  const res = await daemonFetch(
+    `/session/${encodeURIComponent(sessionId)}/abort`,
+    { method: "POST" },
+  );
   if (!res.ok) {
     const body = (await res.json()) as { error: string | { code: string; message: string } };
     const msg = typeof body.error === "string" ? body.error : body.error.message;
@@ -74,11 +77,14 @@ export async function respondToPermission(
   toolUseId: string,
   allowed: boolean,
 ): Promise<void> {
-  const res = await daemonFetch("/session/chat/permission", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, toolUseId, allowed }),
-  });
+  const res = await daemonFetch(
+    `/session/${encodeURIComponent(sessionId)}/permission`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toolUseId, allowed }),
+    },
+  );
   if (!res.ok) {
     const body = (await res.json()) as { error: { code: string; message: string } };
     throw new DaemonError(body.error.message, { status: res.status });
@@ -90,32 +96,34 @@ export async function respondToAnswer(
   toolUseId: string,
   answers: Record<string, string>,
 ): Promise<void> {
-  const res = await daemonFetch("/session/chat/answer", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, toolUseId, answers }),
-  });
+  const res = await daemonFetch(
+    `/session/${encodeURIComponent(sessionId)}/answer`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toolUseId, answers }),
+    },
+  );
   if (!res.ok) {
     const body = (await res.json()) as { error: { code: string; message: string } };
     throw new DaemonError(body.error.message, { status: res.status });
   }
 }
 
-export async function clearSession(): Promise<void> {
-  const res = await daemonFetch("/session/clear", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
+export async function clearSession(sessionId: string): Promise<void> {
+  const res = await daemonFetch(
+    `/session/${encodeURIComponent(sessionId)}/clear`,
+    { method: "POST" },
+  );
   if (!res.ok) {
-    log.error(`Failed to clear session: ${res.status}`);
+    log.error(`Failed to clear session ${sessionId}: ${res.status}`);
   }
 }
 
-export async function getSessionState(): Promise<SessionState> {
-  const res = await daemonFetch("/session/state");
+export async function getSessionState(sessionId: string): Promise<SessionState> {
+  const res = await daemonFetch(`/session/${encodeURIComponent(sessionId)}/state`);
   if (!res.ok) {
-    throw new Error(`Failed to get session state: ${res.status}`);
+    throw new Error(`Failed to get session state for ${sessionId}: ${res.status}`);
   }
   return (await res.json()) as SessionState;
 }

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Think-tab keyed live sessions rollout (phases 3-5)</title>
+  <meta name="date" content="2026-06-01">
+  <meta name="status" content="open">
+  <meta name="tags" content="refactor, session-management, sse-streaming, keyed-sessions, two-phase-chat, event-replay, secure-context, crypto-randomuuid, bug, test-fidelity, flaky-tooling, smoke-test, git-stash-experiment">
+  <meta name="modules" content="use-chat, session-context, session-reducer, daemon-sessions, live-session-registry, chat-proxy">
+  <meta name="related" content=".lore/plans/think-tab-keyed-sessions.md, .lore/work/think-tab-keyed-sessions-implementation.md, docs/adr/0002-keyed-live-sessions.md">
+  <style>
+    body { font: 16px/1.6 system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { font-size: 1.6rem; border-bottom: 2px solid #333; padding-bottom: .4rem; }
+    h2 { font-size: 1.2rem; margin-top: 2rem; color: #222; }
+    h3 { font-size: 1rem; margin-top: 1.4rem; color: #444; }
+    code { background: #f0f0f0; padding: .1rem .3rem; border-radius: 3px; font-size: .9em; }
+    .timeline { border-left: 3px solid #bbb; padding-left: 1rem; margin-left: .4rem; }
+    .timeline > div { margin-bottom: 1.1rem; }
+    .commit { font-family: ui-monospace, monospace; font-size: .8rem; color: #666; }
+    .callout { border-left: 4px solid; padding: .7rem 1rem; margin: 1rem 0; border-radius: 0 4px 4px 0; }
+    .surprise { background: #fff8e6; border-color: #e6a700; }
+    .deadend { background: #fdecea; border-color: #c0392b; }
+    .note { background: #eaf2fb; border-color: #2c6fbf; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .92rem; }
+    th, td { border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; vertical-align: top; }
+    th { background: #f5f5f5; }
+    .label { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Think-tab keyed live sessions rollout (phases 3-5)</h1>
+
+  <p>
+    The Think tab had a wrong-session bug: the daemon tracked the in-flight chat turn in a single
+    global "active session" slot, so resuming an older conversation B after streaming conversation A
+    could surface A's events under B, or persist the wrong session id. The plan
+    (<code>.lore/plans/think-tab-keyed-sessions.md</code>) replaced the singleton with per-session live
+    state keyed by id in the URL path, mirroring the sibling project oracle-keep: client-minted session
+    ids, event-buffer replay on reconnect (no snapshot wrapper), warm session reuse, and send+stream
+    folded onto one keyed <code>/chat</code> route. Six phases: 0 registry skeleton, 1 turn controller,
+    2 daemon routes, 3 Next.js proxy + daemon client, 4 frontend <code>useChat</code>/reducer, 5 cleanup
+    + docs + manual smoke test.
+  </p>
+
+  <p>
+    This retro covers phases 3 through 5. Phases 0-2 were already committed and green at the start
+    (<span class="commit">HEAD = 23324d5</span>).
+  </p>
+
+  <h2>What the plan said vs what happened</h2>
+  <table>
+    <tr><th>Plan</th><th>Reality</th></tr>
+    <tr>
+      <td>Phases 2-4 ship as one atomic PR (shared wire format, can't half-ship).</td>
+      <td>Phase 2 was committed on its own before this stretch; phases 3+4 were committed together as
+        one unit (<span class="commit">fae4997</span>). The branch holds them together even though the
+        commits are split, so the atomicity intent held at the branch level.</td>
+    </tr>
+    <tr>
+      <td>Per-phase implement &rarr; review &rarr; resolve dispatched to sub-agents (orchestrator-only model).</td>
+      <td>Switched to direct tools after a flaky tool-output channel in the prior session produced false
+        conclusions from sub-agent work. Phase 4/5 edits were made directly and verified one command at a time.</td>
+    </tr>
+    <tr>
+      <td>Phase 5 manual smoke test is mandatory (tests verify correctness, not assembly).</td>
+      <td>The smoke test's first step immediately crashed the app with a bug that all 1969 unit tests,
+        typecheck, lint, and a clean build had passed over. The gate paid for itself on the first run.</td>
+    </tr>
+  </table>
+
+  <h2>Timeline</h2>
+  <div class="timeline">
+    <div>
+      <span class="label">Carried in from the prior (summarized) session.</span> A degraded tool-output
+      channel replayed a stale clean <code>git status</code>, leading to the false conclusion that
+      sub-agent Phase 3 changes "did not persist," plus a fabricated "stale contract" theory citing two
+      files that do not exist (<code>daemon/src/contract.ts</code>,
+      <code>nextjs/lib/daemon/generated-types.ts</code>). The work notes were corrupted with this false
+      narrative. The user pushed back ("What do you mean the sub-agents cannot persist???"). The record
+      and notes were corrected; Phase 3 was confirmed on disk and green.
+    </div>
+    <div>
+      <span class="label">Status check.</span> Asked "are we almost there or nowhere close?", the
+      response verified real state (ran the affected tests, read <code>git status</code> directly)
+      rather than trusting the in-head narrative. Phase 3 confirmed green; 5 test files still asserted
+      the old <code>/api/chat</code> / <code>snapshot</code> / <code>pendingSessionId</code> API.
+    </div>
+    <div>
+      <span class="label">Phase 4 tests, small files first.</span> <code>Discussion.test.tsx</code> and
+      <code>RecentActivity.test.tsx</code> updated. The RecentActivity resume assertion moved from
+      <code>pendingSessionId</code> to <code>sessionId</code> (resume now calls <code>setSessionId</code>
+      directly).
+    </div>
+    <div>
+      <span class="label">Abort-test regression caught.</span> The "reverts to send button after abort"
+      test began failing consistently. A controlled <code>git stash</code> experiment confirmed it passed
+      at HEAD and only failed with the working changes &mdash; a real regression, not flakiness.
+    </div>
+    <div>
+      <span class="label">Big rewrite.</span> <code>useChat.test.ts</code> (770 lines) rewritten from the
+      old two-phase JSON+snapshot model onto keyed paths with raw event replay. Obsolete
+      <code>HANDLE_SNAPSHOT</code> and <code>snapshot event handling</code> describe blocks deleted from
+      the reducer and context tests.
+    </div>
+    <div>
+      <span class="label">Phases 3+4 committed.</span> <span class="commit">fae4997</span> &mdash; full gate
+      green: typecheck (4 pkgs), nextjs 1970, daemon 1994, lint, build.
+    </div>
+    <div>
+      <span class="label">Phase 5 cleanup + docs.</span> Removed dead
+      <code>replaceLastMessageContent</code>/<code>REPLACE_LAST_MESSAGE_CONTENT</code> (snapshot-only
+      leftover); fixed <code>daemon/src/routes/help.ts</code> which still advertised the singleton API
+      (<code>/session/chat/send</code>, "snapshot-first" stream); rewrote <code>.lore/reference/think.md</code>
+      SSE protocol + file map; added <code>session_ready</code> to the event table; wrote
+      <code>docs/adr/0002-keyed-live-sessions.md</code> (first file in <code>docs/adr/</code>). Committed
+      <span class="commit">bef807d</span>.
+    </div>
+    <div>
+      <span class="label">Manual smoke test, step 1.</span> First message send threw
+      <code>TypeError: crypto.randomUUID is not a function</code>. Fixed with a browser-safe
+      <code>nextjs/lib/uuid.ts</code> and committed <span class="commit">dd3e251</span>. Smoke test to be
+      re-run from step 1.
+    </div>
+  </div>
+
+  <h2>Surprises and dead ends</h2>
+
+  <div class="callout deadend">
+    <span class="label">Dead end (prior session): flaky tool channel &rarr; "sub-agents didn't persist."</span>
+    A replayed stale <code>git status</code> showing a clean tree drove the conclusion that sub-agent file
+    writes never landed, then a "stale contract.ts" theory built on files that were never real (Read
+    returned "File does not exist" for both). Hours of false reasoning and a corrupted work-notes file.
+    The recovery that worked: re-verify each fact with a direct single command, cross-checked, and stop
+    trusting the agent-reported state. From that point all work used direct tools.
+  </div>
+
+  <div class="callout surprise">
+    <span class="label">Surprise: the abort test broke even though <code>abort()</code> was byte-identical to HEAD.</span>
+    The regression came from upstream, not the abort code. With client-minted ids, <code>sendMessage</code>
+    now seeds <code>sessionIdRef</code> synchronously before the POST. Previously the id only existed after
+    the server's <code>session_ready</code> arrived. The abort test's POST mock was delayed 5000ms, so at
+    HEAD <code>session_ready</code> never came, <code>sessionIdRef</code> stayed null, and <code>abort()</code>
+    skipped its server call &mdash; going straight to idle. After the change, the id was always present, so
+    <code>abort()</code> always <code>await</code>ed the abort fetch, which the test's coarse mock (5000ms
+    delay on <em>every</em> URL) hung. Fix: the mock now fast-paths <code>/abort</code> like the real daemon.
+    A test-fidelity gap exposed by a real behavior change, not a production bug.
+  </div>
+
+  <div class="callout surprise">
+    <span class="label">Surprise: 1969 passing tests + a clean build, app crashes on the first send.</span>
+    <code>crypto.randomUUID()</code> is only defined in a secure context (HTTPS or
+    <code>http://localhost</code>). Memory Loop is served over plain HTTP on a LAN IP, where
+    <code>crypto.randomUUID</code> is <code>undefined</code> even though <code>crypto</code> and
+    <code>crypto.getRandomValues</code> exist. Nothing in the bun/node test environment or the build
+    reproduces a non-secure browser context. The fix uses <code>randomUUID()</code> when present and
+    otherwise builds a v4 UUID from <code>crypto.getRandomValues()</code>; generated ids pass the daemon's
+    <code>validateSessionId</code> character rules.
+  </div>
+
+  <h2>Context worth preserving for the next session here</h2>
+  <ul>
+    <li>
+      <span class="label">Client-minted ids changed abort/stream timing.</span> Any test or code that
+      assumed "no session id until <code>session_ready</code>" is now wrong. The id exists synchronously
+      from the first <code>sendMessage</code> call. Mocks that delay <em>all</em> fetches will hang the
+      abort/permission/answer paths, which now always call the server.
+    </li>
+    <li>
+      <span class="label">Secure-context APIs are a standing hazard in this app.</span> It runs over plain
+      HTTP on a LAN IP. <code>crypto.randomUUID</code> and <code>crypto.subtle</code> are unavailable there.
+      <code>nextjs/lib/uuid.ts</code> now exists for ids; reach for it rather than <code>crypto.randomUUID</code>.
+      Audit any future use of secure-context-gated web APIs against this deployment.
+    </li>
+    <li>
+      <span class="label">Replay replaced snapshot end to end.</span> There is no snapshot wrapper event
+      anywhere now. Reconnect replays raw turn events through the same reducer actions as live events.
+      <code>HANDLE_SNAPSHOT</code>, <code>handleSnapshot</code>, <code>pendingSessionId</code>, and
+      <code>REPLACE_LAST_MESSAGE_CONTENT</code> are gone.
+    </li>
+    <li>
+      <span class="label">Remaining work.</span> Smoke test steps 2-5 are un-run (resume-B-only,
+      two-tab independence, mid-turn reconnect, tool-permission/AskUserQuestion). Then holistic
+      validation against the plan. The daemon-side collision guard for a client-supplied id of a
+      <em>new</em> session (flagged in the plan's risks) was not separately verified in the smoke test.
+    </li>
+    <li>
+      <span class="label">Doc drift found along the way.</span> <code>.lore/reference/think.md</code>'s
+      file map still pointed at pre-daemon-split paths (<code>nextjs/lib/controller.ts</code>,
+      <code>backend/src/...</code>) that predate this work. Corrected to the real daemon modules.
+    </li>
+  </ul>
+</body>
+</html>

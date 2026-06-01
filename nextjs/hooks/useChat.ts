@@ -2,13 +2,16 @@
  * useChat Hook
  *
  * Manages chat communication with the backend via two-phase flow:
- * 1. POST /api/chat - Submit message, get session ID (or 409 if processing)
- * 2. GET /api/chat/stream - Attach SSE viewport for snapshot + live events
+ * 1. POST /api/chat/:sessionId - Submit message (or 409 if already processing)
+ * 2. GET /api/chat/:sessionId/stream - Attach SSE viewport for live events
  *
- * Session ID is owned by SessionContext and passed in as a parameter.
- * This hook does NOT maintain its own session ID state. When a session_ready
- * event arrives, it's forwarded via onEvent to useServerMessageHandler which
- * updates context. The next render passes the updated session ID back in.
+ * Session IDs are client-minted: for a new conversation this hook generates a
+ * UUID up front so the id is in the path on the very first message, exactly like
+ * every later call. The id is owned by SessionContext as the durable source of
+ * truth; this hook reads it via a ref and seeds that ref with the freshly minted
+ * id for the turn. When the daemon echoes the same id back in session_ready, it
+ * is forwarded via onEvent to useServerMessageHandler, which updates context. The
+ * next render passes the (identical) id back in.
  *
  * Features:
  * - Start new sessions (sessionId is null)
@@ -161,17 +164,13 @@ export function useChat(
   /**
    * Processes a single SSE event from the stream.
    *
-   * Handles snapshot events (first event from stream), translates
-   * prompt_pending events into the ServerMessage types the frontend
+   * On reconnect the daemon replays the turn's buffered events (session_ready,
+   * response_start, response_chunk..., tool events, terminal event) as ordinary
+   * events, so there is no separate snapshot wrapper to special-case. This
+   * translates prompt_pending events into the ServerMessage types the frontend
    * components expect, and forwards everything else via onEvent.
    */
   function handleStreamEvent(event: SSEEvent): void {
-    // Handle snapshot event (first event from stream)
-    if (event.type === "snapshot") {
-      onEventRef.current?.(event as unknown as ServerMessage);
-      return;
-    }
-
     // Handle aborted as a non-error terminal event (REQ-ESS-19)
     if (event.type === "aborted") {
       onEventRef.current?.(event as unknown as ServerMessage);
@@ -254,26 +253,37 @@ export function useChat(
 
     reconnectTimerRef.current = setTimeout(() => {
       reconnectTimerRef.current = null;
-      // Reconnect to the session we are currently attached to.
-      connectToStream(sessionIdRef.current ?? undefined);
+      // Reconnect to the session we are currently attached to. The id is always
+      // set while a turn is live (minted in sendMessage or supplied on resume);
+      // if it is somehow missing there is nothing to reconnect to.
+      const id = sessionIdRef.current;
+      if (!id) {
+        setStreamingState("error");
+        setLastError("Connection lost. Refresh to retry.");
+        onStreamEndRef.current?.();
+        return;
+      }
+      connectToStream(id);
     }, delay);
   }
 
   /**
-   * Connects to GET /api/chat/stream and reads SSE events.
+   * Connects to GET /api/chat/:sessionId/stream and reads SSE events.
    *
-   * The stream starts with a snapshot event containing current state,
-   * then sends live events while processing continues. Callable from
-   * sendMessage (after the POST), from a reconnection timer, or from
-   * a mount effect to recover in-progress/completed sessions.
+   * On connect the daemon replays the turn's buffered events, then streams live
+   * events while processing continues (closing after the terminal event if the
+   * turn already finished). Callable from sendMessage (after the POST), from a
+   * reconnection timer, or from a mount effect to recover in-progress/completed
+   * sessions. The session id is always known (client-minted for new sessions,
+   * supplied on resume), so it is always in the path.
    *
-   * On unexpected disconnection, automatically schedules a reconnect.
-   * The daemon's snapshot mechanism restores full state on each connect.
+   * On unexpected disconnection, automatically schedules a reconnect; the
+   * replayed buffer restores full turn state on each connect.
    *
    * This is fire-and-forget: it launches an async reader internally.
    * The AbortController in abortControllerRef controls its lifecycle.
    */
-  function connectToStream(expectSession?: string): void {
+  function connectToStream(sessionId: string): void {
     // Abort any existing stream connection
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -286,18 +296,10 @@ export function useChat(
 
     // Fire-and-forget async reader
     void (async () => {
-      // Track whether this connection received any events (to distinguish
-      // "connected then dropped" from "couldn't connect at all")
-      let receivedSnapshot = false;
-
       try {
-        // Scope the stream to the expected session when known, so the daemon
-        // returns this session's state rather than whichever session was most
-        // recently active. Omitted on the send path, where we deliberately
-        // attach to the session we just started.
-        const streamUrl = expectSession
-          ? `${apiBase}/chat/stream?sessionId=${encodeURIComponent(expectSession)}`
-          : `${apiBase}/chat/stream`;
+        // The stream is keyed by session id in the path, so the daemon returns
+        // exactly this session's events regardless of any other session's state.
+        const streamUrl = `${apiBase}/chat/${encodeURIComponent(sessionId)}/stream`;
         const response = await fetch(streamUrl, {
           signal: controller.signal,
         });
@@ -324,7 +326,6 @@ export function useChat(
             if (!part.trim()) continue;
             const events = parseSSE(part);
             for (const event of events) {
-              if (event.type === "snapshot") receivedSnapshot = true;
               handleStreamEvent(event);
             }
           }
@@ -334,7 +335,6 @@ export function useChat(
         if (buffer.trim()) {
           const events = parseSSE(buffer);
           for (const event of events) {
-            if (event.type === "snapshot") receivedSnapshot = true;
             handleStreamEvent(event);
           }
         }
@@ -350,10 +350,10 @@ export function useChat(
           return;
         }
 
-        // Connection dropped unexpectedly. If we received a snapshot,
-        // the daemon is still processing. Reconnect to pick up where we left off.
+        // Connection dropped unexpectedly. Reconnect to pick up where we left
+        // off; the daemon replays the turn's buffered events on reconnect.
         const error = err instanceof Error ? err.message : "Stream connection failed";
-        log.warn(`Stream connection lost: ${error} (hadSnapshot=${receivedSnapshot})`);
+        log.warn(`Stream connection lost: ${error}`);
 
         if (!userAbortedRef.current) {
           scheduleReconnect();
@@ -373,8 +373,13 @@ export function useChat(
 
   /**
    * Sends a message via two-phase flow:
-   * 1. POST /api/chat (submit message, get session ID or 409)
-   * 2. connectToStream() (attach SSE viewport)
+   * 1. POST /api/chat/:sessionId (submit message, or 409 if already processing)
+   * 2. connectToStream(sessionId) (attach SSE viewport)
+   *
+   * For a new conversation (no session id yet) the id is minted here so it is in
+   * the path on this first message. The minted id is seeded into sessionIdRef so
+   * the rest of this turn (stream, abort) uses it immediately; context catches up
+   * when the daemon echoes the same id back in session_ready.
    */
   const sendMessage = useCallback(
     async (text: string): Promise<void> => {
@@ -393,22 +398,23 @@ export function useChat(
       cancelReconnect();
       onStreamStartRef.current?.();
 
-      const currentSessionId = sessionIdRef.current;
+      const isNewSession = !sessionIdRef.current;
+      const currentSessionId = sessionIdRef.current ?? crypto.randomUUID();
+      // Seed the ref so stream/abort within this turn use the minted id without
+      // waiting for the session_ready round-trip to update context.
+      sessionIdRef.current = currentSessionId;
 
       try {
-        // Phase 1: Submit message via REST
-        const body: Record<string, string> = {
+        // Phase 1: Submit message via REST. The id is in the path, not the body.
+        const body = {
           vaultId: vault.id,
           vaultPath: vault.path,
           prompt: text,
         };
-        if (currentSessionId) {
-          body.sessionId = currentSessionId;
-        }
 
-        log.info(`sendMessage: session=${currentSessionId ?? "new"}, vault=${vault.id}`);
+        log.info(`sendMessage: session=${currentSessionId}${isNewSession ? " (new)" : ""}, vault=${vault.id}`);
 
-        const postResponse = await fetch(`${apiBase}/chat`, {
+        const postResponse = await fetch(`${apiBase}/chat/${encodeURIComponent(currentSessionId)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -428,8 +434,8 @@ export function useChat(
           throw new Error(errorBody.error?.message ?? `HTTP ${postResponse.status}`);
         }
 
-        // Phase 2: Connect to SSE stream
-        connectToStream();
+        // Phase 2: Connect to SSE stream for this session.
+        connectToStream(currentSessionId);
       } catch (err) {
         const error = err instanceof Error ? err.message : "Unknown error";
         setLastError(error);
@@ -555,8 +561,8 @@ export function useChat(
 
   // Reconnect on mount when there's an existing session.
   // Probes the stream endpoint to recover in-progress or just-completed responses.
-  // The snapshot gives us full state regardless of whether the daemon is still
-  // processing or finished while we were away.
+  // The replayed event buffer restores full turn state regardless of whether the
+  // daemon is still processing or finished while we were away.
   useEffect(() => {
     if (mountReconnectedRef.current) return;
     if (!sessionId || !vault) return;
@@ -564,8 +570,8 @@ export function useChat(
 
     mountReconnectedRef.current = true;
     log.info(`Mount reconnect: probing stream for session ${sessionId}`);
-    // Scope to this session so a probe after resuming an older session does
-    // not pull the previously-active session's snapshot.
+    // Keyed by this session's id, so a probe after resuming an older session
+    // returns that session's events, never the previously-active session's.
     connectToStream(sessionId);
   }, [sessionId, vault]);
 

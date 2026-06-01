@@ -83,7 +83,6 @@ export function RecentActivity({
     setSessionId,
     setMessages,
     setSlashCommands,
-    setPendingSessionId,
   } = useSession();
 
   // State for delete confirmation dialog
@@ -138,7 +137,6 @@ export function RecentActivity({
           // Populate context with session data (same as VaultSelect.initializeSession)
           if (data.sessionId) {
             setSessionId(data.sessionId);
-            setPendingSessionId(data.sessionId);
           }
           if (data.messages?.length > 0) {
             setMessages(data.messages);
@@ -153,7 +151,7 @@ export function RecentActivity({
         }
       })();
     },
-    [onResumeDiscussion, vault?.id, setSessionId, setMessages, setSlashCommands, setPendingSessionId, setMode]
+    [onResumeDiscussion, vault?.id, setSessionId, setMessages, setSlashCommands, setMode]
   );
 
   // Handle delete button click - show confirmation dialog

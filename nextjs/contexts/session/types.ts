@@ -154,8 +154,6 @@ export interface SessionState {
   goals: string | null;
   /** Pre-filled text for discussion mode (from inspiration click) */
   discussionPrefill: string | null;
-  /** Session ID pending resume (set by RecentActivity, consumed by Discussion) */
-  pendingSessionId: string | null;
   /** Whether the new session confirmation dialog is shown (persists across tab switches) */
   showNewSessionDialog: boolean;
   /** Whether user wants a new session (skip auto-resume on reconnect) */
@@ -226,8 +224,6 @@ export interface SessionActions {
   setGoals: (goals: string | null) => void;
   /** Set discussion prefill text (from inspiration click) */
   setDiscussionPrefill: (text: string | null) => void;
-  /** Set pending session ID for resume (called by RecentActivity) */
-  setPendingSessionId: (sessionId: string | null) => void;
   /** Set new session dialog visibility (persists across tab switches) */
   setShowNewSessionDialog: (show: boolean) => void;
   /** Enter adjust mode (copies currentFileContent to adjustContent) */
@@ -272,8 +268,6 @@ export interface SessionActions {
   appendStreamingChunk: (content: string) => void;
   /** Set messages only if the current message list is empty. Race-safe. */
   setMessagesIfEmpty: (messages: ConversationMessageProtocol[]) => void;
-  /** Handle a snapshot event from SSE reconnection. Race-safe. */
-  handleSnapshot: (sessionId: string | undefined, content: string, isProcessing: boolean, contextUsage?: number) => void;
   /** Safety net: clear isStreaming on all messages when the SSE stream closes. */
   finalizeStreaming: () => void;
   // Search actions

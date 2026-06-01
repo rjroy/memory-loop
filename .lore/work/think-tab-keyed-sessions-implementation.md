@@ -27,8 +27,8 @@ Started: 2026-05-31
 | 0 | Registry skeleton: `live-session-registry.ts` types + pure helpers + tests, no wiring | done |
 | 1 | Port turn state machine onto registry; client-minted ids; warm reuse | done |
 | 2 | Rewrite daemon session routes keyed by `:sessionId` in path; buffer-replay stream; delete singleton | done |
-| 3 | Next.js proxy + daemon client keyed by sessionId | pending |
-| 4 | Frontend useChat/reducer simplification; delete handleSnapshot + pendingSessionId | pending |
+| 3 | Next.js proxy + daemon client keyed by sessionId | done (uncommitted; ships with Phase 4) |
+| 4 | Frontend useChat/reducer simplification; delete handleSnapshot + pendingSessionId | done (uncommitted; ships with Phase 3) |
 | 5 | Cleanup, docs/ADR, manual smoke test | pending |
 | V | Holistic validation against the plan | pending |
 
@@ -165,40 +165,99 @@ Status legend: pending / in-progress / done / failed
   old await-per-replay with order ["live","buffered-1",...], passes after fix). Also fixed a vacuous
   init-disambiguation assertion. Post-fix: chat-routes 24 pass, full daemon 1994, typecheck 0, lint 0.
 
+### Phase 3 (2026-05-31) — done (verified directly, NOT committed yet)
+> CORRECTION (2026-05-31): An earlier draft of this section claimed Phase 3 "did not persist" and that
+> `daemon/src/contract.ts`/`generated-types.ts` were stale. **That was wrong** — it was written off a
+> laggy/out-of-order tool-output channel that replayed a stale clean `git status`. Re-verified directly,
+> one command at a time: the sub-agent changes ARE on disk, the named contract/generated-types files do
+> not exist in this repo (the Next.js client imports types from `@memory-loop/shared` + `./fetch`, no
+> codegen step), and the touched tests pass. Sub-agent persistence was never the problem. The accurate
+> record follows.
+- Rewrote `nextjs/lib/daemon/sessions.ts`: every live fn takes `sessionId` and builds the keyed daemon
+  path with `encodeURIComponent` (POST/GET `/session/{id}/chat`, `/abort`, `/permission`, `/answer`,
+  `/clear`, `/state`). `sendMessage` strips `sessionId` from the body (it's in the path) and is now
+  REQUIRED. Dropped the old `?sessionId=` stream query. Metadata fns
+  (initSession/lookupSession/deleteSessionById) unchanged; 409 `ALREADY_PROCESSING` code+status
+  preserved via `DaemonError`.
+- Proxy route tree (verified on disk via `find`):
+  ```
+  app/api/chat/[sessionId]/route.ts                      POST (send)          [new]
+  app/api/chat/[sessionId]/stream/route.ts               GET  (SSE stream)    [new]
+  app/api/chat/[sessionId]/abort/route.ts                POST                 [pre-existing]
+  app/api/chat/[sessionId]/answer/[toolUseId]/route.ts   POST                 [pre-existing]
+  app/api/chat/[sessionId]/permission/[toolUseId]/route.ts POST               [pre-existing]
+  ```
+  DELETED old unkeyed routes: `app/api/chat/route.ts`, `app/api/chat/stream/route.ts`. (Send and stream
+  are SEPARATE route files, not folded — earlier draft said folded; that was wrong.) Routes stay thin
+  proxies; SSE passthrough preserved; 409 status preserved.
+- `nextjs/lib/api/client.ts` was NOT modified (earlier draft claimed it was — false; it's absent from
+  the git diff). It's the generic REST wrapper. Phase 4 will update the browser fetch URLs in `useChat`.
+- Tests updated via `configureDaemonFetchForTesting`: `sessions.test.ts` (17 pass) and
+  `chat-proxy.test.ts` (4 pass) — assert keyed paths/bodies; old `?sessionId`/`snapshot` assertions
+  removed. typecheck clean (all 4 packages).
+
+### Phase 3 review + resolution (2026-05-31)
+- Independent review (opus): scope respected (daemon/shared/useChat/contexts/components untouched),
+  paths correctly keyed, snapshot wrapper gone, routes thin. The review flagged a `client.ts`
+  id-minting stopgap as a blocker — but on direct inspection that stopgap **does not exist**
+  (`client.ts` is unmodified; no `crypto.randomUUID()` anywhere in the keyed surface). The review was
+  reasoning off the same bad output channel. Real residual findings, all benign:
+  - should-fix: stale doc comments in `[sessionId]/abort|answer|permission/route.ts` still cite the old
+    `/session/chat/*` daemon paths. Cosmetic; fix in Phase 5 cleanup.
+  - should-fix: `daemon/src/routes/help.ts` discovery endpoint still advertises the old unkeyed API
+    surface ("snapshot-first", `/session/chat/send`, etc.). Pre-existing from Phase 2; fix in Phase 5.
+  - 409 `code` is not surfaced to the UI today (and never was) — no regression. Optional Phase 4 polish.
+- The expected, correct state: keying the proxy/client without keying `useChat` makes the running app
+  non-functional until Phase 4. This is the plan's deliberate "Phases 2–4 land together" design, not a
+  defect. Phases 2+3 must commit/ship as a unit with Phase 4.
+
 ---
 
-## >>> RESUME HERE (state as of end of Phase 2) <<<
+### Phase 4 (2026-05-31) — done (uncommitted; ships with Phase 3)
 
-**Branch:** `fix/think-tab-keyed-sessions`. **Committed through Phase 2** (run `git log --oneline` to confirm).
-Daemon side is DONE and green. The running app is currently BROKEN at runtime (expected): the daemon
-routes are keyed, but the Next.js proxy/client still call the OLD daemon paths. Phase 3 fixes that.
-Unit tests + build are green because Next.js tests mock the daemon fetch layer.
+Frontend re-keyed onto client-minted ids and event-buffer replay. All source edits were made directly
+(not via sub-agents) per the flaky-channel lesson from earlier this session.
 
-**NEXT: Phase 3 — Next.js proxy + daemon client (nextjs/ only).**
-Target the new daemon paths (sessionId in PATH, not body/query, no `snapshot` event):
-- `nextjs/lib/daemon/sessions.ts`: every fn takes `sessionId`, builds keyed path.
-  - `sendMessage({vaultId,vaultPath,sessionId,prompt})` → `POST /session/{sessionId}/chat`, body `{vaultId,vaultPath,prompt}`, returns `{sessionId}`; 409 carries `{error:{code:"ALREADY_PROCESSING",message}}`.
-  - `getChatStream(sessionId)` → `GET /session/{sessionId}/chat` (drop the `?sessionId=` query — path now).
-  - `abortProcessing(sessionId)` → `POST /session/{sessionId}/abort` (no body).
-  - `respondToPermission(sessionId,toolUseId,allowed)` → `POST /session/{sessionId}/permission`, body `{toolUseId,allowed}`.
-  - `respondToAnswer(sessionId,toolUseId,answers)` → `POST /session/{sessionId}/answer`, body `{toolUseId,answers}`.
-  - `clearSession(sessionId)` → `POST /session/{sessionId}/clear`.
-  - `getSessionState(sessionId)` → `GET /session/{sessionId}/state`.
-  - Metadata fns unchanged: initSession, lookupSession, deleteSessionById.
-- `nextjs/app/api/chat/**`: move the message POST and the stream GET under `[sessionId]` so the proxy
-  paths are keyed too (abort/permission/answer already are). Keep them thin proxies.
-- Update daemon-client tests (`configureDaemonFetchForTesting`).
-- Keep build/tests green.
+Source changes (already on disk before this entry, confirmed green):
+- `useChat.ts`: `sendMessage` mints `crypto.randomUUID()` for a new session up front and seeds
+  `sessionIdRef` synchronously, so stream/abort within the turn use it immediately; POST → `/api/chat/{id}`
+  with the id in the PATH (dropped from body); `connectToStream(sessionId)` now requires the id and builds
+  `/api/chat/{id}/stream`; all `receivedSnapshot`/snapshot branches removed; `scheduleReconnect` bails to
+  error if no id.
+- `reducer.ts` / `types.ts` / `initial-state.ts` / `SessionContext.tsx`: deleted `HANDLE_SNAPSHOT` +
+  `handleSnapshot` + `SET_PENDING_SESSION_ID` + `pendingSessionId`. `REPLACE_LAST_MESSAGE_CONTENT` /
+  `replaceLastMessageContent` is now dead (snapshot-only) — flagged for Phase 5, NOT yet removed.
+- `RecentActivity.tsx`: resume calls `setSessionId(data.sessionId)` directly + navigates; no pendingSessionId.
 
-**THEN Phase 4 — frontend (nextjs/): client-minted ids + delete handleSnapshot + delete pendingSessionId.**
-- `useChat.ts`: mint `crypto.randomUUID()` for a NEW session up front so the id is in the path on the
-  first message; `connectToStream` always passes the id (the send-path-omits-id asymmetry collapses);
-  remove the snapshot-mismatch handling and the `?sessionId` scoping (now gone server-side).
-- `reducer.ts` + `SessionContext.tsx`: DELETE `handleSnapshot`/`HANDLE_SNAPSHOT`; replayed events flow
-  through `ensureStreamingMessage`/`appendStreamingChunk`/tool handlers exactly like live events.
-  DELETE dead `pendingSessionId` (action, reducer cases, RecentActivity writes, the session_ready clear).
-- `RecentActivity.tsx`: resume sets the session id + navigates; no pendingSessionId.
-- Update useChat/reducer/SessionContext tests.
+Test changes (this session): updated the 5 test files that asserted the old API.
+- `useChat.test.ts`: full rewrite onto keyed paths + raw replay (no snapshot wrapper). 23 pass.
+- `Discussion.test.tsx`: POST asserts keyed path; **fixed a real regression** in the abort test — with
+  client-minted ids `abort()` now always calls `/chat/{id}/abort`, and the test's coarse mock (5000ms delay
+  on *every* fetch) hung it; the mock now fast-paths `/abort` like the real daemon. (Controlled stash
+  experiment confirmed it passed at HEAD and only my changes triggered it — a genuine behavior change, not
+  flakiness.)
+- `RecentActivity.test.tsx`: captures `sessionId` instead of `pendingSessionId`.
+- `reducer-streaming.test.ts`: deleted the whole `HANDLE_SNAPSHOT` describe block.
+- `SessionContext.test.tsx`: deleted the `snapshot event handling` block + the `setPendingSessionId` test.
+
+**Verification (all green, 2026-05-31):** typecheck clean (4 pkgs); nextjs `1970 pass / 0 fail`; daemon
+`1994 pass / 0 fail`; lint clean. (nextjs dropped from 1986 → 1970 because obsolete snapshot/pendingSessionId
+tests were removed.) No stale `/api/chat` / `pendingSessionId` / `HANDLE_SNAPSHOT` refs remain in any test.
+
+## >>> RESUME HERE (state as of end of Phase 4 — uncommitted, verified green) <<<
+
+**Branch:** `fix/think-tab-keyed-sessions`. **HEAD = `23324d5` (Phase 2).** Phases **3 AND 4** are in the
+working tree, **uncommitted** and fully green (typecheck + nextjs 1970 + daemon 1994 + lint all pass). The
+app is now whole end-to-end (browser uses keyed `/api/chat/{id}` + `/api/chat/{id}/stream`). Per the plan's
+atomicity decision, Phases 2–4 land together, so commit Phases 3+4 as one unit.
+
+**NEXT: commit Phases 3+4** (only on user go-ahead). The pre-commit hook runs the full
+typecheck/lint/test/build across all 4 packages — it must pass. Suggested message theme: "Re-key Think-tab
+frontend onto client-minted session ids + event-buffer replay (phases 3+4)".
+
+**ORCHESTRATION NOTE:** earlier this session a flaky tool-output channel replayed stale `git status`/test
+output and led to false "sub-agents didn't persist" + hallucinated-file conclusions. Sub-agent persistence
+works fine. Verify any agent report against a direct `git status` / direct test run, OR use direct tools.
 
 **THEN Phase 5 — cleanup + docs/ADR + MANDATORY manual smoke test** (the A/B resume reproduction; see
 plan "Phase 5"). **THEN V — holistic validation agent** against `.lore/plans/think-tab-keyed-sessions.md`.

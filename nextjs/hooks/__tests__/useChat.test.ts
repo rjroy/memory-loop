@@ -3,12 +3,15 @@
  *
  * Tests two-phase SSE streaming, session management, and permission resolution.
  *
- * Two-phase flow:
- * 1. POST /api/chat returns JSON { sessionId }
- * 2. GET /api/chat/stream returns SSE (snapshot + live events)
+ * Two-phase flow (keyed by session id in the URL path):
+ * 1. POST /api/chat/:sessionId returns JSON { sessionId }
+ * 2. GET /api/chat/:sessionId/stream replays the turn's raw events, then streams
+ *    live ones (session_ready, response_start, response_chunk..., terminal). There
+ *    is no separate snapshot wrapper.
  *
- * Session ID is caller-owned (passed as parameter). useChat reads it
- * via ref so callbacks always use the latest value without recreating.
+ * For a new conversation the id is minted client-side in sendMessage, so it is in
+ * the path on the very first message. For a resumed session the caller supplies it.
+ * useChat reads the id via ref so callbacks always use the latest value.
  */
 
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
@@ -53,7 +56,7 @@ function createSSEResponse(events: Array<{ type: string; [key: string]: unknown 
 }
 
 /**
- * Creates the standard JSON response for POST /api/chat.
+ * Creates the standard JSON response for POST /api/chat/:sessionId.
  */
 function createPostResponse(sessionId: string): Response {
   return new Response(JSON.stringify({ sessionId }), {
@@ -61,28 +64,47 @@ function createPostResponse(sessionId: string): Response {
   });
 }
 
+/** Extracts the session id from a `/api/chat/:id` POST URL. */
+function postSessionId(url: string): string | undefined {
+  return url.match(/\/chat\/([^/]+)$/)?.[1];
+}
+
+/** Extracts the session id from a `/api/chat/:id/stream` URL. */
+function streamSessionId(url: string): string | undefined {
+  return url.match(/\/chat\/([^/]+)\/stream/)?.[1];
+}
+
 /**
- * Sets up mockFetch to handle the two-phase flow:
- * 1. First call (POST /api/chat) returns JSON { sessionId }
- * 2. Second call (GET /api/chat/stream) returns SSE events
+ * Sets up mockFetch to handle the keyed two-phase flow by URL shape:
+ * - `/chat/:id/stream` returns the replayed SSE events
+ * - `/chat/:id/abort` returns a success ack
+ * - anything else (the POST to `/chat/:id`) returns JSON { sessionId }
+ *
+ * The id is in the path, so we route on the URL rather than call order.
  */
-function setupTwoPhaseResponse(
+function setupKeyedResponse(
   sessionId: string,
   sseEvents: Array<{ type: string; [key: string]: unknown }>
 ): void {
-  let callCount = 0;
   mockFetch.mockImplementation((...args: unknown[]) => {
-    callCount++;
     const url = args[0] as string;
-    if (url.includes("/chat/stream")) {
+    if (url.includes("/stream")) {
       return Promise.resolve(createSSEResponse(sseEvents));
     }
-    // POST /api/chat
-    if (callCount === 1 || url.endsWith("/chat")) {
-      return Promise.resolve(createPostResponse(sessionId));
+    if (url.includes("/abort")) {
+      return Promise.resolve(new Response(JSON.stringify({ success: true })));
     }
-    return Promise.resolve(new Response(JSON.stringify({})));
+    // POST /api/chat/:id
+    return Promise.resolve(createPostResponse(sessionId));
   });
+}
+
+/** Finds the POST /api/chat/:id call in the recorded fetch calls. */
+function findPostCall(): [string, RequestInit] | undefined {
+  return mockFetch.mock.calls.find((c) => {
+    const args = c as unknown as [string, RequestInit?];
+    return args[1]?.method === "POST" && /\/chat\/[^/]+$/.test(args[0]);
+  }) as unknown as [string, RequestInit] | undefined;
 }
 
 beforeEach(() => {
@@ -127,9 +149,8 @@ describe("useChat", () => {
       expect(onError).toHaveBeenCalledWith("No vault selected");
     });
 
-    it("makes POST to /api/chat then GET to /api/chat/stream", async () => {
-      setupTwoPhaseResponse("sess_123", [
-        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+    it("mints a session id in the path for POST then connects the keyed stream", async () => {
+      setupKeyedResponse("sess_123", [
         { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
         { type: "response_start", messageId: "msg_1" },
         { type: "response_chunk", messageId: "msg_1", content: "Hello" },
@@ -147,27 +168,28 @@ describe("useChat", () => {
         expect(result.current.streamingState).toBe("idle");
       });
 
-      // Should have called POST then GET
-      expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
+      // POST: id is minted into the path, never the body.
+      const postCall = findPostCall();
+      expect(postCall).toBeDefined();
+      expect(postCall![0]).toMatch(/^\/api\/chat\/[^/]+$/);
+      expect(postCall![1].method).toBe("POST");
 
-      // First call: POST /api/chat
-      const postCall = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
-      expect(postCall[0]).toBe("/api/chat");
-      expect(postCall[1].method).toBe("POST");
-
-      const body = JSON.parse(postCall[1].body as string) as Record<string, unknown>;
+      const body = JSON.parse(postCall![1].body as string) as Record<string, unknown>;
       expect(body.vaultId).toBe("test-vault");
       expect(body.prompt).toBe("Hello");
       expect(body.sessionId).toBeUndefined();
 
-      // Second call: GET /api/chat/stream
-      const getCall = mockFetch.mock.calls[1] as unknown as [string, RequestInit?];
-      expect(getCall[0]).toBe("/api/chat/stream");
+      // Stream: same id as the POST, also in the path (no query string).
+      const streamCall = mockFetch.mock.calls.find(
+        (c) => (c as unknown as [string])[0].includes("/stream")
+      ) as unknown as [string, RequestInit?];
+      expect(streamCall[0]).toMatch(/^\/api\/chat\/[^/]+\/stream$/);
+      expect(streamSessionId(streamCall[0])).toBe(postSessionId(postCall![0]));
     });
 
-    it("includes sessionId in POST request when provided", async () => {
-      setupTwoPhaseResponse("sess_123", [
-        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+    it("uses the provided sessionId in the path, not the body", async () => {
+      setupKeyedResponse("sess_123", [
+        { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
         { type: "response_end", messageId: "msg_1", durationMs: 100 },
       ]);
 
@@ -181,24 +203,19 @@ describe("useChat", () => {
         expect(result.current.streamingState).toBe("idle");
       });
 
-      // Find the POST /api/chat call (mount-reconnect may also call fetch for the stream)
-      const postCall = mockFetch.mock.calls.find(
-        (c) => {
-          const args = c as unknown as [string, RequestInit?];
-          return args[0] === "/api/chat" && args[1]?.method === "POST";
-        }
-      ) as unknown as [string, RequestInit];
-      const body = JSON.parse(postCall[1].body as string) as Record<string, unknown>;
-      expect(body.sessionId).toBe("sess_123");
+      const postCall = findPostCall();
+      expect(postCall).toBeDefined();
+      expect(postCall![0]).toBe("/api/chat/sess_123");
+
+      const body = JSON.parse(postCall![1].body as string) as Record<string, unknown>;
+      expect(body.sessionId).toBeUndefined();
       expect(body.vaultId).toBe("test-vault");
       expect(body.vaultPath).toBe("/path/to/vault");
       expect(body.prompt).toBe("Continue our conversation");
     });
 
     it("uses latest sessionId via ref when it changes between renders", async () => {
-      // First call: new session
-      setupTwoPhaseResponse("sess_new", [
-        { type: "snapshot", sessionId: "sess_new", isProcessing: true },
+      setupKeyedResponse("sess_new", [
         { type: "session_ready", sessionId: "sess_new", vaultId: "test-vault" },
         { type: "response_end", messageId: "msg_1", durationMs: 100 },
       ]);
@@ -216,12 +233,11 @@ describe("useChat", () => {
         expect(result.current.streamingState).toBe("idle");
       });
 
-      // Simulate context updating session ID (e.g. from session_ready via onEvent)
+      // Simulate context updating the session ID (e.g. from session_ready via onEvent).
       rerender({ sessionId: "sess_new" });
 
-      // Second message should use the updated session ID
-      setupTwoPhaseResponse("sess_new", [
-        { type: "snapshot", sessionId: "sess_new", isProcessing: true },
+      setupKeyedResponse("sess_new", [
+        { type: "session_ready", sessionId: "sess_new", vaultId: "test-vault" },
         { type: "response_end", messageId: "msg_2", durationMs: 100 },
       ]);
 
@@ -233,17 +249,12 @@ describe("useChat", () => {
         expect(result.current.streamingState).toBe("idle");
       });
 
-      // Find the second POST call
+      // The second POST targets the updated session id in the path.
       const postCalls = (mockFetch.mock.calls as unknown as [string, RequestInit?][]).filter(
-        (call) => {
-          const opts = call[1];
-          return opts?.method === "POST" && call[0] === "/api/chat";
-        }
+        (call) => call[1]?.method === "POST" && /\/chat\/[^/]+$/.test(call[0])
       );
       expect(postCalls.length).toBe(2);
-
-      const secondPostBody = JSON.parse(postCalls[1][1]!.body as string) as Record<string, unknown>;
-      expect(secondPostBody.sessionId).toBe("sess_new");
+      expect(postCalls[1][0]).toBe("/api/chat/sess_new");
     });
 
     it("transitions streaming state correctly", async () => {
@@ -252,8 +263,7 @@ describe("useChat", () => {
         sawStarting = true;
       };
 
-      setupTwoPhaseResponse("sess_123", [
-        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+      setupKeyedResponse("sess_123", [
         { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
         { type: "response_end", messageId: "msg_1", durationMs: 100 },
       ]);
@@ -279,8 +289,7 @@ describe("useChat", () => {
         events.push(event);
       });
 
-      setupTwoPhaseResponse("sess_123", [
-        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+      setupKeyedResponse("sess_123", [
         { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
         { type: "response_start", messageId: "msg_1" },
         { type: "response_chunk", messageId: "msg_1", content: "Hello" },
@@ -297,21 +306,20 @@ describe("useChat", () => {
         expect(result.current.streamingState).toBe("idle");
       });
 
-      // snapshot + session_ready + response_start + response_chunk + response_end
-      expect(onEvent).toHaveBeenCalledTimes(5);
-      expect(events[0]).toMatchObject({ type: "snapshot" });
-      expect(events[1]).toMatchObject({ type: "session_ready" });
-      expect(events[2]).toMatchObject({ type: "response_start" });
-      expect(events[3]).toMatchObject({ type: "response_chunk" });
-      expect(events[4]).toMatchObject({ type: "response_end" });
+      // session_ready + response_start + response_chunk + response_end
+      expect(onEvent).toHaveBeenCalledTimes(4);
+      expect(events[0]).toMatchObject({ type: "session_ready" });
+      expect(events[1]).toMatchObject({ type: "response_start" });
+      expect(events[2]).toMatchObject({ type: "response_chunk" });
+      expect(events[3]).toMatchObject({ type: "response_end" });
     });
 
     it("calls onStreamStart and onStreamEnd", async () => {
       const onStreamStart = mock(() => {});
       const onStreamEnd = mock(() => {});
 
-      setupTwoPhaseResponse("sess_123", [
-        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+      setupKeyedResponse("sess_123", [
+        { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
         { type: "response_end", messageId: "msg_1", durationMs: 100 },
       ]);
 
@@ -382,8 +390,8 @@ describe("useChat", () => {
     it("handles SSE error events from stream", async () => {
       const onError = mock(() => {});
 
-      setupTwoPhaseResponse("sess_123", [
-        { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+      setupKeyedResponse("sess_123", [
+        { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
         { type: "error", code: "SDK_ERROR", message: "Something went wrong" },
       ]);
 
@@ -400,14 +408,16 @@ describe("useChat", () => {
       expect(onError).toHaveBeenCalledWith("Something went wrong");
     });
 
-    it("forwards snapshot event via onEvent", async () => {
+    it("forwards replayed events via onEvent", async () => {
       const events: unknown[] = [];
       const onEvent = mock((event: unknown) => {
         events.push(event);
       });
 
-      setupTwoPhaseResponse("sess_123", [
-        { type: "snapshot", sessionId: "sess_123", isProcessing: true, conversationHistory: [] },
+      setupKeyedResponse("sess_123", [
+        { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
+        { type: "response_chunk", messageId: "msg_1", content: "replayed" },
+        { type: "response_end", messageId: "msg_1", durationMs: 100 },
       ]);
 
       const { result } = renderHook(() => useChat(testVault, null, { onEvent }));
@@ -421,9 +431,8 @@ describe("useChat", () => {
       });
 
       expect(events[0]).toMatchObject({
-        type: "snapshot",
+        type: "session_ready",
         sessionId: "sess_123",
-        isProcessing: true,
       });
     });
   });
@@ -433,13 +442,13 @@ describe("useChat", () => {
       // Set up a long-running stream
       mockFetch.mockImplementation((...args: unknown[]) => {
         const url = args[0] as string;
-        if (url.includes("/chat/stream")) {
+        if (url.includes("/stream")) {
           return new Promise<Response>((resolve) => {
             setTimeout(
               () =>
                 resolve(
                   createSSEResponse([
-                    { type: "snapshot", sessionId: "sess_123", isProcessing: true },
+                    { type: "session_ready", sessionId: "sess_123", vaultId: "test-vault" },
                     { type: "response_end", messageId: "msg_1", durationMs: 100 },
                   ])
                 ),
@@ -447,10 +456,10 @@ describe("useChat", () => {
             );
           });
         }
-        if (url.endsWith("/abort")) {
+        if (url.includes("/abort")) {
           return Promise.resolve(new Response(JSON.stringify({ success: true })));
         }
-        // POST /api/chat
+        // POST /api/chat/:id
         return Promise.resolve(createPostResponse("sess_123"));
       });
 
@@ -581,18 +590,14 @@ describe("useChat", () => {
 
   describe("auto-reconnect", () => {
     it("reconnects on mount when sessionId is present", async () => {
-      // Respond to the stream probe with a completed snapshot
+      // The mount probe replays the just-completed turn's raw events.
       mockFetch.mockImplementation(() =>
         Promise.resolve(
           createSSEResponse([
-            {
-              type: "snapshot",
-              sessionId: "existing_session",
-              isProcessing: false,
-              content: "Previous response",
-              toolInvocations: [],
-              pendingPrompts: [],
-            },
+            { type: "session_ready", sessionId: "existing_session", vaultId: "test-vault" },
+            { type: "response_start", messageId: "msg_1" },
+            { type: "response_chunk", messageId: "msg_1", content: "Previous response" },
+            { type: "response_end", messageId: "msg_1", durationMs: 100 },
           ])
         )
       );
@@ -602,18 +607,24 @@ describe("useChat", () => {
         useChat(testVault, "existing_session", { onEvent })
       );
 
-      // Mount-reconnect should fire and deliver the snapshot
+      // Mount-reconnect should fire and deliver the replayed events.
       await waitFor(() => {
         expect(onEvent).toHaveBeenCalled();
       });
 
-      const snapshotCall = onEvent.mock.calls.find(
-        (c) => (c[0] as { type: string }).type === "snapshot"
+      const chunkCall = onEvent.mock.calls.find(
+        (c) => (c[0] as { type: string }).type === "response_chunk"
       );
-      expect(snapshotCall).toBeDefined();
-      expect((snapshotCall![0] as { content: string }).content).toBe("Previous response");
+      expect(chunkCall).toBeDefined();
+      expect((chunkCall![0] as { content: string }).content).toBe("Previous response");
 
-      // Should settle to idle after non-processing snapshot
+      // The probe is keyed to the resumed session, never a different one.
+      const streamCall = mockFetch.mock.calls.find(
+        (c) => (c as unknown as [string])[0].includes("/stream")
+      ) as unknown as [string];
+      expect(streamSessionId(streamCall[0])).toBe("existing_session");
+
+      // Should settle to idle after the terminal event.
       await waitFor(() => {
         expect(result.current.streamingState).toBe("idle");
       });
@@ -636,27 +647,20 @@ describe("useChat", () => {
       mockFetch.mockImplementation((...args: unknown[]) => {
         const url = args[0] as string;
 
-        if (url.endsWith("/chat")) {
-          return Promise.resolve(createPostResponse("sess_reconnect"));
-        }
-
-        if (url.includes("/chat/stream")) {
+        if (url.includes("/stream")) {
           streamCallCount++;
           if (streamCallCount <= 1) {
-            // First stream: error after snapshot
+            // First stream: drops after replaying session_ready.
             return Promise.resolve(
               new Response(
                 new ReadableStream({
                   start(controller) {
-                    const snapshot = `data: ${JSON.stringify({
-                      type: "snapshot",
+                    const event = `data: ${JSON.stringify({
+                      type: "session_ready",
                       sessionId: "sess_reconnect",
-                      isProcessing: true,
-                      content: "partial",
-                      toolInvocations: [],
-                      pendingPrompts: [],
+                      vaultId: "test-vault",
                     })}\n\n`;
-                    controller.enqueue(new TextEncoder().encode(snapshot));
+                    controller.enqueue(new TextEncoder().encode(event));
                     // Simulate connection drop
                     controller.error(new Error("Connection reset"));
                   },
@@ -665,22 +669,18 @@ describe("useChat", () => {
               )
             );
           }
-          // Reconnect stream: delivers completed response
+          // Reconnect stream: replays the completed turn.
           return Promise.resolve(
             createSSEResponse([
-              {
-                type: "snapshot",
-                sessionId: "sess_reconnect",
-                isProcessing: false,
-                content: "complete response",
-                toolInvocations: [],
-                pendingPrompts: [],
-              },
+              { type: "session_ready", sessionId: "sess_reconnect", vaultId: "test-vault" },
+              { type: "response_chunk", messageId: "msg_1", content: "complete response" },
+              { type: "response_end", messageId: "msg_1", durationMs: 100 },
             ])
           );
         }
 
-        return Promise.resolve(new Response(JSON.stringify({})));
+        // POST /api/chat/:id
+        return Promise.resolve(createPostResponse("sess_reconnect"));
       });
 
       const onEvent = mock(() => {});
@@ -718,31 +718,21 @@ describe("useChat", () => {
       mockFetch.mockImplementation((...args: unknown[]) => {
         const url = args[0] as string;
 
-        if (url.endsWith("/chat")) {
-          return Promise.resolve(createPostResponse("sess_abort"));
-        }
-
         if (url.includes("/abort")) {
           return Promise.resolve(new Response(JSON.stringify({ ok: true })));
         }
 
-        if (url.includes("/chat/stream")) {
-          // Slow stream that gives us time to abort
+        if (url.includes("/stream")) {
+          // Stream replays a still-processing turn (no terminal event yet).
           return Promise.resolve(
             createSSEResponse([
-              {
-                type: "snapshot",
-                sessionId: "sess_abort",
-                isProcessing: true,
-                content: "",
-                toolInvocations: [],
-                pendingPrompts: [],
-              },
+              { type: "session_ready", sessionId: "sess_abort", vaultId: "test-vault" },
             ])
           );
         }
 
-        return Promise.resolve(new Response(JSON.stringify({})));
+        // POST /api/chat/:id
+        return Promise.resolve(createPostResponse("sess_abort"));
       });
 
       const { result } = renderHook(() => useChat(testVault, null));
@@ -761,7 +751,7 @@ describe("useChat", () => {
       // Wait a bit to verify no reconnect attempt
       await new Promise((r) => setTimeout(r, 100));
       const streamCalls = mockFetch.mock.calls.filter(
-        (c) => (c as unknown as [string])[0].includes("/chat/stream")
+        (c) => (c as unknown as [string])[0].includes("/stream")
       );
       // Should only have 1 stream call (no reconnect after abort)
       expect(streamCalls.length).toBe(1);

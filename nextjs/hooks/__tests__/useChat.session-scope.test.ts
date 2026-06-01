@@ -1,76 +1,131 @@
 /**
- * Tests for useChat session-scoped stream reconnect.
+ * useChat session scoping tests.
  *
- * The daemon holds a single active session and its SSE stream reflects that
- * one session. To avoid pulling a different (previously-active) session's
- * snapshot, useChat scopes the stream to the session it is showing by passing
- * ?sessionId= on the reconnect probe. The send path intentionally omits it so
- * it attaches to the session it just started.
- *
- * Regression coverage for the "Think" tab bug where resuming an older session
- * surfaced the prior chat's last assistant message.
+ * Verifies that the SSE stream connection is scoped to the correct session ID
+ * via the URL path (`/api/chat/:sessionId/stream`), preventing the bug where
+ * reconnecting after resuming a different session would pull the
+ * previously-active session's events.
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { useChat } from "../useChat";
 import type { VaultInfo } from "@memory-loop/shared";
 
-const testVault: VaultInfo = {
+const mockVault: VaultInfo = {
   id: "test-vault",
   name: "Test Vault",
-  path: "/path/to/vault",
-  contentRoot: "/path/to/vault",
+  path: "/test/vault",
+  contentRoot: "/test/vault",
 };
 
-function createSSEResponse(events: Array<Record<string, unknown>>): Response {
-  const body = events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
-  return new Response(body, {
-    headers: { "Content-Type": "text/event-stream" },
+function createSSEStream(events: Array<Record<string, unknown>>): ReadableStream {
+  return new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      for (const event of events) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      }
+      controller.close();
+    },
   });
 }
 
-describe("useChat session-scoped stream", () => {
-  let originalFetch: typeof fetch;
-  let streamUrls: string[];
+/** Extracts the session id segment from a `/api/chat/:id/stream` URL. */
+function streamSessionId(url: string): string | null {
+  const match = url.match(/\/chat\/([^/]+)\/stream/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+describe("useChat session scoping", () => {
+  let originalFetch: typeof globalThis.fetch;
+  let fetchCalls: string[];
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    streamUrls = [];
-    globalThis.fetch = mock((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("/chat/stream")) {
-        streamUrls.push(url);
-        return Promise.resolve(
-          createSSEResponse([
-            { type: "snapshot", sessionId: "sess_current", isProcessing: false, content: "" },
-          ])
-        );
-      }
-      return Promise.resolve(new Response(JSON.stringify({ sessionId: "sess_current" })));
-    }) as unknown as typeof fetch;
+    fetchCalls = [];
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    mock.restore();
   });
 
-  test("mount reconnect scopes the stream to the current session id", async () => {
-    renderHook(() => useChat(testVault, "sess_current", { onEvent: () => {} }));
+  test("connects to stream keyed by sessionId in the path when session exists", async () => {
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      fetchCalls.push(urlStr);
+      return new Response(createSSEStream([{ type: "session_ready", sessionId: "session-abc" }]), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }) as unknown as typeof globalThis.fetch;
 
-    await waitFor(() => expect(streamUrls.length).toBeGreaterThan(0));
-    expect(streamUrls[0]).toContain("sessionId=sess_current");
+    const { unmount } = renderHook(() => useChat(mockVault, "session-abc"));
+
+    await waitFor(() => {
+      expect(fetchCalls.some((u) => u.includes("/chat/session-abc/stream"))).toBe(true);
+    });
+    // The id lives in the path, never a query string.
+    expect(fetchCalls.every((u) => !u.includes("sessionId="))).toBe(true);
+
+    unmount();
   });
 
-  test("send path attaches without a session scope", async () => {
-    const { result } = renderHook(() => useChat(testVault, null, { onEvent: () => {} }));
+  test("uses the minted sessionId in the path for new sessions (send path)", async () => {
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      fetchCalls.push(urlStr);
+      return new Response(createSSEStream([{ type: "session_ready", sessionId: "minted" }]), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+    const { result } = renderHook(() => useChat(mockVault, null));
 
     await act(async () => {
       await result.current.sendMessage("hello");
     });
 
-    await waitFor(() => expect(streamUrls.length).toBeGreaterThan(0));
-    // The send path omits ?sessionId= so it attaches to the session it started.
-    expect(streamUrls.every((u) => !u.includes("sessionId="))).toBe(true);
+    // The POST mints an id and targets /api/chat/:id; the stream then targets
+    // /api/chat/:id/stream with the SAME id. Neither uses a query string.
+    const postCall = fetchCalls.find((u) => /\/chat\/[^/]+$/.test(u));
+    const streamCall = fetchCalls.find((u) => u.includes("/chat/") && u.includes("/stream"));
+    expect(postCall).toBeDefined();
+    expect(streamCall).toBeDefined();
+
+    const postId = postCall!.match(/\/chat\/([^/]+)$/)?.[1];
+    const streamId = streamSessionId(streamCall!);
+    expect(postId).toBeTruthy();
+    expect(streamId).toBe(postId);
+    expect(fetchCalls.every((u) => !u.includes("sessionId="))).toBe(true);
+  });
+
+  test("a fresh mount for a resumed session probes that session's stream", async () => {
+    // Resuming an older session in the real app remounts Discussion (it was not
+    // mounted in Ground mode), so useChat mounts fresh with the resumed id. The
+    // mount probe must be keyed to that id, never a previously-active session's.
+    const streamConnections: string[] = [];
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      fetchCalls.push(urlStr);
+      if (urlStr.includes("/stream")) {
+        streamConnections.push(urlStr);
+      }
+      return new Response(createSSEStream([{ type: "session_ready", sessionId: "session-two" }]), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+    const { unmount } = renderHook(() => useChat(mockVault, "session-two"));
+
+    await waitFor(() => {
+      expect(streamConnections.some((u) => streamSessionId(u) === "session-two")).toBe(true);
+    });
+    expect(streamConnections.every((u) => streamSessionId(u) !== "session-one")).toBe(true);
+
+    unmount();
   });
 });

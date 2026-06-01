@@ -79,7 +79,6 @@ export function createInitialSessionState(): SessionState {
     recentDiscussions: [],
     goals: null,
     discussionPrefill: null,
-    pendingSessionId: null,
     showNewSessionDialog: false,
     wantsNewSession: false,
     pendingToolUpdates: new Map(),

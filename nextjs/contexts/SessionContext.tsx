@@ -263,10 +263,6 @@ export function SessionProvider({
     dispatch({ type: "SET_DISCUSSION_PREFILL", text });
   }, []);
 
-  const setPendingSessionId = useCallback((sessionId: string | null) => {
-    dispatch({ type: "SET_PENDING_SESSION_ID", sessionId });
-  }, []);
-
   const setShowNewSessionDialog = useCallback((show: boolean) => {
     dispatch({ type: "SET_SHOW_NEW_SESSION_DIALOG", show });
   }, []);
@@ -374,13 +370,6 @@ export function SessionProvider({
     []
   );
 
-  const handleSnapshot = useCallback(
-    (sessionId: string | undefined, content: string, isProcessing: boolean, contextUsage?: number) => {
-      dispatch({ type: "HANDLE_SNAPSHOT", sessionId, content, isProcessing, contextUsage });
-    },
-    []
-  );
-
   const finalizeStreaming = useCallback(() => {
     dispatch({ type: "FINALIZE_STREAMING" });
   }, []);
@@ -470,7 +459,6 @@ export function SessionProvider({
     removeDiscussion,
     setGoals,
     setDiscussionPrefill,
-    setPendingSessionId,
     setShowNewSessionDialog,
     startAdjust,
     updateAdjustContent,
@@ -493,7 +481,6 @@ export function SessionProvider({
     ensureStreamingMessage,
     appendStreamingChunk,
     setMessagesIfEmpty,
-    handleSnapshot,
     finalizeStreaming,
     setSearchActive,
     setSearchMode,
@@ -538,8 +525,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
     ensureStreamingMessage,
     appendStreamingChunk,
     updateLastMessage,
-    handleSnapshot,
-    setPendingSessionId,
     setSlashCommands,
     setLastMessageContextUsage,
     setLastMessageDuration,
@@ -551,10 +536,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         case "session_ready":
           if (message.sessionId) {
             setSessionId(message.sessionId);
-            // Only clear pendingSessionId when a session is actually established.
-            // Empty sessionId means vault was selected but no session yet (e.g., from select_vault).
-            // We need to preserve pendingSessionId so Discussion can send resume_session.
-            setPendingSessionId(null);
           }
           if (message.createdAt) {
             setSessionStartTime(new Date(message.createdAt));
@@ -589,23 +570,8 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
         // Note: search_results, snippets, index_progress, pinned_assets, meeting_started,
         // meeting_stopped, meeting_state handlers removed - now handled by REST API hooks
 
-        default: {
-          // Handle snapshot event (not in ServerMessage union, sent by SSE stream endpoint)
-          const rawMessage = message as unknown as Record<string, unknown>;
-          if (rawMessage.type === "snapshot") {
-            const sessionId = typeof rawMessage.sessionId === "string" && rawMessage.sessionId
-              ? rawMessage.sessionId
-              : undefined;
-            const content = typeof rawMessage.content === "string" ? rawMessage.content : "";
-            const isProcessing = !!rawMessage.isProcessing;
-            const contextUsage = typeof rawMessage.contextUsage === "number"
-              ? rawMessage.contextUsage
-              : undefined;
-
-            handleSnapshot(sessionId, content, isProcessing, contextUsage);
-          }
+        default:
           break;
-        }
       }
     },
     [
@@ -615,8 +581,6 @@ export function useServerMessageHandler(): (message: ServerMessage) => void {
       ensureStreamingMessage,
       appendStreamingChunk,
       updateLastMessage,
-      handleSnapshot,
-      setPendingSessionId,
       setSlashCommands,
       setLastMessageContextUsage,
       setLastMessageDuration,

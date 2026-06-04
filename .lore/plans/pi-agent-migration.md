@@ -1,7 +1,7 @@
 ---
 title: "Implementation plan: pi-agent migration"
 date: 2026-05-18
-status: draft
+status: approved
 tags: [plan, pi-agent, sdk-migration, daemon, streaming, session-manager, refactor]
 modules: [daemon, session-manager, event-translator, fact-extractor, vault-transfer, active-session-controller]
 related: [.lore/plans/ephemeral-sdk-sessions.md, .lore/specs/ephemeral-sdk-sessions.md, .lore/retros/ephemeral-sdk-sessions.md]

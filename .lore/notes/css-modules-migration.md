@@ -1,7 +1,7 @@
 ---
 title: "Implementation notes: CSS Modules migration"
 date: 2026-02-14
-status: complete
+status: shipped
 tags: [implementation, css, css-modules, refactor, aborted]
 source: .lore/_archive/css-modules-migration.md
 modules: [components, styles]

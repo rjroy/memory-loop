@@ -1,7 +1,7 @@
 ---
 title: "Daemon migration (7 stages) and ephemeral SDK sessions"
 date: 2026-03-16
-status: complete
+status: shipped
 tags: [daemon, architecture, migration, sdk, streaming, commission-system, process]
 modules: [daemon, nextjs, shared, cli]
 related:

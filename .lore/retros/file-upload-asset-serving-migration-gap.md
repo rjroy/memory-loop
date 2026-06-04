@@ -1,7 +1,7 @@
 ---
 title: Missing route handlers survived migration with passing tests
 date: 2026-02-08
-status: complete
+status: shipped
 tags: [bug, migration, api-routes, testing-gap, next-js]
 modules: [file-upload, asset-serving, use-file-upload]
 related: [.lore/retros/next-js-migration.md]

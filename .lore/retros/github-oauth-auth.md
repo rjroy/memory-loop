@@ -1,7 +1,7 @@
 ---
 title: Webpack early-return dead code elimination doesn't work
 date: 2026-02-07
-status: complete
+status: shipped
 tags: [auth, middleware, webpack, edge-runtime, instrumentation, dead-code-elimination]
 modules: [auth, middleware, instrumentation]
 related: [.lore/_archive/github-oauth-auth.md]

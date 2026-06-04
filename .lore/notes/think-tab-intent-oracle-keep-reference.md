@@ -1,3 +1,6 @@
+---
+status: shipped
+---
 # Companion Note: How oracle-keep Got This Right
 
 Research note, 2026-05-31. Companion to `think-tab-intent.md`.

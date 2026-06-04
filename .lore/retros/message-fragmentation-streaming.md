@@ -1,7 +1,7 @@
 ---
 title: Stale ref race condition in streaming message handler
 date: 2026-02-15
-status: complete
+status: shipped
 tags: [bug, react, race-condition, streaming, reducer, useRef]
 modules: [session-context, session-reducer]
 related: [.lore/_archive/message-fragmentation-streaming.md]

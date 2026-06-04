@@ -1,7 +1,7 @@
 ---
 title: Bad hook breaks SDK resume, four sessions spent blaming our code
 date: 2026-02-06
-status: complete
+status: shipped
 tags: [bug, sdk-lifecycle, session-management, debugging-process, hooks, false-attribution]
 modules: [active-session-controller, session-manager, session-streamer, api-chat, useChat]
 related: [.lore/_archive/active-session-controller.md, .lore/_archive/session-viewport-separation-spec.md]

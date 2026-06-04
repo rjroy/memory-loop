@@ -1,3 +1,6 @@
+---
+status: shipped
+---
 # Plan: Fix the Think Tab with Keyed Live Sessions (oracle-keep approach)
 
 Status: draft for review. Date: 2026-05-31.

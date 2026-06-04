@@ -1,10 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
+<!DOCTYPE html><html lang="en"><head>
   <meta charset="UTF-8">
   <title>Think-tab keyed live sessions rollout (phases 3-5)</title>
   <meta name="date" content="2026-06-01">
-  <meta name="status" content="open">
+  <meta name="status" content="approved">
   <meta name="tags" content="refactor, session-management, sse-streaming, keyed-sessions, two-phase-chat, event-replay, secure-context, crypto-randomuuid, bug, test-fidelity, flaky-tooling, smoke-test, git-stash-experiment">
   <meta name="modules" content="use-chat, session-context, session-reducer, daemon-sessions, live-session-registry, chat-proxy">
   <meta name="related" content=".lore/plans/think-tab-keyed-sessions.md, .lore/work/think-tab-keyed-sessions-implementation.md, docs/adr/0002-keyed-live-sessions.md">
@@ -49,7 +47,7 @@
 
   <h2>What the plan said vs what happened</h2>
   <table>
-    <tr><th>Plan</th><th>Reality</th></tr>
+    <tbody><tr><th>Plan</th><th>Reality</th></tr>
     <tr>
       <td>Phases 2-4 ship as one atomic PR (shared wire format, can't half-ship).</td>
       <td>Phase 2 was committed on its own before this stretch; phases 3+4 were committed together as
@@ -57,7 +55,7 @@
         commits are split, so the atomicity intent held at the branch level.</td>
     </tr>
     <tr>
-      <td>Per-phase implement &rarr; review &rarr; resolve dispatched to sub-agents (orchestrator-only model).</td>
+      <td>Per-phase implement → review → resolve dispatched to sub-agents (orchestrator-only model).</td>
       <td>Switched to direct tools after a flaky tool-output channel in the prior session produced false
         conclusions from sub-agent work. Phase 4/5 edits were made directly and verified one command at a time.</td>
     </tr>
@@ -66,7 +64,7 @@
       <td>The smoke test's first step immediately crashed the app with a bug that all 1969 unit tests,
         typecheck, lint, and a clean build had passed over. The gate paid for itself on the first run.</td>
     </tr>
-  </table>
+  </tbody></table>
 
   <h2>Timeline</h2>
   <div class="timeline">
@@ -94,7 +92,7 @@
     <div>
       <span class="label">Abort-test regression caught.</span> The "reverts to send button after abort"
       test began failing consistently. A controlled <code>git stash</code> experiment confirmed it passed
-      at HEAD and only failed with the working changes &mdash; a real regression, not flakiness.
+      at HEAD and only failed with the working changes — a real regression, not flakiness.
     </div>
     <div>
       <span class="label">Big rewrite.</span> <code>useChat.test.ts</code> (770 lines) rewritten from the
@@ -103,7 +101,7 @@
       the reducer and context tests.
     </div>
     <div>
-      <span class="label">Phases 3+4 committed.</span> <span class="commit">fae4997</span> &mdash; full gate
+      <span class="label">Phases 3+4 committed.</span> <span class="commit">fae4997</span> — full gate
       green: typecheck (4 pkgs), nextjs 1970, daemon 1994, lint, build.
     </div>
     <div>
@@ -126,7 +124,7 @@
   <h2>Surprises and dead ends</h2>
 
   <div class="callout deadend">
-    <span class="label">Dead end (prior session): flaky tool channel &rarr; "sub-agents didn't persist."</span>
+    <span class="label">Dead end (prior session): flaky tool channel → "sub-agents didn't persist."</span>
     A replayed stale <code>git status</code> showing a clean tree drove the conclusion that sub-agent file
     writes never landed, then a "stale contract.ts" theory built on files that were never real (Read
     returned "File does not exist" for both). Hours of false reasoning and a corrupted work-notes file.
@@ -140,7 +138,7 @@
     now seeds <code>sessionIdRef</code> synchronously before the POST. Previously the id only existed after
     the server's <code>session_ready</code> arrived. The abort test's POST mock was delayed 5000ms, so at
     HEAD <code>session_ready</code> never came, <code>sessionIdRef</code> stayed null, and <code>abort()</code>
-    skipped its server call &mdash; going straight to idle. After the change, the id was always present, so
+    skipped its server call — going straight to idle. After the change, the id was always present, so
     <code>abort()</code> always <code>await</code>ed the abort fetch, which the test's coarse mock (5000ms
     delay on <em>every</em> URL) hung. Fix: the mock now fast-paths <code>/abort</code> like the real daemon.
     A test-fidelity gap exposed by a real behavior change, not a production bug.
@@ -189,5 +187,6 @@
       <code>backend/src/...</code>) that predate this work. Corrected to the real daemon modules.
     </li>
   </ul>
-</body>
-</html>
+
+
+</body></html>

@@ -1,7 +1,7 @@
 ---
 title: Vi Mode for Pair Writing
 date: 2026-01-29
-status: complete
+status: shipped
 tags: [vi-mode, pair-writing, implementation, lessons-learned]
 modules: [pair-writing-editor, use-vi-mode, use-vi-cursor]
 related: [.lore/specs/vi-mode-pair-writing.md, .lore/_archive/vi-mode-pair-writing.md]

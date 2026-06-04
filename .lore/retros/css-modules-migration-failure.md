@@ -1,7 +1,7 @@
 ---
 title: CSS Modules migration failure - verification and incremental approach
 date: 2026-02-14
-status: complete
+status: shipped
 tags: [css-modules, refactor, migration, failure, automation, verification]
 modules: [components, styles]
 related: [.lore/_archive/css-modules-migration-spec.md, .lore/_archive/css-modules-migration.md, .lore/notes/css-modules-migration.md]

@@ -1,7 +1,7 @@
 ---
 title: Workspace collapse validated the plan but exposed CI blind spots
 date: 2026-02-06
-status: complete
+status: shipped
 tags: [refactor, monorepo, workspace-collapse, ci, turbopack, bundler, deployment]
 modules: [nextjs, backend, shared, ci, instrumentation]
 related:

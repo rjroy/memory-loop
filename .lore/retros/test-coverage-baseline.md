@@ -1,7 +1,7 @@
 ---
 title: Test coverage baseline revealed half the backend tests weren't running
 date: 2026-01-16
-status: complete
+status: shipped
 tags: [testing, coverage, ci, bun, glob-patterns]
 modules: [backend, frontend, shared, ci]
 related: []

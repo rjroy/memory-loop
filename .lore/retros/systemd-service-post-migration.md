@@ -1,7 +1,7 @@
 ---
 title: webpackIgnore bypasses extension resolution at runtime
 date: 2026-02-05
-status: complete
+status: shipped
 tags: [deployment, systemd, webpack, next-js, module-resolution, infrastructure]
 modules: [instrumentation, next-config, service-file]
 related: [.lore/retros/next-js-migration.md]

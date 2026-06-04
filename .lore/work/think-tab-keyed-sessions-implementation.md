@@ -1,3 +1,6 @@
+---
+status: shipped
+---
 # Implementation Notes: Think Tab Keyed Sessions
 
 Source plan: `.lore/plans/think-tab-keyed-sessions.md`

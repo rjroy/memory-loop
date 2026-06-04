@@ -1,7 +1,7 @@
 ---
 title: "Guild Hall meeting workflow patterns (Feb-Mar 2026)"
 date: 2026-03-16
-status: complete
+status: shipped
 tags: [process, guild-hall, meetings, commissions, workflow]
 related:
   - .lore/retros/daemon-migration-and-ephemeral-sessions.md

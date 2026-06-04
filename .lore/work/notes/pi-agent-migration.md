@@ -1,7 +1,7 @@
 ---
 title: "Implementation notes: pi-agent migration"
 date: 2026-05-19
-status: complete
+status: shipped
 tags: [implementation, notes, pi-agent, sdk-migration]
 source: .lore/plans/pi-agent-migration.md
 modules: [daemon, session-manager, event-translator, fact-extractor, vault-transfer, active-session-controller]

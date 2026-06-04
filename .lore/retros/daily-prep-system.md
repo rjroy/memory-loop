@@ -1,7 +1,7 @@
 ---
 title: Emergent requirements in daily prep implementation
 date: 2026-02-02
-status: complete
+status: shipped
 tags: [skill-development, ui, iterative-design, lore-workflow]
 modules: [daily-prep-manager, session-actions-card, ask-user-question-dialog, home-view]
 related: [.lore/brainstorm/daily-prep-system.md, .lore/_archive/daily-planning-science.md, .lore/specs/daily-prep.md, .lore/_archive/daily-prep-system.md]

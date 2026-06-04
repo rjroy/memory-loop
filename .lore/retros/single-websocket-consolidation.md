@@ -1,7 +1,7 @@
 ---
 title: WebSocket consolidation revealed hidden coupling in test setup
 date: 2026-02-04
-status: complete
+status: shipped
 tags: [websocket, rest-api, testing, refactor, architecture]
 modules: [websocket-handler, health-panel, vault-select, app]
 related: [.lore/_archive/single-websocket-consolidation.md]

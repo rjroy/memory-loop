@@ -1,7 +1,7 @@
 ---
 title: webpackIgnore silently broke instrumentation; turbopack branch elimination matters
 date: 2026-02-06
-status: complete
+status: shipped
 tags: [bug, bundler, turbopack, webpack, instrumentation, search, content-root]
 modules: [search-routes, instrumentation, scheduler-bootstrap]
 related: [.lore/_archive/content-root-search-fix.md, .lore/notes/content-root-search-fix.md]

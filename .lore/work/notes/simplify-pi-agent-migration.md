@@ -1,7 +1,7 @@
 ---
 title: "Simplification notes: pi-agent-migration"
 date: 2026-05-19
-status: complete
+status: shipped
 tags: [simplify, cleanup, code-quality, pi-agent, sdk-migration]
 modules: [daemon, session-manager, event-translator, fact-extractor, vault-transfer, active-session-controller]
 related: [.lore/work/notes/pi-agent-migration.md, .lore/plans/pi-agent-migration.md]

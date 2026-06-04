@@ -1,7 +1,7 @@
 ---
 title: "Ephemeral SDK Sessions: Spec Validation Review"
 date: 2026-03-15
-status: complete
+status: shipped
 reviewer: Thorne
 spec: .lore/specs/ephemeral-sdk-sessions.md
 plan: .lore/plans/ephemeral-sdk-sessions.md

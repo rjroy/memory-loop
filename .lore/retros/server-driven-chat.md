@@ -1,7 +1,7 @@
 ---
 title: Fire-and-forget exposes timing assumptions hidden by await
 date: 2026-02-08
-status: complete
+status: shipped
 tags: [architecture, concurrency, fire-and-forget, sse, streaming, review-process]
 modules: [active-session-controller, session-streamer, chat-route, useChat]
 related:

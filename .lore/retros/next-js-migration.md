@@ -1,7 +1,7 @@
 ---
 title: Next.js migration exposed hidden coupling between transport and state
 date: 2026-02-05
-status: complete
+status: shipped
 tags: [architecture, refactor, next-js, sse, websocket, state-management, race-condition]
 modules: [session-context, discussion, pair-writing, active-session-controller, useChat]
 related: [.lore/brainstorm/next-js-migration.md, .lore/_archive/nextjs-consolidation.md]

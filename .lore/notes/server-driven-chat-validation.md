@@ -1,7 +1,7 @@
 ---
 title: "Implementation validation: server-driven chat"
 date: 2026-02-08
-status: complete
+status: shipped
 tags: [validation, review, server-driven-chat]
 source: .lore/_archive/server-driven-chat.md
 modules: [session-streamer, active-session-controller, chat-routes, useChat]

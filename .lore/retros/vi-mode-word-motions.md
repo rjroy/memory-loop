@@ -1,7 +1,7 @@
 ---
 title: Plan-to-implementation drift in vi mode word motions
 date: 2026-01-31
-status: complete
+status: shipped
 tags: [vi-mode, planning, scope-management, llm-limitations]
 modules: [use-vi-mode]
 related: [.lore/retros/vi-mode-pair-writing.md, .lore/_archive/vi-mode-pair-writing.md]

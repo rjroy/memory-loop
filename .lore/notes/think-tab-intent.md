@@ -1,3 +1,6 @@
+---
+status: shipped
+---
 # Think Tab — Intent vs. Implementation
 
 Research note, 2026-05-31. Branch: `fix/think-tab-stale-session-snapshot`.

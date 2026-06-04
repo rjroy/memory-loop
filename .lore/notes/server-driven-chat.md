@@ -1,7 +1,7 @@
 ---
 title: "Implementation notes: server-driven-chat"
 date: 2026-02-08
-status: complete
+status: shipped
 tags: [implementation]
 source: .lore/_archive/server-driven-chat.md
 modules: [active-session-controller, session-streamer, chat-route, useChat]

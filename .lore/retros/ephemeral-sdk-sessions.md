@@ -1,7 +1,7 @@
 ---
 title: Perfect review, broken product
 date: 2026-03-15
-status: complete
+status: shipped
 tags: [process, testing, integration, quality-pipeline, daemon, sdk, commission]
 modules: [active-session-controller, session-manager, package.json]
 related:

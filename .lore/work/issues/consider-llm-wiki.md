@@ -1,7 +1,7 @@
 ---
 title: "Consider LLM Wiki"
 date: 2026-04-15
-status: draft
+status: completed
 legacy_status: open
 ---
 

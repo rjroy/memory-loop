@@ -5,8 +5,8 @@ status: executed
 tags: [daemon, migration, proxy, next-js, cleanup, stage-6]
 modules: [api-routes, lib, daemon]
 related:
-  - .lore/specs/daemon-application-boundary.md
-  - .lore/brainstorm/daemon-migration-stages.md
+  - .lore/work/intents/daemon-application-boundary.md
+  - .lore/work/brainstorm/daemon-migration-stages.md
   - .lore/_archive/daemon-skeleton-shared-package.md
   - .lore/_archive/daemon-vault-foundation.md
   - .lore/_archive/daemon-stateless-file-operations.md

@@ -4,7 +4,7 @@ date: 2026-02-14
 status: executed
 tags: [implementation, image-processing, webp]
 modules: [file-upload, image-converter]
-related: [.lore/specs/image-webp-conversion.md, .lore/retros/file-upload-asset-serving-migration-gap.md]
+related: [.lore/work/intents/image-webp-conversion.md, .lore/work/retros/file-upload-asset-serving-migration-gap.md]
 ---
 
 # Plan: Image to WebP Conversion on Upload

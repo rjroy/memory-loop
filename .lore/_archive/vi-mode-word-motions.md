@@ -4,7 +4,7 @@ date: 2026-01-30
 status: executed
 tags: [vi-mode, pair-writing, word-motions, operators]
 modules: [use-vi-mode]
-related: [.lore/retros/vi-mode-word-motions.md, .lore/_archive/vi-mode-pair-writing.md]
+related: [.lore/work/retros/vi-mode-word-motions.md, .lore/_archive/vi-mode-pair-writing.md]
 ---
 
 # Plan: Vi Mode Word Motions and Operators

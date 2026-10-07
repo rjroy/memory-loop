@@ -5,9 +5,9 @@ status: executed
 tags: [daemon, migration, file-operations, search, meeting, tasks, api]
 modules: [file-browser, file-upload, note-capture, meeting-capture, meeting-store, transcript-manager, task-manager, daily-prep-manager, reference-updater, search-cache, search-index, search-handlers]
 related:
-  - .lore/specs/daemon-application-boundary.md
-  - .lore/brainstorm/daemon-migration-stages.md
-  - .lore/research/daemon-rest-api.md
+  - .lore/work/intents/daemon-application-boundary.md
+  - .lore/work/brainstorm/daemon-migration-stages.md
+  - .lore/work/research/daemon-rest-api.md
   - .lore/_archive/daemon-skeleton-shared-package.md
   - .lore/_archive/daemon-vault-foundation.md
 ---

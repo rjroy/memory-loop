@@ -5,7 +5,7 @@ status: executed
 tags: [architecture, session-management, sse, streaming, chat, processing-model]
 modules: [active-session-controller, session-streamer, chat-route, useChat]
 related:
-  - .lore/specs/server-driven-chat.md
+  - .lore/work/intents/server-driven-chat.md
 ---
 
 # Plan: Server-Driven Chat Processing

@@ -5,10 +5,10 @@ status: executed
 tags: [daemon, monorepo, shared-package, schemas, migration, infrastructure]
 modules: [schemas, logger, daemon]
 related:
-  - .lore/specs/daemon-application-boundary.md
-  - .lore/brainstorm/daemon-migration-stages.md
-  - .lore/research/daemon-rest-api.md
-  - .lore/retros/collapse-workspaces.md
+  - .lore/work/intents/daemon-application-boundary.md
+  - .lore/work/brainstorm/daemon-migration-stages.md
+  - .lore/work/research/daemon-rest-api.md
+  - .lore/work/retros/collapse-workspaces.md
 ---
 
 # Plan: Stage 1 - Daemon Skeleton and Shared Package

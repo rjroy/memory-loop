@@ -4,7 +4,7 @@ date: 2026-02-14
 status: executed
 tags: [css, css-modules, refactor, aborted]
 modules: [components, styles]
-related: [.lore/_archive/css-modules-migration-spec.md, .lore/brainstorm/css-modules-migration.md, .lore/retros/css-modules-migration-failure.md]
+related: [.lore/_archive/css-modules-migration-spec.md, .lore/work/brainstorm/css-modules-migration.md, .lore/work/retros/css-modules-migration-failure.md]
 ---
 
 > **Note**: This plan was executed on 2026-02-14 but the migration was aborted due to implementation failures. See `.lore/retros/css-modules-migration-failure.md` for lessons learned.

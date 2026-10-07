@@ -5,9 +5,9 @@ status: executed
 tags: [daemon, vault, migration, monorepo, api, hybrid-state]
 modules: [vault-manager, vault-config, vault-helpers, daemon]
 related:
-  - .lore/specs/daemon-application-boundary.md
-  - .lore/brainstorm/daemon-migration-stages.md
-  - .lore/research/daemon-rest-api.md
+  - .lore/work/intents/daemon-application-boundary.md
+  - .lore/work/brainstorm/daemon-migration-stages.md
+  - .lore/work/research/daemon-rest-api.md
   - .lore/_archive/daemon-skeleton-shared-package.md
 ---
 

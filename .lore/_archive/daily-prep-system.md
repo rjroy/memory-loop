@@ -4,7 +4,7 @@ date: 2026-02-02
 status: executed
 tags: [skill-development, ui, rest-api, ground-tab]
 modules: [daily-prep-manager, session-actions-card, home-view, daily-prep-skill, daily-debrief-command]
-related: [.lore/specs/daily-prep.md]
+related: [.lore/work/intents/daily-prep.md]
 ---
 
 # Daily Prep System Implementation Plan

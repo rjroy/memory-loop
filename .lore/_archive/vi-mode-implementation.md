@@ -4,7 +4,7 @@ date: 2026-01-29
 status: archived
 tags: [vi-mode, modal-editing, cursor-rendering, textarea]
 modules: [pair-writing-editor]
-related: [.lore/specs/vi-mode-pair-writing.md]
+related: [.lore/work/intents/vi-mode-pair-writing.md]
 ---
 
 # Research: Vi Mode Implementation for Pair Writing

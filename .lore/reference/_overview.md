@@ -38,7 +38,7 @@ This isn't arbitrary branding. The names teach a practice:
 
 The sigils reinforce the metaphors: 🪨 solid foundation, 🪶 light writing tool, ✨ spark of insight, 🪞 reflective surface.
 
-See [Navigation Bar](./navigation-bar.md) for implementation details and [GCTR Mode Transitions](../diagrams/gctr-mode-transitions.md) for a visual map of how modes connect.
+See [Navigation Bar](./navigation-bar.md) for implementation details and [GCTR Mode Transitions](../work/diagrams/gctr-mode-transitions.md) for a visual map of how modes connect.
 
 ## Architecture
 

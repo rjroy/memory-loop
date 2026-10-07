@@ -11,7 +11,6 @@ related:
   - .lore/work/retros/discussion-multi-turn-resume.md
   - .lore/work/retros/next-js-migration.md
 req-prefix: SDC
-legacy_source_type: spec
 legacy_status: implemented
 ---
 

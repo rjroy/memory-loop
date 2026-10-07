@@ -6,7 +6,6 @@ modules: [ "session-manager", "daemon-config", "vault-config", "config-editor-di
 related: [ ".lore/reference/_infrastructure/configuration.md", ".lore/reference/think.md", ".lore/work/research/pi-agent-sdk.md" ]
 req-prefix: "MODELS"
 title: "Configurable discussion model registry"
-legacy_source_type: spec
 ---
 
 ```html

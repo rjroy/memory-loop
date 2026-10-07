@@ -5,7 +5,6 @@ status: completed
 tags: [vi-mode, pair-writing, modal-editing, keyboard, requirements]
 modules: [pair-writing-editor, use-vi-mode, vault-config]
 related: [.lore/_archive/vi-mode-implementation.md]
-legacy_source_type: spec
 legacy_status: implemented
 ---
 

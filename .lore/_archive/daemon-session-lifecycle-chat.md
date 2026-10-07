@@ -5,18 +5,18 @@ status: executed
 tags: [daemon, migration, session, chat, sse, streaming, mcp, sdk, stage-5]
 modules: [session-manager, active-session-controller, session-streamer, controller, vault-transfer, vault-setup, inspiration-manager, pair-writing-prompts, mock-sdk, sse]
 related:
-  - .lore/specs/daemon-application-boundary.md
-  - .lore/specs/server-driven-chat.md
-  - .lore/brainstorm/daemon-migration-stages.md
-  - .lore/research/daemon-rest-api.md
-  - .lore/research/claude-agent-sdk.md
-  - .lore/research/claude-agent-sdk-ref-typescript.md
+  - .lore/work/intents/daemon-application-boundary.md
+  - .lore/work/intents/server-driven-chat.md
+  - .lore/work/brainstorm/daemon-migration-stages.md
+  - .lore/work/research/daemon-rest-api.md
+  - .lore/work/research/claude-agent-sdk.md
+  - .lore/work/research/claude-agent-sdk-ref-typescript.md
   - .lore/_archive/daemon-skeleton-shared-package.md
   - .lore/_archive/daemon-vault-foundation.md
   - .lore/_archive/daemon-stateless-file-operations.md
   - .lore/_archive/daemon-background-schedulers.md
-  - .lore/retros/server-driven-chat.md
-  - .lore/retros/discussion-multi-turn-resume.md
+  - .lore/work/retros/server-driven-chat.md
+  - .lore/work/retros/discussion-multi-turn-resume.md
 ---
 
 # Plan: Stage 5 - Daemon Session Lifecycle and Chat

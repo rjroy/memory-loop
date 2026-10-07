@@ -5,10 +5,10 @@ status: executed
 tags: [refactor, monorepo, simplification, next-js, workspace-collapse]
 modules: [backend, shared, nextjs]
 related:
-  - .lore/brainstorm/collapse-workspaces.md
+  - .lore/work/brainstorm/collapse-workspaces.md
   - .lore/_archive/nextjs-consolidation.md
-  - .lore/retros/next-js-migration.md
-  - .lore/retros/systemd-service-post-migration.md
+  - .lore/work/retros/next-js-migration.md
+  - .lore/work/retros/systemd-service-post-migration.md
 ---
 
 # Plan: Collapse Workspaces

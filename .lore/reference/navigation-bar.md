@@ -99,7 +99,7 @@ const modes: ModeOption[] = [
 
 ## Diagrams
 
-- [GCTR Mode Transitions](../diagrams/gctr-mode-transitions.md) - All mode switches and contextual transitions with data flow
+- [GCTR Mode Transitions](../work/diagrams/gctr-mode-transitions.md) - All mode switches and contextual transitions with data flow
 
 ## Notes
 

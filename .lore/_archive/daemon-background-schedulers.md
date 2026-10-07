@@ -5,9 +5,9 @@ status: executed
 tags: [daemon, migration, extraction, spaced-repetition, scheduling, sdk-provider, api]
 modules: [extraction-manager, extraction-state, transcript-reader, fact-extractor, memory-writer, card-discovery-scheduler, card-discovery-state, card-generator, card-generator-config, card-dedup, card-manager, card-storage, card-schema, sm2-algorithm, scheduler-bootstrap, sdk-provider, config-handlers, instrumentation]
 related:
-  - .lore/specs/daemon-application-boundary.md
-  - .lore/brainstorm/daemon-migration-stages.md
-  - .lore/research/daemon-rest-api.md
+  - .lore/work/intents/daemon-application-boundary.md
+  - .lore/work/brainstorm/daemon-migration-stages.md
+  - .lore/work/research/daemon-rest-api.md
   - .lore/_archive/daemon-skeleton-shared-package.md
   - .lore/_archive/daemon-vault-foundation.md
   - .lore/_archive/daemon-stateless-file-operations.md

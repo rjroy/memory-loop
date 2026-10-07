@@ -5,7 +5,7 @@ status: executed
 tags: [migration, next-js, consolidation, maintainability]
 modules: [nextjs, backend]
 related:
-  - .lore/brainstorm/next-js-migration.md
+  - .lore/work/brainstorm/next-js-migration.md
 ---
 
 # Plan: Consolidate to Single Next.js Application

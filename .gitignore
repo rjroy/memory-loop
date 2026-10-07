@@ -48,3 +48,4 @@ backend/logs/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+/.lore/local/

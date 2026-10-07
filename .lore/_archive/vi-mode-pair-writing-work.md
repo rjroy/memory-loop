@@ -4,7 +4,7 @@ date: 2026-01-29
 status: shipped
 tags: [vi-mode, pair-writing, task-tracking, implementation]
 modules: [pair-writing-editor, use-vi-mode]
-related: [.lore/specs/vi-mode-pair-writing.md, .lore/_archive/vi-mode-pair-writing.md]
+related: [.lore/work/intents/vi-mode-pair-writing.md, .lore/_archive/vi-mode-pair-writing.md]
 ---
 
 # Work Breakdown: Vi Mode for Pair Writing

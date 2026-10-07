@@ -5,9 +5,9 @@ status: executed
 tags: [daemon, cli, mcp, progressive-discovery, agent-interaction, migration, stage-7]
 modules: [cli, daemon]
 related:
-  - .lore/specs/daemon-application-boundary.md
-  - .lore/brainstorm/daemon-migration-stages.md
-  - .lore/research/daemon-rest-api.md
+  - .lore/work/intents/daemon-application-boundary.md
+  - .lore/work/brainstorm/daemon-migration-stages.md
+  - .lore/work/research/daemon-rest-api.md
   - .lore/_archive/daemon-skeleton-shared-package.md
   - .lore/_archive/daemon-vault-foundation.md
   - .lore/_archive/daemon-stateless-file-operations.md

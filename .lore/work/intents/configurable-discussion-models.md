@@ -1,12 +1,11 @@
 ---
 date: "2026-05-21"
-status: "approved"
-tags: ["model-config", "global-config", "discussion", "pi-agent", "session-manager"]
-modules: ["session-manager", "daemon-config", "vault-config", "config-editor-dialog"]
-related: [".lore/reference/_infrastructure/configuration.md", ".lore/reference/think.md", ".lore/work/research/pi-agent-sdk.md"]
+status: completed
+tags: [ "model-config", "global-config", "discussion", "pi-agent", "session-manager" ]
+modules: [ "session-manager", "daemon-config", "vault-config", "config-editor-dialog" ]
+related: [ ".lore/reference/_infrastructure/configuration.md", ".lore/reference/think.md", ".lore/work/research/pi-agent-sdk.md" ]
 req-prefix: "MODELS"
 title: "Configurable discussion model registry"
-legacy_source_type: spec
 ---
 
 ```html

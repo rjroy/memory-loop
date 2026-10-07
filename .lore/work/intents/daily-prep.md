@@ -5,7 +5,6 @@ status: completed
 tags: [daily-planning, bookend, energy, commitment, ground-tab, skill-development]
 modules: [home-view, vault-info-card, session-actions-card, daily-prep-skill, daily-debrief-skill, routes-daily-prep]
 related: [.lore/work/brainstorm/daily-prep-system.md, .lore/_archive/daily-planning-science.md]
-legacy_source_type: spec
 legacy_status: implemented
 ---
 

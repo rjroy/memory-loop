@@ -5,7 +5,6 @@ status: completed
 tags: [spaced-repetition, deduplication, similarity, cards]
 modules: [card-discovery-scheduler, card-manager, card-storage]
 related: [.lore/reference/spaced-repetition.md, .lore/reference/_infrastructure/card-generator.md]
-legacy_source_type: spec
 legacy_status: implemented
 ---
 

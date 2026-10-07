@@ -13,7 +13,6 @@ related:
   - .lore/work/research/claude-agent-sdk.md
   - .lore/work/brainstorm/daemon-migration-stages.md
 req-prefix: ESS
-legacy_source_type: spec
 legacy_status: implemented
 ---
 

@@ -5,7 +5,6 @@ status: completed
 tags: [image-processing, webp, upload, optimization, compression]
 modules: [file-upload]
 related: [.lore/reference/think.md, .lore/work/retros/file-upload-asset-serving-migration-gap.md]
-legacy_source_type: spec
 legacy_status: implemented
 ---
 

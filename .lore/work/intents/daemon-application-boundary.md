@@ -14,7 +14,6 @@ related:
   - .lore/reference/_overview.md
   - .lore/reference/daemon-application-boundary.md
 req-prefix: DAB
-legacy_source_type: spec
 legacy_status: implemented
 ---
 

@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-29T20:58:31Z",
+  "title": "Design System: Memory Loop",
+  "extensions": {
+    "colorMeta": {
+      "night": {
+        "role": "neutral",
+        "displayName": "Night",
+        "tonalRamp": ["oklch(15.000% 0.02399 205.163)", "oklch(26.429% 0.02399 205.163)", "oklch(37.857% 0.02399 205.163)", "oklch(49.286% 0.02399 205.163)", "oklch(60.714% 0.02399 205.163)", "oklch(72.143% 0.02399 205.163)", "oklch(83.571% 0.02399 205.163)", "oklch(95.000% 0.02399 205.163)"]
+      },
+      "parchment": {
+        "role": "neutral",
+        "displayName": "Parchment",
+        "tonalRamp": ["oklch(15.000% 0.02884 89.569)", "oklch(26.429% 0.02884 89.569)", "oklch(37.857% 0.02884 89.569)", "oklch(49.286% 0.02884 89.569)", "oklch(60.714% 0.02884 89.569)", "oklch(72.143% 0.02884 89.569)", "oklch(83.571% 0.02884 89.569)", "oklch(95.000% 0.02884 89.569)"]
+      },
+      "lantern": {
+        "role": "primary",
+        "displayName": "Lantern",
+        "tonalRamp": ["oklch(15.000% 0.14599 83.130)", "oklch(26.429% 0.14599 83.130)", "oklch(37.857% 0.14599 83.130)", "oklch(49.286% 0.14599 83.130)", "oklch(60.714% 0.14599 83.130)", "oklch(72.143% 0.14599 83.130)", "oklch(83.571% 0.14599 83.130)", "oklch(95.000% 0.14599 83.130)"]
+      },
+      "horizon": {
+        "role": "secondary",
+        "displayName": "Horizon",
+        "tonalRamp": ["oklch(15.000% 0.12373 260.152)", "oklch(26.429% 0.12373 260.152)", "oklch(37.857% 0.12373 260.152)", "oklch(49.286% 0.12373 260.152)", "oklch(60.714% 0.12373 260.152)", "oklch(72.143% 0.12373 260.152)", "oklch(83.571% 0.12373 260.152)", "oklch(95.000% 0.12373 260.152)"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "View heading", "purpose": "Focusable H1; no hero or display-font role." },
+      "title": { "displayName": "Notice heading", "purpose": "H2 explaining unavailable functionality." },
+      "body": { "displayName": "Body and desktop navigation", "purpose": "Explanations, purpose text, and ordinary desktop navigation." },
+      "emphasis": { "displayName": "Interface emphasis", "purpose": "Current desktop destination and content/skip links." },
+      "label": { "displayName": "Scope and compact navigation", "purpose": "Regular scope text and unselected compact links." },
+      "compact-selected": { "displayName": "Selected compact destination", "purpose": "Semibold compact navigation, without shrinking the text." },
+      "app-name": { "displayName": "Desktop app name", "purpose": "Plain interface branding in the rail." },
+      "compact-app-name": { "displayName": "Compact app name", "purpose": "Plain interface branding above the compact workspace." }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": [{ "name": "compact-layout-below", "value": "56rem" }]
+  },
+  "components": [
+    {
+      "name": "Desktop navigation",
+      "kind": "nav",
+      "refersTo": "navigation-rail",
+      "description": "Actual rail/link/selection/focus styling; the preview omits the full-page sticky/min-height scaffold.",
+      "html": "<div class=\"ds-rail\"><header class=\"ds-app-name\">Memory Loop</header><nav class=\"ds-navigation\" aria-label=\"Primary\"><a class=\"ds-navigation-link\" href=\"/ground\" aria-current=\"page\">Ground</a><a class=\"ds-navigation-link\" href=\"/capture\">Capture</a><a class=\"ds-navigation-link\" href=\"/think\">Think</a><a class=\"ds-navigation-link\" href=\"/recall\">Recall</a></nav><footer class=\"ds-scope\">Navigation preview</footer></div>",
+      "css": ".ds-rail { width: 13rem; padding: 2rem 1.5rem; color: var(--parchment); background: var(--night); font: 400 1rem/1.5 'Source Sans 3', system-ui, sans-serif; } .ds-app-name { font-size: 1.375rem; font-weight: 600; line-height: 1.4; } .ds-navigation { display: grid; gap: .5rem; margin-top: 2.75rem; } .ds-navigation-link { position: relative; display: flex; align-items: center; min-height: 3rem; padding: .625rem 1rem; border-radius: 4px; color: inherit; text-decoration: none; text-decoration-thickness: 1px; text-underline-offset: .2em; overflow-wrap: anywhere; } .ds-navigation-link[aria-current='page'] { font-weight: 600; } .ds-navigation-link[aria-current='page']::before { position: absolute; inset: .625rem auto .625rem 0; width: 3px; background: var(--lantern); content: ''; } .ds-navigation-link:hover, .ds-navigation-link:active { text-decoration: underline; } .ds-navigation-link:focus-visible { outline: 2px solid var(--parchment); outline-offset: -6px; } .ds-scope { margin: 1.5rem 0 0; font-size: .875rem; }"
+    },
+    {
+      "name": "Compact navigation",
+      "kind": "nav",
+      "refersTo": "compact-navigation-link",
+      "description": "The same four cell styles shown inline for the panel; the application shell fixes this navigation to the viewport bottom.",
+      "html": "<nav class=\"ds-compact-navigation\" aria-label=\"Primary\"><a class=\"ds-compact-link\" href=\"/ground\">Ground</a><a class=\"ds-compact-link\" href=\"/capture\" aria-current=\"page\">Capture</a><a class=\"ds-compact-link\" href=\"/think\">Think</a><a class=\"ds-compact-link\" href=\"/recall\">Recall</a></nav>",
+      "css": ".ds-compact-navigation { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; padding-bottom: env(safe-area-inset-bottom, 0px); color: var(--parchment); background: var(--night); font: 400 .875rem/1.5 'Source Sans 3', system-ui, sans-serif; } .ds-compact-link { position: relative; display: flex; align-items: center; justify-content: center; min-height: var(--navigation-height); padding: .75rem 4px; border-radius: 0; color: inherit; text-align: center; text-decoration: none; text-decoration-thickness: 1px; text-underline-offset: .2em; overflow-wrap: anywhere; } .ds-compact-link[aria-current='page'] { font-weight: 600; } .ds-compact-link[aria-current='page']::before { position: absolute; inset: 0 .75rem auto; height: 3px; background: var(--lantern); content: ''; } .ds-compact-link:hover, .ds-compact-link:active { text-decoration: underline; } .ds-compact-link:focus-visible { outline: 2px solid var(--parchment); outline-offset: -6px; }"
+    },
+    {
+      "name": "Unavailable-feature notice",
+      "kind": "card",
+      "refersTo": "placeholder-notice",
+      "description": "Actual content-sized status section on the workspace, not a disabled form or simulated loading state.",
+      "html": "<section class=\"ds-notice\"><h2>Quick capture isn't available yet</h2><p>Note entry and saving are not available in this preview.</p></section>",
+      "css": ".ds-notice { max-width: 42rem; margin-top: 2rem; padding: 1.5rem; border: 1px solid var(--parchment); border-radius: 6px; color: var(--parchment); background: var(--night); font: 400 1rem/1.5 'Source Sans 3', system-ui, sans-serif; overflow-wrap: break-word; } .ds-notice h2 { margin: 0; font-size: 1.125rem; font-weight: 600; line-height: 1.4; } .ds-notice p { margin: .5rem 0 0; }"
+    },
+    {
+      "name": "Content link",
+      "kind": "custom",
+      "refersTo": "content-link",
+      "description": "Native link with persistent underline, 44px minimum hit height, and independent keyboard focus.",
+      "html": "<a class=\"ds-content-link\" href=\"/capture\">Open Capture</a>",
+      "css": ".ds-content-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 1rem; color: var(--parchment); font: 600 1rem/1.5 'Source Sans 3', system-ui, sans-serif; text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: .2em; } .ds-content-link:hover { text-decoration-thickness: 2px; } .ds-content-link:active { text-underline-offset: .1em; } .ds-content-link:focus-visible { outline: 2px solid var(--parchment); outline-offset: 4px; }"
+    },
+    {
+      "name": "View heading and purpose",
+      "kind": "custom",
+      "refersTo": "view-heading",
+      "description": "The real modest H1/purpose pattern; route behavior is supplied by the app, not this static preview.",
+      "html": "<div class=\"ds-view\"><h1 tabindex=\"-1\">Ground</h1><p>An overview built from interchangeable panels.</p></div>",
+      "css": ".ds-view { color: var(--parchment); background: var(--night); font: 400 1rem/1.5 'Source Sans 3', system-ui, sans-serif; } .ds-view h1 { width: fit-content; max-width: 100%; margin: 0; font-size: 1.75rem; font-weight: 600; line-height: 1.2; } .ds-view h1:focus-visible { outline: 2px solid var(--parchment); outline-offset: 4px; } .ds-view p { max-width: 70ch; margin: .75rem 0 0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Studio console",
+    "overview": "Stable navigation sits beside a replaceable work surface. Night now extends across navigation and workspace, with readable Parchment text and thin Parchment notice boundaries. Spacing, alignment, and type weight separate areas without adding new surface hues. The personal brand appears through exact color roles and a single interface family.\n\nThis is a task-focused interface, not a promotional surface. The system is flat and restrained: no hero imagery, decorative brand motifs, shadows, or entrance choreography. Unavailable functionality is explained plainly rather than illustrated with invented activity. Dark is the default even when the operating system prefers light; there is no theme switch or stored preference.",
+    "keyCharacteristics": ["Stable navigation and replaceable content.", "A unified Night field with a purposeful selection accent.", "One locally served interface family in regular and semibold.", "Flat boundaries, visible focus, and honest empty states."],
+    "rules": [
+      { "name": "The Purposeful Accents Rule", "body": "Use accent color for a real selection or information role, not to fill empty space.", "section": "colors" },
+      { "name": "The One Interface Voice Rule", "body": "Use regular and semibold Source Sans 3 for working interface text; do not introduce a display face to decorate a task.", "section": "typography" },
+      { "name": "The Flat Surface Rule", "body": "Separate work areas with fields, spacing, or a single rule rather than decorative depth.", "section": "elevation" }
+    ],
+    "dos": ["Do keep selection, keyboard focus, and unavailable-feature copy distinct.", "Do preserve native links, readable wrapping, and document scrolling.", "Do use local font files with their OFL and recorded provenance.", "Do measure contrast for any new rendered color pairing."],
+    "donts": ["Don't add decorative art, taglines, shadows, gradients, or simulated activity to the working shell.", "Don't replace the approved navigation marker with an unrelated accent treatment.", "Don't turn Horizon or panel-only tonal ramps into invented status colors.", "Don't infer button, input, loading, or error styles from components this phase does not contain."]
+  }
+}

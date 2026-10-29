@@ -1,20 +1,20 @@
 ---
 title: Phase-1 visual-direction review notes
 date: 2026-10-29
-status: brand-direction-approved
+status: dark-refinement-awaiting-independent-review
 ---
 
 # Direction review and approval record
 
-Companion to [the shell shape](phase-1-shell.md), not a second product or implementation authority. The user first delegated best guesses, then approved updating the proposal to the personal-brand palette and interface typography below. Layout and scope remain unchanged; detailed shell and technical decisions are not all thereby approved. Implementation and generated imagery are outside this pass's assigned scope, not prohibited as future work. This review uses documentation and text schematics, not a served decision page or image comps. It sets no standing build-path preference.
+Companion to [the shell shape](phase-1-shell.md), not a second product authority. The original shell passed acceptance under the [plan](../plans/phase-1-shell.md). After trying its phone/Tailscale preview, the user requested dark styling: the same personal-brand system and layout, with a dark default rather than a theme switch. That CSS-only refinement is now built/visually checked and awaits parent-owned independent verification/review; original GREEN/Accept/ship evidence is historical, not reused as its fresh verdict. No standing build-path preference changes.
 
 ## Current approved direction: personal-brand shell
 
-Use **Night `#031315`** for navigation and primary text; **Parchment `#FEF6E1`** for the workspace and text on Night; **Lantern `#EFB83F`** for the selection marker and occasional future action fill with Night text; **Horizon `#5E8BD6`** only for purposeful information accents. Use **Source Sans 3 / Source Sans 3 Semibold** throughout the interface. The [local guidance snapshot](personal-brand-snapshot.md) is self-contained and records source path, Git revisions, clean source status, and the limited transcription; no fonts or art are copied.
+Use **Night `#031315`** for workspace and navigation; **Parchment `#FEF6E1`** for readable text, thin notice boundaries, and focus outlines; **Lantern `#EFB83F`** for the restrained selection marker and existing selection/skip-link highlight with Night text; **Horizon `#5E8BD6`** remains reserved and unused. Keep **Source Sans 3 / Source Sans 3 Semibold** throughout the interface. No new hue, art, typography, toggles, or behavior is added. The [local guidance snapshot](personal-brand-snapshot.md) records source revisions/status and the unchanged two-font/OFL copy manifest.
 
-**First viewport and path:** retain the studio-console structure: four stable left-rail destinations on desktop, four equal bottom links on phone, route title/purpose and one honest unavailable-feature region. **Signature:** selection uses a Lantern edge and semibold Parchment label; shell position stays fixed. **Focus proposal:** separate Parchment outline on Night navigation, Night outline on the Parchment workspace, each with contrasting separation. Content links are Night and underlined. Actual contrast and rendered states are unverified; the shell brief records acceptance checks, not a pass. **Reach:** future panels, composer, conversation, and file browser can replace their views independently. **Risk:** adding narrative art, taglines, or decorative lantern/path motifs would turn a working tool into brand promotion; none are part of this direction.
+**First viewport and path:** the built dark shell retains the same four left-rail destinations on desktop, four equal bottom links on phone, route title/purpose, and honest unavailable-feature region. **Signature:** the Lantern edge and semibold label show selection without moving the shell. **Focus:** Parchment outlines remain separate from selection on the Night field; content links are Parchment and underlined. Before/after desktop/phone geometry and copy are identical. The shell brief records actual checks and pending independent acceptance at their proper scope. **Reach:** future view replacements remain independent. **Risk:** neither dark mode nor personal branding justifies glow, imagery, new controls, or promotion; none are added.
 
-The former mineral-green/Public Sans appearance is superseded. The user's pinned brand choice wins over the seed's unpinned palette/type suggestions; it does not require rerolling the structural concept. Approval is for updating design artifacts, not implementing the UI, copying assets, settling architecture, or claiming accessibility compliance.
+The former mineral-green/Public Sans appearance is superseded. The user's pinned brand choice wins over the seed's unpinned palette/type suggestions; it does not require rerolling the structural concept. The subsequent authorization now permits implementation of this bounded shell, with local font integration/license provenance as planned. It does not authorize generated artwork, later domain features, settled deployment architecture, or a claim of verified accessibility.
 
 ## Historical grounding and selection record
 
@@ -72,4 +72,4 @@ The original review offered the lead, tray, plate alternative, one correction, o
 
 A quiet standing alternative is the familiar category-standard app shell, played straight. If that is preferred, identify two or three adjacent products before its implementation direction is committed. It is an available exit, not the recommendation or a standing product preference.
 
-There is no implementation direction contract or DESIGN.md yet: this is still a shape artifact. The personal-brand color/type direction is approved; implementation and remaining detailed decisions are not. No build path is stored, and no image generation or rendering has been authorized by this record.
+This remains the design decision record. `DESIGN.md` and `.impeccable/design.json` map the current dark-default CSS; its refinement gate is open for parent-owned independent verification/review, while the original phase's acceptance remains historical. No standing build path is stored, and no image generation or paid rendering was performed.

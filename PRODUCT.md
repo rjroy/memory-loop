@@ -12,7 +12,7 @@ web
 
 ## Stack
 
-Unsettled. Bun, Hono, React, and Next.js are candidates, not requirements. Prefer a lightweight shell; an additional application server needs justification. Visual design guesses are delegated for proposal, not approval to implement or settle architecture.
+For phase 1, the [implementation plan](.lore/work/plans/phase-1-shell.md) selects Bun-managed React, TypeScript, Vite, and React Router: a static frontend shell without Next.js, Hono, or another application server. This is a delegated implementation choice under the user's authorization to plan then implement, not a settlement of the later daemon architecture or production hosting.
 
 ## Users
 
@@ -35,7 +35,7 @@ The four application areas are fixed and ordered:
 3. **Think:** AI chat.
 4. **Recall:** vault file access.
 
-Phase 1 is only a frontend shell with four independently replaceable placeholder views, proposed and reviewed before implementation. No daemon, vault access, AI, business logic, fake conversations, or invented dashboard data. Functional capture is not part of this phase.
+The user authorized planning then implementing phase 1 from the reviewed design: only a frontend shell with four independently replaceable placeholder views. The original implementation passed independent GREEN and technical/visual acceptance as recorded in the completed plan. The user subsequently requested a dark-default appearance after trying the phone preview; that CSS-only refinement is built and visually checked, with parent-owned independent verification/review pending. Test/setup and UI work use separate lanes. No daemon, vault access, AI, business logic, fake conversations, or invented dashboard data. Functional capture is not part of this phase.
 
 Long term, a daemon owns business logic and authoritative operation state; the frontend presents state and sends commands. Accepted asynchronous work must survive browser disconnection, and reconnecting must recover authoritative state and outstanding decisions. Cancellation is explicit, not a side effect of disconnection. These are future requirements, not phase-1 work. Process-crash durability remains unresolved.
 
@@ -45,11 +45,11 @@ Respect configurable vault/content locations. Do not delete or rewrite unrelated
 
 ## Brand Commitments
 
-The name is **Memory Loop**. No old application design is inherited. The user approved applying **The Guide** personal-brand palette and Source Sans 3/Semibold interface typography to the shell design proposal. The [local guidance snapshot](.lore/work/design/personal-brand-snapshot.md) records the exact palette roles and source provenance. Keep the interface task-focused: no hero art, taglines, or decorative brand motifs. This direction approval is not implementation authorization or approval of every layout, accessibility, or technical detail; responsive navigation and detailed shell behavior remain documented proposals.
+The name is **Memory Loop**. No old application design is inherited. The user approved **The Guide** personal-brand palette and Source Sans 3/Semibold interface typography, then authorized planning and implementing the shell. Dark is now the approved default: Night workspace/navigation, Parchment readable text, restrained Lantern selection, and Horizon reserved for purposeful information. This does not request a theme switch or new behavior. The [local guidance snapshot](.lore/work/design/personal-brand-snapshot.md) records the exact palette roles and source provenance. Keep the interface task-focused: no hero art, taglines, or decorative brand motifs. Approval is not evidence of tested contrast/accessibility or authorization for later product phases.
 
 ## Evidence on Hand
 
-The restart intent and current conversation establish product truth. Approved personal-brand guidance is captured locally with source revision and clean-worktree provenance; no fonts or artwork have been copied. No vault files, real conversations, panel content, product screenshots, or visual assets are supplied for this phase. Do not manufacture examples to make a placeholder look active.
+The restart intent and current conversation establish product truth. Approved personal-brand guidance is captured locally with source revision and clean-worktree provenance. Source Sans 3 regular/semibold and their OFL license are now copied locally with byte-for-byte hashes in that record; no artwork was copied or generated. Actual shell screenshots were captured and opened for desktop, phone, narrow and landscape layouts. No vault files, real conversations, or panel content are supplied. Do not manufacture examples to make a placeholder look active.
 
 ## Product Principles
 
@@ -61,4 +61,4 @@ The restart intent and current conversation establish product truth. Approved pe
 
 ## Open Decisions
 
-Stack, authentication and LAN exposure, panel contents/configuration, AI integration details, metadata storage and transport, process-crash durability, and the depth/order of future features remain open. No product-specific accessibility needs have been supplied; the shape brief proposes an accessibility baseline for approval.
+Authentication and LAN exposure, production static hosting, panel contents/configuration, AI integration details, metadata storage and transport, process-crash durability, and the depth/order of future features remain open. The phase-1 frontend stack is selected in the plan; the later daemon stack is not. No product-specific accessibility needs have been supplied; use the shell design's WCAG 2.2 AA acceptance targets and verify the actual build.

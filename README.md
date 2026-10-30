@@ -6,10 +6,10 @@ Markdown without changing it. The other three views remain honest placeholders.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
 curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
-The native Next App Router migration (`memory-loop-1l0.2`) is in verification,
-not accepted yet. Next presents the UI and proxies two read-only API routes to
+The native Next App Router migration (`memory-loop-1l0.2`) is accepted. Next presents the UI and proxies two read-only API routes to
 the authenticated Bun/Hono daemon. The daemon reads the JSON-configured vault
-when started. No real-vault activation or private-phone cutover has occurred.
+when started. The private Tailscale deployment now uses the selected real vault;
+independent real-deployment verification passed and final review accepted it.
 
 ## Operator guide
 
@@ -86,10 +86,8 @@ through the authenticated API.
 
 ### Start both tiers
 
-**Bare daemon startup reads the existing selected vault.** Real-vault activation
-and private-phone cutover remain `memory-loop-1l0.3`, after fixture/security review;
-do not run these defaults as migration test commands. For an approved deployment,
-use separate terminals:
+**Bare daemon startup reads the existing selected vault.** For the current
+private deployment, start from the project root in separate terminals:
 
 ```sh
 # Terminal 1: API-only Bun/Hono, default 127.0.0.1:3001; no frontend build needed.
@@ -99,6 +97,12 @@ bun --no-env-file run server
 # Terminal 3: authenticated tree status/shape, without printing notes or tokens.
 bun --no-env-file run check:daemon
 ```
+
+Open **https://gsai.raptor-piranha.ts.net:9443/recall** on a device connected to
+the tailnet. To stop, press Ctrl-C in each terminal; to restart, run the daemon
+and server commands again. Build with `bun --no-env-file run build` after source
+changes before restarting the production server. No OS autostart is configured;
+the background Tailscale Serve mapping alone does not start either process.
 
 During phase-two verification, use only controlled fixture data and an explicit
 scratch root/transport instead (separate terminals, after creating fixture vault
@@ -140,7 +144,7 @@ errors and application logs omit credentials, note identifiers and note text.
 Use a **current, updated browser with the Navigation API**. Presentation snapshots
 use the public `navigation.currentEntry.key`; unsupported browsers show “Browser
 update required” rather than a URL-identity fallback. Chromium fixture checks do
-not establish actual phone support: verify that browser before private cutover.
+not establish actual phone support: the physical phone browser remains unverified.
 
 Loopback is not user authentication against local processes. The selected
 phase-three topology is **private Tailscale Serve → loopback Node Next → loopback
@@ -152,11 +156,12 @@ tailnet connection alone is not authorization. Verify actual proxy header
 replacement and denied-principal behavior with fixtures before real notes.
 Never expose the daemon, bind to LAN/all interfaces, or create a public Funnel.
 
-The already-running **127.0.0.1:4173** static preview and its `dist/` remain unchanged
-as the phase-three rollback. It has no vault API and is not the supported runtime.
-Do not rebuild, stop or repoint it while testing Next. Its private app Serve
-mapping remains unchanged until reviewed cutover; unrelated mappings and services
-remain untouched. No real-vault daemon or remote transport was activated here.
+The **127.0.0.1:4173** static preview and its `dist/` remain the retained rollback.
+It has no vault API and is not the supported runtime. The current private mapping
+is 9443 → 3000; if rollback is needed, change only that mapping with
+`tailscale serve --bg --https=9443 http://127.0.0.1:4173`. Preserve the preview
+and unrelated mappings. A separate unauthorized tailnet principal has not been
+tested end-to-end; fixture identity-policy and actual proxy-header checks passed.
 
 ## What Recall does
 
@@ -195,10 +200,10 @@ transactional snapshot.
 The Hono daemon phase (`memory-loop-1l0.1`) passed independent fixture-based
 backend checks (**130 tests**) and typecheck. Fresh technical verification
 accepted the HN1-R1 readiness correction. This verifies the private daemon API,
-not Next/phone acceptance. Native Next and the API-only daemon are implemented;
-their fixture adapters have independent checks. Architecture cleanup still needs
-the reconciled full suite and fresh technical/visual review before `memory-loop-1l0.2`
-acceptance. Historical results below do not substitute for that verification.
+not physical-phone acceptance. Native Next and the API-only daemon are implemented;
+the migration was accepted after its checks and technical/visual review. Real-vault
+deployment has been activated and independently verified; final review accepted it.
+Historical results below do not substitute for the real-deployment verification.
 
 ```sh
 bun --no-env-file run typecheck
@@ -231,9 +236,8 @@ focused pane helpers. These are baseline results, not renewed visual-application
 acceptance. Baseline evidence is
 recorded in `.impeccable/review/recall/handoff.md` (local/ignored); the sidebar's
 verification and findings resolution are recorded in Beads `memory-loop-ms4`.
-This is implementation acceptance, not real-vault activation:
-the static Tailscale preview remains API-isolated and phone access to real notes
-is not enabled.
+This is historical implementation acceptance; the subsequent private deployment
+now uses the real vault and has passed independent real-deployment verification.
 
 The visual application (`memory-loop-44w`) adds unchanged approved A.5/A.1 artwork,
 IM Fell English SC identity and Libre Baskerville editorial headings, alongside

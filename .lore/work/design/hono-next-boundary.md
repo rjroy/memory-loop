@@ -143,6 +143,22 @@ The daemon requires no frontend build after static serving is removed. Document 
 
 ## Private cutover and rollback
 
+**Current deployment:** fixture and proxy-header security review accepted; the
+approved real vault is active through private `https://gsai.raptor-piranha.ts.net:9443/`
+→ loopback Next 3000 → authenticated loopback Hono 3001. Initial HTTPS tree and
+selected-note status/schema checks passed without logging content. Independent
+real-deployment verification passed and final review accepted it without findings.
+A separate unauthorized tailnet principal and a physical phone remain untested.
+
+From the project root, build with `bun --no-env-file run build` when needed;
+start `bun --no-env-file run daemon` and `bun --no-env-file run server` in
+separate terminals. Ctrl-C stops each; rerun both commands to restart. There is no
+OS autostart. Transport and the sibling credential use ignored owner-only project
+metadata; the daemon alone reads the existing ignored vault selection. A current
+browser with the Navigation API is required. Keep the static 4173 preview for
+rollback, using `tailscale serve --bg --https=9443 http://127.0.0.1:4173` to
+change only the app mapping if needed.
+
 Before dependency removal, preserve the served static artifact and verify the existing owned 4173 preview remains runnable; Next builds into `.next`, not that `dist`. Keep its process/artifact and current **9443 → 4173** path working until cutover. Do not stop an unidentified process. Snapshot/filter current Serve configuration immediately before mutation; compare immediately after. The board **9444 → 48763**, unrelated **443**, unrelated Funnel **10000**, other Memory Loop service, and fixture **4317** are out of scope. Never run `tailscale serve reset` or restore a whole stale config over unrelated changes.
 
 In 1l0.3 start the production pair with fixture vault, transport in tailscale mode and the exact derived principal. Repoint **only 9443** to Next using the installed CLI's reviewed per-port operation (target form: `tailscale serve --bg --https=9443 http://127.0.0.1:3000`); verify its semantics/version first. Exercise header replacement, HTTPS and full fixture Recall through that same mapping. On any failure restore only **9443 → 4173**, verify it and unrelated mappings, and stop only newly owned processes. Do not expose an unreviewed fallback daemon or relax authentication to make the probe pass.
@@ -157,4 +173,4 @@ Inspected local sources: `AGENTS.md`, README/PRODUCT, restart/Recall intents, ac
 
 Official sources rechecked: [Next deployment](https://nextjs.org/docs/app/getting-started/deploying), [routing/history](https://nextjs.org/docs/app/getting-started/linking-and-navigating), [useRouter](https://nextjs.org/docs/app/api-reference/functions/use-router), [query hooks/SSR](https://nextjs.org/docs/app/api-reference/functions/use-search-params), [Route Handlers](https://nextjs.org/docs/app/api-reference/file-conventions/route), [Bun Next guide](https://bun.sh/guides/ecosystem/nextjs), [Hono/Bun](https://hono.dev/docs/getting-started/bun), [Hono auth](https://hono.dev/docs/middleware/builtin/bearer-auth), [Serve identity/trust](https://tailscale.com/kb/1312/serve), [Serve CLI](https://tailscale.com/kb/1242/tailscale-serve), [ACL policy](https://tailscale.com/kb/1337/acl-syntax), [upstream Serve header implementation](https://github.com/tailscale/tailscale/blob/main/ipn/ipnlocal/serve.go), and published [Next](https://registry.npmjs.org/next/latest)/[Hono](https://registry.npmjs.org/hono/latest) metadata. Upstream main and registry snapshots do not prove installed runtime behavior.
 
-No new product decision is needed now. Design review accepted the architecture and HN-001 amendment. Phase 1l0.1 has independent fixture verification and technical review; native Next/HN-001 runtime evidence, installed Serve/principal/header proof, and unprivileged CLI permission for the one mapping remain later execution gates. Report exact failures if blocked; do not use sudo or edit `~/Applications/`. No private deployment or real-vault activation has occurred.
+No new product decision is needed now. Design review accepted the architecture and HN-001 amendment. Fixture verification and fresh security review accepted the private boundary; real-vault deployment is active, independently verified, and accepted in final review. Report exact failures if blocked; do not use sudo or edit `~/Applications/`.

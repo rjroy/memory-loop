@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import type { VaultId } from '../../backend/contract';
 import { failureCopy, findNote, idKey, noteLocation, readNote, readTree, selectionFromSearch } from '../recall/api';
@@ -8,6 +8,7 @@ import { useDesktop } from '../recall/useDesktop';
 import { useVaultRead } from '../recall/useVaultRead';
 import MarkdownDocument from '../recall/MarkdownDocument';
 import VaultFiles from '../recall/VaultFiles';
+import FilesToggle from '../recall/FilesToggle';
 import '../recall/recall.css';
 
 function Message({ heading, body, action, onAction }: { heading: string; body: string; action?: string; onAction?: () => void }) {
@@ -41,8 +42,19 @@ export default function RecallView() {
   const filesHeading = useRef<HTMLHeadingElement>(null);
   const readerRef = useRef<HTMLElement>(null);
   const identityRef = useRef<HTMLParagraphElement>(null);
-  const toggleRef = useRef<HTMLButtonElement>(null);
+  const collapseRef = useRef<HTMLButtonElement>(null);
+  const expandRef = useRef<HTMLButtonElement>(null);
   const pendingFocus = useRef<'files' | 'identity' | 'toggle' | null>(null);
+  const attachExpand = useCallback((element: HTMLButtonElement | null) => {
+    expandRef.current = element;
+    if (!element) return;
+    return () => {
+      // Ref cleanup runs before removal, while the outgoing control still owns focus.
+      // Explicit open/selection actions already have their own focus destination.
+      if (document.activeElement === element && pendingFocus.current === null) pendingFocus.current = 'toggle';
+      expandRef.current = null;
+    };
+  }, []);
   const revealSelection = useRef(true);
   const pendingScroll = useRef<number | null>(session.entries.get(entryKey) ?? session.readerScroll);
   const previousEntry = useRef({ key: entryKey, pathname: location.pathname, search: location.search, hash: location.hash });
@@ -136,7 +148,7 @@ export default function RecallView() {
     if (!target) return;
     const element = target === 'files'
       ? filesRef.current?.querySelector<HTMLElement>('a[aria-current="page"]') ?? filesHeading.current
-      : target === 'identity' ? identityRef.current : toggleRef.current;
+      : target === 'identity' ? identityRef.current : showFiles ? collapseRef.current : expandRef.current;
     if (element && (target !== 'files' || showFiles) && (target !== 'identity' || showReader)) {
       element.focus({ preventScroll: true });
       if (target === 'files') element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
@@ -175,7 +187,10 @@ export default function RecallView() {
 
   const closeFiles = () => {
     pendingFocus.current = 'toggle';
-    pendingScroll.current = session.readerScroll;
+    // Desktop keeps the live reader. Let native anchoring account for its changed
+    // layout, and keep recording the resulting real scroll position. Only the
+    // hidden narrow reader needs an explicit restoration when it returns.
+    if (desktop) rememberReader(); else pendingScroll.current = session.readerScroll;
     if (desktop) setDesktopVisible(false); else { session.narrowClosed = true; setNarrowOpen(false); }
     console.info('recall_files_visibility_changed', { visible: false, trigger: 'user' });
   };
@@ -212,12 +227,12 @@ export default function RecallView() {
       : note.status === 'error' ? failureCopy[note.error].heading : tree.status === 'loading' ? 'Loading files…' : '';
 
   return <div className="recall" onKeyDown={event => {
-    if (!desktop && showFiles && event.key === 'Escape') { event.preventDefault(); closeFiles(); }
+    if (showFiles && event.key === 'Escape' && filesRef.current?.contains(event.target as Node)) {
+      event.preventDefault(); closeFiles();
+    }
   }}>
     <header className="recall-toolbar">
       <h1 id="view-heading" tabIndex={-1}>Recall</h1>
-      {canBrowse && <button className="recall-button files-toggle" ref={toggleRef} type="button" aria-expanded={showFiles} aria-controls="recall-files"
-        onClick={showFiles ? closeFiles : openFiles}>{desktop ? showFiles ? 'Hide files' : 'Show files' : showFiles ? 'Close files' : 'Open files'}</button>}
       <p className="read-only-label">Read-only</p>
     </header>
     <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{announcement ? `Recall: ${announcement}` : ''}</div>
@@ -229,7 +244,10 @@ export default function RecallView() {
             aria-busy={tree.status === 'loading'} onScroll={() => {
               if (showFiles && tree.status === 'ready' && filesRef.current) session.treeScroll = { top: filesRef.current.scrollTop, left: filesRef.current.scrollLeft };
             }}>
-            <h2 ref={filesHeading} tabIndex={-1}>Files</h2>
+            <header className="files-header">
+              <h2 ref={filesHeading} tabIndex={-1}>Files</h2>
+              <FilesToggle expanded active={showFiles} ref={collapseRef} onToggle={closeFiles} />
+            </header>
             {desktop && selection.id && <button className="pane-jump" type="button" onClick={() => identityRef.current?.focus({ preventScroll: true })}>Skip to note</button>}
             {tree.status === 'loading' ? <p className="files-status">Loading files…</p>
               : tree.status === 'error' ? <Message heading="Couldn't load files" body="The file list couldn't be retrieved. Try again."
@@ -242,6 +260,9 @@ export default function RecallView() {
                 </>}
           </nav>
           <section className="recall-reader" ref={readerRef} hidden={!showReader} aria-label="Note reader" onScroll={rememberReader}>
+            {showReader && !showFiles && <div className="reader-controls">
+              <FilesToggle expanded={false} ref={attachExpand} onToggle={openFiles} />
+            </div>}
             {showReader && <div className="reader-measure">
               {selection.invalid ? <Failure code="invalid_request" retry={() => {}} />
                 : selection.id ? <>

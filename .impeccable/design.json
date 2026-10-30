@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-30T00:22:17Z",
+  "generatedAt": "2026-10-30T01:46:10Z",
   "title": "Design System: Memory Loop",
   "extensions": {
     "colorMeta": {
@@ -170,19 +170,35 @@
       "css": ".ds-content-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 1rem; color: var(--parchment, #fef6e1); font: 600 1rem/1.5 'Source Sans 3', system-ui, sans-serif; text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: .2em; } .ds-content-link:hover { text-decoration-thickness: 2px; } .ds-content-link:active { text-underline-offset: .1em; } .ds-content-link:focus-visible { outline: 2px solid var(--parchment, #fef6e1); outline-offset: 4px; }"
     },
     {
-      "name": "Recall toolbar and Files control",
+      "name": "Recall toolbar",
+      "kind": "custom",
+      "refersTo": "recall-toolbar",
+      "description": "Route title and Read-only label retain their alignment. Files visibility now belongs to the local Files/reader headers, not this toolbar.",
+      "html": "<header class=\"ds-recall-toolbar\"><h1 tabindex=\"-1\">Recall</h1><p>Read-only</p></header>",
+      "css": ".ds-recall-toolbar{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;padding:1.75rem 2rem;border-bottom:1px solid var(--parchment, #fef6e1);}.ds-recall-toolbar h1{display:flex;align-items:center;min-height:44px;width:fit-content;max-width:100%;margin:0 auto 0 0;font-size:1.75rem;font-weight:600;line-height:1.2;}.ds-recall-toolbar h1:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}.ds-recall-toolbar p{margin:0;font-size:.875rem;}@media(width < 56rem){.ds-recall-toolbar{padding:max(1rem,env(safe-area-inset-top,0px)) max(1rem,env(safe-area-inset-right,0px)) 1rem max(1rem,env(safe-area-inset-left,0px));}}"
+    },
+    {
+      "name": "Files sidebar — expanded control",
       "kind": "button",
-      "refersTo": "recall-button",
-      "description": "Real toolbar/control styling. Static visibility-state excerpt; React supplies pane toggling and focus, not this panel snippet.",
-      "html": "<header class=\"ds-recall-toolbar\"><h1 tabindex=\"-1\">Recall</h1><button class=\"ds-recall-button\" type=\"button\" aria-expanded=\"false\">Show files</button><p>Read-only</p></header>",
-      "css": ".ds-recall-toolbar{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;padding:1.75rem 2rem;border-bottom:1px solid var(--parchment, #fef6e1);}.ds-recall-toolbar h1{width:fit-content;max-width:100%;margin:0 auto 0 0;font-size:1.75rem;font-weight:600;line-height:1.2;}.ds-recall-toolbar h1:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}.ds-recall-toolbar p{margin:0;font-size:.875rem;}.ds-recall-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;max-width:100%;padding:.5rem .875rem;border:1px solid var(--parchment, #fef6e1);border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);font:inherit;cursor:pointer;}.ds-recall-button:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-recall-button:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-recall-button:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}.ds-recall-button:disabled{cursor:wait;text-decoration:none;}@media(width < 56rem){.ds-recall-toolbar{padding:max(1rem,env(safe-area-inset-top,0px)) max(1rem,env(safe-area-inset-right,0px)) 1rem max(1rem,env(safe-area-inset-left,0px));}}"
+      "refersTo": "files-toggle",
+      "description": "Static expanded geometry: plain left chevron at the Files header upper-right, 20px icon/44px target. React supplies collapse, hover/focus tooltip dismissal, Escape and focus restoration; this panel excerpt is not the application controller.",
+      "html": "<nav class=\"ds-files\" id=\"ds-expanded-files\" aria-label=\"Vault files\"><header class=\"ds-files-header\"><h2>Files</h2><button class=\"ds-files-toggle\" type=\"button\" aria-label=\"Collapse files sidebar\" aria-expanded=\"true\" aria-controls=\"ds-expanded-files\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 20 20\" fill=\"none\" aria-hidden=\"true\"><path d=\"m12 5-5 5 5 5\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button></header></nav>",
+      "css": ".ds-files{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;padding:1.5rem 1rem 2rem;}.ds-files-header{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}.ds-files-header h2{margin:0 .5rem;font-size:1.125rem;font-weight:600;line-height:1.4;}.ds-files-toggle{display:inline-grid;place-items:center;width:44px;height:44px;padding:12px;border:0;border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);cursor:pointer;}.ds-files-toggle svg{width:20px;height:20px;}.ds-files-toggle:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-files-toggle:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-files-toggle:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}"
+    },
+    {
+      "name": "Files sidebar — collapsed control and tooltip",
+      "kind": "button",
+      "refersTo": "files-tooltip",
+      "description": "Static collapsed geometry at the reader upper-left: right chevron, valid hidden Files target, matching tooltip shown for comparison. Runtime tooltip opens on hover/focus, remains pointer-reachable and dismisses with Escape without moving focus. No retained icon rail or visible Show/Hide text.",
+      "html": "<section class=\"ds-reader-control-context\" aria-label=\"Note reader\"><nav id=\"ds-collapsed-files\" aria-label=\"Vault files\" hidden></nav><span class=\"ds-files-control\"><button class=\"ds-expand-toggle\" type=\"button\" aria-label=\"Expand files sidebar\" aria-expanded=\"false\" aria-controls=\"ds-collapsed-files\" aria-describedby=\"ds-files-tooltip\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 20 20\" fill=\"none\" aria-hidden=\"true\"><path d=\"m8 5 5 5-5 5\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button><span class=\"ds-files-tooltip\" id=\"ds-files-tooltip\" role=\"tooltip\">Expand files sidebar</span></span></section>",
+      "css": ".ds-reader-control-context{min-height:100px;padding:1.75rem 2rem;color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;}.ds-reader-control-context [hidden]{display:none!important;}.ds-files-control{position:relative;display:inline-flex;}.ds-expand-toggle{display:inline-grid;place-items:center;width:44px;height:44px;padding:12px;border:0;border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);cursor:pointer;}.ds-expand-toggle svg{width:20px;height:20px;}.ds-expand-toggle:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-expand-toggle:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-expand-toggle:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}.ds-files-tooltip{position:absolute;top:100%;left:0;width:max-content;max-width:min(16rem,calc(100vw - 3rem));padding:.5rem .75rem;border:1px solid var(--parchment, #fef6e1);border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);font-size:.875rem;line-height:1.5;}"
     },
     {
       "name": "Recall button — hover",
       "kind": "button",
       "refersTo": "recall-button-hover",
       "description": "The source :hover state shown at rest for comparison; not a separate runtime control.",
-      "html": "<div class=\"ds-control-context\"><button class=\"ds-recall-button\" type=\"button\">Show files</button></div>",
+      "html": "<div class=\"ds-control-context\"><button class=\"ds-recall-button\" type=\"button\">Retry note</button></div>",
       "css": ".ds-control-context{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;}.ds-recall-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;max-width:100%;padding:.5rem .875rem;border:1px solid var(--parchment, #fef6e1);border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);font:inherit;cursor:pointer;color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-recall-button:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-recall-button:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-recall-button:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}"
     },
     {
@@ -190,7 +206,7 @@
       "kind": "button",
       "refersTo": "recall-button-active",
       "description": "The source :active state shown at rest for comparison; not a separate runtime control.",
-      "html": "<div class=\"ds-control-context\"><button class=\"ds-recall-button\" type=\"button\">Show files</button></div>",
+      "html": "<div class=\"ds-control-context\"><button class=\"ds-recall-button\" type=\"button\">Retry note</button></div>",
       "css": ".ds-control-context{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;}.ds-recall-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;max-width:100%;padding:.5rem .875rem;border:1px solid var(--parchment, #fef6e1);border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);font:inherit;cursor:pointer;color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-recall-button:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-recall-button:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-recall-button:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}"
     },
     {

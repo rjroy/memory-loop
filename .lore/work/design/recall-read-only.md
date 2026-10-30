@@ -7,6 +7,8 @@ surface: Recall
 
 # Recall: files beside the page
 
+Sidebar correction (`memory-loop-ms4`, 2026-10-30): the user superseded the detached text toggle with the [approved icon-sidebar adaptation](personal-brand-snapshot.md#approved-recall-sidebar-adaptation). The current layout/control descriptions below reflect that bounded correction. Fresh technical **Accept** and visual **SHIP** resolve R1/R2/R3/V1: sticky-header row clearance, breakpoint focus transfer, anchor-adjusted reading restoration, and focused-helper visibility. Independent current-build unit **25/25**, Recall browser **25/25**, legacy browser **18/18**, and typecheck/build pass; backend **87** remains prior unchanged evidence. Original read-only counts below are historical. Acceptance still does not activate real-vault reads or remote transport.
+
 **Approved by the user: “Implement this design.”** The read-only slice is complete: independent frontend unit 24/24, Recall browser 17/17 in one run, typecheck/build pass, technical **Accept** and visual **ship**. The original 15-failure RED remains historical evidence. Acceptance does not activate a real vault or remote transport.
 
 Authority: [Recall intent](../intents/recall.md), [local plan](../../local/plans/read-only-recall.md), [PRODUCT.md](../../../PRODUCT.md), approved dark [DESIGN.md](../../../DESIGN.md), and the backend-owned [typed contract](../../../backend/contract.ts) / [contract notes](../../../backend/CONTRACT.md). This brief records the accepted route/interaction design; canonical DESIGN.md records the actual built system. The placeholder Recall interior was replaced.
@@ -39,18 +41,18 @@ Inherit Night surfaces, Parchment text, restrained Lantern selection, and Source
 
 ## Layout and first state
 
-- Preserve **Ground · Capture · Think · Recall** in that order and keep them usable in every state. Recall's toolbar contains H1 **Recall**, the Files control, and **Read-only**. Remove the obsolete global **Navigation preview** label when Recall becomes functional; do not invent a connected badge. Other tabs keep their own unavailable-feature explanations.
-- **Desktop, existing ≥56rem breakpoint:** preserve the 13rem app rail. Recall uses the available outlet rather than the placeholder notice width/padding. Files is visible on first entry, approximately 16rem wide (toward 14rem near the breakpoint), with a thin Parchment divider. Reader and Files scroll independently beneath the reachable toolbar. No resizer. **Hide files / Show files** changes space, not selection or reading position.
+- Preserve **Ground · Capture · Think · Recall** in that order and keep them usable in every state. Recall's toolbar contains H1 **Recall** and **Read-only**, retaining its prior title alignment. The Files control belongs to its local pane header. The obsolete global **Navigation preview** label stays removed; do not invent a connected badge. Other tabs keep their own unavailable-feature explanations.
+- **Desktop, existing ≥56rem breakpoint:** preserve the 13rem app rail. Recall uses the available outlet rather than the placeholder notice width/padding. Files is visible on first entry, approximately 16rem wide (toward 14rem near the breakpoint), with a thin Parchment divider. Reader and Files scroll independently beneath the reachable toolbar. No resizer. A plain left-chevron icon in the sticky Files header's upper-right collapses the hierarchy; a plain right-chevron icon at the reader's upper-left expands it. No collapsed destination-icon rail or empty Files column. This changes space, not selection or reading position.
 - **Narrow:** show either Files or reader, filling the app viewport above the persistent bottom tabs and safe area. Files is a full-height replacement, not a half-sheet or overlaid drawer. The hidden reader is absent from layout and the accessibility tree. This is **non-modal**: no focus trap, `aria-modal`, backdrop, or disabled app navigation.
-- First narrow entry without a note opens Files. A direct note URL starts the reader. **Open files / Close files** switches modes; selection closes Files immediately, even before loading finishes. Escape also closes Files. Native Back remains browser history, not a hidden close action.
+- First narrow entry without a note opens Files. A direct note URL starts the reader. The same left/right-chevron controls in the Files/reader headers switch modes; selection closes Files immediately, even before loading finishes. Escape within Files closes it unless dismissing a visible tooltip first. Native Back remains browser history, not a hidden close action.
 - Replace the redundant compact Memory Loop brand header with the Recall toolbar **on narrow Recall only**. Desktop branding and other views stay unchanged. Short landscape uses the same narrow model; no minimum-height spacer or tab-bar overlap.
 
 ```text
 DESKTOP
 ┌─────────────┬────────────────────────────────────────────┐
-│ Memory Loop │ Recall              Hide files   Read-only │
+│ Memory Loop │ Recall                           Read-only │
 │ Ground      ├─────────────────┬──────────────────────────┤
-│ Capture     │ Files           │ [filename.md]            │
+│ Capture     │ Files         ‹ │ [filename.md]            │
 │ Think       │ [folder] ▾      │ [relative path]          │
 │ Recall      │   [filename.md] │ Formatting support       │
 │             │ [folder] ▸      │ [rendered Markdown…]     │
@@ -58,12 +60,12 @@ DESKTOP
 └─────────────┴─────────────────┴──────────────────────────┘
 PHONE: FILES                      PHONE: READER
 ┌─────────────────────────┐      ┌─────────────────────────┐
-│ Recall      Close files │      │ Recall       Open files │
-│ Read-only               │      │ Read-only               │
-│ Files                   │      │ [filename.md]           │
-│ [folder] ▾              │choose│ [relative path]         │
-│   [filename.md]         │ ───► │ Formatting support      │
-│ [folder] ▸              │      │ [rendered Markdown…]    │
+│ Recall        Read-only │      │ Recall        Read-only │
+│ Files                 ‹ │      │ ›                       │
+│ [folder] ▾              │      │ [filename.md]           │
+│   [filename.md]         │choose│ [relative path]         │
+│ [folder] ▸              │ ───► │ Formatting support      │
+│                         │      │ [rendered Markdown…]    │
 │ full-height hierarchy   │      │ reading scroll          │
 ├─────────────────────────┤      ├─────────────────────────┤
 │Ground Capture Think Recall│    │Ground Capture Think Recall│
@@ -82,8 +84,8 @@ Use native nested lists, folder disclosure buttons, and file links in **Vault fi
 | Action | Result and focus contract |
 |---|---|
 | Enter Recall | Client app-route entry focuses Recall H1; hard load does not autofocus. No response-driven focus jump. |
-| Show/Open files | Focus current link if already available, otherwise Files heading; keep that focus when loading completes. Restore expansion/list position. |
-| Hide/Close files or narrow Escape | Focus the corresponding toolbar toggle; preserve reader position. Buttons expose expanded state and controlled panel. |
+| Expand files sidebar (right-chevron icon) | Focus current link if already available, otherwise Files heading; keep that focus when loading completes. Restore expansion/list position. |
+| Collapse files sidebar (left-chevron icon), or Escape within expanded Files | Focus the visible reader-header expand control; preserve reader position. Buttons expose expanded state and controlled panel. Escape dismisses a visible tooltip first without moving focus or collapsing Files. |
 | Choose a different note | Clear old body, show safe identity when known, focus reader identity once, reset that note to top; narrow Files closes. |
 | Note response | Update only the currently requested note. No second focus movement; concise polite status, never a live announcement of the whole article. |
 | Choose current note / retry | Re-read without another history entry; preserve reading position where possible. |
@@ -91,6 +93,8 @@ Use native nested lists, folder disclosure buttons, and file links in **Vault fi
 | Leave for another tab | Normal app navigation, no leave guard; retain presentation context in memory only. |
 
 Resize preserves selection and reading position. Entering narrow with a note keeps the reader unless the user is actively using Files; without one, show Files unless explicitly closed. Visible narrow Files becomes a visible desktop panel on widening; otherwise restore the desktop visibility preference. If a pane becomes hidden while focused, focus the visible Files toggle instead of leaving focus in hidden content. No orientation-driven jump to the page top.
+
+Sidebar buttons are 44×44px with 20px drawn SVG chevrons, no visible Show/Hide/Open/Close files text, and accessible names **Collapse files sidebar** / **Expand files sidebar**. `aria-controls` references the retained Files navigation even when hidden. Matching tooltips support hover and keyboard focus, remain pointer-reachable, and dismiss with Escape. The existing Parchment focus, native disclosure/link keyboard behavior, and Lantern current-file selection remain unchanged.
 
 ## Identity, links, and browser history
 
@@ -127,7 +131,7 @@ Use structured error **codes**, not status alone or leaked filesystem messages: 
 | State / code | Copy | Placement / action |
 |---|---|---|
 | Tree loading | **Loading files…** | Files only; tabs/toggle usable. |
-| Ready, unselected | **Choose a Markdown note** — Open a folder or choose a file in Files. Notes open read-only. | Reader; existing Files toolbar control if hidden, not a duplicate action. Never auto-select first note. |
+| Ready, unselected | **Choose a Markdown note** — Open a folder or choose a file in Files. Notes open read-only. | Reader; existing reader-header expand icon if Files is hidden, not a duplicate action. Never auto-select first note. |
 | Empty eligible root | **No Markdown notes to show** — Recall lists Markdown files and folders only. Other files and hidden entries aren't shown. | Workspace when no requested/open note; no fake browse action. A nonempty folder hierarchy remains browsable even if it contains no notes. |
 | Note loading | **Opening note…** | Reader with known identity, no previous body. |
 | Zero-length success | **This note is empty.** | Keep file identity and Files control. |

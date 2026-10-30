@@ -3,7 +3,7 @@
 A personal, dark-default workspace with four stable destinations: Ground, Capture,
 Think, and Recall. **Recall is built:** browse one configured vault and read
 Markdown without changing it. The other three views remain honest placeholders.
-Visual review is **ship**; final technical verification is still pending. This is
+Visual review is **SHIP**; final technical verification is **Accept**. This is
 not authorization to activate real-vault reads or expose them remotely.
 
 ## Operator guide
@@ -85,6 +85,9 @@ is disabled; legacy `.env.example` is unused. Use the documented Bun
 
 - Desktop Files starts visible and can be hidden; narrow Files fills the area
   above the four persistent app links and closes on selection. It is not modal.
+- A left-chevron icon at the Files header's upper-right collapses the sidebar;
+  a right-chevron at the reader's upper-left expands it. Both have accessible
+  names and hover/keyboard-focus tooltips, without visible Show/Hide text.
 - Native folder disclosures and file links preserve keyboard and modified-click
   behavior. Note URLs are `/recall?file=<query-encoded JSON component array>`.
 - Literal filenames/relative paths identify the article. Browser history and
@@ -126,13 +129,16 @@ owns disposable test vaults and loopback daemons; it needs a current build and
 never uses personal configuration or a live vault. No browser download is
 required by these commands.
 
-Read-only Recall is complete: final independent frontend unit **24/24**, Recall
-browser **17/17 in one run**, typecheck/build pass, technical **Accept** and visual
-**ship**. Prior backend **87** and legacy browser **18** remain valid unchanged.
-UI-001/002/003 are resolved, including bare Recall → client-side note selection
-→ reopen Files → keyboard Skip to content/hash change. The root production
-build is current. Evidence is recorded in `.impeccable/review/recall/handoff.md`
-(local/ignored). This is implementation acceptance, not real-vault activation:
+Read-only Recall and the sidebar correction (`memory-loop-ms4`) are complete:
+current-build independent frontend unit **25/25**, Recall browser **25/25**,
+legacy browser **18/18**, and typecheck/build pass, with fresh technical
+**Accept** and visual **SHIP**. Backend **87** remains prior unchanged evidence.
+UI-001/002/003 and MS4-R1/R2/R3/V1 are resolved, including sticky-header row
+clearance, breakpoint focus transfer, reading-anchor restoration, and visible
+focused pane helpers. The root production build is current. Baseline evidence is
+recorded in `.impeccable/review/recall/handoff.md` (local/ignored); the sidebar's
+verification and findings resolution are recorded in Beads `memory-loop-ms4`.
+This is implementation acceptance, not real-vault activation:
 the static Tailscale preview remains API-isolated and phone access to real notes
 is not enabled.
 

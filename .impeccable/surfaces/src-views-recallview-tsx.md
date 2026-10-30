@@ -19,6 +19,8 @@ STORY: Find a folder, recognize the literal filename/path, open it, and read. Re
 
 FIRST VIEWPORT: Desktop keeps the 13rem app rail, Recall toolbar, 14–16rem Files panel, and remaining-width reader with 68ch prose. Narrow Files fills the area above persistent bottom links and closes on selection. Identity/path and formatting disclosure precede Markdown.
 
+Sidebar correction (`memory-loop-ms4`): retain the toolbar title/Read-only alignment but move visibility to a 44×44px local icon control. A 20px plain left chevron belongs at the sticky Files header's upper-right; when collapsed, a plain right chevron belongs at the reader's upper-left, with no retained icon rail. Accessible Collapse files sidebar / Expand files sidebar names, controlled/expanded state, hover/focus tooltips with Escape dismissal, and focus return preserve the existing selection/history/scroll model. This supersedes the prior toolbar text toggle and has fresh technical **Accept** / visual **SHIP**; R1/R2/R3/V1 are independently resolved. Current-build independent unit **25/25**, Recall browser **25/25**, legacy browser **18/18**, and typecheck/build pass; backend **87** remains prior unchanged evidence. See the [refreshed guidance](../../.lore/work/design/personal-brand-snapshot.md#approved-recall-sidebar-adaptation). Palette roles and all unrelated design stay unchanged; fixture-only acceptance does not activate real-vault reads.
+
 FORM: User-pinned tree/reader structure, shaped directly within the established world; no roll/seed or generated comp. Code-led written schematic approved by the user.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

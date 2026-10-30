@@ -5,14 +5,194 @@ function noteUrl(origin: string, id: string[]): string {
   return `${origin}/recall?${new URLSearchParams({ file: JSON.stringify(id) })}`;
 }
 
+test('MS4-R1: reopened Files reveals the focused current row below its sticky header', async ({ page, recallOrigin }) => {
+  const entries = Array.from({ length: 100 }, (_, index) => {
+    const name = `fixture-${String(index).padStart(3, '0')}.md`;
+    return { kind: 'note', name, id: [name] };
+  });
+  await page.route('**/api/vault/tree', route => route.fulfill({ json: { entries } }));
+  await page.route('**/api/vault/note?*', route => route.fulfill({ json: { name: 'fixture-030.md', markdown: '# Fixture note' } }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${recallOrigin}/recall`);
+  const files = page.getByRole('navigation', { name: 'Vault files' });
+  const current = files.getByRole('link', { name: 'fixture-030.md' });
+  await current.click();
+  await expect(page.getByRole('article')).toContainText('Fixture note');
+  await files.evaluate(element => new Promise<void>(resolve => {
+    element.addEventListener('scroll', () => resolve(), { once: true });
+    element.scrollTop = element.scrollHeight;
+  }));
+  await files.getByRole('button', { name: 'Collapse files sidebar' }).click();
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
+  await expect(current).toBeFocused();
+  await expect.poll(() => current.evaluate(element => {
+    const pane = element.closest('nav');
+    const header = pane?.querySelector('header');
+    if (!pane || !header) return false;
+    const row = element.getBoundingClientRect();
+    const headerBox = header.getBoundingClientRect();
+    const hit = document.elementFromPoint(row.left + row.width / 2, row.top + row.height / 2);
+    return row.top >= headerBox.bottom - 1 && row.bottom <= pane.getBoundingClientRect().bottom + 1 && !!hit && element.contains(hit);
+  })).toBe(true);
+});
+
+test('MS4-R2: widening a focused mobile expand control transfers focus to the visible desktop collapse control', async ({ page, recallOrigin }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${recallOrigin}/recall`);
+  const files = page.getByRole('navigation', { name: 'Vault files' });
+  await files.getByRole('link', { name: 'alpha.md' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.setViewportSize({ width: 390, height: 844 });
+  const expand = page.getByRole('button', { name: 'Expand files sidebar' });
+  await expect(expand).toBeVisible();
+  await expand.focus();
+  await expect(expand).toBeFocused();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const collapse = page.getByRole('button', { name: 'Collapse files sidebar' });
+  await expect(collapse).toBeVisible();
+  await expect(collapse).toBeFocused();
+});
+
+test('MS4-R3: re-entry preserves the reading anchor after sidebar collapse changes layout', async ({ page, recallOrigin }) => {
+  const markdown = ['# Anchor fixture', ...Array.from({ length: 60 }, (_, index) =>
+    `Paragraph ${index}: ${'fixture prose '.repeat(12)}`)].join('\n\n');
+  await page.route('**/api/vault/note?*', route => route.fulfill({ json: { name: 'danger.md', markdown } }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(noteUrl(recallOrigin, ['danger.md']));
+  const article = page.getByRole('article');
+  await expect(article).toContainText('Paragraph 59');
+  const reader = page.getByRole('region', { name: 'Note reader' });
+  await reader.evaluate(element => new Promise<void>(resolve => {
+    element.addEventListener('scroll', () => resolve(), { once: true });
+    element.scrollTop = 1000;
+  }));
+  await expect.poll(() => reader.evaluate(element => element.scrollTop)).toBeGreaterThan(900);
+  await page.getByRole('button', { name: 'Collapse files sidebar' }).click();
+  await expect(page.getByRole('button', { name: 'Expand files sidebar' })).toBeVisible();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  const anchor = await article.evaluate(element => {
+    const reader = element.closest('section');
+    if (!reader) throw new Error('Missing reader');
+    const view = reader.getBoundingClientRect();
+    const paragraphs = [...element.querySelectorAll('p')];
+    const index = paragraphs.findIndex(paragraph => {
+      const box = paragraph.getBoundingClientRect();
+      return paragraph.textContent?.startsWith('Paragraph ') && box.top >= view.top + 80 && box.bottom <= view.bottom - 40;
+    });
+    if (index < 0) throw new Error('No fully visible fixture paragraph');
+    return { index, y: paragraphs[index].getBoundingClientRect().top };
+  });
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Capture' }).click();
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Recall' }).click();
+  await expect(page).toHaveURL(noteUrl(recallOrigin, ['danger.md']));
+  await expect(article).toContainText('Paragraph 59');
+  await expect.poll(async () => Math.abs(await article.locator('p').nth(anchor.index).evaluate(element => element.getBoundingClientRect().top) - anchor.y)).toBeLessThanOrEqual(2);
+});
+
+for (const scenario of [
+  { width: 1440, height: 900, collapsed: false, helper: 'Skip to note', before: 'Collapse files sidebar' },
+  { width: 1440, height: 900, collapsed: true, helper: 'Return to files', before: 'Expand files sidebar' },
+  { width: 390, height: 844, collapsed: true, helper: 'Return to files', before: 'Expand files sidebar' },
+] as const) {
+  test(`MS4-V1: focused ${scenario.helper} remains unobscured at ${scenario.width}px`, async ({ page, recallOrigin }) => {
+    await page.setViewportSize({ width: scenario.width, height: scenario.height });
+    await page.goto(noteUrl(recallOrigin, ['alpha.md']));
+    await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+    if (scenario.collapsed && scenario.width >= 896) await page.getByRole('button', { name: 'Collapse files sidebar' }).click();
+    await page.getByRole('button', { name: scenario.before }).focus();
+    await page.keyboard.press('Tab');
+    const helper = page.getByRole('button', { name: scenario.helper });
+    await expect(helper).toBeFocused();
+    await expect.poll(() => helper.evaluate(element => {
+      const box = element.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1 || box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight) return false;
+      return [[.25, .5], [.5, .5], [.75, .5]].every(([x, y]) => {
+        const hit = document.elementFromPoint(box.left + box.width * x, box.top + box.height * y);
+        return !!hit && element.contains(hit);
+      });
+    })).toBe(true);
+  });
+}
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`sidebar chevrons occupy the Files and reader headers at ${viewport.width}px`, async ({ page, recallOrigin }) => {
+    await page.setViewportSize(viewport);
+    await page.goto(`${recallOrigin}/recall`);
+    const files = page.getByRole('navigation', { name: 'Vault files' });
+    await files.getByRole('link', { name: 'alpha.md' }).click();
+    await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+    if (viewport.width < 896) await page.getByRole('button', { name: 'Expand files sidebar' }).click();
+    const collapse = files.getByRole('button', { name: 'Collapse files sidebar' });
+    const heading = files.getByRole('heading', { name: 'Files' });
+    await expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    const regionId = await files.getAttribute('id');
+    expect(regionId).toBeTruthy();
+    await expect(collapse).toHaveAttribute('aria-controls', regionId ?? '');
+    await expect(collapse.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+    const collapseBox = await collapse.boundingBox();
+    const headingBox = await heading.boundingBox();
+    const filesBox = await files.boundingBox();
+    expect(collapseBox).not.toBeNull();
+    expect(headingBox).not.toBeNull();
+    expect(filesBox).not.toBeNull();
+    if (collapseBox && headingBox && filesBox) {
+      expect(collapseBox.width).toBeGreaterThanOrEqual(44);
+      expect(collapseBox.height).toBeGreaterThanOrEqual(44);
+      expect(collapseBox.x).toBeGreaterThan(headingBox.x);
+      expect(collapseBox.x + collapseBox.width / 2).toBeGreaterThan(filesBox.x + filesBox.width / 2);
+      expect(Math.abs((collapseBox.y + collapseBox.height / 2) - (headingBox.y + headingBox.height / 2))).toBeLessThanOrEqual(44);
+    }
+    const icon = await collapse.locator('svg').boundingBox();
+    expect(icon).not.toBeNull();
+    if (icon) { expect(icon.width).toBe(20); expect(icon.height).toBe(20); }
+    await collapse.hover();
+    const tooltip = page.getByRole('tooltip');
+    await expect(tooltip).toHaveText('Collapse files sidebar');
+    await expect(tooltip).toBeVisible();
+    await tooltip.hover();
+    await expect(tooltip).toBeVisible();
+    await collapse.focus();
+    await page.mouse.move(0, 0);
+    await expect(tooltip).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(tooltip).toBeHidden();
+    await expect(collapse).toBeFocused();
+    await expect(files).toBeVisible();
+    const location = page.url();
+    const historyLength = await page.evaluate(() => history.length);
+    await page.keyboard.press('Enter');
+    await expect(files).toBeHidden();
+    const expand = page.getByRole('button', { name: 'Expand files sidebar' });
+    await expect(expand).toBeFocused();
+    await expect(expand).toHaveAttribute('aria-expanded', 'false');
+    await expect(expand).toHaveAttribute('aria-controls', regionId ?? '');
+    await expect(expand.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+    const expandBox = await expand.boundingBox();
+    const readerBox = await page.getByRole('region', { name: 'Note reader' }).boundingBox();
+    expect(expandBox).not.toBeNull();
+    expect(readerBox).not.toBeNull();
+    if (expandBox && readerBox) {
+      expect(expandBox.width).toBeGreaterThanOrEqual(44);
+      expect(expandBox.height).toBeGreaterThanOrEqual(44);
+      expect(expandBox.x).toBeLessThan(readerBox.x + readerBox.width / 2);
+      expect(expandBox.y).toBeLessThanOrEqual(readerBox.y + 80);
+    }
+    await expect(page.getByText(/^(Show|Hide|Open|Close) files$/)).toHaveCount(0);
+    await page.keyboard.press('Space');
+    await expect(files.getByRole('link', { name: 'alpha.md' })).toBeFocused();
+    expect(page.url()).toBe(location);
+    expect(await page.evaluate(() => history.length)).toBe(historyLength);
+  });
+}
+
 test('desktop Files is visible, toggleable, and note history survives direct entry and refresh', async ({ page, recallOrigin }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${recallOrigin}/recall`);
   const files = page.getByRole('navigation', { name: 'Vault files' });
   await expect(files).toBeVisible();
-  await page.getByRole('button', { name: 'Hide files' }).click();
+  await page.getByRole('button', { name: 'Collapse files sidebar' }).click();
   await expect(files).toBeHidden();
-  await page.getByRole('button', { name: 'Show files' }).click();
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
   await expect(files).toBeVisible();
   await files.getByRole('link', { name: 'alpha.md' }).click();
   await expect(page).toHaveURL(noteUrl(recallOrigin, ['alpha.md']));
@@ -51,12 +231,12 @@ test('phone Files fills the workspace, selection reveals reader, and reopening r
   await expect(files).toBeHidden();
   await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
   await expect(page.locator(':focus')).toHaveText('alpha.md');
-  await page.getByRole('button', { name: 'Open files' }).click();
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
   await expect(files).toBeVisible();
   await expect(files.getByRole('link', { name: 'alpha.md' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(files).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Open files' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Expand files sidebar' })).toBeFocused();
 });
 
 test('modified note link opens a new tab without changing the current phone mode', async ({ page, context, recallOrigin }) => {
@@ -227,7 +407,7 @@ test('RECALL-UI-003: Skip to content does not close open mobile Files for a sele
   await files.getByRole('link', { name: 'alpha.md' }).click();
   await expect(page).toHaveURL(noteUrl(recallOrigin, ['alpha.md']));
   await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
-  await page.getByRole('button', { name: 'Open files' }).click();
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
   await expect(files).toBeVisible();
   const skip = page.getByRole('link', { name: 'Skip to content' });
   await skip.focus();

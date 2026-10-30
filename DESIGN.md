@@ -159,6 +159,19 @@ components:
     textColor: "{colors.night}"
     rounded: "{rounded.navigation}"
     padding: ".5rem .875rem"
+  files-toggle:
+    backgroundColor: "{colors.night}"
+    textColor: "{colors.parchment}"
+    rounded: "{rounded.navigation}"
+    padding: "12px"
+    width: "44px"
+    height: "44px"
+  files-tooltip:
+    backgroundColor: "{colors.night}"
+    textColor: "{colors.parchment}"
+    typography: "{typography.label}"
+    rounded: "{rounded.navigation}"
+    padding: ".5rem .75rem"
   vault-folder:
     backgroundColor: "{colors.night}"
     textColor: "{colors.parchment}"
@@ -293,9 +306,11 @@ A focusable H1 with a modest fixed type scale, followed by body-sized purpose af
 
 ### Recall toolbar and buttons
 
-The route H1, Files visibility button, and plain Read-only label form a wrapping toolbar with one bottom rule. Buttons inherit their context's type size, with a 44px minimum height, Parchment stroke, shared navigation corners, and recorded padding. Hover inverts to Parchment/Night; pressed state uses Lantern/Night. Keyboard focus remains the separate Parchment outline. Pending work shows a short status rather than a simulated percentage; duplicate retries are suppressed while the relevant read is pending.
+The route H1 and plain Read-only label form a wrapping toolbar with one bottom rule; its 44px heading row retains the previous title alignment. Recovery buttons retain their Parchment stroke, shared navigation corners, and recorded padding. Hover inverts to Parchment/Night; pressed state uses Lantern/Night. Keyboard focus remains the separate Parchment outline. Pending work shows a short status rather than a simulated percentage; duplicate retries are suppressed while the relevant read is pending.
 
-Desktop labels are Hide files / Show files; narrow labels are Open files / Close files, with expanded state and a controlled-panel relationship. Closing returns focus to the toggle; opening targets the current file or Files heading. Narrow selection closes Files immediately. These names describe visibility, not a change to the selected file.
+Files visibility uses a quiet icon-only button, not a detached toolbar text action. A 20px plain left chevron sits in a 44×44px target at the upper-right of the sticky Files header; when collapsed, a plain right chevron sits at the upper-left of the reader, outside the centered prose measure. Its local controls row remains reachable while the reader scrolls. No destination-icon rail or empty Files column remains. Both desktop and narrow use the accessible names Collapse files sidebar / Expand files sidebar, `aria-expanded`, and `aria-controls` targeting the retained, hidden Files navigation. The SVG is hidden from assistive technology. Closing focuses the visible expand control; opening targets the current file or Files heading. Narrow selection still closes Files immediately without changing note/history/scroll semantics.
+
+Matching Parchment-on-Night tooltips appear on pointer hover and keyboard focus, remain available while the pointer enters them, and dismiss with Escape without moving focus or collapsing Files. A subsequent Escape within expanded Files collapses it and returns focus to the visible expand control. Normal Tab/Shift+Tab and Enter/Space operation is retained. The approved Parchment focus and Lantern selection mapping is unchanged; the source site's compound glyph, retained icon rail, and newer Horizon roles are not imported. This correction implements the user's [refreshed sidebar direction](.lore/work/design/personal-brand-snapshot.md#approved-recall-sidebar-adaptation). `memory-loop-ms4` has fresh technical **Accept** and visual **SHIP**: R1/R2/R3/V1 are resolved, including sticky-header row clearance, breakpoint focus transfer, anchor-adjusted reading restoration, and unobscured focused helpers. Independent current-build unit **25/25**, Recall browser **25/25**, legacy browser **18/18**, and typecheck/build pass; backend **87** remains prior unchanged evidence. Verification used test-owned fixtures, not real-vault activation.
 
 ### Vault file hierarchy
 

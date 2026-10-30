@@ -51,6 +51,34 @@ function selectedId() {
 }
 
 describe('Recall: native file selection and reading', () => {
+  it('provides icon-only sidebar controls with stable region semantics, focus and history', async () => {
+    const user = userEvent.setup();
+    mount();
+    const files = await expandShelf(user);
+    await user.click(within(files).getByRole('link', { name: 'Alpha #1.md' }));
+    await screen.findByRole('article', { name: 'Alpha #1.md' });
+    const push = vi.spyOn(window.history, 'pushState');
+    const location = window.location.href;
+    const collapse = within(files).getByRole('button', { name: 'Collapse files sidebar' });
+    const filesHeading = within(files).getByRole('heading', { name: 'Files' });
+    expect(filesHeading.parentElement).toContainElement(collapse);
+    expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    expect(collapse).toHaveAttribute('aria-controls', files.id);
+    expect(collapse.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    collapse.focus();
+    await user.keyboard('{Enter}');
+    const expand = screen.getByRole('button', { name: 'Expand files sidebar' });
+    expect(expand).toHaveFocus();
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
+    expect(expand).toHaveAttribute('aria-controls', files.id);
+    expect(document.getElementById(files.id)).toBeInTheDocument();
+    expect(expand.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    await user.keyboard(' ');
+    expect(within(screen.getByRole('navigation', { name: 'Vault files' })).getByRole('link', { name: 'Alpha #1.md' })).toHaveFocus();
+    expect(window.location.href).toBe(location);
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it('loads a real hierarchy without choosing a note; folders disclose natively without note requests', async () => {
     const tree = deferred<Response>();
     api = installVaultApi({ tree: () => tree.promise });
@@ -58,7 +86,7 @@ describe('Recall: native file selection and reading', () => {
     mount();
 
     expect(screen.getByText('Loading files…')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Hide files' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Collapse files sidebar' })).toHaveAttribute('aria-expanded', 'true');
     expectAppNavigation();
     expect(screen.queryByRole('tree')).not.toBeInTheDocument();
     expect(screen.queryByRole('treeitem')).not.toBeInTheDocument();
@@ -134,11 +162,11 @@ describe('Recall: native file selection and reading', () => {
     const push = vi.spyOn(window.history, 'pushState');
     const location = window.location.href;
 
-    await user.click(screen.getByRole('button', { name: 'Hide files' }));
+    await user.click(screen.getByRole('button', { name: 'Collapse files sidebar' }));
     expect(screen.queryByRole('navigation', { name: 'Vault files' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Show files' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Expand files sidebar' })).toHaveFocus();
     expect(screen.getByRole('article', { name: 'Alpha #1.md' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Show files' }));
+    await user.click(screen.getByRole('button', { name: 'Expand files sidebar' }));
     const restored = await screen.findByRole('navigation', { name: 'Vault files' });
     expect(within(restored).getByRole('link', { name: 'Alpha #1.md' })).toHaveFocus();
     const skip = screen.getByText('Skip to note', { exact: true });
@@ -162,28 +190,28 @@ describe('Recall: native file selection and reading', () => {
     const user = userEvent.setup();
     mount();
     await expandShelf(user);
-    expect(screen.getByRole('button', { name: 'Close files' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Collapse files sidebar' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(document.querySelector('[aria-modal="true"]')).toBeNull();
     expectAppNavigation();
-    await user.click(screen.getByRole('button', { name: 'Close files' }));
+    await user.click(screen.getByRole('button', { name: 'Collapse files sidebar' }));
     expect(screen.queryByRole('navigation', { name: 'Vault files' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open files' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Expand files sidebar' })).toHaveFocus();
     expect(screen.getByText('Choose a Markdown note')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Open files' }));
+    await user.click(screen.getByRole('button', { name: 'Expand files sidebar' }));
     expect(screen.getByRole('heading', { name: 'Files' })).toHaveFocus();
     await user.click(within(screen.getByRole('navigation', { name: 'Vault files' })).getByRole('link', { name: 'Alpha #1.md' }));
     expect(screen.queryByRole('navigation', { name: 'Vault files' })).not.toBeInTheDocument();
     expect(screen.getByText('Opening note…')).toBeInTheDocument();
     await act(async () => { note.resolve(jsonResponse({ name: 'Alpha #1.md', markdown: 'Phone fixture body.' })); });
     await screen.findByRole('article', { name: 'Alpha #1.md' });
-    await user.click(screen.getByRole('button', { name: 'Open files' }));
+    await user.click(screen.getByRole('button', { name: 'Expand files sidebar' }));
     expect(screen.queryByRole('article')).not.toBeInTheDocument();
     expect(screen.queryByText('Phone fixture body.')).not.toBeInTheDocument();
     expect(within(screen.getByRole('navigation', { name: 'Vault files' })).getByRole('link', { name: 'Alpha #1.md' })).toHaveFocus();
     expectAppNavigation();
     await user.keyboard('{Escape}');
-    expect(screen.getByRole('button', { name: 'Open files' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Expand files sidebar' })).toHaveFocus();
     expect(screen.getByRole('article', { name: 'Alpha #1.md' })).toBeInTheDocument();
   });
 
@@ -196,13 +224,13 @@ describe('Recall: native file selection and reading', () => {
     await screen.findByRole('article', { name: 'Alpha #1.md' });
     const location = window.location.href;
     await act(async () => { viewport.resize(390); });
-    expect(screen.getByRole('button', { name: 'Open files' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand files sidebar' })).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Alpha #1.md' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Open files' }));
+    await user.click(screen.getByRole('button', { name: 'Expand files sidebar' }));
     await act(async () => { viewport.resize(1440); });
     const current = within(screen.getByRole('navigation', { name: 'Vault files' })).getByRole('link', { name: 'Alpha #1.md' });
     expect(current).toHaveFocus();
-    expect(screen.getByRole('button', { name: 'Hide files' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse files sidebar' })).toBeInTheDocument();
     expect(window.location.href).toBe(location);
   });
 
@@ -215,7 +243,7 @@ describe('Recall: native file selection and reading', () => {
     expect(screen.queryByRole('navigation', { name: 'Vault files' })).not.toBeInTheDocument();
     expect(document.activeElement).toBe(document.body);
     expect(document.title).toBe('Alpha #1.md · Recall · Memory Loop');
-    await user.click(screen.getByRole('button', { name: 'Open files' }));
+    await user.click(screen.getByRole('button', { name: 'Expand files sidebar' }));
     const files = await screen.findByRole('navigation', { name: 'Vault files' });
     expect(within(files).getByRole('button', { name: 'Test shelf & café' })).toHaveAttribute('aria-expanded', 'true');
     expect(within(files).getByRole('link', { name: 'Alpha #1.md' })).toHaveFocus();
@@ -242,7 +270,7 @@ describe('Recall: truthful failures and short-query recovery', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await screen.findByText('No Markdown notes to show');
     expect(screen.queryByText('Choose a Markdown note')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^(Open|Show|Hide|Close) files$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^(Collapse|Expand) files sidebar$/ })).not.toBeInTheDocument();
     expect(requestedNotes()).toEqual([]);
     expect(push).not.toHaveBeenCalled();
   });

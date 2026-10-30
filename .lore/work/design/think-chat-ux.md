@@ -1,7 +1,7 @@
 ---
 title: Think — conversation, open draft and honest continuity
 date: 2026-10-30
-status: draft
+status: approved
 tags: [think, ux, responsive, chat, accessibility, design]
 related: [.lore/work/intents/think.md, .lore/work/design/think-execution-reconnect.md, .lore/work/design/think-transcript-persistence.md, .lore/work/design/think-permissions-context.md]
 ---

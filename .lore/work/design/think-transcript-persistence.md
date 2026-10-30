@@ -1,7 +1,7 @@
 ---
 title: Think vault transcript persistence
 date: 2026-10-30
-status: draft
+status: approved
 tags: [think, chat, transcripts, persistence, vault, design]
 modules: [backend, think]
 related: [.lore/work/intents/think.md, .lore/work/design/think-execution-reconnect.md, .lore/work/design/hono-next-boundary.md]

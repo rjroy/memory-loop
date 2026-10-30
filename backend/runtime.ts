@@ -1,12 +1,13 @@
 import { serve } from 'bun';
-import { dirname, isAbsolute, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isAbsolute, join } from 'node:path';
 import { prepareServer } from './server';
+import { defaultProjectRoot, transportFileFor } from './runtime-options';
+import { loadTransport } from './transport';
 
 interface RuntimeOptions {
   projectRoot: string;
   distDirectory: string;
-  port: number;
+  port?: number;
   devOrigin?: string;
 }
 
@@ -19,9 +20,9 @@ function parseDevOrigin(value: string): string {
 }
 
 function optionsFromArgs(args: string[]): RuntimeOptions {
-  let projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  let projectRoot = defaultProjectRoot;
   let distDirectory: string | undefined;
-  let port = 3000;
+  let port: number | undefined;
   let devOrigin: string | undefined;
   const seen = new Set<string>();
   for (let i = 0; i < args.length; i += 2) {
@@ -42,8 +43,11 @@ function optionsFromArgs(args: string[]): RuntimeOptions {
 
 async function main(): Promise<void> {
   const options = optionsFromArgs(process.argv.slice(2));
-  const authority = `127.0.0.1:${options.port}`;
-  console.info('daemon_start_attempt', { port: options.port });
+  console.info('daemon_start_attempt');
+  const transport = await loadTransport(transportFileFor(options.projectRoot));
+  const port = Number(new URL(transport.config.daemonOrigin).port || 80);
+  if (options.port !== undefined && options.port !== port) throw new Error('Daemon port does not match transport configuration');
+  const authority = `127.0.0.1:${port}`;
   const prepared = await prepareServer({
     projectRoot: options.projectRoot,
     distDirectory: options.distDirectory,
@@ -52,12 +56,12 @@ async function main(): Promise<void> {
   });
   let server: ReturnType<typeof serve>;
   try {
-    server = serve({ hostname: '127.0.0.1', port: options.port, development: false, fetch: prepared.fetch });
+    server = serve({ hostname: '127.0.0.1', port, development: false, fetch: prepared.fetch });
   } catch (error: unknown) {
     await prepared.close();
     throw error;
   }
-  console.info('daemon_start_outcome', { status: 'listening', port: options.port });
+  console.info('daemon_start_outcome', { status: 'listening', port });
 
   let shuttingDown = false;
   const shutdown = async (signal: 'SIGINT' | 'SIGTERM') => {
@@ -87,6 +91,9 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
-  console.error('daemon_start_outcome', { status: 'failed', reason: code === 'EADDRINUSE' ? 'EADDRINUSE' : 'startup_failed' });
+  const reason = code === 'EADDRINUSE' ? 'EADDRINUSE' :
+    code === 'transport_invalid' || code === 'transport_unavailable' || code === 'transport_exists' ? 'transport_unavailable' :
+      error instanceof Error && error.message === 'Daemon port does not match transport configuration' ? 'port_mismatch' : 'startup_failed';
+  console.error('daemon_start_outcome', { status: 'failed', reason });
   process.exitCode = 1;
 });

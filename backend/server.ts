@@ -55,6 +55,8 @@ function staticResponse(result: StaticResult, name: string): Response {
 
 /** Prepare the configured API and static application without starting a listener. */
 export async function prepareServer(options: ServerOptions): Promise<PreparedServer> {
+  const transport = await loadTransport(transportFileFor(options.projectRoot));
+  if (transport.config.daemonOrigin !== `http://${options.authority}`) throw new Error('Daemon port does not match transport configuration');
   if (process.platform !== 'linux' || !constants.O_DIRECTORY || !constants.O_NOFOLLOW || !constants.O_NONBLOCK) {
     throw new Error('Static serving is unavailable');
   }
@@ -67,7 +69,12 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
     const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
     vault = { error: code === 'config_missing' || code === 'config_invalid' ? code : 'vault_unavailable' };
   }
-  const api = createApp({ authority: options.authority, allowedOrigins: options.allowedOrigins, vault });
+  let api: ReturnType<typeof createApp>;
+  try { api = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault }); }
+  catch (error) {
+    try { if ('reader' in vault) await vault.reader.close(); } finally { await dist.close(); }
+    throw error;
+  }
   return {
     async fetch(request) {
       const url = new URL(request.url);
@@ -108,3 +115,5 @@ import { extname } from 'node:path';
 import { createApp, type VaultState } from './app';
 import { loadConfig } from './config';
 import { openVault } from './vault';
+import { loadTransport } from './transport';
+import { transportFileFor } from './runtime-options';

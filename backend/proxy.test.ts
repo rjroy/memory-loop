@@ -25,7 +25,7 @@ async function freePort(): Promise<number> {
   }
 }
 
-it('proxies same-origin Vite HTTP requests to the fixture daemon without bypassing origin checks', async () => {
+it('keeps the transitional Vite proxy from bypassing the private daemon boundary', async () => {
   const fixture = await mkdtemp(join(tmpdir(), 'memory-loop-proxy-test-'));
   let prepared: PreparedServer | undefined;
   const daemon = createHttpServer((request: IncomingMessage, response: ServerResponse) => {
@@ -48,7 +48,7 @@ it('proxies same-origin Vite HTTP requests to the fixture daemon without bypassi
     const projectRoot = join(fixture, 'project');
     const vault = join(fixture, 'vault');
     const dist = join(fixture, 'dist');
-    await mkdir(join(projectRoot, '.memory-loop'), { recursive: true });
+    await mkdir(join(projectRoot, '.memory-loop'), { recursive: true, mode: 0o700 });
     await mkdir(join(vault, 'folder'), { recursive: true });
     await mkdir(dist);
     await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault }));
@@ -61,6 +61,8 @@ it('proxies same-origin Vite HTTP requests to the fixture daemon without bypassi
     const daemonAddress = daemon.address();
     if (!daemonAddress || typeof daemonAddress === 'string') throw new Error('Expected a daemon TCP address');
     const daemonAuthority = `127.0.0.1:${daemonAddress.port}`;
+    await writeFile(join(projectRoot, '.memory-loop', 'transport.json'), JSON.stringify({ daemonOrigin: `http://${daemonAuthority}`, web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } }), { mode: 0o600 });
+    await writeFile(join(projectRoot, '.memory-loop', 'service.token'), 'a'.repeat(64), { mode: 0o600 });
     const vitePort = await freePort();
     const frontendOrigin = `http://127.0.0.1:${vitePort}`;
     prepared = await prepareServer({ projectRoot, distDirectory: dist, authority: daemonAuthority, allowedOrigins: [frontendOrigin] });
@@ -79,16 +81,16 @@ it('proxies same-origin Vite HTTP requests to the fixture daemon without bypassi
     expect(shell.headers.get('content-type')).toContain('text/html');
 
     const tree = await fetch(`${frontendOrigin}/api/vault/tree`, { headers: { origin: frontendOrigin, 'sec-fetch-site': 'same-origin' } });
-    expect(tree.status).toBe(200);
+    expect(tree.status).toBe(403);
     expect(tree.headers.get('content-type')).toContain('application/json');
     expect(tree.headers.get('cache-control')).toBe('no-store');
-    expect(await tree.json()).toMatchObject({ entries: [{ name: 'folder', children: [{ name: 'note.md' }] }] });
+    expect(await tree.text()).not.toContain('note.md');
 
     const query = new URLSearchParams({ id: JSON.stringify(['folder', 'note.md']) });
     const note = await fetch(`${frontendOrigin}/api/vault/note?${query}`, { headers: { origin: frontendOrigin } });
-    expect(note.status).toBe(200);
+    expect(note.status).toBe(403);
     expect(note.headers.get('cache-control')).toBe('no-store');
-    expect(await note.json()).toEqual({ name: 'note.md', markdown: '# Proxy fixture\n' });
+    expect(await note.text()).not.toContain('Proxy fixture');
 
     const hostile = await fetch(`${frontendOrigin}/api/vault/tree`, { headers: { origin: 'http://evil.example', 'sec-fetch-site': 'cross-site' } });
     expect(hostile.status).toBe(403);

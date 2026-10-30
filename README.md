@@ -14,18 +14,34 @@ not configured.
 ### Start the daemon
 
 With Bun 1.4.3 and an existing `.memory-loop/config.json` as described below,
-build the frontend before starting the daemon:
+build the frontend and initialize the private transport once before starting the daemon:
 
 ```sh
 bun --no-env-file run build
+bun --no-env-file run setup:transport
+```
+
+Start the daemon in one terminal and leave it running:
+
+```sh
 bun --no-env-file run daemon
 ```
 
+In a second terminal, check the authenticated service:
+
+```sh
+bun --no-env-file run check:daemon
+```
+
 `bun run daemon` is the canonical entrypoint; the outer `--no-env-file` also
-prevents Bun from loading env files before it runs the script. The daemon reads
-the configured vault and serves both the built frontend and read-only API at
-`http://127.0.0.1:3000`. Stop it with Ctrl-C. This is not the static Vite preview
-or a separate web-server tier.
+prevents Bun from loading env files before it runs the script. Project Bun
+configuration suppresses the launcher's command echo, not application output or
+errors. The daemon reads
+the configured vault and temporarily serves the built frontend and authenticated
+service API at `http://127.0.0.1:3001`. The existing browser UI cannot call the
+private API directly; the Next web tier is not implemented yet. `check:daemon`
+reports API status without printing notes or the credential. Stop with Ctrl-C.
+This is not the static Vite preview or the future separate web-server tier.
 
 Arguments are forwarded directly, for example:
 
@@ -68,18 +84,18 @@ error. There is no config editor or vault picker in the interface.
 
 ### Local vault reads
 
-Starting the daemon uses the configured vault. To serve it locally:
+Starting the daemon uses the configured vault. After the one-time transport setup,
+start it locally:
 
 ```sh
 bun --no-env-file run build
 bun --no-env-file run daemon
 ```
 
-Then open `http://127.0.0.1:3000/recall`. The daemon serves `dist/`, frontend deep
-links, and the read-only API on that same origin. It binds to loopback, **not the
-LAN**. `--port <port>` changes the port; `--project-root <absolute-directory>`
-selects config and default build location; `--dist <absolute-directory>` selects
-another build directory. Use Ctrl-C to stop a daemon you started.
+The daemon binds to loopback, **not the LAN**. `--port <port>` must match the
+configured daemon origin; `--project-root <absolute-directory>` selects config
+and default build location; `--dist <absolute-directory>` selects another build
+directory. Use Ctrl-C to stop a daemon you started.
 
 Loopback is not authentication against other local processes. **Remote access to
 real notes requires a separate approved, reviewed authenticated private
@@ -87,22 +103,19 @@ transport.** Do not proxy the daemon through Tailscale, bind to `0.0.0.0`, or in
 authorization from the existing static preview. No real-vault daemon or remote
 transport was activated in this work.
 
-### Development with the API
+### Transitional development boundary
 
-Build once so `dist/` exists, then use separate terminals:
+The old Vite UI is not connected to the authenticated daemon; its proxy does not
+inject credentials and browser Origin/Fetch Metadata requests are denied by the
+daemon. Do not put the service token in browser code. The Next web tier will
+provide the authenticated server-side boundary in the next migration phase.
 
-```sh
-bun --no-env-file run daemon --dev-origin http://127.0.0.1:5173
-bun --no-env-file run dev
-```
-
-Vite runs on loopback port 5173 and proxies `/api` to the loopback daemon;
-browser requests stay same-origin. For a nondefault daemon port, use `--port`
-and the server-only `MEMORY_LOOP_DAEMON_URL`, for example
-`MEMORY_LOOP_DAEMON_URL=http://127.0.0.1:3001 bun --no-env-file run dev`.
-That variable is not vault configuration or client data. Vite env-file loading
-is disabled; legacy `.env.example` is unused. Use the documented Bun
-`--no-env-file` invocations and never expose secrets in client variables.
+Transport lives separately from vault config in ignored `.memory-loop/transport.json`
+and `.memory-loop/service.token`; setup creates private files and refuses to
+replace existing credentials. Restart after changes. An absolute server-only
+`MEMORY_LOOP_TRANSPORT_FILE` can select another transport file; its token is the
+sibling `service.token`. Bun's `--no-env-file` prevents Bun env-file loading;
+it does not remove values inherited from the parent process.
 
 ## What Recall does
 
@@ -137,6 +150,13 @@ guarantee; relocation/rename/delete can affect in-flight reads. Browsing is not 
 transactional snapshot.
 
 ## Checks and current acceptance
+
+The Hono daemon phase (`memory-loop-1l0.1`) passed independent fixture-based
+backend checks (**130 tests**) and typecheck. Fresh technical verification
+accepted the HN1-R1 readiness correction. This verifies the private daemon API,
+not the future Next UI or phone access. The existing static preview remains
+API-isolated; transitional daemon static serving is scheduled for removal in
+the Next phase.
 
 ```sh
 bun --no-env-file run typecheck

@@ -40,7 +40,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
           const last = page.getByRole('main').locator('p').last();
           const lastBox = await last.boundingBox();
           const navBox = await page.getByRole('navigation', { name: 'Primary' }).boundingBox();
-          if (lastBox && navBox) expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(navBox.y);
+          if (lastBox && navBox) expect(lastBox.y).toBeGreaterThanOrEqual(navBox.y + navBox.height - 1);
         }
       }
       expect(failures).toEqual([]);

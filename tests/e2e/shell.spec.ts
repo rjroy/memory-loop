@@ -2,6 +2,40 @@ import { expect, test } from '@playwright/test';
 
 const views = ['Ground', 'Capture', 'Think', 'Recall'] as const;
 
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`44W top navigation is horizontal above the workspace at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/ground');
+    const nav = page.getByRole('navigation', { name: 'Primary' });
+    const links = nav.getByRole('link');
+    await expect(links).toHaveCount(4);
+    expect(await links.allTextContents()).toEqual([...views]);
+    const boxes = await Promise.all(views.map(name => nav.getByRole('link', { name }).boundingBox()));
+    const navBox = await nav.boundingBox();
+    const mainBox = await page.getByRole('main').boundingBox();
+    expect(navBox).not.toBeNull();
+    expect(mainBox).not.toBeNull();
+    for (const box of boxes) expect(box).not.toBeNull();
+    if (!navBox || !mainBox || boxes.some(box => box === null)) throw new Error('Expected visible navigation and workspace');
+    const visibleBoxes = boxes.filter(box => box !== null);
+    expect(navBox.y + navBox.height).toBeLessThanOrEqual(mainBox.y + 1);
+    expect(mainBox.x).toBeLessThanOrEqual(visibleBoxes[0].x);
+    for (let index = 1; index < visibleBoxes.length; index++) {
+      expect(visibleBoxes[index].x).toBeGreaterThan(visibleBoxes[index - 1].x);
+      expect(Math.max(visibleBoxes[index].y, visibleBoxes[0].y)).toBeLessThan(
+        Math.min(visibleBoxes[index].y + visibleBoxes[index].height, visibleBoxes[0].y + visibleBoxes[0].height));
+    }
+    for (const [index, name] of views.entries()) {
+      await expect(links.nth(index)).toHaveAttribute('href', `/${name.toLowerCase()}`);
+    }
+    await expect(nav.getByRole('link', { name: 'Ground' })).toHaveAttribute('aria-current', 'page');
+    await nav.getByRole('link', { name: 'Capture' }).click();
+    await expect(nav.getByRole('link', { name: 'Capture' })).toHaveAttribute('aria-current', 'page');
+    await page.goBack();
+    await expect(nav.getByRole('link', { name: 'Ground' })).toHaveAttribute('aria-current', 'page');
+  });
+}
+
 test('declares a neutral favicon instead of requesting a missing icon', async ({ page }) => {
   const faviconRequests: string[] = [];
   page.on('request', request => {

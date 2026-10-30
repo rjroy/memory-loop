@@ -1,6 +1,6 @@
 ---
 name: Memory Loop
-description: Dark personal-brand shell and read-only Recall system extracted from the built interface.
+description: Accepted four-mode personal-brand workspace, compact top navigation and reflective read-only Recall.
 colors:
   night: "#031315"
   parchment: "#fef6e1"
@@ -34,49 +34,54 @@ typography:
     lineHeight: 1.5
   compact-selected:
     fontFamily: "Source Sans 3, system-ui, sans-serif"
-    fontSize: ".875rem"
+    fontSize: "1rem"
     fontWeight: 600
     lineHeight: 1.5
   app-name:
-    fontFamily: "Source Sans 3, system-ui, sans-serif"
-    fontSize: "1.375rem"
-    fontWeight: 600
-    lineHeight: 1.4
+    fontFamily: "IM Fell English SC, Georgia, serif"
+    fontSize: "1.75rem"
+    fontWeight: 400
+    lineHeight: 1.1
   compact-app-name:
-    fontFamily: "Source Sans 3, system-ui, sans-serif"
-    fontSize: "1.25rem"
-    fontWeight: 600
-    lineHeight: 1.4
+    fontFamily: "IM Fell English SC, Georgia, serif"
+    fontSize: "1.75rem"
+    fontWeight: 400
+    lineHeight: 1.1
+  invitation:
+    fontFamily: "IM Fell English SC, Georgia, serif"
+    fontSize: "clamp(3rem, 5.3vw, 4.8rem)"
+    fontWeight: 400
+    lineHeight: 1.05
   reading:
     fontFamily: "Source Sans 3, system-ui, sans-serif"
     fontSize: "1.0625rem"
     fontWeight: 400
     lineHeight: 1.7
   note-identity:
-    fontFamily: "Source Sans 3, system-ui, sans-serif"
-    fontSize: "1.125rem"
-    fontWeight: 600
+    fontFamily: "Libre Baskerville, Georgia, serif"
+    fontSize: "clamp(1.25rem, 1.8vw, 1.5rem)"
+    fontWeight: 400
     lineHeight: 1.5
   markdown-headline:
-    fontFamily: "Source Sans 3, system-ui, sans-serif"
+    fontFamily: "Libre Baskerville, Georgia, serif"
     fontSize: "1.75rem"
-    fontWeight: 600
-    lineHeight: 1.3
+    fontWeight: 400
+    lineHeight: 1.4
   markdown-title:
-    fontFamily: "Source Sans 3, system-ui, sans-serif"
+    fontFamily: "Libre Baskerville, Georgia, serif"
     fontSize: "1.375rem"
-    fontWeight: 600
-    lineHeight: 1.3
+    fontWeight: 400
+    lineHeight: 1.4
   markdown-subtitle:
-    fontFamily: "Source Sans 3, system-ui, sans-serif"
+    fontFamily: "Libre Baskerville, Georgia, serif"
     fontSize: "1.125rem"
-    fontWeight: 600
-    lineHeight: 1.3
+    fontWeight: 400
+    lineHeight: 1.4
   markdown-small-heading:
-    fontFamily: "Source Sans 3, system-ui, sans-serif"
+    fontFamily: "Libre Baskerville, Georgia, serif"
     fontSize: "1.0625rem"
-    fontWeight: 600
-    lineHeight: 1.3
+    fontWeight: 400
+    lineHeight: 1.4
   code-inline:
     fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace"
     fontSize: ".875em"
@@ -98,37 +103,36 @@ spacing:
   reading-inset: "1.75rem"
   control-inline: ".875rem"
 components:
-  navigation-rail:
+  navigation-header:
     backgroundColor: "{colors.night}"
     textColor: "{colors.parchment}"
     typography: "{typography.body}"
-    padding: "2rem 1.5rem"
-    width: "13rem"
+    padding: "12px clamp(20px, 4.4vw, 64px); safe-area-aware"
   navigation-link:
     textColor: "{colors.parchment}"
     typography: "{typography.body}"
     rounded: "{rounded.navigation}"
-    padding: ".625rem 1rem"
+    padding: "8px 10px"
   navigation-link-current:
     textColor: "{colors.parchment}"
     typography: "{typography.emphasis}"
     rounded: "{rounded.navigation}"
-    padding: ".625rem 1rem"
+    padding: "8px 10px"
   compact-navigation-link:
     textColor: "{colors.parchment}"
-    typography: "{typography.label}"
-    rounded: "{rounded.square}"
-    padding: ".75rem 4px"
+    typography: "{typography.body}"
+    rounded: "{rounded.navigation}"
+    padding: "8px 10px"
   compact-navigation-link-current:
     textColor: "{colors.parchment}"
     typography: "{typography.compact-selected}"
-    rounded: "{rounded.square}"
-    padding: ".75rem 4px"
+    rounded: "{rounded.navigation}"
+    padding: "8px 10px"
   placeholder-notice:
-    textColor: "{colors.parchment}"
+    textColor: "context foreground; Think uses Night on Horizon"
     typography: "{typography.body}"
-    rounded: "{rounded.notice}"
-    padding: "{spacing.generous}"
+    rounded: "0; Think 6px"
+    padding: "1.5rem 0 0; Think 1.75rem 2rem"
   content-link:
     textColor: "{colors.parchment}"
     typography: "{typography.emphasis}"
@@ -138,12 +142,12 @@ components:
     typography: "{typography.emphasis}"
     padding: ".5rem 1rem"
   view-heading:
-    textColor: "{colors.parchment}"
+    textColor: "context foreground"
     typography: "{typography.headline}"
   recall-toolbar:
     backgroundColor: "{colors.night}"
     textColor: "{colors.parchment}"
-    padding: "1.75rem 2rem"
+    padding: "12px 2rem; narrow 8px 20px"
   recall-button:
     backgroundColor: "{colors.night}"
     textColor: "{colors.parchment}"
@@ -172,6 +176,13 @@ components:
     typography: "{typography.label}"
     rounded: "{rounded.navigation}"
     padding: ".5rem .75rem"
+  reader-files-toggle:
+    backgroundColor: "{colors.parchment}"
+    textColor: "{colors.night}"
+    rounded: "{rounded.navigation}"
+    padding: "12px"
+    width: "44px"
+    height: "44px"
   vault-folder:
     backgroundColor: "{colors.night}"
     textColor: "{colors.parchment}"
@@ -191,14 +202,14 @@ components:
     rounded: "{rounded.square}"
     padding: ".625rem .5rem .625rem 1.875rem"
   note-identity:
-    textColor: "{colors.parchment}"
+    textColor: "{colors.night}"
     typography: "{typography.note-identity}"
   markdown-document:
-    backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    backgroundColor: "{colors.parchment}"
+    textColor: "{colors.night}"
     typography: "{typography.reading}"
   markdown-code:
-    textColor: "{colors.parchment}"
+    textColor: "{colors.night}"
     typography: "{typography.code-block}"
     padding: "{spacing.standard}"
   recall-state:
@@ -210,91 +221,91 @@ components:
 
 ## Overview
 
-**Creative North Star: "Studio console"**
+**Creative North Star: "One familiar place, four different ways to arrive"**
 
-Stable navigation sits beside replaceable work surfaces. Night spans navigation and workspace, with readable Parchment text and thin boundaries. Spacing, alignment, and type weight separate areas without adding surface hues. The personal brand appears through exact color roles and one interface family; monospace is reserved for actual note code.
+The user approved the [four-mode character board](.lore/work/design/memory-loop-character/index.html) at `acfac1f` and explicitly authorized its application in `memory-loop-44w`, then clarified that its compact horizontal top navigation—not the old app rail/bottom bar—is part of that approved direction. Shared A.5 identity and IM Fell English SC connect four emotional jobs: inspiring Ground, quiet blank-slate Capture, curious Think, and reflective Recall. Older assistant-authored restraint and retained navigation adaptations are superseded, not immutable brand rules.
 
-This is a task-focused interface, not a promotional surface. The system is flat and restrained: no hero imagery, decorative brand motifs, shadows, or entrance choreography. Functional Recall presents files and an unboxed document; the other three views explain unavailable functionality without invented activity. Dark is the default even when the operating system prefers light; there is no theme switch or stored preference.
+Ground gives the full, unaltered A.1 narrative artwork enough room beside its invitation. Capture uses Parchment and open space, with no illustration or fake input. Think uses a cool Night/Horizon mixture, a questioning display line and compact A.5. Recall keeps its dark navigation/hierarchy beside a Parchment editorial reader. Artwork frames identity, never note text. No new features, theme switch, invented user content, generated assets, or external resource services are added.
 
 **Key Characteristics:**
 - Stable navigation and replaceable content.
-- A unified Night field with a purposeful selection accent.
-- One locally served interface family in regular and semibold.
+- One recognizable family with four deliberately different moods.
+- Local IM Fell identity, Source Sans interface/prose, and Libre Baskerville reading headings.
 - Flat boundaries, visible focus, and honest empty states.
 - Bounded file browsing and comfortable, unboxed Markdown reading.
 
-Merged from `src/styles.css`, `src/recall/recall.css`, the shell, and built Recall components. The shell/dark refinement and read-only Recall are accepted: Recall has visual **ship**, technical **Accept**, and independent behavioral verification. This records the completed read-only slice, not activation of a real vault or remote API. Source palette/font provenance is in [the local brand snapshot](.lore/work/design/personal-brand-snapshot.md). Route strategy remains in the [shell brief](.impeccable/surfaces/src-app-tsx.md) and [approved Recall brief](.lore/work/design/recall-read-only.md).
+Extracted from `src/styles.css`, `src/recall/recall.css`, the shell and four views. `memory-loop-44w` is independently accepted: typecheck/build, frontend unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, fresh visual **SHIP** and technical **Accept**. Backend **87** remains prior unchanged evidence. 44W-T1 is resolved for initial unfocused pointer targets and natural keyboard operation at 844×390/200% text; history/UI-001/002/003 and MS4 regressions remain verified. [Integration provenance](.lore/work/design/character-integration.md) records seven unchanged copied files, three reused Source Sans files, rights, hashes and acceptance evidence. The historical [snapshot](.lore/work/design/personal-brand-snapshot.md) is unchanged. No real vault or remote API is activated.
 
 ## Colors
 
-Night and Parchment carry the interface; Lantern marks a deliberate choice. The frontmatter values preserve the CSS source notation.
+Night and Parchment carry complementary dark/light contexts. Horizon identifies location and dark-context focus; Lantern offers warmth and the Ground action. The four core values are unchanged. Muted Night `#344548` and Weathered Ivory `#d5d3c5` are source-guide functional neutrals, not new identity colors.
 
 ### Primary
-- **Lantern:** selected-navigation edge, current-file underline, browser text selection, focus-only pane-jump surfaces, and pressed Recall buttons. It is not a warning or connection-status color.
+- **Lantern:** Ground invitation/action, browser text selection, focus-only pane-jump surfaces, and pressed Recall buttons. Night text on Lantern; not a connection-status signal.
 
 ### Secondary
-- **Horizon:** declared core-brand token, reserved for information accents. No current component renders it; reservation is not a new UI state.
+- **Horizon:** selected app-link/current-file underline; dark-context focus; Think's honest unavailable-feature surface and 10% Horizon/90% Night field. Selection also retains semibold text and `aria-current`.
 
 ### Neutral
-- **Night:** the canvas for workspace, rail, toolbar, file hierarchy, reader, and bottom navigation. It also supplies text on inverse hover/pressed controls and text selection.
-- **Parchment:** text, links, boundaries, code/table rules, and focus outlines. Hovered Recall buttons invert to Parchment with Night text; document/notice surfaces remain Night, not light or elevated cards.
+- **Night:** shared top identity/navigation, toolbar, hierarchy and Ground; text/focus on Parchment. Light supporting text is Muted Night.
+- **Parchment:** Capture and reader surfaces; dark-context text. Dark supporting text is Weathered Ivory. Rules mix context foreground/background; secondary control hover reverses that context's pair.
 
 ### Named Rules
-**The Purposeful Accents Rule.** Use accent color for a real selection or information role, not to fill empty space.
+**The Purposeful Accents Rule.** Give warmth, curiosity, selection and focus explicit roles; do not make color the only indication of a state.
 
-Solid-pair evidence: Parchment/Night measures 17.59:1 and Lantern/Night 10.47:1, including the inverse button pairings. Recall's fixture-only computed-style/contrast evidence confirms those same source values. Other pairings and native disabled-checkbox appearance are not thereby contrast-approved. Existing sidecar tonal ramps remain panel-only synthesized inspection aids, not additional brand colors or runtime tokens.
+Core contrast: Parchment/Night 17.59:1; Lantern/Night 10.47:1; Horizon/Night 5.54:1. Contextual source-pair calculations and rendered-resource checks are recorded with the author evidence. Decorative separators are not control boundaries. Native disabled-checkbox appearance is not thereby contrast-approved. Sidecar tonal ramps remain inspection aids, not runtime tokens.
 
 ## Typography
 
-Source Sans 3 is the only interface/prose family, with system-ui/sans-serif fallbacks. Two unchanged local files supply regular and semibold; the SIL OFL/copyright notice ships alongside them. Actual inline/fenced code uses the native monospace stack recorded above, with no new font asset. No display serif or separate decorative face is introduced. Font synthesis is disabled; note-authored emphasis is content, not a new interface font role.
+Source Sans 3 regular/semibold remains the interface and reading-prose family. IM Fell English SC regular carries the Memory Loop wordmark and Ground/Think invitations. Libre Baskerville regular carries literal note identity and editorial Markdown headings. Each face is local and ships with its OFL; the two new fonts are preloaded. Native monospace remains code-only. Font synthesis stays disabled.
 
-The incumbent headline/title/body/label and app-name steps remain intact. Desktop navigation inherits body sizing; its current destination uses emphasis. Compact links use label sizing and semibold only when current. Recall adds the observed reading, identity, Markdown-heading, and code roles—not a replacement interface ramp. The code-inline size is relative to its text context; fenced code uses its explicit step. There is no fluid display scale; text enlargement and natural wrapping remain available.
+Route/Files/status headings retain their Source Sans hierarchy. Shared identity is 28px IM Fell with one 40px A.5, at every viewport. Navigation remains 16px Source Sans rather than shrinking on phones; all text scales naturally at 200%. Invitations use bounded fluid IM Fell scales, up to 76.8px on Ground and 68px on Think. Recall retains 28/22/18/17px Markdown steps in Libre Baskerville 400 with 1.4 line height. Code sizes stay relative/explicit as recorded above.
 
 Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.7 line height; note identity/path and compatibility copy remain compact. Markdown paragraphs have 1.4em separation, headings 1.8em before / .65em after, and the first content block has no added top margin. These are measures, not a requirement to pad short copy.
 
 ### Named Rules
-**The One Interface Voice Rule.** Use regular and semibold Source Sans 3 for working interface text; do not introduce a display face to decorate a task.
+**The Three Type Roles Rule.** IM Fell names/invites; Source Sans operates/explains; Libre Baskerville marks reflective editorial headings. Do not turn every label into display type.
 
 **The Content Code Rule.** Use the native monospace stack for actual code, not filenames, navigation, or a technical-looking interface costume.
 
 ## Layout
 
-At 56rem and above, a 13rem rail sits beside a `minmax(0, 1fr)` content column. The rail retains its sticky/minimum-viewport treatment. Navigation rows have .5rem gaps and begin 2.75rem below the app name. The obsolete Navigation preview footer is no longer rendered. Ground/Capture/Think retain their 72rem maximum workspace and 3rem / 2.5rem insets.
+One full-width header precedes the workspace: A.5/IM Fell identity at the start, horizontal Ground/Capture/Think/Recall links at the end when space permits. Flex wrapping moves the link group onto a second top row on phones or enlarged text; links may reflow naturally without clipping or reducing type. Header has 12px vertical padding, safe-area-aware gutters and 8px/24px group gaps. There is no permanent global app sidebar, fixed bottom navigation or reserved bottom-bar clearance. Ordinary workspace insets remain 3.5rem and `clamp(2rem, 4.4vw, 4.5rem)`; Ground keeps its two-column art composition, Capture/Think 64rem measures.
 
-Below 56rem, those three placeholder views retain their compact brand header, 2rem / 1.25rem workspace insets, fixed four-cell bottom navigation, and reserved document clearance. Cells have a 4rem minimum height and bottom safe-area padding, and can grow for wrapped labels. They use one document scroll.
+Below 56rem the same top header precedes 2rem/1.25rem workspace insets. All three placeholders use one document scroll. Capture's flex composition has a 24rem minimum inner height to preserve its intentional blank-slate space, not a calculation based on a removed bottom bar.
 
-Recall is a task-specific layout, not a new rule for all views. Its 100dvh workspace clips page overflow and allocates a wrapping toolbar above independently scrollable Files and reader panes. Desktop Files defaults visible, using `clamp(14rem, 22vw, 16rem)` beside the remaining reader width; its divider is one Parchment rule. Toolbar insets are 1.75rem / 2rem; Files uses 1.5rem / 1rem / 2rem and reader 1.75rem / 2rem / 4rem. Hiding Files expands the reader's available space without increasing its prose measure.
+Recall's app uses `auto minmax(12rem, 1fr)` grid rows within 100dvh: actual top-header height, then the workspace. The lower bound prevents enlarged headers from crushing the working area to zero; if content outgrows a short viewport the page can scroll, rather than clipping controls. Normal layouts keep independent pane scrollers. Desktop Files remains default-visible with the same `clamp(14rem, 22vw, 16rem)` split; the reader stays Parchment and bounded to 68ch.
 
-Narrow Recall uses `minmax(0, 1fr) auto` rows: main workspace above the actual bottom-navigation height, rather than an estimated fixed offset. The route toolbar replaces the redundant brand header. Files or reader fills the available main area; this is not a modal, backdrop, half-sheet, or focus trap. Toolbar/Files insets respect top/side safe areas; reading gutters are 1.25rem and bottom padding 3rem. Short landscape uses the same topology. Hidden reader content is removed while Files is shown; all four app links remain available.
+Narrow Recall has the same shared top identity/navigation and a compact Recall/Read-only toolbar—no duplicate logo. Files or reader fills the remaining work area non-modally. Toolbar padding is 8px vertically on narrow/short viewports; short-height Files/reader top insets are 16px without reducing text. The independent collapsible Files tree is not the removed global app sidebar. At 844×390/200% text, both initial pointer targets and keyboard-focused chevrons are unobscured, and all four top links are initially visible.
 
-Reused spacing steps are recorded above. Additional source-specific values, such as the rail offset and workspace insets, belong to their layout/component rules rather than an invented universal scale. Headings, purpose text, and notices flow naturally without fixed content heights.
+Reused spacing steps are recorded above. Header/workspace insets belong to their layout rules rather than an invented universal scale. Headings, purpose text and unavailable copy wrap naturally.
 
 ## Elevation & Depth
 
-Surfaces are flat. A continuous Night field, one-pixel Parchment rules, spacing, and weight create hierarchy. There are no shadow, blur, gradient, or material-texture tokens. State changes are immediate, without timed animation; the folder chevron rotates directly with disclosure state. Browser surfaces use `color-scheme: dark`. Recall explicitly uses thin Parchment-on-Night scrollbars; no ornamental scrollbar or new surface palette is introduced.
+Surfaces are flat, but no longer emotionally uniform: Night, Parchment and the cool Think mixture separate moods. Full approved artwork supplies narrative richness, not invented texture or shadow. No blur, gradient or timed entrance is added. Native browser surfaces use light color-scheme in Capture/reader and dark elsewhere; thin contextual scrollbars and Lantern text selection complete the treatment.
 
 ### Named Rules
 **The Flat Surface Rule.** Separate work areas with fields, spacing, or a single rule rather than decorative depth.
 
 ## Shapes
 
-Navigation and Recall buttons share modest corners; compact navigation and file rows are square. Notices have slightly softer corners, a single Parchment outline, and no shadow. The frontmatter preserves those three corner treatments. A drawn 16px disclosure chevron is functional hierarchy notation, not decorative brand artwork. No pills, ornamental badges, or image assets are introduced.
+Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground/Capture notices are separated by a single rule; Think's Horizon notice has 6px corners. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
 
-The selected-navigation mark is a 3px Lantern edge: vertical within desktop links, horizontal at the top of compact cells. This explicitly approved state indicator is not a general license for colored card/callout stripes. The detector warning was reviewed and retained as that narrow exception.
+All top app links use the same 2px Horizon selected underline, semibold text and programmatic current state across sizes. Current-file underline remains Horizon. None is a general callout stripe.
 
 ## Components
 
 ### Navigation
 
-Real page links, not ARIA tab widgets. Desktop rows have a 3rem minimum height; compact cells use the reserved navigation height. Current location combines the Lantern edge, semibold text, and `aria-current="page"`. Hover/pressed feedback underlines text; focus is independent of current location, using a 2px Parchment outline inset 6px against Night. Desktop and compact link variants are separately mapped in the frontmatter/sidecar.
+Real page links, not ARIA tab widgets. Existing dimensions, order, current-click/query guard and routing remain. Current location combines Horizon underline, semibold and `aria-current="page"`; keyboard focus is an independent 2px Horizon outline inset 6px against Night.
 
 ### Notice containers
 
-A content-sized section with H2 and explanatory children: at most 42rem wide, generous padding, a single outline, and notice corners. Text follows its heading after .5rem. There is no skeleton, alert role, fake disabled form, or simulated service state. This reusable visual primitive does not force future views into a notice layout.
+A section with H2 and explanatory children, at most 42rem wide. Text follows its heading after .5rem. Ground uses a quiet rule under its invitation, Capture rests its honest notice below open space, Think uses Night text on Horizon. Existing tested purpose/unavailable copy is unchanged. No skeleton, alert role, disabled form or simulated service state is added.
 
 ### Content links
 
-Native, persistently underlined Parchment links in semibold, with a 44px minimum hit height. Hover thickens the underline; pressed feedback moves its offset closer. Keyboard focus uses the 2px Parchment outline with a 4px offset. These shell links remain distinct from Recall's working buttons and from note-authored web links.
+Native semibold links retain 44px minimum height. Ground's real Open Capture destination uses Lantern/Night primary-action styling; other content links stay underlined. Focus uses context focus color, 2px with 4px offset. These remain native links, not invented save/send buttons.
 
 ### Skip and pane-jump controls
 
@@ -306,21 +317,21 @@ A focusable H1 with a modest fixed type scale, followed by body-sized purpose af
 
 ### Recall toolbar and buttons
 
-The route H1 and plain Read-only label form a wrapping toolbar with one bottom rule; its 44px heading row retains the previous title alignment. Recovery buttons retain their Parchment stroke, shared navigation corners, and recorded padding. Hover inverts to Parchment/Night; pressed state uses Lantern/Night. Keyboard focus remains the separate Parchment outline. Pending work shows a short status rather than a simulated percentage; duplicate retries are suppressed while the relevant read is pending.
+The compact Recall H1/Read-only row sits below the shared top app header, without duplicated branding. Recovery buttons use their context's ink/surface/border and reverse on hover; pressed uses Lantern/Night. Night contexts focus Horizon; the reader focuses Night on Parchment. Pending/read/retry behavior is unchanged.
 
 Files visibility uses a quiet icon-only button, not a detached toolbar text action. A 20px plain left chevron sits in a 44×44px target at the upper-right of the sticky Files header; when collapsed, a plain right chevron sits at the upper-left of the reader, outside the centered prose measure. Its local controls row remains reachable while the reader scrolls. No destination-icon rail or empty Files column remains. Both desktop and narrow use the accessible names Collapse files sidebar / Expand files sidebar, `aria-expanded`, and `aria-controls` targeting the retained, hidden Files navigation. The SVG is hidden from assistive technology. Closing focuses the visible expand control; opening targets the current file or Files heading. Narrow selection still closes Files immediately without changing note/history/scroll semantics.
 
-Matching Parchment-on-Night tooltips appear on pointer hover and keyboard focus, remain available while the pointer enters them, and dismiss with Escape without moving focus or collapsing Files. A subsequent Escape within expanded Files collapses it and returns focus to the visible expand control. Normal Tab/Shift+Tab and Enter/Space operation is retained. The approved Parchment focus and Lantern selection mapping is unchanged; the source site's compound glyph, retained icon rail, and newer Horizon roles are not imported. This correction implements the user's [refreshed sidebar direction](.lore/work/design/personal-brand-snapshot.md#approved-recall-sidebar-adaptation). `memory-loop-ms4` has fresh technical **Accept** and visual **SHIP**: R1/R2/R3/V1 are resolved, including sticky-header row clearance, breakpoint focus transfer, anchor-adjusted reading restoration, and unobscured focused helpers. Independent current-build unit **25/25**, Recall browser **25/25**, legacy browser **18/18**, and typecheck/build pass; backend **87** remains prior unchanged evidence. Verification used test-owned fixtures, not real-vault activation.
+Matching tooltips use the surrounding context's ink/surface: Parchment/Night in Files, Night/Parchment in the reader. Their hover/focus/Escape behavior, 20px/44px geometry, local placement, sticky clearance and focus return are unchanged. The source site's compound glyph and retained destination rail are not imported. Current 44w verification is unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, typecheck/build, visual **SHIP** and technical **Accept**; 44W-T1 and the protected MS4/history findings are resolved.
 
 ### Vault file hierarchy
 
-Native nested lists, folder buttons and note links live in Vault files navigation, separate from Primary app navigation. Folders expose expanded state and a controlled nested list; no ARIA tree/roving-arrow model is claimed. Rows target 44px minimum height, wrap literal names, and preserve extensions. Deep nesting can scroll inside Files, never the page. Current-file semibold text and a 2px Lantern underline are distinct from the Parchment focus outline inset 2px. A collapsed folder does not close its selected document.
+Native nested lists, folder buttons and note links remain unchanged. Rows target 44px, wrap names/extensions, and deep nesting scrolls inside Files. Current-file semibold/Horizon underline is distinct from the Horizon focus outline inset 2px. Collapsing a folder does not close its selected document.
 
 ### Markdown reader
 
 The unboxed article is named by its literal filename, not by invented metadata or the first source heading. A relative path and default-closed native Formatting support disclosure precede the document and scroll with it. File identity is focusable; an arriving response does not refocus the page or make the entire article a live region.
 
-Source H1–H5 become native H2–H6 beneath Recall's route H1; source H6 stays H6. This approved cap preserves text but does not repair skipped source levels. CommonMark/GFM lists retain markers; task checkboxes are disabled and named from their task text. Code uses the native stack, bordered padded scrollers, and preserved whitespace. Tables have their own focusable horizontal scroller, semantic headers, 8rem minimum cell width and one-pixel row rules. Quotes use a single Parchment rule; no syntax-color palette or media viewer exists.
+Source H1–H5 still become native H2–H6; source H6 stays H6. This cap does not repair skipped source levels. Markdown renderer/links/tasks/code/tables are unchanged; only type and contextual rule colors change. Literal identity is Libre Baskerville above a thin rule, metadata stays legible Source Sans, and body stays 17px/1.7. Code/table scrollers retain their semantics and bounded overflow. No syntax-color palette or media viewer is added.
 
 Raw HTML is escaped text. Markdown images become Image not shown text, and embeds remain literal. Only deliberate HTTP(S) links are live, opening a new tab with an accessible indication and safe relationship. Note/heading/wiki and unsafe links remain text. Frontmatter passes through ordinary Markdown rather than becoming application metadata.
 
@@ -341,8 +352,8 @@ Selection uses native note URLs/history; different notes reset to top, and Back/
 - Do preserve literal file identity, document semantics, and honest read-only recovery states.
 
 ### Don't:
-- Don't add decorative art, taglines, shadows, gradients, or simulated activity to the working shell.
-- Don't replace the approved navigation marker with an unrelated accent treatment.
-- Don't turn Horizon or panel-only tonal ramps into invented status colors.
+- Don't crop/recolor/redraw approved artwork or place narrative art behind reading text.
+- Don't turn a visual invitation into simulated user activity or a future feature.
+- Don't treat prior assistant restraint as immutable brand truth, or panel-only tonal ramps as runtime colors.
 - Don't invent search, editing, media, configuration, or transport controls from these read-only components.
 - Don't treat panel-only component schematics or tonal ramps as live vault data or additional runtime tokens.

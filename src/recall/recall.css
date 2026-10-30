@@ -1,13 +1,16 @@
 .app-shell.app-shell--recall {
   height: 100dvh;
   min-height: 0;
-  overflow: hidden;
+  /* Keep a usable work area when text/header reflow outgrows a short viewport.
+     The page can then scroll; neither navigation nor Files controls are clipped. */
+  grid-template-rows: auto minmax(12rem, 1fr);
 }
 
 .app-shell--recall .workspace {
   min-width: 0;
   max-width: none;
-  height: 100%;
+  height: auto;
+  min-height: 0;
   padding: 0;
   overflow: hidden;
 }
@@ -17,7 +20,7 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  scrollbar-color: var(--parchment) var(--night);
+  scrollbar-color: var(--horizon) var(--surface);
   scrollbar-width: thin;
 }
 
@@ -30,8 +33,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: .5rem 1rem;
-  padding: 1.75rem 2rem;
-  border-bottom: 1px solid var(--parchment);
+  padding: 12px 2rem;
+  border-bottom: 1px solid var(--rule);
 }
 
 .recall-toolbar h1 { display: flex; align-items: center; min-height: 44px; margin-right: auto; }
@@ -44,14 +47,14 @@
   min-height: 44px;
   max-width: 100%;
   padding: .5rem .875rem;
-  border: 1px solid var(--parchment);
+  border: 1px solid var(--ink);
   border-radius: 4px;
-  color: var(--parchment);
-  background: var(--night);
+  color: var(--ink);
+  background: var(--surface);
   cursor: pointer;
 }
 
-.recall-button:hover { color: var(--night); background: var(--parchment); }
+.recall-button:hover { color: var(--surface); background: var(--ink); }
 .recall-button:active { color: var(--night); background: var(--lantern); }
 .recall-button:disabled { cursor: wait; text-decoration: none; }
 
@@ -77,12 +80,12 @@
   padding: 12px;
   border: 0;
   border-radius: 4px;
-  color: var(--parchment);
-  background: var(--night);
+  color: var(--ink);
+  background: var(--surface);
   cursor: pointer;
 }
 .files-toggle svg { width: 20px; height: 20px; }
-.files-toggle:hover { color: var(--night); background: var(--parchment); }
+.files-toggle:hover { color: var(--surface); background: var(--ink); }
 .files-toggle:active { color: var(--night); background: var(--lantern); }
 .files-tooltip {
   position: absolute;
@@ -92,10 +95,10 @@
   width: max-content;
   max-width: min(16rem, calc(100vw - 3rem));
   padding: .5rem .75rem;
-  border: 1px solid var(--parchment);
+  border: 1px solid var(--ink);
   border-radius: 4px;
-  color: var(--parchment);
-  background: var(--night);
+  color: var(--ink);
+  background: var(--surface);
   font-size: .875rem;
   line-height: 1.5;
 }
@@ -120,14 +123,14 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-color: var(--parchment) var(--night);
+  scrollbar-color: var(--horizon) var(--surface);
   scrollbar-width: thin;
 }
 
 .recall-files {
   --files-top-inset: 1.5rem;
   padding: var(--files-top-inset) 1rem 2rem;
-  border-right: 1px solid var(--parchment);
+  border-right: 1px solid var(--rule);
   scroll-padding-top: calc(var(--files-top-inset) + 44px + .5rem);
 }
 .recall-files h2 { margin: 0 .5rem; }
@@ -163,20 +166,31 @@
 .file-link[aria-current='page'] span {
   font-weight: 600;
   text-decoration: underline;
-  text-decoration-color: var(--lantern);
+  text-decoration-color: var(--horizon);
   text-decoration-thickness: 2px;
   text-underline-offset: .25em;
 }
 
 .empty-folder, .files-footnote, .files-status { margin: .5rem; }
 .empty-folder { padding: .5rem 0 .75rem 1.875rem; font-size: .875rem; }
-.files-footnote { margin-top: 2rem; font-size: .875rem; }
-.recall-reader { padding: 1.75rem 2rem 4rem; }
+.files-footnote { margin-top: 2rem; font-size: .875rem; color: var(--muted); }
+.recall-reader {
+  --surface: var(--parchment);
+  --ink: var(--night);
+  --muted: #344548;
+  --rule: color-mix(in srgb, var(--night) 25%, var(--parchment));
+  --focus: var(--night);
+  padding: 1.75rem 2rem 4rem;
+  color: var(--ink);
+  background: var(--surface);
+  color-scheme: light;
+  scrollbar-color: var(--muted) var(--surface);
+}
 .reader-measure { max-width: 68ch; margin-inline: auto; font-size: 1.0625rem; line-height: 1.7; }
-.note-header { margin-bottom: 2rem; }
-.note-identity { width: fit-content; max-width: 100%; margin: 0; font-size: 1.125rem; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
-.note-path { margin: .25rem 0 0; font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; }
-.formatting-support { margin-top: .75rem; font-size: .875rem; line-height: 1.5; }
+.note-header { margin-bottom: 2.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--rule); }
+.note-identity { width: fit-content; max-width: 100%; margin: 0; font: 400 clamp(1.25rem, 1.8vw, 1.5rem)/1.5 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.note-path { margin: .5rem 0 0; color: var(--muted); font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; }
+.formatting-support { margin-top: .75rem; color: var(--muted); font-size: .875rem; line-height: 1.5; }
 .formatting-support summary { width: fit-content; max-width: 100%; min-height: 44px; padding-block: .625rem; cursor: pointer; }
 .formatting-support summary:hover { text-decoration: underline; }
 .formatting-support p { max-width: 60ch; margin: .25rem 0 1rem; }
@@ -208,7 +222,7 @@
   min-height: 44px;
   max-width: calc(100% - 1rem);
   padding: .5rem .875rem;
-  border: 1px solid var(--parchment);
+  border: 1px solid var(--night);
   color: var(--night);
   background: var(--lantern);
   cursor: pointer;
@@ -222,7 +236,7 @@
 .markdown-document > :first-child { margin-top: 0; }
 .markdown-document p { margin: 0 0 1.4em; }
 .markdown-document h2, .markdown-document h3, .markdown-document h4,
-.markdown-document h5, .markdown-document h6 { margin: 1.8em 0 .65em; font-size: 1.0625rem; font-weight: 600; line-height: 1.3; }
+.markdown-document h5, .markdown-document h6 { margin: 1.8em 0 .65em; font: 400 1.0625rem/1.4 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; text-wrap: balance; }
 .markdown-document .markdown-h1 { font-size: 1.75rem; }
 .markdown-document .markdown-h2 { font-size: 1.375rem; }
 .markdown-document .markdown-h3 { font-size: 1.125rem; }
@@ -233,39 +247,45 @@
 .markdown-document li > p { margin-bottom: .5em; }
 .markdown-document li + li { margin-top: .3em; }
 .markdown-document .task-list-item { list-style: none; }
-.markdown-document input[type='checkbox'] { accent-color: var(--parchment); margin-right: .5em; }
+.markdown-document input[type='checkbox'] { accent-color: var(--night); margin-right: .5em; }
 .markdown-document code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .875em; }
 .markdown-document pre {
   max-width: 100%;
   overflow: auto;
   margin: 1.4em 0;
   padding: 1rem;
-  border: 1px solid var(--parchment);
+  border: 1px solid var(--rule);
   font-size: .9375rem;
   line-height: 1.6;
   white-space: pre;
   overflow-wrap: normal;
-  scrollbar-color: var(--parchment) var(--night);
+  scrollbar-color: var(--muted) var(--surface);
   scrollbar-width: thin;
 }
 .markdown-document pre code { font-size: inherit; }
-.markdown-document blockquote { margin: 1.4em 0; padding-left: 1.25em; border-left: 1px solid var(--parchment); }
-.markdown-document hr { border: 0; border-top: 1px solid var(--parchment); margin-block: 2em; }
-.markdown-table-scroll { max-width: 100%; overflow-x: auto; margin: 1.4em 0; scrollbar-color: var(--parchment) var(--night); scrollbar-width: thin; }
+.markdown-document blockquote { margin: 1.4em 0; padding-left: 1.25em; border-left: 1px solid var(--rule); }
+.markdown-document hr { border: 0; border-top: 1px solid var(--rule); margin-block: 2em; }
+.markdown-table-scroll { max-width: 100%; overflow-x: auto; margin: 1.4em 0; scrollbar-color: var(--muted) var(--surface); scrollbar-width: thin; }
 .markdown-document table { width: 100%; border-collapse: collapse; font-size: 1rem; }
-.markdown-document th, .markdown-document td { min-width: 8rem; padding: .625rem .875rem; border-bottom: 1px solid var(--parchment); text-align: left; vertical-align: top; }
+.markdown-document th, .markdown-document td { min-width: 8rem; padding: .625rem .875rem; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
 .markdown-document th { font-weight: 600; }
 .markdown-document :is(pre, .markdown-table-scroll):focus-visible { outline-offset: -3px; }
 
 @media (width < 56rem) {
-  .app-shell.app-shell--recall { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-bottom: 0; }
-  .app-shell--recall .shell-navigation { display: contents; }
-  .app-shell--recall .app-name { display: none; }
-  .app-shell--recall .primary-navigation { position: static; grid-column: 1; grid-row: 2; }
-  .app-shell--recall .workspace { grid-column: 1; grid-row: 1; height: auto; }
-  .recall-toolbar { padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px)) 1rem max(1rem, env(safe-area-inset-left, 0px)); }
+  .recall-toolbar { padding: 8px max(20px, env(safe-area-inset-right, 0px)) 8px max(20px, env(safe-area-inset-left, 0px)); }
   .recall-files { --files-top-inset: 1.25rem; padding: var(--files-top-inset) max(1rem, env(safe-area-inset-right, 0px)) 2rem max(1rem, env(safe-area-inset-left, 0px)); border: 0; }
   .recall-reader { padding: 1.5rem max(1.25rem, env(safe-area-inset-right, 0px)) 3rem max(1.25rem, env(safe-area-inset-left, 0px)); }
   .recall-blocking { padding: 1.5rem 1.25rem; }
   .recall-panes--split { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (height < 30rem) {
+  .recall-toolbar { padding-block: 8px; }
+  .recall-files { --files-top-inset: 16px; }
+  .recall-reader { padding-block: 16px 24px; }
+}
+
+@media (forced-colors: active) {
+  .file-link[aria-current='page'] span { text-decoration-color: Highlight; }
+  .note-header, .markdown-document :is(pre, blockquote, hr, th, td) { border-color: CanvasText; }
 }

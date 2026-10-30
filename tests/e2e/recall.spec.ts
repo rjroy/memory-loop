@@ -5,6 +5,44 @@ function noteUrl(origin: string, id: string[]): string {
   return `${origin}/recall?${new URLSearchParams({ file: JSON.stringify(id) })}`;
 }
 
+test('44W-T1: Files controls and primary destinations remain operable at 200% text in short landscape', async ({ page, recallOrigin }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto(noteUrl(recallOrigin, ['alpha.md']));
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.addStyleTag({ content: ':root { font-size: 200% !important; }' });
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe('32px');
+  const expand = page.getByRole('button', { name: 'Expand files sidebar' });
+  const isUnobscured = (element: Element) => {
+    const box = element.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    if (box.width <= 0 || box.height <= 0 || x < 0 || x >= innerWidth || y < 0 || y >= innerHeight) return false;
+    const hit = document.elementFromPoint(x, y);
+    return !!hit && element.contains(hit);
+  };
+  for (let index = 0; index < 16 && !(await expand.evaluate(element => element === document.activeElement)); index++) {
+    await page.keyboard.press('Tab');
+  }
+  await expect(expand).toBeFocused();
+  await expect.poll(() => expand.evaluate(isUnobscured)).toBe(true);
+  await page.keyboard.press('Enter');
+  const collapse = page.getByRole('button', { name: 'Collapse files sidebar' });
+  await expect(collapse).toBeVisible();
+  await collapse.focus();
+  await expect(collapse).toBeFocused();
+  await expect.poll(() => collapse.evaluate(isUnobscured)).toBe(true);
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+  for (const name of ['Ground', 'Capture', 'Think', 'Recall']) {
+    const link = nav.getByRole('link', { name });
+    await link.scrollIntoViewIfNeeded();
+    await expect(link).toBeVisible();
+    await expect.poll(() => link.evaluate(isUnobscured)).toBe(true);
+  }
+  await collapse.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+});
+
 test('MS4-R1: reopened Files reveals the focused current row below its sticky header', async ({ page, recallOrigin }) => {
   const entries = Array.from({ length: 100 }, (_, index) => {
     const name = `fixture-${String(index).padStart(3, '0')}.md`;
@@ -225,7 +263,7 @@ test('phone Files fills the workspace, selection reveals reader, and reopening r
   expect(navBox).not.toBeNull();
   if (filesBox && navBox) {
     expect(filesBox.width).toBeGreaterThan(350);
-    expect(filesBox.y + filesBox.height).toBeLessThanOrEqual(navBox.y + 1);
+    expect(filesBox.y).toBeGreaterThanOrEqual(navBox.y + navBox.height - 1);
   }
   await files.getByRole('link', { name: 'alpha.md' }).click();
   await expect(files).toBeHidden();

@@ -1,4 +1,20 @@
 @font-face {
+  font-family: 'IM Fell English SC';
+  src: url('/fonts/im-fell-english-sc/IMFellEnglishSC-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Libre Baskerville';
+  src: url('/fonts/libre-baskerville/LibreBaskerville-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'Source Sans 3';
   src: url('/fonts/source-sans-3/SourceSans3-Regular.ttf') format('truetype');
   font-weight: 400;
@@ -24,8 +40,11 @@
   --parchment: #fef6e1;
   --lantern: #efb83f;
   --horizon: #5e8bd6;
-  --rail-width: 13rem;
-  --navigation-height: 4rem;
+  --surface: var(--night);
+  --ink: var(--parchment);
+  --muted: #d5d3c5;
+  --rule: color-mix(in srgb, var(--parchment) 27%, var(--night));
+  --focus: var(--horizon);
 }
 
 * { box-sizing: border-box; }
@@ -36,6 +55,8 @@ body {
   line-height: 1.5;
 }
 
+img { display: block; max-width: 100%; height: auto; }
+
 ::selection { color: var(--night); background: var(--lantern); }
 
 a {
@@ -45,46 +66,56 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--parchment);
+  outline: 2px solid var(--focus);
   outline-offset: 4px;
 }
 
 .app-shell {
   display: grid;
-  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
   min-height: 100svh;
 }
 
-.shell-navigation {
-  position: sticky;
-  top: 0;
-  align-self: start;
+.app-header {
   display: flex;
-  flex-direction: column;
-  min-height: 100svh;
-  padding: 2rem 1.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding: max(12px, env(safe-area-inset-top, 0px)) clamp(20px, 4.4vw, 64px) 12px;
   color: var(--parchment);
   background: var(--night);
+  border-bottom: 1px solid var(--rule);
 }
 
-.app-name {
-  font-size: 1.375rem;
-  font-weight: 600;
-  line-height: 1.4;
+.brand-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-identity img { width: 40px; height: 40px; flex-shrink: 0; }
+.brand-identity span {
+  min-width: 0;
+  font: 400 1.75rem/1.1 'IM Fell English SC', Georgia, serif;
+  letter-spacing: -.02em;
 }
 
 .primary-navigation {
-  display: grid;
-  gap: .5rem;
-  margin-top: 2.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
 }
 
 .navigation-link {
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 3rem;
-  padding: .625rem 1rem;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 10px;
   border-radius: 4px;
   text-decoration: none;
   overflow-wrap: anywhere;
@@ -94,9 +125,9 @@ a {
 
 .navigation-link[aria-current='page']::before {
   position: absolute;
-  inset: .625rem auto .625rem 0;
-  width: 3px;
-  background: var(--lantern);
+  inset: auto 10px 4px;
+  height: 2px;
+  background: var(--horizon);
   content: '';
 }
 
@@ -104,7 +135,7 @@ a {
 .navigation-link:active { text-decoration: underline; }
 
 .navigation-link:focus-visible {
-  outline-color: var(--parchment);
+  outline-color: var(--horizon);
   outline-offset: -6px;
 }
 
@@ -115,8 +146,10 @@ a {
 
 .workspace {
   width: 100%;
-  max-width: 72rem;
-  padding: 3rem 2.5rem;
+  min-width: 0;
+  padding: 3.5rem clamp(2rem, 4.4vw, 4.5rem);
+  color: var(--ink);
+  background: var(--surface);
   overflow-wrap: break-word;
 }
 
@@ -131,6 +164,8 @@ h1 {
   line-height: 1.2;
 }
 
+h1, h2, .brand-invitation { text-wrap: balance; }
+
 h2 {
   margin: 0;
   font-size: 1.125rem;
@@ -141,17 +176,86 @@ h2 {
 .view-purpose {
   max-width: 70ch;
   margin: .75rem 0 0;
+  color: var(--muted);
 }
 
 .placeholder-notice {
   max-width: 42rem;
   margin-top: 2rem;
-  padding: 1.5rem;
-  border: 1px solid var(--parchment);
-  border-radius: 6px;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
 }
 
 .placeholder-notice p { margin: .5rem 0 0; }
+
+.brand-invitation {
+  margin: 0;
+  font: 400 clamp(3rem, 5.3vw, 4.8rem)/1.05 'IM Fell English SC', Georgia, serif;
+  letter-spacing: -.025em;
+}
+
+.ground-arrival {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(2rem, 4vw, 4rem);
+  max-width: 76rem;
+  margin: 4rem auto 0;
+}
+
+.ground-welcome .brand-invitation { max-width: 9ch; color: var(--lantern); }
+.ground-welcome .placeholder-notice { margin-top: 2.75rem; max-width: 38ch; }
+.ground-art { width: 100%; max-width: 32rem; justify-self: center; }
+.ground-welcome .content-link {
+  justify-content: center;
+  padding: .625rem 1.25rem;
+  border-radius: 5px;
+  color: var(--night);
+  background: var(--lantern);
+  text-decoration: none;
+}
+.ground-welcome .content-link:hover { text-decoration: underline; }
+.ground-welcome .content-link:active { background: var(--parchment); }
+
+.app-shell--capture { background: var(--parchment); }
+.app-shell--capture .workspace {
+  --surface: var(--parchment);
+  --ink: var(--night);
+  --muted: #344548;
+  --rule: color-mix(in srgb, var(--night) 25%, var(--parchment));
+  --focus: var(--night);
+  color-scheme: light;
+  display: flex;
+}
+.capture-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 24rem;
+  max-width: 64rem;
+  margin-inline: auto;
+}
+.capture-view .placeholder-notice { margin-top: auto; padding-top: 1.5rem; }
+.capture-view > div { padding-bottom: 10rem; }
+
+.app-shell--think { background: color-mix(in srgb, var(--horizon) 10%, var(--night)); }
+.app-shell--think .workspace {
+  --surface: color-mix(in srgb, var(--horizon) 10%, var(--night));
+  --rule: color-mix(in srgb, var(--parchment) 27%, var(--surface));
+}
+.think-view { max-width: 64rem; margin-inline: auto; }
+.think-invitation { display: flex; align-items: center; gap: 3rem; margin-top: 4.5rem; }
+.think-invitation .brand-invitation { max-width: 13ch; font-size: clamp(3rem, 4.8vw, 4.25rem); }
+.think-invitation img { width: 96px; height: 96px; flex-shrink: 0; }
+.think-view .placeholder-notice {
+  margin-top: 3rem;
+  padding: 1.75rem 2rem;
+  border: 0;
+  border-radius: 6px;
+  color: var(--night);
+  background: var(--horizon);
+}
 
 .content-link {
   display: inline-flex;
@@ -188,50 +292,20 @@ h2 {
 }
 
 @media (width < 56rem) {
-  .app-shell {
-    display: block;
-    padding-bottom: calc(var(--navigation-height) + env(safe-area-inset-bottom, 0px) + 1.5rem);
-  }
-
-  .shell-navigation {
-    position: static;
-    min-height: auto;
-    padding: 1.5rem 1.25rem 0;
-    color: var(--parchment);
-    background: var(--night);
-  }
-
-  .app-name { font-size: 1.25rem; }
-  .scope-label { margin-top: .25rem; }
-
-  .primary-navigation {
-    position: fixed;
-    z-index: 2;
-    inset: auto 0 0;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0;
-    margin: 0;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    color: var(--parchment);
-    background: var(--night);
-  }
-
-  .navigation-link {
-    justify-content: center;
-    min-height: var(--navigation-height);
-    padding: .75rem 4px;
-    border-radius: 0;
-    font-size: .875rem;
-    text-align: center;
-  }
-
-  .navigation-link[aria-current='page']::before {
-    inset: 0 .75rem auto;
-    width: auto;
-    height: 3px;
-  }
+  .app-header { padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
+  .primary-navigation { gap: 4px; }
 
   .workspace { padding: 2rem 1.25rem; }
+
+  .ground-arrival { grid-template-columns: 1fr; gap: 2.5rem; margin-top: 2.5rem; }
+  .ground-welcome .brand-invitation { max-width: 12ch; font-size: clamp(3rem, 10vw, 4rem); }
+  .ground-welcome .placeholder-notice { margin-top: 1.75rem; }
+  .ground-art { max-width: 25rem; }
+  .capture-view > div { padding-bottom: 8rem; }
+  .think-invitation { gap: 1.5rem; margin-top: 3rem; }
+  .think-invitation .brand-invitation { font-size: clamp(2.5rem, 7.5vw, 3.5rem); }
+  .think-invitation img { width: 56px; height: 56px; }
+  .think-view .placeholder-notice { margin-top: 2.5rem; padding: 1.5rem; }
 }
 
 @media (forced-colors: active) {

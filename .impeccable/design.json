@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-30T01:46:10Z",
+  "generatedAt": "2026-10-30T04:02:56.970Z",
   "title": "Design System: Memory Loop",
   "extensions": {
     "colorMeta": {
@@ -64,7 +64,7 @@
     "typographyMeta": {
       "headline": {
         "displayName": "View heading",
-        "purpose": "Focusable H1; no hero or display-font role."
+        "purpose": "Focusable Source Sans route H1, separate from expressive invitations."
       },
       "title": {
         "displayName": "Notice heading",
@@ -76,7 +76,7 @@
       },
       "emphasis": {
         "displayName": "Interface emphasis",
-        "purpose": "Current desktop destination and content/skip links."
+        "purpose": "Current app destination and content/skip links."
       },
       "label": {
         "displayName": "Scope and compact navigation",
@@ -84,15 +84,15 @@
       },
       "compact-selected": {
         "displayName": "Selected compact destination",
-        "purpose": "Semibold compact navigation, without shrinking the text."
+        "purpose": "Same 16px Source Sans/semibold selected top link across viewports; not a shrunken bottom-tab label."
       },
       "app-name": {
         "displayName": "Desktop app name",
-        "purpose": "Plain interface branding in the rail."
+        "purpose": "28px IM Fell English SC wordmark and 40px approved A.5 in one shared top header."
       },
       "compact-app-name": {
         "displayName": "Compact app name",
-        "purpose": "Compact branding in Ground/Capture/Think; replaced by the toolbar in Recall."
+        "purpose": "Same shared identity on phones/enlarged text; no duplicated Recall toolbar logo."
       },
       "reading": {
         "displayName": "Reading prose",
@@ -100,23 +100,23 @@
       },
       "note-identity": {
         "displayName": "Literal filename",
-        "purpose": "Focusable article identity, separate from source headings."
+        "purpose": "Focusable literal filename in Libre Baskerville, never an invented note title."
       },
       "markdown-headline": {
         "displayName": "Source H1",
-        "purpose": "Rendered as H2 beneath Recall H1."
+        "purpose": "Rendered as H2 beneath Recall H1. Libre Baskerville regular, editorial heading role."
       },
       "markdown-title": {
         "displayName": "Source H2",
-        "purpose": "Rendered as H3."
+        "purpose": "Rendered as H3. Libre Baskerville regular, editorial heading role."
       },
       "markdown-subtitle": {
         "displayName": "Source H3",
-        "purpose": "Rendered as H4."
+        "purpose": "Rendered as H4. Libre Baskerville regular, editorial heading role."
       },
       "markdown-small-heading": {
         "displayName": "Smaller source headings",
-        "purpose": "Source H4/H5/H6 rendered as H5/H6/H6."
+        "purpose": "Source H4/H5/H6 rendered as H5/H6/H6. Libre Baskerville regular, editorial heading role."
       },
       "code-inline": {
         "displayName": "Inline code",
@@ -125,6 +125,10 @@
       "code-block": {
         "displayName": "Fenced code",
         "purpose": "Explicit native-monospace size inside bounded scrolling blocks."
+      },
+      "invitation": {
+        "displayName": "Expressive invitation",
+        "purpose": "Bounded IM Fell headline on Ground/Think only."
       }
     },
     "shadows": [],
@@ -138,44 +142,36 @@
   },
   "components": [
     {
-      "name": "Desktop navigation",
+      "name": "Top navigation",
       "kind": "nav",
-      "refersTo": "navigation-rail",
-      "description": "Actual rail/link/selection/focus styling; the preview omits the full-page sticky/min-height scaffold.",
-      "html": "<div class=\"ds-rail\"><header class=\"ds-app-name\">Memory Loop</header><nav class=\"ds-navigation\" aria-label=\"Primary\"><a class=\"ds-navigation-link\" href=\"/ground\" aria-current=\"page\">Ground</a><a class=\"ds-navigation-link\" href=\"/capture\">Capture</a><a class=\"ds-navigation-link\" href=\"/think\">Think</a><a class=\"ds-navigation-link\" href=\"/recall\">Recall</a></nav></div>",
-      "css": ".ds-rail { width: 13rem; padding: 2rem 1.5rem; color: var(--parchment, #fef6e1); background: var(--night, #031315); font: 400 1rem/1.5 'Source Sans 3', system-ui, sans-serif; } .ds-app-name { font-size: 1.375rem; font-weight: 600; line-height: 1.4; } .ds-navigation { display: grid; gap: .5rem; margin-top: 2.75rem; } .ds-navigation-link { position: relative; display: flex; align-items: center; min-height: 3rem; padding: .625rem 1rem; border-radius: 4px; color: inherit; text-decoration: none; text-decoration-thickness: 1px; text-underline-offset: .2em; overflow-wrap: anywhere; } .ds-navigation-link[aria-current='page'] { font-weight: 600; } .ds-navigation-link[aria-current='page']::before { position: absolute; inset: .625rem auto .625rem 0; width: 3px; background: var(--lantern, #efb83f); content: ''; } .ds-navigation-link:hover, .ds-navigation-link:active { text-decoration: underline; } .ds-navigation-link:focus-visible { outline: 2px solid var(--parchment, #fef6e1); outline-offset: -6px; }"
-    },
-    {
-      "name": "Compact navigation",
-      "kind": "nav",
-      "refersTo": "compact-navigation-link",
-      "description": "Four persistent cell styles; fixed on placeholder routes, final grid row beneath the Recall main workspace.",
-      "html": "<nav class=\"ds-compact-navigation\" aria-label=\"Primary\"><a class=\"ds-compact-link\" href=\"/ground\">Ground</a><a class=\"ds-compact-link\" href=\"/capture\" aria-current=\"page\">Capture</a><a class=\"ds-compact-link\" href=\"/think\">Think</a><a class=\"ds-compact-link\" href=\"/recall\">Recall</a></nav>",
-      "css": ".ds-compact-navigation { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; padding-bottom: env(safe-area-inset-bottom, 0px); color: var(--parchment, #fef6e1); background: var(--night, #031315); font: 400 .875rem/1.5 'Source Sans 3', system-ui, sans-serif; } .ds-compact-link { position: relative; display: flex; align-items: center; justify-content: center; min-height: var(--navigation-height, 4rem); padding: .75rem 4px; border-radius: 0; color: inherit; text-align: center; text-decoration: none; text-decoration-thickness: 1px; text-underline-offset: .2em; overflow-wrap: anywhere; } .ds-compact-link[aria-current='page'] { font-weight: 600; } .ds-compact-link[aria-current='page']::before { position: absolute; inset: 0 .75rem auto; height: 3px; background: var(--lantern, #efb83f); content: ''; } .ds-compact-link:hover, .ds-compact-link:active { text-decoration: underline; } .ds-compact-link:focus-visible { outline: 2px solid var(--parchment, #fef6e1); outline-offset: -6px; }"
+      "refersTo": "navigation-header",
+      "description": "Actual shared compact identity and horizontal native app links, above the workspace at every size. Header groups wrap on narrow/enlarged layouts; there is no permanent app rail or bottom bar. Application supplies routing/current-query guard; this excerpt is static.",
+      "html": "<header class=\"ds-top-header\"><div class=\"ds-brand-identity\"><img src=\"/brand/the-guide/approved-a5.svg\" width=\"40\" height=\"40\" alt=\"\"><span>Memory Loop</span></div><nav class=\"ds-primary-navigation\" aria-label=\"Primary\"><a class=\"ds-navigation-link\" href=\"/ground\" aria-current=\"page\">Ground</a><a class=\"ds-navigation-link\" href=\"/capture\">Capture</a><a class=\"ds-navigation-link\" href=\"/think\">Think</a><a class=\"ds-navigation-link\" href=\"/recall\">Recall</a></nav></header>",
+      "css": ".ds-top-header{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-top-header *{box-sizing:border-box}.ds-top-header {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px 24px;\n  padding: max(12px, env(safe-area-inset-top, 0px)) clamp(20px, 4.4vw, 64px) 12px;\n  color: var(--parchment);\n  background: var(--night);\n  border-bottom: 1px solid var(--rule);\n}\n.ds-brand-identity {\n  display: flex;\n  min-width: 0;\n  align-items: center;\n  gap: 12px;\n}\n.ds-brand-identity img { width: 40px; height: 40px; flex-shrink: 0; }\n.ds-brand-identity span {\n  min-width: 0;\n  font: 400 1.75rem/1.1 'IM Fell English SC', Georgia, serif;\n  letter-spacing: -.02em;\n}\n.ds-primary-navigation {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 4px 8px;\n}\n.ds-navigation-link {\n  position: relative;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 44px;\n  padding: 8px 10px;\n  border-radius: 4px;\n  text-decoration: none;\n  overflow-wrap: anywhere;\n}\n.ds-navigation-link[aria-current='page'] { font-weight: 600; }\n.ds-navigation-link[aria-current='page']::before {\n  position: absolute;\n  inset: auto 10px 4px;\n  height: 2px;\n  background: var(--horizon);\n  content: '';\n}\n.ds-navigation-link:hover,\n.ds-navigation-link:active { text-decoration: underline; }\n.ds-navigation-link:focus-visible {\n  outline-color: var(--horizon);\n  outline-offset: -6px;\n}@media(width < 56rem){.ds-top-header{padding-inline:20px}.ds-primary-navigation{gap:4px}}"
     },
     {
       "name": "Unavailable-feature notice",
-      "kind": "card",
+      "kind": "custom",
       "refersTo": "placeholder-notice",
-      "description": "Actual content-sized status section on the workspace, not a disabled form or simulated loading state.",
+      "description": "Actual Capture notice on Parchment: a single rule and honest copy, not an editable field. Capture leaves breathing room above it; Ground/Think adapt the same semantic section.",
       "html": "<section class=\"ds-notice\"><h2>Quick capture isn't available yet</h2><p>Note entry and saving are not available in this preview.</p></section>",
-      "css": ".ds-notice { max-width: 42rem; margin-top: 2rem; padding: 1.5rem; border: 1px solid var(--parchment, #fef6e1); border-radius: 6px; color: var(--parchment, #fef6e1); background: var(--night, #031315); font: 400 1rem/1.5 'Source Sans 3', system-ui, sans-serif; overflow-wrap: break-word; } .ds-notice h2 { margin: 0; font-size: 1.125rem; font-weight: 600; line-height: 1.4; } .ds-notice p { margin: .5rem 0 0; }"
+      "css": ".ds-notice{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-notice{--ink:var(--night);--surface:var(--parchment);--rule:color-mix(in srgb,var(--night) 25%,var(--parchment));}.ds-notice {\n  max-width: 42rem;\n  margin-top: 2rem;\n  padding-top: 1.5rem;\n  border-top: 1px solid var(--rule);\n}\n.ds-notice p { margin: .5rem 0 0; }.ds-notice h2{margin:0;font-size:1.125rem;font-weight:600;line-height:1.4}"
     },
     {
       "name": "Content link",
       "kind": "custom",
       "refersTo": "content-link",
-      "description": "Native link with persistent underline, 44px minimum hit height, and independent keyboard focus.",
+      "description": "Ground’s real Open Capture link, styled as a Lantern primary action without changing native link behavior.",
       "html": "<a class=\"ds-content-link\" href=\"/capture\">Open Capture</a>",
-      "css": ".ds-content-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 1rem; color: var(--parchment, #fef6e1); font: 600 1rem/1.5 'Source Sans 3', system-ui, sans-serif; text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: .2em; } .ds-content-link:hover { text-decoration-thickness: 2px; } .ds-content-link:active { text-underline-offset: .1em; } .ds-content-link:focus-visible { outline: 2px solid var(--parchment, #fef6e1); outline-offset: 4px; }"
+      "css": ".ds-content-link{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-content-link {\n  display: inline-flex;\n  align-items: center;\n  min-height: 44px;\n  margin-top: 1rem;\n  font-weight: 600;\n  text-decoration-line: underline;\n}\n.ds-content-link {\n  justify-content: center;\n  padding: .625rem 1.25rem;\n  border-radius: 5px;\n  color: var(--night);\n  background: var(--lantern);\n  text-decoration: none;\n}\n.ds-content-link:hover { text-decoration: underline; }\n.ds-content-link:active { background: var(--parchment); }.ds-content-link:focus-visible{outline:2px solid var(--horizon);outline-offset:4px}"
     },
     {
       "name": "Recall toolbar",
       "kind": "custom",
       "refersTo": "recall-toolbar",
-      "description": "Route title and Read-only label retain their alignment. Files visibility now belongs to the local Files/reader headers, not this toolbar.",
+      "description": "Compact Recall/Read-only row below the shared app header, without a duplicate identity; Files visibility remains local to Files/reader headers.",
       "html": "<header class=\"ds-recall-toolbar\"><h1 tabindex=\"-1\">Recall</h1><p>Read-only</p></header>",
-      "css": ".ds-recall-toolbar{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;padding:1.75rem 2rem;border-bottom:1px solid var(--parchment, #fef6e1);}.ds-recall-toolbar h1{display:flex;align-items:center;min-height:44px;width:fit-content;max-width:100%;margin:0 auto 0 0;font-size:1.75rem;font-weight:600;line-height:1.2;}.ds-recall-toolbar h1:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}.ds-recall-toolbar p{margin:0;font-size:.875rem;}@media(width < 56rem){.ds-recall-toolbar{padding:max(1rem,env(safe-area-inset-top,0px)) max(1rem,env(safe-area-inset-right,0px)) 1rem max(1rem,env(safe-area-inset-left,0px));}}"
+      "css": ".ds-recall-toolbar{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-recall-toolbar {\n  flex: 0 0 auto;\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: .5rem 1rem;\n  padding: 12px 2rem;\n  border-bottom: 1px solid var(--rule);\n}\n.ds-recall-toolbar h1 { display: flex; align-items: center; min-height: 44px; margin-right: auto; }\n.ds-read-only { margin: 0; font-size: .875rem; }.ds-recall-toolbar h1{font-size:1.75rem;font-weight:600;line-height:1.2}.ds-recall-toolbar p{margin:0;font-size:.875rem}@media(width < 56rem){.ds-recall-toolbar{padding:8px 20px}}"
     },
     {
       "name": "Files sidebar — expanded control",
@@ -183,15 +179,15 @@
       "refersTo": "files-toggle",
       "description": "Static expanded geometry: plain left chevron at the Files header upper-right, 20px icon/44px target. React supplies collapse, hover/focus tooltip dismissal, Escape and focus restoration; this panel excerpt is not the application controller.",
       "html": "<nav class=\"ds-files\" id=\"ds-expanded-files\" aria-label=\"Vault files\"><header class=\"ds-files-header\"><h2>Files</h2><button class=\"ds-files-toggle\" type=\"button\" aria-label=\"Collapse files sidebar\" aria-expanded=\"true\" aria-controls=\"ds-expanded-files\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 20 20\" fill=\"none\" aria-hidden=\"true\"><path d=\"m12 5-5 5 5 5\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button></header></nav>",
-      "css": ".ds-files{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;padding:1.5rem 1rem 2rem;}.ds-files-header{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}.ds-files-header h2{margin:0 .5rem;font-size:1.125rem;font-weight:600;line-height:1.4;}.ds-files-toggle{display:inline-grid;place-items:center;width:44px;height:44px;padding:12px;border:0;border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);cursor:pointer;}.ds-files-toggle svg{width:20px;height:20px;}.ds-files-toggle:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-files-toggle:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-files-toggle:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}"
+      "css": ".ds-files{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-files{padding:1.5rem 1rem 2rem}.ds-files h2{margin:0 .5rem;font-size:1.125rem;font-weight:600;line-height:1.4}.ds-files-header {\n  position: sticky;\n  z-index: 2;\n  top: 0;\n  left: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: .5rem;\n  margin-bottom: 1rem;\n  background: var(--night);\n}\n.ds-files-toggle {\n  display: inline-grid;\n  place-items: center;\n  width: 44px;\n  height: 44px;\n  padding: 12px;\n  border: 0;\n  border-radius: 4px;\n  color: var(--ink);\n  background: var(--surface);\n  cursor: pointer;\n}\n.ds-files-toggle svg { width: 20px; height: 20px; }\n.ds-files-toggle:hover { color: var(--surface); background: var(--ink); }\n.ds-files-toggle:active { color: var(--night); background: var(--lantern); }.ds-files-toggle:focus-visible{outline:2px solid var(--horizon);outline-offset:4px}"
     },
     {
       "name": "Files sidebar — collapsed control and tooltip",
       "kind": "button",
       "refersTo": "files-tooltip",
-      "description": "Static collapsed geometry at the reader upper-left: right chevron, valid hidden Files target, matching tooltip shown for comparison. Runtime tooltip opens on hover/focus, remains pointer-reachable and dismisses with Escape without moving focus. No retained icon rail or visible Show/Hide text.",
+      "description": "Same accepted right-chevron geometry at reader upper-left; now Night/Parchment with Night focus. Static shown tooltip is not application behavior; React still owns hover/focus/Escape.",
       "html": "<section class=\"ds-reader-control-context\" aria-label=\"Note reader\"><nav id=\"ds-collapsed-files\" aria-label=\"Vault files\" hidden></nav><span class=\"ds-files-control\"><button class=\"ds-expand-toggle\" type=\"button\" aria-label=\"Expand files sidebar\" aria-expanded=\"false\" aria-controls=\"ds-collapsed-files\" aria-describedby=\"ds-files-tooltip\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 20 20\" fill=\"none\" aria-hidden=\"true\"><path d=\"m8 5 5 5-5 5\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button><span class=\"ds-files-tooltip\" id=\"ds-files-tooltip\" role=\"tooltip\">Expand files sidebar</span></span></section>",
-      "css": ".ds-reader-control-context{min-height:100px;padding:1.75rem 2rem;color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;}.ds-reader-control-context [hidden]{display:none!important;}.ds-files-control{position:relative;display:inline-flex;}.ds-expand-toggle{display:inline-grid;place-items:center;width:44px;height:44px;padding:12px;border:0;border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);cursor:pointer;}.ds-expand-toggle svg{width:20px;height:20px;}.ds-expand-toggle:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-expand-toggle:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-expand-toggle:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}.ds-files-tooltip{position:absolute;top:100%;left:0;width:max-content;max-width:min(16rem,calc(100vw - 3rem));padding:.5rem .75rem;border:1px solid var(--parchment, #fef6e1);border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);font-size:.875rem;line-height:1.5;}"
+      "css": ".ds-reader-control-context{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-reader-control-context{--surface:var(--parchment);--ink:var(--night);--focus:var(--night);min-height:100px;padding:1.75rem 2rem}.ds-reader-control-context [hidden]{display:none!important}.ds-files-control { position: relative; display: inline-flex; flex: 0 0 44px; }\n.ds-expand-toggle {\n  display: inline-grid;\n  place-items: center;\n  width: 44px;\n  height: 44px;\n  padding: 12px;\n  border: 0;\n  border-radius: 4px;\n  color: var(--ink);\n  background: var(--surface);\n  cursor: pointer;\n}\n.ds-expand-toggle svg { width: 20px; height: 20px; }\n.ds-expand-toggle:hover { color: var(--surface); background: var(--ink); }\n.ds-expand-toggle:active { color: var(--night); background: var(--lantern); }\n.ds-files-tooltip {\n  position: absolute;\n  z-index: 3;\n  top: 100%;\n  left: 0;\n  width: max-content;\n  max-width: min(16rem, calc(100vw - 3rem));\n  padding: .5rem .75rem;\n  border: 1px solid var(--ink);\n  border-radius: 4px;\n  color: var(--ink);\n  background: var(--surface);\n  font-size: .875rem;\n  line-height: 1.5;\n}.ds-expand-toggle:focus-visible{outline:2px solid var(--night);outline-offset:4px}"
     },
     {
       "name": "Recall button — hover",
@@ -199,7 +195,7 @@
       "refersTo": "recall-button-hover",
       "description": "The source :hover state shown at rest for comparison; not a separate runtime control.",
       "html": "<div class=\"ds-control-context\"><button class=\"ds-recall-button\" type=\"button\">Retry note</button></div>",
-      "css": ".ds-control-context{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;}.ds-recall-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;max-width:100%;padding:.5rem .875rem;border:1px solid var(--parchment, #fef6e1);border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);font:inherit;cursor:pointer;color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-recall-button:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-recall-button:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-recall-button:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}"
+      "css": ".ds-control-context{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-recall-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 44px;\n  max-width: 100%;\n  padding: .5rem .875rem;\n  border: 1px solid var(--ink);\n  border-radius: 4px;\n  color: var(--ink);\n  background: var(--surface);\n  cursor: pointer;\n}\n.ds-recall-button:hover { color: var(--surface); background: var(--ink); }\n.ds-recall-button:active { color: var(--night); background: var(--lantern); }.ds-recall-button{color:var(--surface);background:var(--ink)}.ds-recall-button:focus-visible{outline:2px solid var(--focus);outline-offset:4px}"
     },
     {
       "name": "Recall button — active",
@@ -207,7 +203,7 @@
       "refersTo": "recall-button-active",
       "description": "The source :active state shown at rest for comparison; not a separate runtime control.",
       "html": "<div class=\"ds-control-context\"><button class=\"ds-recall-button\" type=\"button\">Retry note</button></div>",
-      "css": ".ds-control-context{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;}.ds-recall-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;max-width:100%;padding:.5rem .875rem;border:1px solid var(--parchment, #fef6e1);border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);font:inherit;cursor:pointer;color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-recall-button:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-recall-button:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-recall-button:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}"
+      "css": ".ds-control-context{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-recall-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 44px;\n  max-width: 100%;\n  padding: .5rem .875rem;\n  border: 1px solid var(--ink);\n  border-radius: 4px;\n  color: var(--ink);\n  background: var(--surface);\n  cursor: pointer;\n}\n.ds-recall-button:hover { color: var(--surface); background: var(--ink); }\n.ds-recall-button:active { color: var(--night); background: var(--lantern); }.ds-recall-button{color:var(--night);background:var(--lantern)}.ds-recall-button:focus-visible{outline:2px solid var(--focus);outline-offset:4px}"
     },
     {
       "name": "Vault hierarchy",
@@ -215,44 +211,61 @@
       "refersTo": "vault-folder",
       "description": "Schematic folder/filename slots, not real vault data. Native buttons/links with explicit expanded/current states; application supplies disclosure behavior.",
       "html": "<nav class=\"ds-vault\" aria-label=\"Vault files\"><h2>Files</h2><ul><li><button class=\"ds-folder ds-file-row\" type=\"button\" aria-expanded=\"true\" aria-controls=\"ds-file-children\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"m6 4 4 4-4 4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/></svg><span>[folder]</span></button><ul id=\"ds-file-children\"><li><a class=\"ds-file-row ds-file-link\" href=\"/recall\" aria-current=\"page\"><span>[filename.md]</span></a></li></ul></li></ul><p>Markdown files only.</p></nav>",
-      "css": ".ds-vault{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;padding:1.5rem 1rem 2rem;overflow:auto;scrollbar-color:var(--parchment, #fef6e1) var(--night, #031315);scrollbar-width:thin;}.ds-vault h2{margin:0 .5rem 1rem;font-size:1.125rem;font-weight:600;line-height:1.4;}.ds-vault ul{list-style:none;margin:0;padding:0;}.ds-vault ul ul{margin-left:.875rem;}.ds-file-row{display:flex;gap:.375rem;align-items:flex-start;width:100%;min-width:10rem;min-height:44px;padding:.625rem .5rem;border:0;border-radius:0;text-align:left;color:var(--parchment, #fef6e1);background:var(--night, #031315);font:inherit;line-height:1.5;text-decoration:none;overflow-wrap:anywhere;cursor:pointer;}.ds-file-row span{min-width:0;}.ds-folder{font-weight:600;}.ds-folder svg{flex:0 0 16px;margin-top:.25rem;}.ds-folder[aria-expanded='true'] svg{transform:rotate(90deg);}.ds-file-link{padding-left:1.875rem;}.ds-file-row:hover span{text-decoration:underline;}.ds-file-row:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:-2px;}.ds-file-link[aria-current='page'] span{font-weight:600;text-decoration:underline;text-decoration-color:var(--lantern, #efb83f);text-decoration-thickness:2px;text-underline-offset:.25em;}.ds-vault p{margin:2rem .5rem .5rem;font-size:.875rem;}"
+      "css": ".ds-vault{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-vault{padding:1.5rem 1rem 2rem}.ds-vault ul{list-style:none;margin:0;padding:0}.ds-vault ul ul{margin-left:.875rem}.ds-vault h2{margin:0 .5rem 1rem;font-size:1.125rem}.ds-file-row {\n  display: flex;\n  gap: .375rem;\n  align-items: flex-start;\n  width: 100%;\n  min-width: 10rem;\n  min-height: 44px;\n  padding: .625rem .5rem;\n  border: 0;\n  border-radius: 0;\n  text-align: left;\n  color: var(--parchment);\n  background: var(--night);\n  line-height: 1.5;\n  text-decoration: none;\n  overflow-wrap: anywhere;\n  cursor: pointer;\n}\n.ds-file-row span { min-width: 0; }\n.ds-folder { font-weight: 600 !important; }\n.ds-file-link { padding-left: 1.875rem; }\n.ds-file-row:hover span { text-decoration: underline; }\n.ds-file-link[aria-current='page'] span {\n  font-weight: 600;\n  text-decoration: underline;\n  text-decoration-color: var(--horizon);\n  text-decoration-thickness: 2px;\n  text-underline-offset: .25em;\n}.ds-file-row{font:inherit}.ds-file-row:focus-visible{outline:2px solid var(--horizon);outline-offset:-2px}.ds-vault p{margin:2rem .5rem .5rem;font-size:.875rem}"
     },
     {
       "name": "Markdown reader",
       "kind": "custom",
       "refersTo": "markdown-document",
-      "description": "Schematic content slots only. Shows actual identity, disclosure, reading, code/table and named disabled-task styling without fetching vault content.",
+      "description": "Schematic slots, never vault data. Actual Parchment reader, Libre Baskerville filename/headings, Source Sans prose, contextual rules and bounded code/table scrollers. Renderer semantics/safe URLs are unchanged.",
       "html": "<article class=\"ds-reader\" aria-labelledby=\"ds-note-identity\"><header class=\"ds-note-header\"><p class=\"ds-note-identity\" id=\"ds-note-identity\" tabindex=\"-1\">[filename.md]</p><p class=\"ds-note-path\">[relative path]</p><details class=\"ds-formatting\"><summary>Formatting support</summary><p>CommonMark and GFM are supported. Raw HTML is shown as text. Images and embeds aren't displayed. Note, heading, and Obsidian wiki links remain text. Web links open in a new tab. Task checkboxes are read-only. Frontmatter is ordinary Markdown, not interpreted metadata. This is not a full Obsidian preview.</p></details></header><div class=\"ds-markdown\"><h2>[Markdown heading]</h2><p>[Rendered Markdown content]</p><ul><li class=\"ds-task\"><input type=\"checkbox\" disabled checked aria-label=\"[Task text]\"> [Task text]</li></ul><pre tabindex=\"0\" aria-label=\"Code block\"><code>[Code content]</code></pre><div class=\"ds-table-scroll\" role=\"region\" aria-label=\"Table\" tabindex=\"0\"><table><thead><tr><th>[Column]</th></tr></thead><tbody><tr><td>[Cell]</td></tr></tbody></table></div></div></article>",
-      "css": ".ds-reader{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;max-width:68ch;margin-inline:auto;font-size:1.0625rem;line-height:1.7;overflow-wrap:anywhere;}.ds-note-header{margin-bottom:2rem;}.ds-note-identity{width:fit-content;max-width:100%;margin:0;font-size:1.125rem;font-weight:600;line-height:1.5;}.ds-note-identity:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}.ds-note-path{margin:.25rem 0 0;font-size:.875rem;line-height:1.5;}.ds-formatting{margin-top:.75rem;font-size:.875rem;line-height:1.5;}.ds-formatting summary{width:fit-content;max-width:100%;min-height:44px;padding-block:.625rem;cursor:pointer;}.ds-formatting summary:hover{text-decoration:underline;}.ds-formatting summary:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}.ds-formatting p{max-width:60ch;margin:.25rem 0 1rem;}.ds-markdown h2{margin:0 0 .65em;font-size:1.75rem;font-weight:600;line-height:1.3;}.ds-markdown p{margin:0 0 1.4em;}.ds-markdown ul{padding-left:1.5em;margin:0 0 1.4em;}.ds-task{list-style:none;}.ds-task input{accent-color:var(--parchment, #fef6e1);margin-right:.5em;}.ds-markdown code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.875em;}.ds-markdown pre{max-width:100%;overflow:auto;margin:1.4em 0;padding:1rem;border:1px solid var(--parchment, #fef6e1);font-size:.9375rem;line-height:1.6;white-space:pre;overflow-wrap:normal;scrollbar-color:var(--parchment, #fef6e1) var(--night, #031315);scrollbar-width:thin;}.ds-markdown pre code{font-size:inherit;}.ds-table-scroll{max-width:100%;overflow-x:auto;margin:1.4em 0;scrollbar-color:var(--parchment, #fef6e1) var(--night, #031315);scrollbar-width:thin;}.ds-table-scroll table{width:100%;border-collapse:collapse;font-size:1rem;}.ds-table-scroll th,.ds-table-scroll td{min-width:8rem;padding:.625rem .875rem;border-bottom:1px solid var(--parchment, #fef6e1);text-align:left;vertical-align:top;}.ds-table-scroll th{font-weight:600;}.ds-markdown pre:focus-visible,.ds-table-scroll:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:-3px;}"
+      "css": ".ds-reader{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-reader {\n  --surface: var(--parchment);\n  --ink: var(--night);\n  --muted: #344548;\n  --rule: color-mix(in srgb, var(--night) 25%, var(--parchment));\n  --focus: var(--night);\n  padding: 1.75rem 2rem 4rem;\n  color: var(--ink);\n  background: var(--surface);\n  color-scheme: light;\n  scrollbar-color: var(--muted) var(--surface);\n}\n.ds-reader { max-width: 68ch; margin-inline: auto; font-size: 1.0625rem; line-height: 1.7; }\n.ds-note-header { margin-bottom: 2.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--rule); }\n.ds-note-identity { width: fit-content; max-width: 100%; margin: 0; font: 400 clamp(1.25rem, 1.8vw, 1.5rem)/1.5 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; overflow-wrap: anywhere; }\n.ds-note-path { margin: .5rem 0 0; color: var(--muted); font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; }\n.ds-formatting { margin-top: .75rem; color: var(--muted); font-size: .875rem; line-height: 1.5; }\n.ds-formatting summary { width: fit-content; max-width: 100%; min-height: 44px; padding-block: .625rem; cursor: pointer; }\n.ds-formatting p { max-width: 60ch; margin: .25rem 0 1rem; }\n.ds-markdown { overflow-wrap: anywhere; }\n.ds-markdown p { margin: 0 0 1.4em; }\n.ds-markdown h2, .ds-markdown h3, .ds-markdown h4,\n.ds-markdown h5, .ds-markdown h6 { margin: 1.8em 0 .65em; font: 400 1.0625rem/1.4 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; text-wrap: balance; }\n.ds-markdown .markdown-h1 { font-size: 1.75rem; }\n.ds-markdown code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .875em; }\n.ds-markdown pre {\n  max-width: 100%;\n  overflow: auto;\n  margin: 1.4em 0;\n  padding: 1rem;\n  border: 1px solid var(--rule);\n  font-size: .9375rem;\n  line-height: 1.6;\n  white-space: pre;\n  overflow-wrap: normal;\n  scrollbar-color: var(--muted) var(--surface);\n  scrollbar-width: thin;\n}\n.ds-markdown pre code { font-size: inherit; }\n.ds-table-scroll { max-width: 100%; overflow-x: auto; margin: 1.4em 0; scrollbar-color: var(--muted) var(--surface); scrollbar-width: thin; }\n.ds-markdown table { width: 100%; border-collapse: collapse; font-size: 1rem; }\n.ds-markdown th, .ds-markdown td { min-width: 8rem; padding: .625rem .875rem; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }.ds-markdown h2{margin-top:0;font-size:1.75rem}.ds-reader :focus-visible{outline:2px solid var(--night);outline-offset:4px}.ds-task{list-style:none}.ds-task input{accent-color:var(--night)}"
     },
     {
       "name": "Read-only recovery state",
       "kind": "custom",
       "refersTo": "recall-state",
-      "description": "The actual transport-recovery wording and flat message/button treatment; a static component example, not a live connection signal.",
+      "description": "Actual blocking transport failure on Night; the same recovery component uses Night ink on Parchment when inside the reader. No fake connection state.",
       "html": "<div class=\"ds-recall-state\"><h2>Vault service unavailable</h2><p>Recall couldn't reach the vault service. Check the local service and try again.</p><button class=\"ds-recall-button\" type=\"button\">Try again</button></div>",
-      "css": ".ds-recall-state{color:var(--parchment, #fef6e1);background:var(--night, #031315);font:400 1rem/1.5 'Source Sans 3', system-ui, sans-serif;max-width:60ch;}.ds-recall-state h2{margin:0;font-size:1.125rem;font-weight:600;line-height:1.4;}.ds-recall-state p{margin:.5rem 0 0;}.ds-recall-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;max-width:100%;padding:.5rem .875rem;border:1px solid var(--parchment, #fef6e1);border-radius:4px;color:var(--parchment, #fef6e1);background:var(--night, #031315);font:inherit;cursor:pointer;margin-top:1.25rem;}.ds-recall-button:hover{color:var(--night, #031315);background:var(--parchment, #fef6e1);}.ds-recall-button:active{color:var(--night, #031315);background:var(--lantern, #efb83f);}.ds-recall-button:focus-visible{outline:2px solid var(--parchment, #fef6e1);outline-offset:4px;}.ds-recall-button:disabled{cursor:wait;text-decoration:none;}"
+      "css": ".ds-recall-state{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-recall-state { max-width: 60ch; }\n.ds-recall-state h2 { font-size: 1.125rem; }\n.ds-recall-state p { margin: .5rem 0 0; }\n.ds-recall-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 44px;\n  max-width: 100%;\n  padding: .5rem .875rem;\n  border: 1px solid var(--ink);\n  border-radius: 4px;\n  color: var(--ink);\n  background: var(--surface);\n  cursor: pointer;\n}\n.ds-recall-button:hover { color: var(--surface); background: var(--ink); }\n.ds-recall-button:active { color: var(--night); background: var(--lantern); }.ds-recall-state h2{margin:0}.ds-recall-button{margin-top:1.25rem;font:inherit}.ds-recall-button:focus-visible{outline:2px solid var(--focus);outline-offset:4px}"
+    },
+    {
+      "name": "Shared approved identity",
+      "kind": "custom",
+      "refersTo": "navigation-header",
+      "description": "One unmodified 40px A.5 signature with 28px IM Fell wordmark in the shared top header, across sizes; no duplicate Recall identity. Text enlarges/wraps naturally. Exact provenance: .lore/work/design/character-integration.md.",
+      "html": "<div class=\"ds-identity\"><img src=\"/brand/the-guide/approved-a5.svg\" width=\"40\" height=\"40\" alt=\"\"><span>Memory Loop</span></div>",
+      "css": ".ds-identity{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-identity {\n  display: flex;\n  min-width: 0;\n  align-items: center;\n  gap: 12px;\n}\n.ds-identity img { width: 40px; height: 40px; flex-shrink: 0; }\n.ds-identity span {\n  min-width: 0;\n  font: 400 1.75rem/1.1 'IM Fell English SC', Georgia, serif;\n  letter-spacing: -.02em;\n}"
+    },
+    {
+      "name": "Ground narrative artwork",
+      "kind": "custom",
+      "refersTo": "view-heading",
+      "description": "Approved full A.1, uncropped and unaltered, placed beside the gold IM Fell Ground invitation—not behind reading text. This is brand artwork, not user content.",
+      "html": "<figure class=\"ds-art-context\"><img src=\"/brand/the-guide/approved-a1.webp\" width=\"1254\" height=\"1254\" alt=\"A guide offers a lantern between a warm mountain path and a cool, far-off city.\"></figure>",
+      "css": ".ds-art-context{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-art-context{margin:0;padding:1rem;max-width:32rem}.ds-art-context img{display:block;width:100%;height:auto}"
     }
   ],
   "narrative": {
-    "northStar": "Studio console",
-    "overview": "Stable navigation sits beside replaceable work surfaces. Night spans navigation and workspace, with readable Parchment text and thin boundaries. Spacing, alignment, and type weight separate areas without adding surface hues. The personal brand appears through exact color roles and one interface family; monospace is reserved for actual note code.\n\nThis is a task-focused interface, not a promotional surface. The system is flat and restrained: no hero imagery, decorative brand motifs, shadows, or entrance choreography. Functional Recall presents files and an unboxed document; the other three views explain unavailable functionality without invented activity. Dark is the default even when the operating system prefers light; there is no theme switch or stored preference.",
+    "northStar": "One familiar place, four different ways to arrive",
+    "overview": "User-approved board acfac1f applied in memory-loop-44w: inspiring Ground with full A.1; quiet Parchment Capture without a fake form; curious cool Think with a questioning IM Fell invitation; reflective Parchment Recall with Libre Baskerville editorial headings and Source Sans prose. Shared unchanged A.5/IM Fell identity connects all four. Prior no-art/single-font/uniform-dark adaptations are superseded. No future functionality, invented user content, generated artwork or external resource service is added. Accepted current-build typecheck/build, unit 25/25, Recall browser 26/26 and legacy browser 20/20; fresh visual SHIP and technical Accept. Backend 87 remains prior unchanged evidence. User navigation correction: the board’s compact top identity and horizontal real app links replace the permanent global rail and phone bottom bar. Shared identity appears once; independent Files sidebar stays. Reflow/enlargement can grow the page instead of clipping a zero-height workspace. Prior rail-layout captures are superseded. 44W-T1 initial unfocused pointer and natural keyboard operation at 844×390/200% text are independently verified; history/UI-001/002/003/MS4 remain intact. No real-vault or physical-device claim.",
     "keyCharacteristics": [
-      "Stable navigation and replaceable content.",
-      "A unified Night field with a purposeful selection accent.",
-      "One locally served interface family in regular and semibold.",
-      "Flat boundaries, visible focus, and honest empty states.",
-      "Bounded file browsing and comfortable, unboxed Markdown reading."
+      "Compact shared top identity and horizontal real links; full-width workspace, no global app rail or bottom bar.",
+      "Shared identity, four distinct emotional jobs.",
+      "Full approved artwork only where it has room; never behind note text.",
+      "Local IM Fell identity, Source Sans UI/prose, Libre Baskerville editorial headings.",
+      "Horizon location/dark focus, Night light focus, Lantern warmth/actions.",
+      "Honest unfinished tabs and unchanged safe read-only Recall behavior."
     ],
     "rules": [
       {
         "name": "The Purposeful Accents Rule",
-        "body": "Use accent color for a real selection or information role, not to fill empty space.",
+        "body": "Give warmth, curiosity, selection and focus explicit roles; color is never the only state cue.",
         "section": "colors"
       },
       {
-        "name": "The One Interface Voice Rule",
-        "body": "Use regular and semibold Source Sans 3 for working interface text; do not introduce a display face to decorate a task.",
+        "name": "The Three Type Roles Rule",
+        "body": "IM Fell names/invites; Source Sans operates/explains; Libre Baskerville marks reflective editorial headings.",
         "section": "typography"
       },
       {
@@ -275,11 +288,10 @@
       "Do preserve literal file identity, document semantics, and honest read-only recovery states."
     ],
     "donts": [
-      "Don't add decorative art, taglines, shadows, gradients, or simulated activity to the working shell.",
-      "Don't replace the approved navigation marker with an unrelated accent treatment.",
-      "Don't turn Horizon or panel-only tonal ramps into invented status colors.",
-      "Don't invent search, editing, media, configuration, or transport controls from these read-only components.",
-      "Don't treat panel-only component schematics or tonal ramps as live vault data or additional runtime tokens."
+      "Don't crop, recolor or redraw approved artwork, or place narrative art behind reading text.",
+      "Don't turn visual invitations into simulated user content or future features.",
+      "Don't treat prior assistant restraint as immutable brand truth or panel ramps as runtime colors.",
+      "Don't change renderer safety, history, focus or reading restoration to achieve visual styling."
     ]
   }
 }

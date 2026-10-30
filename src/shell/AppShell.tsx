@@ -2,16 +2,18 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { destinations } from '../navigation';
 import RouteEffects from './RouteEffects';
 import { RecallSessionProvider } from '../recall/RecallSession';
+import BrandIdentity from '../components/BrandIdentity';
 
 export default function AppShell() {
   const location = useLocation();
+  const mode = destinations.find(({ path }) => path === location.pathname.replace(/\/$/, ''))?.label.toLowerCase();
 
   return (
     <RecallSessionProvider>
       <a className="skip-link" href="#main-content">Skip to content</a>
-      <div className={`app-shell${location.pathname.replace(/\/$/, '') === '/recall' ? ' app-shell--recall' : ''}`}>
-        <div className="shell-navigation">
-          <header className="app-name">Memory Loop</header>
+      <div className={`app-shell${mode ? ` app-shell--${mode}` : ''}`}>
+        <header className="app-header">
+          <BrandIdentity />
           <nav className="primary-navigation" aria-label="Primary">
             {destinations.map(({ label, path }) => (
               <NavLink
@@ -32,7 +34,7 @@ export default function AppShell() {
               </NavLink>
             ))}
           </nav>
-        </div>
+        </header>
         <main className="workspace" id="main-content" tabIndex={-1}>
           <Outlet />
         </main>

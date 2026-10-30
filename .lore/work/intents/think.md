@@ -21,6 +21,7 @@ This captures present intent, not authorization to implement or a completed tech
 - While the AI is working, replace Send with Stop. This is an explicit cancellation action, not a consequence of disconnecting. Cancellation semantics for running tools and partial responses need definition.
 - Clearly distinguish user messages from AI messages, using accessible identification rather than color alone.
 - Render conversation Markdown well, including ordinary prose, lists, code, and other supported structures. Reuse established rendering foundations where appropriate; chat-specific formatting and link/media behavior need design.
+- Maximize the area available for the chat dialogue. Keep persistent controls and status commentary minimal; avoid routine maintenance messages and redundant helper copy.
 - Do not impose an application turn limit. Provider limits and finite model context still exist; make their handling explicit rather than promising unlimited context.
 
 Think should receive a deliberate Impeccable interaction and responsive design pass before implementation. Preserve the current branded shell and four-tab top navigation; the placeholder chat layout is not a fixed design.
@@ -55,7 +56,7 @@ Save full user and AI messages, with summaries of tool activity rather than comp
 
 Format, configurable location, naming, timing of writes, and representation of timestamps, errors, and interrupted turns remain open. A reasonable direction to evaluate is ordinary Markdown plus clearly structured metadata, not an opaque export requiring Memory Loop to read it.
 
-Avoid rewriting unrelated content. Transcript writes belong in the daemon, and storage failures must not be silently presented as successful logging. Detailed recovery behavior needs planning.
+Avoid rewriting unrelated content. Transcript writes belong in the daemon, which automatically retries ordinary transient storage failures with capped backoff while chat, tools and monitoring continue. Healthy logging and brief failures stay quiet; show a meaningful warning only for persistent failure or a condition needing operator attention, never a false saved claim. Do not require a user-facing Retry logging action. External file conflicts may still require operator resolution without overwriting the user's content; detailed retry/ownership behavior belongs in the persistence design.
 
 ## Tools, permissions, and OpenCode
 

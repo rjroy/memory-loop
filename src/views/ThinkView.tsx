@@ -1,9 +1,10 @@
 import PlaceholderNotice from '../components/PlaceholderNotice';
+import RouteHeading from '../shell/RouteHeading';
 
 export default function ThinkView() {
   return (
     <div className="think-view">
-      <h1 id="view-heading" tabIndex={-1}>Think</h1>
+      <RouteHeading route="/think">Think</RouteHeading>
       <p className="view-purpose">Discuss ideas with AI using vault context.</p>
       <div className="think-invitation">
         <p className="brand-invitation">What else could this become?</p>

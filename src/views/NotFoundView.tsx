@@ -1,11 +1,12 @@
-import { Link } from 'react-router-dom';
+import AppLink from '../shell/AppLink';
+import RouteHeading from '../shell/RouteHeading';
 
 export default function NotFoundView() {
   return (
     <>
-      <h1 id="view-heading" tabIndex={-1}>Page not found</h1>
+      <RouteHeading route="not-found">Page not found</RouteHeading>
       <p className="view-purpose">This address doesn't match a Memory Loop view.</p>
-      <Link className="content-link recovery-link" to="/ground">Go to Ground</Link>
+      <AppLink className="content-link recovery-link" href="/ground">Go to Ground</AppLink>
     </>
   );
 }

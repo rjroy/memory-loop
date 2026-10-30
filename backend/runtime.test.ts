@@ -7,7 +7,6 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer as createViteServer } from 'vite';
 
 const entrypoint = fileURLToPath(new URL('./runtime.ts', import.meta.url));
 const packageRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -34,9 +33,7 @@ beforeEach(async () => {
   fixture = await mkdtemp(join(tmpdir(), 'memory-loop-runtime-test-'));
   await mkdir(join(fixture, 'project', '.memory-loop'), { recursive: true, mode: 0o700 });
   await mkdir(join(fixture, 'vault', 'folder'), { recursive: true });
-  await mkdir(join(fixture, 'dist'), { recursive: true });
   await writeFile(join(fixture, 'vault', 'folder', 'note.md'), '# fixture\n');
-  await writeFile(join(fixture, 'dist', 'index.html'), '<title>Fixture shell</title>');
   await writeFile(join(fixture, 'project', '.memory-loop', 'config.json'),
     JSON.stringify({ vaultDirectory: join(fixture, 'vault') }));
   await writeFile(join(fixture, 'project', '.memory-loop', 'service.token'), token, { mode: 0o600 });
@@ -81,11 +78,10 @@ async function reservePort(): Promise<{ listener: Server; port: number }> {
   return { listener, port: (address as AddressInfo).port };
 }
 
-function launch(port: number, devOrigin?: string, configure = true): ChildProcessWithoutNullStreams {
+function launch(port: number, configure = true): ChildProcessWithoutNullStreams {
   if (configure) setTransport(port);
   const process = spawn('bun', ['--no-env-file', entrypoint, '--project-root', join(fixture, 'project'),
-    '--dist', join(fixture, 'dist'), '--port', String(port),
-    ...(devOrigin === undefined ? [] : ['--dev-origin', devOrigin])], {
+    '--port', String(port)], {
     cwd: fixture, env: { ...globalThis.process.env, MEMORY_LOOP_TRANSPORT_FILE: undefined }, stdio: 'pipe',
   });
   process.stderr.setEncoding('utf8');
@@ -160,7 +156,7 @@ it('starts the daemon package script with forwarded fixture paths and port', asy
   await new Promise<void>((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
   setTransport(port);
   const process = spawn('bun', ['--no-env-file', 'run', 'daemon', '--project-root', join(fixture, 'project'),
-    '--dist', join(fixture, 'dist'), '--port', String(port)],
+    '--port', String(port)],
   { cwd: packageRoot, detached: true, env: { ...globalThis.process.env, MEMORY_LOOP_TRANSPORT_FILE: undefined }, stdio: 'pipe' });
   child = process;
   if (process.pid === undefined) throw new Error('Could not start test-owned daemon script');
@@ -169,14 +165,12 @@ it('starts the daemon package script with forwarded fixture paths and port', asy
   process.stderr.on('data', (text: string) => { stderr += text; });
   process.stdout.resume();
   await waitReady(process, port);
-  const base = `http://127.0.0.1:${port}`;
   const tree = await serviceRequest(port, '/api/vault/tree', { authorization: `Bearer ${token}` });
   expect(tree.status).toBe(200);
   expect(JSON.parse(tree.body)).toMatchObject({ entries: [{ name: 'folder', children: [{ name: 'note.md' }] }] });
   const note = await serviceRequest(port, `/api/vault/note?${new URLSearchParams({ id: JSON.stringify(['folder', 'note.md']) })}`, { authorization: `Bearer ${token}` });
   expect(JSON.parse(note.body)).toEqual({ name: 'note.md', markdown: '# fixture\n' });
-  const page = await fetch(`${base}/recall`, { headers: { accept: 'text/html' } });
-  expect(await page.text()).toContain('Fixture shell');
+  expect((await serviceRequest(port, '/recall', { authorization: `Bearer ${token}` })).status).toBe(404);
 
   // Bun may wrap the runtime; signal only the process group created for this test.
   globalThis.process.kill(-ownedScriptGroup, 'SIGTERM');
@@ -197,16 +191,14 @@ it('starts the daemon package script with forwarded fixture paths and port', asy
   expect(released).toBe(true);
 }, 10000);
 
-it.each(['SIGTERM', 'SIGINT'] as const)('serves fixture API and SPA, rejects untrusted host/origin, and shuts down on %s', async signal => {
-  const { process, base, port } = await startRuntime();
+it.each(['SIGTERM', 'SIGINT'] as const)('serves fixture API, rejects untrusted host/origin, and shuts down on %s', async signal => {
+  const { process, port } = await startRuntime();
   const tree = await serviceRequest(port, '/api/vault/tree', { authorization: `Bearer ${token}` });
   expect(tree.status).toBe(200);
   expect(JSON.parse(tree.body)).toMatchObject({ entries: [{ name: 'folder', children: [{ name: 'note.md' }] }] });
   const note = await serviceRequest(port, `/api/vault/note?${new URLSearchParams({ id: JSON.stringify(['folder', 'note.md']) })}`, { authorization: `Bearer ${token}` });
   expect(JSON.parse(note.body)).toEqual({ name: 'note.md', markdown: '# fixture\n' });
-  const page = await fetch(`${base}/recall`, { headers: { accept: 'text/html' } });
-  expect(page.status).toBe(200);
-  expect(await page.text()).toContain('Fixture shell');
+  expect((await serviceRequest(port, '/recall', { authorization: `Bearer ${token}` })).status).toBe(404);
   expect((await requestWithHost(port, 'evil.example')).status).toBe(403);
   expect((await serviceRequest(port, '/api/vault/tree', { origin: 'http://evil.example', authorization: `Bearer ${token}` })).status).toBe(403);
   expect((await serviceRequest(port, '/api/vault/tree')).status).toBe(401);
@@ -219,20 +211,20 @@ it.each(['SIGTERM', 'SIGINT'] as const)('serves fixture API and SPA, rejects unt
   await new Promise<void>((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
 }, 10000);
 
-it('keeps the shell available when the configured file is missing', async () => {
+it('keeps the API available with a clear error when configuration is missing', async () => {
   await rm(join(fixture, 'project', '.memory-loop', 'config.json'));
-  const { base, port } = await startRuntime();
+  const { port } = await startRuntime();
   const response = await serviceRequest(port, '/api/vault/tree', { authorization: `Bearer ${token}` });
   expect(response.status).toBe(503);
   expect(JSON.parse(response.body)).toMatchObject({ error: { code: 'config_missing' } });
-  expect((await fetch(`${base}/recall`, { headers: { accept: 'text/html' } })).status).toBe(200);
+  expect((await serviceRequest(port, '/recall', { authorization: `Bearer ${token}` })).status).toBe(404);
 }, 10000);
 
 it('uses the configured daemon origin port when no CLI port override is supplied', async () => {
   const { listener, port } = await reservePort();
   await new Promise<void>((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
   setTransport(port);
-  const process = spawn('bun', ['--no-env-file', entrypoint, '--project-root', join(fixture, 'project'), '--dist', join(fixture, 'dist')], {
+  const process = spawn('bun', ['--no-env-file', entrypoint, '--project-root', join(fixture, 'project')], {
     cwd: fixture, env: { ...globalThis.process.env, MEMORY_LOOP_TRANSPORT_FILE: undefined }, stdio: 'pipe',
   });
   child = process;
@@ -248,42 +240,6 @@ it('does not allow another loopback origin by default', async () => {
   expect((await serviceRequest(port, '/api/vault/tree', { authorization: `Bearer ${token}` })).status).toBe(200);
   expect((await serviceRequest(port, '/api/vault/tree', { origin: 'http://127.0.0.1:5173', authorization: `Bearer ${token}` })).status).toBe(403);
 }, 10000);
-
-it('does not let the transitional Vite proxy bypass daemon authentication or browser-header rejection', async () => {
-  const daemonReservation = await reservePort();
-  const viteReservation = await reservePort();
-  const daemonPort = daemonReservation.port;
-  const vitePort = viteReservation.port;
-  await Promise.all([daemonReservation.listener, viteReservation.listener].map(listener =>
-    new Promise<void>((resolve, reject) => listener.close(error => error ? reject(error) : resolve()))));
-  const frontendOrigin = `http://127.0.0.1:${vitePort}`;
-  const daemonOrigin = `http://127.0.0.1:${daemonPort}`;
-  const previous = process.env.MEMORY_LOOP_DAEMON_URL;
-  let vite: Awaited<ReturnType<typeof createViteServer>> | undefined;
-  try {
-    process.env.MEMORY_LOOP_DAEMON_URL = daemonOrigin;
-    try {
-      vite = await createViteServer({
-        configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)),
-        logLevel: 'silent', server: { host: '127.0.0.1', port: vitePort, strictPort: true },
-      });
-    } finally {
-      if (previous === undefined) delete process.env.MEMORY_LOOP_DAEMON_URL;
-      else process.env.MEMORY_LOOP_DAEMON_URL = previous;
-    }
-    await vite.listen();
-    const daemonProcess = launch(daemonPort, frontendOrigin);
-    await waitReady(daemonProcess, daemonPort);
-    const tree = await fetch(`${frontendOrigin}/api/vault/tree`, { headers: { origin: frontendOrigin } });
-    expect(tree.status).toBe(403);
-    expect(tree.headers.get('cache-control')).toBe('no-store');
-    expect(await tree.text()).not.toContain('note.md');
-    expect((await fetch(`${frontendOrigin}/api/vault/tree`, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
-    expect((await serviceRequest(daemonPort, '/api/vault/tree', { authorization: `Bearer ${token}` })).status).toBe(200);
-  } finally {
-    await vite?.close();
-  }
-}, 15000);
 
 it('fails without replacing or interfering with an existing loopback listener', async () => {
   const { listener, port } = await reservePort();
@@ -305,7 +261,7 @@ it.each(['missing token', 'bad token', 'token permissions', 'bad transport', 'po
     if (problem === 'bad token') await writeFile(join(metadata, 'service.token'), 'invalid');
     if (problem === 'token permissions') await chmod(join(metadata, 'service.token'), 0o644);
     if (problem === 'bad transport') await writeFile(join(metadata, 'transport.json'), '{');
-    const process = launch(port, undefined, false);
+    const process = launch(port, false);
     const result = await Promise.race([exited(process), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Startup failure timed out')), 5000))]);
     expect(result.code).not.toBe(0);
     expect(stderr).toMatch(problem === 'port mismatch' ? /port|mismatch/i : /transport|credential|token/i);

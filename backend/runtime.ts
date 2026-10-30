@@ -1,29 +1,17 @@
 import { serve } from 'bun';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { prepareServer } from './server';
 import { defaultProjectRoot, transportFileFor } from './runtime-options';
 import { loadTransport } from './transport';
 
 interface RuntimeOptions {
   projectRoot: string;
-  distDirectory: string;
   port?: number;
-  devOrigin?: string;
-}
-
-function parseDevOrigin(value: string): string {
-  const match = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::(\d{1,5}))?$/.exec(value);
-  if (!match || (match[1] !== undefined && (Number(match[1]) < 1 || Number(match[1]) > 65535))) {
-    throw new Error('Invalid runtime arguments');
-  }
-  return new URL(value).origin;
 }
 
 function optionsFromArgs(args: string[]): RuntimeOptions {
   let projectRoot = defaultProjectRoot;
-  let distDirectory: string | undefined;
   let port: number | undefined;
-  let devOrigin: string | undefined;
   const seen = new Set<string>();
   for (let i = 0; i < args.length; i += 2) {
     const flag = args[i];
@@ -31,14 +19,12 @@ function optionsFromArgs(args: string[]): RuntimeOptions {
     if (seen.has(flag) || value === undefined) throw new Error('Invalid runtime arguments');
     seen.add(flag);
     if (flag === '--project-root' && isAbsolute(value)) projectRoot = value;
-    else if (flag === '--dist' && isAbsolute(value)) distDirectory = value;
-    else if (flag === '--dev-origin') devOrigin = parseDevOrigin(value);
     else if (flag === '--port' && /^\d+$/.test(value)) {
       port = Number(value);
       if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error('Invalid runtime arguments');
     } else throw new Error('Invalid runtime arguments');
   }
-  return { projectRoot, distDirectory: distDirectory ?? join(projectRoot, 'dist'), port, devOrigin };
+  return { projectRoot, port };
 }
 
 async function main(): Promise<void> {
@@ -50,9 +36,7 @@ async function main(): Promise<void> {
   const authority = `127.0.0.1:${port}`;
   const prepared = await prepareServer({
     projectRoot: options.projectRoot,
-    distDirectory: options.distDirectory,
     authority,
-    allowedOrigins: [`http://${authority}`, ...(options.devOrigin === undefined ? [] : [options.devOrigin])],
   });
   let server: ReturnType<typeof serve>;
   try {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './recall-fixture';
 
 const views = ['Ground', 'Capture', 'Think', 'Recall'] as const;
 
@@ -74,6 +74,8 @@ test('navigation preserves history, current-link no-op and focus', async ({ page
   await expect(page.getByRole('heading', { level: 1, name: 'Capture' })).toBeFocused();
   await nav.getByRole('link', { name: 'Capture' }).click();
   await nav.getByRole('link', { name: 'Think' }).click();
+  await expect(page).toHaveURL(/\/think$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Think' })).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/\/capture$/);
   await expect(page).toHaveTitle('Capture · Memory Loop');
@@ -116,6 +118,8 @@ test('back restores scroll without a leave guard', async ({ page }) => {
   });
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
   await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Capture' }).evaluate((link: HTMLElement) => link.click());
+  await expect(page).toHaveURL(/\/capture$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Capture' })).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/\/ground$/);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(500);

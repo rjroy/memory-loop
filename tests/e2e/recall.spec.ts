@@ -1,9 +1,28 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from './recall-fixture';
+import { expect, fixtureToken, test } from './recall-fixture';
 
 function noteUrl(origin: string, id: string[]): string {
   return `${origin}/recall?${new URLSearchParams({ file: JSON.stringify(id) })}`;
 }
+
+test('fixture service credential never reaches browser HTML, RSC, assets, requests or storage', async ({ page, recallOrigin }) => {
+  const observed: Promise<string>[] = [];
+  const requestHeaders: string[] = [];
+  page.on('request', request => { requestHeaders.push(JSON.stringify(request.headers())); });
+  page.on('response', response => {
+    const type = response.headers()['content-type'] ?? '';
+    if (/text\/|json|javascript|component/i.test(type)) {
+      observed.push(response.text().catch(() => ''));
+    }
+  });
+  await page.goto(`${recallOrigin}/recall`);
+  await page.getByRole('navigation', { name: 'Vault files' }).getByRole('link', { name: 'alpha.md' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Capture' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Capture' })).toBeVisible();
+  const browserState = await page.evaluate(() => JSON.stringify({ html: document.documentElement.outerHTML, local: { ...localStorage }, session: { ...sessionStorage } }));
+  expect([browserState, ...requestHeaders, ...await Promise.all(observed)].join('\n')).not.toContain(fixtureToken);
+});
 
 test('44W-T1: Files controls and primary destinations remain operable at 200% text in short landscape', async ({ page, recallOrigin }) => {
   await page.setViewportSize({ width: 844, height: 390 });
@@ -459,6 +478,204 @@ test('RECALL-UI-003: Skip to content does not close open mobile Files for a sele
   await page.waitForFunction(() => document.body.dataset.testHashSettled === 'yes');
   await expect(files).toBeVisible();
   await expect(page.locator(':focus')).toHaveAttribute('id', 'main-content');
+});
+
+test('HN-001: native Skip entry reconciles with note selection on Back and Forward without reload', async ({ page, recallOrigin }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${recallOrigin}/recall`);
+  const files = page.getByRole('navigation', { name: 'Vault files' });
+  await files.getByRole('link', { name: 'alpha.md' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
+  await expect(files).toBeVisible();
+  const initialLength = await page.evaluate(() => { Object.assign(window, { __fixtureNavigationMarker: 'retained' }); return history.length; });
+  await page.getByRole('link', { name: 'Skip to content' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(`${noteUrl(recallOrigin, ['alpha.md'])}#main-content`);
+  await expect(files).toBeVisible();
+  await expect(page.locator(':focus')).toHaveAttribute('id', 'main-content');
+  await files.getByRole('button', { name: 'folder' }).click();
+  await files.getByRole('link', { name: 'beta.md' }).click();
+  await expect(page.getByRole('article')).toContainText('Beta fixture body.');
+  await expect.poll(() => page.evaluate(() => history.length)).toBe(initialLength + 2);
+  await page.goBack();
+  await expect(page).toHaveURL(`${noteUrl(recallOrigin, ['alpha.md'])}#main-content`);
+  await expect(files).toBeVisible();
+  await expect(files.getByRole('link', { name: 'alpha.md' })).toHaveAttribute('aria-current', 'page');
+  await files.getByRole('button', { name: 'Collapse files sidebar' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.goForward();
+  await expect(page).toHaveURL(noteUrl(recallOrigin, ['folder', 'beta.md']));
+  await expect(page.getByRole('article')).toContainText('Beta fixture body.');
+  expect(await page.evaluate(() => Reflect.get(window, '__fixtureNavigationMarker'))).toBe('retained');
+});
+
+test('HN2-R1: Back from Capture restores the native Skip entry Files snapshot after Recall remounts', async ({ page, recallOrigin }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${recallOrigin}/recall`);
+  const files = page.getByRole('navigation', { name: 'Vault files' });
+  await files.getByRole('link', { name: 'alpha.md' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
+  await expect(files).toBeVisible();
+  await page.evaluate(() => { Object.assign(window, { __hn2Retained: true }); });
+  await page.getByRole('link', { name: 'Skip to content' }).focus();
+  await page.keyboard.press('Enter');
+  const fragment = `${noteUrl(recallOrigin, ['alpha.md'])}#main-content`;
+  await expect(page).toHaveURL(fragment);
+  await expect(page.locator(':focus')).toHaveAttribute('id', 'main-content');
+  const key = await page.evaluate(() => {
+    const navigation = Reflect.get(window, 'navigation') as { currentEntry: { key: string } } | undefined;
+    if (!navigation?.currentEntry) throw new Error('Navigation API is required for this browser');
+    return navigation.currentEntry.key;
+  });
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Capture' }).click();
+  await expect(page).toHaveURL(`${recallOrigin}/capture`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Capture' })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(fragment);
+  await expect.poll(() => page.evaluate(() => {
+    const navigation = Reflect.get(window, 'navigation') as { currentEntry: { key: string } } | undefined;
+    return navigation?.currentEntry.key;
+  })).toBe(key);
+  await expect(files).toBeVisible();
+  await expect(files.getByRole('link', { name: 'alpha.md' })).toHaveAttribute('aria-current', 'page');
+  expect(await page.evaluate(() => Reflect.get(window, '__hn2Retained'))).toBe(true);
+  await files.getByRole('button', { name: 'Collapse files sidebar' }).click();
+  await expect(page.getByRole('button', { name: 'Expand files sidebar' })).toBeFocused();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+});
+
+test('HN-001: selection during native Skip preserves the outgoing Files snapshot on Back', async ({ page, recallOrigin }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${recallOrigin}/recall`);
+  const files = page.getByRole('navigation', { name: 'Vault files' });
+  await files.getByRole('button', { name: 'folder', exact: true }).click();
+  await files.getByRole('link', { name: 'alpha.md' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
+  await expect(files).toBeVisible();
+  const length = await page.evaluate(() => {
+    Object.assign(window, { __hnRetained: true });
+    window.addEventListener('popstate', () => {
+      if (location.hash !== '#main-content') return;
+      const beta = [...document.querySelectorAll<HTMLElement>('.file-link')].find(element => element.textContent === 'beta.md');
+      beta?.click();
+    }, { once: true });
+    return history.length;
+  });
+  await page.getByRole('link', { name: 'Skip to content' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(noteUrl(recallOrigin, ['folder', 'beta.md']));
+  await expect(page.getByRole('article')).toContainText('Beta fixture body.');
+  await expect.poll(() => page.evaluate(() => history.length)).toBe(length + 2);
+  await page.goBack();
+  await expect(page).toHaveURL(`${noteUrl(recallOrigin, ['alpha.md'])}#main-content`);
+  await expect(files).toBeVisible();
+  await expect(files.getByRole('link', { name: 'alpha.md' })).toHaveAttribute('aria-current', 'page');
+  await files.getByRole('button', { name: 'Collapse files sidebar' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.goForward();
+  await expect(page).toHaveURL(noteUrl(recallOrigin, ['folder', 'beta.md']));
+  await expect(page.getByRole('article')).toContainText('Beta fixture body.');
+  expect(await page.evaluate(() => Reflect.get(window, '__hnRetained'))).toBe(true);
+});
+
+test('HN-001: Back before native fragment repair commits retains that entry for Forward', async ({ page, recallOrigin }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${recallOrigin}/recall`);
+  const files = page.getByRole('navigation', { name: 'Vault files' });
+  await files.getByRole('link', { name: 'alpha.md' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
+  const length = await page.evaluate(() => {
+    Object.assign(window, { __hnRetained: true, __hnBackTriggered: false });
+    window.addEventListener('popstate', () => {
+      if (location.hash === '#main-content') {
+        Reflect.set(window, '__hnBackTriggered', true);
+        history.back();
+      }
+    }, { once: true });
+    return history.length;
+  });
+  await page.getByRole('link', { name: 'Skip to content' }).focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, '__hnBackTriggered'))).toBe(true);
+  await expect(page).toHaveURL(noteUrl(recallOrigin, ['alpha.md']));
+  await page.goForward();
+  await expect(page).toHaveURL(`${noteUrl(recallOrigin, ['alpha.md'])}#main-content`);
+  await expect(files).toBeVisible();
+  await expect(files.getByRole('link', { name: 'alpha.md' })).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => page.evaluate(() => history.length)).toBe(length + 1);
+  expect(await page.evaluate(() => Reflect.get(window, '__hnRetained'))).toBe(true);
+});
+
+test('HN-001: rapid later app navigation wins over a superseded native repair', async ({ page, recallOrigin }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${recallOrigin}/recall`);
+  await page.getByRole('navigation', { name: 'Vault files' }).getByRole('link', { name: 'alpha.md' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
+  await page.evaluate(() => {
+    Object.assign(window, { __hnRetained: true });
+    window.addEventListener('popstate', () => {
+      if (location.hash !== '#main-content') return;
+      document.querySelector<HTMLElement>('nav[aria-label="Primary"] a[href="/capture"]')?.click();
+      document.querySelector<HTMLElement>('nav[aria-label="Primary"] a[href="/think"]')?.click();
+    }, { once: true });
+  });
+  await page.getByRole('link', { name: 'Skip to content' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(`${recallOrigin}/think`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Think' })).toBeVisible();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page).toHaveURL(`${recallOrigin}/think`);
+  await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Think' })).toHaveAttribute('aria-current', 'page');
+  expect(await page.evaluate(() => Reflect.get(window, '__hnRetained'))).toBe(true);
+});
+
+test('HN-001: a new identical fragment entry has its own snapshot and does not refetch the note', async ({ page, recallOrigin }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let noteRequests = 0;
+  page.on('request', request => { if (new URL(request.url()).pathname === '/api/vault/note') noteRequests++; });
+  await page.goto(`${recallOrigin}/recall`);
+  const files = page.getByRole('navigation', { name: 'Vault files' });
+  await files.getByRole('link', { name: 'alpha.md' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.getByRole('button', { name: 'Expand files sidebar' }).click();
+  const requestsBefore = noteRequests;
+  await page.getByRole('link', { name: 'Skip to content' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(`${noteUrl(recallOrigin, ['alpha.md'])}#main-content`);
+  const oldKey = await page.evaluate(() => {
+    const navigation = Reflect.get(window, 'navigation') as { currentEntry: { key: string } } | undefined;
+    if (!navigation?.currentEntry) throw new Error('Navigation API is required for this browser');
+    return navigation.currentEntry.key;
+  });
+  await page.goBack();
+  await expect(page).toHaveURL(noteUrl(recallOrigin, ['alpha.md']));
+  await expect(files).toBeVisible();
+  await files.getByRole('button', { name: 'Collapse files sidebar' }).click();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.getByRole('link', { name: 'Skip to content' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(`${noteUrl(recallOrigin, ['alpha.md'])}#main-content`);
+  const newKey = await page.evaluate(() => {
+    const navigation = Reflect.get(window, 'navigation') as { currentEntry: { key: string } } | undefined;
+    if (!navigation?.currentEntry) throw new Error('Navigation API is required for this browser');
+    return navigation.currentEntry.key;
+  });
+  expect(newKey).not.toBe(oldKey);
+  await expect(files).toBeHidden();
+  await expect(page.locator(':focus')).toHaveAttribute('id', 'main-content');
+  await page.goBack();
+  await expect(page).toHaveURL(noteUrl(recallOrigin, ['alpha.md']));
+  await page.goForward();
+  await expect(page).toHaveURL(`${noteUrl(recallOrigin, ['alpha.md'])}#main-content`);
+  await expect(files).toBeHidden();
+  await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  expect(noteRequests).toBe(requestsBefore);
 });
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 568 }, { width: 844, height: 390 }]) {

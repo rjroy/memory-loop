@@ -1,5 +1,8 @@
+'use client';
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import { usePresentation } from '../shell/presentation';
+import type { Presentation } from '../shell/presentation';
 import type { VaultId } from '../../backend/contract';
 import { failureCopy, findNote, idKey, noteLocation, readNote, readTree, selectionFromSearch } from '../recall/api';
 import type { RecallFailure } from '../recall/api';
@@ -9,6 +12,7 @@ import { useVaultRead } from '../recall/useVaultRead';
 import MarkdownDocument from '../recall/MarkdownDocument';
 import VaultFiles from '../recall/VaultFiles';
 import FilesToggle from '../recall/FilesToggle';
+import RouteHeading from '../shell/RouteHeading';
 import '../recall/recall.css';
 
 function Message({ heading, body, action, onAction }: { heading: string; body: string; action?: string; onAction?: () => void }) {
@@ -22,29 +26,42 @@ function Failure({ code, retry }: { code: RecallFailure; retry: () => void }) {
 }
 
 export default function RecallView() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const navigationType = useNavigationType();
+  const presentation = usePresentation();
+  // Next may retain the outgoing page during a transition. Its note controller
+  // must not interpret Capture's URL as an unselected Recall entry or overwrite
+  // the session's last note/reading position before it is hidden or unmounted.
+  return presentation.location.pathname === '/recall' ? <RecallContent {...presentation} /> : null;
+}
+
+function RecallContent({ location, navigate, navigationType, isNavigating, recallSnapshot, rememberEntry, registerRecallCapture }: Presentation) {
   const session = useRecallSession();
   const desktop = useDesktop();
   const selection = useMemo(() => selectionFromSearch(location.search), [location.search]);
   const key = selection.id ? idKey(selection.id) : null;
-  // Native hash entries can lose router state and reuse its fallback "default" key.
-  const entryKey = JSON.stringify([location.key, location.pathname, location.search]);
+  // Identity comes from the public browser entry, never Next router internals.
+  const entryKey = location.key;
   const [treeRevision, setTreeRevision] = useState(0);
   const [noteRevision, setNoteRevision] = useState(0);
   const tree = useVaultRead('tree', treeRevision, readTree);
   const note = useVaultRead(key, noteRevision, readNote);
+  // A route POP can remount this controller rather than transition an existing
+  // one. Seed it from that entry just as the transition effect would below.
+  const initialPop = useRef(navigationType === 'POP' ? recallSnapshot : undefined).current;
+  const initialHashPresentation = location.nativeHash ? initialPop : undefined;
   const [expanded, setExpanded] = useState(() => new Set(session.expanded));
-  const [desktopVisible, setDesktopVisible] = useState(session.desktopVisible);
-  const [narrowOpen, setNarrowOpen] = useState(() => !selection.id && !selection.invalid && !session.narrowClosed);
+  const [desktopVisible, setDesktopVisible] = useState(initialHashPresentation?.desktopVisible ?? session.desktopVisible);
+  const [narrowOpen, setNarrowOpen] = useState(() => navigationType === 'POP'
+    ? initialHashPresentation?.narrowOpen ?? false
+    : !selection.id && !selection.invalid && !session.narrowClosed);
   const filesRef = useRef<HTMLElement>(null);
   const filesHeading = useRef<HTMLHeadingElement>(null);
   const readerRef = useRef<HTMLElement>(null);
   const identityRef = useRef<HTMLParagraphElement>(null);
   const collapseRef = useRef<HTMLButtonElement>(null);
   const expandRef = useRef<HTMLButtonElement>(null);
-  const pendingFocus = useRef<'files' | 'identity' | 'toggle' | null>(null);
+  const pendingFocus = useRef<'files' | 'identity' | 'toggle' | null>(
+    navigationType === 'POP' && selection.id && !initialHashPresentation ? 'identity' : null,
+  );
   const attachExpand = useCallback((element: HTMLButtonElement | null) => {
     expandRef.current = element;
     if (!element) return;
@@ -55,8 +72,8 @@ export default function RecallView() {
       expandRef.current = null;
     };
   }, []);
-  const revealSelection = useRef(true);
-  const pendingScroll = useRef<number | null>(session.entries.get(entryKey) ?? session.readerScroll);
+  const revealSelection = useRef(!initialPop);
+  const pendingScroll = useRef<number | null>(recallSnapshot?.readerScroll ?? session.readerScroll);
   const previousEntry = useRef({ key: entryKey, pathname: location.pathname, search: location.search, hash: location.hash });
   const previousDesktop = useRef(desktop);
   const restoreOnEntry = useRef(navigationType === 'PUSH' && !selection.id && !selection.invalid && session.lastId
@@ -70,6 +87,19 @@ export default function RecallView() {
   const canBrowse = !blocked && !empty;
   const showFiles = canBrowse && (desktop ? desktopVisible : narrowOpen);
   const showReader = canBrowse && (desktop || !narrowOpen);
+
+  useLayoutEffect(() => {
+    if (initialPop) session.treeScroll = { ...initialPop.treeScroll };
+  }, [initialPop, session]);
+
+  // The coordinator reads this synchronously at native entry creation or before
+  // selection changes panes. All per-entry snapshots live in that one map.
+  useLayoutEffect(() => registerRecallCapture(entryKey, () => ({
+    readerScroll: pendingScroll.current ?? (showReader && readerRef.current ? readerRef.current.scrollTop : session.readerScroll),
+    treeScroll: showFiles && tree.status === 'ready' && filesRef.current
+      ? { top: filesRef.current.scrollTop, left: filesRef.current.scrollLeft } : { ...session.treeScroll },
+    narrowOpen, desktopVisible,
+  })), [entryKey, registerRecallCapture, showReader, showFiles, tree.status, narrowOpen, desktopVisible, session]);
 
   const revealAncestors = (id: VaultId | null) => {
     if (!id) return;
@@ -98,20 +128,31 @@ export default function RecallView() {
     const previous = previousEntry.current;
     const hashOnly = previous.pathname === location.pathname && previous.search === location.search && previous.hash !== location.hash;
     previousEntry.current = { key: entryKey, pathname: location.pathname, search: location.search, hash: location.hash };
-    if (previous.key === entryKey) return;
+    if (navigationType === 'INITIAL') return;
+    if (previous.key === entryKey && previous.pathname === location.pathname && previous.search === location.search && previous.hash === location.hash) return;
     if (hashOnly) {
-      // The anchor inherits this note's reading position, without selecting it again.
-      session.entries.set(entryKey, pendingScroll.current ?? session.entries.get(previous.key) ?? session.readerScroll);
+      // A new native fragment inherits the visible note. A traversal restores
+      // that exact browser entry, not a different entry with the same URL.
+      if (navigationType === 'POP' && recallSnapshot) {
+        pendingScroll.current = recallSnapshot.readerScroll;
+        session.treeScroll = { ...recallSnapshot.treeScroll };
+        setNarrowOpen(recallSnapshot.narrowOpen);
+        setDesktopVisible(recallSnapshot.desktopVisible);
+        pendingFocus.current = null;
+      }
       return;
     }
     revealSelection.current = true;
     const restoration = restoreOnEntry.current;
     // Returning through bare /recall replaces its URL; that is not a new-note reset.
     pendingScroll.current = restoration?.replacing && key === idKey(restoration.id) ? restoration.scroll
-      : navigationType === 'POP' ? session.entries.get(entryKey) ?? 0 : 0;
+      : navigationType === 'POP' ? recallSnapshot?.readerScroll ?? 0 : 0;
     restoreOnEntry.current = null;
-    if (navigationType === 'POP') pendingFocus.current = selection.id ? 'identity' : null;
-    setNarrowOpen(false);
+    const hashPresentation = navigationType === 'POP' && location.nativeHash ? recallSnapshot : undefined;
+    if (navigationType === 'POP' && recallSnapshot) session.treeScroll = { ...recallSnapshot.treeScroll };
+    if (navigationType === 'POP') pendingFocus.current = selection.id && !hashPresentation ? 'identity' : null;
+    setNarrowOpen(hashPresentation?.narrowOpen ?? false);
+    if (hashPresentation) setDesktopVisible(hashPresentation.desktopVisible);
   }, [entryKey, location.pathname, location.search, location.hash, navigationType, session, key]);
 
   useLayoutEffect(() => {
@@ -131,7 +172,7 @@ export default function RecallView() {
     if (!showFiles || tree.status !== 'ready' || !filesRef.current) return;
     filesRef.current.scrollTop = session.treeScroll.top;
     filesRef.current.scrollLeft = session.treeScroll.left;
-  }, [showFiles, tree.status, session]);
+  }, [entryKey, showFiles, tree.status, session]);
 
   useLayoutEffect(() => {
     if (!showFiles || !revealSelection.current || tree.status !== 'ready') return;
@@ -144,6 +185,9 @@ export default function RecallView() {
   }, [showFiles, tree.status, key, expanded]);
 
   useLayoutEffect(() => {
+    // A selection can close Files while Next still displays the outgoing note.
+    // Keep its focus intent until the selected entry is actually committed.
+    if (isNavigating) return;
     const target = pendingFocus.current;
     if (!target) return;
     const element = target === 'files'
@@ -154,7 +198,7 @@ export default function RecallView() {
       if (target === 'files') element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       pendingFocus.current = null;
     }
-  }, [entryKey, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded]);
+  }, [entryKey, isNavigating, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded]);
 
   useLayoutEffect(() => {
     if (!showReader || pendingScroll.current === null || !readerRef.current) return;
@@ -171,9 +215,9 @@ export default function RecallView() {
   }, [filename, selection.invalid, note.status]);
 
   const rememberReader = () => {
-    if (!showReader || !readerRef.current || pendingScroll.current !== null) return;
+    if (isNavigating || !showReader || !readerRef.current || pendingScroll.current !== null) return;
     session.readerScroll = readerRef.current.scrollTop;
-    session.entries.set(entryKey, session.readerScroll);
+    rememberEntry();
   };
 
   const openFiles = () => {
@@ -196,6 +240,7 @@ export default function RecallView() {
   };
 
   const selectNote = (id: VaultId) => {
+    rememberEntry();
     rememberReader();
     pendingFocus.current = 'identity';
     setNarrowOpen(false);
@@ -232,7 +277,7 @@ export default function RecallView() {
     }
   }}>
     <header className="recall-toolbar">
-      <h1 id="view-heading" tabIndex={-1}>Recall</h1>
+      <RouteHeading route="/recall">Recall</RouteHeading>
       <p className="read-only-label">Read-only</p>
     </header>
     <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{announcement ? `Recall: ${announcement}` : ''}</div>
@@ -242,7 +287,10 @@ export default function RecallView() {
         : <div className={`recall-panes${showFiles && desktop ? ' recall-panes--split' : ''}`}>
           <nav className="recall-files" id="recall-files" aria-label="Vault files" ref={filesRef} hidden={!showFiles}
             aria-busy={tree.status === 'loading'} onScroll={() => {
-              if (showFiles && tree.status === 'ready' && filesRef.current) session.treeScroll = { top: filesRef.current.scrollTop, left: filesRef.current.scrollLeft };
+              if (showFiles && tree.status === 'ready' && filesRef.current) {
+                session.treeScroll = { top: filesRef.current.scrollTop, left: filesRef.current.scrollLeft };
+                rememberEntry();
+              }
             }}>
             <header className="files-header">
               <h2 ref={filesHeading} tabIndex={-1}>Files</h2>

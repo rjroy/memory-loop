@@ -1,7 +1,8 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import App from '../../src/App';
+import RecallView from '../../src/views/RecallView';
+import { TestPresentation } from './fixtures/presentation';
 import {
   alphaId, betaId, deferred, errorResponse, expectOnlyVaultReads,
   installVaultApi, installViewport, jsonResponse, noteLocation, rootId, vaultTree,
@@ -18,7 +19,7 @@ afterEach(() => { expectOnlyVaultReads(api); });
 
 function mount(path = '/recall') {
   window.history.replaceState(null, '', path);
-  return render(<App />);
+  return render(<TestPresentation><RecallView /></TestPresentation>);
 }
 
 function primary() {
@@ -407,35 +408,4 @@ describe('Recall: renderer and route boundaries', () => {
     expect(requestedNotes()).toEqual([alphaId]);
   });
 
-  it('uses native note history, preserves the current Recall tab, and restores context without trapping bare-URL Back', async () => {
-    const user = userEvent.setup();
-    mount();
-    const files = await expandShelf(user);
-    await user.click(within(files).getByRole('link', { name: 'Alpha #1.md' }));
-    await screen.findByRole('article', { name: 'Alpha #1.md' });
-    await user.click(within(screen.getByRole('navigation', { name: 'Vault files' })).getByRole('link', { name: 'Beta.md' }));
-    await screen.findByRole('article', { name: 'Beta.md' });
-    await act(async () => { window.history.back(); });
-    await waitFor(() => { expect(selectedId()).toEqual(alphaId); });
-    await screen.findByRole('article', { name: 'Alpha #1.md' });
-    expect(document.title).toBe('Alpha #1.md · Recall · Memory Loop');
-    await act(async () => { window.history.back(); });
-    await waitFor(() => { expect(window.location.pathname + window.location.search).toBe('/recall'); });
-    expect(screen.queryByRole('article')).not.toBeInTheDocument();
-    expect(screen.getByText('Choose a Markdown note')).toBeInTheDocument();
-    await act(async () => { window.history.forward(); });
-    await screen.findByRole('article', { name: 'Alpha #1.md' });
-    const push = vi.spyOn(window.history, 'pushState');
-    await user.click(within(primary()).getByRole('link', { name: 'Recall' }));
-    expect(selectedId()).toEqual(alphaId);
-    expect(push).not.toHaveBeenCalled();
-    await user.click(within(primary()).getByRole('link', { name: 'Capture' }));
-    expect(screen.getByRole('heading', { level: 1, name: 'Capture' })).toHaveFocus();
-    expect(document.title).toBe('Capture · Memory Loop');
-    await user.click(within(primary()).getByRole('link', { name: 'Recall' }));
-    await waitFor(() => { expect(selectedId()).toEqual(alphaId); });
-    await screen.findByRole('article', { name: 'Alpha #1.md' });
-    expect(document.title).toBe('Alpha #1.md · Recall · Memory Loop');
-    expect(screen.getByRole('heading', { level: 1, name: 'Recall' })).toHaveFocus();
-  });
 });

@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './recall-fixture';
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   for (const name of ['Ground', 'Capture', 'Think', 'Recall']) {
@@ -14,13 +14,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         const url = new URL(request.url());
         if (url.origin !== allowedOrigin || (name !== 'Recall' && url.pathname.startsWith('/api/'))) failures.push(request.url());
       });
-      if (name === 'Recall') {
-        await page.route('**/api/vault/tree', route => route.fulfill({ status: 200, json: { entries: [] } }));
-      }
       await page.goto(`/${name.toLowerCase()}`);
       await expect(page.getByRole('main')).toBeVisible();
       await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
-      if (name === 'Recall') await expect(page.getByRole('heading', { name: 'No Markdown notes to show', exact: true })).toBeVisible();
+      if (name === 'Recall') await expect(page.getByRole('navigation', { name: 'Vault files' }).getByRole('link', { name: 'alpha.md' })).toBeVisible();
       await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name })).toHaveAttribute('aria-current', 'page');
       await page.keyboard.press('Tab');
       await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();

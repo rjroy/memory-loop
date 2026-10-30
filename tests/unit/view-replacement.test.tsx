@@ -1,40 +1,13 @@
 import { render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, it, vi } from 'vitest';
-import App from '../../src/App';
-import { installVaultApi, installViewport, jsonResponse } from './fixtures/recall';
+import { expect, it } from 'vitest';
+import { TestPresentation } from './fixtures/presentation';
 
-const selection = vi.hoisted(() => ({ name: '' }));
-vi.mock('../../src/views/GroundView', async (original) => {
-  const actual = await original<typeof import('../../src/views/GroundView')>();
-  return { default: () => selection.name === 'Ground' ? <h1>Replacement Ground</h1> : <actual.default /> };
-});
-vi.mock('../../src/views/CaptureView', async (original) => {
-  const actual = await original<typeof import('../../src/views/CaptureView')>();
-  return { default: () => selection.name === 'Capture' ? <h1>Replacement Capture</h1> : <actual.default /> };
-});
-vi.mock('../../src/views/ThinkView', async (original) => {
-  const actual = await original<typeof import('../../src/views/ThinkView')>();
-  return { default: () => selection.name === 'Think' ? <h1>Replacement Think</h1> : <actual.default /> };
-});
-vi.mock('../../src/views/RecallView', async (original) => {
-  const actual = await original<typeof import('../../src/views/RecallView')>();
-  return { default: () => selection.name === 'Recall' ? <h1>Replacement Recall</h1> : <actual.default /> };
-});
-
-beforeEach(() => {
-  selection.name = '';
-  installViewport(1440);
-  installVaultApi({ tree: () => jsonResponse({ entries: [] }) });
-});
-it.each(['Ground', 'Capture', 'Think', 'Recall'])('replaces %s independently while other destinations remain reachable', async (name) => {
-  selection.name = name;
+it.each(['Ground', 'Capture', 'Think', 'Recall'])('renders a replacement %s view without changing shell destinations', name => {
   window.history.replaceState(null, '', `/${name.toLowerCase()}`);
-  render(<App />);
+  render(<TestPresentation><h1>Replacement {name}</h1></TestPresentation>);
   expect(screen.getByRole('heading', { level: 1, name: `Replacement ${name}` })).toBeInTheDocument();
   const nav = screen.getByRole('navigation', { name: 'Primary' });
-  for (const other of ['Ground', 'Capture', 'Think', 'Recall'].filter(item => item !== name)) {
-    await userEvent.click(within(nav).getByRole('link', { name: other }));
-    expect(screen.getByRole('heading', { level: 1, name: other })).toBeInTheDocument();
+  for (const destination of ['Ground', 'Capture', 'Think', 'Recall']) {
+    expect(within(nav).getByRole('link', { name: destination })).toHaveAttribute('href', `/${destination.toLowerCase()}`);
   }
 });

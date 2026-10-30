@@ -4,6 +4,15 @@
 - Label actionable open issues `agentic` when scope is settled, or `escalate` when a user decision is needed. Keep parent routing consistent with its next action. Close issues only after their work is verified.
 - For a sequence of Beads issues, use a dedicated working branch and make a checkpoint commit for each verified issue before starting the next, including only that issue's changes and relevant Beads updates. Stop if verification or committing is blocked. Explicit instructions not to commit take precedence. Never push without approval.
 
+## Build strong layers
+
+- Keep each layer within its agreed scope, but complete the foundation it needs rather than leaving shortcuts for later layers to repair.
+- Respect user-selected architecture and frameworks. Do not silently replace them or hand-roll a substitute for an appropriate maintained foundation to simplify a first pass; explain the tradeoffs and agree on a departure first.
+- Deliver a runnable, user-testable end-to-end layer, including its integration path and operator startup commands. Passing tests or a static mockup alone do not establish that the layer works.
+- Preserve prior behavior and inspect the actual user experience, including visual behavior where relevant, rather than relying only on automated checks.
+- Use placeholders only where explicitly agreed, and do not make unimplemented capabilities look functional. Surface incomplete work and record agreed deferrals in Beads.
+- Build for the current layer and its obvious needs; do not overengineer every possible future feature.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:full hash:19cc25d9 -->
 ## Issue Tracking with bd (beads)
 

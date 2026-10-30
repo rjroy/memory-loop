@@ -25,6 +25,12 @@ This captures present intent, not authorization to implement or a completed tech
 
 Think should receive a deliberate Impeccable interaction and responsive design pass before implementation. Preserve the current branded shell and four-tab top navigation; the placeholder chat layout is not a fixed design.
 
+### Proportionate Stop behavior
+
+Stop is a practical, best-effort control using the agent service's supported cancellation behavior, not a promise of perfect cancellation. If submission failed or execution has already ended, there may be nothing to stop. Show an honest result rather than treating that as a defect requiring new coordination machinery. If a Stop request fails, make the failure understandable and allow an explicit retry where applicable.
+
+Prefer the maintained service's existing behavior and ordinary error handling over bespoke mechanisms for speculative timing cases. Add complexity only for a demonstrated problem with a meaningful user consequence. This does not weaken the requirement that accepted work survive browser disconnection or justify claiming work stopped without confirmation.
+
 ## Execution and reconnect
 
 Carry forward daemon-owned asynchronous execution. Accepted work continues when a browser loses connectivity, closes, or moves away from Think. Reconnecting restores the authoritative conversation, operation status, available output, and pending decisions, then resumes monitoring.
@@ -53,7 +59,9 @@ Avoid rewriting unrelated content. Transcript writes belong in the daemon, and s
 
 ## Tools, permissions, and OpenCode
 
-Allow full tool use, controlled by a configurable permission system whose initial requested setting is fully permissive. Do not silently substitute a restricted tool set or recurring confirmation prompts. Determine how this setting maps to the chosen OpenCode permission model rather than bypassing that model accidentally.
+Allow full tool use, controlled by a configurable permission system whose initial setting is fully permissive. In this initial mode, tool permission checks must allow tools without asking the user for approval or rejecting them. Do not silently substitute a restricted tool set, confirmation prompts, or inherited permission rules that defeat this setting. Determine how to express the effective allow-all policy through the chosen OpenCode permission model and verify its precedence before activation.
+
+Permission-request presentation and reconnect recovery prepare for a future restrictive configuration; they must not introduce permission gates into the initial permissive experience. Ordinary agent questions are distinct from requests for tool permission. Permissive permissions do not promise that tools cannot encounter execution errors, operating-system restrictions, or provider limits.
 
 Fully permissive execution is not a vault sandbox: enabled tools may execute commands, access networks, and modify or delete files outside the vault, subject to their process privileges. Record and surface that scope explicitly. This future tool setting does not authorize development-time destructive actions or changes to this repository's operating rules.
 

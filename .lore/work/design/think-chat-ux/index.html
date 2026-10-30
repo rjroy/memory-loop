@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Design preview only. Fictional Think conversations and sample controls, not a working chat client.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="board.css">
+  <script src="preview.js" defer></script>
+  <title>Think — design preview, not the live application</title>
+</head>
+<body>
+  <a class="skip-link" href="#message">Skip to sample message</a>
+  <div class="review-page">
+    <aside class="review-bar" aria-label="Design review controls, not product navigation">
+      <p><strong>Design preview</strong><span>Fictional content · sample actions only</span></p>
+      <label>View <select id="review-state">
+        <option value="new">New chat</option>
+        <option value="working">AI working</option>
+        <option value="reading">Reading older</option>
+        <option value="disconnected">Disconnected</option>
+        <option value="logging">Logging problem</option>
+        <option value="question">Agent question</option>
+      </select></label>
+    </aside>
+    <div class="mock-app">
+      <header class="app-header">
+        <div class="brand-identity"><img src="../memory-loop-character/assets/approved-a5.svg" width="40" height="40" alt=""><span>Memory Loop</span></div>
+        <nav class="primary-navigation" aria-label="Illustrated app navigation, not active">
+          <span>Ground</span><span>Capture</span><span class="current" aria-current="page">Think</span><span>Recall</span>
+        </nav>
+      </header>
+      <main class="chat-layout" id="sample">
+        <header class="think-header">
+          <div class="think-heading"><h1>Think</h1><p id="run-status">Ready</p></div>
+          <div class="chat-actions">
+            <button type="button" class="button secondary" data-sample>New chat</button>
+            <details class="chat-details"><summary>Chat details</summary>
+              <div><p><strong>Tools have full access.</strong> They can run commands, use the network, and read or change files outside your vault under the service account.</p>
+              <p>Stop is best effort. It can’t undo changes already made, and some background work may continue.</p>
+              <p>Unsent drafts stay through navigation and reconnect, but are lost on a hard reload. Transcripts contain full messages and tool summaries, and may contain sensitive text.</p></div>
+            </details>
+          </div>
+        </header>
+        <section class="conversation" aria-label="Sample conversation" tabindex="0">
+          <div class="conversation-measure" id="conversation-content"></div>
+        </section>
+        <div class="compose-area">
+          <div class="compose-measure">
+            <div class="position-row" id="position-row" hidden><button type="button" class="button text-button" data-sample>Latest response <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v13m-5-5 5 5 5-5"/></svg></button></div>
+            <div class="connection-note" id="connection-note" hidden></div>
+            <label class="message-label" for="message">Message</label>
+            <textarea id="message" rows="3" placeholder="Follow the thought…" aria-describedby="compose-hint" spellcheck="false"></textarea>
+            <div class="compose-actions"><p id="compose-hint">Enter for a new line.</p><button type="button" class="button primary" id="send-stop" data-sample>Send</button></div>
+            <div class="log-status" id="log-status"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="sample-feedback visually-hidden" role="status" id="sample-feedback"></div>
+
+  <template id="state-new">
+    <div class="empty-invitation"><div><h2>What else could this become?</h2><p>A question, a half-formed idea, a place to begin.</p></div><img src="../memory-loop-character/assets/approved-a5.svg" width="64" height="64" alt=""></div>
+    <p class="empty-context">Tools have full access, including outside your vault.</p>
+  </template>
+
+  <template id="state-working">
+    <article class="message user" aria-labelledby="working-you"><h2 id="working-you" class="role-label">You</h2><p>I want to make more room for writing, but I keep waiting for a clear afternoon.</p></article>
+    <article class="message assistant" aria-labelledby="working-ai"><h2 id="working-ai" class="role-label">AI</h2>
+      <div class="prose"><p>What if a beginning didn’t need a clear afternoon?</p><p>I’m looking for a smaller rhythm you could return to, rather than a perfect stretch of time.</p></div>
+      <details class="activity" open><summary>AI activity · File read working</summary><ol><li><span>File search</span><strong>Completed</strong></li><li><span>File read</span><strong>Working</strong></li></ol></details>
+      <p class="part-status">Response in progress</p>
+    </article>
+  </template>
+
+  <template id="state-disconnected">
+    <article class="message user" aria-labelledby="disconnected-you"><h2 id="disconnected-you" class="role-label">You</h2><p>Could we turn this into a small writing routine?</p></article>
+    <article class="message assistant" aria-labelledby="disconnected-ai"><h2 id="disconnected-ai" class="role-label">AI</h2><div class="prose"><p>Start by giving the routine a small enough shape to fit an ordinary day. One possibility is to</p></div><p class="part-status">Last received text · reconnecting</p></article>
+  </template>
+
+  <template id="state-logging">
+    <article class="message user" aria-labelledby="logging-you"><h2 id="logging-you" class="role-label">You</h2><p>What might a ten-minute beginning look like?</p></article>
+    <article class="message assistant" aria-labelledby="logging-ai"><h2 id="logging-ai" class="role-label">AI</h2>
+      <div class="prose"><h3>Give the thought somewhere to land.</h3><ol><li>Write the question you keep circling.</li><li>Stay with one small part of it.</li><li>Leave a sentence for tomorrow.</li></ol>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Sample writing routine table"><table><thead><tr><th>Moment</th><th>Small action</th></tr></thead><tbody><tr><td>Begin</td><td>Write one question</td></tr><tr><td>Return</td><td>Follow one thread</td></tr></tbody></table></div>
+        <pre tabindex="0" aria-label="Sample plain text code block"><code>One question.
+One small beginning.
+Something to return to tomorrow.</code></pre>
+      </div>
+    </article>
+  </template>
+
+  <template id="state-question">
+    <article class="message user" aria-labelledby="question-you"><h2 id="question-you" class="role-label">You</h2><p>Help me choose a rhythm I can keep.</p></article>
+    <article class="message assistant" aria-labelledby="question-ai"><h2 id="question-ai" class="role-label">AI</h2><p>Which direction would you like to explore?</p>
+      <section class="agent-question" aria-label="Ordinary AI question, not a tool approval"><h3>AI question</h3><fieldset><legend>Choose a starting point</legend><label><input type="radio" name="sample-direction" value="daily"> A smaller daily habit</label><label><input type="radio" name="sample-direction" value="weekly"> A weekly writing block</label></fieldset><button type="button" class="button secondary" data-sample>Send answer</button><p class="part-status">Sample question · not a tool permission request</p></section>
+    </article>
+  </template>
+</body>
+</html>

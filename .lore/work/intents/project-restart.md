@@ -32,7 +32,7 @@ The application has four tabs:
 | Think | AI chat interface. |
 | Recall | Vault file access. |
 
-These areas establish the product structure, not the implementation order or the full feature depth of each area. Layers and phases have not yet been defined.
+These areas establish the product structure, not the full feature depth of each area. The four-tab placeholder shell is implemented. The next functional layer is [read-only Recall](recall.md), establishing JSON vault configuration, daemon file retrieval, and Markdown rendering before Think needs vault-backed chat history.
 
 ## Feature inventory for the restart
 
@@ -106,6 +106,6 @@ Bun, Hono, React, and Next.js are candidate technologies, not requirements. Choo
 
 ## Starting direction
 
-Start with quick capture and a dashboard composed of interchangeable panels. Think and Recall are established application areas, with their depth and implementation order still to be decided. Treat the remaining optional capabilities as candidates to evaluate, not a mandatory backlog. Build in layers, beginning with the smallest useful product.
+Quick capture remains the core product capability, alongside a dashboard composed of interchangeable panels. Following the completed frontend shell, build read-only Recall next to establish shared vault foundations before implementing Think or Capture. See [the Recall intent](recall.md) for that layer's scope. Treat the remaining optional capabilities as candidates to evaluate, not a mandatory backlog.
 
 Panel contents, detailed feature scope, layer boundaries, phase order, and the remaining technical choices are open decisions. The daemon/presentation split and disconnect-safe asynchronous operation lifecycle are established requirements.

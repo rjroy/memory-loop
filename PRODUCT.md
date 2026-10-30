@@ -4,7 +4,7 @@
 
 ## Authority
 
-Product context captured on 2026-10-29 from [the restart intent](.lore/work/intents/project-restart.md) and the current conversation. This is a fresh restart; previous implementation and design are not requirements. The conversation narrows phase 1 to a frontend shell.
+Product context captured from [the restart intent](.lore/work/intents/project-restart.md), [Recall intent](.lore/work/intents/recall.md), and current user decisions. This is a fresh restart; old implementation/design are not requirements. Phase 1 established the shell; the user subsequently approved and authorized the read-only Recall design.
 
 ## Platform
 
@@ -12,7 +12,7 @@ web
 
 ## Stack
 
-For phase 1, the [implementation plan](.lore/work/plans/phase-1-shell.md) selects Bun-managed React, TypeScript, Vite, and React Router: a static frontend shell without Next.js, Hono, or another application server. This is a delegated implementation choice under the user's authorization to plan then implement, not a settlement of the later daemon architecture or production hosting.
+The accepted [phase-1 plan](.lore/work/plans/phase-1-shell.md) established Bun-managed React, TypeScript, Vite and React Router. Read-only Recall adds a Bun Request/Response daemon serving the built frontend and two same-origin read endpoints, without Next.js or Hono. Development uses the Vite loopback proxy; standalone preview stays static-only. Maintained react-markdown/remark-gfm supply rendering. This settles the current slice, not AI integration or remote production hosting.
 
 ## Users
 
@@ -35,7 +35,11 @@ The four application areas are fixed and ordered:
 3. **Think:** AI chat.
 4. **Recall:** vault file access.
 
-The user authorized planning then implementing phase 1 from the reviewed design: only a frontend shell with four independently replaceable placeholder views. The original implementation passed independent GREEN and technical/visual acceptance as recorded in the completed plan. The user subsequently requested a dark-default appearance after trying the phone preview; that CSS-only refinement is built and visually checked, with parent-owned independent verification/review pending. Test/setup and UI work use separate lanes. No daemon, vault access, AI, business logic, fake conversations, or invented dashboard data. Functional capture is not part of this phase.
+Phase 1 was a frontend-only shell with four placeholders; it and the dark-default refinement passed their independent checks/reviews. The subsequent [approved Recall design](.lore/work/design/recall-read-only.md) is implemented and accepted: one JSON-configured vault, daemon-owned listing/note reads, a native folder hierarchy, and safe read-only CommonMark/GFM. The read-only slice is complete with visual **ship** and technical **Accept**. This does not activate a real vault or remote API.
+
+Ground/Capture/Think remain disposable placeholders. Recall's task-specific Files/reader interior replaces its placeholder without constraining future replacements. Preserve the four destinations, not a shared card layout. Recall has no search, editing, media, config editor or vault writes. Capture, AI and dashboard contents remain unimplemented; no fake conversations or invented activity are supplied.
+
+Local config is already set and ignored, but only test-owned vaults were read during implementation/verification. Real-vault daemon activation requires explicit approval. The existing Tailscale static preview serves the built UI with no vault API. Remote real-note access requires a separately approved and reviewed authenticated private transport; loopback alone is not authentication against local processes.
 
 Long term, a daemon owns business logic and authoritative operation state; the frontend presents state and sends commands. Accepted asynchronous work must survive browser disconnection, and reconnecting must recover authoritative state and outstanding decisions. Cancellation is explicit, not a side effect of disconnection. These are future requirements, not phase-1 work. Process-crash durability remains unresolved.
 
@@ -49,7 +53,7 @@ The name is **Memory Loop**. No old application design is inherited. The user ap
 
 ## Evidence on Hand
 
-The restart intent and current conversation establish product truth. Approved personal-brand guidance is captured locally with source revision and clean-worktree provenance. Source Sans 3 regular/semibold and their OFL license are now copied locally with byte-for-byte hashes in that record; no artwork was copied or generated. Actual shell screenshots were captured and opened for desktop, phone, narrow and landscape layouts. No vault files, real conversations, or panel content are supplied. Do not manufacture examples to make a placeholder look active.
+The intents and current user decisions establish product truth. Approved brand guidance, two local Source Sans 3 files and OFL hashes retain their recorded provenance; no artwork was copied/generated. Shell and Recall screenshots cover desktop, phone, narrow and landscape. Recall inspection/tests use clearly test-owned fixtures, never personal notes. Final independent frontend unit **24**, Recall browser **17/17 in one run**, typecheck/build and technical **Accept** join visual **ship**; prior backend **87** and legacy browser **18** remain valid unchanged. Evidence and verification limits are recorded in the local handoff. Do not manufacture live activity or infer activation from test fixtures.
 
 ## Product Principles
 
@@ -61,4 +65,4 @@ The restart intent and current conversation establish product truth. Approved pe
 
 ## Open Decisions
 
-Authentication and LAN exposure, production static hosting, panel contents/configuration, AI integration details, metadata storage and transport, process-crash durability, and the depth/order of future features remain open. The phase-1 frontend stack is selected in the plan; the later daemon stack is not. No product-specific accessibility needs have been supplied; use the shell design's WCAG 2.2 AA acceptance targets and verify the actual build.
+No implementation findings remain open for read-only Recall; UI-001/002/003 are independently verified and technically accepted. Real-note local activation and authenticated remote transport remain deployment choices, not implementation blockers. Panel contents, Capture/AI integration, future operation metadata/durability, and later feature order remain undecided. The current Bun daemon/config contract is selected; broader daemon/AI architecture is not. No product-specific accessibility needs were supplied; WCAG 2.2 AA targets do not substitute for actual verification or manual assistive-technology testing.

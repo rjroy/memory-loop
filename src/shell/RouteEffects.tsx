@@ -14,6 +14,7 @@ export default function RouteEffects() {
   const navigationType = useNavigationType();
   const entries = useRef(new Map<string, EntryPosition>());
   const currentKey = useRef<string | null>(null);
+  const currentPath = useRef<string | null>(null);
 
   useLayoutEffect(() => {
     const remember = () => {
@@ -45,17 +46,20 @@ export default function RouteEffects() {
     if (location.pathname === '/') return;
 
     const path = location.pathname.replace(/\/$/, '');
+    const recallLocal = path === '/recall' && currentPath.current === path;
+    currentPath.current = path;
     const title = destinations.find(destination => destination.path === path)?.label ?? 'Page not found';
-    document.title = `${title} · Memory Loop`;
+    // Recall owns note titles and pane focus/scroll on query-only location changes.
+    if (path !== '/recall') document.title = `${title} · Memory Loop`;
 
     const firstView = currentKey.current === null;
     const saved = entries.current.get(location.key);
     currentKey.current = location.key;
-    if (firstView) return;
+    if (firstView || recallLocal) return;
 
     const heading = document.querySelector<HTMLElement>('#main-content h1');
     if (heading && !heading.hasAttribute('tabindex')) heading.tabIndex = -1;
-    const target = navigationType === 'POP' && saved
+    const target = path !== '/recall' && navigationType === 'POP' && saved
       ? (saved.element?.isConnected ? saved.element :
         (saved.elementId ? document.getElementById(saved.elementId) : null)) ?? heading
       : heading;

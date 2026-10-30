@@ -35,7 +35,7 @@ for (const name of views) {
 
 test('navigation preserves history, current-link no-op and focus', async ({ page }) => {
   await page.goto('/ground');
-  const nav = page.getByRole('navigation');
+  const nav = page.getByRole('navigation', { name: 'Primary' });
   await nav.getByRole('link', { name: 'Capture' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Capture' })).toBeFocused();
   await nav.getByRole('link', { name: 'Capture' }).click();
@@ -55,7 +55,7 @@ test('navigation preserves history, current-link no-op and focus', async ({ page
 test('modified click opens a new tab without changing the current page', async ({ page, context }) => {
   await page.goto('/ground');
   const newPage = context.waitForEvent('page');
-  await page.getByRole('navigation').getByRole('link', { name: 'Capture' }).click({ modifiers: ['Control'] });
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Capture' }).click({ modifiers: ['Control'] });
   const tab = await newPage;
   await tab.waitForLoadState();
   await expect(tab).toHaveURL(/\/capture$/);
@@ -65,7 +65,7 @@ test('modified click opens a new tab without changing the current page', async (
 test('unknown address offers recovery', async ({ page }) => {
   await page.goto('/unknown');
   await expect(page).toHaveTitle('Page not found · Memory Loop');
-  await expect(page.getByRole('navigation').locator('[aria-current="page"]')).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Primary' }).locator('[aria-current="page"]')).toHaveCount(0);
   await page.getByRole('link', { name: 'Go to Ground' }).click();
   await expect(page).toHaveURL(/\/ground$/);
 });
@@ -81,7 +81,7 @@ test('back restores scroll without a leave guard', async ({ page }) => {
     window.scrollTo(0, 700);
   });
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
-  await page.getByRole('navigation').getByRole('link', { name: 'Capture' }).evaluate((link: HTMLElement) => link.click());
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Capture' }).evaluate((link: HTMLElement) => link.click());
   await page.goBack();
   await expect(page).toHaveURL(/\/ground$/);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(500);

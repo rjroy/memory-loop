@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import App from '../../src/App';
+import { installVaultApi, installViewport, jsonResponse } from './fixtures/recall';
 
 const selection = vi.hoisted(() => ({ name: '' }));
 vi.mock('../../src/views/GroundView', async (original) => {
@@ -21,13 +22,17 @@ vi.mock('../../src/views/RecallView', async (original) => {
   return { default: () => selection.name === 'Recall' ? <h1>Replacement Recall</h1> : <actual.default /> };
 });
 
-beforeEach(() => { selection.name = ''; });
+beforeEach(() => {
+  selection.name = '';
+  installViewport(1440);
+  installVaultApi({ tree: () => jsonResponse({ entries: [] }) });
+});
 it.each(['Ground', 'Capture', 'Think', 'Recall'])('replaces %s independently while other destinations remain reachable', async (name) => {
   selection.name = name;
   window.history.replaceState(null, '', `/${name.toLowerCase()}`);
   render(<App />);
   expect(screen.getByRole('heading', { level: 1, name: `Replacement ${name}` })).toBeInTheDocument();
-  const nav = screen.getByRole('navigation');
+  const nav = screen.getByRole('navigation', { name: 'Primary' });
   for (const other of ['Ground', 'Capture', 'Think', 'Recall'].filter(item => item !== name)) {
     await userEvent.click(within(nav).getByRole('link', { name: other }));
     expect(screen.getByRole('heading', { level: 1, name: other })).toBeInTheDocument();

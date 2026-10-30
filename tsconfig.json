@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["vite/client", "node", "@testing-library/jest-dom"]
   },
-  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "tests", "backend", "vite.config.ts", "playwright.config.ts"]
 }

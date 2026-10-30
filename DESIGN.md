@@ -59,7 +59,7 @@ typography:
     lineHeight: 1.7
   note-identity:
     fontFamily: "Libre Baskerville, Georgia, serif"
-    fontSize: "clamp(1.25rem, 1.8vw, 1.5rem)"
+    fontSize: "1.25rem"
     fontWeight: 400
     lineHeight: 1.5
   markdown-headline:
@@ -202,7 +202,7 @@ components:
     rounded: "{rounded.square}"
     padding: ".625rem .5rem .625rem 1.875rem"
   note-identity:
-    textColor: "{colors.night}"
+    textColor: "{colors.parchment}"
     typography: "{typography.note-identity}"
   markdown-document:
     backgroundColor: "{colors.parchment}"
@@ -261,7 +261,7 @@ Source Sans 3 regular/semibold remains the interface and reading-prose family. I
 
 Route/Files/status headings retain their Source Sans hierarchy. Shared identity is 28px IM Fell with one 40px A.5, at every viewport. Navigation remains 16px Source Sans rather than shrinking on phones; all text scales naturally at 200%. Invitations use bounded fluid IM Fell scales, up to 76.8px on Ground and 68px on Think. Recall retains 28/22/18/17px Markdown steps in Libre Baskerville 400 with 1.4 line height. Code sizes stay relative/explicit as recorded above.
 
-Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.7 line height; note identity/path and compatibility copy remain compact. Markdown paragraphs have 1.4em separation, headings 1.8em before / .65em after, and the first content block has no added top margin. These are measures, not a requirement to pad short copy.
+Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.7 line height; filename/path stay compact in the dark section titlebar. Markdown paragraphs have 1.4em separation, headings 1.8em before / .65em after, and the first content block has no added top margin. These are measures, not a requirement to pad short copy.
 
 ### Named Rules
 **The Three Type Roles Rule.** IM Fell names/invites; Source Sans operates/explains; Libre Baskerville marks reflective editorial headings. Do not turn every label into display type.
@@ -276,7 +276,7 @@ Below 56rem the same top header precedes 2rem/1.25rem workspace insets. All thre
 
 Recall's app uses `auto minmax(12rem, 1fr)` grid rows within 100dvh: actual top-header height, then the workspace. The lower bound prevents enlarged headers from crushing the working area to zero; if content outgrows a short viewport the page can scroll, rather than clipping controls. Normal layouts keep independent pane scrollers. Desktop Files remains default-visible with the same `clamp(14rem, 22vw, 16rem)` split; the reader stays Parchment and bounded to 68ch.
 
-Narrow Recall has the same shared top identity/navigation and a compact Recall/Read-only toolbar—no duplicate logo. Files or reader fills the remaining work area non-modally. Toolbar padding is 8px vertically on narrow/short viewports; short-height Files/reader top insets are 16px without reducing text. The independent collapsible Files tree is not the removed global app sidebar. At 844×390/200% text, both initial pointer targets and keyboard-focused chevrons are unobscured, and all four top links are initially visible.
+Narrow Recall has the same shared top identity/navigation and a compact Recall/Read-only section titlebar—no duplicate logo. The selected filename/path wraps onto a second titlebar row, outside both pane scrollers. Files or reader fills the remaining work area non-modally. Titlebar padding is 8px vertically on narrow/short viewports; short-height layouts tighten its row gap and use a rem-scaled 18px Recall heading when a file is selected. Files/reader top insets remain 16px. The independent collapsible Files tree is not the removed global app sidebar. The 53h titlebar and reader-local Skip correction require renewed independent verification; earlier 44w checks are baseline evidence, not acceptance of this refinement.
 
 Reused spacing steps are recorded above. Header/workspace insets belong to their layout rules rather than an invented universal scale. Headings, purpose text and unavailable copy wrap naturally.
 
@@ -309,7 +309,7 @@ Native semibold links retain 44px minimum height. Ground's real Open Capture des
 
 ### Skip and pane-jump controls
 
-The app skip link is above the viewport until focus; its visible state is Lantern with Night text, a 44px minimum hit height, and a Parchment outline separated by 3px. It targets focusable main, whose outline is inset 10px. Recall's focus-only Skip to note / Return to files buttons use the same inverse accent vocabulary inside their panes, without history entries. They are focus helpers, not hidden shortcuts or new destinations.
+The app skip link is above the viewport until focus; its visible state is Lantern with Night text, a 44px minimum hit height, and a Parchment outline separated by 3px. It targets focusable main, whose outline is inset 10px. Recall's focus-only Skip to note / Return to files buttons use the same inverse accent vocabulary inside their panes, without history entries. Skip to note focuses the existing reader article (`tabindex="-1"`, named by the titlebar filename) without scrolling; the next Tab follows native order inside the article rather than returning through Files. Return to files opens Files if needed and focuses its current file or heading. Ordinary note selection still focuses the titlebar filename once. Neither focus destination adds a visible reader heading or spacing.
 
 ### View heading and purpose
 
@@ -317,7 +317,7 @@ A focusable H1 with a modest fixed type scale, followed by body-sized purpose af
 
 ### Recall toolbar and buttons
 
-The compact Recall H1/Read-only row sits below the shared top app header, without duplicated branding. Recovery buttons use their context's ink/surface/border and reverse on hover; pressed uses Lantern/Night. Night contexts focus Horizon; the reader focuses Night on Parchment. Pending/read/retry behavior is unchanged.
+The dark section titlebar sits below the shared top app header, without duplicated branding. Desktop groups Recall H1, the selected literal filename with its relative breadcrumb, and Read-only across one row; the filename/path group wraps below Recall/Read-only on narrow screens. Full names and paths wrap rather than truncate. Recovery buttons use their context's ink/surface/border and reverse on hover; pressed uses Lantern/Night. Night contexts focus Horizon; the reader focuses Night on Parchment. Pending/read/retry behavior is unchanged.
 
 Files visibility uses a quiet icon-only button, not a detached toolbar text action. A 20px plain left chevron sits in a 44×44px target at the upper-right of the sticky Files header; when collapsed, a plain right chevron sits at the upper-left of the reader, outside the centered prose measure. Its local controls row remains reachable while the reader scrolls. No destination-icon rail or empty Files column remains. Both desktop and narrow use the accessible names Collapse files sidebar / Expand files sidebar, `aria-expanded`, and `aria-controls` targeting the retained, hidden Files navigation. The SVG is hidden from assistive technology. Closing focuses the visible expand control; opening targets the current file or Files heading. Narrow selection still closes Files immediately without changing note/history/scroll semantics.
 
@@ -329,9 +329,9 @@ Native nested lists, folder buttons and note links remain unchanged. Rows target
 
 ### Markdown reader
 
-The unboxed article is named by its literal filename, not by invented metadata or the first source heading. A relative path and default-closed native Formatting support disclosure precede the document and scroll with it. File identity is focusable; an arriving response does not refocus the page or make the entire article a live region.
+The unboxed article is named by its literal filename, not by invented metadata or the first source heading. The focusable filename and wrapping vault-relative breadcrumb appear only in the dark section titlebar, not inside the reader. The user removed the Formatting support disclosure entirely, along with the old identity block's divider and spacing. The article itself is programmatically focusable for Skip to note but adds no ordinary Tab stop or visible header. An arriving response does not refocus the page or make the entire article a live region.
 
-Source H1–H5 still become native H2–H6; source H6 stays H6. This cap does not repair skipped source levels. Markdown renderer/links/tasks/code/tables are unchanged; only type and contextual rule colors change. Literal identity is Libre Baskerville above a thin rule, metadata stays legible Source Sans, and body stays 17px/1.7. Code/table scrollers retain their semantics and bounded overflow. No syntax-color palette or media viewer is added.
+Source H1–H5 still become native H2–H6; source H6 stays H6. This cap does not repair skipped source levels. Markdown renderer/links/tasks/code/tables are unchanged. Literal identity is 20px Libre Baskerville in the dark titlebar, its breadcrumb is legible Source Sans, and reader body stays 17px/1.7. Code/table scrollers retain their semantics and bounded overflow. No syntax-color palette or media viewer is added.
 
 Raw HTML is escaped text. Markdown images become Image not shown text, and embeds remain literal. Only deliberate HTTP(S) links are live, opening a new tab with an accessible indication and safe relationship. Note/heading/wiki and unsafe links remain text. Frontmatter passes through ordinary Markdown rather than becoming application metadata.
 

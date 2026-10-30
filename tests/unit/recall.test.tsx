@@ -173,7 +173,7 @@ describe('Recall: native file selection and reading', () => {
     const skip = screen.getByText('Skip to note', { exact: true });
     expect(['A', 'BUTTON']).toContain(skip.tagName);
     await user.click(skip);
-    expect(document.activeElement).toHaveTextContent('Alpha #1.md');
+    expect(screen.getByRole('article', { name: 'Alpha #1.md' })).toHaveFocus();
     expect(within(restored).getByRole('link', { name: 'Alpha #1.md' })).not.toHaveFocus();
     const returnToFiles = screen.getByText('Return to files', { exact: true });
     expect(['A', 'BUTTON']).toContain(returnToFiles.tagName);
@@ -402,7 +402,13 @@ describe('Recall: renderer and route boundaries', () => {
       expect(['https:', 'http:']).toContain(new URL(link.href).protocol);
     }
     expect(within(article).getByRole('checkbox')).toBeDisabled();
-    expect(screen.getByText('Formatting support', { selector: 'summary' }).closest('details')).not.toHaveAttribute('open');
+    expect(screen.queryByText('Formatting support')).not.toBeInTheDocument();
+    const identity = document.getElementById('note-identity')!;
+    const titlebar = identity.closest('header')!;
+    expect(within(titlebar).getByRole('heading', { level: 1, name: 'Recall' })).toBeInTheDocument();
+    expect(within(titlebar).getByText('Test shelf & café / Alpha #1.md')).toBeInTheDocument();
+    expect(identity).toHaveAttribute('tabindex', '-1');
+    expect(article).not.toContainElement(identity);
     expect(document.title).toBe('Alpha #1.md · Recall · Memory Loop');
     expect(writes).not.toHaveBeenCalled();
     expect(requestedNotes()).toEqual([alphaId]);

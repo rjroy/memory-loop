@@ -14,6 +14,12 @@ Recall's grid uses actual header height plus a `minmax(12rem, 1fr)` workspace ro
 
 The previous no-art, one-font and uniformly dark rules were project adaptations, explicitly revisited by the user—not restrictions in the underlying brand. There is no theme toggle, new identity, generated image, paid rendering, crop, recolor, derivative, font subset, dependency or external resource service.
 
+### User-directed Recall titlebar refinement
+
+The later `memory-loop-53h` request moves the selected literal filename and vault-relative breadcrumb into the dark Recall section titlebar alongside Recall/Read-only. The filename retains Libre Baskerville, now 1.25rem; the breadcrumb retains Source Sans and dark-context supporting ink. Narrow layouts wrap that group below Recall/Read-only; short viewports tighten grouping and use a rem-scaled 18px Recall heading when selected. The Parchment reader starts directly with note content: no duplicate identity, Formatting support disclosure, old separating rule or its spacing. No artwork, palette or Markdown behavior changes.
+
+Selection still focuses the titlebar filename once. Skip to note instead focuses the existing reader article (`tabindex="-1"`, named by that filename) without scrolling, so the next Tab follows native reader links/controls rather than traversing Files again. This adds neither a visible reader heading nor a normal Tab stop. Return to files retains its existing current-file/Files-heading destination. The 53h implementation and 53H-R1 correction require independent acceptance; the historical 44w receipts below do not establish that outcome.
+
 ### Contextual color decision
 
 The current source guide `BRAND.md` §8 specifies **Horizon focus on Night, Night focus on Parchment, and Horizon selected-location underlines**. Apply those roles under the new explicit board/application approval: app navigation and current file use Horizon plus semibold/`aria-current`; Files/dark controls focus Horizon; reader/Capture focus Night. All app links now share the same 2px selected underline across sizes. Lantern remains Ground warmth/action, text selection, pressed controls and focus-only pane helpers. The core palette is unchanged; Muted Night `#344548` / Weathered Ivory `#d5d3c5` come from the guide's functional neutral extension. Think uses a 10% Horizon / 90% Night sRGB surface, as in the board.

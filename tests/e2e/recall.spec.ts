@@ -171,6 +171,24 @@ for (const scenario of [
   });
 }
 
+test('53H-R1: Skip to note moves keyboard traversal past Files into the reader', async ({ page, recallOrigin }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(noteUrl(recallOrigin, ['danger.md']));
+  const files = page.getByRole('navigation', { name: 'Vault files' });
+  const reader = page.getByRole('region', { name: 'Note reader' });
+  await expect(files).toBeVisible();
+  await expect(reader.getByRole('article')).toContainText('Source heading');
+  const link = reader.getByRole('link', { name: 'web (opens in a new tab)', exact: true });
+  await expect(link).toBeVisible();
+  const skip = files.getByRole('button', { name: 'Skip to note' });
+  await skip.focus();
+  await expect(skip).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(link).toBeFocused();
+  await expect(files.getByRole('button', { name: 'Collapse files sidebar' })).not.toBeFocused();
+});
+
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   test(`sidebar chevrons occupy the Files and reader headers at ${viewport.width}px`, async ({ page, recallOrigin }) => {
     await page.setViewportSize(viewport);

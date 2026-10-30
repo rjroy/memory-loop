@@ -29,16 +29,17 @@
 
 .recall-toolbar {
   flex: 0 0 auto;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: .5rem 1rem;
+  gap: .5rem 2rem;
   padding: 12px 2rem;
   border-bottom: 1px solid var(--rule);
 }
 
-.recall-toolbar h1 { display: flex; align-items: center; min-height: 44px; margin-right: auto; }
-.read-only-label { margin: 0; font-size: .875rem; }
+.recall-toolbar h1 { display: flex; align-items: center; min-height: 44px; }
+.recall-note-location { min-width: 0; }
+.read-only-label { grid-column: 3; margin: 0; font-size: .875rem; }
 
 .recall-button {
   display: inline-flex;
@@ -187,13 +188,8 @@
   scrollbar-color: var(--muted) var(--surface);
 }
 .reader-measure { max-width: 68ch; margin-inline: auto; font-size: 1.0625rem; line-height: 1.7; }
-.note-header { margin-bottom: 2.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--rule); }
-.note-identity { width: fit-content; max-width: 100%; margin: 0; font: 400 clamp(1.25rem, 1.8vw, 1.5rem)/1.5 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; overflow-wrap: anywhere; }
-.note-path { margin: .5rem 0 0; color: var(--muted); font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; }
-.formatting-support { margin-top: .75rem; color: var(--muted); font-size: .875rem; line-height: 1.5; }
-.formatting-support summary { width: fit-content; max-width: 100%; min-height: 44px; padding-block: .625rem; cursor: pointer; }
-.formatting-support summary:hover { text-decoration: underline; }
-.formatting-support p { max-width: 60ch; margin: .25rem 0 1rem; }
+.note-identity { width: fit-content; max-width: 100%; margin: 0; font: 400 1.25rem/1.5 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.note-path { margin: .25rem 0 0; color: var(--muted); font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; }
 .recall-message { max-width: 60ch; }
 .recall-message h2 { font-size: 1.125rem; }
 .recall-message p { margin: .5rem 0 0; }
@@ -273,6 +269,8 @@
 
 @media (width < 56rem) {
   .recall-toolbar { padding: 8px max(20px, env(safe-area-inset-right, 0px)) 8px max(20px, env(safe-area-inset-left, 0px)); }
+  .recall-note-location { grid-column: 1 / -1; grid-row: 2; }
+  .read-only-label { grid-row: 1; }
   .recall-files { --files-top-inset: 1.25rem; padding: var(--files-top-inset) max(1rem, env(safe-area-inset-right, 0px)) 2rem max(1rem, env(safe-area-inset-left, 0px)); border: 0; }
   .recall-reader { padding: 1.5rem max(1.25rem, env(safe-area-inset-right, 0px)) 3rem max(1.25rem, env(safe-area-inset-left, 0px)); }
   .recall-blocking { padding: 1.5rem 1.25rem; }
@@ -280,12 +278,17 @@
 }
 
 @media (height < 30rem) {
-  .recall-toolbar { padding-block: 8px; }
+  .recall-toolbar { padding-block: 8px; row-gap: 0; }
+  /* Keep the note location and pane controls in reach in short, enlarged-text
+     layouts. Recall remains a visible route heading, subordinate to the file. */
+  .recall-toolbar:has(.recall-note-location) h1 { font-size: 1.125rem; }
+  .note-identity { line-height: 1.4; }
+  .note-path { margin-top: 0; }
   .recall-files { --files-top-inset: 16px; }
   .recall-reader { padding-block: 16px 24px; }
 }
 
 @media (forced-colors: active) {
   .file-link[aria-current='page'] span { text-decoration-color: Highlight; }
-  .note-header, .markdown-document :is(pre, blockquote, hr, th, td) { border-color: CanvasText; }
+  .markdown-document :is(pre, blockquote, hr, th, td) { border-color: CanvasText; }
 }

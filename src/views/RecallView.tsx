@@ -56,6 +56,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   const filesRef = useRef<HTMLElement>(null);
   const filesHeading = useRef<HTMLHeadingElement>(null);
   const readerRef = useRef<HTMLElement>(null);
+  const articleRef = useRef<HTMLElement>(null);
   const identityRef = useRef<HTMLParagraphElement>(null);
   const collapseRef = useRef<HTMLButtonElement>(null);
   const expandRef = useRef<HTMLButtonElement>(null);
@@ -278,6 +279,10 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   }}>
     <header className="recall-toolbar">
       <RouteHeading route="/recall">Recall</RouteHeading>
+      {canBrowse && selection.id && <div className="recall-note-location">
+        <p className="note-identity" ref={identityRef} tabIndex={-1} id="note-identity">{filename ?? 'Requested note'}</p>
+        {filename && <p className="note-path">{selection.id.join(' / ')}</p>}
+      </div>}
       <p className="read-only-label">Read-only</p>
     </header>
     <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{announcement ? `Recall: ${announcement}` : ''}</div>
@@ -296,7 +301,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
               <h2 ref={filesHeading} tabIndex={-1}>Files</h2>
               <FilesToggle expanded active={showFiles} ref={collapseRef} onToggle={closeFiles} />
             </header>
-            {desktop && selection.id && <button className="pane-jump" type="button" onClick={() => identityRef.current?.focus({ preventScroll: true })}>Skip to note</button>}
+            {desktop && selection.id && <button className="pane-jump" type="button" onClick={() => articleRef.current?.focus({ preventScroll: true })}>Skip to note</button>}
             {tree.status === 'loading' ? <p className="files-status">Loading files…</p>
               : tree.status === 'error' ? <Message heading="Couldn't load files" body="The file list couldn't be retrieved. Try again."
                 action="Retry files" onAction={() => setTreeRevision(value => value + 1)} />
@@ -315,14 +320,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
               {selection.invalid ? <Failure code="invalid_request" retry={() => {}} />
                 : selection.id ? <>
                   <button className="pane-jump" type="button" onClick={openFiles}>Return to files</button>
-                  <article aria-labelledby="note-identity" aria-busy={note.status === 'loading'}>
-                    <header className="note-header">
-                      <p className="note-identity" ref={identityRef} tabIndex={-1} id="note-identity">{filename ?? 'Requested note'}</p>
-                      {filename && <p className="note-path">{selection.id.join(' / ')}</p>}
-                      <details className="formatting-support"><summary>Formatting support</summary>
-                        <p>CommonMark and GFM are supported. Raw HTML is shown as text. Images and embeds aren't displayed. Note, heading, and Obsidian wiki links remain text. Web links open in a new tab. Task checkboxes are read-only. Frontmatter is ordinary Markdown, not interpreted metadata. This is not a full Obsidian preview.</p>
-                      </details>
-                    </header>
+                  <article ref={articleRef} tabIndex={-1} aria-labelledby="note-identity" aria-busy={note.status === 'loading'}>
                     {note.status === 'loading' ? <p className="note-status">Opening note…</p>
                       : note.status === 'error' ? <Failure code={note.error} retry={() => setNoteRevision(value => value + 1)} />
                         : note.status === 'ready' && (note.data.markdown.length

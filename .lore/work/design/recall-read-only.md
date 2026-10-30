@@ -11,6 +11,8 @@ Sidebar correction (`memory-loop-ms4`, 2026-10-30): the user superseded the deta
 
 Visual application (`memory-loop-44w`, 2026-10-30) is accepted: independent current-build typecheck/build, unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, fresh visual **SHIP** and technical **Accept**; backend **87** is prior unchanged evidence. The user-approved board `acfac1f` and explicit top-navigation correction now provide one compact A.5/IM Fell header with horizontal links, no permanent global rail/bottom bar or duplicate Recall logo. Files remains independent; Parchment/Libre Baskerville reading and Source Sans prose retain safe Markdown semantics. Horizon marks locations/dark focus, Night light focus. 44W-T1 initial pointer obstruction is resolved with raw-pointer and natural keyboard checks at 844×390/200%; history/UI-001/002/003/MS4 remain verified. Older restraint/layout adaptations are superseded; exact [runtime provenance](character-integration.md) and access limits remain authoritative.
 
+Titlebar refinement (`memory-loop-53h`, 2026-10-30): the user's later request supersedes the old reader identity/disclosure placement. Filename and breadcrumb belong in the dark section titlebar; Formatting support and the old reader identity divider/spacing are removed. Skip to note has a separate reader-local article focus destination so keyboard traversal bypasses Files; ordinary selection still focuses the titlebar filename. These direct changes are reflected below; implementation/correction awaits independent acceptance, not implied by the earlier slice's receipts.
+
 **Approved by the user: “Implement this design.”** The read-only slice is complete: independent frontend unit 24/24, Recall browser 17/17 in one run, typecheck/build pass, technical **Accept** and visual **ship**. The original 15-failure RED remains historical evidence. Acceptance does not activate a real vault or remote transport.
 
 Authority: [Recall intent](../intents/recall.md), [local plan](../../local/plans/read-only-recall.md), [PRODUCT.md](../../../PRODUCT.md), approved dark [DESIGN.md](../../../DESIGN.md), and the backend-owned [typed contract](../../../backend/contract.ts) / [contract notes](../../../backend/CONTRACT.md). This brief records the accepted route/interaction design; canonical DESIGN.md records the actual built system. The placeholder Recall interior was replaced.
@@ -23,7 +25,7 @@ OWN-WORLD: Apply the approved reflective board: Night Files/navigation, warm Par
 
 STORY: Find a folder, recognize the literal filename/path, open it, and read. Recovery explains what failed without exposing host paths or pretending the vault is empty.
 
-FIRST VIEWPORT: Shared compact top identity/horizontal app links, reachable Recall toolbar, approximately 16rem desktop Files and remaining-width reader with 68ch prose. Narrow Files fills the work area below the top header; selection closes it immediately. Reader identity/compatibility precede Markdown. Enlarged text can reflow the header and allow page scroll instead of clipping the work area.
+FIRST VIEWPORT: Shared compact top identity/horizontal app links, dark Recall section titlebar with the selected filename/breadcrumb and Read-only, approximately 16rem desktop Files and remaining-width reader with 68ch prose. Narrow Files fills the work area below the titlebar; selection closes it immediately. The reader starts with note content, without a duplicate identity, compatibility disclosure or separating rule. Enlarged text can reflow the header and allow page scroll instead of clipping the work area.
 
 FORM: User-pinned tree/reader structure, shaped directly within the established world; no roll/seed or generated comp. Code-led written schematic approved by the user.
 
@@ -43,22 +45,22 @@ The original read-only topology remains constrained; 44w applies the approved bo
 
 ## Layout and first state
 
-- Preserve **Ground · Capture · Think · Recall** in that order and keep them usable in every state. Recall's toolbar contains H1 **Recall** and **Read-only**, retaining its prior title alignment. The Files control belongs to its local pane header. The obsolete global **Navigation preview** label stays removed; do not invent a connected badge. Other tabs keep their own unavailable-feature explanations.
+- Preserve **Ground · Capture · Think · Recall** in that order and keep them usable in every state. Recall's dark section titlebar contains H1 **Recall**, the selected literal filename and vault-relative breadcrumb, and **Read-only**. The Files control belongs to its local pane header. The obsolete global **Navigation preview** label stays removed; do not invent a connected badge. Other tabs keep their own unavailable-feature explanations.
 - **Desktop, existing ≥56rem breakpoint:** Recall spans the width below compact top navigation, not beside a permanent app rail. Files is visible on first entry, approximately 16rem wide (toward 14rem near the breakpoint), with a thin contextual divider. Reader and Files scroll independently beneath the toolbar. No resizer. Left-chevron at sticky Files header upper-right collapses it; right-chevron at reader upper-left expands it. No destination-icon rail or empty Files column. This changes space, not selection or reading position.
 - **Narrow:** Files or reader fills the work area below shared top navigation and Recall/Read-only, not a half-sheet or overlaid drawer. Hidden reader is absent from layout/accessibility. This is **non-modal**: no focus trap, `aria-modal`, backdrop or disabled app navigation. No bottom navigation/clearance remains.
 - First narrow entry without a note opens Files. A direct note URL starts the reader. The same left/right-chevron controls in the Files/reader headers switch modes; selection closes Files immediately, even before loading finishes. Escape within Files closes it unless dismissing a visible tooltip first. Native Back remains browser history, not a hidden close action.
-- Shared top header owns the single A.5/Memory Loop identity; Recall's toolbar contains only Recall/Read-only. Its app grid has an actual-height header and `minmax(12rem, 1fr)` workspace row. Short/enlarged layouts may scroll the page rather than crush panes; 16px short-height pane insets keep the initial 44px Files controls reachable without shrinking text.
+- Shared top header owns the single A.5/Memory Loop identity. Recall's titlebar places the selected filename above its wrapping breadcrumb between Recall and Read-only on desktop; narrow layouts move that group onto a second row. Its app grid has an actual-height header and `minmax(12rem, 1fr)` workspace row. Short/enlarged layouts may scroll the page rather than crush panes; tight titlebar grouping, a rem-scaled 18px Recall heading when selected, and 16px pane insets keep 44px Files controls reachable.
 
 ```text
 DESKTOP
 ┌──────────────────────────────────────────────────────────┐
 │ [A.5] Memory Loop           Ground Capture Think Recall  │
 ├──────────────────────────────────────────────────────────┤
-│ Recall                                         Read-only │
+│ Recall   [filename.md / relative breadcrumb]    Read-only │
 ├─────────────────┬────────────────────────────────────────┤
-│ Files         ‹ │ [filename.md]                          │
-│ [folder] ▾      │ [relative path]                        │
-│   [filename.md] │ Formatting support                     │
+│ Files         ‹ │ [rendered Markdown…]                   │
+│ [folder] ▾      │                                        │
+│   [filename.md] │                                        │
 │ files scroll    │ [rendered Markdown… / reading scroll]   │
 └─────────────────┴────────────────────────────────────────┘
 PHONE: FILES                      PHONE: READER
@@ -67,10 +69,12 @@ PHONE: FILES                      PHONE: READER
 │Ground Capture Think Recall│    │Ground Capture Think Recall│
 ├─────────────────────────┤      ├─────────────────────────┤
 │ Recall        Read-only │      │ Recall        Read-only │
+│ [selected filename/path] │      │ [filename / breadcrumb] │
+├─────────────────────────┤      ├─────────────────────────┤
 │ Files                 ‹ │      │ ›                       │
-│ [folder] ▾              │      │ [filename.md]           │
-│   [filename.md]         │choose│ [relative path]         │
-│ [folder] ▸              │ ───► │ Formatting support      │
+│ [folder] ▾              │      │ [rendered Markdown…]    │
+│   [filename.md]         │choose│                         │
+│ [folder] ▸              │ ───► │                         │
 │                         │      │ [rendered Markdown…]    │
 │ full-height hierarchy   │      │ reading scroll          │
 └─────────────────────────┘      └─────────────────────────┘
@@ -83,14 +87,14 @@ Use native nested lists, folder disclosure buttons, and file links in **Vault fi
 - Root entries are visible; folders start collapsed except selected-note ancestors. Preserve daemon ordering. Folder buttons expose expanded state and their controlled list; Enter/Space toggles, Tab/Shift+Tab follows native controls. Expansion does not fetch a note or change history. Empty expanded folder: **No items to show.**
 - File rows are actual note-location links. Preserve Enter, modified click, new tab, and copy-link behavior. Modified click does not change the current phone mode. Current file: Parchment semibold, Horizon underline, `aria-current="page"`; keyboard focus has a separate Horizon outline. No selected-folder styling or count badges.
 - Target ≥44px rows; exact names/extensions wrap rather than lose their only identifier. Deep nesting may scroll horizontally inside Files, never the page. Bring focused rows into view. Collapsing a focused descendant returns focus to its folder button; collapsing a selected ancestor does not close the document. Reopening Files reveals selected ancestors.
-- Focus-only **Skip to note** before the desktop hierarchy and **Return to files** before reader identity bypass long lists. The latter opens Files if needed and focuses its current link or heading. These actions do not affect history.
+- Focus-only **Skip to note** before the desktop hierarchy focuses the reader article without scrolling. The article has `tabindex="-1"` and is named by the titlebar filename; the next Tab enters its native links/controls rather than returning through Files. No visible heading or spacing is added. **Return to files** before the article opens Files if needed and focuses its current link or heading. These actions do not affect history.
 
 | Action | Result and focus contract |
 |---|---|
 | Enter Recall | Client app-route entry focuses Recall H1; hard load does not autofocus. No response-driven focus jump. |
 | Expand files sidebar (right-chevron icon) | Focus current link if already available, otherwise Files heading; keep that focus when loading completes. Restore expansion/list position. |
 | Collapse files sidebar (left-chevron icon), or Escape within expanded Files | Focus the visible reader-header expand control; preserve reader position. Buttons expose expanded state and controlled panel. Escape dismisses a visible tooltip first without moving focus or collapsing Files. |
-| Choose a different note | Clear old body, show safe identity when known, focus reader identity once, reset that note to top; narrow Files closes. |
+| Choose a different note | Clear old body, show safe identity when known, focus titlebar filename once, reset that note to top; narrow Files closes. |
 | Note response | Update only the currently requested note. No second focus movement; concise polite status, never a live announcement of the whole article. |
 | Choose current note / retry | Re-read without another history entry; preserve reading position where possible. |
 | Choose A then B | Late A success/error cannot overwrite B or move focus. Superseded short reads may be abandoned. |
@@ -102,7 +106,7 @@ Sidebar buttons are 44×44px with 20px drawn SVG chevrons, no visible Show/Hide/
 
 ## Identity, links, and browser history
 
-- Keep route H1 **Recall**. Reader identity is the literal filename, including `.md`, followed by a wrapping vault-relative path. It labels the article and is focusable, not another H1 or a title invented from frontmatter/the first Markdown heading.
+- Keep route H1 **Recall**. Selected identity is the literal filename, including `.md`, followed by a wrapping vault-relative path in the dark section titlebar. It labels the reader article and is focusable, not another H1 or a title invented from frontmatter/the first Markdown heading. Its selection-focus role is separate from Skip to note's reader-local article destination.
 - The actual contract uses **arrays of filename components**, not host paths. Preserve the returned ID sequence. Display escaped `name`/relative components; never construct a host path or show the configured root. On a direct URL before retrieval, show loading rather than treating unvalidated URL text as a trusted filename.
 - Frontend URL: **`/recall?file=<JSON component array, query-encoded once>`**. Pass that same component sequence to the contract's **`/api/vault/note?id=…`**, again with one normal query encoding. Do not put Markdown, config, credentials, or absolute paths in URL/history. Relative names may be visible in URLs; IDs are not access tokens or promises of remote access.
 - Different note: push one entry. Same note, retries, expansion, and Files toggles: no entry. Back/Forward restores selection and that entry's reader position, revealing the reader; an unavailable historical target stays an error, not another file. Opening Files does not intercept Back.
@@ -115,7 +119,7 @@ Expansion, visibility, last selection, and scroll are session-memory presentatio
 
 ## Reading and compatibility
 
-An unboxed Parchment article, not a disabled editor: filename/path and compatibility disclosure scroll with the document; toolbar remains reachable. Source Sans 3 body **1.0625rem / 1.7**, maximum **68ch**, narrow gutters **20px**. Libre Baskerville 400 supplies literal filename and source heading sizes 1.75rem / 1.375rem / 1.125rem / 1.0625rem, with 1.4 heading line height. Route H1 remains Source Sans; renderer H1–H5 still become H2–H6 and source H6 stays H6. This cap does not repair skipped source levels.
+An unboxed Parchment article, not a disabled editor: filename/path stay in the dark section titlebar outside the pane scrollers. There is no duplicate reader identity, Formatting support disclosure, old divider or leftover identity-block spacing. Source Sans 3 body **1.0625rem / 1.7**, maximum **68ch**, narrow gutters **20px**. Libre Baskerville 400 supplies the **1.25rem** titlebar filename and source heading sizes 1.75rem / 1.375rem / 1.125rem / 1.0625rem, with 1.4 heading line height. Route H1 remains Source Sans; renderer H1–H5 still become H2–H6 and source H6 stays H6. This cap does not repair skipped source levels.
 
 Lists retain markers; GFM tasks are disabled native checkboxes named from their task text. Actual code uses the browser monospace stack; code/tables retain bounded, keyboard-accessible horizontal scrolling. Long prose URLs/headings/paths wrap. Blockquote/table rules mix Night/Parchment for the light reader; no syntax palette or media chrome is added. Fixture-only author inspection is not independent approval or physical-device/assistive-technology verification.
 
@@ -125,8 +129,7 @@ CommonMark + GFM, with these explicit first-slice limits:
 - HTTP/HTTPS links open on deliberate activation in a new tab, with safe opener/referrer handling and an accessible new-tab indication. Unsafe/protocol-relative URLs remain text. Relative note links, heading fragments, and Obsidian wiki links also remain text in this slice.
 - Frontmatter passes through ordinary Markdown, not parsed/hidden metadata or note identity. No Obsidian plugin interpretation.
 
-Files footer: **Markdown files only.** Collapsed native **Formatting support** disclosure near reader identity:
-> CommonMark and GFM are supported. Raw HTML is shown as text. Images and embeds aren't displayed. Note, heading, and Obsidian wiki links remain text. Web links open in a new tab. Task checkboxes are read-only. Frontmatter is ordinary Markdown, not interpreted metadata. This is not a full Obsidian preview.
+Files footer: **Markdown files only.** The user removed the **Formatting support** disclosure entirely; the renderer's compatibility limits above are unchanged.
 
 ## States and copy
 

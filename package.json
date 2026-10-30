@@ -5,6 +5,7 @@
   "type": "module",
   "packageManager": "bun@1.4.3",
   "scripts": {
+    "daemon": "bun --no-env-file backend/runtime.ts",
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

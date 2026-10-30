@@ -6,9 +6,32 @@ Markdown without changing it. The other three views remain honest placeholders.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
 curious Think and reflective Recall. The corrected top-navigation application has
 fresh visual **SHIP**, technical **Accept** and independent current-build checks.
-No real-vault access or remote exposure is authorized.
+The daemon reads the locally configured vault when started; remote exposure is
+not configured.
 
 ## Operator guide
+
+### Start the daemon
+
+With Bun 1.4.3 and an existing `.memory-loop/config.json` as described below,
+build the frontend before starting the daemon:
+
+```sh
+bun --no-env-file run build
+bun --no-env-file run daemon
+```
+
+`bun run daemon` is the canonical entrypoint; the outer `--no-env-file` also
+prevents Bun from loading env files before it runs the script. The daemon reads
+the configured vault and serves both the built frontend and read-only API at
+`http://127.0.0.1:3000`. Stop it with Ctrl-C. This is not the static Vite preview
+or a separate web-server tier.
+
+Arguments are forwarded directly, for example:
+
+```sh
+bun --no-env-file run daemon --port 3001
+```
 
 ### UI-only preview — no vault activation
 
@@ -43,14 +66,13 @@ independently of the shell's working directory; restart after an approved change
 Missing/invalid configuration leaves the shell available with a distinct API
 error. There is no config editor or vault picker in the interface.
 
-### Real-vault reads — separate explicit activation gate
+### Local vault reads
 
-**Do not run the following merely to preview the UI.** Starting the daemon uses
-the configured real vault. After explicit approval to activate local reads:
+Starting the daemon uses the configured vault. To serve it locally:
 
 ```sh
 bun --no-env-file run build
-bun --no-env-file backend/runtime.ts
+bun --no-env-file run daemon
 ```
 
 Then open `http://127.0.0.1:3000/recall`. The daemon serves `dist/`, frontend deep
@@ -67,11 +89,10 @@ transport was activated in this work.
 
 ### Development with the API
 
-This also requires approval before using real configuration. Build once so
-`dist/` exists, then use separate terminals:
+Build once so `dist/` exists, then use separate terminals:
 
 ```sh
-bun --no-env-file backend/runtime.ts --dev-origin http://127.0.0.1:5173
+bun --no-env-file run daemon --dev-origin http://127.0.0.1:5173
 bun --no-env-file run dev
 ```
 

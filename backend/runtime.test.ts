@@ -9,13 +9,16 @@ import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
 
 const entrypoint = fileURLToPath(new URL('./runtime.ts', import.meta.url));
+const packageRoot = fileURLToPath(new URL('../', import.meta.url));
 let fixture: string;
 let child: ChildProcessWithoutNullStreams | undefined;
+let ownedScriptGroup: number | undefined;
 let occupied: Server | undefined;
 let stderr: string;
 
 beforeEach(async () => {
   child = undefined;
+  ownedScriptGroup = undefined;
   occupied = undefined;
   stderr = '';
   fixture = await mkdtemp(join(tmpdir(), 'memory-loop-runtime-test-'));
@@ -30,6 +33,12 @@ beforeEach(async () => {
 
 afterEach(async () => {
   try {
+    if (ownedScriptGroup !== undefined) {
+      try { process.kill(-ownedScriptGroup, 'SIGKILL'); }
+      catch (error: unknown) {
+        if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH')) throw error;
+      }
+    }
     if (child && child.exitCode === null && child.signalCode === null) {
       child.kill('SIGKILL');
       await exited(child);
@@ -126,6 +135,47 @@ it('preserves the requested Host in the test HTTP transport', async () => {
     await new Promise<void>((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
   }
 });
+
+it('starts the daemon package script with forwarded fixture paths and port', async () => {
+  const { listener, port } = await reservePort();
+  await new Promise<void>((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
+  const process = spawn('bun', ['--no-env-file', 'run', 'daemon', '--project-root', join(fixture, 'project'),
+    '--dist', join(fixture, 'dist'), '--port', String(port)],
+  { cwd: packageRoot, detached: true, stdio: 'pipe' });
+  child = process;
+  if (process.pid === undefined) throw new Error('Could not start test-owned daemon script');
+  ownedScriptGroup = process.pid;
+  process.stderr.setEncoding('utf8');
+  process.stderr.on('data', (text: string) => { stderr += text; });
+  process.stdout.resume();
+  await waitReady(process, port);
+  const base = `http://127.0.0.1:${port}`;
+  const tree = await fetch(`${base}/api/vault/tree`);
+  expect(tree.status).toBe(200);
+  expect(await tree.json()).toMatchObject({ entries: [{ name: 'folder', children: [{ name: 'note.md' }] }] });
+  const note = await fetch(`${base}/api/vault/note?${new URLSearchParams({ id: JSON.stringify(['folder', 'note.md']) })}`);
+  expect(await note.json()).toEqual({ name: 'note.md', markdown: '# fixture\n' });
+  const page = await fetch(`${base}/recall`, { headers: { accept: 'text/html' } });
+  expect(await page.text()).toContain('Fixture shell');
+
+  // Bun may wrap the runtime; signal only the process group created for this test.
+  globalThis.process.kill(-ownedScriptGroup, 'SIGTERM');
+  await Promise.race([exited(process), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Script shutdown timed out')), 3000))]);
+  const deadline = Date.now() + 3000;
+  let released = false;
+  while (Date.now() < deadline && !released) {
+    const probe = createServer();
+    try {
+      await new Promise<void>((resolve, reject) => { probe.once('error', reject); probe.listen(port, '127.0.0.1', resolve); });
+      released = true;
+      await new Promise<void>((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
+    } catch (error: unknown) {
+      if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'EADDRINUSE')) throw error;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  }
+  expect(released).toBe(true);
+}, 10000);
 
 it.each(['SIGTERM', 'SIGINT'] as const)('serves fixture API and SPA, rejects untrusted host/origin, and shuts down on %s', async signal => {
   const { process, base, port } = await startRuntime();

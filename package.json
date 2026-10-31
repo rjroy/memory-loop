@@ -13,11 +13,13 @@
     "typecheck": "node node_modules/next/dist/bin/next typegen && tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run",
     "test:backend": "vitest run --config backend/vitest.config.ts",
+    "test:opencode": "vitest run --config backend/vitest.opencode.config.ts",
     "test:watch": "vitest",
     "build": "node node_modules/next/dist/bin/next typegen && tsc --noEmit && node node_modules/next/dist/bin/next build",
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@opencode/client": "2.2.2",
     "hono": "4.13.14",
     "next": "16.4.3",
     "react": "19.3.1",
@@ -28,6 +30,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "@playwright/test": "1.64.1",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",

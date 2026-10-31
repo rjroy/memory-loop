@@ -573,6 +573,14 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     lifecycle(next);
   }
 
+  function settleSend(receipt: SendReceipt, state?: 'rejected' | 'cancelled-before-delivery' | 'completed' | 'failed' | 'interrupted'): void {
+    if (state) updateSend(receipt, state);
+    if (activeRuns.get(receipt.conversationId) === receipt.runId) {
+      activeRuns.delete(receipt.conversationId);
+      refreshEligibility(receipt.conversationId);
+    }
+  }
+
   async function dispatchSend(receipt: SendReceipt, text: string, controller: AbortController): Promise<void> {
     if (controller.signal.aborted) return;
     const messageId = `msg_memoryloop_${receipt.clientCommandId.replaceAll('-', '')}`;
@@ -587,8 +595,8 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     } catch {
       console.info('think_original_capture_outcome', { status: 'failed' });
       originalCapture(receipt, 'failed');
-      if (!stoppedRuns.has(receipt.runId)) updateSend(receipt, 'rejected');
-      if (activeRuns.get(receipt.conversationId) === receipt.runId) { activeRuns.delete(receipt.conversationId); refreshEligibility(receipt.conversationId); }
+      // Stop owns the cancellation receipt when capture fails after Stop was registered.
+      settleSend(receipt, stoppedRuns.has(receipt.runId) ? undefined : 'rejected');
       return;
     }
     const current = startMonitor();
@@ -600,7 +608,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       updateSend(receipt, stoppedRuns.has(receipt.runId) ? 'cancelled-before-delivery' : 'monitor-unavailable');
       return;
     }
-    if (stoppedRuns.has(receipt.runId)) { updateSend(receipt, 'cancelled-before-delivery'); if (activeRuns.get(receipt.conversationId) === receipt.runId) { activeRuns.delete(receipt.conversationId); refreshEligibility(receipt.conversationId); } return; }
+    if (stoppedRuns.has(receipt.runId)) { settleSend(receipt, 'cancelled-before-delivery'); return; }
     const id = messageId;
     dispatchedRuns.add(receipt.runId);
     try {
@@ -766,9 +774,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
               : session.outcome === 'succeeded' && assistantCorrelated && assistantTime?.outcome === 'completed' ? 'completed'
               : session.outcome === 'failed' && assistantCorrelated && assistantTime?.outcome === 'failed' ? 'failed' : undefined;
             if (terminal) {
-              updateSend(receipt, terminal);
-              activeRuns.delete(conversationId);
-              refreshEligibility(conversationId);
+              settleSend(receipt, terminal);
               console.info('think_run_reconciled', { outcome: terminal });
             }
           }
@@ -795,8 +801,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     const send = commands.get(sendCommandId);
     if (!send || send.kind !== 'send') { updateStop(receipt, 'upstream-unconfirmed'); return; }
     if (!dispatchedRuns.has(receipt.runId)) {
-      updateSend(send, 'cancelled-before-delivery');
-      if (activeRuns.get(receipt.conversationId) === receipt.runId) { activeRuns.delete(receipt.conversationId); refreshEligibility(receipt.conversationId); }
+      settleSend(send, 'cancelled-before-delivery');
       updateStop(receipt, 'cancelled-before-delivery');
       return;
     }

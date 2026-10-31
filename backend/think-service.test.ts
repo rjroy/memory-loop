@@ -1543,6 +1543,35 @@ describe('daemon-owned native prompt dispatch', () => {
 });
 
 describe('R3 definitive local cancellation', () => {
+  it('does not release a newer reservation when the cancelled Send capture fails late', async () => {
+    const firstCapture = deferred<void>();
+    const secondCapture = deferred<void>();
+    const base = unitBodies();
+    const replace = vi.fn<BodyStore['replace']>(async (key, source, kind) => {
+      if (key.owner.kind === 'original') await (key.owner.clientCommandId === '55555555-5555-4555-8555-555555555555' ? firstCapture.promise : secondCapture.promise);
+      return base.replace(key, source, kind);
+    });
+    const f = setup(model, { ...base, replace });
+    try {
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: 'first fixture' };
+      const first = await f.service.send(send);
+      await vi.waitFor(() => expect(replace).toHaveBeenCalledOnce());
+      const stop = { conversationId: a.conversationId, clientCommandId: '88888888-8888-4888-8888-888888888888', runId: first.runId };
+      await f.service.stop(stop);
+      await vi.waitFor(async () => expect(await f.service.command(a.conversationId, stop.clientCommandId)).toMatchObject({ state: 'cancelled-before-delivery' }));
+      const second = { ...send, clientCommandId: '66666666-6666-4666-8666-666666666666', text: 'second fixture' };
+      await f.service.send(second);
+      await vi.waitFor(() => expect(replace).toHaveBeenCalledTimes(2));
+      firstCapture.reject(new Error('fixture late capture failure'));
+      await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'original-capture', clientCommandId: send.clientCommandId, state: 'failed' })));
+      expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ state: 'cancelled-before-delivery' });
+      await expect(f.service.send({ ...send, clientCommandId: '77777777-7777-4777-8777-777777777777' })).rejects.toMatchObject({ code: 'command_conflict' });
+      expect(f.prompt).not.toHaveBeenCalled();
+    } finally { firstCapture.resolve(); secondCapture.resolve(); await f.service.close(); }
+  });
+
   it('releases the Send reservation without resurrecting its command tombstone', async () => {
     const gate = deferred<void>();
     const base = unitBodies();

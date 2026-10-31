@@ -12,7 +12,7 @@ the authenticated Bun/Hono daemon. Think command/stream/content foundations are
 available in the isolated fixture below, with conversation controls, reconnect,
 vault transcripts and automatic logging recovery. Phase 4 is independently
 accepted; Phase 5 is independently verified and accepted for fixture use.
-Personal Think activation remains Phase 6 and requires an authorized operator window.
+Local browser testing is the next step; network deployment is user-managed and not a prerequisite.
 The daemon reads the JSON-configured vault
 when started. The private Tailscale deployment now uses the selected real vault;
 independent real-deployment verification passed and final review accepted it.
@@ -63,8 +63,8 @@ errors, not an empty tree. There is no config editor or vault picker in the UI.
 #### Think transcripts: fixture/staged configuration
 
 The daemon also accepts the following Think configuration. Paths are examples;
-personal activation/configuration changes remain a separately authorized Phase 6
-step, not part of the current fixture exercise:
+the local fixture uses a scripted provider and throwaway vault. Real vault and
+native-service selection are separate user configuration, not required for it:
 
 ```json
 {
@@ -371,7 +371,7 @@ and accepted at `3ab9a23`. Phase 4 transcript writing/recovery is independently
 verified and accepted after filesystem/security corrections. **The fixture now
 serves the real interactive Think UI**, backed by the actual Next/Bun/native
 path and a local scripted provider. Phase 5 is accepted for fixture use;
-personal/private-Serve activation remains Phase 6. `check:daemon` checks Recall's
+Phase 6 provides local testing and configuration handoff. `check:daemon` checks Recall's
 tree only, not Think readiness.
 
 Select the already verified OpenCode 2.2.2 native executable explicitly, using
@@ -386,6 +386,10 @@ native OpenCode and a local scripted provider on fixture ports. It creates its
 own vault/config/HOME/discovery/credentials; no personal setup or real provider
 is used. This is isolation, not an OS sandbox. Only the credential-free loopback
 web URL is printed; do not add credentials to URLs, commands or output.
+
+Use trusted, directly installed compatible Bun and Node executables on `PATH`.
+If a version-manager shim refuses an untrusted configuration, use your existing
+verified executables directly rather than trusting or changing that configuration.
 
 ### Try the conversation UI first
 

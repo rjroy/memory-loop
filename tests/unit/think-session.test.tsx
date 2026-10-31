@@ -237,8 +237,9 @@ describe('Think session command ownership', () => {
 
   it('checks unknown Send delivery using the same receipt identity without a second POST', async () => {
     const f = fixture();
+    const receipt = deferred<SendReceipt>();
     vi.mocked(f.client.send).mockRejectedValue(new ThinkClientError('transport', undefined, undefined, 'unknown'));
-    vi.mocked(f.client.receipt).mockResolvedValue({ conversationId: a, clientCommandId: c, epoch, kind: 'send', state: 'admitted', runId: b });
+    vi.mocked(f.client.receipt).mockReturnValue(receipt.promise);
     try {
       f.session.setLocation(think(a));
       await waitFor(() => expect(f.session.getSnapshot().identity).toEqual({ conversationId: a, epoch }));
@@ -246,7 +247,11 @@ describe('Think session command ownership', () => {
       const view = f.session.getPresentation();
       view.actions.send({ conversationId: a, epoch }, f.session.getSnapshot().draft.version);
       await waitFor(() => expect(vi.mocked(f.client.receipt).mock.calls.some(([id, command]) => id === a && command === c)).toBe(true));
+      expect(f.session.getPresentation().state).toMatchObject({ composer: { kind: 'checking' }, run: { state: 'unknown' }, pendingSubmission: { text: 'uncertain original' }, rejectedSubmissions: [] });
+      f.session.getPresentation().actions.send({ conversationId: a, epoch }, f.session.getSnapshot().draft.version);
       expect(f.client.send).toHaveBeenCalledOnce();
+      receipt.resolve({ conversationId: a, clientCommandId: c, epoch, kind: 'send', state: 'admitted', runId: b });
+      await waitFor(() => expect(f.session.getPresentation().state.composer).toMatchObject({ kind: 'stop', runId: b }));
     } finally { f.session.close(); }
   });
 

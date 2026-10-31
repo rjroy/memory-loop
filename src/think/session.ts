@@ -64,7 +64,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   let readController: AbortController | undefined;
   let pendingCreate: { conversationId: string; clientCommandId: string } | undefined;
   type Command<R extends CommandReceipt> = { identity: ThinkKnownIdentity; commandId: string; receipt?: R; delivery: 'posting' | 'unknown' | 'known' | 'rejected' };
-  type OwnedSend = Command<SendReceipt> & { kind: 'send'; text: string; draftVersion: number; checking: boolean; rejected: boolean; stop?: OwnedStop };
+  type OwnedSend = Command<SendReceipt> & { kind: 'send'; text: string; draftVersion: number; stop?: OwnedStop };
   type OwnedStop = Command<StopReceipt> & { kind: 'stop'; runId: string };
   type OwnedReply = Command<FormReplyReceipt> & { kind: 'form-reply'; decisionId: string; request: string; answer: FormReplyCommand['answer'] };
   type OwnedCommand = OwnedSend | OwnedStop | OwnedReply;
@@ -99,8 +99,10 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     return active && state.connection !== 'service-changed' && state.connection !== 'denied' && state.identity?.conversationId === identity.conversationId && state.identity.epoch === identity.epoch;
   }
   const keyOf = (ref: BodyRef) => JSON.stringify(ref);
+  const checkingSend = (send: OwnedSend | undefined) => !!send && !send.receipt && (send.delivery === 'posting' || send.delivery === 'unknown');
+  const rejectedSend = (send: OwnedSend) => send.delivery === 'rejected' || send.receipt?.state === 'rejected';
   function validRun(send: OwnedSend | undefined): send is OwnedSend & { receipt: SendReceipt } {
-    return !!send?.receipt && !['completed', 'failed', 'interrupted', 'cancelled-before-delivery', 'rejected'].includes(send.receipt.state);
+    return !!send?.receipt && !finalReceipt(send.receipt);
   }
   function stopState(stop: OwnedStop | undefined): 'available' | 'requesting' | 'retry' {
     if (!stop) return 'available';
@@ -146,16 +148,16 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     const sendUnavailable = unavailable || state.connection === 'reconnecting';
     const composer: ThinkPresentationState['composer'] = validRun(currentSend)
       ? { kind: 'stop', runId: currentSend.receipt.runId, state: unavailable ? 'unavailable' : stopState(currentSend.stop), ...(currentSend.stop?.receipt ? { receiptState: currentSend.stop.receipt.state } : {}) }
-      : currentSend?.checking ? { kind: 'checking' }
+      : checkingSend(currentSend) ? { kind: 'checking' }
       : { kind: 'send', eligible: !sendUnavailable && state.snapshot?.sendEligibility === 'available' && !!state.draft.text.trim(),
         ...(state.connection === 'reconnecting' ? { reason: 'resynchronizing' as const } : unavailable ? { reason: 'unavailable' as const } : state.snapshot?.sendEligibility === 'busy' ? { reason: 'busy' as const } : !state.draft.text.trim() ? { reason: 'empty' as const } : state.snapshot?.sendEligibility !== 'available' ? { reason: 'unavailable' as const } : {}) };
-    const runState: ThinkPresentationState['run'] = !run ? { state: currentSend?.checking ? 'unknown' : 'none' }
+    const runState: ThinkPresentationState['run'] = !run ? { state: checkingSend(currentSend) ? 'unknown' : 'none' }
       : run.state === 'completed' || run.state === 'failed' || run.state === 'interrupted' || run.state === 'cancelled-before-delivery' ? { state: run.state, runId: run.runId }
       : run.state === 'rejected' ? { state: 'none' } : { state: 'working', runId: run.runId };
     const transcript = state.snapshot?.transcript;
     return { identity, revision: state.snapshot?.revision ?? null, creation: state.snapshot?.creation ?? (state.connection === 'opening' ? 'opening' : 'unavailable'),
       messages: [...grouped.values()].sort((a, b) => a.displayOrder - b.displayOrder),
-      ...(currentSend && currentSend.text && !currentSend.rejected && !state.entries.some(entry => entry.kind === 'original' && entry.clientCommandId === currentSend.commandId) ? { pendingSubmission: { clientCommandId: currentSend.commandId, text: currentSend.text, admission: admission(currentSend) } } : {}),
+      ...(currentSend && currentSend.text && !rejectedSend(currentSend) && !state.entries.some(entry => entry.kind === 'original' && entry.clientCommandId === currentSend.commandId) ? { pendingSubmission: { clientCommandId: currentSend.commandId, text: currentSend.text, admission: admission(currentSend) } } : {}),
       backgroundActivity, draft: state.draft, composer, run: runState,
       monitoring: state.connection === 'inactive' ? 'unavailable' : state.connection, ...(state.snapshot?.contentHealth ? { contentHealth: state.snapshot.contentHealth } : {}),
       ...(state.snapshot?.permissionCompatibility ? { permissionCompatibility: state.snapshot.permissionCompatibility } : {}),
@@ -351,10 +353,10 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     if (finalReceipt(receipt)) commands.delete(key);
     const publish = ownedIdentity(command.identity);
     if (command.kind === 'send' && receipt.kind === 'send') {
-      const changed = command.receipt !== receipt || command.checking;
-      command.receipt = receipt; command.checking = false; command.rejected = receipt.state === 'rejected';
-      if (command.rejected && command.text) rememberRejected(command, receipt.failure?.code === 'resource_failure' ? 'resource_failure' : 'unknown');
-      if (publish && !command.rejected && sends.get(command.identity.conversationId) === command && state.draft.version === command.draftVersion && state.draft.text === command.text) {
+      const changed = command.receipt !== receipt;
+      command.receipt = receipt;
+      if (rejectedSend(command) && command.text) rememberRejected(command, receipt.failure?.code === 'resource_failure' ? 'resource_failure' : 'unknown');
+      if (publish && !rejectedSend(command) && sends.get(command.identity.conversationId) === command && state.draft.version === command.draftVersion && state.draft.text === command.text) {
         const draft = { text: '', version: state.draft.version + 1 };
         drafts.set(command.identity.conversationId, draft); update({ draft });
       } else if (publish && changed) update({});
@@ -401,10 +403,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     if (!command.receipt) {
       command.delivery = rejectedPost(error) ? 'rejected' : 'unknown';
       if (command.delivery === 'rejected') commands.delete(commandKey(command.identity, command.commandId));
-      if (command.kind === 'send') {
-        command.checking = command.delivery !== 'rejected'; command.rejected = !command.checking;
-        if (command.rejected) rememberRejected(command, 'unknown');
-      }
+      if (command.kind === 'send' && rejectedSend(command)) rememberRejected(command, 'unknown');
     }
     if (!ownedIdentity(command.identity)) return;
     if (command.kind === 'form-reply') publishReply(command);
@@ -475,7 +474,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
             // Only unresolved admission reserves a missing local command; rejected text is retained separately.
             if (send && send.commandId !== receipt.clientCommandId && !listed && (commandPending(send) || finalReceipt(receipt))) break;
             if (!send || send.commandId !== receipt.clientCommandId) {
-              send = { kind: 'send', identity, commandId: receipt.clientCommandId, delivery: 'known', text: '', draftVersion: -1, checking: false, rejected: false };
+              send = { kind: 'send', identity, commandId: receipt.clientCommandId, delivery: 'known', text: '', draftVersion: -1 };
               commands.set(key, send); sends.set(id, send);
             }
             applyReceipt(send, receipt);
@@ -630,10 +629,10 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     send(identity, draftVersion) {
       if (!ownedIdentity(identity) || state.draft.version !== draftVersion || !state.draft.text.trim() || state.snapshot?.sendEligibility !== 'available' || state.connection === 'denied' || state.connection === 'service-changed' || state.connection === 'unavailable' || state.connection === 'inactive' || state.connection === 'reconnecting') return;
       const existing = sends.get(identity.conversationId);
-      if (existing && (existing.checking || validRun(existing))) return;
+      if (existing && (checkingSend(existing) || validRun(existing))) return;
       const commandId = randomUUID();
       if (!uuid.test(commandId)) return;
-      const send: OwnedSend = { kind: 'send', identity: { ...identity }, commandId, delivery: 'posting', text: state.draft.text, draftVersion, checking: true, rejected: false };
+      const send: OwnedSend = { kind: 'send', identity: { ...identity }, commandId, delivery: 'posting', text: state.draft.text, draftVersion };
       sends.set(identity.conversationId, send);
       commands.set(commandKey(identity, commandId), send);
       update({});

@@ -1,5 +1,5 @@
-import { captureTextLimit } from '../../backend/capture-contract';
-import type { CaptureRequest, CaptureResponse } from '../../backend/capture-contract';
+import { captureTextLimit, isCaptureResponse } from '../../backend/capture-contract';
+import type { CaptureRequest } from '../../backend/capture-contract';
 
 export type CaptureResult =
   | { kind: 'saved' }
@@ -8,8 +8,6 @@ export type CaptureResult =
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
-const savedResponse = (value: unknown): value is CaptureResponse =>
-  object(value) && value.ok === true && Object.keys(value).length === 1;
 
 /** Bound untrusted responses without displaying upstream messages or private details. */
 async function readResponse(response: Response, signal: AbortSignal): Promise<unknown> {
@@ -41,7 +39,7 @@ async function readResponse(response: Response, signal: AbortSignal): Promise<un
 }
 
 function resultFromResponse(status: number, value: unknown): CaptureResult {
-  if (status === 200 && savedResponse(value)) return { kind: 'saved' };
+  if (status === 200 && isCaptureResponse(value)) return { kind: 'saved' };
   if (!object(value) || !object(value.error) || typeof value.error.message !== 'string') return { kind: 'uncertain' };
   const code = value.error.code;
   if (status === 503 && code === 'capture_uncertain') return { kind: 'uncertain' };

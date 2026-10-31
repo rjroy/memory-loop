@@ -8,6 +8,8 @@ import { Service } from '@opencode/client/service';
 import { prepareServer, type PreparedServer } from './server';
 import * as configModule from './config';
 import * as vaultModule from './vault';
+import * as captureModule from './capture';
+import * as appModule from './app';
 
 const authority = '127.0.0.1:31234';
 const token = 'a'.repeat(64);
@@ -172,6 +174,32 @@ it.each(['missing token', 'invalid token', 'invalid transport'] as const)(
     }
   },
 );
+
+it.each(['close', 'construction'] as const)('attempts Vault cleanup after Capture fails during %s and preserves error precedence', async phase => {
+  const events: string[] = [];
+  const captureFailure = new Error('capture close failed');
+  const vaultFailure = new Error('vault close failed');
+  const openCapture = captureModule.openCaptureWriter;
+  const openVault = vaultModule.openVault;
+  vi.spyOn(captureModule, 'openCaptureWriter').mockImplementation(async (...args) => {
+    const writer = await openCapture(...args);
+    const close = writer.close.bind(writer);
+    writer.close = async () => { events.push('capture'); await close(); throw captureFailure; };
+    return writer;
+  });
+  vi.spyOn(vaultModule, 'openVault').mockImplementation(async (...args) => {
+    const reader = await openVault(...args);
+    const close = reader.close.bind(reader);
+    reader.close = async () => { events.push('vault'); await close(); throw vaultFailure; };
+    return reader;
+  });
+  if (phase === 'construction') vi.spyOn(appModule, 'createApp').mockImplementation(() => { throw new Error('construction failed'); });
+  const operation = phase === 'construction'
+    ? prepareServer({ projectRoot, authority })
+    : prepareServer({ projectRoot, authority }).then(prepared => prepared.close());
+  await expect(operation).rejects.toBe(vaultFailure);
+  expect(events).toEqual(['capture', 'vault']);
+});
 
 it.each(['missing', 'invalid'] as const)('serves a clear %s config error without a frontend fallback', async kind => {
   const config = join(projectRoot, '.memory-loop', 'config.json');

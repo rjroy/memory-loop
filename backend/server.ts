@@ -92,11 +92,14 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
     try { capture = await openCaptureWriter(config.vaultDirectory); console.info('capture_setup_outcome', { status: 'ready' }); }
     catch { console.info('capture_setup_outcome', { status: 'unavailable' }); }
   }
+  async function close() {
+    try { if (!('error' in think)) await think.close(); } finally { try { await capture?.close(); } finally { if ('reader' in vault) await vault.reader.close(); } }
+  }
   try {
     const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault, think, capture });
-    return { fetch, async close() { try { if (!('error' in think)) await think.close(); } finally { try { await capture?.close(); } finally { if ('reader' in vault) await vault.reader.close(); } } } };
+    return { fetch, close };
   } catch (error) {
-    try { if (!('error' in think)) await think.close(); } finally { try { await capture?.close(); } finally { if ('reader' in vault) await vault.reader.close(); } }
+    await close();
     throw error;
   }
 }

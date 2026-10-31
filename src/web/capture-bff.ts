@@ -1,4 +1,4 @@
-import { captureBodyLimit, parseCaptureRequest } from '../../backend/capture-contract';
+import { captureBodyLimit, captureErrors, isCaptureResponse, parseCaptureRequest } from '../../backend/capture-contract';
 import type { LoadedTransport } from '../../backend/transport';
 import { allowsWebRequest } from './request-policy';
 
@@ -10,15 +10,13 @@ export interface CaptureBffDependencies {
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
 const errors = {
-  forbidden: [403, 'Request is not permitted'],
-  not_found: [404, 'Not found'],
-  method_not_allowed: [405, 'Method is not allowed'],
-  invalid_request: [400, 'Invalid Capture request (maximum 1 MiB of UTF-8 text)'],
-  capture_unavailable: [503, 'Capture is unavailable'],
-  capture_uncertain: [503, 'Capture save is unconfirmed'],
+  forbidden: { status: 403, message: 'Request is not permitted' },
+  not_found: { status: 404, message: 'Not found' },
+  method_not_allowed: { status: 405, message: 'Method is not allowed' },
+  ...captureErrors,
 } as const;
 function failure(code: keyof typeof errors): Response {
-  const [status, message] = errors[code];
+  const { status, message } = errors[code];
   return Response.json({ error: { code, message } }, { status, headers });
 }
 
@@ -76,10 +74,10 @@ export async function handleCaptureRequest(request: Request, dependencies: Captu
           const result = await dependencies.fetch(new URL('/api/capture', origin), { token: dependencies.transport.serviceToken, body, signal: controller.signal });
           if (!/^application\/json(?:\s*;|\s*$)/i.test(result.headers.get('content-type') ?? '') || !result.body) throw new Error('invalid response');
           const data: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await bounded(result.body, 65536)));
-          if (result.status === 200 && data !== null && typeof data === 'object' && 'ok' in data && data.ok === true && Object.keys(data).length === 1) return Response.json({ ok: true }, { headers });
+          if (result.status === 200 && isCaptureResponse(data)) return Response.json({ ok: true }, { headers });
           if (data && typeof data === 'object' && 'error' in data && data.error && typeof data.error === 'object' && 'code' in data.error) {
             const code = data.error.code;
-            if ((code === 'invalid_request' || code === 'capture_unavailable' || code === 'capture_uncertain') && errors[code][0] === result.status) return failure(code);
+            if ((code === 'invalid_request' || code === 'capture_unavailable' || code === 'capture_uncertain') && errors[code].status === result.status) return failure(code);
             if ((code === 'unauthorized' && result.status === 401) || (code === 'forbidden' && result.status === 403)) return failure('capture_unavailable');
           }
           throw new Error('unrecognized response');

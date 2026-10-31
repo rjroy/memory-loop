@@ -6,7 +6,7 @@ import type { ThinkService, ThinkUnavailableCode } from './think/service';
 import { ThinkServiceError } from './think/service';
 import { parseContentRequest } from './think/content-transfer';
 import { parseVaultId, type VaultReader } from './vault';
-import { captureBodyLimit, parseCaptureRequest } from './capture-contract';
+import { captureBodyLimit, captureErrors, parseCaptureRequest } from './capture-contract';
 import { CaptureError, type CaptureWriter } from './capture';
 
 export type VaultState = { reader: VaultReader } |
@@ -117,14 +117,14 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   });
   app.post('/api/capture', async context => {
     const input = parseCaptureRequest(await jsonInput(context.req.raw, captureBodyLimit));
-    if (!input) return Response.json({ error: { code: 'invalid_request', message: 'Invalid Capture request (maximum 1 MiB of UTF-8 text)' } }, { status: 400 });
-    if (!options.capture) return Response.json({ error: { code: 'capture_unavailable', message: 'Capture is unavailable' } }, { status: 503 });
+    if (!input) return Response.json({ error: { code: 'invalid_request', message: captureErrors.invalid_request.message } }, { status: captureErrors.invalid_request.status });
+    if (!options.capture) return Response.json({ error: { code: 'capture_unavailable', message: captureErrors.capture_unavailable.message } }, { status: captureErrors.capture_unavailable.status });
     try {
       await options.capture.capture(input.text);
       return context.json({ ok: true });
     } catch (error: unknown) {
       const code = error instanceof CaptureError ? error.code : 'capture_uncertain';
-      return Response.json({ error: { code, message: code === 'capture_uncertain' ? 'Capture save is unconfirmed' : 'Capture is unavailable' } }, { status: 503 });
+      return Response.json({ error: { code, message: captureErrors[code].message } }, { status: captureErrors[code].status });
     }
   });
   app.get('/api/vault/tree', async context => {

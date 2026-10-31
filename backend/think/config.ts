@@ -5,6 +5,8 @@ export interface ThinkConfig {
   registrationFile: string;
   agent?: string;
   model?: NonNullable<SessionCreateInput['model']>;
+  /** Writer validates independently: bad logging configuration must not disable native chat. */
+  transcriptDirectory?: unknown;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -20,7 +22,7 @@ function identifier(value: unknown): value is string {
 }
 
 export function parseThinkConfig(value: unknown): ThinkConfig | undefined {
-  if (!record(value) || !only(value, ['service', 'location', 'permissionMode', 'agent', 'model']) ||
+  if (!record(value) || !only(value, ['service', 'location', 'permissionMode', 'agent', 'model', 'transcriptDirectory']) ||
       !record(value.service) || !only(value.service, ['registrationFile', 'requiredVersion']) ||
       typeof value.service.registrationFile !== 'string' || !isAbsolute(value.service.registrationFile) || value.service.registrationFile.includes('\0') ||
       (value.service.requiredVersion !== undefined && value.service.requiredVersion !== '2.2.2') ||
@@ -32,6 +34,7 @@ export function parseThinkConfig(value: unknown): ThinkConfig | undefined {
       !identifier(model.providerID) || !identifier(model.id) || (model.variant !== undefined && !identifier(model.variant)))) return undefined;
   return {
     registrationFile: value.service.registrationFile,
+    ...('transcriptDirectory' in value ? { transcriptDirectory: value.transcriptDirectory } : {}),
     ...(typeof value.agent === 'string' ? { agent: value.agent } : {}),
     ...(record(model) && typeof model.providerID === 'string' && typeof model.id === 'string'
       ? { model: { providerID: model.providerID, id: model.id, ...(typeof model.variant === 'string' ? { variant: model.variant } : {}) } } : {}),

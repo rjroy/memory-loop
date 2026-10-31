@@ -57,7 +57,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     }
     const epoch = randomUUID();
     bodies = await createBodyStore({ directory: join(dirname(transportFile), `think-bodies-${epoch}`), epoch, vaultDirectory: directory });
-    const service = createThinkService({ native: nativeSessions(client), bodies, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch, serviceIdentity: { pid: info.pid, version: info.version } });
+    const service = createThinkService({ native: nativeSessions(client), bodies, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch, serviceIdentity: { pid: info.pid, version: info.version }, transcript: { directory: think.transcriptDirectory } });
     console.info('think_setup_outcome', { status: 'ready' });
     return service;
   } catch {

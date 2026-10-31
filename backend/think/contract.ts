@@ -59,6 +59,16 @@ export interface FormReplyReceipt extends CreateConversationCommand {
 
 export type CommandReceipt = CreateReceipt | SendReceipt | StopReceipt | FormReplyReceipt;
 
+export interface TranscriptHealth {
+  state: 'not-started' | 'writing' | 'up-to-date' | 'degraded' | 'retrying';
+  warning: boolean;
+  liveTextPending: boolean;
+  reason?: 'io_unavailable' | 'conflict' | 'content_gap' | 'invalid_configuration';
+  lastSyncedAt?: string;
+  /** Ordinary Recall identity, never an absolute path or private body-cache locator. */
+  noteId?: string[];
+}
+
 export interface ConversationState {
   conversationId: string;
   epoch: string;
@@ -66,6 +76,8 @@ export interface ConversationState {
   creation: CreateState;
   permissionCompatibility?: 'incompatible';
   permissionPending?: boolean;
+  transcript?: TranscriptHealth;
+  otherTranscriptWarnings?: number;
 }
 
 export type ThinkUnavailableCode = 'think_unavailable' | 'think_config_missing' | 'think_config_invalid';

@@ -32,6 +32,16 @@ Read-only inspection on 2026-10-30 established:
 
 No personal vault/configuration, OpenCode auth/config/session store, live app endpoint or running build artifact was inspected. No OpenCode/model/service was started or called for this design. Version-pinned official network source reads do not establish integration acceptance.
 
+### Phase 4 operational clarification — 2026-10-31
+
+The inspection above records the design's earlier evidence state. Separately authorized Phase 4 implementation now connects `backend/think/transcript.ts`, `transcript-file.ts` and `transcript-format.ts` to the service's normalized `content.page/open` seam. Optional daemon JSON `think.transcriptDirectory` is supported, with the **`Conversations/Memory Loop`** default and UUID filename specified below. Writer validation is separate from native-service setup: an invalid logging location leaves valid Recall/native chat available. Private original-body capture before dispatch remains a distinct execution resource gate; a vault append/sync failure does not become one.
+
+The current HTTP health names are `transcript.state`, `warning`, `liveTextPending`, optional `lastSyncedAt`, `reason` and vault-relative `noteId`, plus conversation-level `otherTranscriptWarnings`. Thus the design's illustrative `last_synced_at` is exposed as **`lastSyncedAt`**, not a mutable frontmatter field. Automatic retries and the one-minute persistent-warning threshold are implemented; there is no manual logging retry route/control. The current Think page remains a placeholder until Phase 5, so this is an API health seam, not delivered UI treatment.
+
+Observed compaction entries retain only owned session/event identity, phase, source timestamp and sequence. Pinned 2.2.2 exposes no shared compaction ID on these events; repeat `(sessionId, eventId)` observations keep the first fact. No summary, provider/error payload or never-observed start/end fact is reconstructed on reconnect. Full-history catch-up and text-part ordinals remain separate from active native context.
+
+The controlled application exit run passed through real Next → Bun → native and Recall HTTP, including read execution during a namespace conflict and automatic catch-up after restoration of the same directory. Its evidence and limits are recorded in the [validation report](../research/opencode-2.2.2-validation.md#later-phase-4-observation--application-transcript-recovery). Subsequent convergence and fresh filesystem/security verification accepted Phase 4 after P4-01/02/03 corrections. These implementation facts neither change this document's approval nor authorize personal activation, file adoption, restart recovery or stronger filesystem isolation.
+
 ## Three distinct kinds of persistence
 
 | Owner | What it retains | What it does not establish |

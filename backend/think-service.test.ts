@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EventSubscribeInput, OpenCodeEvent, SessionCreateInput, SessionGetInput, SessionPromptInput, SessionPromptOutput } from '@opencode/client';
 import type { SessionInboxListInput, SessionInboxListOutput, SessionInboxCancelInput, SessionInterruptInput, SessionInterruptOutput } from '@opencode/client';
@@ -13,6 +13,10 @@ import type { NativeSession, NativeSessions } from './think/native';
 import type { BodyKey, BodyRef, BodyStore } from './think/body-store';
 import * as bodyModule from './think/body-store';
 import type { ThinkContentReader } from './think/projection';
+import { constants } from 'node:fs';
+import { transcriptIO, type TranscriptIO } from './think/transcript-file';
+import type { TranscriptRuntime } from './think/transcript';
+import { parseThinkConfig } from './think/config';
 
 const epoch = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const vaultDirectory = '/fixture/canonical-vault';
@@ -65,7 +69,7 @@ function unitBodies(): BodyStore {
 }
 
 function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, bodies?: BodyStore, directory = vaultDirectory,
-  leaseOptions?: { clock: { now(): number }; transferIdleMs: number }) {
+  leaseOptions?: { clock: { now(): number }; transferIdleMs: number }, transcript?: ThinkServiceOptions['transcript']) {
   const calls: Array<{ input: SessionCreateInput; signal: AbortSignal; result: ReturnType<typeof deferred<NativeSession>> }> = [];
   const prompts: Array<{ input: SessionPromptInput; signal: AbortSignal; result: ReturnType<typeof deferred<SessionPromptOutput>> }> = [];
   const cancels: Array<{ input: SessionInboxCancelInput; result: ReturnType<typeof deferred<void>> }> = [];
@@ -169,7 +173,7 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
     replyPermission(input: PermissionReplyInput, signal: AbortSignal): Promise<void>;
   };
   const options = { native, context: { directory, agent, model: selectedModel }, epoch,
-    serviceIdentity: { pid: 49123, version: '2.2.2' }, bodies: bodies ?? unitBodies(), ...leaseOptions } satisfies ThinkServiceOptions & { clock?: { now(): number }; transferIdleMs?: number };
+    serviceIdentity: { pid: 49123, version: '2.2.2' }, bodies: bodies ?? unitBodies(), ...leaseOptions, ...(transcript ? { transcript } : {}) } satisfies ThinkServiceOptions & { clock?: { now(): number }; transferIdleMs?: number };
   const service = createThinkService(options);
   function complete(index: number, changes: Partial<NativeSession> = {}) {
     const call = calls[index];
@@ -1026,6 +1030,317 @@ describe('real private-store normalized projection', () => {
   }
   const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: 'original fixture 🧠' };
 
+  it.each(['form-reply', 'cancelled-send'] as const)('P4-03 reports lost original %s capture as content gap, not a pending or saved transcript', async kind => {
+    const root = await mkdtemp('/tmp/opencode/think-capture-gap-');
+    const vault = join(root, 'vault');
+    await mkdir(vault, { mode: 0o700 });
+    const actual = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    const capture = deferred<BodyRef>();
+    const held = vi.fn();
+    const bodies: BodyStore = { ...actual, async replace(key, source, mode) {
+      if (key.owner.kind === (kind === 'form-reply' ? 'form-reply' : 'original')) { held(); return capture.promise; }
+      return actual.replace(key, source, mode);
+    } };
+    const f = setup(model, bodies, vault);
+    try {
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      if (kind === 'form-reply') {
+        await f.service.send(send); await waitForCalls(f.prompts, 1);
+        await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.transcript?.state).toBe('up-to-date'));
+        const command = { conversationId: a.conversationId, clientCommandId: '88888888-8888-4888-8888-888888888888', decisionId: 'form_fixture_question', answer: { answer: 'fixture missing answer' } };
+        await f.service.reply(command);
+        await vi.waitFor(() => expect(held).toHaveBeenCalledOnce());
+        expect((await f.service.conversation(a.conversationId))?.transcript?.warning).not.toBe(true);
+        capture.reject(new Error('fixture private capture failure'));
+        await vi.waitFor(async () => expect(await f.service.command(a.conversationId, command.clientCommandId)).toMatchObject({ state: 'rejected', failure: { code: 'resource_failure' } }));
+        expect(f.replyForm).not.toHaveBeenCalled();
+      } else {
+        const receipt = await f.service.send(send);
+        await vi.waitFor(() => expect(held).toHaveBeenCalledOnce());
+        expect((await f.service.conversation(a.conversationId))?.transcript?.warning).not.toBe(true);
+        await f.service.stop({ conversationId: a.conversationId, clientCommandId: '88888888-8888-4888-8888-888888888888', runId: receipt.runId });
+        capture.reject(new Error('fixture private capture failure'));
+        await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ state: 'cancelled-before-delivery' }));
+        expect(f.prompt).not.toHaveBeenCalled();
+      }
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ warning: true, reason: 'content_gap' }));
+      expect((await f.service.content.page(a.conversationId)).entries).not.toContainEqual(expect.objectContaining({ kind: kind === 'form-reply' ? 'form-reply' : 'original', clientCommandId: kind === 'form-reply' ? '88888888-8888-4888-8888-888888888888' : send.clientCommandId }));
+    } finally { try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); } }
+  });
+
+  it('Phase 4 retries unavailable transcript storage autonomously while execution continues and clears warning only after sync', async () => {
+    const root = await mkdtemp('/tmp/opencode/think-transcript-retry-');
+    const vault = join(root, 'vault');
+    await mkdir(vault, { mode: 0o700 });
+    const bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    let now = 1_700_000_000_000;
+    const timers = new Set<{ at: number; callback: () => void }>();
+    const runtime: TranscriptRuntime = { now: () => now, random: () => 0.5, schedule(callback, delay) {
+      const task = { at: now + delay, callback }; timers.add(task); return () => { timers.delete(task); };
+    } };
+    let fault: 'write' | 'sync' | 'none' = 'write';
+    let failures = 0;
+    let fileReads = 0;
+    const io: TranscriptIO = { ...transcriptIO, async open(path, flags, mode) {
+      const handle = await transcriptIO.open(path, flags, mode);
+      if (!(flags & constants.O_APPEND)) return handle;
+      return { fd: handle.fd, stat: () => handle.stat(), close: () => handle.close(),
+        async read(buffer, offset, length, position) { const result = await handle.read(buffer, offset, length, position); fileReads += result.bytesRead; return result; },
+        async write(buffer, offset, length, position) {
+          if (fault === 'write') { failures++; throw Object.assign(new Error('fixture unavailable'), { code: 'ENOSPC' }); }
+          return handle.write(buffer, offset, length, position);
+        },
+        async sync() { if (fault === 'sync') { failures++; throw Object.assign(new Error('fixture sync unavailable'), { code: 'EIO' }); } await handle.sync(); },
+      };
+    } };
+    const f = setup(model, bodies, vault, undefined, { io, runtime, warningAfterMs: 5000 });
+    const target = join(vault, 'Conversations', 'Memory Loop', `think-${a.conversationId}.md`);
+    const advance = async () => {
+      const next = Math.min(...[...timers].map(task => task.at));
+      if (!Number.isFinite(next)) throw new Error('fixture retry not scheduled');
+      now = next;
+      for (const task of [...timers]) if (task.at <= now) { timers.delete(task); task.callback(); }
+      await new Promise<void>(resolve => setImmediate(resolve));
+    };
+    try {
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      const app = createApp({ authority: '127.0.0.1:3000', serviceToken: 'a'.repeat(64), think: f.service,
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+      const caller = new AbortController();
+      const response = await app(new Request(`http://127.0.0.1:3000/api/think/conversations/${a.conversationId}/messages`, {
+        method: 'POST', signal: caller.signal, headers: { host: '127.0.0.1:3000', authorization: `Bearer ${'a'.repeat(64)}`, 'content-type': 'application/json' }, body: JSON.stringify({ clientCommandId: send.clientCommandId, text: send.text }),
+      }));
+      expect(response.status).toBe(202); caller.abort();
+      await waitForCalls(f.prompts, 1);
+      const pending = f.prompts[0];
+      if (!pending?.input.id) throw new Error('fixture prompt missing');
+      await vi.waitFor(() => expect(failures).toBeGreaterThan(0));
+      expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ state: 'retrying', warning: false });
+      await f.service.create(b); await waitForCalls(f.calls, 2); f.complete(1);
+      pending.result.resolve({ id: pending.input.id, sessionID: sessionId(a.conversationId), time: { created: 20 }, type: 'user', payload: { text: 'prepared fixture' }, delivery: 'queue' });
+      f.messages.push({ id: pending.input.id, type: 'user', text: 'prepared fixture', time: { created: 20 } },
+        { id: 'msg_fixture_retry', type: 'assistant', agent, model, finish: 'stop', time: { created: 22, completed: 23 }, content: [{ type: 'text', text: 'fixture answer after failure' },
+          { type: 'tool', id: 'tool_fixture_retry', name: 'read', time: { created: 22, completed: 23 }, state: { status: 'error', input: { path: 'private-retry-tool-path' }, error: { type: 'fixture', message: 'private-retry-tool-error' } } }] });
+      f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
+      f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_retry', created: 24, durable: { aggregateID: sessionId(a.conversationId), seq: 1, version: 1 }, data: { sessionID: sessionId(a.conversationId) } });
+      await vi.waitFor(async () => expect((await f.service.command(a.conversationId, send.clientCommandId))?.state).toBe('completed'));
+      for (let i = 0; i < 10; i++) {
+        const previous = failures;
+        do { await advance(); } while (failures === previous && timers.size);
+        await vi.waitFor(() => expect(failures).toBeGreaterThan(previous));
+      }
+      expect(now - 1_700_000_000_000).toBeGreaterThan(120000);
+      expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ warning: true, state: 'retrying' });
+      expect(fileReads).toBe(0);
+      fault = 'sync';
+      const beforeSync = failures;
+      await advance();
+      await vi.waitFor(() => expect(failures).toBeGreaterThan(beforeSync));
+      expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ warning: true, state: 'retrying' });
+      fault = 'none';
+      await advance();
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ warning: false, state: 'up-to-date' }));
+      const markdown = await readFile(target, 'utf8');
+      expect(markdown.split(send.text)).toHaveLength(2);
+      expect(markdown.split('fixture answer after failure')).toHaveLength(2);
+      expect(markdown).toContain('File read');
+      expect(markdown).not.toMatch(/private-retry-tool-path|private-retry-tool-error/);
+      expect(markdown).not.toContain('prepared fixture');
+      expect(f.prompt).toHaveBeenCalledOnce();
+      expect(f.interruptSession).not.toHaveBeenCalled();
+    } finally { try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); } }
+  });
+
+  it('Phase 4 records observed native compaction without exporting its summary or removing earlier full history', async () => {
+    const state = await fixture();
+    const { f, root } = state;
+    const path = join(root, 'vault', 'Conversations', 'Memory Loop', `think-${a.conversationId}.md`);
+    try {
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      await f.service.send(send); await waitForCalls(f.prompts, 1);
+      await vi.waitFor(async () => expect(await readFile(path, 'utf8')).toContain(send.text));
+      f.emit({ type: 'session.compaction.ended', id: 'evt_fixture_compaction', created: 30,
+        durable: { aggregateID: sessionId(a.conversationId), seq: 5, version: 1 },
+        data: { sessionID: sessionId(a.conversationId), reason: 'auto', text: 'fixture-secret-compaction-summary' } });
+      f.emit({ type: 'session.compaction.ended', id: 'evt_fixture_compaction', created: 30,
+        durable: { aggregateID: sessionId(a.conversationId), seq: 5, version: 1 },
+        data: { sessionID: sessionId(a.conversationId), reason: 'auto', text: 'fixture-secret-compaction-summary' } });
+      f.emit({ type: 'session.compaction.ended', id: 'evt_fixture_unowned', created: 31,
+        durable: { aggregateID: 'ses_unowned_fixture', seq: 6, version: 1 },
+        data: { sessionID: 'ses_unowned_fixture', reason: 'manual', text: 'fixture-unowned-summary' } });
+      await vi.waitFor(async () => {
+        const markdown = await readFile(path, 'utf8');
+        expect(markdown).toMatch(/compact/i);
+        expect(markdown).toContain(send.text);
+        expect(markdown).not.toContain('fixture-secret-compaction-summary');
+        expect(markdown).not.toContain('fixture-unowned-summary');
+        expect(markdown).not.toContain('evt_fixture_unowned');
+        expect(markdown.split('Context compacted.')).toHaveLength(2);
+      }, { timeout: 3000 });
+      expect(f.prompt).toHaveBeenCalledOnce();
+    } finally { await state.close(); }
+  });
+
+  it('Phase 4 records the original UTF-8 form reply after the user entry without exposing native form metadata', async () => {
+    const state = await fixture();
+    const { f, root } = state;
+    const path = join(root, 'vault', 'Conversations', 'Memory Loop', `think-${a.conversationId}.md`);
+    try {
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      await f.service.send(send); await waitForCalls(f.prompts, 1);
+      await vi.waitFor(async () => expect(await readFile(path, 'utf8')).toContain(send.text));
+      const command = { conversationId: a.conversationId, clientCommandId: '88888888-8888-4888-8888-888888888888', decisionId: 'form_fixture_question', answer: { answer: 'form 🧠 original Ω' } };
+      expect(await f.service.reply(command)).toMatchObject({ kind: 'form-reply', state: 'registered' });
+      await vi.waitFor(() => expect(f.replyForm).toHaveBeenCalledOnce());
+      await vi.waitFor(async () => {
+        const markdown = await readFile(path, 'utf8');
+        expect(markdown).toContain(JSON.stringify(command.answer));
+        expect(markdown).toContain('"kind":"form-reply"');
+        expect(markdown.indexOf(send.text)).toBeLessThan(markdown.indexOf('form 🧠 original Ω'));
+        expect(markdown).not.toContain('do-not-expose');
+      });
+      expect(f.prompt).toHaveBeenCalledOnce();
+    } finally { await state.close(); }
+  });
+
+  it('Phase 4 reports external edits until the same owned file is restored and synchronized without a retry route', async () => {
+    const root = await mkdtemp('/tmp/opencode/think-transcript-health-');
+    const vault = join(root, 'vault');
+    await mkdir(vault, { mode: 0o700 });
+    const bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    let now = 1_700_000_000_000;
+    const timers = new Set<{ at: number; callback: () => void }>();
+    const runtime: TranscriptRuntime = { now: () => now, random: () => 0.5, schedule(callback, delay) {
+      const task = { at: now + delay, callback }; timers.add(task); return () => { timers.delete(task); };
+    } };
+    const f = setup(model, bodies, vault, undefined, { runtime });
+    const path = join(vault, 'Conversations', 'Memory Loop', `think-${a.conversationId}.md`);
+    try {
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      await f.service.send(send); await waitForCalls(f.prompts, 1);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ state: 'up-to-date' }));
+      const original = await readFile(path);
+      const identity = await lstat(path);
+      await appendFile(path, 'external fixture edit');
+      const changed = await readFile(path);
+      f.emit({ type: 'session.compaction.ended', id: 'evt_health_compaction', created: 30,
+        durable: { aggregateID: sessionId(a.conversationId), seq: 6, version: 1 }, data: { sessionID: sessionId(a.conversationId), reason: 'auto', text: 'private summary' } });
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ warning: true, reason: 'conflict' }));
+      expect(await readFile(path)).toEqual(changed);
+      const nativeCalls = f.prompt.mock.calls.length;
+      const app = createApp({ authority: '127.0.0.1:3000', serviceToken: 'a'.repeat(64), think: f.service,
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+      const response = await app(new Request(`http://127.0.0.1:3000/api/think/conversations/${a.conversationId}/transcript/retry`, {
+        method: 'POST', headers: { host: '127.0.0.1:3000', authorization: `Bearer ${'a'.repeat(64)}` },
+      }));
+      expect([404, 405]).toContain(response.status);
+      expect(f.prompt.mock.calls.length).toBe(nativeCalls);
+      expect(await readFile(path)).toEqual(changed);
+      await writeFile(path, original);
+      expect((await lstat(path)).ino).toBe(identity.ino);
+      expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ warning: true, reason: 'conflict' });
+      await vi.waitFor(() => expect(timers.size).toBeGreaterThan(0));
+      now = Math.min(...[...timers].map(task => task.at));
+      for (const task of [...timers]) if (task.at <= now) { timers.delete(task); task.callback(); }
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ warning: false, state: 'up-to-date' }));
+      const caughtUp = await readFile(path, 'utf8');
+      expect(caughtUp.startsWith(original.toString('utf8'))).toBe(true);
+      expect(caughtUp).toContain('Context compacted.');
+      expect(caughtUp).not.toContain('external fixture edit');
+      expect(f.prompt).toHaveBeenCalledOnce();
+    } finally { try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); } }
+  });
+
+  it('Phase 4 invalid transcript path degrades logging without disabling Recall or native execution', async () => {
+    const config = parseThinkConfig({ service: { registrationFile: '/fixture/registration.json', requiredVersion: '2.2.2' }, location: { kind: 'vault' }, transcriptDirectory: '../outside' });
+    expect(config?.transcriptDirectory).toBe('../outside');
+    const root = await mkdtemp('/tmp/opencode/think-transcript-config-');
+    const vault = join(root, 'vault');
+    await mkdir(vault, { mode: 0o700 });
+    const bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    const f = setup(model, bodies, vault, undefined, { directory: config?.transcriptDirectory });
+    try {
+      const app = createApp({ authority: '127.0.0.1:3000', serviceToken: 'a'.repeat(64), think: f.service,
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: 'recall fixture' }), close: async () => {} } } });
+      const response = await app(new Request('http://127.0.0.1:3000/api/vault/tree', { headers: { host: '127.0.0.1:3000', authorization: `Bearer ${'a'.repeat(64)}` } }));
+      expect(response.status).toBe(200);
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      expect(await f.service.send(send)).toMatchObject({ state: 'registered' });
+      await waitForCalls(f.prompts, 1);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ warning: true, reason: 'invalid_configuration' }));
+      await expect(lstat(join(root, 'outside'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally { try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); } }
+  });
+
+  it('Phase 4 writes original and canonical text to the owned conversation Markdown after caller abort and New chat', async () => {
+    const state = await fixture();
+    const { f, root } = state;
+    const original = 'original 🧠\r\n````\n<!-- memory-loop-end fake -->';
+    const assistant = 'assistant fixture\n```\nfull text Ω';
+    const path = join(root, 'vault', 'Conversations', 'Memory Loop', `think-${a.conversationId}.md`);
+    try {
+      await f.service.create(a);
+      await waitForCalls(f.calls, 1);
+      f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      const token = 'a'.repeat(64);
+      const app = createApp({ authority: '127.0.0.1:3000', serviceToken: token, think: f.service,
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+      const abort = new AbortController();
+      const response = await app(new Request(`http://127.0.0.1:3000/api/think/conversations/${a.conversationId}/messages`, {
+        method: 'POST', signal: abort.signal, headers: { host: '127.0.0.1:3000', authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ clientCommandId: send.clientCommandId, text: original }),
+      }));
+      expect(response.status).toBe(202);
+      abort.abort();
+      await waitForCalls(f.prompts, 1);
+      const pending = f.prompts[0];
+      if (!pending?.input.id) throw new Error('fixture prompt missing');
+      await f.service.create(b);
+      await waitForCalls(f.calls, 2);
+      f.complete(1);
+      await vi.waitFor(async () => expect((await f.service.conversation(b.conversationId))?.creation).toBe('ready'));
+      expect(pending.signal.aborted).toBe(false);
+      pending.result.resolve({ id: pending.input.id, sessionID: sessionId(a.conversationId), time: { created: 20 }, type: 'user', payload: { text: 'plugin-expanded-secret' }, delivery: 'queue' });
+      f.messages.push(
+        { id: pending.input.id, type: 'user', text: 'plugin-expanded-secret', time: { created: 20 } },
+        { id: 'msg_fixture_transcript', type: 'assistant', agent, model, finish: 'stop', time: { created: 22, completed: 23 }, content: [
+          { type: 'reasoning', text: 'fixture-hidden-reasoning' },
+          { type: 'text', text: assistant },
+          { type: 'tool', id: 'fixture-transcript-tool', name: 'unknown-custom-tool', time: { created: 22, completed: 23 }, state: { status: 'error', input: { path: 'fixture-private-tool-argument' }, error: { type: 'fixture', message: 'fixture-private-tool-error' } } },
+        ] },
+      );
+      f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
+      const emit = (id: string, seq: number) => f.emit({ type: 'session.execution.succeeded', id, created: 24,
+        durable: { aggregateID: sessionId(a.conversationId), seq, version: 1 }, data: { sessionID: sessionId(a.conversationId) } });
+      emit('evt_fixture_transcript', 1);
+      await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId: 'msg_fixture_transcript' })));
+      let markdown = '';
+      await vi.waitFor(async () => {
+        markdown = await readFile(path, 'utf8');
+        expect(markdown).toContain(assistant);
+      }, { timeout: 3000 });
+      expect(markdown).toContain(`conversation_id: "${a.conversationId}"`);
+      expect(markdown).toContain(`\`\`\`\`\`text\n${original}\n\`\`\`\`\``);
+      expect(markdown).toContain(`\`\`\`\`text\n${assistant}\n\`\`\`\``);
+      expect(markdown).toMatch(/Custom tool/);
+      expect(markdown).not.toMatch(/plugin-expanded-secret|fixture-hidden-reasoning|fixture-private-tool-argument|fixture-private-tool-error/);
+      await expect(lstat(join(root, 'vault', 'Conversations', 'Memory Loop', `think-${b.conversationId}.md`))).rejects.toMatchObject({ code: 'ENOENT' });
+      const prior = f.listMessages.mock.calls.length;
+      emit('evt_fixture_transcript_repeat', 2);
+      await vi.waitFor(() => expect(f.listMessages.mock.calls.length).toBeGreaterThan(prior));
+      await vi.waitFor(async () => expect(await readFile(path, 'utf8')).toBe(markdown));
+      expect(f.prompt).toHaveBeenCalledOnce();
+      expect(f.interruptSession).not.toHaveBeenCalled();
+    } finally { await state.close(); }
+  });
+
   it('keeps original text distinct from prepared input and normalizes mixed text and safe custom tool facts', async () => {
     const fixtureState = await fixture();
     const { f } = fixtureState;
@@ -1082,17 +1397,35 @@ describe('real private-store normalized projection', () => {
       await waitForCalls(f.calls, 1);
       f.complete(0);
       await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
-      await f.service.send(send);
+      const receipt = await f.service.send(send);
       await waitForCalls(f.prompts, 1);
       const sid = sessionId(a.conversationId);
       const messageId = 'msg_fixture_preview';
+      const pending = f.prompts[0];
+      if (!pending?.input.id) throw new Error('fixture prompt missing');
+      pending.result.resolve({ id: pending.input.id, sessionID: sid, time: { created: 19 }, type: 'user', payload: { text: send.text }, delivery: 'queue' });
+      await vi.waitFor(async () => expect((await f.service.command(a.conversationId, send.clientCommandId))?.state).toBe('admitted'));
       f.emit({ type: 'session.text.started', id: 'evt_fixture_text_start', created: 20,
         durable: { aggregateID: sid, seq: 1, version: 1 }, data: { sessionID: sid, assistantMessageID: messageId, ordinal: 0 } });
       f.emit({ type: 'session.text.delta', id: 'evt_fixture_text_delta', created: 21,
         data: { sessionID: sid, assistantMessageID: messageId, ordinal: 0, delta: 'observed partial' } });
       await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId, closure: 'open' })));
+      const subscriptionsBeforeGap = f.subscribe.mock.calls.length;
+      const historyBeforeGap = f.listMessages.mock.calls.length;
       f.endStream('error');
       await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId, closure: 'open', capture: 'incomplete' })), { timeout: 8000 });
+      const transcript = join(fixtureState.root, 'vault', 'Conversations', 'Memory Loop', `think-${a.conversationId}.md`);
+      await vi.waitFor(async () => {
+        const markdown = await readFile(transcript, 'utf8');
+        expect(markdown).toContain('observed partial');
+        expect(markdown).toContain('"capture":"observed-partial"');
+      });
+      // The controlled adapter emits server.connected on each subscription; a
+      // subsequent authority query proves that reconnection has been accepted.
+      await vi.waitFor(() => expect(f.subscribe.mock.calls.length).toBeGreaterThan(subscriptionsBeforeGap), { timeout: 8000 });
+      await vi.waitFor(() => expect(f.listMessages.mock.calls.length).toBeGreaterThan(historyBeforeGap), { timeout: 8000 });
+      await f.service.stop({ conversationId: a.conversationId, clientCommandId: '88888888-8888-4888-8888-888888888888', runId: receipt.runId });
+      await vi.waitFor(() => expect(f.interruptSession).toHaveBeenCalledOnce());
       const partial = (await f.service.content.page(a.conversationId)).entries.find(entry => entry.kind === 'assistant-text' && entry.messageId === messageId);
       if (!partial || partial.kind !== 'assistant-text') throw new Error('partial fixture projection missing');
       const partialReader = await f.service.content.open(partial.body);
@@ -1106,6 +1439,14 @@ describe('real private-store normalized projection', () => {
       if (!canonical || canonical.kind !== 'assistant-text') throw new Error('canonical fixture projection missing');
       const canonicalReader = await f.service.content.open(canonical.body);
       try { expect(Buffer.from(await canonicalReader.read(0, canonical.body.through)).toString('utf8')).toBe('canonical fixture'); } finally { await canonicalReader.close(); }
+      await vi.waitFor(async () => {
+        const markdown = await readFile(transcript, 'utf8');
+        expect(markdown).toContain('AI (replacement)');
+        expect(markdown).toContain('"supersedes_entry_id"');
+        expect(markdown.split('canonical fixture')).toHaveLength(2);
+        expect(markdown.split('observed partial')).toHaveLength(2);
+      });
+      expect(f.prompt).toHaveBeenCalledOnce();
     } finally { await fixtureState.close(); }
   }, 15000);
 

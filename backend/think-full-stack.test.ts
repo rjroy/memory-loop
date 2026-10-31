@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
+import { lstat, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { relative } from 'node:path';
 import { OpenCode } from '@opencode/client';
 import { Service } from '@opencode/client/service';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { chromium, type Browser, type Page, type Route } from '@playwright/test';
 import { fixtureLargeResponse, launchThinkFixture } from '../tests/think-fixture';
 
@@ -230,6 +230,61 @@ it('runs the owned Node Next → Bun daemon → native fixture command lifecycle
     await call(`${toolChat.base}/decisions/${encodeURIComponent(form.id)}/reply`, 'POST', { clientCommandId: replyId, answer: { answer: 'fixture answer' } });
     await poll(`${toolChat.base}/commands/${replyId}`, value => value.state === 'replied', 'form reply');
     expect((await client.session.form.get({ sessionID: toolChat.nativeId, formID: form.id }, { signal: AbortSignal.timeout(5000) })).state).toEqual({ status: 'answered', answer: { answer: 'fixture answer' } });
+
+    // The writer and Recall use the same owned fixture vault, not a synthetic export.
+    const loggingReady = (value: Record<string, unknown>) => typeof value.transcript === 'object' && value.transcript !== null && 'state' in value.transcript && value.transcript.state === 'up-to-date';
+    await poll(toolChat.base, loggingReady, 'initial transcript');
+    const directory = `${fixture.workspace}/Conversations`;
+    const moved = `${fixture.workspace}/Conversations-fixture-moved`;
+    const noteId = ['Conversations', 'Memory Loop', `think-${toolChat.id}.md`];
+    const initialPath = `${fixture.workspace}/${noteId.join('/')}`;
+    let initial = '';
+    await vi.waitFor(async () => { initial = await readFile(initialPath, 'utf8'); expect(initial).toContain('fixture answer'); }, { timeout: 30000 });
+    expect(initial).toContain('fixture-read');
+    expect(initial).toContain('fixture-read-complete');
+    expect(initial).toContain('File read');
+    expect(initial).toContain('fixture answer');
+    expect(initial).not.toContain('sentinel.env');
+    const tree = await call('/api/vault/tree');
+    expect(JSON.stringify(tree)).toContain(noteId[2]);
+    const noteQuery = new URLSearchParams({ id: JSON.stringify(noteId) });
+    expect(await call(`/api/vault/note?${noteQuery}`)).toMatchObject({ markdown: initial });
+
+    const faultChat = await createChat();
+    const sentinel = `${fixture.workspace}/fixture-transcript-sentinel.txt`;
+    await writeFile(sentinel, 'fixture sentinel', { flag: 'wx' });
+    let movedDirectory = false;
+    const faultStarted = performance.now();
+    try {
+      await rename(directory, moved);
+      movedDirectory = true;
+      const faultId = randomUUID();
+      const faultCaller = new AbortController();
+      expect(await call(`${faultChat.base}/messages`, 'POST', { clientCommandId: faultId, text: 'fixture-read fault-owned original Ω' }, faultCaller.signal)).toMatchObject({ state: 'registered' });
+      faultCaller.abort();
+      await poll(`${faultChat.base}/commands/${faultId}`, value => value.state === 'completed', 'faulted logging send');
+      const faultHistory = await client.message.list({ sessionID: faultChat.nativeId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+      expect(faultHistory.data.flatMap(message => message.type === 'assistant' ? message.content.filter(part => part.type === 'tool' && part.name === 'read' && part.state.status === 'completed') : [])).toHaveLength(1);
+      await poll(faultChat.base, value => typeof value.transcript === 'object' && value.transcript !== null && 'reason' in value.transcript && value.transcript.reason === 'conflict', 'logging conflict');
+      expect(await readFile(`${moved}/Memory Loop/${noteId[2]}`, 'utf8')).toBe(initial);
+      expect(await readFile(sentinel, 'utf8')).toBe('fixture sentinel');
+      await rename(moved, directory);
+      movedDirectory = false;
+      await poll(faultChat.base, loggingReady, 'automatic transcript catch-up');
+      const faultNoteId = ['Conversations', 'Memory Loop', `think-${faultChat.id}.md`];
+      const note = await call(`/api/vault/note?${new URLSearchParams({ id: JSON.stringify(faultNoteId) })}`);
+      if (typeof note.markdown !== 'string') throw new Error('fixture Recall transcript missing');
+      expect(note.markdown.split('fixture-read fault-owned original Ω')).toHaveLength(2);
+      expect(note.markdown.split('fixture-read-complete')).toHaveLength(2);
+      expect(note.markdown).toContain('File read');
+      expect(note.markdown).not.toContain('sentinel.env');
+      const after = await client.message.list({ sessionID: faultChat.nativeId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+      expect(after.data.filter(message => message.type === 'user' && message.id === `msg_memoryloop_${faultId.replaceAll('-', '')}`)).toHaveLength(1);
+      expect(after.data.flatMap(message => message.type === 'assistant' ? message.content.filter(part => part.type === 'tool' && part.name === 'read' && part.state.status === 'completed') : [])).toHaveLength(1);
+      process.stdout.write(`${JSON.stringify({ event: 'phase4_fixture_transcript', transcriptBytes: Buffer.byteLength(note.markdown), entries: (note.markdown.match(/<!-- memory-loop-entry /g) ?? []).length, catchupMs: Math.round(performance.now() - faultStarted) })}\n`);
+    } finally {
+      if (movedDirectory) await rename(moved, directory);
+    }
   } finally {
     await fixture.close();
     await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });

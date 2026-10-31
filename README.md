@@ -8,7 +8,9 @@ curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
 The native Next App Router migration (`memory-loop-1l0.2`) is accepted. Next presents the UI and proxies Recall's read-only API routes to
 the authenticated Bun/Hono daemon. Think command/stream/content foundations are
-available in the isolated fixture below, not a working Think conversation UI.
+available in the isolated fixture below, now with vault transcript writing and
+automatic logging recovery. Phase 4 is independently verified and accepted; this is
+not a working Think conversation UI or authorization to activate personal Think.
 The daemon reads the JSON-configured vault
 when started. The private Tailscale deployment now uses the selected real vault;
 independent real-deployment verification passed and final review accepted it.
@@ -49,9 +51,68 @@ Vault configuration is JSON, not environment-based discovery:
 ```
 
 The path is a placeholder. The user's local JSON selection already exists; do
-not read or overwrite it to test the UI. Metadata must stay outside the vault.
+not read or overwrite it to test the UI. Configuration and private cache metadata
+stay outside the vault; a transcript's small frontmatter is intentional note content.
 Missing/invalid vault configuration and an unavailable vault produce distinct API
 errors, not an empty tree. There is no config editor or vault picker in the UI.
+
+#### Think transcripts: fixture/staged configuration
+
+The daemon also accepts the following Think configuration. Paths are examples;
+personal activation/configuration changes remain a separately authorized Phase 6
+step, not part of the current fixture exercise:
+
+```json
+{
+  "vaultDirectory": "/absolute/fixture-vault",
+  "think": {
+    "service": {
+      "registrationFile": "/absolute/fixture/service-discovery.json",
+      "requiredVersion": "2.2.2"
+    },
+    "location": { "kind": "vault" },
+    "permissionMode": "full",
+    "transcriptDirectory": "Conversations/Memory Loop"
+  }
+}
+```
+
+The selected OpenCode service must already exist; the application does not start
+or replace it or discover a personal default. Version `2.2.2` and `full` are the
+current defaults/only supported choices. Optional `agent`/`model` overrides stay
+daemon-owned; omission uses native defaults. The vault is the native working
+directory, **not a tool sandbox**.
+
+Omit `transcriptDirectory` to use **`Conversations/Memory Loop`** (including the
+space). An override is vault-relative: slash-separated visible names, with no
+empty/dot-prefixed components, absolute path, backslash or NUL. All runs append
+to `think-<conversation UUID>.md`; an empty New chat creates no transcript file.
+Settings load at daemon startup. Restart does not move files, recover accepted
+work or adopt transcripts from an earlier daemon.
+
+Transcripts contain full original user and AI text in literal fenced blocks,
+plus conservative tool/lifecycle summaries—not reasoning or raw tool payloads.
+They are sensitive vault notes covered by the vault's normal sync/backups;
+secrets deliberately written in user/AI text are not redacted. Newly created
+files are owner-only `0600`. Existing, linked, moved or externally edited targets
+are conflicts: the writer never overwrites, merges or adopts them. It can resume
+only when the original owned namespace/bytes pass its safety checks again.
+
+Vault logging never gates chat/tools. It retries automatically, backing off from
+about one second to a maximum one-minute delay while the daemon lives. There is
+no Retry logging route/button. Snapshot/watch health stays quiet for short
+storage failures; `warning` becomes true after one minute from the first failure,
+or immediately for a conflict, content gap or invalid logging configuration.
+It clears only after catch-up and synchronization. Other conversations' warnings
+remain in `otherTranscriptWarnings`. The Think UI is still a placeholder; this
+health is available through HTTP, not a shipped logging interface.
+
+The **private original-body capture before native dispatch is different**: failure
+there rejects the Send as a resource failure, because the original bytes could
+not be retained. A later vault write/sync failure or invalid transcript location
+only degrades logging; valid Recall/native chat remain available.
+
+#### Initialize transport
 
 For a **new operator-owned root**, initialize transport once:
 
@@ -106,7 +167,7 @@ and server commands again. Build with `bun --no-env-file run build` after source
 changes before restarting the production server. No OS autostart is configured;
 the background Tailscale Serve mapping alone does not start either process.
 
-During phase-two verification, use only controlled fixture data and an explicit
+During Think development, use only controlled fixture data and an explicit
 scratch root/transport instead (separate terminals, after creating fixture vault
 config and transport):
 
@@ -294,10 +355,10 @@ assistive-technology use and physical-device safe areas have not been verified.
 ## Local Think transport fixture
 
 Phase 2 is checkpointed at `0f45fa1`; Phase 3 transport is independently verified
-and accepted, with its local checkpoint recording the result. **This exercises HTTP
-transport, not a functional Think UI.** Vault transcripts, interactive Think and
-personal/private-Serve activation remain later phases. `check:daemon` checks
-Recall's tree only, not Think readiness.
+and accepted at `3ab9a23`. Phase 4 transcript writing/recovery is independently
+verified and accepted after filesystem/security corrections. **This exercises HTTP and ordinary vault Markdown, not a functional
+Think UI.** Interactive Think remains Phase 5; personal/private-Serve activation
+remains Phase 6. `check:daemon` checks Recall's tree only, not Think readiness.
 
 Select the already verified OpenCode 2.2.2 native executable explicitly, using
 the characterization prerequisites above:
@@ -340,8 +401,9 @@ event replay. Ending this curl (including expected timeout exit 28) never sends
 Stop. Reopen the same URL before or after the following exercise; do not resend.
 
 Back in the second terminal, this Node example waits for creation, sends **one**
-scripted large-UTF-8 response request, waits on its receipt, pages the manifest
-and verifies the complete canonical body without printing its text:
+scripted large-UTF-8 response request, waits on its receipt, pages the manifest,
+verifies the complete canonical body, then waits for transcript synchronization
+and reads that note through Recall's HTTP API without printing its text:
 
 ```sh
 node --input-type=module <<'JS'
@@ -386,9 +448,35 @@ do {
   hash.update(bytes); offset = chunk.nextOffset; transfer = chunk.transfer;
 } while (offset < ref.through);
 if (hash.digest('hex') !== ref.sha256) throw new Error('Content digest mismatch');
-console.log(JSON.stringify({ state: 'completed', verifiedAssistantBytes: offset }));
+let logging;
+for (let i = 0; i < 300; i++) {
+  logging = (await json(base)).transcript;
+  if (logging?.state === 'up-to-date' && !logging.warning) break;
+  if (logging?.warning) throw new Error('Logging needs attention; chat is separate. Inspect health, do not resend');
+  await delay(200);
+}
+if (logging?.state !== 'up-to-date' || !Array.isArray(logging.noteId)) throw new Error('Logging still pending; do not resend');
+const query = new URLSearchParams({ id: JSON.stringify(logging.noteId) });
+const note = await json(`${new URL(base).origin}/api/vault/note?${query}`);
+if (typeof note.markdown !== 'string' || !note.markdown.includes('memory_loop_transcript: 1')) throw new Error('Fixture transcript unavailable');
+console.log(JSON.stringify({ state: 'completed', verifiedAssistantBytes: offset, transcriptBytes: Buffer.byteLength(note.markdown) }));
 JS
 ```
+
+Open the printed fixture URL at `/recall`, then browse **Conversations → Memory
+Loop → think-&lt;conversation UUID&gt;.md** to read the ordinary Markdown. No Think
+UI is needed. For an inert built-in file-read exercise instead of the large-text
+response, repeat with fresh conversation/command IDs and replace `fixture-large`
+in the Send example with `fixture-read`; the scripted provider reads only its
+test-owned sentinel. Never reuse a command ID with changed text.
+
+AI completion alone does not mean the transcript is synchronized. Snapshot
+`transcript` includes `state`, `warning`, `liveTextPending`, and when available
+`lastSyncedAt`, `reason` and the ordinary Recall `noteId`. `up-to-date` covers
+currently eligible entries, not every unfinished preview token. Closing the
+watch or creating another conversation does not cancel the writer or force a
+retry. For a conflict, preserve the file and fix the underlying namespace/storage
+condition; do not delete an owned transcript or restart expecting automatic adoption.
 
 The first chunk pins `generation`/`through` and returns a scoped transfer nonce;
 echo it on subsequent chunks. Each response contains at most **64 KiB raw bytes**
@@ -419,6 +507,21 @@ To repeat only this owned fixture case:
 ```sh
 OPENCODE_TEST_BINARY=/absolute/path/to/verified/opencode.exe \
   bun --no-env-file run test:opencode backend/think-full-stack.test.ts -t 'recovers large immutable content'
+```
+
+Separate Phase 4 evidence in `/tmp/opencode/think-phase4-native-transcript-acceptance.log`
+records **1 selected case passed / 2 unselected skipped** through real Node Next →
+Bun → native. A built-in read completed while the transcript namespace was in
+conflict; restoring the same directory allowed automatic catch-up through Recall
+HTTP without duplicate input/output, adoption, or changes to the prior transcript
+or sentinel. Its one sample was **4,059 transcript bytes, 8 entries, 1,012 ms from
+fault start through catch-up**—not a benchmark, retry deadline or size limit.
+Subsequent independent convergence and filesystem/security correction verification
+accepted Phase 4; this does not activate Think on the live Tailscale path. The retained case is:
+
+```sh
+OPENCODE_TEST_BINARY=/absolute/path/to/verified/opencode.exe \
+  bun --no-env-file run test:opencode backend/think-full-stack.test.ts -t 'runs the owned Node Next'
 ```
 
 Use Ctrl-C in the **fixture launcher terminal** to stop only its owned processes

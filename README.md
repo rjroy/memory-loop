@@ -12,7 +12,14 @@ the authenticated Bun/Hono daemon. Think command/stream/content foundations are
 available in the isolated fixture below, with conversation controls, reconnect,
 vault transcripts and automatic logging recovery. Phase 4 is independently
 accepted; Phase 5 is independently verified and accepted for fixture use.
-Local browser testing is the next step; network deployment is user-managed and not a prerequisite.
+The local scripted-provider fixture has been tested. A separate local app at
+`http://127.0.0.1:40987/think` has also reached the existing OpenCode service and
+selected vault: a real reply, reload recovery and transcript/Recall read were
+verified. An initial check incorrectly expected Send to be enabled with an empty
+draft; independent verification confirmed it is disabled when empty and enabled
+after entering an unsent draft. This does not measure token-by-token streaming or
+exact native terminal latency. The address is ephemeral. Network deployment is
+user-managed and is not a prerequisite.
 The daemon reads the JSON-configured vault
 when started. The private Tailscale deployment now uses the selected real vault;
 independent real-deployment verification passed and final review accepted it.

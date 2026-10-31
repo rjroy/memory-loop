@@ -82,6 +82,16 @@ describe('Think BFF target policy', () => {
     expect(fetcher).toHaveBeenCalledOnce();
     expect(String(fetcher.mock.calls[0][0])).toBe(`${transport.config.daemonOrigin}${snapshot}?cursor=${cursor}`);
   });
+  it('uses entries array presence, not the route, to select snapshot projection', async () => {
+    const { call, fetcher } = setup();
+    const state = { conversationId: id, epoch: other, revision: 1, creation: 'ready', sendEligibility: 'available' };
+    fetcher.mockResolvedValueOnce(Response.json({ ...state, entries: null, contentHealth: null, privateField: 'secret' }));
+    const result = await call('GET', snapshot);
+    expect(result.status).toBe(200);
+    expect(await result.json()).toEqual(state);
+    fetcher.mockResolvedValueOnce(Response.json({ ...state, entries: [], contentHealth: 'complete' }));
+    expect(await (await call('GET', snapshot)).json()).toEqual({ ...state, entries: [], contentHealth: 'complete' });
+  });
 });
 
 describe('Think daemon HTTP target policy', () => {

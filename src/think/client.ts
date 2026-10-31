@@ -1,18 +1,10 @@
-import { projectConversation } from '../web/think-projection';
+import { projectConversation, type ThinkSnapshot } from '../web/think-projection';
+export type { ThinkManifestEntry, ThinkSnapshot } from '../web/think-projection';
 import type { BodyRef } from '../../backend/think/body-store';
 import type { CommandReceipt, ConversationState, CreateConversationCommand, FormReplyCommand, SendCommand, StopCommand } from '../../backend/think/contract';
 import { isThinkErrorCode } from '../../backend/think/contract';
-import type { ProjectionEntry } from '../../backend/think/projection';
 import type { ContentChunk } from '../../backend/think/content-transfer';
 
-/** The BFF intentionally omits commandKind from lifecycle entries. */
-export type ThinkManifestEntry = Exclude<ProjectionEntry, { kind: 'lifecycle' }> |
-  Omit<Extract<ProjectionEntry, { kind: 'lifecycle' }>, 'commandKind'>;
-export interface ThinkSnapshot extends ConversationState {
-  entries: ThinkManifestEntry[];
-  contentHealth?: 'complete' | 'incomplete';
-  nextCursor?: string;
-}
 export type ThinkFieldValue = string | number | boolean | string[];
 interface ThinkFormFieldBase {
   key: string;
@@ -66,23 +58,11 @@ const decision = (value: string) => { if (!opaque.test(value)) throw new ThinkCl
 const integer = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const has = <T extends string>(value: unknown, values: readonly T[]): value is T => typeof value === 'string' && values.some(item => item === value);
 
-function isState(value: unknown): value is ConversationState {
-  return object(value) && typeof value.conversationId === 'string' && uuid.test(value.conversationId) &&
-    typeof value.epoch === 'string' && uuid.test(value.epoch) && integer(value.revision) &&
-    has(value.creation, ['registered', 'ready', 'upstream-unconfirmed', 'rejected']) &&
-    has(value.sendEligibility, ['available', 'busy', 'unavailable']);
-}
-
 function state(value: unknown, conversationId: string, snapshot: false): ConversationState;
 function state(value: unknown, conversationId: string, snapshot: true): ThinkSnapshot;
 function state(value: unknown, conversationId: string, snapshot: boolean): ConversationState | ThinkSnapshot {
   try {
-    const projected: unknown = projectConversation(value, conversationId, snapshot);
-    if (!isState(projected)) throw new Error();
-    if (!snapshot) return projected;
-    if (!('entries' in projected) || !Array.isArray(projected.entries)) throw new Error();
-    // projectConversation has checked each projected entry and removed private fields.
-    return projected as ThinkSnapshot;
+    return projectConversation(value, conversationId, snapshot);
   } catch { throw new ThinkClientError('invalid-response'); }
 }
 

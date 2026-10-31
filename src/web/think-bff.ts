@@ -58,7 +58,7 @@ async function bodyBytes(request: Request): Promise<Uint8Array> {
   return boundedBytes(request.body, 6 * 1024 * 1024 + 4096);
 }
 
-function project(value: unknown, method: Method, path: string, query: URLSearchParams): Record<string, unknown> {
+function project(value: unknown, method: Method, path: string, query: URLSearchParams): object {
   const segments = path.slice(base.length).split('/').filter(Boolean);
   if (method === 'GET' && segments[1] === 'content') {
     const input = parseContentRequest(segments[0], segments[2], query);

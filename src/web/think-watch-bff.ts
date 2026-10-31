@@ -63,18 +63,20 @@ export async function handleThinkWatch(request: Request, dependencies: {
             }
             if (!event || !data.length) throw new Error('invalid frame');
             const parsed: unknown = JSON.parse(data.join('\n'));
-            let projected: Record<string, unknown>;
+            let projected: object;
             if (event === 'heartbeat') {
               if (epoch === undefined || !parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length) throw new Error('invalid heartbeat');
               projected = {};
             } else if (event === 'snapshot' && epoch === undefined) {
-              projected = projectConversation(parsed, match[1], true);
-              epoch = String(projected.epoch);
-              revision = Number(projected.revision);
+              const snapshot = projectConversation(parsed, match[1], true);
+              projected = snapshot;
+              epoch = snapshot.epoch;
+              revision = snapshot.revision;
             } else if (event === 'revision' && epoch !== undefined) {
-              projected = projectConversation(parsed, match[1], false);
-              if (projected.epoch !== epoch || typeof projected.revision !== 'number' || projected.revision <= revision) throw new Error('invalid revision');
-              revision = projected.revision;
+              const next = projectConversation(parsed, match[1], false);
+              if (next.epoch !== epoch || next.revision <= revision) throw new Error('invalid revision');
+              projected = next;
+              revision = next.revision;
             } else throw new Error('unexpected event');
             const frame = `event: ${event}\ndata: ${JSON.stringify(projected)}\n\n`;
             if (Buffer.byteLength(frame) > 60 * 1024) throw new Error('frame too large');

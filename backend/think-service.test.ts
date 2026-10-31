@@ -1389,6 +1389,7 @@ describe('real private-store normalized projection', () => {
       const historyBeforeGap = f.listMessages.mock.calls.length;
       f.endStream('error');
       await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId, closure: 'open', capture: 'incomplete' })), { timeout: 8000 });
+      expect((await f.service.content.page(a.conversationId)).contentHealth).toBe('incomplete');
       const transcript = join(fixtureState.root, 'vault', 'Conversations', 'Memory Loop', `think-${a.conversationId}.md`);
       await vi.waitFor(async () => {
         const markdown = await readFile(transcript, 'utf8');
@@ -1410,6 +1411,7 @@ describe('real private-store normalized projection', () => {
       f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_text_end', created: 24,
         durable: { aggregateID: sid, seq: 2, version: 1 }, data: { sessionID: sid } });
       await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId, closure: 'closed', capture: 'complete' })));
+      expect((await f.service.content.page(a.conversationId)).contentHealth).toBe('complete');
       const canonical = (await f.service.content.page(a.conversationId)).entries.find(entry => entry.kind === 'assistant-text' && entry.messageId === messageId);
       if (!canonical || canonical.kind !== 'assistant-text') throw new Error('canonical fixture projection missing');
       const canonicalReader = await f.service.content.open(canonical.body);
@@ -1961,9 +1963,9 @@ describe('R5/R6 independent authority channels', () => {
 describe('R4 projection capture failure', () => {
   it('settles the run and retains safe tool facts while explicitly reporting missing content, then catches up', async () => {
     const base = unitBodies();
-    let failAssistant = true;
+    const failedOrdinals = new Set([0, 1]);
     const replace = vi.fn<BodyStore['replace']>(async (key, source, kind) => {
-      if (key.owner.kind === 'assistant-text' && failAssistant) throw new Error('fixture-private-disk-error');
+      if (key.owner.kind === 'assistant-text' && failedOrdinals.has(key.owner.ordinal)) throw new Error('fixture-private-disk-error');
       return base.replace(key, source, kind);
     });
     const f = setup(model, { ...base, replace });
@@ -1980,6 +1982,7 @@ describe('R4 projection capture failure', () => {
       f.messages.push({ id: pending.input.id, type: 'user', text: send.text, time: { created: 20 } },
         { id: 'msg_fixture_capture', type: 'assistant', agent, model, finish: 'stop', time: { created: 22, completed: 23 }, content: [
           { type: 'text', text: 'fixture canonical' },
+          { type: 'text', text: 'fixture second canonical' },
           { type: 'tool', id: 'fixture-tool', name: 'custom', time: { created: 22, completed: 23 }, state: { status: 'error', input: {}, error: { type: 'fixture', message: 'fixture-generic-tool-error' } } },
         ] });
       f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
@@ -1991,12 +1994,21 @@ describe('R4 projection capture failure', () => {
       expect(page.entries).toContainEqual(expect.objectContaining({ kind: 'tool', category: 'custom', state: 'failed' }));
       expect(await f.service.conversation(a.conversationId)).not.toMatchObject({ permissionCompatibility: 'incompatible' });
       expect(JSON.stringify(page)).not.toMatch(/fixture-private-disk-error|fixture-generic-tool-error/);
-      failAssistant = false;
+      failedOrdinals.delete(0);
       const before = f.listMessages.mock.calls.length;
       f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_catchup', created: 25,
         durable: { aggregateID: sid, seq: 3, version: 1 }, data: { sessionID: sid } });
       await vi.waitFor(() => expect(f.listMessages.mock.calls.length).toBeGreaterThan(before));
-      await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId: 'msg_fixture_capture', closure: 'closed' })));
+      await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId: 'msg_fixture_capture', ordinal: 0, closure: 'closed' })));
+      expect((await f.service.content.page(a.conversationId)).contentHealth).toBe('incomplete');
+      failedOrdinals.delete(1);
+      f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_second_catchup', created: 26,
+        durable: { aggregateID: sid, seq: 4, version: 1 }, data: { sessionID: sid } });
+      await vi.waitFor(async () => {
+        const repaired = await f.service.content.page(a.conversationId);
+        expect(repaired.entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId: 'msg_fixture_capture', ordinal: 1, closure: 'closed' }));
+        expect(repaired.contentHealth).toBe('complete');
+      });
       expect(f.prompt).toHaveBeenCalledOnce();
       expect(await f.service.send({ ...send, clientCommandId: '66666666-6666-4666-8666-666666666666' })).toMatchObject({ kind: 'send' });
     } finally { await f.service.close(); }

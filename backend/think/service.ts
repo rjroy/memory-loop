@@ -131,7 +131,6 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   const runs = new Map<string, { conversationId: string; sendCommandId: string }>();
   const activeRuns = new Map<string, string>();
   const activeSessions = new Set<string>();
-  const incompleteContent = new Set<string>();
   const missingCanonical = new Map<string, Set<string>>();
   const textKey = (messageId: string, ordinal: number) => JSON.stringify([messageId, ordinal]);
   function noteMissing(conversationId: string, messageId: string, ordinal: number): void {
@@ -202,7 +201,6 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         if (entry.kind === 'assistant-text' && entry.closure === 'open' && entry.capture !== 'incomplete') { entries[index] = { ...entry, capture: 'incomplete' }; noteMissing(conversationId, entry.messageId, entry.ordinal); changed = true; }
       }
       const state = conversations.get(conversationId);
-      if (changed) incompleteContent.add(conversationId);
       if (changed && state) setConversation(conversationId, { ...state, revision: state.revision + 1 });
       if (changed) transcripts.changed(conversationId);
     }
@@ -253,9 +251,9 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         ...(activeRuns.has(conversationId) ? { runId: activeRuns.get(conversationId) } : {}) });
     } catch {
       markPreviewGaps();
+      const wasIncomplete = (missingCanonical.get(conversationId)?.size ?? 0) > 0;
       noteMissing(conversationId, messageId, ordinal);
-      if (!incompleteContent.has(conversationId)) {
-        incompleteContent.add(conversationId);
+      if (!wasIncomplete) {
         const state = conversations.get(conversationId);
         if (state) setConversation(conversationId, { ...state, revision: state.revision + 1 });
         transcripts.changed(conversationId);
@@ -680,7 +678,6 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           let userTime: number | undefined;
           let assistantTime: { created: number; completed: number; outcome: 'completed' | 'failed' } | undefined;
           const captured: ProjectionEntry[] = [];
-          let captureFailed = false;
           const succeededKeys = new Set<string>();
           const failedKeys = new Set<string>();
           do {
@@ -703,7 +700,6 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
                         sourceTime: message.time.created, ...(existing?.runId ? { runId: existing.runId } : runId && userTime !== undefined ? { runId } : {}) });
                       succeededKeys.add(textKey(message.id, textOrdinal));
                     } catch {
-                      captureFailed = true;
                       failedKeys.add(textKey(message.id, textOrdinal));
                       if (existing?.kind === 'assistant-text') captured.push({ ...existing, capture: 'incomplete' });
                       console.info('think_content_outcome', { status: 'unavailable' });
@@ -737,13 +733,12 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (!await verifyIdentity(controller)) break;
           if (state.generation !== generation) continue;
           if (closed || identityChanged || monitor !== monitored || !monitor?.healthy || monitored.generation !== monitorGeneration || activeRuns.get(conversationId) !== runId) break;
-          const wasIncomplete = incompleteContent.has(conversationId);
+          const wasIncomplete = (missingCanonical.get(conversationId)?.size ?? 0) > 0;
           let missing = missingCanonical.get(conversationId);
           if (!missing) { missing = new Set(); missingCanonical.set(conversationId, missing); }
           for (const key of succeededKeys) missing.delete(key);
           for (const key of failedKeys) missing.add(key);
-          const incomplete = captureFailed || missing.size > 0;
-          if (incomplete) incompleteContent.add(conversationId); else incompleteContent.delete(conversationId);
+          const incomplete = missing.size > 0;
           if (wasIncomplete !== incomplete) {
             const current = conversations.get(conversationId);
             if (current) setConversation(conversationId, { ...current, revision: current.revision + 1 });
@@ -857,7 +852,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           const encoded = Buffer.from(JSON.stringify([conversationId, state.revision, index])).toString('base64url');
           nextCursor = `${encoded}.${createHmac('sha256', cursorKey).update(encoded).digest('hex')}`;
         }
-        return { conversationId, epoch, revision: state.revision, entries: page, contentHealth: incompleteContent.has(conversationId) ? 'incomplete' : 'complete', ...(nextCursor ? { nextCursor } : {}) };
+        return { conversationId, epoch, revision: state.revision, entries: page, contentHealth: (missingCanonical.get(conversationId)?.size ?? 0) > 0 ? 'incomplete' : 'complete', ...(nextCursor ? { nextCursor } : {}) };
       },
       async open(ref) {
         requireOpen();

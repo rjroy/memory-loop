@@ -70,9 +70,9 @@ inspiration card. An agent populates the questions daily.
 Clicking a question opens a fresh Think conversation with that question prefilled
 and editable. Do not send it automatically.
 
-Exact prompt collection limits and whether every inspiration selection rule also
-applies remain to be settled during design; the weekly quote schedule does not
-apply to this daily question generation.
+Show one question, using the same increasing file-order weights and 50-entry cap
+as Inspiration. The weekly quote schedule does not apply to this daily question
+generation.
 
 ### Recent captures
 
@@ -86,6 +86,8 @@ Show the latest ten conversations. Each has Resume and Delete actions.
 
 - Resume reopens the selected conversation in Think.
 - The conversation currently selected in Think cannot be deleted.
+- A conversation with running AI work cannot be deleted, even when it is not
+  selected. Deletion must not implicitly stop that work.
 - Explicit deletion removes both the conversation and its associated vault
   transcript.
 - Falling outside the latest-ten display limit never deletes a conversation or
@@ -94,12 +96,22 @@ Show the latest ten conversations. Each has Resume and Delete actions.
 Resuming conversations is a real daemon capability, including continuity across
 daemon restarts, not simply a card-local link or in-memory list.
 
+Start the resumable list with new conversations created under the durable
+registry. Do not migrate pre-existing conversations into it; leave their existing
+vault transcripts intact.
+
 ### Current Goals
 
 Render a designated Markdown resource file containing the user's current goals.
 This card is a file display, not a new goals-management or editing system.
 
 ## Foundation boundaries
+
+Daily and weekly generation may run automatically while the daemon is available,
+using the configured AI and bounded excerpts of recent vault edits. Web research
+to verify quote attribution is authorized. Generated writes are restricted to the
+designated question and quote resources. This does not authorize unrelated vault
+rewrites or autonomous changes to user-authored material.
 
 The implementation should provide three coherent foundations:
 

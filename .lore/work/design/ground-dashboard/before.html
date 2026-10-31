@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Ground — source-backed current placeholder</title>
+  <link rel="stylesheet" href="../../../../src/styles.css">
+  <style>
+    @font-face{font-family:'IM Fell English SC';src:url('../../../../public/fonts/im-fell-english-sc/IMFellEnglishSC-Regular.ttf') format('truetype');font-weight:400}
+    @font-face{font-family:'Source Sans 3';src:url('../../../../public/fonts/source-sans-3/SourceSans3-Regular.ttf') format('truetype');font-weight:400}
+    @font-face{font-family:'Source Sans 3';src:url('../../../../public/fonts/source-sans-3/SourceSans3-SemiBold.ttf') format('truetype');font-weight:600}
+    .review-notice{padding:.75rem clamp(20px,4.4vw,64px);border-bottom:1px solid var(--rule);color:var(--muted);font-size:.875rem}
+    .review-notice p{margin:0}.review-notice a{display:inline-flex;align-items:center;min-height:44px}
+  </style>
+</head>
+<body>
+  <aside class="review-notice" aria-label="Design review, outside the product"><p><strong>Source-backed before.</strong> Current Ground placeholder markup and stylesheet; not a capture of the running app.</p><a href="index.html">View proposed composition</a><p id="review-feedback" role="status">Sample navigation is inert.</p></aside>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="app-shell app-shell--ground">
+    <header class="app-header">
+      <div class="brand-identity"><img src="../../../../public/brand/the-guide/approved-a5.svg" width="40" height="40" alt=""><span>Memory Loop</span></div>
+      <nav class="primary-navigation" aria-label="Primary"><a class="navigation-link" href="#ground" aria-current="page" data-sample>Ground</a><a class="navigation-link" href="#capture" data-sample>Capture</a><a class="navigation-link" href="#think" data-sample>Think</a><a class="navigation-link" href="#recall" data-sample>Recall</a></nav>
+    </header>
+    <main class="workspace" id="main-content" tabindex="-1">
+      <div class="ground-view">
+        <h1 id="view-heading" tabindex="-1">Ground</h1>
+        <p class="view-purpose">An overview built from interchangeable panels.</p>
+        <div class="ground-arrival">
+          <div class="ground-welcome">
+            <p class="brand-invitation">Pick up a thread.</p>
+            <section class="placeholder-notice"><h2>Panels aren't available yet</h2><p>Panel contents haven't been chosen. This preview doesn't display vault information.</p><a class="content-link" href="#capture" data-sample>Open Capture</a></section>
+          </div>
+          <img class="ground-art" src="../../../../public/brand/the-guide/approved-a1.webp" width="1254" height="1254" alt="A guide offers a lantern between a warm mountain path and a cool, far-off city.">
+        </div>
+      </div>
+    </main>
+  </div>
+  <script>document.addEventListener('click',event=>{if(event.target.closest('[data-sample]')){event.preventDefault();document.querySelector('#review-feedback').textContent='Sample only. The application is unchanged.';}});</script>
+</body>
+</html>

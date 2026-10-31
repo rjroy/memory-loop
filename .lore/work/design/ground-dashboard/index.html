@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Ground — static design composition</title>
+  <link rel="stylesheet" href="board.css">
+  <script src="preview.js" defer></script>
+</head>
+<body>
+  <aside class="review-notice" aria-label="Design review, outside the product">
+    <p><strong>Ground design preview.</strong> Fictional content; sample actions do not open, send, save or delete anything.</p>
+    <div class="review-options">
+      <a href="before.html">Current placeholder</a>
+      <label for="review-state">Example state</label>
+      <select id="review-state">
+        <option value="ready">Populated</option><option value="loading">Loading</option>
+        <option value="empty">Empty</option><option value="missing">Missing files</option>
+        <option value="malformed">Malformed files</option><option value="mixed">Independent failure</option>
+        <option value="long">Long content</option>
+      </select>
+      <label class="text-option"><input id="large-text" type="checkbox"> 200% text</label>
+    </div>
+    <p id="review-feedback" role="status">Design artifact only; the application is unchanged.</p>
+  </aside>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand-identity">
+        <img src="../../../../public/brand/the-guide/approved-a5.svg" width="40" height="40" alt="">
+        <span>Memory Loop</span>
+      </div>
+      <nav class="primary-navigation" aria-label="Primary">
+        <a class="navigation-link" href="#ground" aria-current="page" data-sample>Ground</a>
+        <a class="navigation-link" href="#capture" data-sample>Capture</a>
+        <a class="navigation-link" href="#think" data-sample>Think</a>
+        <a class="navigation-link" href="#recall" data-sample>Recall</a>
+      </nav>
+    </header>
+    <main class="workspace" id="main-content" tabindex="-1">
+      <div class="ground">
+        <h1 class="visually-hidden" tabindex="-1">Ground</h1>
+        <div class="ground-arrival">
+          <p class="brand-invitation">Pick up a thread.</p>
+          <img class="ground-art" src="../../../../public/brand/the-guide/approved-a1.webp" width="1254" height="1254"
+            alt="A guide offers a lantern between a warm mountain path and a cool, far-off city.">
+        </div>
+        <div class="ground-grid">
+          <section class="card quick-actions" aria-labelledby="actions-heading" data-card="actions">
+            <h2 id="actions-heading">Quick Actions</h2>
+            <div class="card-body">
+              <div class="action-strip" aria-label="Quick Actions">
+                <button class="skill-action" type="button" data-prefill="@intent"><span>Shape an idea</span><span class="skill-ref">@intent</span></button>
+                <button class="skill-action" type="button" data-prefill="@write-lyrics"><span>Start a lyric</span><span class="skill-ref">@write-lyrics</span></button>
+              </div>
+            </div>
+          </section>
+          <section class="card inspiration" aria-labelledby="inspiration-heading" data-card="inspiration">
+            <h2 id="inspiration-heading">Inspiration</h2>
+            <div class="card-body">
+              <figure class="quotation">
+                <blockquote><p>Tell all the truth but tell it slant —</p></blockquote>
+                <figcaption>Emily Dickinson<span class="quote-source">“Tell all the truth but tell it slant”</span></figcaption>
+              </figure>
+            </div>
+          </section>
+          <section class="card prompts" aria-labelledby="prompts-heading" data-card="prompts">
+            <h2 id="prompts-heading">Prompts</h2>
+            <div class="card-body">
+              <button type="button" class="question-action" data-prefill="What would make a good beginning today?">
+                <span>What would make a good beginning today?</span>
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 12h17m-6-6 6 6-6 6"/></svg>
+              </button>
+            </div>
+          </section>
+          <section class="card goals" aria-labelledby="goals-heading" data-card="goals">
+            <h2 id="goals-heading">Current Goals</h2>
+            <div class="card-body markdown-document">
+              <h3>A little room for writing</h3>
+              <ul><li>Make a small beginning on ordinary days.</li><li>Finish one song before starting another.</li></ul>
+            </div>
+          </section>
+          <section class="card captures" aria-labelledby="captures-heading" data-card="captures">
+            <h2 id="captures-heading">Recent captures</h2>
+            <div class="card-body">
+              <ol class="capture-list">
+                <li><a class="capture-link" href="#recall-entry-1" data-sample><span class="capture-excerpt">The chorus might work better as a question than an answer.</span><span class="capture-time">Today, 10:42</span><span class="capture-path">00_Inbox/2026-10-31.md</span></a></li>
+                <li><a class="capture-link" href="#recall-entry-2" data-sample><span class="capture-excerpt">A place to begin, not another system to maintain.</span><span class="capture-time">Today, 09:18</span><span class="capture-path">00_Inbox/2026-10-31.md</span></a></li>
+                <li><a class="capture-link" href="#recall-entry-3" data-sample><span class="capture-excerpt">Keep the image of the kitchen light for the second verse.</span><span class="capture-time">Yesterday, 20:06</span><span class="capture-path">00_Inbox/2026-10-30.md</span></a></li>
+                <li><a class="capture-link" href="#recall-entry-4" data-sample><span class="capture-excerpt">What changes if the first draft is allowed to be very small?</span><span class="capture-time">Yesterday, 15:24</span><span class="capture-path">00_Inbox/2026-10-30.md</span></a></li>
+                <li><a class="capture-link" href="#recall-entry-5" data-sample><span class="capture-excerpt">An unfinished thought is still something to return to.</span><span class="capture-time">30 Oct, 08:12</span><span class="capture-path">00_Inbox/2026-10-30.md</span></a></li>
+              </ol>
+            </div>
+          </section>
+          <section class="card conversations" aria-labelledby="conversations-heading" data-card="conversations">
+            <h2 id="conversations-heading">Recent conversations</h2>
+            <div class="card-body"><ol class="conversation-list" id="conversation-list"></ol></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+  <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+    <h2 id="delete-title">Delete conversation?</h2>
+    <p id="delete-description">This deletes the conversation and its transcript file. This cannot be undone.</p>
+    <div class="dialog-actions"><button type="button" class="quiet-button" id="cancel-delete" autofocus>Cancel</button><button type="button" class="quiet-button" id="confirm-delete">Delete conversation</button></div>
+  </dialog>
+</body>
+</html>

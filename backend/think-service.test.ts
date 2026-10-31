@@ -10,9 +10,7 @@ import type { PermissionReplyInput, PermissionRequestListInput, PermissionReques
 import { createThinkService, type ThinkServiceOptions } from './think/service';
 import { createApp, type AppOptions } from './app';
 import type { NativeSession, NativeSessions } from './think/native';
-import type { BodyKey, BodyRef, BodyStore } from './think/body-store';
-import * as bodyModule from './think/body-store';
-import type { ThinkContentReader } from './think/projection';
+import { createBodyStore, type BodyKey, type BodyRef, type BodyStore } from './think/body-store';
 import { constants } from 'node:fs';
 import { transcriptIO, type TranscriptIO } from './think/transcript-file';
 import type { TranscriptRuntime } from './think/transcript';
@@ -156,22 +154,7 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
   const replyForm = vi.fn(async (_input: SessionFormReplyInput, _signal: AbortSignal): Promise<SessionFormReplyOutput> => {});
   const listPermissionRequests = vi.fn(async (_input: PermissionRequestListInput, _signal: AbortSignal): Promise<PermissionRequestListOutput> => ({ location: { directory }, data: [...pendingPermissions] }));
   const replyPermission = vi.fn(async (_input: PermissionReplyInput, _signal: AbortSignal): Promise<void> => {});
-  const native = { createSession, getSession, subscribe, prompt, listInbox, cancelInbox, interruptSession, activeSessions, listMessages, getMessage, getServerInfo, listForms, getForm, replyForm, listPermissionRequests, replyPermission } satisfies NativeSessions & {
-    subscribe(input: EventSubscribeInput, signal: AbortSignal): AsyncIterable<OpenCodeEvent>;
-    prompt(input: SessionPromptInput, signal: AbortSignal): Promise<SessionPromptOutput>;
-    listInbox(input: SessionInboxListInput, signal: AbortSignal): Promise<SessionInboxListOutput>;
-    cancelInbox(input: SessionInboxCancelInput, signal: AbortSignal): Promise<void>;
-    interruptSession(input: SessionInterruptInput, signal: AbortSignal): Promise<SessionInterruptOutput>;
-    activeSessions(signal: AbortSignal): Promise<SessionActiveOutput>;
-    listMessages(input: MessageListInput, signal: AbortSignal): Promise<MessageListOutput>;
-    getMessage(input: SessionMessageGetInput, signal: AbortSignal): Promise<SessionMessageGetOutput>;
-    getServerInfo(signal: AbortSignal): Promise<ServerInfo>;
-    listForms(input: SessionFormListInput, signal: AbortSignal): Promise<SessionFormListOutput>;
-    getForm(input: SessionFormGetInput, signal: AbortSignal): Promise<SessionFormGetOutput>;
-    replyForm(input: SessionFormReplyInput, signal: AbortSignal): Promise<SessionFormReplyOutput>;
-    listPermissionRequests(input: PermissionRequestListInput, signal: AbortSignal): Promise<PermissionRequestListOutput>;
-    replyPermission(input: PermissionReplyInput, signal: AbortSignal): Promise<void>;
-  };
+  const native = { createSession, getSession, subscribe, prompt, listInbox, cancelInbox, interruptSession, activeSessions, listMessages, getMessage, getServerInfo, listForms, getForm, replyForm, listPermissionRequests, replyPermission } satisfies NativeSessions & { replyPermission(input: PermissionReplyInput, signal: AbortSignal): Promise<void> };
   const options = { native, context: { directory, agent, model: selectedModel }, epoch,
     serviceIdentity: { pid: 49123, version: '2.2.2' }, bodies: bodies ?? unitBodies(), ...leaseOptions, ...(transcript ? { transcript } : {}) } satisfies ThinkServiceOptions & { clock?: { now(): number }; transferIdleMs?: number };
   const service = createThinkService(options);
@@ -359,7 +342,7 @@ describe('Phase 3 authenticated snapshot and watch', () => {
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
     let bodies: BodyStore;
-    try { bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch }); }
+    try { bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch }); }
     catch (error) { await rm(root, { recursive: true, force: true }); throw error; }
     let ready: Awaited<ReturnType<typeof readyFixture>>;
     try { ready = await readyFixture({ leaseMs: 300, heartbeatMs: 1000 }, { clock: { now: () => now }, transferIdleMs: 400 }, bodies, vault); }
@@ -451,7 +434,7 @@ describe('Phase 3 authenticated content transfer', () => {
     const root = await mkdtemp('/tmp/opencode/think-transfer-test-');
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
-    const bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
     let now = 0;
     const f = setup(model, bodies, vault, { clock: { now: () => now }, transferIdleMs: 100 });
     try {
@@ -877,7 +860,7 @@ describe('daemon-owned Think conversation creation', () => {
     const signal = f.calls[0]?.signal;
     await f.service.close();
     expect(signal?.aborted).toBe(true);
-    // NativeSessions exposes only create/get; close has no process-stop or interrupt capability.
+    expect(f.interruptSession).not.toHaveBeenCalled();
     expect(f.createSession).toHaveBeenCalledOnce();
   });
 });
@@ -956,15 +939,6 @@ describe('daemon-owned original body foundation', () => {
     } finally { body.commit.resolve(body.ref()); await f.service.close(); }
   });
 
-  it('exposes the flat content reader contract for downstream owners', async () => {
-    const body = bodyFixture();
-    const f = setup(model, body.bodies);
-    try {
-      const content: unknown = Reflect.get(f.service, 'content');
-      expect(content).toMatchObject({ page: expect.any(Function), open: expect.any(Function) });
-    } finally { await f.service.close(); }
-  });
-
   it.each(['commit', 'failure'] as const)('captures a form reply before native dispatch (%s)', async result => {
     const body = bodyFixture();
     const f = setup(model, body.bodies);
@@ -991,10 +965,6 @@ describe('daemon-owned original body foundation', () => {
   });
 
   it('retains original UTF-8 through the real private store and exposes it in the content projection', async () => {
-    type Factory = (options: { directory: string; epoch: string; vaultDirectory: string }) => Promise<BodyStore>;
-    const candidate: unknown = Reflect.get(bodyModule, 'createBodyStore');
-    if (typeof candidate !== 'function') throw new Error('Missing requested createBodyStore factory export');
-    const createBodyStore = candidate as Factory;
     const root = await mkdtemp('/tmp/opencode/think-content-test-');
     const vault = join(root, 'vault');
     let f: ReturnType<typeof setup> | undefined;
@@ -1009,11 +979,7 @@ describe('daemon-owned original body foundation', () => {
       await vi.waitFor(async () => expect((await f?.service.conversation(a.conversationId))?.creation).toBe('ready'));
       const receipt = await f.service.send(send);
       await waitForCalls(f.prompts, 1);
-      const content: unknown = Reflect.get(f.service, 'content');
-      function isContentReader(value: unknown): value is ThinkContentReader {
-        return typeof value === 'object' && value !== null && 'page' in value && typeof value.page === 'function' && 'open' in value && typeof value.open === 'function';
-      }
-      if (!isContentReader(content)) throw new Error('Missing requested Think content reader');
+      const content = f.service.content;
       const page = await content.page(a.conversationId);
       const original = page.entries.find(entry => entry.kind === 'original' && entry.clientCommandId === send.clientCommandId);
       if (!original || original.kind !== 'original') throw new Error('Missing original body projection');
@@ -1033,7 +999,7 @@ describe('real private-store normalized projection', () => {
     const root = await mkdtemp('/tmp/opencode/think-projection-test-');
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
-    const bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
     const f = setup(model, bodies, vault);
     return { f, root, async close() { try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); } } };
   }
@@ -1043,7 +1009,7 @@ describe('real private-store normalized projection', () => {
     const root = await mkdtemp('/tmp/opencode/think-capture-gap-');
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
-    const actual = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    const actual = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
     const capture = deferred<BodyRef>();
     const held = vi.fn();
     const bodies: BodyStore = { ...actual, async replace(key, source, mode) {
@@ -1082,7 +1048,7 @@ describe('real private-store normalized projection', () => {
     const root = await mkdtemp('/tmp/opencode/think-transcript-retry-');
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
-    const bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
     let now = 1_700_000_000_000;
     const timers = new Set<{ at: number; callback: () => void }>();
     const runtime: TranscriptRuntime = { now: () => now, random: () => 0.5, schedule(callback, delay) {
@@ -1220,7 +1186,7 @@ describe('real private-store normalized projection', () => {
     const root = await mkdtemp('/tmp/opencode/think-transcript-health-');
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
-    const bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
     let now = 1_700_000_000_000;
     const timers = new Set<{ at: number; callback: () => void }>();
     const runtime: TranscriptRuntime = { now: () => now, random: () => 0.5, schedule(callback, delay) {
@@ -1271,7 +1237,7 @@ describe('real private-store normalized projection', () => {
     const root = await mkdtemp('/tmp/opencode/think-transcript-config-');
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
-    const bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
     const f = setup(model, bodies, vault, undefined, { directory: config?.transcriptDirectory });
     try {
       const app = createApp({ authority: '127.0.0.1:3000', serviceToken: 'a'.repeat(64), think: f.service,
@@ -1566,7 +1532,7 @@ describe('daemon-owned native prompt dispatch', () => {
       await vi.waitFor(async () => expect((await f.service.conversation(b.conversationId))?.creation).toBe('ready'));
       expect(promptCall.signal.aborted).toBe(false);
       promptCall.result.reject(new Error('fixture ambiguous transport failure'));
-      await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ runId: receipt.runId }));
+      await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ runId: receipt.runId, state: 'upstream-unconfirmed' }));
       expect(await f.service.send(send)).toMatchObject({ runId: receipt.runId });
       await expect(f.service.send({ ...send, clientCommandId: '77777777-7777-4777-8777-777777777777' })).rejects.toMatchObject({ code: 'command_conflict' });
       expect(f.prompt).toHaveBeenCalledOnce();

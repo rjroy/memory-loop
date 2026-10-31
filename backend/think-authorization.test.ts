@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApp, type AppOptions } from './app';
-import type { ConversationState, CreateConversationCommand, CreateReceipt, ThinkService } from './think/service';
+import type { ConversationState, CreateConversationCommand, CreateReceipt } from './think/service';
+import { expectNoThinkDispatch, thinkHttpService } from './think-http-test-fixture';
 import type { VaultReader } from './vault';
 
 const authority = '127.0.0.1:3000';
@@ -20,22 +21,11 @@ function setup(unavailable = false) {
     note: vi.fn(async () => ({ name: 'note.md', markdown: 'fixture' })),
     close: vi.fn(async () => {}),
   };
-  const think = {
-    create: vi.fn(async (_command: CreateConversationCommand): Promise<CreateReceipt> => receipt),
-    conversation: vi.fn(async (_id: string): Promise<ConversationState | null> => state),
-    snapshot: vi.fn<ThinkService['snapshot']>(async () => snapshot),
-    watch: vi.fn<ThinkService['watch']>(async () => { throw new Error('Unexpected watch'); }),
-    contentChunk: vi.fn<ThinkService['contentChunk']>(async () => { throw new Error('Unexpected content chunk'); }),
-    command: vi.fn(async (_id: string, _commandId: string): Promise<CreateReceipt | null> => receipt),
-    send: vi.fn<ThinkService['send']>(async () => { throw new Error('Unexpected Send'); }),
-    stop: vi.fn<ThinkService['stop']>(async () => { throw new Error('Unexpected Stop'); }),
-    decisions: vi.fn<ThinkService['decisions']>(async () => { throw new Error('Unexpected decisions'); }),
-    decision: vi.fn<ThinkService['decision']>(async () => { throw new Error('Unexpected decision'); }),
-    reply: vi.fn<ThinkService['reply']>(async () => { throw new Error('Unexpected reply'); }),
-    content: { page: vi.fn<ThinkService['content']['page']>(async () => { throw new Error('Unexpected page'); }),
-      open: vi.fn<ThinkService['content']['open']>(async () => { throw new Error('Unexpected open'); }) },
-    close: vi.fn(async () => {}),
-  } satisfies ThinkService;
+  const think = thinkHttpService();
+  think.create.mockResolvedValue(receipt);
+  think.conversation.mockResolvedValue(state);
+  think.snapshot.mockResolvedValue(snapshot);
+  think.command.mockResolvedValue(receipt);
   const options: AppOptions = { authority, serviceToken: token, vault: { reader: vault },
     think: unavailable ? { error: 'think_unavailable' } : think };
   const app = createApp(options);
@@ -88,38 +78,14 @@ describe('Think HTTP command boundary', () => {
     const response = await post(JSON.stringify(command), headers);
     expect(response.status).toBe(status);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(think.create).not.toHaveBeenCalled();
-    expect(think.conversation).not.toHaveBeenCalled();
-    expect(think.snapshot).not.toHaveBeenCalled();
-    expect(think.watch).not.toHaveBeenCalled();
-    expect(think.contentChunk).not.toHaveBeenCalled();
-    expect(think.command).not.toHaveBeenCalled();
-    expect(think.send).not.toHaveBeenCalled();
-    expect(think.stop).not.toHaveBeenCalled();
-    expect(think.decisions).not.toHaveBeenCalled();
-    expect(think.decision).not.toHaveBeenCalled();
-    expect(think.reply).not.toHaveBeenCalled();
-    expect(think.content.page).not.toHaveBeenCalled();
-    expect(think.content.open).not.toHaveBeenCalled();
+    expectNoThinkDispatch(think);
   });
 
   it('rejects a missing credential before any Think service call', async () => {
     const { post, think } = setup();
     const response = await post(JSON.stringify(command), { authorization: '' });
     expect(response.status).toBe(401);
-    expect(think.create).not.toHaveBeenCalled();
-    expect(think.conversation).not.toHaveBeenCalled();
-    expect(think.snapshot).not.toHaveBeenCalled();
-    expect(think.watch).not.toHaveBeenCalled();
-    expect(think.contentChunk).not.toHaveBeenCalled();
-    expect(think.command).not.toHaveBeenCalled();
-    expect(think.send).not.toHaveBeenCalled();
-    expect(think.stop).not.toHaveBeenCalled();
-    expect(think.decisions).not.toHaveBeenCalled();
-    expect(think.decision).not.toHaveBeenCalled();
-    expect(think.reply).not.toHaveBeenCalled();
-    expect(think.content.page).not.toHaveBeenCalled();
-    expect(think.content.open).not.toHaveBeenCalled();
+    expectNoThinkDispatch(think);
   });
 
   it.each(['not json', JSON.stringify({ ...command, conversationId: 'not-a-uuid' }), JSON.stringify({ conversationId })])(

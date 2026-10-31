@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from './app';
-import type { ThinkService } from './think/service';
-import type { SendCommand, SendReceipt, StopCommand, StopReceipt } from './think/contract';
+import type { SendReceipt, StopReceipt } from './think/contract';
+import { expectNoThinkDispatch, thinkHttpService } from './think-http-test-fixture';
 import type { VaultReader } from './vault';
 
 const authority = '127.0.0.1:3000';
@@ -20,22 +20,9 @@ function setup() {
   };
   const sendReceipt: SendReceipt = { kind: 'send', conversationId, clientCommandId, runId, epoch, state: 'registered' };
   const stopReceipt: StopReceipt = { kind: 'stop', conversationId, clientCommandId, runId, epoch, state: 'registered' };
-  const think = {
-    create: vi.fn<ThinkService['create']>(),
-    conversation: vi.fn<ThinkService['conversation']>(),
-    snapshot: vi.fn<ThinkService['snapshot']>(async () => { throw new Error('Unexpected snapshot'); }),
-    watch: vi.fn<ThinkService['watch']>(async () => { throw new Error('Unexpected watch'); }),
-    contentChunk: vi.fn<ThinkService['contentChunk']>(async () => { throw new Error('Unexpected content chunk'); }),
-    command: vi.fn<ThinkService['command']>(),
-    close: vi.fn(async () => {}),
-    send: vi.fn(async (_command: SendCommand) => sendReceipt),
-    stop: vi.fn(async (_command: StopCommand) => stopReceipt),
-    decisions: vi.fn<ThinkService['decisions']>(async () => { throw new Error('Unexpected decisions'); }),
-    decision: vi.fn<ThinkService['decision']>(async () => { throw new Error('Unexpected decision'); }),
-    reply: vi.fn<ThinkService['reply']>(async () => { throw new Error('Unexpected reply'); }),
-    content: { page: vi.fn<ThinkService['content']['page']>(async () => { throw new Error('Unexpected page'); }),
-      open: vi.fn<ThinkService['content']['open']>(async () => { throw new Error('Unexpected open'); }) },
-  } satisfies ThinkService;
+  const think = thinkHttpService();
+  think.send.mockResolvedValue(sendReceipt);
+  think.stop.mockResolvedValue(stopReceipt);
   const app = createApp({ authority, serviceToken: token, vault: { reader: vault }, think });
   const post = (path: string, body: string, headers: Record<string, string> = {}) => app(new Request(`http://${authority}${path}`, {
     method: 'POST', headers: { host: authority, authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers }, body,
@@ -69,19 +56,7 @@ describe('Think Send and Stop HTTP boundary', () => {
     const f = setup();
     expect((await f.post(`${base}/messages`, JSON.stringify({ clientCommandId, text: 'fixture' }), headers)).status).toBe(status);
     expect((await f.post(`${base}/runs/${runId}/stop`, JSON.stringify({ clientCommandId }), headers)).status).toBe(status);
-    expect(f.think.send).not.toHaveBeenCalled();
-    expect(f.think.stop).not.toHaveBeenCalled();
-    expect(f.think.create).not.toHaveBeenCalled();
-    expect(f.think.conversation).not.toHaveBeenCalled();
-    expect(f.think.snapshot).not.toHaveBeenCalled();
-    expect(f.think.watch).not.toHaveBeenCalled();
-    expect(f.think.contentChunk).not.toHaveBeenCalled();
-    expect(f.think.command).not.toHaveBeenCalled();
-    expect(f.think.decisions).not.toHaveBeenCalled();
-    expect(f.think.decision).not.toHaveBeenCalled();
-    expect(f.think.reply).not.toHaveBeenCalled();
-    expect(f.think.content.page).not.toHaveBeenCalled();
-    expect(f.think.content.open).not.toHaveBeenCalled();
+    expectNoThinkDispatch(f.think);
   });
 
   it.each([

@@ -1,8 +1,7 @@
 import { waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { createThinkSession, type ThinkSession, type ThinkSessionOptions } from '../../src/think/session';
+import { createThinkSession, type ThinkSessionOptions } from '../../src/think/session';
 import { createThinkClient, ThinkClientError, type ThinkSnapshot, type ThinkWatchHandlers } from '../../src/think/client';
-import type { ThinkPresentation } from '../../src/think/types';
 import type { CreateReceipt, SendReceipt } from '../../backend/think/contract';
 import type { BodyRef } from '../../backend/think/body-store';
 import { createHash, webcrypto } from 'node:crypto';
@@ -41,17 +40,6 @@ function fixture(pointerValue: string | null = null) {
   return { client, pointer, navigate, session, watches };
 }
 const think = (id: string) => ({ pathname: '/think', search: `?conversation=${id}` });
-
-// Proposed smallest adapter: the existing session owns the presenter state and actions.
-function presentation(session: ThinkSession): ThinkPresentation | undefined {
-  const get: unknown = Reflect.get(session, 'getPresentation');
-  expect(typeof get).toBe('function');
-  if (typeof get !== 'function') return undefined;
-  const value: unknown = Reflect.apply(get, session, []);
-  const isPresentation = (item: unknown): item is ThinkPresentation => typeof item === 'object' && item !== null && 'state' in item && 'actions' in item && typeof item.actions === 'object' && item.actions !== null && 'send' in item.actions && typeof item.actions.send === 'function' && 'stop' in item.actions && typeof item.actions.stop === 'function';
-  expect(isPresentation(value)).toBe(true);
-  return isPresentation(value) ? value : undefined;
-}
 
 describe('Think read-side session ownership', () => {
   it('creates exactly one first conversation only on bare Think activation and keeps typing during creation', async () => {
@@ -211,7 +199,7 @@ describe('Think read-side session ownership', () => {
   });
 });
 
-describe('Think session command ownership (proposed getPresentation adapter)', () => {
+describe('Think session command ownership', () => {
   it('sends one immutable command for a draft version and preserves a newer edit after acknowledgement', async () => {
     const f = fixture();
     const ack = deferred<SendReceipt>();
@@ -221,15 +209,14 @@ describe('Think session command ownership (proposed getPresentation adapter)', (
       await waitFor(() => expect(f.session.getSnapshot().identity).toEqual({ conversationId: a, epoch }));
       f.session.editDraft('first text');
       const version = f.session.getSnapshot().draft.version;
-      const view = presentation(f.session);
-      if (!view) return;
+      const view = f.session.getPresentation();
       view.actions.send({ conversationId: a, epoch }, version);
       view.actions.send({ conversationId: a, epoch }, version);
       await waitFor(() => expect(f.client.send).toHaveBeenCalledOnce());
       expect(vi.mocked(f.client.send).mock.calls[0]?.[0]).toMatchObject({ conversationId: a, clientCommandId: c, text: 'first text' });
       f.session.editDraft('newer text');
       ack.resolve({ conversationId: a, clientCommandId: c, epoch, kind: 'send', state: 'registered', runId: b });
-      await waitFor(() => expect(presentation(f.session)?.state.composer).toMatchObject({ kind: 'stop', runId: b }));
+      await waitFor(() => expect(f.session.getPresentation().state.composer).toMatchObject({ kind: 'stop', runId: b }));
       expect(f.session.getSnapshot().draft.text).toBe('newer text');
       expect(f.client.send).toHaveBeenCalledOnce();
     } finally { f.session.close(); }
@@ -241,8 +228,7 @@ describe('Think session command ownership (proposed getPresentation adapter)', (
       f.session.setLocation(think(a));
       await waitFor(() => expect(f.session.getSnapshot().identity).toEqual({ conversationId: a, epoch }));
       f.session.editDraft('exact captured text');
-      const view = presentation(f.session);
-      if (!view) return;
+      const view = f.session.getPresentation();
       view.actions.send({ conversationId: a, epoch }, f.session.getSnapshot().draft.version);
       await waitFor(() => expect(f.client.send).toHaveBeenCalledOnce());
       await waitFor(() => expect(f.session.getSnapshot().draft.text).toBe(''));
@@ -257,8 +243,7 @@ describe('Think session command ownership (proposed getPresentation adapter)', (
       f.session.setLocation(think(a));
       await waitFor(() => expect(f.session.getSnapshot().identity).toEqual({ conversationId: a, epoch }));
       f.session.editDraft('uncertain original');
-      const view = presentation(f.session);
-      if (!view) return;
+      const view = f.session.getPresentation();
       view.actions.send({ conversationId: a, epoch }, f.session.getSnapshot().draft.version);
       await waitFor(() => expect(vi.mocked(f.client.receipt).mock.calls.some(([id, command]) => id === a && command === c)).toBe(true));
       expect(f.client.send).toHaveBeenCalledOnce();
@@ -273,15 +258,14 @@ describe('Think session command ownership (proposed getPresentation adapter)', (
       f.session.setLocation(think(a));
       await waitFor(() => expect(f.session.getSnapshot().identity).toEqual({ conversationId: a, epoch }));
       f.session.editDraft('fixture work');
-      const view = presentation(f.session);
-      if (!view) return;
+      const view = f.session.getPresentation();
       view.actions.send({ conversationId: a, epoch }, f.session.getSnapshot().draft.version);
       ack.resolve({ conversationId: a, clientCommandId: c, epoch, kind: 'send', state: 'admitted', runId: b });
-      await waitFor(() => expect(presentation(f.session)?.state.composer).toMatchObject({ kind: 'stop', runId: b }));
-      presentation(f.session)?.actions.stop({ conversationId: a, epoch }, b);
+      await waitFor(() => expect(f.session.getPresentation().state.composer).toMatchObject({ kind: 'stop', runId: b }));
+      f.session.getPresentation().actions.stop({ conversationId: a, epoch }, b);
       await waitFor(() => expect(f.client.stop).toHaveBeenCalledOnce());
       expect(vi.mocked(f.client.stop).mock.calls[0]?.[0]).toMatchObject({ conversationId: a, runId: b });
-      expect(presentation(f.session)?.state.run.state).not.toBe('interrupted');
+      expect(f.session.getPresentation().state.run.state).not.toBe('interrupted');
       expect(f.client.send).toHaveBeenCalledOnce();
     } finally { f.session.close(); }
   });

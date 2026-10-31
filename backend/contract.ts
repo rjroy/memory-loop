@@ -21,12 +21,28 @@ export interface VaultNoteResponse {
   markdown: string;
 }
 
-export type VaultErrorCode =
-  | 'config_missing'
-  | 'config_invalid'
-  | 'vault_unavailable'
-  | 'note_unavailable'
-  | 'invalid_request';
+export const vaultErrors = {
+  config_missing: { status: 503, message: 'Vault configuration is missing' },
+  config_invalid: { status: 503, message: 'Vault configuration is invalid' },
+  vault_unavailable: { status: 503, message: 'Vault directory is unavailable' },
+  note_unavailable: { status: 404, message: 'Note is unavailable' },
+  invalid_request: { status: 400, message: 'Invalid note identifier' },
+} as const;
+
+export type VaultErrorCode = keyof typeof vaultErrors;
+
+export function isVaultErrorCode(value: unknown): value is VaultErrorCode {
+  return typeof value === 'string' && Object.hasOwn(vaultErrors, value);
+}
+
+export function isVaultComponent(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && !value.startsWith('.') &&
+    !value.includes('/') && !value.includes('\\') && !value.includes('\0');
+}
+
+export function isVaultId(value: unknown): value is VaultId {
+  return Array.isArray(value) && value.length > 0 && value.every(isVaultComponent);
+}
 
 /** Public messages must not contain filesystem paths or note content. */
 export interface VaultErrorResponse {

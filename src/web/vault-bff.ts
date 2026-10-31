@@ -1,5 +1,5 @@
 import type { LoadedTransport } from '../../backend/transport';
-import type { VaultEntry, VaultId, VaultErrorCode } from '../../backend/contract';
+import { isVaultErrorCode, isVaultId, vaultErrors, type VaultEntry, type VaultId, type VaultErrorCode } from '../../backend/contract';
 import { allowsWebRequest } from './request-policy';
 
 export interface BffDependencies {
@@ -9,11 +9,7 @@ export interface BffDependencies {
 }
 
 const errors: Record<VaultErrorCode | 'service_unavailable' | 'forbidden' | 'not_found' | 'method_not_allowed', { status: number; message: string }> = {
-  config_missing: { status: 503, message: 'Vault configuration is missing' },
-  config_invalid: { status: 503, message: 'Vault configuration is invalid' },
-  vault_unavailable: { status: 503, message: 'Vault directory is unavailable' },
-  note_unavailable: { status: 404, message: 'Note is unavailable' },
-  invalid_request: { status: 400, message: 'Invalid note identifier' },
+  ...vaultErrors,
   service_unavailable: { status: 503, message: 'Vault service unavailable' },
   forbidden: { status: 403, message: 'Request is not permitted' },
   not_found: { status: 404, message: 'Not found' },
@@ -27,12 +23,8 @@ function failure(code: keyof typeof errors): Response {
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-function validId(value: unknown): value is VaultId {
-  return Array.isArray(value) && value.length > 0 && value.every((part: unknown) =>
-    typeof part === 'string' && part.length > 0 && !part.startsWith('.') && !part.includes('/') && !part.includes('\\') && !part.includes('\0'));
-}
 function entry(value: unknown): VaultEntry {
-  if (!record(value) || typeof value.name !== 'string' || !validId(value.id)) throw new Error('invalid');
+  if (!record(value) || typeof value.name !== 'string' || !isVaultId(value.id)) throw new Error('invalid');
   const id = [...value.id];
   if (value.kind === 'note') return { kind: 'note', name: value.name, id };
   if (value.kind === 'directory' && Array.isArray(value.children)) return { kind: 'directory', name: value.name, id, children: value.children.map(entry) };
@@ -53,7 +45,7 @@ function validDaemonOrigin(origin: string): boolean {
 function domainError(value: unknown, status: number): VaultErrorCode | undefined {
   if (!record(value) || !record(value.error) || typeof value.error.message !== 'string') return;
   const code = value.error.code;
-  if (code === 'config_missing' || code === 'config_invalid' || code === 'vault_unavailable' || code === 'note_unavailable' || code === 'invalid_request') {
+  if (isVaultErrorCode(code)) {
     if (errors[code].status === status) return code;
   }
 }
@@ -76,7 +68,7 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
           decodeURIComponent(url.search.replace(/\+/g, ' '));
           const values = url.searchParams.getAll('id');
           const parsed: unknown = values.length === 1 ? JSON.parse(values[0]) : undefined;
-          if (validId(parsed)) id = parsed;
+          if (isVaultId(parsed)) id = parsed;
         } catch { /* A malformed identifier is a client error. */ }
       }
       if (operation === 'note' && !id) response = failure('invalid_request');

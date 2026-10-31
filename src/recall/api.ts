@@ -1,4 +1,4 @@
-import type { VaultEntry, VaultErrorCode, VaultId, VaultNoteResponse, VaultTreeResponse } from '../../backend/contract';
+import { isVaultComponent, isVaultErrorCode, isVaultId, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultTreeResponse } from '../../backend/contract';
 
 export type RecallFailure = VaultErrorCode | 'transport';
 
@@ -12,14 +12,7 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function component(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && !value.startsWith('.') &&
-    !/[\/\\\0]/.test(value);
-}
-
-export function validId(value: unknown): value is VaultId {
-  return Array.isArray(value) && value.length > 0 && value.every(component);
-}
+export { isVaultId as validId } from '../../backend/contract';
 
 export function idKey(id: VaultId): string { return JSON.stringify(id); }
 
@@ -33,14 +26,14 @@ export function selectionFromSearch(search: string): { id: VaultId | null; inval
   if (values.length !== 1) return { id: null, invalid: true };
   try {
     const id: unknown = JSON.parse(values[0]);
-    if (validId(id) && id.at(-1)!.endsWith('.md')) return { id, invalid: false };
+    if (isVaultId(id) && id.at(-1)!.endsWith('.md')) return { id, invalid: false };
   } catch { /* Malformed client addresses never become filesystem requests. */ }
   return { id: null, invalid: true };
 }
 
 function isTree(value: unknown): value is VaultTreeResponse {
   const entriesValid = (entries: unknown, parent: VaultId): boolean => Array.isArray(entries) && entries.every(entry => {
-    if (!record(entry) || !component(entry.name) || !validId(entry.id) ||
+    if (!record(entry) || !isVaultComponent(entry.name) || !isVaultId(entry.id) ||
       idKey(entry.id) !== idKey([...parent, entry.name])) return false;
     if (entry.kind === 'note') return entry.name.endsWith('.md');
     return entry.kind === 'directory' && entriesValid(entry.children, entry.id);
@@ -48,7 +41,6 @@ function isTree(value: unknown): value is VaultTreeResponse {
   return record(value) && entriesValid(value.entries, []);
 }
 
-const codes: readonly VaultErrorCode[] = ['config_missing', 'config_invalid', 'vault_unavailable', 'note_unavailable', 'invalid_request'];
 let readSequence = 0;
 
 async function request<T>(url: string, operation: 'tree' | 'note', signal: AbortSignal, validate: (value: unknown) => value is T): Promise<T> {
@@ -61,8 +53,8 @@ async function request<T>(url: string, operation: 'tree' | 'note', signal: Abort
     if (mime !== 'application/json') throw new RecallReadError('transport');
     const body: unknown = await response.json();
     if (!response.ok) {
-      if (record(body) && record(body.error) && codes.includes(body.error.code as VaultErrorCode)) {
-        throw new RecallReadError(body.error.code as VaultErrorCode);
+      if (record(body) && record(body.error) && isVaultErrorCode(body.error.code)) {
+        throw new RecallReadError(body.error.code);
       }
       throw new RecallReadError('transport');
     }
@@ -85,9 +77,9 @@ export function readTree(_key: string, signal: AbortSignal): Promise<VaultTreeRe
 
 export function readNote(key: string, signal: AbortSignal): Promise<VaultNoteResponse> {
   const id: unknown = JSON.parse(key);
-  if (!validId(id)) return Promise.reject(new RecallReadError('invalid_request'));
+  if (!isVaultId(id)) return Promise.reject(new RecallReadError('invalid_request'));
   return request(`/api/vault/note?${new URLSearchParams({ id: key })}`, 'note', signal,
-    (value): value is VaultNoteResponse => record(value) && component(value.name) &&
+    (value): value is VaultNoteResponse => record(value) && isVaultComponent(value.name) &&
       value.name === id.at(-1) && typeof value.markdown === 'string');
 }
 

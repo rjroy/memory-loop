@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import type { VaultErrorCode } from './contract';
+import { isVaultErrorCode, vaultErrors, type VaultErrorCode } from './contract';
 import type { ThinkService, ThinkUnavailableCode } from './think/service';
 import { ThinkServiceError } from './think/service';
 import { parseContentRequest } from './think/content-transfer';
@@ -14,8 +14,6 @@ export type VaultState = { reader: VaultReader } |
 
 export interface AppOptions {
   authority: string;
-  /** Transitional caller compatibility only; never used as an authorization bypass. */
-  allowedOrigins?: readonly string[];
   serviceToken?: string;
   vault: VaultState;
   capture?: CaptureWriter;
@@ -23,22 +21,14 @@ export interface AppOptions {
   watchPolicy?: { leaseMs: number; heartbeatMs: number };
 }
 
-const errors: Record<VaultErrorCode, { status: 400 | 404 | 503; message: string }> = {
-  config_missing: { status: 503, message: 'Vault configuration is missing' },
-  config_invalid: { status: 503, message: 'Vault configuration is invalid' },
-  vault_unavailable: { status: 503, message: 'Vault directory is unavailable' },
-  note_unavailable: { status: 404, message: 'Note is unavailable' },
-  invalid_request: { status: 400, message: 'Invalid note identifier' },
-};
-
 function publicError(code: VaultErrorCode): Response {
-  const { status, message } = errors[code];
+  const { status, message } = vaultErrors[code];
   return Response.json({ error: { code, message } }, { status });
 }
 
 function serviceError(error: unknown): Response {
   const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
-  return publicError(typeof code === 'string' && Object.hasOwn(errors, code) ? code as VaultErrorCode : 'vault_unavailable');
+  return publicError(isVaultErrorCode(code) ? code : 'vault_unavailable');
 }
 
 const thinkErrors = {

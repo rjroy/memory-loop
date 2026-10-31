@@ -109,7 +109,21 @@ describe('server-only vault BFF boundary', () => {
     expect(JSON.parse(await safe(response))).toMatchObject({ error: { code: 'note_unavailable' } });
   });
   it.each([
+    ['config_missing', 503, 'Vault configuration is missing'],
+    ['config_invalid', 503, 'Vault configuration is invalid'],
+    ['vault_unavailable', 503, 'Vault directory is unavailable'],
+    ['note_unavailable', 404, 'Note is unavailable'],
+    ['invalid_request', 400, 'Invalid note identifier'],
+  ])('uses the canonical message and matching status for %s', async (code, status, message) => {
+    const { request } = setup(async () => json({ error: { code, message: 'private upstream detail' } }, status));
+    const response = await request('/api/vault/tree');
+    expect(response.status).toBe(status);
+    expect(JSON.parse(await safe(response))).toEqual({ error: { code, message } });
+  });
+  it.each([
     ['unauthorized', () => json({ error: { code: 'unauthorized', message: 'secret internal' } }, 401)],
+    ['known code with wrong status', () => json({ error: { code: 'note_unavailable', message: 'secret internal' } }, 503)],
+    ['inherited property code', () => json({ error: { code: 'toString', message: 'secret internal' } }, 503)],
     ['unknown status', () => json({ private: 'upstream-sensitive' }, 418)],
     ['HTML', () => new Response('<html>upstream-sensitive</html>', { status: 200 })],
     ['invalid JSON', () => new Response('{upstream-sensitive', { headers: { 'content-type': 'application/json' } })],

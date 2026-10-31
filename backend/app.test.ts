@@ -13,7 +13,7 @@ function setup(vault?: VaultState) {
     note: vi.fn(async () => ({ name: 'note.md', markdown: '# Test note\n' })),
     close: vi.fn(async () => {}),
   };
-  const options = { authority, allowedOrigins: [origin], vault: vault ?? { reader }, serviceToken: token } satisfies AppOptions & { serviceToken: string };
+  const options = { authority, vault: vault ?? { reader }, serviceToken: token } satisfies AppOptions & { serviceToken: string };
   const app = createApp(options);
   const request = (path: string, init: RequestInit = {}, authenticate = true) => {
     const headers = new Headers(init.headers);
@@ -136,7 +136,7 @@ describe('vault HTTP API', () => {
 
   it('rejects a missing Host header', async () => {
     const reader: VaultReader = { tree: vi.fn(), note: vi.fn(), close: vi.fn() };
-    const options = { authority, allowedOrigins: [origin], vault: { reader }, serviceToken: token };
+    const options = { authority, vault: { reader }, serviceToken: token };
     const app = createApp(options);
     const response = await app(new Request(`http://${authority}/api/vault/tree`, { headers: { authorization: `Bearer ${token}` } }));
     expect(response.status).toBe(403);

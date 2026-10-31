@@ -6,8 +6,10 @@ Markdown without changing it. The other three views remain honest placeholders.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
 curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
-The native Next App Router migration (`memory-loop-1l0.2`) is accepted. Next presents the UI and proxies two read-only API routes to
-the authenticated Bun/Hono daemon. The daemon reads the JSON-configured vault
+The native Next App Router migration (`memory-loop-1l0.2`) is accepted. Next presents the UI and proxies Recall's read-only API routes to
+the authenticated Bun/Hono daemon. Think command/stream/content foundations are
+available in the isolated fixture below, not a working Think conversation UI.
+The daemon reads the JSON-configured vault
 when started. The private Tailscale deployment now uses the selected real vault;
 independent real-deployment verification passed and final review accepted it.
 
@@ -26,7 +28,7 @@ bun --no-env-file run build
 
 Build uses the supported default Turbopack and writes `.next/`, not `dist/`.
 It needs neither transport/vault configuration nor a running daemon. Native
-`src/app/` pages/layout and two explicit Route Handlers are the sole application
+`src/app/` pages/layout and explicit Route Handlers are the sole application
 path; there is no React Router, Vite application, static export or `preview` command.
 Vitest retains Vite only as its transitive test engine, with env-file loading off.
 
@@ -125,7 +127,7 @@ or eviction. Missing/invalid transport or credentials fail before serving vault
 data; correct the private files/permissions rather than weakening validation.
 
 `bun --no-env-file run dev` launches standard Node `next dev`, also on loopback.
-It requires the same transport preflight and two BFF endpoints, not a dev proxy.
+It requires the same transport preflight and fixed BFF routes, not a dev proxy.
 Framework development access logging is disabled to keep note IDs out of logs;
 application attempt/outcome/error logs remain visible. Bun configuration suppresses
 only its command echo. Ctrl-C stops the owned web child; stop the daemon separately.
@@ -134,8 +136,10 @@ missing/invalid vault config remains a distinct read error after daemon startup.
 
 ### Browser and private deployment boundary
 
-The browser uses same-origin Next APIs. Only `GET /api/vault/tree` and
-`GET /api/vault/note` reach the server-only BFF; it creates fresh service headers
+The browser uses same-origin Next APIs. Recall uses `GET /api/vault/tree` and
+`GET /api/vault/note`; the internal Think layer adds fixed command, snapshot,
+watch, content and decision routes under the same web request policy, not a
+generic OpenCode proxy. The BFF creates fresh service headers
 for the authenticated daemon. Browser credentials, cookies and forwarding headers
 are not forwarded. The daemon rejects browser Origin/Fetch Metadata and has no
 frontend assets, SPA fallback or generic filesystem route. APIs are uncached;
@@ -287,26 +291,139 @@ and local paths are recorded in [integration provenance](.lore/work/design/chara
 The historical [guidance snapshot](.lore/work/design/personal-brand-snapshot.md)
 is unchanged. No new generated art, dependencies or theme switch were added. Manual
 assistive-technology use and physical-device safe areas have not been verified.
-# Local Think fixture
+## Local Think transport fixture
 
-For an isolated, local HTTP exercise (not a functional Think UI), select the
-installed OpenCode 2.2.2 native executable explicitly and run:
+Phase 2 is checkpointed at `0f45fa1`; Phase 3 transport is independently verified
+and accepted, with its local checkpoint recording the result. **This exercises HTTP
+transport, not a functional Think UI.** Vault transcripts, interactive Think and
+personal/private-Serve activation remain later phases. `check:daemon` checks
+Recall's tree only, not Think readiness.
+
+Select the already verified OpenCode 2.2.2 native executable explicitly, using
+the characterization prerequisites above:
 
 ```sh
 OPENCODE_TEST_BINARY=/absolute/path/to/opencode.exe bun --no-env-file run think:fixture
 ```
 
-The command builds a separate Next copy and prints its loopback URL. For example,
-substitute that URL below to register a conversation (use fresh UUIDs for each
-new command):
+The command builds a separate Next copy and starts owned Node Next, Bun/Hono,
+native OpenCode and a local scripted provider on fixture ports. It creates its
+own vault/config/HOME/discovery/credentials; no personal setup or real provider
+is used. This is isolation, not an OS sandbox. Only the credential-free loopback
+web URL is printed; do not add credentials to URLs, commands or output.
+
+In a second terminal, substitute the printed URL and create one conversation:
 
 ```sh
-curl -X POST "$FIXTURE_URL/api/think/conversations" -H 'content-type: application/json' \
-  -d '{"conversationId":"11111111-1111-4111-8111-111111111111","clientCommandId":"22222222-2222-4222-8222-222222222222"}'
-curl "$FIXTURE_URL/api/think/conversations/11111111-1111-4111-8111-111111111111"
+export FIXTURE_URL='http://127.0.0.1:<printed-port>'
+export THINK_ID="$(node -p 'crypto.randomUUID()')"
+export THINK_SEND_ID="$(node -p 'crypto.randomUUID()')"
+export THINK_BASE="$FIXTURE_URL/api/think/conversations/$THINK_ID"
+curl --fail --silent --show-error "$FIXTURE_URL/api/think/conversations" \
+  -H 'content-type: application/json' \
+  -d "{\"conversationId\":\"$THINK_ID\",\"clientCommandId\":\"$(node -p 'crypto.randomUUID()')\"}"
+curl --fail --silent --show-error "$THINK_BASE"
 ```
 
-Use Ctrl-C to stop its owned processes and remove its private fixture
-directory. It uses only a local scripted model; it does not use a personal
-OpenCode configuration or a real provider. `bun --no-env-file run think:fixture
---help` shows usage without starting services.
+In another terminal, set `THINK_BASE` to that same conversation URL and watch:
+
+```sh
+curl --fail --no-buffer --silent --show-error --max-time 20 "$THINK_BASE/events"
+```
+
+The first event is `snapshot`, followed by monotonic `revision` state signals
+and 15-second `heartbeat` events. Read the snapshot again for changed manifests;
+follow its opaque `nextCursor` with `?cursor=...` until absent. Cursors belong to
+that revision; an invalidated listing can be read afresh. A watch ends after a
+five-minute lease; reopen it for fresh authorization and a fresh snapshot, not
+event replay. Ending this curl (including expected timeout exit 28) never sends
+Stop. Reopen the same URL before or after the following exercise; do not resend.
+
+Back in the second terminal, this Node example waits for creation, sends **one**
+scripted large-UTF-8 response request, waits on its receipt, pages the manifest
+and verifies the complete canonical body without printing its text:
+
+```sh
+node --input-type=module <<'JS'
+import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+const base = process.env.THINK_BASE, command = process.env.THINK_SEND_ID;
+if (!base || !command) throw new Error('Set fixture variables first');
+async function json(url, body) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(5000),
+    ...(body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) });
+  if (!response.ok) throw new Error(`Fixture HTTP ${response.status}; inspect state, do not resend`);
+  return response.json();
+}
+async function until(url, field, expected) {
+  for (let i = 0; i < 300; i++) {
+    const value = await json(url);
+    if (value[field] === expected) return value;
+    if (['rejected', 'failed', 'interrupted', 'monitor-unavailable'].includes(value[field])) throw new Error('Fixture operation did not succeed');
+    await delay(200);
+  }
+  throw new Error('Fixture wait timed out; query receipt, do not resend');
+}
+await until(base, 'creation', 'ready');
+await json(`${base}/messages`, { clientCommandId: command, text: 'fixture-large' });
+await until(`${base}/commands/${command}`, 'state', 'completed');
+let cursor, ref, epoch;
+do {
+  const page = await json(base + (cursor ? `?${new URLSearchParams({ cursor })}` : ''));
+  epoch = page.epoch;
+  const entry = page.entries.find(item => item.kind === 'assistant-text' && item.closure === 'closed' && item.body.kind === 'canonical');
+  if (entry) ref = entry.body;
+  cursor = page.nextCursor;
+} while (cursor);
+if (!ref) throw new Error('Canonical assistant body is not available');
+let offset = 0, transfer;
+const hash = createHash('sha256');
+do {
+  const query = new URLSearchParams({ generation: ref.generation, through: String(ref.through), offset: String(offset), ...(transfer ? { transfer } : {}) });
+  const chunk = await json(`${base}/content/${ref.contentId}?${query}`);
+  const bytes = Buffer.from(chunk.bytes, 'base64');
+  if (chunk.epoch !== epoch || chunk.generation !== ref.generation || chunk.nextOffset !== offset + bytes.length || chunk.nextOffset > ref.through || (offset < ref.through && !bytes.length)) throw new Error('Invalid content progress');
+  hash.update(bytes); offset = chunk.nextOffset; transfer = chunk.transfer;
+} while (offset < ref.through);
+if (hash.digest('hex') !== ref.sha256) throw new Error('Content digest mismatch');
+console.log(JSON.stringify({ state: 'completed', verifiedAssistantBytes: offset }));
+JS
+```
+
+The first chunk pins `generation`/`through` and returns a scoped transfer nonce;
+echo it on subsequent chunks. Each response contains at most **64 KiB raw bytes**
+within **128 KiB JSON**. Successful chunks renew a **60-second idle lease**;
+watch reconnection does not invalidate a progressing transfer. Decode UTF-8
+incrementally if displaying text rather than hashing bytes. An expired nonce or
+unavailable old prefix returns `content_unavailable`: reread the current manifest
+as needed, but do not disconnect the watch, loop resnapshots or resubmit a prompt.
+Only an explicit `POST .../runs/:runId/stop` requests best-effort Stop.
+
+Unpinned superseded previews and native-verified finalized bytes can be reclaimed.
+Canonical restoration uses public `session.message.get`, completed text identity,
+length and SHA-256; mismatches remain content errors. Originals, form replies,
+unfinished previews and pinned readers are retained for this daemon epoch. This
+is not daemon-restart recovery or constant-memory native JSON decoding. There is
+no application conversation-turn cap; current Send validation permits up to
+1 MiB UTF-8 per input, and native/provider limits still apply.
+
+The controlled two-Chromium transport test uses already-installed
+`/usr/bin/chromium`; no browser download is implied. The corrected real
+response-drop/reconnect/large-UTF-8 scenario passed its focused run; accompanying
+TypeScript passed as reported. This followed an initial browser-harness failure
+in convergence, not a post-fix rerun of every suite. Measurements and the separate
+convergence results are recorded in the validation report below. Fresh review
+accepted the Bun idle-timeout correction; affected checks and native fixture passed.
+To repeat only this owned fixture case:
+
+```sh
+OPENCODE_TEST_BINARY=/absolute/path/to/verified/opencode.exe \
+  bun --no-env-file run test:opencode backend/think-full-stack.test.ts -t 'recovers large immutable content'
+```
+
+Use Ctrl-C in the **fixture launcher terminal** to stop only its owned processes
+and remove its private directory. `bun --no-env-file run think:fixture --help`
+shows usage without starting services. See the [reusable native validation
+report](.lore/work/research/opencode-2.2.2-validation.md) for the checkpointed
+Phase 1 baseline and separately labeled later integration evidence. These
+instructions were source-checked, not executed during this documentation pass.

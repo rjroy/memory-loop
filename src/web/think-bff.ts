@@ -1,5 +1,7 @@
 import type { LoadedTransport } from '../../backend/transport';
 import { allowsWebRequest } from './request-policy';
+import { projectConversation } from './think-projection';
+import { parseContentRequest } from '../../backend/think/content-transfer';
 
 type Method = 'GET' | 'POST';
 export interface ThinkBffDependencies {
@@ -15,6 +17,7 @@ const routes = [
   { method: 'POST', pattern: new RegExp(`^${base}$`) },
   { method: 'GET', pattern: new RegExp(`^${base}/${uuid}$`) },
   { method: 'GET', pattern: new RegExp(`^${base}/${uuid}/commands/${uuid}$`) },
+  { method: 'GET', pattern: new RegExp(`^${base}/${uuid}/content/${uuid}$`) },
   { method: 'POST', pattern: new RegExp(`^${base}/${uuid}/messages$`) },
   { method: 'POST', pattern: new RegExp(`^${base}/${uuid}/runs/${uuid}/stop$`) },
   { method: 'GET', pattern: new RegExp(`^${base}/${uuid}/decisions$`) },
@@ -29,6 +32,7 @@ const errors = {
   think_config_missing: [503, 'Think setup is required'], think_config_invalid: [503, 'Think configuration is invalid'],
   service_unavailable: [503, 'Think service unavailable'],
   decision_unavailable: [503, 'Decision details are unavailable'],
+  content_unavailable: [404, 'Content is unavailable'],
 } as const;
 function failure(code: keyof typeof errors): Response {
   const [status, message] = errors[code];
@@ -66,8 +70,17 @@ async function bodyBytes(request: Request): Promise<Uint8Array> {
   return boundedBytes(request.body, 6 * 1024 * 1024 + 4096);
 }
 
-function project(value: unknown, method: Method, path: string): Record<string, unknown> {
+function project(value: unknown, method: Method, path: string, query: URLSearchParams): Record<string, unknown> {
   const segments = path.slice(base.length).split('/').filter(Boolean);
+  if (method === 'GET' && segments[1] === 'content') {
+    const input = parseContentRequest(segments[0], segments[2], query);
+    if (!input || !record(value) || value.conversationId !== input.conversationId || value.contentId !== input.contentId || value.generation !== input.generation || value.through !== input.through || value.offset !== input.offset ||
+        typeof value.epoch !== 'string' || !new RegExp(`^${uuid}$`).test(value.epoch) || typeof value.transfer !== 'string' || !new RegExp(`^${uuid}$`).test(value.transfer) ||
+        (input.transfer !== undefined && value.transfer !== input.transfer) || typeof value.bytes !== 'string' || value.bytes.length > 87384 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.bytes)) throw new Error('invalid content chunk');
+    const bytes = Buffer.from(value.bytes, 'base64');
+    if (bytes.toString('base64') !== value.bytes || bytes.length > 65536 || value.nextOffset !== input.offset + bytes.length || input.offset + bytes.length > input.through || (input.offset < input.through && bytes.length === 0)) throw new Error('invalid content bounds');
+    return { conversationId: input.conversationId, epoch: value.epoch, contentId: input.contentId, generation: input.generation, through: input.through, offset: input.offset, bytes: value.bytes, nextOffset: value.nextOffset, transfer: value.transfer };
+  }
   if (segments[1] === 'decisions' && method === 'GET') {
     const decision = (input: unknown): Record<string, unknown> => {
       if (!record(input) || input.conversationId !== segments[0] || typeof input.decisionId !== 'string' ||
@@ -100,11 +113,7 @@ function project(value: unknown, method: Method, path: string): Record<string, u
   if (segments.length && value.conversationId !== segments[0]) throw new Error('conversation mismatch');
   if (method === 'GET' && typeof value.revision === 'number' && Number.isSafeInteger(value.revision) && value.revision >= 0 &&
       typeof value.creation === 'string' && ['registered', 'ready', 'upstream-unconfirmed', 'rejected'].includes(value.creation)) {
-    if (value.permissionCompatibility !== undefined && value.permissionCompatibility !== 'incompatible' ||
-        value.permissionPending !== undefined && typeof value.permissionPending !== 'boolean') throw new Error('invalid permission state');
-    return { conversationId: value.conversationId, epoch: value.epoch, revision: value.revision, creation: value.creation,
-      ...(value.permissionCompatibility === 'incompatible' ? { permissionCompatibility: 'incompatible' } : {}),
-      ...(typeof value.permissionPending === 'boolean' ? { permissionPending: value.permissionPending } : {}) };
+    return projectConversation(value, String(value.conversationId), Array.isArray(value.entries));
   }
   if (typeof value.clientCommandId !== 'string' || !new RegExp(`^${uuid}$`).test(value.clientCommandId) ||
       !['create', 'send', 'stop', 'form-reply'].includes(String(value.kind)) || typeof value.state !== 'string') throw new Error('invalid receipt');
@@ -135,8 +144,10 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
   try {
     const url = new URL(request.url);
     const route = routes.find(item => item.pattern.test(url.pathname));
+    const segments = url.pathname.slice(base.length).split('/').filter(Boolean);
+    const content = request.method === 'GET' && segments[1] === 'content' && segments.length === 3;
     if (!allowsWebRequest(request, dependencies.transport.config.web)) response = failure('forbidden');
-    else if (!route || url.search || url.hash) response = failure('not_found');
+    else if (!route || url.hash || (content ? !parseContentRequest(segments[0], segments[2], url.searchParams) : (url.search && !(request.method === 'GET' && new RegExp(`^${base}/${uuid}$`).test(url.pathname) && [...url.searchParams.keys()].length === 1 && /^[A-Za-z0-9_-]{1,256}\.[a-f0-9]{64}$/.test(url.searchParams.get('cursor') ?? ''))))) response = failure('not_found');
     else if (request.method !== route.method) response = failure('method_not_allowed');
     else {
       let body: Uint8Array | undefined;
@@ -148,11 +159,11 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const upstream = async () => {
-          const result = await dependencies.fetch(new URL(url.pathname, origin), { method: route.method, token: dependencies.transport.serviceToken, body, signal: controller.signal });
+          const result = await dependencies.fetch(new URL(`${url.pathname}${url.search}`, origin), { method: route.method, token: dependencies.transport.serviceToken, body, signal: controller.signal });
           if (!/^application\/json(?:\s*;|\s*$)/i.test(result.headers.get('content-type') ?? '')) throw new Error('invalid content type');
           if (!result.body) throw new Error('missing response');
-          const data: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await boundedBytes(result.body, 65536)));
-          if (result.status === (route.method === 'POST' ? 202 : 200)) return Response.json(project(data, route.method, url.pathname), { status: result.status, headers });
+          const data: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await boundedBytes(result.body, content ? 131072 : 65536)));
+          if (result.status === (route.method === 'POST' ? 202 : 200)) return Response.json(project(data, route.method, url.pathname, url.searchParams), { status: result.status, headers });
           if (record(data) && record(data.error) && typeof data.error.code === 'string' && Object.hasOwn(errors, data.error.code)) {
             const code = data.error.code as keyof typeof errors;
             if (errors[code][0] === result.status) return failure(code);

@@ -23,6 +23,9 @@ function setup() {
   const think = {
     create: vi.fn<ThinkService['create']>(),
     conversation: vi.fn<ThinkService['conversation']>(),
+    snapshot: vi.fn<ThinkService['snapshot']>(async () => { throw new Error('Unexpected snapshot'); }),
+    watch: vi.fn<ThinkService['watch']>(async () => { throw new Error('Unexpected watch'); }),
+    contentChunk: vi.fn<ThinkService['contentChunk']>(async () => { throw new Error('Unexpected content chunk'); }),
     command: vi.fn<ThinkService['command']>(),
     close: vi.fn(async () => {}),
     send: vi.fn(async (_command: SendCommand) => sendReceipt),
@@ -70,10 +73,15 @@ describe('Think Send and Stop HTTP boundary', () => {
     expect(f.think.stop).not.toHaveBeenCalled();
     expect(f.think.create).not.toHaveBeenCalled();
     expect(f.think.conversation).not.toHaveBeenCalled();
+    expect(f.think.snapshot).not.toHaveBeenCalled();
+    expect(f.think.watch).not.toHaveBeenCalled();
+    expect(f.think.contentChunk).not.toHaveBeenCalled();
     expect(f.think.command).not.toHaveBeenCalled();
     expect(f.think.decisions).not.toHaveBeenCalled();
     expect(f.think.decision).not.toHaveBeenCalled();
     expect(f.think.reply).not.toHaveBeenCalled();
+    expect(f.think.content.page).not.toHaveBeenCalled();
+    expect(f.think.content.open).not.toHaveBeenCalled();
   });
 
   it.each([

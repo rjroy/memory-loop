@@ -53,6 +53,7 @@ const native: NativeSessions = {
   async interruptSession() { throw new Error('unexpected fixture interrupt'); },
   async activeSessions() { return {}; },
   async listMessages() { return { data: [], cursor: {} }; },
+  async getMessage() { throw new Error('unexpected fixture message readback'); },
   async listPermissionRequests() { return { location: { directory: '/fixture/vault' }, data: [] }; },
   async getServerInfo() { return serverInfo; },
   async listForms() { throw new Error('unexpected fixture form list'); },
@@ -71,6 +72,8 @@ const bodies: BodyStore = {
   },
   async append() { throw new Error('unexpected fixture append'); },
   async open() { throw new Error('unexpected fixture open'); },
+  async evict() { return 'protected'; },
+  async restore() { throw new Error('unexpected fixture restore'); },
   async close() {},
 };
 const service = createThinkService({ native, bodies, context: { directory: '/fixture/vault' }, epoch,

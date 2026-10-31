@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { constants } from 'node:fs';
-import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from 'node:http';
+import { createServer, request as httpRequest, type IncomingHttpHeaders, type IncomingMessage, type ClientRequest, type Server } from 'node:http';
 import { access, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
@@ -16,6 +16,17 @@ let child: ChildProcessWithoutNullStreams;
 let port: number;
 let calls: Array<{ url: string | undefined; method: string | undefined; headers: IncomingHttpHeaders; body: string }> = [];
 let output = '';
+let watchMode: 'normal' | 'redirect' | 'malformed' | 'oversized' = 'normal';
+let watchClosed = 0;
+const conversationId = '11111111-1111-4111-8111-111111111111';
+const commandId = '22222222-2222-4222-8222-222222222222';
+const epoch = '33333333-3333-4333-8333-333333333333';
+const watchPath = `/api/think/conversations/${conversationId}/events`;
+const bodyRef = { key: { conversationId, owner: { kind: 'original', clientCommandId: commandId, messageId: 'msg_fixture_owned' } },
+  epoch, contentId: '44444444-4444-4444-8444-444444444444', generation: '55555555-5555-4555-8555-555555555555', through: 123, kind: 'canonical', sha256: 'a'.repeat(64) };
+const watchSnapshot = { conversationId, epoch, revision: 1, creation: 'ready', contentHealth: 'complete',
+  entries: [{ kind: 'original', displayOrder: 0, clientCommandId: commandId, messageId: 'msg_fixture_owned', body: bodyRef, nativeDebug: 'fixture-private-entry' }],
+  nativeDebug: 'fixture-private-snapshot' };
 const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: '', NEXT_TELEMETRY_DISABLED: '1', NODE_ENV: 'production' };
 
 function listen(server: Server): Promise<number> {
@@ -39,6 +50,61 @@ function request(path: string, headers: Record<string, string> = {}, targetPort 
     req.on('error', reject);
     req.end(requestBody);
   });
+}
+function watchRequest(headers: Record<string, string> = {}): Promise<{ req: ClientRequest; res: IncomingMessage }> {
+  return new Promise((resolveWatch, reject) => {
+    const req = httpRequest({ hostname: '127.0.0.1', port, path: watchPath, headers }, res => resolveWatch({ req, res }));
+    req.setTimeout(8000, () => req.destroy(new Error('fixture watch connection timeout')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function watchFrames(res: IncomingMessage) {
+  const iterator = res[Symbol.asyncIterator]();
+  let buffer = '';
+  async function nextChunk(timeoutMs: number) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([iterator.next(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('fixture watch timeout')), timeoutMs); })]);
+    } finally { if (timer) clearTimeout(timer); }
+  }
+  return {
+    async frame(timeoutMs = 3000) {
+      for (;;) {
+        const boundary = /\r?\n\r?\n/.exec(buffer);
+        if (boundary && boundary.index !== undefined) {
+          const raw = buffer.slice(0, boundary.index);
+          buffer = buffer.slice(boundary.index + boundary[0].length);
+          if (!raw.includes('data:')) continue;
+          expect(Buffer.byteLength(raw)).toBeLessThanOrEqual(64 * 1024);
+          const type = /^event:\s*(.+)$/m.exec(raw)?.[1];
+          const data = raw.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
+          const value: unknown = JSON.parse(data);
+          return { type, value, raw };
+        }
+        const chunk = await nextChunk(timeoutMs);
+        if (chunk.done) throw new Error('fixture watch ended before frame');
+        buffer += Buffer.from(chunk.value).toString('utf8');
+        if (Buffer.byteLength(buffer) > 64 * 1024 + 4096) throw new Error('fixture watch frame exceeded bound');
+      }
+    },
+    async remaining() {
+      let text = buffer;
+      for (;;) {
+        let chunk: IteratorResult<unknown>;
+        try { chunk = await nextChunk(3000); }
+        catch (error: unknown) {
+          if (error instanceof Error && (error.message === 'aborted' || ('code' in error && (error.code === 'ECONNRESET' || error.code === 'ERR_STREAM_PREMATURE_CLOSE')))) return text;
+          throw error;
+        }
+        if (chunk.done) return text;
+        if (!(chunk.value instanceof Uint8Array) && typeof chunk.value !== 'string') throw new Error('invalid fixture stream chunk');
+        text += Buffer.from(chunk.value).toString('utf8');
+        if (Buffer.byteLength(text) > 128 * 1024) throw new Error('fixture watch forwarded too much');
+      }
+    },
+  };
 }
 async function ready() {
   const deadline = Date.now() + 15_000;
@@ -116,12 +182,32 @@ describe('production Next HTTP boundary', () => {
       req.on('end', () => {
         calls.push({ url: req.url, method: req.method, headers: req.headers, body });
         if (req.url?.startsWith('/api/think/conversations')) {
+          if (req.url.startsWith(`/api/think/conversations/${conversationId}/content/`)) {
+            res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
+            res.end(JSON.stringify({ conversationId, epoch, contentId: bodyRef.contentId, generation: bodyRef.generation,
+              through: bodyRef.through, offset: 0, bytes: Buffer.from('fixture').toString('base64'), nextOffset: 7,
+              transfer: '66666666-6666-4666-8666-666666666666', nativeDebug: 'fixture-private-chunk' }));
+            return;
+          }
+          if (req.url === watchPath) {
+            const mode = watchMode;
+            if (mode === 'redirect') { res.writeHead(302, { location: 'http://fixture-private.invalid/secret' }).end(); return; }
+            res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', 'set-cookie': 'fixture=private' });
+            res.write(`event: snapshot\ndata: ${JSON.stringify(watchSnapshot)}\n\n`);
+            const timer = setTimeout(() => {
+              if (mode === 'normal') {
+                res.write('event: heartbeat\ndata: {}\n\n');
+                res.write(`event: revision\ndata: ${JSON.stringify({ conversationId, epoch, revision: 2, creation: 'ready', nativeDebug: 'fixture-private-update' })}\n\n`);
+              } else if (mode === 'malformed') res.end('event: revision\ndata: {"fixture-private-invalid":\n\n');
+              else res.end(`event: revision\ndata: ${'fixture-private-oversized'.repeat(4000)}\n\n`);
+            }, mode === 'normal' ? 5500 : 10);
+            res.once('close', () => { clearTimeout(timer); watchClosed++; });
+            return;
+          }
           if (body.includes('44444444-4444-4444-8444-444444444444')) { res.destroy(); return; }
-          const conversationId = '11111111-1111-4111-8111-111111111111';
-          const clientCommandId = '22222222-2222-4222-8222-222222222222';
-          const epoch = '33333333-3333-4333-8333-333333333333';
+          const clientCommandId = commandId;
           const receipt = { kind: 'create', conversationId, clientCommandId, epoch, state: 'registered' };
-          const state = { conversationId, epoch, revision: 1, creation: 'ready' };
+          const state = watchSnapshot;
           res.writeHead(req.method === 'POST' ? 202 : 200, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
           res.end(JSON.stringify(req.url.includes('/commands/') || req.method === 'POST' ? receipt : state));
           return;
@@ -203,6 +289,107 @@ describe('production Next HTTP boundary', () => {
     expect(response.status).toBe(503);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ method: 'POST', body });
+  });
+  it('preserves the bounded Think snapshot manifest and strips noncontract fields', async () => {
+    calls = [];
+    const response = await request(`/api/think/conversations/${conversationId}`);
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({ conversationId, epoch, revision: 1, creation: 'ready', entries: [
+      expect.objectContaining({ kind: 'original', clientCommandId: commandId, messageId: 'msg_fixture_owned', body: bodyRef }),
+    ] });
+    expect(response.body).not.toContain('fixture-private');
+    expect(Buffer.byteLength(response.body)).toBeLessThanOrEqual(64 * 1024);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].headers.authorization).toBe(`Bearer ${token}`);
+  });
+  it('forwards an authenticated bounded Think content chunk with fixed query and strips private fields', async () => {
+    calls = [];
+    const query = new URLSearchParams({ generation: bodyRef.generation, through: String(bodyRef.through), offset: '0' });
+    const path = `/api/think/conversations/${conversationId}/content/${bodyRef.contentId}?${query}`;
+    const response = await request(path, { origin: `http://127.0.0.1:${port}`, 'sec-fetch-site': 'same-origin', authorization: 'Bearer browser-secret', cookie: 'session=fixture' });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({ conversationId, epoch, contentId: bodyRef.contentId, generation: bodyRef.generation,
+      through: bodyRef.through, offset: 0, bytes: Buffer.from('fixture').toString('base64'), nextOffset: 7, transfer: expect.any(String) });
+    expect(Buffer.byteLength(response.body)).toBeLessThanOrEqual(128 * 1024);
+    expect(response.body + JSON.stringify(response.headers)).not.toContain('fixture-private');
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: 'GET', url: path });
+    expect(calls[0].headers.authorization).toBe(`Bearer ${token}`);
+    expect(calls[0].headers.cookie).toBeUndefined();
+    expect(calls[0].headers.origin).toBeUndefined();
+    expect(calls[0].headers['sec-fetch-site']).toBeUndefined();
+  });
+  it('denies a Think content chunk before upstream access', async () => {
+    calls = [];
+    const query = new URLSearchParams({ generation: bodyRef.generation, through: String(bodyRef.through), offset: '0' });
+    const response = await request(`/api/think/conversations/${conversationId}/content/${bodyRef.contentId}?${query}`, { origin: 'null' });
+    expect(response.status).toBe(403);
+    expect(calls).toHaveLength(0);
+  });
+  it('streams snapshot, heartbeat and a later revision beyond five seconds without buffering or forwarding browser credentials', async () => {
+    calls = [];
+    watchMode = 'normal';
+    const closedBefore = watchClosed;
+    const { req, res } = await watchRequest({ origin: `http://127.0.0.1:${port}`, 'sec-fetch-site': 'same-origin', authorization: 'Bearer browser-secret', cookie: 'session=fixture' });
+    try {
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toMatch(/^text\/event-stream(?:;|$)/i);
+      expect(res.headers['cache-control']).toMatch(/no-cache|no-store/);
+      expect(res.headers['cache-control']).toContain('no-transform');
+      expect(res.headers['set-cookie']).toBeUndefined();
+      const frames = watchFrames(res);
+      const first = await frames.frame();
+      expect(first.type).toBe('snapshot');
+      expect(first.value).toMatchObject({ conversationId, epoch, revision: 1, entries: [expect.objectContaining({ kind: 'original', body: bodyRef })] });
+      expect(first.raw).not.toContain('fixture-private');
+      const start = Date.now();
+      const heartbeat = await frames.frame(8000);
+      expect(Date.now() - start).toBeGreaterThan(5000);
+      expect(heartbeat.type).toBe('heartbeat');
+      const later = await frames.frame();
+      expect(later.type).toBe('revision');
+      expect(later.value).toMatchObject({ conversationId, epoch, revision: 2 });
+      expect(later.raw).not.toContain('fixture-private');
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ method: 'GET', url: watchPath });
+      expect(calls[0].headers.authorization).toBe(`Bearer ${token}`);
+      expect(calls[0].headers.accept).toBe('text/event-stream');
+      expect(calls[0].headers.cookie).toBeUndefined();
+      expect(calls[0].headers.origin).toBeUndefined();
+      expect(calls[0].headers['sec-fetch-site']).toBeUndefined();
+    } finally { req.destroy(); res.destroy(); }
+    await vi.waitFor(() => expect(watchClosed).toBeGreaterThan(closedBefore), { timeout: 3000 });
+    expect(calls.every(call => call.method === 'GET' && call.url === watchPath)).toBe(true);
+  }, 15000);
+  it.each<Record<string, string>>([{ host: 'hostile.example', 'x-forwarded-host': `127.0.0.1` }, { origin: 'null' }, { 'sec-fetch-site': 'cross-site' }])('denies a Think watch before the upstream boundary %o', async headers => {
+    calls = [];
+    const response = await request(watchPath, headers);
+    expect(response.status).toBe(403);
+    expect(calls).toHaveLength(0);
+  });
+  it('rejects an upstream watch redirect without exposing its target', async () => {
+    calls = [];
+    watchMode = 'redirect';
+    try {
+      const response = await request(watchPath);
+      expect(response.status).toBe(503);
+      expect(response.body + JSON.stringify(response.headers)).not.toMatch(/fixture-private|location/i);
+      expect(calls).toHaveLength(1);
+    } finally { watchMode = 'normal'; }
+  });
+  it.each(['malformed', 'oversized'] as const)('closes on a %s control frame without leaking its bytes', async mode => {
+    calls = [];
+    watchMode = mode;
+    const { req, res } = await watchRequest();
+    try {
+      expect(res.statusCode).toBe(200);
+      const frames = watchFrames(res);
+      expect((await frames.frame()).type).toBe('snapshot');
+      expect(await frames.remaining()).not.toContain('fixture-private');
+      expect(calls).toHaveLength(1);
+    } finally { req.destroy(); res.destroy(); watchMode = 'normal'; }
   });
   it('forwards exactly encoded note identifier on the fixed route', async () => {
     calls = [];

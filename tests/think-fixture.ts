@@ -13,6 +13,7 @@ import { preflightExecutable } from './opencode/native-binary';
 import { readinessFromOutput } from './opencode/readiness';
 
 const project = fileURLToPath(new URL('..', import.meta.url));
+export const fixtureLargeResponse = `fixture-large-response:${'漢🧠'.repeat(30000)}`;
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
 const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -126,7 +127,7 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
       const send = () => {
         held.delete(send);
         if (user.includes('fixture-read') && !toolResult) finish({ tool_calls: [{ index: 0, id: 'fixture-read', type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: join(root, 'owned-external/sentinel.env') }) } }] }, 'tool_calls');
-        else finish({ content: toolResult ? 'fixture-read-complete' : 'fixture-ok' }, 'stop');
+        else finish({ content: toolResult ? 'fixture-read-complete' : user.includes('fixture-large') ? fixtureLargeResponse : 'fixture-ok' }, 'stop');
       };
       if (user.includes('fixture-hold') || user.includes('fixture-stop')) { held.add(send); response.once('close', () => held.delete(send)); }
       else send();

@@ -1,8 +1,10 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import type { VaultErrorCode } from './contract';
 import type { ThinkService, ThinkUnavailableCode } from './think/service';
 import { ThinkServiceError } from './think/service';
+import { parseContentRequest } from './think/content-transfer';
 import { parseVaultId, type VaultReader } from './vault';
 
 export type VaultState = { reader: VaultReader } |
@@ -15,6 +17,7 @@ export interface AppOptions {
   serviceToken?: string;
   vault: VaultState;
   think?: ThinkService | { error: ThinkUnavailableCode };
+  watchPolicy?: { leaseMs: number; heartbeatMs: number };
 }
 
 const errors: Record<VaultErrorCode, { status: 400 | 404 | 503; message: string }> = {
@@ -43,6 +46,7 @@ const thinkErrors = {
   think_config_missing: { status: 503, message: 'Think setup is required' },
   think_config_invalid: { status: 503, message: 'Think configuration is invalid' },
   decision_unavailable: { status: 503, message: 'Decision details are unavailable' },
+  content_unavailable: { status: 404, message: 'Content is unavailable' },
 } as const;
 
 function thinkError(code: keyof typeof thinkErrors): Response {
@@ -77,6 +81,8 @@ async function jsonInput(request: Request, limit: number): Promise<unknown> {
 }
 
 export function createApp(options: AppOptions): (request: Request) => Promise<Response> {
+  const watchPolicy = options.watchPolicy ?? { leaseMs: 300000, heartbeatMs: 15000 };
+  if (!Number.isSafeInteger(watchPolicy.leaseMs) || watchPolicy.leaseMs < 1 || !Number.isSafeInteger(watchPolicy.heartbeatMs) || watchPolicy.heartbeatMs < 1) throw new Error('Invalid watch policy');
   if (!options.serviceToken || !/^[a-f0-9]{64}$/.test(options.serviceToken)) throw new Error('Service credential unavailable');
   const expected = Buffer.from(options.serviceToken, 'hex');
   const app = new Hono();
@@ -164,9 +170,52 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     if (!service) return thinkError('think_config_missing');
     if ('error' in service) return thinkError(service.error);
     try {
-      const state = await service.conversation(id);
+      const state = await service.snapshot(id, context.req.query('cursor'));
       return state ? context.json(state) : thinkError('not_found');
     } catch (error: unknown) { return thinkServiceError(error); }
+  });
+  app.get(`${thinkBase}/:id/events`, async context => {
+    const id = context.req.param('id');
+    if (!uuid.test(id)) return thinkError('invalid_request');
+    const service = options.think;
+    if (!service) return thinkError('think_config_missing');
+    if ('error' in service) return thinkError(service.error);
+    let watch: Awaited<ReturnType<ThinkService['watch']>>;
+    try { watch = await service.watch(id); } catch (error: unknown) { return thinkServiceError(error); }
+    if (!watch) return thinkError('not_found');
+    const owned = watch;
+    return streamSSE(context, async stream => {
+      const signal = context.req.raw.signal;
+      const lease = setTimeout(() => owned.close(), watchPolicy.leaseMs);
+      lease.unref();
+      const stop = () => { owned.close(); stream.abort(); };
+      stream.onAbort(() => owned.close());
+      signal.addEventListener('abort', stop, { once: true });
+      if (signal.aborted) stop();
+      const write = async (event: string, value: unknown) => {
+        const data = JSON.stringify(value);
+        if (Buffer.byteLength(data) > 60 * 1024) throw new Error('control frame too large');
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([stream.writeSSE({ event, data }), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('slow subscriber')), 10000); })]);
+        } finally { if (timer) clearTimeout(timer); }
+      };
+      try {
+        if (signal.aborted) return;
+        await write('snapshot', owned.snapshot);
+        let next = owned.next();
+        while (!signal.aborted && !stream.aborted) {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const item = await Promise.race([next, new Promise<'heartbeat'>(resolve => { timer = setTimeout(() => resolve('heartbeat'), watchPolicy.heartbeatMs); })]);
+          if (timer) clearTimeout(timer);
+          if (item === 'heartbeat') { await write('heartbeat', {}); continue; }
+          if (!item) break;
+          await write('revision', item);
+          next = owned.next();
+        }
+      } catch { stream.abort(); }
+      finally { clearTimeout(lease); signal.removeEventListener('abort', stop); owned.close(); }
+    });
   });
   app.get(`${thinkBase}/:id/commands/:commandId`, async context => {
     const { id, commandId } = context.req.param();
@@ -178,6 +227,16 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
       const receipt = await service.command(id, commandId);
       return receipt ? context.json(receipt) : thinkError('not_found');
     } catch (error: unknown) { return thinkServiceError(error); }
+  });
+  app.get(`${thinkBase}/:id/content/:contentId`, async context => {
+    const { id, contentId } = context.req.param();
+    const input = parseContentRequest(id, contentId, new URL(context.req.url).searchParams);
+    if (!input) return thinkError('invalid_request');
+    const service = options.think;
+    if (!service) return thinkError('think_config_missing');
+    if ('error' in service) return thinkError(service.error);
+    try { return context.json(await service.contentChunk(input)); }
+    catch (error: unknown) { return thinkServiceError(error); }
   });
   app.get(`${thinkBase}/:id/decisions`, async context => {
     const id = context.req.param('id');

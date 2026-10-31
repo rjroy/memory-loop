@@ -121,6 +121,28 @@ The later project convergence passed frontend **23/23**, backend **317/317**, br
 
 The original Phase 1 reproduction files/checkpoint below remain the portable baseline; these later files and the now-present `think:fixture` command are Phase 2 additions. Subsequent senior service corrections passed independent focused **86 tests**, project/test TypeScript checks and the normal full-stack fixture (`/tmp/opencode/think-senior-authority-independent-green.log`, `think-senior-authority-typecheck.log`, and `think-senior-authority-native.log`). Fresh whole-phase verification accepted R5/R6 as resolved without material regressions; Phase 2 is accepted and closed, with its local checkpoint recording these additions. No functional Think UI, vault transcript delivery, private Serve/personal activation or arbitrary-plugin compatibility is claimed by this result.
 
+### Later Phase 3 observation — application watch and content transport
+
+**Accepted Phase 3 controlled transport evidence, separate from the Phase 1 checkpoint.** The application now exposes paginated manifests, snapshot-first Hono SSE and a dedicated validating Node HTTP bridge. Watch events are `snapshot`, bounded monotonic `revision` state signals and `heartbeat`; changed manifests are read through the short snapshot endpoint. A five-minute watch lease requires fresh authenticated reconnect, never Stop or native event replay. Authenticated body responses carry at most 64 KiB raw bytes within 128 KiB JSON, identified by content generation, immutable UTF-8 `through`/offset and a scoped nonce with a renewable 60-second idle lease. See [README's runnable fixture exercise](../../../README.md#local-think-transport-fixture), `backend/app.ts`, `backend/think/content-transfer.ts` and `src/web/think-watch-{http,bff}.ts` for this application contract; it is not a new native OpenCode API.
+
+The native readback seam is the public `client.session.message.get({ sessionID, messageID }, { signal })` (not `client.message.get`). Cache restoration uses the trusted session/message/text ordinal, completed assistant state, retained UTF-8 length and SHA-256 before serving the **same** old canonical generation. Pinned readers prevent reclamation; originals, form replies and unfinished previews stay resident in private spill storage for the daemon epoch. An unavailable/mismatched old body is a content error, not execution failure, cancellation or a reason to loop event-watch resnapshots. Native full-message decoding still allocates a full value; no constant-memory or restart-recovery guarantee is added.
+
+The handoff reports focused foundations **120 GREEN plus TypeScript**. Project convergence passed frontend **23/23**, backend **357/357**, browser **54/54**, build and TypeScript; five native cases passed, while the separate browser transport case initially failed in its harness. After a test-only correction, the completed `/tmp/opencode/think-phase3-dropped-chunk-verified.log` records **1 selected test passed / 1 unselected skipped**, with accompanying TypeScript passing as reported. The retained case is `backend/think-full-stack.test.ts`: `recovers large immutable content across two real browser watches without resending`. It exercises two Chromium same-origin clients through Node Next → Bun/Hono → native scripted provider, including fetching the real chunk response then discarding it before browser delivery, and reconnect without resubmission. This is a corrected focused pass after convergence, **not a post-fix all-suite rerun**. Fresh review then found Bun's default ten-second idle timeout could precede the fifteen-second heartbeat. The corrected runtime applies a per-request idle override only to successfully authenticated watches; independent quiet-heartbeat, affected backend/TypeScript and large-content browser checks passed (`/tmp/opencode/think-phase3-bun-idle-verified.log` and associated backend, typecheck and large-regression logs). Fresh verification accepted the correction without material regressions; Phase 3 is accepted with its local checkpoint.
+
+The completed log's sanitized `phase3_fixture_metrics` sample is retained here so it does not depend on temporary files:
+
+| Measurement | Recorded sample |
+| --- | --- |
+| Full user / assistant UTF-8 bytes | **238,027 / 210,023 B** |
+| Largest observed control frame | **2,260 B** |
+| Native-client decode | **5.326 ms** |
+| Native RSS, before → after | **279,560,192 → 282,783,744 B** |
+| Daemon RSS, before → after | **52,527,104 → 56,889,344 B** |
+| Browser user / assistant assembly | **46.2 / 58.6 ms** |
+| Browser user / assistant heap delta | **0 / 0 B**, coarse browser API |
+
+RSS values are before/after snapshots, **not peaks**. The coarse heap API's zero delta does **not** establish zero allocation. Timings are one controlled sample, not performance guarantees or Markdown-rendering benchmarks. This transport probe does not establish Think UI, vault transcript, physical-device, private Serve, restart-recovery or arbitrary-size acceptance. No native/project checks were rerun for this documentation update.
+
 ### Ordinary history/status is recovery; live events are signals
 
 Use these ordinary calls for a known owned session:

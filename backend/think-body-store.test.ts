@@ -3,7 +3,7 @@ import { link, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, unlink, wr
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as bodyModule from './think/body-store';
-import type { BodyKey, BodyStore, PreviewBodyRef } from './think/body-store';
+import type { BodyKey, BodyReader, BodyRef, BodyStore, PreviewBodyRef } from './think/body-store';
 
 const epoch = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const key: BodyKey = { conversationId: '11111111-1111-4111-8111-111111111111', owner: {
@@ -16,6 +16,26 @@ function factory(): Factory {
   return candidate as Factory;
 }
 async function* bytes(text: string): AsyncIterable<Uint8Array> { yield Buffer.from(text, 'utf8'); }
+type ReclaimStore = BodyStore & {
+  evict(ref: BodyRef): Promise<'evicted' | 'deferred' | 'protected' | 'already-evicted'>;
+  restore(ref: Extract<BodyRef, { kind: 'canonical' }>, source: AsyncIterable<Uint8Array>): Promise<BodyReader>;
+};
+function reclaimable(value: BodyStore): value is ReclaimStore {
+  return 'evict' in value && typeof value.evict === 'function' && 'restore' in value && typeof value.restore === 'function';
+}
+function reclamation(value: BodyStore): ReclaimStore {
+  if (!reclaimable(value)) throw new Error('BodyStore reclamation contract is missing evict/restore');
+  return value;
+}
+async function fileCount(path: string): Promise<number> {
+  let count = 0;
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    const child = join(path, entry.name);
+    if (entry.isDirectory()) count += await fileCount(child);
+    else if (entry.isFile()) count++;
+  }
+  return count;
+}
 
 let root: string;
 let vault: string;
@@ -35,6 +55,56 @@ afterEach(async () => {
 });
 
 describe('private Think body store', () => {
+  it('exposes the reclamation and verified restoration contract', async () => {
+    store = await factory()({ directory, epoch, vaultDirectory: vault });
+    expect(reclaimable(store), 'BodyStore must expose evict and restore').toBe(true);
+  });
+
+  it('defers eviction until the last pinned reader closes, then verifies exact canonical restoration', async () => {
+    store = await factory()({ directory, epoch, vaultDirectory: vault });
+    const bodies = reclamation(store);
+    const assistantKey: BodyKey = { conversationId: key.conversationId, owner: { kind: 'assistant-text', messageId: 'msg_fixture_assistant', ordinal: 0 } };
+    const ref = await store.replace(assistantKey, bytes('fixture canonical 🧠'), 'canonical');
+    if (ref.kind !== 'canonical') throw new Error('fixture canonical missing');
+    const first = await store.open(ref);
+    const second = await store.open(ref);
+    const resident = await fileCount(directory);
+    expect(resident).toBeGreaterThan(0);
+    expect(await bodies.evict(ref)).toBe('deferred');
+    await first.close();
+    expect(await fileCount(directory)).toBe(resident);
+    expect(Buffer.from(await second.read(0, ref.through)).toString('utf8')).toBe('fixture canonical 🧠');
+    await second.close();
+    expect(await fileCount(directory)).toBeLessThan(resident);
+    expect(await bodies.evict(ref)).toBe('already-evicted');
+    await expect(store.open(ref)).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(store.open({ ...ref, generation: 'forged-generation' })).rejects.toMatchObject({ code: 'stale_ref' });
+    await expect(bodies.restore(ref, bytes('fixture canonical 🦊'))).rejects.toMatchObject({ code: 'resource_failure' });
+    await expect(store.open(ref)).rejects.toMatchObject({ code: 'unavailable' });
+    const restored = await bodies.restore(ref, bytes('fixture canonical 🧠'));
+    expect(Buffer.from(await restored.read(0, ref.through)).toString('utf8')).toBe('fixture canonical 🧠');
+    const separate = await store.open(ref);
+    await restored.close();
+    expect(Buffer.from(await separate.read(0, ref.through)).toString('utf8')).toBe('fixture canonical 🧠');
+    await separate.close();
+  });
+
+  it('protects originals, form replies and the current unfinished preview but permits superseded preview eviction', async () => {
+    store = await factory()({ directory, epoch, vaultDirectory: vault });
+    const bodies = reclamation(store);
+    const original = await store.replace(key, bytes('fixture original'), 'canonical');
+    const form = await store.replace({ conversationId: key.conversationId, owner: { kind: 'form-reply', clientCommandId: '33333333-3333-4333-8333-333333333333', decisionId: 'form_fixture' } }, bytes('fixture answer'), 'canonical');
+    const assistantKey: BodyKey = { conversationId: key.conversationId, owner: { kind: 'assistant-text', messageId: 'msg_fixture_preview', ordinal: 0 } };
+    const preview = await store.replace(assistantKey, bytes('fixture partial'), 'preview');
+    expect(await bodies.evict(original)).toBe('protected');
+    expect(await bodies.evict(form)).toBe('protected');
+    expect(await bodies.evict(preview)).toBe('protected');
+    const canonical = await store.replace(assistantKey, bytes('fixture canonical'), 'canonical');
+    expect(canonical.generation).not.toBe(preview.generation);
+    expect(await bodies.evict(preview)).toBe('evicted');
+    expect(await readdir(vault)).toEqual([]);
+  });
+
   it('exports the requested factory', () => {
     expect(Reflect.get(bodyModule, 'createBodyStore'), 'createBodyStore factory must be available').toEqual(expect.any(Function));
   });

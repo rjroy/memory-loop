@@ -3,10 +3,18 @@ import type { FormInfo, SessionCreateInput } from '@opencode/client';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isAbsolute, normalize } from 'node:path';
 import type { NativeSession, NativeSessions } from './native';
-import type { BodyKey, BodyRef, BodyStore, PreviewBodyRef } from './body-store';
-import type { ProjectionEntry, ThinkContentReader, ToolCategory, ToolState } from './projection';
+import type { BodyKey, BodyReader, BodyRef, BodyStore, PreviewBodyRef } from './body-store';
+import type { ProjectionEntry, ProjectionPage, ThinkContentReader, ToolCategory, ToolState } from './projection';
+import type { ContentChunk, ContentChunkRequest } from './content-transfer';
 
-export type ThinkServiceErrorCode = 'invalid_request' | 'command_conflict' | 'not_found' | 'think_unavailable' | 'decision_unavailable';
+export type ConversationSnapshot = ConversationState & Pick<ProjectionPage, 'entries' | 'contentHealth' | 'nextCursor'>;
+export interface ConversationWatch {
+  snapshot: ConversationSnapshot;
+  next(): Promise<ConversationState | null>;
+  close(): void;
+}
+
+export type ThinkServiceErrorCode = 'invalid_request' | 'command_conflict' | 'not_found' | 'think_unavailable' | 'decision_unavailable' | 'content_unavailable';
 
 export class ThinkServiceError extends Error {
   constructor(readonly code: ThinkServiceErrorCode) {
@@ -19,6 +27,9 @@ export class ThinkServiceError extends Error {
 export interface ThinkService {
   create(command: CreateConversationCommand): Promise<CreateReceipt>;
   conversation(conversationId: string): Promise<ConversationState | null>;
+  snapshot(conversationId: string, cursor?: string): Promise<ConversationSnapshot | null>;
+  watch(conversationId: string): Promise<ConversationWatch | null>;
+  contentChunk(request: ContentChunkRequest): Promise<ContentChunk>;
   command(conversationId: string, clientCommandId: string): Promise<CommandReceipt | null>;
   send(command: SendCommand): Promise<SendReceipt>;
   stop(command: StopCommand): Promise<StopReceipt>;
@@ -39,6 +50,8 @@ export interface ThinkServiceOptions {
   };
   epoch: string;
   serviceIdentity: { pid: number; version: string };
+  clock?: { now(): number };
+  transferIdleMs?: number;
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -75,9 +88,41 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   const preparingReplies = new Map<string, { payload: string; result: Promise<FormReplyReceipt> }>();
   const formLocks = new Set<string>();
   const conversations = new Map<string, ConversationState>();
+  const watchers = new Map<string, Set<(state: ConversationState | null) => void>>();
+  function setConversation(id: string, state: ConversationState): void {
+    const previous = conversations.get(id);
+    conversations.set(id, state);
+    if (!previous || state.revision <= previous.revision) return;
+    for (const notify of watchers.get(id) ?? []) notify({ ...state });
+  }
   const sendDigests = new Map<string, string>();
   const projections = new Map<string, ProjectionEntry[]>();
   const published = new Set<string>();
+  const publishedRefs = new Map<string, BodyRef>();
+  const reclaimable = new Map<string, BodyRef>();
+  const locators = new Map<string, { sessionID: string; messageID: string; ordinal: number }>();
+  const rehydrations = new Map<string, { promise: Promise<BodyReader>; waiters: number }>();
+  const transferKey = (conversationId: string, contentId: string, generation: string, through: number) => JSON.stringify([conversationId, contentId, generation, through]);
+  const clock = options.clock ?? { now: () => Date.now() };
+  const transferIdleMs = options.transferIdleMs ?? 60000;
+  if (!Number.isSafeInteger(transferIdleMs) || transferIdleMs < 1) throw new ThinkServiceError('invalid_request');
+  type Transfer = { ref: BodyRef; reader: BodyReader; expires: number; next: number; last?: number; busy: boolean };
+  const transfers = new Map<string, Transfer>();
+  const transferWork = new Set<Promise<unknown>>();
+  let openingTransfers = 0;
+  function trackTransfer<T>(work: Promise<T>): Promise<T> {
+    transferWork.add(work);
+    void work.then(() => transferWork.delete(work), () => transferWork.delete(work));
+    return work;
+  }
+  function expireTransfers(): void {
+    for (const [nonce, transfer] of transfers) {
+      if (!transfer.busy && transfer.expires <= clock.now()) {
+        transfers.delete(nonce);
+        void trackTransfer(transfer.reader.close()).catch(() => {});
+      }
+    }
+  }
   const cursorKey = randomBytes(32);
   const runs = new Map<string, { conversationId: string; sendCommandId: string }>();
   const activeRuns = new Map<string, string>();
@@ -114,13 +159,18 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       entry.kind === 'assistant-text' && existing.kind === 'assistant-text' && existing.messageId === entry.messageId && existing.ordinal === entry.ordinal ||
       entry.kind === 'tool' && existing.kind === 'tool' && existing.messageId === entry.messageId && existing.toolCallId === entry.toolCallId ||
       entry.kind === 'form-reply' && existing.kind === 'form-reply' && existing.clientCommandId === entry.clientCommandId));
+    const old = index < 0 ? undefined : entries[index];
+    if (old?.kind === 'assistant-text' && old.body.kind === 'preview' && entry.kind === 'assistant-text' && old.body.generation !== entry.body.generation) reclaimable.set(refIdentity(old.body), old.body);
     const next = { ...entry, displayOrder: index < 0 ? entries.length : entries[index].displayOrder } as ProjectionEntry;
-    if ('body' in next) published.add(refIdentity(next.body));
+    if ('body' in next) {
+      published.add(refIdentity(next.body));
+      publishedRefs.set(transferKey(conversationId, next.body.contentId, next.body.generation, next.body.through), next.body);
+    }
     const changed = index < 0 || JSON.stringify(entries[index]) !== JSON.stringify(next);
     if (index < 0) entries.push(next); else entries[index] = next;
     projections.set(conversationId, entries);
     const state = conversations.get(conversationId);
-    if (state && changed) conversations.set(conversationId, { ...state, revision: state.revision + 1 });
+    if (state && changed) setConversation(conversationId, { ...state, revision: state.revision + 1 });
   }
 
   function markPreviewGaps(): void {
@@ -132,17 +182,17 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       }
       const state = conversations.get(conversationId);
       if (changed) incompleteContent.add(conversationId);
-      if (changed && state) conversations.set(conversationId, { ...state, revision: state.revision + 1 });
+      if (changed && state) setConversation(conversationId, { ...state, revision: state.revision + 1 });
     }
   }
 
-  function lifecycle(receipt: CommandReceipt): void {
+  function lifecycle(receipt: CommandReceipt, changes?: Partial<ConversationState>): void {
     const entries = projections.get(receipt.conversationId) ?? [];
     entries.push({ kind: 'lifecycle', clientCommandId: receipt.clientCommandId, ...('runId' in receipt ? { runId: receipt.runId } : {}),
       state: receipt.state, sourceTime: Date.now(), displayOrder: entries.length });
     projections.set(receipt.conversationId, entries);
     const state = conversations.get(receipt.conversationId);
-    if (state) conversations.set(receipt.conversationId, { ...state, revision: state.revision + 1 });
+    if (state) setConversation(receipt.conversationId, { ...state, ...changes, revision: state.revision + 1 });
   }
 
   async function captureText(conversationId: string, messageId: string, ordinal: number, text: string, kind: 'start' | 'delta' | 'end'): Promise<void> {
@@ -162,12 +212,25 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       if (!incompleteContent.has(conversationId)) {
         incompleteContent.add(conversationId);
         const state = conversations.get(conversationId);
-        if (state) conversations.set(conversationId, { ...state, revision: state.revision + 1 });
+        if (state) setConversation(conversationId, { ...state, revision: state.revision + 1 });
       }
       console.info('think_content_outcome', { status: 'unavailable' });
     }
   }
+  let maintenanceRunning = false;
   const refreshTimer = setInterval(() => {
+    expireTransfers();
+    if (!maintenanceRunning && reclaimable.size) {
+      maintenanceRunning = true;
+      const maintenance = (async () => {
+        for (const [key, ref] of reclaimable) {
+          if (closed) break;
+          try { const result = await bodies.evict(ref); if (result === 'evicted' || result === 'already-evicted') reclaimable.delete(key); }
+          catch { console.info('think_content_reclaim_outcome', { status: 'unavailable' }); }
+        }
+      })().finally(() => { maintenanceRunning = false; });
+      void trackTransfer(maintenance);
+    }
     for (const conversationId of conversations.keys()) {
       if (!refreshes.get(conversationId)?.running) requestRefresh(conversationId);
     }
@@ -191,8 +254,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     const previous = conversations.get(receipt.conversationId);
     if (!previous) return;
     commands.set(receipt.clientCommandId, next);
-    lifecycle(next);
-    conversations.set(receipt.conversationId, { ...previous, revision: previous.revision + 1, creation: state });
+    lifecycle(next, { creation: state });
   }
 
   function matches(session: NativeSession, id: string, conversationId: string): boolean {
@@ -207,7 +269,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         (model.variant === undefined ? session.model.variant === undefined || session.model.variant === 'default' : session.model.variant === model.variant)));
   }
 
-  async function nativeCall<T>(controller: AbortController, operation: 'create' | 'readback' | 'monitor-connect' | 'prompt' | 'inbox-list' | 'inbox-cancel' | 'interrupt' | 'status' | 'active' | 'history' | 'identity' | 'form-list' | 'form-get' | 'form-reply' | 'permission-list', call: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  async function nativeCall<T>(controller: AbortController, operation: 'create' | 'readback' | 'monitor-connect' | 'prompt' | 'inbox-list' | 'inbox-cancel' | 'interrupt' | 'status' | 'active' | 'history' | 'identity' | 'form-list' | 'form-get' | 'form-reply' | 'permission-list' | 'message-get', call: (signal: AbortSignal) => Promise<T>): Promise<T> {
     console.info('think_native_attempt', { operation });
     const signal = controller.signal;
     if (signal.aborted) {
@@ -249,6 +311,49 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     } catch {
       if (!closed) available = false;
       return false;
+    }
+  }
+
+  async function openPublishedBody(ref: BodyRef): Promise<BodyReader> {
+    const key = refIdentity(ref);
+    if (!published.has(key)) throw new ThinkServiceError('not_found');
+    try { return await bodies.open(ref); }
+    catch (error) {
+      if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'unavailable' && 'reason' in error && error.reason === 'evicted') || ref.kind !== 'canonical') throw new ThinkServiceError('content_unavailable');
+    }
+    const locator = locators.get(key);
+    if (!locator || closed) throw new ThinkServiceError('content_unavailable');
+    let work = rehydrations.get(key);
+    if (!work) {
+      const controller = new AbortController();
+      const promise = (async () => {
+        if (!await verifyIdentity(controller)) throw new ThinkServiceError('content_unavailable');
+        const message = await nativeCall(controller, 'message-get', signal => native.getMessage({ sessionID: locator.sessionID, messageID: locator.messageID }, signal));
+        if (message.id !== locator.messageID || message.type !== 'assistant' || message.time.completed === undefined) throw new ThinkServiceError('content_unavailable');
+        const part = message.content.filter(item => item.type === 'text')[locator.ordinal];
+        if (!part || part.type !== 'text' || Buffer.byteLength(part.text, 'utf8') !== ref.through || createHash('sha256').update(part.text, 'utf8').digest('hex') !== ref.sha256 ||
+            !await verifyIdentity(controller) || controller.signal.aborted || closed) throw new ThinkServiceError('content_unavailable');
+        const guard = await bodies.restore(ref, bodyBytes(part.text));
+        if (closed || controller.signal.aborted) { await guard.close(); throw new ThinkServiceError('content_unavailable'); }
+        return guard;
+      })();
+      tasks.set(controller, promise.then(() => {}, () => {}).finally(() => { tasks.delete(controller); }));
+      work = { promise, waiters: 0 };
+      rehydrations.set(key, work);
+    }
+    work.waiters++;
+    try {
+      await work.promise;
+      if (closed) throw new ThinkServiceError('content_unavailable');
+      return await bodies.open(ref);
+    } catch { throw new ThinkServiceError('content_unavailable'); }
+    finally {
+      work.waiters--;
+      if (!work.waiters) {
+        rehydrations.delete(key);
+        const guard = await work.promise.catch(() => undefined);
+        if (guard) { await guard.close(); if (!closed) reclaimable.set(key, ref); }
+      }
     }
   }
 
@@ -321,7 +426,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   function setPermissionPending(conversationId: string, pending: boolean): void {
     const state = conversations.get(conversationId);
     if (!state || (pending === (state.permissionPending ?? false) && (!pending || state.permissionCompatibility === 'incompatible'))) return;
-    conversations.set(conversationId, { ...state, revision: state.revision + 1, permissionPending: pending,
+    setConversation(conversationId, { ...state, revision: state.revision + 1, permissionPending: pending,
       ...(pending ? { permissionCompatibility: 'incompatible' as const } : {}) });
   }
 
@@ -581,10 +686,18 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (incomplete) incompleteContent.add(conversationId); else incompleteContent.delete(conversationId);
           if (wasIncomplete !== incomplete) {
             const current = conversations.get(conversationId);
-            if (current) conversations.set(conversationId, { ...current, revision: current.revision + 1 });
+            if (current) setConversation(conversationId, { ...current, revision: current.revision + 1 });
           }
           for (const entry of captured) {
-            if (entry.kind === 'assistant-text' || entry.kind === 'tool') putEntry(conversationId, entry);
+            if (entry.kind === 'assistant-text' || entry.kind === 'tool') {
+              putEntry(conversationId, entry);
+              if (entry.kind === 'assistant-text' && entry.body.kind === 'canonical' && entry.capture === 'complete') {
+                const key = refIdentity(entry.body);
+                const first = !locators.has(key);
+                locators.set(key, { sessionID, messageID: entry.messageId, ordinal: entry.ordinal });
+                if (first) reclaimable.set(key, entry.body);
+              }
+            }
           }
           const receipt = run ? commands.get(run.sendCommandId) : undefined;
           if (runId && receipt?.kind === 'send' && dispatchedRuns.has(runId) &&
@@ -647,7 +760,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     }
   }
 
-  return {
+  const service: ThinkService = {
     content: {
       async page(conversationId, cursor) {
         requireOpen();
@@ -686,8 +799,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       },
       async open(ref) {
         requireOpen();
-        if (!published.has(refIdentity(ref))) throw new ThinkServiceError('not_found');
-        return bodies.open(ref);
+        return trackTransfer(openPublishedBody(ref));
       },
     },
     async create(command) {
@@ -714,7 +826,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       const receipt: CreateReceipt = { kind: 'create', conversationId, clientCommandId, epoch, state: 'registered' };
       const state: ConversationState = { conversationId, epoch, revision: 1, creation: 'registered' };
       commands.set(clientCommandId, receipt);
-      conversations.set(conversationId, state);
+      setConversation(conversationId, state);
       lifecycle(receipt);
       sessionConversations.set(`ses_memoryloop_${conversationId.replaceAll('-', '')}`, conversationId);
       console.info('think_create_registered');
@@ -872,6 +984,92 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       const state = conversations.get(conversationId);
       return state ? { ...state } : null;
     },
+    async snapshot(conversationId, cursor) {
+      requireOpen();
+      if (typeof conversationId !== 'string' || !uuid.test(conversationId)) throw new ThinkServiceError('invalid_request');
+      const state = conversations.get(conversationId);
+      if (!state) return null;
+      const page = await service.content.page(conversationId, cursor);
+      return { ...state, entries: page.entries, contentHealth: page.contentHealth, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) };
+    },
+    contentChunk(input) {
+      requireOpen();
+      return trackTransfer((async () => {
+        if (!input || !uuid.test(input.conversationId) || !uuid.test(input.contentId) || !uuid.test(input.generation) ||
+            !Number.isSafeInteger(input.through) || input.through < 0 || !Number.isSafeInteger(input.offset) || input.offset < 0 || input.offset > input.through ||
+            (input.transfer !== undefined && !uuid.test(input.transfer)) || (input.transfer === undefined && input.offset !== 0)) throw new ThinkServiceError('invalid_request');
+        expireTransfers();
+        const key = transferKey(input.conversationId, input.contentId, input.generation, input.through);
+        let nonce = input.transfer;
+        let transfer = nonce ? transfers.get(nonce) : undefined;
+        if (nonce) {
+          if (!transfer || transferKey(transfer.ref.key.conversationId, transfer.ref.contentId, transfer.ref.generation, transfer.ref.through) !== key || transfer.busy ||
+              (input.offset !== transfer.next && input.offset !== transfer.last)) throw new ThinkServiceError('content_unavailable');
+        } else {
+          const ref = publishedRefs.get(key);
+          if (!ref || transfers.size + openingTransfers >= 64) throw new ThinkServiceError('content_unavailable');
+          openingTransfers++;
+          try {
+            const reader = await openPublishedBody(ref);
+            if (closed) { await reader.close(); throw new ThinkServiceError('content_unavailable'); }
+            nonce = randomUUID();
+            transfer = { ref, reader, expires: clock.now() + transferIdleMs, next: 0, busy: false };
+            transfers.set(nonce, transfer);
+          } catch { throw new ThinkServiceError('content_unavailable'); }
+          finally { openingTransfers--; }
+        }
+        if (!transfer || !nonce) throw new ThinkServiceError('content_unavailable');
+        transfer.busy = true;
+        try {
+          const bytes = await transfer.reader.read(input.offset, Math.min(65536, input.through - input.offset));
+          if (bytes.length > Math.min(65536, input.through - input.offset) || (input.offset < input.through && !bytes.length)) throw new Error('invalid body read');
+          if (closed) throw new Error('service closed');
+          const nextOffset = input.offset + bytes.length;
+          if (input.offset === transfer.next) { transfer.last = input.offset; transfer.next = nextOffset; }
+          transfer.expires = clock.now() + transferIdleMs;
+          return { conversationId: input.conversationId, epoch, contentId: input.contentId, generation: input.generation, through: input.through, offset: input.offset, bytes: Buffer.from(bytes).toString('base64'), nextOffset, transfer: nonce };
+        } catch {
+          transfers.delete(nonce);
+          await transfer.reader.close().catch(() => {});
+          throw new ThinkServiceError('content_unavailable');
+        } finally { transfer.busy = false; }
+      })());
+    },
+    async watch(conversationId) {
+      requireOpen();
+      if (typeof conversationId !== 'string' || !uuid.test(conversationId)) throw new ThinkServiceError('invalid_request');
+      if (!conversations.has(conversationId)) return null;
+      let pending: ConversationState | undefined;
+      let waiter: ((state: ConversationState | null) => void) | undefined;
+      let stopped = false;
+      const listeners = watchers.get(conversationId) ?? new Set<(state: ConversationState | null) => void>();
+      watchers.set(conversationId, listeners);
+      const close = () => {
+        if (stopped) return;
+        stopped = true;
+        listeners.delete(notify);
+        if (!listeners.size) watchers.delete(conversationId);
+        waiter?.(null);
+        waiter = undefined;
+      };
+      const notify = (state: ConversationState | null) => {
+        if (!state) { close(); return; }
+        if (waiter) { const resolve = waiter; waiter = undefined; resolve(state); }
+        else if (pending) close();
+        else pending = state;
+      };
+      listeners.add(notify);
+      try {
+        const snapshot = await service.snapshot(conversationId);
+        if (!snapshot) { close(); return null; }
+        if (pending && pending.revision <= snapshot.revision) pending = undefined;
+        return { snapshot, close, next: () => {
+          if (stopped) return Promise.resolve(null);
+          if (pending) { const next = pending; pending = undefined; return Promise.resolve(next); }
+          return new Promise(resolve => { waiter = resolve; });
+        } };
+      } catch (error) { close(); throw error; }
+    },
     async command(conversationId, clientCommandId) {
       requireOpen();
       if (typeof conversationId !== 'string' || !uuid.test(conversationId) ||
@@ -882,17 +1080,24 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     async close() {
       if (!closing) {
         closed = true;
+        for (const listeners of watchers.values()) for (const notify of listeners) notify(null);
         clearInterval(refreshTimer);
         console.info('think_service_closed');
         const pending = [...tasks.entries()];
         const ownedMonitor = monitor;
         ownedMonitor?.controller.abort();
         for (const [controller] of pending) controller.abort();
-        closing = Promise.all([...pending.map(([, task]) => task), ...(ownedMonitor ? [ownedMonitor.task] : [])]).then(async () => { await bodies.close(); });
+        closing = Promise.all([...pending.map(([, task]) => task), ...(ownedMonitor ? [ownedMonitor.task] : [])]).then(async () => {
+          await Promise.allSettled([...transferWork]);
+          await Promise.all([...transfers.values()].map(transfer => transfer.reader.close()));
+          transfers.clear();
+          await bodies.close();
+        });
       }
       await closing;
     },
   };
+  return service;
 }
 
 export type { CommandReceipt, ConversationState, CreateConversationCommand, CreateReceipt, SendCommand, SendReceipt, StopCommand, StopReceipt, ThinkUnavailableCode } from './contract';

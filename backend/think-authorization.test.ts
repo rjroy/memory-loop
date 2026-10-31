@@ -11,6 +11,7 @@ const epoch = '33333333-3333-4333-8333-333333333333';
 const command: CreateConversationCommand = { conversationId, clientCommandId };
 const receipt: CreateReceipt = { ...command, kind: 'create', epoch, state: 'registered' };
 const state: ConversationState = { conversationId, epoch, revision: 1, creation: 'ready' };
+const snapshot = { ...state, entries: [], contentHealth: 'complete' as const };
 const base = '/api/think/conversations';
 
 function setup(unavailable = false) {
@@ -22,6 +23,9 @@ function setup(unavailable = false) {
   const think = {
     create: vi.fn(async (_command: CreateConversationCommand): Promise<CreateReceipt> => receipt),
     conversation: vi.fn(async (_id: string): Promise<ConversationState | null> => state),
+    snapshot: vi.fn<ThinkService['snapshot']>(async () => snapshot),
+    watch: vi.fn<ThinkService['watch']>(async () => { throw new Error('Unexpected watch'); }),
+    contentChunk: vi.fn<ThinkService['contentChunk']>(async () => { throw new Error('Unexpected content chunk'); }),
     command: vi.fn(async (_id: string, _commandId: string): Promise<CreateReceipt | null> => receipt),
     send: vi.fn<ThinkService['send']>(async () => { throw new Error('Unexpected Send'); }),
     stop: vi.fn<ThinkService['stop']>(async () => { throw new Error('Unexpected Stop'); }),
@@ -59,14 +63,16 @@ describe('Think HTTP command boundary', () => {
     expect(think.decisions).not.toHaveBeenCalled();
     expect(think.decision).not.toHaveBeenCalled();
     expect(think.reply).not.toHaveBeenCalled();
+    expect(think.content.page).not.toHaveBeenCalled();
+    expect(think.content.open).not.toHaveBeenCalled();
   });
 
   it('reads current state and the registered command receipt', async () => {
     const { request, think } = setup();
     const conversation = await request(`${base}/${conversationId}`);
     expect(conversation.status).toBe(200);
-    expect(await conversation.json()).toEqual(state);
-    expect(think.conversation).toHaveBeenCalledExactlyOnceWith(conversationId);
+    expect(await conversation.json()).toEqual(snapshot);
+    expect(think.snapshot).toHaveBeenCalledExactlyOnceWith(conversationId, undefined);
     const commandResponse = await request(`${base}/${conversationId}/commands/${clientCommandId}`);
     expect(commandResponse.status).toBe(200);
     expect(await commandResponse.json()).toEqual(receipt);
@@ -84,12 +90,17 @@ describe('Think HTTP command boundary', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(think.create).not.toHaveBeenCalled();
     expect(think.conversation).not.toHaveBeenCalled();
+    expect(think.snapshot).not.toHaveBeenCalled();
+    expect(think.watch).not.toHaveBeenCalled();
+    expect(think.contentChunk).not.toHaveBeenCalled();
     expect(think.command).not.toHaveBeenCalled();
     expect(think.send).not.toHaveBeenCalled();
     expect(think.stop).not.toHaveBeenCalled();
     expect(think.decisions).not.toHaveBeenCalled();
     expect(think.decision).not.toHaveBeenCalled();
     expect(think.reply).not.toHaveBeenCalled();
+    expect(think.content.page).not.toHaveBeenCalled();
+    expect(think.content.open).not.toHaveBeenCalled();
   });
 
   it('rejects a missing credential before any Think service call', async () => {
@@ -98,12 +109,17 @@ describe('Think HTTP command boundary', () => {
     expect(response.status).toBe(401);
     expect(think.create).not.toHaveBeenCalled();
     expect(think.conversation).not.toHaveBeenCalled();
+    expect(think.snapshot).not.toHaveBeenCalled();
+    expect(think.watch).not.toHaveBeenCalled();
+    expect(think.contentChunk).not.toHaveBeenCalled();
     expect(think.command).not.toHaveBeenCalled();
     expect(think.send).not.toHaveBeenCalled();
     expect(think.stop).not.toHaveBeenCalled();
     expect(think.decisions).not.toHaveBeenCalled();
     expect(think.decision).not.toHaveBeenCalled();
     expect(think.reply).not.toHaveBeenCalled();
+    expect(think.content.page).not.toHaveBeenCalled();
+    expect(think.content.open).not.toHaveBeenCalled();
   });
 
   it.each(['not json', JSON.stringify({ ...command, conversationId: 'not-a-uuid' }), JSON.stringify({ conversationId })])(
@@ -123,10 +139,10 @@ describe('Think HTTP command boundary', () => {
 
   it('reports unknown conversations and commands from the service', async () => {
     const { request, think } = setup();
-    think.conversation.mockResolvedValueOnce(null);
+    think.snapshot.mockResolvedValueOnce(null);
     think.command.mockResolvedValueOnce(null);
     expect((await request(`${base}/${conversationId}`)).status).toBe(404);
-    expect(think.conversation).toHaveBeenCalledExactlyOnceWith(conversationId);
+    expect(think.snapshot).toHaveBeenCalledExactlyOnceWith(conversationId, undefined);
     expect((await request(`${base}/${conversationId}/commands/${clientCommandId}`)).status).toBe(404);
     expect(think.command).toHaveBeenCalledExactlyOnceWith(conversationId, clientCommandId);
   });

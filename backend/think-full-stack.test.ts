@@ -1,14 +1,124 @@
-import { randomUUID } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { relative } from 'node:path';
 import { OpenCode } from '@opencode/client';
 import { Service } from '@opencode/client/service';
 import { expect, it } from 'vitest';
-import { launchThinkFixture } from '../tests/think-fixture';
+import { chromium, type Browser, type Page, type Route } from '@playwright/test';
+import { fixtureLargeResponse, launchThinkFixture } from '../tests/think-fixture';
 
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+it('PH3-R1 keeps a quiet watch alive across two default heartbeats on the canonical Bun listener', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary });
+  const abort = new AbortController();
+  const phase: { createAccepted: boolean; sendAccepted: boolean; watchStatus: number | null; snapshotSeen: boolean; heartbeatCount: number; lastFrameType: string | null; watchStarted: number | null; lastFrameAt: number | null } = {
+    createAccepted: false, sendAccepted: false, watchStatus: null, snapshotSeen: false, heartbeatCount: 0, lastFrameType: null, watchStarted: null, lastFrameAt: null,
+  };
+  try {
+    const origin = new URL(fixture.daemonUrl);
+    if (origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || !origin.port || forbidden.has(Number(origin.port))) throw new Error('invalid fixture daemon listener');
+    const request = (path: string, body?: object, signal: AbortSignal = AbortSignal.timeout(5000)) => new Promise<import('node:http').IncomingMessage>((resolve, reject) => {
+      const payload = body === undefined ? undefined : JSON.stringify(body);
+      const req = httpRequest(new URL(path, origin), {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { ...fixture.headers, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, signal,
+      }, resolve);
+      req.on('error', reject);
+      req.end(payload);
+    });
+    const call = async (path: string, body?: object) => {
+      const response = await request(path, body);
+      let text = '';
+      response.setEncoding('utf8');
+      for await (const chunk of response) {
+        text += chunk;
+        if (text.length > 128 * 1024) throw new Error('fixture response limit');
+      }
+      expect(response.statusCode).toBe(body === undefined ? 200 : 202);
+      return JSON.parse(text) as Record<string, unknown>;
+    };
+    const conversationId = randomUUID();
+    const base = `/api/think/conversations/${conversationId}`;
+    await call('/api/think/conversations', { conversationId, clientCommandId: randomUUID() });
+    phase.createAccepted = true;
+    const poll = async (path: string, predicate: (value: Record<string, unknown>) => boolean) => {
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        const value = await call(path);
+        if (predicate(value)) return value;
+        if (value.creation === 'rejected' || value.state === 'failed') throw new Error('fixture operation failed');
+        await delay(50);
+      }
+      throw new Error('fixture operation timed out');
+    };
+    await poll(base, value => value.creation === 'ready');
+    const commandId = randomUUID();
+    await call(`${base}/messages`, { clientCommandId: commandId, text: 'fixture-hold quiet watch' });
+    phase.sendAccepted = true;
+    await poll(`${base}/commands/${commandId}`, value => value.state === 'admitted');
+    const deadline = Date.now() + 20000;
+    while (fixture.control.info().held === 0) {
+      if (Date.now() >= deadline) throw new Error('fixture provider hold timed out');
+      await delay(50);
+    }
+    const requests = fixture.control.info().requests;
+    phase.watchStarted = performance.now();
+    const response = await request(`${base}/events`, undefined, AbortSignal.any([abort.signal, AbortSignal.timeout(50000)]));
+    phase.watchStatus = response.statusCode ?? null;
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('text/event-stream');
+    response.setEncoding('utf8');
+    let buffer = '';
+    let lastFrame = performance.now();
+    let snapshot = false;
+    let heartbeats = 0;
+    try {
+      for await (const chunk of response) {
+        buffer += String(chunk).replaceAll('\r\n', '\n');
+        if (buffer.length > 128 * 1024) throw new Error('fixture watch frame too large');
+        let end: number;
+        while ((end = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, end);
+          buffer = buffer.slice(end + 2);
+          const now = performance.now();
+          const event = /^event: ?(.+)$/m.exec(frame)?.[1];
+          phase.lastFrameAt = now;
+          phase.lastFrameType = event === 'snapshot' || event === 'revision' || event === 'heartbeat' ? event : 'other';
+          if (!snapshot) { expect(event).toBe('snapshot'); snapshot = true; phase.snapshotSeen = true; }
+          else if (event === 'heartbeat') {
+            expect(now - lastFrame).toBeGreaterThan(10000);
+            heartbeats++;
+            phase.heartbeatCount = heartbeats;
+          }
+          lastFrame = now;
+        }
+        if (heartbeats >= 2) break;
+      }
+      if (heartbeats < 2) throw new Error(`quiet watch closed after ${heartbeats} heartbeats`);
+    } finally { abort.abort(); response.destroy(); }
+    expect(fixture.control.info().requests).toBe(requests);
+    expect(fixture.control.info().held).toBeGreaterThan(0);
+    expect((await call(`${base}/commands/${commandId}`)).state).toBe('admitted');
+    const endpoint = await Service.discover({ file: `${fixture.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    expect((await native.session.active({ signal: AbortSignal.timeout(5000) }))[`ses_memoryloop_${conversationId.replaceAll('-', '')}`]).toMatchObject({ type: 'running' });
+  } catch (error: unknown) {
+    const now = performance.now();
+    const code = error instanceof Error && 'code' in error ? error.code : undefined;
+    const errorCategory = code === 'ECONNRESET' || code === 'ABORT_ERR' || code === 'ERR_STREAM_PREMATURE_CLOSE' ? code : error instanceof Error && error.name === 'AssertionError' ? 'assertion' : 'other';
+    console.error(JSON.stringify({ createAccepted: phase.createAccepted, sendAccepted: phase.sendAccepted, watchStatus: phase.watchStatus,
+      snapshotSeen: phase.snapshotSeen, heartbeatCount: phase.heartbeatCount, lastFrameType: phase.lastFrameType,
+      msSinceLastFrame: phase.lastFrameAt === null ? null : Math.round(now - phase.lastFrameAt),
+      totalWatchMs: phase.watchStarted === null ? null : Math.round(now - phase.watchStarted), errorCategory }));
+    throw error;
+  } finally { await fixture.close(); await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' }); }
+}, 240000);
 
 it('runs the owned Node Next → Bun daemon → native fixture command lifecycle', async () => {
   const binary = process.env.OPENCODE_TEST_BINARY;
@@ -124,6 +234,343 @@ it('runs the owned Node Next → Bun daemon → native fixture command lifecycle
     await fixture.close();
     await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
     for (const pid of pids) {
+      try { process.kill(-pid, 0); throw new Error('owned fixture process group remains'); }
+      catch (error: unknown) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; }
+    }
+  }
+}, 240000);
+
+it('recovers large immutable content across two real browser watches without resending', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary });
+  let browser: Browser | undefined;
+  let ownedPids: number[] = [];
+  const observerAbort = new AbortController();
+  try {
+    const rootRelative = relative('/tmp/opencode', fixture.root);
+    if (!rootRelative || rootRelative.startsWith('..') || rootRelative.startsWith('/') || await realpath(fixture.root) !== fixture.root) throw new Error('invalid owned fixture root');
+    const web = new URL(fixture.webUrl);
+    if (web.protocol !== 'http:' || web.hostname !== '127.0.0.1' || !web.port || forbidden.has(Number(web.port)) || web.pathname !== '/') throw new Error('invalid fixture web listener');
+    const receipts: unknown = JSON.parse(await readFile(`${fixture.root}/process-receipts.json`, 'utf8'));
+    if (!Array.isArray(receipts) || !receipts.every((entry: unknown) => typeof entry === 'object' && entry !== null && 'pid' in entry && typeof entry.pid === 'number' && Number.isSafeInteger(entry.pid) && entry.pid > 1 && entry.pid !== process.pid)) throw new Error('invalid owned process receipt');
+    ownedPids = receipts.map(entry => entry.pid);
+    const pidFor = (operation: string) => {
+      const entry: unknown = receipts.find((item: unknown) => typeof item === 'object' && item !== null && 'operation' in item && item.operation === operation);
+      if (!entry || typeof entry !== 'object' || !('pid' in entry) || typeof entry.pid !== 'number' || !Number.isSafeInteger(entry.pid) || entry.pid <= 1 || entry.pid === process.pid) throw new Error('invalid owned process identity');
+      return entry.pid;
+    };
+    const nativePid = pidFor('native');
+    const daemonPid = pidFor('daemon');
+    const endpoint = await Service.discover({ file: `${fixture.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    const info = await native.server.info({ signal: AbortSignal.timeout(5000) });
+    expect(info.pid).toBe(nativePid);
+    expect(info.version).toBe('2.2.2');
+    browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const contextA = await browser.newContext();
+    const contextB = await browser.newContext();
+    // The app root redirects to /ground; this transport-only probe must not race
+    // shell navigation. Only this inert document is intercepted, never API/SSE.
+    const probeUrl = new URL('/__think_phase3_probe__', fixture.webUrl).href;
+    for (const context of [contextA, contextB]) {
+      await context.route(probeUrl, async route => {
+        const request = route.request();
+        if (request.method() !== 'GET' || !request.isNavigationRequest() || request.url() !== probeUrl) { await route.continue(); return; }
+        await route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8',
+          headers: { 'cache-control': 'no-store', 'content-security-policy': "default-src 'self'; connect-src 'self'" },
+          body: '<!doctype html><html><head><title>Fixture transport probe</title></head><body></body></html>' });
+      });
+    }
+    const pageA = await contextA.newPage();
+    const pageB = await contextB.newPage();
+    await Promise.all([pageA.goto(probeUrl), pageB.goto(probeUrl)]);
+    expect(pageA.url()).toBe(probeUrl);
+    expect(pageB.url()).toBe(probeUrl);
+    async function browserJson(page: Page, path: string, body?: object) {
+      const result = await page.evaluate(async ({ path, body }) => {
+        const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        return { status: response.status, value: await response.json() as unknown };
+      }, { path, body });
+      expect(result.status).toBe(body === undefined ? 200 : 202);
+      if (!result.value || typeof result.value !== 'object' || Array.isArray(result.value)) throw new Error('invalid browser fixture response');
+      return Object.fromEntries(Object.entries(result.value));
+    }
+    async function poll(page: Page, path: string, predicate: (value: Record<string, unknown>) => boolean) {
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        const value = await browserJson(page, path);
+        if (predicate(value)) return value;
+        if (value.state === 'failed' || value.state === 'monitor-unavailable' || value.creation === 'rejected') throw new Error('fixture browser operation failed');
+        await delay(50);
+      }
+      throw new Error('fixture browser operation timed out');
+    }
+    async function watch(page: Page, path: string) {
+      return page.evaluate(async path => {
+        const source = new EventSource(path);
+        const observations: Array<{ event: string; revision?: number; conversationId?: string; epoch?: string; bytes: number }> = [];
+        Reflect.set(globalThis, '__fixtureWatch', { source, observations });
+        const snapshot = await new Promise<unknown>((resolve, reject) => {
+          const timer = setTimeout(() => { source.close(); reject(new Error('fixture snapshot timeout')); }, 15000);
+          source.addEventListener('snapshot', event => {
+            try {
+              const data: unknown = JSON.parse((event as MessageEvent<string>).data);
+              const revision = typeof data === 'object' && data !== null && 'revision' in data && typeof data.revision === 'number' ? data.revision : undefined;
+              observations.push({ event: 'snapshot', revision, bytes: new TextEncoder().encode((event as MessageEvent<string>).data).length });
+              clearTimeout(timer); resolve(data);
+            } catch (error) { clearTimeout(timer); reject(error); }
+          }, { once: true });
+          source.addEventListener('revision', event => {
+            const text = (event as MessageEvent<string>).data;
+            const data: unknown = JSON.parse(text);
+            observations.push({ event: 'revision', revision: typeof data === 'object' && data !== null && 'revision' in data && typeof data.revision === 'number' ? data.revision : undefined,
+              conversationId: typeof data === 'object' && data !== null && 'conversationId' in data && typeof data.conversationId === 'string' ? data.conversationId : undefined,
+              epoch: typeof data === 'object' && data !== null && 'epoch' in data && typeof data.epoch === 'string' ? data.epoch : undefined,
+              bytes: new TextEncoder().encode(text).length });
+          });
+          source.addEventListener('error', () => { clearTimeout(timer); reject(new Error('fixture watch failed')); }, { once: true });
+        });
+        return snapshot;
+      }, path);
+    }
+    async function closeWatch(page: Page) {
+      await page.evaluate(() => {
+        const value: unknown = Reflect.get(globalThis, '__fixtureWatch');
+        if (typeof value !== 'object' || value === null || !('source' in value) || !(value.source instanceof EventSource)) throw new Error('fixture watch missing');
+        value.source.close();
+      });
+    }
+    function entries(value: unknown): Record<string, unknown>[] {
+      if (!value || typeof value !== 'object' || !('entries' in value) || !Array.isArray(value.entries)) throw new Error('fixture manifest missing');
+      return value.entries.map((entry: unknown) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error('invalid fixture manifest entry');
+        return Object.fromEntries(Object.entries(entry));
+      });
+    }
+    function refOf(entry: Record<string, unknown>) {
+      const value = entry.body;
+      if (!value || typeof value !== 'object' || !('contentId' in value) || typeof value.contentId !== 'string' || !('generation' in value) || typeof value.generation !== 'string' || !('through' in value) || typeof value.through !== 'number') throw new Error('invalid fixture body reference');
+      return { contentId: value.contentId, generation: value.generation, through: value.through };
+    }
+    const conversationId = randomUUID();
+    const commandId = randomUUID();
+    const base = `/api/think/conversations/${conversationId}`;
+    await browserJson(pageA, '/api/think/conversations', { conversationId, clientCommandId: randomUUID() });
+    await poll(pageA, base, value => value.creation === 'ready');
+    const firstSnapshot = await watch(pageA, `${base}/events`);
+    expect(firstSnapshot).toMatchObject({ conversationId, epoch: expect.any(String), revision: expect.any(Number) });
+    const input = `fixture-hold fixture-large ${'漢🧠'.repeat(34000)}`;
+    await browserJson(pageA, `${base}/messages`, { clientCommandId: commandId, text: input });
+    const heldDeadline = Date.now() + 20000;
+    while (fixture.control.info().held === 0) { if (Date.now() >= heldDeadline) throw new Error('fixture provider hold timed out'); await delay(50); }
+    const before = await poll(pageA, base, value => Array.isArray(value.entries) && value.entries.some((entry: unknown) => typeof entry === 'object' && entry !== null && 'kind' in entry && entry.kind === 'original'));
+    const originalBefore = entries(before).find(entry => entry.kind === 'original' && entry.clientCommandId === commandId);
+    if (!originalBefore) throw new Error('fixture original manifest missing');
+    const originalRef = refOf(originalBefore);
+    expect(originalRef.through).toBeGreaterThan(128 * 1024);
+    await pageA.waitForFunction(() => {
+      const watch: unknown = Reflect.get(globalThis, '__fixtureWatch');
+      return typeof watch === 'object' && watch !== null && 'observations' in watch && Array.isArray(watch.observations) && watch.observations.some((entry: unknown) => typeof entry === 'object' && entry !== null && 'event' in entry && entry.event === 'revision');
+    }, undefined, { timeout: 15000 });
+    const observed: unknown = await pageA.evaluate(() => {
+      const watch: unknown = Reflect.get(globalThis, '__fixtureWatch');
+      if (!watch || typeof watch !== 'object' || !('observations' in watch)) throw new Error('fixture watch observations missing');
+      return watch.observations;
+    });
+    if (!Array.isArray(observed)) throw new Error('fixture observations invalid');
+    let previousRevision = -1;
+    let controlMaxFrameBytes = 0;
+    for (const item of observed) {
+      if (!item || typeof item !== 'object' || !('revision' in item) || typeof item.revision !== 'number' || !('bytes' in item) || typeof item.bytes !== 'number') throw new Error('invalid fixture watch observation');
+      expect(item.bytes + 32).toBeLessThanOrEqual(64 * 1024);
+      controlMaxFrameBytes = Math.max(controlMaxFrameBytes, item.bytes + 32);
+      expect(item.revision).toBeGreaterThan(previousRevision);
+      previousRevision = item.revision;
+      if ('event' in item && item.event === 'revision') expect(item).toMatchObject({ conversationId, epoch: before.epoch });
+    }
+    await closeWatch(pageA);
+    const nativeId = `ses_memoryloop_${conversationId.replaceAll('-', '')}`;
+    expect((await native.session.active({ signal: AbortSignal.timeout(5000) }))[nativeId]).toMatchObject({ type: 'running' });
+
+    const bodyDirectory = `${fixture.root}/daemon-app/.memory-loop`;
+    const assistantHash = createHash('sha256').update(fixtureLargeResponse).digest('hex');
+    async function hasAssistantFile() {
+      for (const item of await readdir(bodyDirectory, { withFileTypes: true })) {
+        if (!item.isDirectory() || !item.name.startsWith('think-bodies-')) continue;
+        const dir = `${bodyDirectory}/${item.name}`;
+        for (const file of await readdir(dir, { withFileTypes: true })) {
+          if (!file.isFile()) continue;
+          try {
+            const data = await readFile(`${dir}/${file.name}`);
+            if (data.length === Buffer.byteLength(fixtureLargeResponse) && createHash('sha256').update(data).digest('hex') === assistantHash) return true;
+          } catch (error: unknown) {
+            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+          }
+        }
+      }
+      return false;
+    }
+    const eviction = (async () => {
+      const deadline = Date.now() + 30000;
+      let resident = false;
+      while (Date.now() < deadline && !observerAbort.signal.aborted) {
+        const exists = await hasAssistantFile();
+        if (exists) resident = true;
+        else if (resident) return true;
+        await delay(25);
+      }
+      throw new Error('fixture canonical eviction not observed');
+    })();
+    void eviction.catch(() => {});
+    fixture.control.release();
+    await poll(pageB, `${base}/commands/${commandId}`, value => value.state === 'completed');
+    const freshSnapshot = await watch(pageB, `${base}/events`);
+    controlMaxFrameBytes = Math.max(controlMaxFrameBytes, Buffer.byteLength(JSON.stringify(freshSnapshot)) + 32);
+    expect(freshSnapshot).toMatchObject({ conversationId, epoch: before.epoch, revision: expect.any(Number) });
+    const watchOriginal = entries(freshSnapshot).find(entry => entry.kind === 'original' && entry.clientCommandId === commandId);
+    if (!watchOriginal) throw new Error('reconnected watch lost original identity');
+    expect(refOf(watchOriginal)).toEqual(originalRef);
+    expect(entries(freshSnapshot)).toContainEqual(expect.objectContaining({ kind: 'lifecycle', clientCommandId: commandId, state: 'completed' }));
+    await eviction;
+    const current = await browserJson(pageB, base);
+    const manifest = entries(current);
+    const originalAfter = manifest.find(entry => entry.kind === 'original' && entry.clientCommandId === commandId);
+    const assistant = manifest.find(entry => entry.kind === 'assistant-text' && entry.closure === 'closed');
+    if (!originalAfter || !assistant) throw new Error('fixture content manifest missing');
+    expect(refOf(originalAfter)).toEqual(originalRef);
+    const assistantRef = refOf(assistant);
+    expect(assistantRef.through).toBeGreaterThan(128 * 1024);
+    const watchAssistant = entries(freshSnapshot).find(entry => entry.kind === 'assistant-text' && entry.messageId === assistant.messageId && entry.ordinal === assistant.ordinal);
+    if (!watchAssistant) throw new Error('reconnected watch lost assistant identity');
+    expect(refOf(watchAssistant)).toEqual(assistantRef);
+    const rss = async (pid: number) => {
+      const status = await readFile(`/proc/${pid}/status`, 'utf8');
+      const value = /^VmRSS:\s+(\d+)\s+kB$/m.exec(status)?.[1];
+      return value ? Number(value) * 1024 : 0;
+    };
+    const nativeRssBefore = await rss(nativePid);
+    const daemonRssBefore = await rss(daemonPid);
+    const decodeStarted = performance.now();
+    const history = await native.message.list({ sessionID: nativeId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(10000) });
+    const nativeDecodeMs = performance.now() - decodeStarted;
+    expect(history.data.filter(message => message.type === 'user' && message.id === `msg_memoryloop_${commandId.replaceAll('-', '')}`)).toHaveLength(1);
+    expect(history.data.some(message => message.type === 'assistant' && message.content.some(part => part.type === 'text' && part.text === fixtureLargeResponse))).toBe(true);
+    const assemble = async (ref: { contentId: string; generation: string; through: number }, reconnect: boolean) => {
+      const matchesContent = (url: URL) => url.origin === web.origin && url.pathname === `${base}/content/${ref.contentId}`;
+      let dropped: { offset: number; transfer: string; upstreamStatus: number } | undefined;
+      let dropFinished: Promise<void> | undefined;
+      const dropOnce = (route: Route) => {
+        const url = new URL(route.request().url());
+        const transfer = url.searchParams.get('transfer');
+        const offset = Number(url.searchParams.get('offset'));
+        if (route.request().method() !== 'GET' || dropped || !transfer || !Number.isSafeInteger(offset) || offset <= 0 ||
+            url.searchParams.get('generation') !== ref.generation || url.searchParams.get('through') !== String(ref.through)) {
+          return route.continue();
+        }
+        // Fetch the real Next response once, then discard it before Chromium sees it.
+        dropFinished = (async () => {
+          const upstream = await route.fetch({ maxRetries: 0, timeout: 5000 });
+          dropped = { offset, transfer, upstreamStatus: upstream.status() };
+          await upstream.dispose();
+          await route.abort('failed');
+        })();
+        return dropFinished;
+      };
+      if (reconnect) await pageB.route(matchesContent, dropOnce);
+      try {
+        const result = await pageB.evaluate(async ({ base, ref, reconnect }) => {
+      const started = performance.now();
+      const memory: unknown = Reflect.get(performance, 'memory');
+      const heap = () => typeof memory === 'object' && memory !== null && 'usedJSHeapSize' in memory && typeof memory.usedJSHeapSize === 'number' ? memory.usedJSHeapSize : null;
+      const heapBefore = heap();
+      async function chunk(offset: number, transfer?: string, signal?: AbortSignal) {
+        const query = new URLSearchParams({ generation: ref.generation, through: String(ref.through), offset: String(offset), ...(transfer ? { transfer } : {}) });
+        const response = await fetch(`${base}/content/${encodeURIComponent(ref.contentId)}?${query}`, { signal });
+        if (!response.ok) throw new Error('fixture chunk failed');
+        const value: unknown = await response.json();
+        if (!value || typeof value !== 'object' || !('bytes' in value) || typeof value.bytes !== 'string' || !('transfer' in value) || typeof value.transfer !== 'string' || !('nextOffset' in value) || typeof value.nextOffset !== 'number') throw new Error('invalid fixture chunk');
+        const decoded = Uint8Array.from(atob(value.bytes), char => char.charCodeAt(0));
+        if (decoded.length > 65536 || value.nextOffset !== offset + decoded.length || value.nextOffset > ref.through || (offset < ref.through && decoded.length === 0)) throw new Error('invalid fixture chunk bounds');
+        return { bytes: value.bytes, decoded, transfer: value.transfer, nextOffset: value.nextOffset };
+      }
+      const first = await chunk(0);
+      const repeat = await chunk(0, first.transfer);
+      if (repeat.bytes !== first.bytes || repeat.nextOffset !== first.nextOffset || repeat.transfer !== first.transfer) throw new Error('fixture retry changed bytes');
+      let failedOnce = false;
+      if (reconnect) {
+        try { await chunk(first.nextOffset, first.transfer); }
+        catch (error: unknown) { if (!(error instanceof TypeError)) throw error; failedOnce = true; }
+        if (!failedOnce) throw new Error('fixture expected dropped chunk response');
+      }
+      let reconnectSnapshotBytes = 0;
+      if (reconnect) {
+        const current: unknown = Reflect.get(globalThis, '__fixtureWatch');
+        if (!current || typeof current !== 'object' || !('source' in current) || !(current.source instanceof EventSource)) throw new Error('fixture watch missing');
+        current.source.close();
+        const next = new EventSource(`${base}/events`);
+        const snapshot = await new Promise<unknown>((resolve, reject) => {
+          const timer = setTimeout(() => { next.close(); reject(new Error('fixture reconnect timeout')); }, 15000);
+          next.addEventListener('snapshot', event => {
+            const raw = (event as MessageEvent<string>).data;
+            reconnectSnapshotBytes = new TextEncoder().encode(raw).length + 32;
+            clearTimeout(timer); resolve(JSON.parse(raw) as unknown);
+          }, { once: true });
+          next.addEventListener('error', () => { clearTimeout(timer); reject(new Error('fixture reconnect failed')); }, { once: true });
+        });
+        if (!snapshot || typeof snapshot !== 'object' || !('entries' in snapshot) || !Array.isArray(snapshot.entries) || !snapshot.entries.some((entry: unknown) => typeof entry === 'object' && entry !== null && 'body' in entry && typeof entry.body === 'object' && entry.body !== null && 'contentId' in entry.body && entry.body.contentId === ref.contentId && 'generation' in entry.body && entry.body.generation === ref.generation)) throw new Error('fixture reconnect changed content');
+        Reflect.set(globalThis, '__fixtureWatch', { source: next, observations: [] });
+      }
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      let text = decoder.decode(first.decoded, { stream: true });
+      let offset = first.nextOffset;
+      let count = 1;
+      while (offset < ref.through) {
+        const part = await chunk(offset, first.transfer);
+        if (part.transfer !== first.transfer) throw new Error('fixture transfer identity changed');
+        text += decoder.decode(part.decoded, { stream: true });
+        offset = part.nextOffset;
+        count++;
+      }
+      const heapAfter = heap();
+      return { text: text + decoder.decode(), count, failedOnce, failedOffset: first.nextOffset, failedTransfer: first.transfer, reconnectSnapshotBytes, elapsedMs: performance.now() - started,
+         heapDelta: heapBefore === null || heapAfter === null ? null : heapAfter - heapBefore };
+        }, { base, ref, reconnect });
+        if (reconnect) {
+          expect(dropped?.upstreamStatus).toBe(200);
+          expect(dropped?.offset === result.failedOffset && dropped.transfer === result.failedTransfer).toBe(true);
+        }
+        return result;
+      } finally {
+        if (reconnect) {
+          try { await dropFinished; } finally { await pageB.unroute(matchesContent, dropOnce); }
+        }
+      }
+    };
+    const userAssembly = await assemble(originalRef, false);
+    expect(userAssembly.text).toBe(input);
+    expect(userAssembly.count).toBeGreaterThan(1);
+    const assistantAssembly = await assemble(assistantRef, true);
+    expect(assistantAssembly.text).toBe(fixtureLargeResponse);
+    expect(assistantAssembly.count).toBeGreaterThan(1);
+    expect(assistantAssembly.failedOnce).toBe(true);
+    controlMaxFrameBytes = Math.max(controlMaxFrameBytes, assistantAssembly.reconnectSnapshotBytes);
+    expect(controlMaxFrameBytes).toBeLessThanOrEqual(64 * 1024);
+    const daemonRssAfter = await rss(daemonPid);
+    const nativeRssAfter = await rss(nativePid);
+    process.stdout.write(`${JSON.stringify({ event: 'phase3_fixture_metrics', userBytes: originalRef.through, assistantBytes: assistantRef.through,
+      controlMaxFrameBytes, nativeClientDecodeMs: nativeDecodeMs, nativeRssBeforeBytes: nativeRssBefore, nativeRssAfterBytes: nativeRssAfter,
+      daemonRssBeforeBytes: daemonRssBefore, daemonRssAfterBytes: daemonRssAfter, browserUserAssemblyMs: userAssembly.elapsedMs,
+      browserAssistantAssemblyMs: assistantAssembly.elapsedMs, browserUserHeapDeltaBytes: userAssembly.heapDelta,
+      browserAssistantHeapDeltaBytes: assistantAssembly.heapDelta })}\n`);
+    await closeWatch(pageB);
+    expect(fixture.control.info().requests).toBeGreaterThan(0);
+  } finally {
+    observerAbort.abort();
+    try { await browser?.close(); } finally { await fixture.close(); }
+    await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
+    for (const pid of ownedPids) {
       try { process.kill(-pid, 0); throw new Error('owned fixture process group remains'); }
       catch (error: unknown) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; }
     }

@@ -1,5 +1,5 @@
 import type { EventSubscribeInput, MessageListInput, MessageListOutput, OpenCodeEvent, SessionActiveOutput, SessionCreateInput, SessionGetInput, SessionInfo, SessionPromptInput, SessionPromptOutput, SessionInboxListInput, SessionInboxListOutput, SessionInboxCancelInput, SessionInboxCancelOutput, SessionInterruptInput, SessionInterruptOutput } from '@opencode/client';
-import type { OpenCodeClient, ServerInfo, SessionFormListInput, SessionFormListOutput, SessionFormGetInput, SessionFormGetOutput, SessionFormReplyInput, SessionFormReplyOutput, PermissionRequestListInput, PermissionRequestListOutput } from '@opencode/client';
+import type { OpenCodeClient, ServerInfo, SessionFormListInput, SessionFormListOutput, SessionFormGetInput, SessionFormGetOutput, SessionFormReplyInput, SessionFormReplyOutput, PermissionRequestListInput, PermissionRequestListOutput, SessionMessageGetInput, SessionMessageGetOutput } from '@opencode/client';
 
 /** Only the public session fields needed for ownership and creation readback. */
 export type NativeSession = Pick<SessionInfo, 'id' | 'parentID' | 'metadata' | 'location' | 'permissions' | 'agent' | 'model'>;
@@ -14,6 +14,7 @@ export interface NativeSessions {
   interruptSession(input: SessionInterruptInput, signal: AbortSignal): Promise<SessionInterruptOutput>;
   activeSessions(signal: AbortSignal): Promise<SessionActiveOutput>;
   listMessages(input: MessageListInput, signal: AbortSignal): Promise<MessageListOutput>;
+  getMessage(input: SessionMessageGetInput, signal: AbortSignal): Promise<SessionMessageGetOutput>;
   getServerInfo(signal: AbortSignal): Promise<ServerInfo>;
   listForms(input: SessionFormListInput, signal: AbortSignal): Promise<SessionFormListOutput>;
   getForm(input: SessionFormGetInput, signal: AbortSignal): Promise<SessionFormGetOutput>;
@@ -33,6 +34,7 @@ export function nativeSessions(client: OpenCodeClient): NativeSessions {
     interruptSession: (input, signal) => client.session.interrupt(input, { signal }),
     activeSessions: signal => client.session.active({ signal }),
     listMessages: (input, signal) => client.message.list(input, { signal }),
+    getMessage: (input, signal) => client.session.message.get(input, { signal }),
     getServerInfo: signal => client.server.info({ signal }),
     listForms: (input, signal) => client.session.form.list(input, { signal }),
     getForm: (input, signal) => client.session.form.get(input, { signal }),

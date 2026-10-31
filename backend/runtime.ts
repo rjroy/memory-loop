@@ -40,7 +40,21 @@ async function main(): Promise<void> {
   });
   let server: ReturnType<typeof serve>;
   try {
-    server = serve({ hostname: '127.0.0.1', port, development: false, fetch: prepared.fetch });
+    server = serve({
+      hostname: '127.0.0.1', port, development: false,
+      async fetch(request, listener) {
+        const response = await prepared.fetch(request);
+        // Accepted watches have their own lease and write deadlines. Bun's default
+        // idle timeout is shorter than the watch heartbeat; leave it unchanged for
+        // all other requests and let those watch-specific bounds govern the stream.
+        if (request.method === 'GET' && response.status === 200 &&
+            /^\/api\/think\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/events$/.test(new URL(request.url).pathname) &&
+            /^text\/event-stream(?:\s*;|\s*$)/i.test(response.headers.get('content-type') ?? '')) {
+          listener.timeout(request, 0);
+        }
+        return response;
+      },
+    });
   } catch (error: unknown) {
     await prepared.close();
     throw error;

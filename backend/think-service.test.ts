@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EventSubscribeInput, OpenCodeEvent, SessionCreateInput, SessionGetInput, SessionPromptInput, SessionPromptOutput } from '@opencode/client';
 import type { SessionInboxListInput, SessionInboxListOutput, SessionInboxCancelInput, SessionInterruptInput, SessionInterruptOutput } from '@opencode/client';
-import type { MessageListInput, MessageListOutput, ServerInfo, SessionActiveOutput, SessionInfo } from '@opencode/client';
+import type { MessageListInput, MessageListOutput, ServerInfo, SessionActiveOutput, SessionInfo, SessionMessageGetInput, SessionMessageGetOutput } from '@opencode/client';
 import type { SessionFormListInput, SessionFormListOutput, SessionFormGetInput, SessionFormGetOutput, SessionFormReplyInput, SessionFormReplyOutput } from '@opencode/client';
 import type { PermissionReplyInput, PermissionRequestListInput, PermissionRequestListOutput } from '@opencode/client';
 import { createThinkService, type ThinkServiceOptions } from './think/service';
-import { createApp } from './app';
+import { createApp, type AppOptions } from './app';
 import type { NativeSession, NativeSessions } from './think/native';
 import type { BodyKey, BodyRef, BodyStore } from './think/body-store';
 import * as bodyModule from './think/body-store';
@@ -58,11 +58,14 @@ function unitBodies(): BodyStore {
       if (!bytes) throw new Error('fixture body missing');
       return { async read(offset, length) { return bytes.subarray(offset, offset + length); }, async close() {} };
     },
+    async evict() { return 'protected'; },
+    async restore() { throw new Error('unexpected fixture restore'); },
     async close() { data.clear(); },
   };
 }
 
-function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, bodies?: BodyStore, directory = vaultDirectory) {
+function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, bodies?: BodyStore, directory = vaultDirectory,
+  leaseOptions?: { clock: { now(): number }; transferIdleMs: number }) {
   const calls: Array<{ input: SessionCreateInput; signal: AbortSignal; result: ReturnType<typeof deferred<NativeSession>> }> = [];
   const prompts: Array<{ input: SessionPromptInput; signal: AbortSignal; result: ReturnType<typeof deferred<SessionPromptOutput>> }> = [];
   const cancels: Array<{ input: SessionInboxCancelInput; result: ReturnType<typeof deferred<void>> }> = [];
@@ -134,6 +137,11 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
   });
   const activeSessions = vi.fn(async (_signal: AbortSignal): Promise<SessionActiveOutput> => { order.push('active'); return { ...active }; });
   const listMessages = vi.fn(async (_input: MessageListInput, _signal: AbortSignal): Promise<MessageListOutput> => { order.push('history'); return { data: [...messages], cursor: {} }; });
+  const getMessage = vi.fn(async (input: SessionMessageGetInput, _signal: AbortSignal): Promise<SessionMessageGetOutput> => {
+    const found = messages.find(message => message.id === input.messageID);
+    if (!found) throw new Error('fixture message missing');
+    return found;
+  });
   const getServerInfo = vi.fn(async (_signal: AbortSignal): Promise<ServerInfo> => ({ ...serverInfo }));
   const listForms = vi.fn(async (input: SessionFormListInput, _signal: AbortSignal): Promise<SessionFormListOutput> =>
     input.sessionID === form.sessionID && form.state.status === 'pending' ? [form] : []);
@@ -144,7 +152,7 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
   const replyForm = vi.fn(async (_input: SessionFormReplyInput, _signal: AbortSignal): Promise<SessionFormReplyOutput> => {});
   const listPermissionRequests = vi.fn(async (_input: PermissionRequestListInput, _signal: AbortSignal): Promise<PermissionRequestListOutput> => ({ location: { directory }, data: [...pendingPermissions] }));
   const replyPermission = vi.fn(async (_input: PermissionReplyInput, _signal: AbortSignal): Promise<void> => {});
-  const native = { createSession, getSession, subscribe, prompt, listInbox, cancelInbox, interruptSession, activeSessions, listMessages, getServerInfo, listForms, getForm, replyForm, listPermissionRequests, replyPermission } satisfies NativeSessions & {
+  const native = { createSession, getSession, subscribe, prompt, listInbox, cancelInbox, interruptSession, activeSessions, listMessages, getMessage, getServerInfo, listForms, getForm, replyForm, listPermissionRequests, replyPermission } satisfies NativeSessions & {
     subscribe(input: EventSubscribeInput, signal: AbortSignal): AsyncIterable<OpenCodeEvent>;
     prompt(input: SessionPromptInput, signal: AbortSignal): Promise<SessionPromptOutput>;
     listInbox(input: SessionInboxListInput, signal: AbortSignal): Promise<SessionInboxListOutput>;
@@ -152,6 +160,7 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
     interruptSession(input: SessionInterruptInput, signal: AbortSignal): Promise<SessionInterruptOutput>;
     activeSessions(signal: AbortSignal): Promise<SessionActiveOutput>;
     listMessages(input: MessageListInput, signal: AbortSignal): Promise<MessageListOutput>;
+    getMessage(input: SessionMessageGetInput, signal: AbortSignal): Promise<SessionMessageGetOutput>;
     getServerInfo(signal: AbortSignal): Promise<ServerInfo>;
     listForms(input: SessionFormListInput, signal: AbortSignal): Promise<SessionFormListOutput>;
     getForm(input: SessionFormGetInput, signal: AbortSignal): Promise<SessionFormGetOutput>;
@@ -159,8 +168,8 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
     listPermissionRequests(input: PermissionRequestListInput, signal: AbortSignal): Promise<PermissionRequestListOutput>;
     replyPermission(input: PermissionReplyInput, signal: AbortSignal): Promise<void>;
   };
-  const options: ThinkServiceOptions = { native, context: { directory, agent, model: selectedModel }, epoch,
-    serviceIdentity: { pid: 49123, version: '2.2.2' }, bodies: bodies ?? unitBodies() };
+  const options = { native, context: { directory, agent, model: selectedModel }, epoch,
+    serviceIdentity: { pid: 49123, version: '2.2.2' }, bodies: bodies ?? unitBodies(), ...leaseOptions } satisfies ThinkServiceOptions & { clock?: { now(): number }; transferIdleMs?: number };
   const service = createThinkService(options);
   function complete(index: number, changes: Partial<NativeSession> = {}) {
     const call = calls[index];
@@ -181,12 +190,571 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
   const endStream = (reason: 'eof' | 'error') => { streamEnd = reason; wake?.(); wake = undefined; };
   const setServerInfo = (info: ServerInfo) => { serverInfo = info; };
   const setForm = (next: SessionFormGetOutput) => { form = next; };
-  return { service, createSession, getSession, calls, sessions, complete, subscribe, prompt, prompts, order, listInbox, cancelInbox, cancels, interruptSession, inbox, activeSessions, listMessages, active, messages, setStatus, emit, endStream, getServerInfo, setServerInfo, listForms, getForm, replyForm, setForm, form: () => form, listPermissionRequests, pendingPermissions, replyPermission };
+  return { service, createSession, getSession, calls, sessions, complete, subscribe, prompt, prompts, order, listInbox, cancelInbox, cancels, interruptSession, inbox, activeSessions, listMessages, getMessage, active, messages, setStatus, emit, endStream, getServerInfo, setServerInfo, listForms, getForm, replyForm, setForm, form: () => form, listPermissionRequests, pendingPermissions, replyPermission };
 }
 
 async function waitForCalls(calls: unknown[], count: number) {
   await vi.waitFor(() => expect(calls).toHaveLength(count));
 }
+
+describe('Phase 3 authenticated snapshot and watch', () => {
+  const authority = '127.0.0.1:3000';
+  const token = 'a'.repeat(64);
+  const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: `fixture original ${'x'.repeat(70 * 1024)}` };
+  async function readyFixture(watchPolicy?: { leaseMs: number; heartbeatMs: number }, leaseOptions?: { clock: { now(): number }; transferIdleMs: number }, bodies?: BodyStore, directory = vaultDirectory) {
+    const f = setup(model, bodies, directory, leaseOptions);
+    await f.service.create(a);
+    await waitForCalls(f.calls, 1);
+    f.complete(0);
+    await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+    const receipt = await f.service.send(send);
+    await waitForCalls(f.prompts, 1);
+    await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'original', clientCommandId: send.clientCommandId })));
+    const appOptions = { authority, serviceToken: token, think: f.service,
+      vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } },
+      ...(watchPolicy ? { watchPolicy } : {}) } satisfies AppOptions & { watchPolicy?: { leaseMs: number; heartbeatMs: number } };
+    const app = createApp(appOptions);
+    const base = `/api/think/conversations/${a.conversationId}`;
+    const request = (path: string, init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      if (!headers.has('host')) headers.set('host', authority);
+      if (!headers.has('authorization')) headers.set('authorization', `Bearer ${token}`);
+      return app(new Request(`http://${authority}${path}`, { ...init, headers }));
+    };
+    return { f, receipt, base, request };
+  }
+
+  it('returns a bounded authoritative snapshot with stable body references, not inline user bytes', async () => {
+    const { f, base, request } = await readyFixture();
+    try {
+      const response = await request(base);
+      expect(response.status).toBe(200);
+      const value: unknown = await response.json();
+      expect(value).toMatchObject({ conversationId: a.conversationId, epoch, revision: expect.any(Number), entries: expect.arrayContaining([expect.objectContaining({ kind: 'original', clientCommandId: send.clientCommandId, body: expect.objectContaining({ epoch, generation: expect.any(String), through: Buffer.byteLength(send.text) }) })]) });
+      expect(Buffer.byteLength(JSON.stringify(value))).toBeLessThanOrEqual(64 * 1024);
+      expect(JSON.stringify(value)).not.toContain(send.text);
+      expect(f.prompt).toHaveBeenCalledOnce();
+    } finally { await f.service.close(); }
+  });
+
+  it('pages hundreds of parts from one native message without losing ordinal identity', async () => {
+    const { f } = await readyFixture();
+    try {
+      const sid = sessionId(a.conversationId);
+      const messageId = 'msg_fixture_many_parts';
+      f.messages.push({ id: messageId, type: 'assistant', agent, model, finish: 'stop', time: { created: 20, completed: 21 },
+        content: Array.from({ length: 350 }, (_, index) => ({ type: 'text' as const, text: `fixture-part-${index}` })) });
+      f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_many_parts', created: 22,
+        durable: { aggregateID: sid, seq: 1, version: 1 }, data: { sessionID: sid } });
+      await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).nextCursor).toEqual(expect.any(String)));
+      const ordinals: number[] = [];
+      let cursor: string | undefined;
+      const cursors = new Set<string>();
+      let pageCount = 0;
+      do {
+        const page = await f.service.content.page(a.conversationId, cursor);
+        expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(64 * 1024);
+        expect(JSON.stringify(page)).not.toContain('fixture-part-');
+        for (const entry of page.entries) if (entry.kind === 'assistant-text' && entry.messageId === messageId) ordinals.push(entry.ordinal);
+        cursor = page.nextCursor;
+        if (cursor) { expect(cursors.has(cursor)).toBe(false); cursors.add(cursor); }
+        pageCount++;
+      } while (cursor);
+      expect(pageCount).toBeGreaterThan(1);
+      expect(ordinals).toEqual(Array.from({ length: 350 }, (_, index) => index));
+      expect(f.prompt).toHaveBeenCalledOnce();
+    } finally { await f.service.close(); }
+  });
+
+  it('delivers snapshot first, follows newer revisions, and reconnects without cancelling or resending', async () => {
+    const { f, base, request } = await readyFixture();
+    const controllers: AbortController[] = [];
+    const readers: ReadableStreamDefaultReader<Uint8Array>[] = [];
+    async function open(lastEventId?: string) {
+      const controller = new AbortController();
+      controllers.push(controller);
+      const response = await request(`${base}/events`, { signal: controller.signal, headers: lastEventId ? { 'last-event-id': lastEventId } : {} });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toMatch(/^text\/event-stream(?:;|$)/i);
+      expect(response.headers.get('cache-control')).toMatch(/no-store|no-cache/);
+      if (!response.body) throw new Error('watch response has no stream');
+      const reader = response.body.getReader();
+      readers.push(reader);
+      let buffer = '';
+      const decoder = new TextDecoder();
+      const frame = async () => {
+        for (;;) {
+          const boundary = /\r?\n\r?\n/.exec(buffer);
+          if (boundary && boundary.index !== undefined) {
+            const raw = buffer.slice(0, boundary.index);
+            buffer = buffer.slice(boundary.index + boundary[0].length);
+            if (!raw.includes('data:')) continue;
+            expect(Buffer.byteLength(raw)).toBeLessThanOrEqual(64 * 1024);
+            const type = /^event:\s*(.+)$/m.exec(raw)?.[1];
+            const data = raw.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
+            const value: unknown = JSON.parse(data);
+            return { type, value };
+          }
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const chunk = await Promise.race([reader.read(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('fixture watch frame timed out')), 3000); })]);
+            if (chunk.done) throw new Error('fixture watch ended unexpectedly');
+            buffer += decoder.decode(chunk.value, { stream: true });
+            expect(Buffer.byteLength(buffer)).toBeLessThanOrEqual(64 * 1024 + 4096);
+          } finally { if (timer) clearTimeout(timer); }
+        }
+      };
+      return { frame, controller };
+    }
+    try {
+      const watch = await open();
+      const first = await watch.frame();
+      expect(first.type).toBe('snapshot');
+      expect(first.value).toMatchObject({ conversationId: a.conversationId, epoch, revision: expect.any(Number), entries: expect.arrayContaining([expect.objectContaining({ kind: 'original', clientCommandId: send.clientCommandId })]) });
+      expect(JSON.stringify(first.value)).not.toContain(send.text);
+      if (!first.value || typeof first.value !== 'object' || !('revision' in first.value) || typeof first.value.revision !== 'number') throw new Error('invalid snapshot revision');
+      const revision = first.value.revision;
+      const page = await f.service.content.page(a.conversationId);
+      const original = page.entries.find(entry => entry.kind === 'original' && entry.clientCommandId === send.clientCommandId);
+      if (!original || original.kind !== 'original') throw new Error('fixture original missing');
+      const sid = sessionId(a.conversationId);
+      f.emit({ type: 'session.text.started', id: 'evt_fixture_watch', created: 20,
+        durable: { aggregateID: sid, seq: 1, version: 1 }, data: { sessionID: sid, assistantMessageID: 'msg_fixture_watch', ordinal: 0 } });
+      const update = await watch.frame();
+      expect(update.value).toMatchObject({ conversationId: a.conversationId, epoch, revision: expect.any(Number) });
+      if (!update.value || typeof update.value !== 'object' || !('revision' in update.value) || typeof update.value.revision !== 'number') throw new Error('invalid update revision');
+      expect(update.value.revision).toBeGreaterThan(revision);
+      watch.controller.abort();
+      expect(f.prompts[0]?.signal.aborted).toBe(false);
+      expect(f.interruptSession).not.toHaveBeenCalled();
+      const reopened = await open('obsolete-event-id');
+      const fresh = await reopened.frame();
+      expect(fresh.type).toBe('snapshot');
+      expect(fresh.value).toMatchObject({ conversationId: a.conversationId, epoch, entries: expect.arrayContaining([expect.objectContaining({ kind: 'original', clientCommandId: send.clientCommandId, body: original.body })]) });
+      expect(f.prompt).toHaveBeenCalledOnce();
+      expect(f.prompts[0]?.signal.aborted).toBe(false);
+    } finally {
+      for (const controller of controllers) controller.abort();
+      for (const reader of readers) void reader.cancel().catch(() => {});
+      await f.service.close();
+    }
+  });
+
+  it('leases only the watch and preserves a progressing transfer across authenticated reconnection', async () => {
+    let now = 0;
+    const root = await mkdtemp('/tmp/opencode/think-watch-lease-test-');
+    const vault = join(root, 'vault');
+    await mkdir(vault, { mode: 0o700 });
+    let bodies: BodyStore;
+    try { bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch }); }
+    catch (error) { await rm(root, { recursive: true, force: true }); throw error; }
+    let ready: Awaited<ReturnType<typeof readyFixture>>;
+    try { ready = await readyFixture({ leaseMs: 300, heartbeatMs: 1000 }, { clock: { now: () => now }, transferIdleMs: 400 }, bodies, vault); }
+    catch (error) { try { await bodies.close(); } finally { await rm(root, { recursive: true, force: true }); } throw error; }
+    const { f, base, request } = ready;
+    const firstAbort = new AbortController();
+    const secondAbort = new AbortController();
+    let firstReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let secondReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    vi.useFakeTimers();
+    try {
+      const original = (await f.service.content.page(a.conversationId)).entries.find(entry => entry.kind === 'original' && entry.clientCommandId === send.clientCommandId);
+      if (!original || original.kind !== 'original') throw new Error('fixture original missing');
+      const ref = original.body;
+      const watch = await request(`${base}/events`, { signal: firstAbort.signal });
+      expect(watch.status).toBe(200);
+      if (!watch.body) throw new Error('fixture watch missing body');
+      firstReader = watch.body.getReader();
+      const first = await firstReader.read();
+      expect(first.done).toBe(false);
+      expect(new TextDecoder().decode(first.value)).toContain(ref.generation);
+      let ended = false;
+      const firstStream = firstReader;
+      const drain = (async () => { while (!(await firstStream.read()).done) {} ended = true; })();
+      void drain.catch(() => {});
+      const path = (offset: number, transfer?: string) => `${base}/content/${encodeURIComponent(ref.contentId)}?${new URLSearchParams({ generation: ref.generation, through: String(ref.through), offset: String(offset), ...(transfer ? { transfer } : {}) })}`;
+      async function read(offset: number, transfer?: string) {
+        const response = await request(path(offset, transfer));
+        if (response.status !== 200) {
+          const diagnostic: unknown = await response.clone().json();
+          expect(response.status, `fixture chunk error: ${JSON.stringify(diagnostic)}`).toBe(200);
+        }
+        const value: unknown = await response.json();
+        if (!value || typeof value !== 'object' || !('transfer' in value) || typeof value.transfer !== 'string' || !('nextOffset' in value) || typeof value.nextOffset !== 'number') throw new Error('invalid fixture chunk');
+        return { transfer: value.transfer, nextOffset: value.nextOffset };
+      }
+      const initial = await read(0);
+      expect(initial.nextOffset).toBeGreaterThan(0);
+      expect(initial.nextOffset).toBeLessThan(ref.through);
+      now += 200;
+      await vi.advanceTimersByTimeAsync(200);
+      await read(0, initial.transfer); // A retry renews the transfer's idle lease.
+      now += 101;
+      await vi.advanceTimersByTimeAsync(101);
+      expect(ended).toBe(true);
+      const watchCalls = vi.spyOn(f.service, 'watch');
+      const contentOpen = vi.spyOn(f.service.content, 'open');
+      expect((await request(`${base}/events`, { headers: { authorization: `Bearer ${'b'.repeat(64)}` } })).status).toBe(401);
+      expect(watchCalls).not.toHaveBeenCalled();
+      expect(contentOpen).not.toHaveBeenCalled();
+      const later = await read(initial.nextOffset, initial.transfer);
+      expect(later.nextOffset).toBe(ref.through);
+      const reopened = await request(`${base}/events`, { signal: secondAbort.signal });
+      expect(reopened.status).toBe(200);
+      if (!reopened.body) throw new Error('reconnected fixture watch missing body');
+      secondReader = reopened.body.getReader();
+      const snapshot = await secondReader.read();
+      expect(snapshot.done).toBe(false);
+      expect(new TextDecoder().decode(snapshot.value)).toContain(ref.generation);
+      expect(f.prompt).toHaveBeenCalledOnce();
+      expect(f.prompts[0]?.signal.aborted).toBe(false);
+      expect(f.interruptSession).not.toHaveBeenCalled();
+    } finally {
+      firstAbort.abort(); secondAbort.abort();
+      if (firstReader) void firstReader.cancel().catch(() => {});
+      if (secondReader) void secondReader.cancel().catch(() => {});
+      vi.useRealTimers();
+      try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); }
+    }
+  });
+
+  it.each<Record<string, string>>([{ host: 'evil.example' }, { origin: 'null' }, { 'sec-fetch-site': 'cross-site' }, { authorization: `Bearer ${'b'.repeat(64)}` }])('denies watch before any protected native work %o', async headers => {
+    const { f, base, request } = await readyFixture();
+    try {
+      const before = { subscribe: f.subscribe.mock.calls.length, prompt: f.prompt.mock.calls.length, history: f.listMessages.mock.calls.length };
+      const response = await request(`${base}/events`, { headers });
+      expect([401, 403]).toContain(response.status);
+      expect(f.subscribe.mock.calls.length).toBe(before.subscribe);
+      expect(f.prompt.mock.calls.length).toBe(before.prompt);
+      expect(f.listMessages.mock.calls.length).toBe(before.history);
+    } finally { await f.service.close(); }
+  });
+});
+
+describe('Phase 3 authenticated content transfer', () => {
+  const authority = '127.0.0.1:3000';
+  const token = 'a'.repeat(64);
+  async function fixture(text: string) {
+    const root = await mkdtemp('/tmp/opencode/think-transfer-test-');
+    const vault = join(root, 'vault');
+    await mkdir(vault, { mode: 0o700 });
+    const bodies = await bodyModule.createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
+    let now = 0;
+    const f = setup(model, bodies, vault, { clock: { now: () => now }, transferIdleMs: 100 });
+    try {
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text };
+      await f.service.send(send); await waitForCalls(f.prompts, 1);
+      const page = await f.service.content.page(a.conversationId);
+      const original = page.entries.find(entry => entry.kind === 'original' && entry.clientCommandId === send.clientCommandId);
+      if (!original || original.kind !== 'original') throw new Error('fixture original missing');
+      const app = createApp({ authority, serviceToken: token, think: f.service,
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+      const base = `/api/think/conversations/${a.conversationId}`;
+      const request = (path: string, init: RequestInit = {}) => {
+        const headers = new Headers(init.headers);
+        if (!headers.has('host')) headers.set('host', authority);
+        if (!headers.has('authorization')) headers.set('authorization', `Bearer ${token}`);
+        return app(new Request(`http://${authority}${path}`, { ...init, headers }));
+      };
+      const path = (ref: BodyRef, offset: number, transfer?: string, conversationId = a.conversationId) => {
+        const query = new URLSearchParams({ generation: ref.generation, through: String(ref.through), offset: String(offset), ...(transfer === undefined ? {} : { transfer }) });
+        return `/api/think/conversations/${conversationId}/content/${encodeURIComponent(ref.contentId)}?${query}`;
+      };
+      return { f, bodies, root, ref: original.body, request, path, base, advance(ms: number) { now += ms; },
+        async close() { try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); } } };
+    } catch (error) {
+      try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); }
+      throw error;
+    }
+  }
+  async function chunk(response: Response, ref: BodyRef, offset: number) {
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toMatch(/no-store/);
+    const raw = await response.text();
+    expect(Buffer.byteLength(raw)).toBeLessThanOrEqual(128 * 1024);
+    const value: unknown = JSON.parse(raw);
+    expect(value).toMatchObject({ conversationId: a.conversationId, epoch, contentId: ref.contentId, generation: ref.generation, through: ref.through, offset,
+      bytes: expect.any(String), nextOffset: expect.any(Number), transfer: expect.any(String) });
+    if (!value || typeof value !== 'object' || !('bytes' in value) || typeof value.bytes !== 'string' || !('nextOffset' in value) || typeof value.nextOffset !== 'number' || !('transfer' in value) || typeof value.transfer !== 'string') throw new Error('invalid fixture chunk');
+    const data = Buffer.from(value.bytes, 'base64');
+    expect(data.toString('base64')).toBe(value.bytes);
+    expect(data.length).toBeLessThanOrEqual(64 * 1024);
+    expect(value.nextOffset).toBe(offset + data.length);
+    expect(value.nextOffset).toBeLessThanOrEqual(ref.through);
+    if (offset < ref.through) expect(value.nextOffset).toBeGreaterThan(offset);
+    return { data, nextOffset: value.nextOffset, transfer: value.transfer };
+  }
+  async function contentError(response: Response) {
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    const value: unknown = await response.json();
+    expect(value).toMatchObject({ error: { code: expect.stringMatching(/content|transfer|range|stale|invalid/i) } });
+  }
+
+  async function filesIn(path: string): Promise<number> {
+    let count = 0;
+    for (const entry of await readdir(path, { withFileTypes: true })) {
+      if (entry.isDirectory()) count += await filesIn(join(path, entry.name));
+      else if (entry.isFile()) count++;
+    }
+    return count;
+  }
+
+  async function reclaimedFixture() {
+    const x = await fixture('fixture original remains protected');
+    try {
+      const messageId = 'msg_fixture_reclaim';
+      const text = 'canonical fixture 🧠';
+      const message: SessionMessageGetOutput = { id: messageId, type: 'assistant', agent, model, finish: 'stop',
+        time: { created: 22, completed: 23 }, content: [{ type: 'text', text }] };
+      x.f.messages.push(message);
+      const sid = sessionId(a.conversationId);
+      x.f.emit({ type: 'session.execution.started', id: 'evt_fixture_reclaim', created: 24,
+        durable: { aggregateID: sid, seq: 3, version: 1 }, data: { sessionID: sid } });
+      let ref: BodyRef | undefined;
+      await vi.waitFor(async () => {
+        const entry = (await x.f.service.content.page(a.conversationId)).entries.find(item => item.kind === 'assistant-text' && item.messageId === messageId);
+        expect(entry).toMatchObject({ kind: 'assistant-text', body: { kind: 'canonical' }, ordinal: 0 });
+        if (entry?.kind === 'assistant-text') ref = entry.body;
+      });
+      if (!ref) throw new Error('fixture canonical missing');
+      const resident = await filesIn(join(x.root, 'bodies'));
+      expect(resident).toBeGreaterThanOrEqual(2);
+      x.advance(1000);
+      await vi.advanceTimersByTimeAsync(6000);
+      await vi.waitFor(async () => expect(await filesIn(join(x.root, 'bodies'))).toBeLessThan(resident));
+      expect(x.f.getMessage).not.toHaveBeenCalled();
+      const snapshot = await x.f.service.snapshot(a.conversationId);
+      expect(snapshot?.entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId, body: ref }));
+      expect(x.f.getMessage).not.toHaveBeenCalled();
+      return { ...x, canonical: ref, message, text, sid };
+    } catch (error) { await x.close(); throw error; }
+  }
+
+  it('reclaims verified canonical bytes on maintenance and coalesces concurrent rehydration with independent readers', async () => {
+    vi.useFakeTimers();
+    let x: Awaited<ReturnType<typeof reclaimedFixture>> | undefined;
+    const readback = deferred<SessionMessageGetOutput>();
+    try {
+      x = await reclaimedFixture();
+      x.f.getMessage.mockImplementationOnce(() => readback.promise);
+      const first = x.request(x.path(x.canonical, 0));
+      const second = x.request(x.path(x.canonical, 0));
+      await vi.waitFor(() => expect(x?.f.getMessage).toHaveBeenCalledOnce());
+      expect(x.f.getMessage).toHaveBeenCalledWith({ sessionID: x.sid, messageID: x.message.id }, expect.any(AbortSignal));
+      readback.resolve(x.message);
+      const [one, two] = await Promise.all([first, second]);
+      const left = await chunk(one, x.canonical, 0);
+      const right = await chunk(two, x.canonical, 0);
+      expect(left.data.toString('utf8')).toBe(x.text);
+      expect(right.data.toString('utf8')).toBe(x.text);
+      expect(left.transfer).not.toBe(right.transfer);
+      expect(x.f.getMessage).toHaveBeenCalledOnce();
+      expect(x.f.prompt).toHaveBeenCalledOnce();
+    } finally { readback.resolve({ id: 'msg_fixture_cleanup', type: 'user', text: '', time: { created: 1 } }); try { await x?.close(); } finally { vi.useRealTimers(); } }
+  }, 15000);
+
+  it('retires an expired transfer pin on maintenance without a subsequent request', async () => {
+    vi.useFakeTimers();
+    let x: Awaited<ReturnType<typeof fixture>> | undefined;
+    try {
+      x = await fixture('fixture original');
+      const originalOpen = x.bodies.open.bind(x.bodies);
+      let closed = 0;
+      vi.spyOn(x.bodies, 'open').mockImplementation(async ref => {
+        const reader = await originalOpen(ref);
+        return { read: (offset, length) => reader.read(offset, length), async close() { closed++; await reader.close(); } };
+      });
+      await chunk(await x.request(x.path(x.ref, 0)), x.ref, 0);
+      expect(closed).toBe(0);
+      x.advance(101);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(closed).toBe(1);
+      expect(x.f.prompt).toHaveBeenCalledOnce();
+      expect(x.f.interruptSession).not.toHaveBeenCalled();
+    } finally { try { await x?.close(); } finally { vi.useRealTimers(); } }
+  }, 15000);
+
+  it.each(['digest', 'wrong-id', 'wrong-type', 'wrong-ordinal', 'missing'] as const)('returns a content-level error without candidate bytes for %s rehydration', async failure => {
+    vi.useFakeTimers();
+    let x: Awaited<ReturnType<typeof reclaimedFixture>> | undefined;
+    const watchAbort = new AbortController();
+    let watchReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      x = await reclaimedFixture();
+      if (failure === 'missing') {
+        const watch = await x.request(`${x.base}/events`, { signal: watchAbort.signal });
+        expect(watch.status).toBe(200);
+        if (!watch.body) throw new Error('fixture watch missing');
+        watchReader = watch.body.getReader();
+        expect((await watchReader.read()).done).toBe(false);
+      }
+      const candidate: SessionMessageGetOutput = failure === 'wrong-type'
+        ? { id: x.message.id, type: 'user', text: x.text, time: { created: 22 } }
+        : { id: failure === 'wrong-id' ? 'msg_fixture_wrong' : x.message.id, type: 'assistant', agent, model, finish: 'stop', time: { created: 22, completed: 23 },
+          content: failure === 'wrong-ordinal' ? [] : [{ type: 'text', text: failure === 'digest' ? 'canonical fixture 🦊' : x.text }] };
+      if (failure === 'missing') x.f.getMessage.mockRejectedValueOnce(new Error('fixture private native failure'));
+      else x.f.getMessage.mockResolvedValueOnce(candidate);
+      const response = await x.request(x.path(x.canonical, 0));
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      const text = await response.text();
+      expect(JSON.parse(text)).toMatchObject({ error: { code: expect.stringMatching(/content|unavailable|resource/i) } });
+      expect(text).not.toMatch(/canonical fixture|fixture private native failure/);
+      expect(x.f.prompt).toHaveBeenCalledOnce();
+      expect(x.f.interruptSession).not.toHaveBeenCalled();
+      if (watchReader) {
+        let next: Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>['read']>> | undefined;
+        const pending = watchReader.read().then(value => { next = value; });
+        const sid = sessionId(a.conversationId);
+        x.f.emit({ type: 'session.text.started', id: 'evt_fixture_content_error_watch', created: 30,
+          durable: { aggregateID: sid, seq: 4, version: 1 }, data: { sessionID: sid, assistantMessageID: 'msg_fixture_new_activity', ordinal: 0 } });
+        await vi.waitFor(() => expect(next?.done).toBe(false));
+        await pending;
+        expect(new TextDecoder().decode(next?.value)).toContain('event: revision');
+      }
+    } finally { watchAbort.abort(); if (watchReader) void watchReader.cancel().catch(() => {}); try { await x?.close(); } finally { vi.useRealTimers(); } }
+  }, 15000);
+
+  it('does not resurrect reclaimed files when shutdown interrupts an owned rehydration', async () => {
+    vi.useFakeTimers();
+    let x: Awaited<ReturnType<typeof reclaimedFixture>> | undefined;
+    const readback = deferred<SessionMessageGetOutput>();
+    let closed = false;
+    try {
+      x = await reclaimedFixture();
+      x.f.getMessage.mockImplementationOnce(() => readback.promise);
+      const response = x.request(x.path(x.canonical, 0));
+      await vi.waitFor(() => expect(x?.f.getMessage).toHaveBeenCalledOnce());
+      const signal = x.f.getMessage.mock.calls[0]?.[1];
+      const shutdown = x.close();
+      await vi.advanceTimersByTimeAsync(11000);
+      await shutdown;
+      closed = true;
+      expect(signal?.aborted).toBe(true);
+      readback.resolve(x.message);
+      await Promise.resolve();
+      await expect(lstat(x.root)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect((await response).status).toBeGreaterThanOrEqual(400);
+    } finally {
+      readback.resolve({ id: 'msg_fixture_cleanup', type: 'user', text: '', time: { created: 1 } });
+      try { if (x && !closed) await x.close(); } finally { vi.useRealTimers(); }
+    }
+  }, 15000);
+
+  it('streams a large UTF-8 value in bounded pinned chunks and retries an offset without duplication', async () => {
+    const text = `${'a'.repeat(65535)}🧠${'漢字'.repeat(34000)}`;
+    const x = await fixture(text);
+    try {
+      const first = await chunk(await x.request(x.path(x.ref, 0)), x.ref, 0);
+      const retry = await chunk(await x.request(x.path(x.ref, 0, first.transfer)), x.ref, 0);
+      expect(retry).toEqual(first);
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      let output = decoder.decode(first.data, { stream: true });
+      let offset = first.nextOffset;
+      while (offset < x.ref.through) {
+        x.advance(50); // The injected 100 ms idle lease renews on each successful chunk.
+        const next = await chunk(await x.request(x.path(x.ref, offset, first.transfer)), x.ref, offset);
+        expect(next.transfer).toBe(first.transfer);
+        output += decoder.decode(next.data, { stream: true });
+        offset = next.nextOffset;
+      }
+      output += decoder.decode();
+      expect(offset).toBe(x.ref.through);
+      expect(output).toBe(text);
+      expect(x.f.prompt).toHaveBeenCalledOnce();
+    } finally { await x.close(); }
+  });
+
+  it('rejects wrong transfer scopes, stale generations and invalid ranges without opening content on denial', async () => {
+    const x = await fixture('fixture body for scoped transfer');
+    const open = vi.spyOn(x.bodies, 'open');
+    try {
+      const denied = await x.request(x.path(x.ref, 0), { headers: { authorization: `Bearer ${'b'.repeat(64)}` } });
+      expect(denied.status).toBe(401);
+      expect(open).not.toHaveBeenCalled();
+      const first = await chunk(await x.request(x.path(x.ref, 0)), x.ref, 0);
+      await contentError(await x.request(x.path(x.ref, 0, 'unknown-transfer')));
+      await contentError(await x.request(x.path(x.ref, 0, first.transfer, b.conversationId)));
+      await contentError(await x.request(x.path({ ...x.ref, contentId: '77777777-7777-4777-8777-777777777777' }, 0, first.transfer)));
+      await contentError(await x.request(x.path({ ...x.ref, generation: 'unknown-generation' }, 0, first.transfer)));
+      await contentError(await x.request(x.path(x.ref, x.ref.through + 1, first.transfer)));
+      await contentError(await x.request(x.path({ ...x.ref, through: x.ref.through + 1 }, 0, first.transfer)));
+      expect(x.f.prompt).toHaveBeenCalledOnce();
+    } finally { open.mockRestore(); await x.close(); }
+  });
+
+  it('expires an idle transfer as a content error while keeping the watch and execution alive', async () => {
+    const x = await fixture('fixture transfer with independent watch');
+    const controller = new AbortController();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      const watch = await x.request(`${x.base}/events`, { signal: controller.signal });
+      expect(watch.status).toBe(200);
+      if (!watch.body) throw new Error('fixture watch missing body');
+      reader = watch.body.getReader();
+      expect((await reader.read()).done).toBe(false);
+      const first = await chunk(await x.request(x.path(x.ref, 0)), x.ref, 0);
+      x.advance(101);
+      await contentError(await x.request(x.path(x.ref, 0, first.transfer)));
+      expect(x.f.prompts[0]?.signal.aborted).toBe(false);
+      expect(x.f.interruptSession).not.toHaveBeenCalled();
+      const sid = sessionId(a.conversationId);
+      x.f.emit({ type: 'session.text.started', id: 'evt_fixture_transfer_watch', created: 20,
+        durable: { aggregateID: sid, seq: 1, version: 1 }, data: { sessionID: sid, assistantMessageID: 'msg_fixture_transfer', ordinal: 0 } });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const next = await Promise.race([reader.read(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('watch stopped after content failure')), 3000); })]);
+        expect(next.done).toBe(false);
+      } finally { if (timer) clearTimeout(timer); }
+    } finally { controller.abort(); if (reader) void reader.cancel().catch(() => {}); await x.close(); }
+  });
+
+  it('finishes a pinned preview prefix after append and canonical replacement', async () => {
+    const x = await fixture('fixture prompt');
+    try {
+      const sid = sessionId(a.conversationId);
+      const messageId = 'msg_fixture_transfer_preview';
+      const prefix = `${'p'.repeat(65535)}🧠${'q'.repeat(10000)}`;
+      x.f.emit({ type: 'session.text.started', id: 'evt_fixture_transfer_start', created: 20,
+        durable: { aggregateID: sid, seq: 1, version: 1 }, data: { sessionID: sid, assistantMessageID: messageId, ordinal: 0 } });
+      x.f.emit({ type: 'session.text.delta', id: 'evt_fixture_transfer_delta', created: 21,
+        data: { sessionID: sid, assistantMessageID: messageId, ordinal: 0, delta: prefix } });
+      let preview: BodyRef | undefined;
+      await vi.waitFor(async () => {
+        const item = (await x.f.service.content.page(a.conversationId)).entries.find(entry => entry.kind === 'assistant-text' && entry.messageId === messageId);
+        expect(item).toMatchObject({ kind: 'assistant-text', body: { kind: 'preview', through: Buffer.byteLength(prefix) } });
+        if (item?.kind === 'assistant-text') preview = item.body;
+      });
+      if (!preview) throw new Error('fixture preview missing');
+      const oldRef = preview;
+      const first = await chunk(await x.request(x.path(oldRef, 0)), oldRef, 0);
+      expect(first.nextOffset).toBeLessThan(oldRef.through);
+      x.f.emit({ type: 'session.text.delta', id: 'evt_fixture_transfer_append', created: 22,
+        data: { sessionID: sid, assistantMessageID: messageId, ordinal: 0, delta: ' later suffix' } });
+      await vi.waitFor(async () => {
+        const item = (await x.f.service.content.page(a.conversationId)).entries.find(entry => entry.kind === 'assistant-text' && entry.messageId === messageId);
+        expect(item).toMatchObject({ body: { kind: 'preview', generation: oldRef.generation, through: Buffer.byteLength(`${prefix} later suffix`) } });
+      });
+      x.f.emit({ type: 'session.text.ended', id: 'evt_fixture_transfer_canonical', created: 23,
+        durable: { aggregateID: sid, seq: 2, version: 1 }, data: { sessionID: sid, assistantMessageID: messageId, ordinal: 0, text: 'canonical replacement' } });
+      await vi.waitFor(async () => {
+        const item = (await x.f.service.content.page(a.conversationId)).entries.find(entry => entry.kind === 'assistant-text' && entry.messageId === messageId);
+        expect(item).toMatchObject({ body: { kind: 'canonical' }, closure: 'closed' });
+        if (item?.kind === 'assistant-text') expect(item.body.generation).not.toBe(oldRef.generation);
+      });
+      const chunks = [first.data];
+      let offset = first.nextOffset;
+      while (offset < oldRef.through) {
+        const next = await chunk(await x.request(x.path(oldRef, offset, first.transfer)), oldRef, offset);
+        chunks.push(next.data);
+        offset = next.nextOffset;
+      }
+      expect(Buffer.concat(chunks).toString('utf8')).toBe(prefix);
+      expect(x.f.prompt).toHaveBeenCalledOnce();
+    } finally { await x.close(); }
+  });
+});
 
 describe('daemon-owned Think conversation creation', () => {
   it('accepts native default model variant readback when the configured variant is omitted', async () => {
@@ -318,6 +886,8 @@ describe('daemon-owned original body foundation', () => {
       replace,
       append: vi.fn<BodyStore['append']>(async () => { throw new Error('unexpected append'); }),
       open: vi.fn<BodyStore['open']>(async () => { throw new Error('unexpected open'); }),
+      evict: vi.fn<BodyStore['evict']>(async () => 'protected'),
+      restore: vi.fn<BodyStore['restore']>(async () => { throw new Error('unexpected restore'); }),
       close: vi.fn(async () => {}),
     };
     const ref = (): BodyRef => ({ key: observedKey ?? { conversationId: send.conversationId, owner: { kind: 'original', clientCommandId: send.clientCommandId, messageId: `msg_memoryloop_${send.clientCommandId.replaceAll('-', '')}` } },

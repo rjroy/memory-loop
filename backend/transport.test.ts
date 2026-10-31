@@ -7,6 +7,7 @@ import { loadTransport, parseTransport, setupTransport } from './transport';
 const roots: string[] = [];
 const valid = { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } };
 const tailnet = { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'tailscale', origin: 'https://fixture.tailnet.example:9443', allowedLogin: 'fixture@example.invalid' } };
+const proxy = { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'reverse-proxy', origin: 'https://proxy.example.test:10000', externalAuth: 'operator-managed' } };
 const token = 'a'.repeat(64);
 
 async function fixture() {
@@ -29,6 +30,23 @@ afterEach(async () => {
 it('parses the exact loopback and personal-tailnet configuration shapes', () => {
   expect(parseTransport(valid)).toEqual(valid);
   expect(parseTransport(tailnet)).toEqual(tailnet);
+});
+
+it('parses an explicitly authenticated reverse-proxy origin', () => {
+  expect(parseTransport(proxy)).toEqual(proxy);
+});
+
+it.each([
+  'http://proxy.example.test:10000', 'https://*.example.test:10000',
+  'https://user:password@proxy.example.test:10000', 'https://proxy.example.test:10000/path',
+  'https://proxy.example.test:10000?query=1', 'https://proxy.example.test:10000#fragment',
+  'https://proxy.example.test:443', 'https://127.0.0.1:10000',
+])('rejects unsafe reverse-proxy origin %s', origin => {
+  expect(() => parseTransport({ ...proxy, web: { ...proxy.web, origin } })).toThrow(expect.objectContaining({ code: 'transport_invalid' }));
+});
+
+it.each([undefined, false, true, 'none'])('requires an explicit operator-managed authentication assertion: %s', externalAuth => {
+  expect(() => parseTransport({ ...proxy, web: { ...proxy.web, externalAuth } })).toThrow(expect.objectContaining({ code: 'transport_invalid' }));
 });
 
 it.each([

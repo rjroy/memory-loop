@@ -197,7 +197,7 @@ MEMORY_LOOP_TRANSPORT_FILE=/absolute/scratch/app/.memory-loop/transport.json \
 
 Open `http://127.0.0.1:3000/recall` for loopback mode. Both launchers accept
 `--port <port>`; the daemon port must match `daemonOrigin`, and the web port must
-match the loopback web origin. In tailscale mode the public HTTPS origin is
+match the loopback web origin. In tailscale and reverse-proxy modes the public HTTPS origin is
 distinct from the private web listen port. Occupied ports fail without fallback
 or eviction. Missing/invalid transport or credentials fail before serving vault
 data; correct the private files/permissions rather than weakening validation.
@@ -234,7 +234,28 @@ with `{ "mode": "tailscale", "origin": "https://<self-DNS>:9443", "allowedLogin"
 login are required, with no wildcard or simultaneous loopback API bypass. A
 tailnet connection alone is not authorization. Verify actual proxy header
 replacement and denied-principal behavior with fixtures before real notes.
-Never expose the daemon, bind to LAN/all interfaces, or create a public Funnel.
+Never expose the daemon or bind either tier to LAN/all interfaces. Tailscale mode
+rejects Funnel requests.
+
+For a separately secured, operator-managed authenticated reverse proxy, replace
+`web` with, for example:
+
+```json
+{ "mode": "reverse-proxy", "origin": "https://proxy.example.test:10000", "externalAuth": "operator-managed" }
+```
+
+The origin must be a canonical HTTPS DNS origin, including any non-default public
+port and without credentials, path, query or fragment. The explicit assertion is
+an operator declaration, **not** application authentication: the proxy must enforce
+authentication for every request, including all API routes and static assets, and
+preserve the actual public Host. Next and the daemon must remain bound to loopback;
+local processes able to reach Next are trusted and can bypass proxy authentication.
+The app checks actual Host, any supplied Origin and Fetch Metadata; it neither
+trusts forwarded authority nor expects Tailscale identity in this mode. The daemon
+service token stays server-side. Do not expose this mode through a public Funnel
+unless the existing proxy independently enforces the required authentication.
+Verify the complete proxy path and unauthorized access with disposable fixtures
+before using private data; selecting the mode does not configure or verify a proxy.
 
 The **127.0.0.1:4173** static preview and its `dist/` remain the retained rollback.
 It has no vault API and is not the supported runtime. The current private mapping

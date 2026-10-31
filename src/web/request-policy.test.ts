@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TransportConfig } from '../../backend/transport';
+import { parseTransport } from '../../backend/transport';
 import { allowsWebRequest } from './request-policy';
 
 const local: TransportConfig['web'] = { mode: 'loopback', origin: 'http://127.0.0.1:3000' };
@@ -11,6 +12,28 @@ function request(host: string | undefined, extra: Record<string, string> = {}) {
 }
 
 describe('web request policy', () => {
+  const proxyWeb = () => parseTransport({ daemonOrigin: 'http://127.0.0.1:3001', web: {
+    mode: 'reverse-proxy', origin: 'https://proxy.example.test:10000', externalAuth: 'operator-managed',
+  } }).web;
+  it.each([undefined, 'none', 'same-origin'])('accepts the authenticated proxy authority with allowed fetch metadata %s', site => {
+    const web = proxyWeb();
+    expect(allowsWebRequest(request('proxy.example.test:10000', { origin: web.origin, ...(site ? { 'sec-fetch-site': site } : {}) }), web)).toBe(true);
+  });
+  it('accepts proxy requests without Origin or Fetch Metadata', () => {
+    expect(allowsWebRequest(request('proxy.example.test:10000'), proxyWeb())).toBe(true);
+  });
+  it.each<Record<string, string>>([
+    { host: 'evil.test', 'x-forwarded-host': 'proxy.example.test:10000' },
+    { host: 'evil.test', forwarded: 'host=proxy.example.test:10000' },
+    { host: 'proxy.example.test' }, { origin: 'null' }, { origin: 'https://evil.test' },
+    { origin: 'https://proxy.example.test' }, { 'sec-fetch-site': 'same-site' },
+    { 'sec-fetch-site': 'cross-site' }, { 'sec-fetch-site': 'unknown' },
+  ])('denies hostile reverse-proxy request %o', headers => {
+    expect(allowsWebRequest(request('proxy.example.test:10000', headers), proxyWeb())).toBe(false);
+  });
+  it('denies missing actual proxy Host even with forwarded authority', () => {
+    expect(allowsWebRequest(request(undefined, { 'x-forwarded-host': 'proxy.example.test:10000' }), proxyWeb())).toBe(false);
+  });
   it.each([undefined, 'none', 'same-origin'])('accepts local exact authority and allowed fetch metadata %s', site => {
     expect(allowsWebRequest(request('127.0.0.1:3000', { origin: local.origin, ...(site ? { 'sec-fetch-site': site } : {}) }), local)).toBe(true);
   });

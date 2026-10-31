@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { LoadedTransport } from './transport';
+import { parseTransport } from './transport';
 import { handleCaptureRequest, type CaptureBffDependencies } from '../src/web/capture-bff';
 
 const token = 'a'.repeat(64);
@@ -26,6 +27,24 @@ async function expectError(response: Response, status: number, code: string) {
 }
 
 describe('Capture same-origin BFF boundary', () => {
+  it('keeps the daemon token server-side for the authenticated reverse-proxy origin', async () => {
+    const selected: LoadedTransport = { config: parseTransport({ daemonOrigin: 'http://127.0.0.1:3001', web: {
+      mode: 'reverse-proxy', origin: 'https://proxy.example.test:10000', externalAuth: 'operator-managed',
+    } }), serviceToken: token };
+    const { request, fetch, log } = setup(undefined, selected);
+    const response = await request('/api/capture', { host: 'proxy.example.test:10000', origin: selected.config.web.origin,
+      'sec-fetch-site': 'same-origin', authorization: 'Bearer browser-secret', cookie: 'session=browser-secret' });
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain(token);
+    expect(JSON.stringify([...response.headers])).not.toContain(token);
+    expect(fetch).toHaveBeenCalledOnce();
+    const [target, options] = fetch.mock.calls[0];
+    expect(target.href).toBe('http://127.0.0.1:3001/api/capture');
+    expect(Object.keys(options).sort()).toEqual(['body', 'signal', 'token']);
+    expect(options.token).toBe(token);
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/browser-secret|private thought/);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(token);
+  });
   it('dispatches only the fixed target, service token and body, never browser credentials', async () => {
     const { request, fetch, log } = setup();
     const response = await request('/api/capture', { origin: transport.config.web.origin, 'sec-fetch-site': 'same-origin', authorization: 'Bearer browser-secret', cookie: 'session=browser-secret', 'x-forwarded-host': 'evil.test' });

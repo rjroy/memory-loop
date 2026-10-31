@@ -73,10 +73,7 @@ export interface ThinkQuestion {
   readonly reply: 'idle' | FormReplyReceipt['state'];
 }
 
-/** Continuation advances through the daemon's oldest-first manifest, not backwards. */
-export type ThinkHistory =
-  | { readonly state: 'loading' | 'complete' | 'unavailable' }
-  | { readonly state: 'more'; readonly nextCursor: string };
+export type ThinkHistory = { readonly state: 'loading' | 'complete' | 'unavailable' };
 
 export interface ThinkRejectedSubmission {
   readonly clientCommandId: string;
@@ -117,7 +114,6 @@ export interface ThinkPresentationActions {
   confirmNewChat(): void;
   checkConnection(): void;
   retryBody(identity: ThinkKnownIdentity, ref: BodyRef): void;
-  loadHistory(identity: ThinkKnownIdentity, cursor: string): void;
   loadQuestion(identity: ThinkKnownIdentity, decisionId: string): void;
   editQuestion(identity: ThinkKnownIdentity, decisionId: string, answer: FormReplyCommand['answer']): void;
   replyQuestion(identity: ThinkKnownIdentity, decisionId: string, answer: FormReplyCommand['answer']): void;

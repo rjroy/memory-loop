@@ -300,9 +300,6 @@ function Conversation({ presentation }: ThinkPresenterProps) {
         {identity && state.questions.map(question => <ThinkQuestion key={question.decisionId} identity={identity} question={question} actions={actions} />)}
         {state.history.state === 'loading' && <p className="think-part-status">Loading messages…</p>}
         {state.history.state === 'unavailable' && <p className="think-part-status">Some messages couldn’t be loaded.</p>}
-        {state.history.state === 'more' && identity && <button type="button" className="think-button think-text-button" onClick={() => {
-          if (state.history.state === 'more') { pause(); actions.loadHistory(identity, state.history.nextCursor); }
-        }}>Load more messages</button>}
         {terminal && hasContent && <p className="think-part-status" role="status">{terminal}</p>}
       </div>
     </section>

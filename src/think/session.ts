@@ -669,9 +669,6 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       if (!ownedIdentity(identity) || ref.key.conversationId !== identity.conversationId || ref.epoch !== identity.epoch || !state.entries.some(entry => 'body' in entry && keyOf(entry.body) === keyOf(ref))) return;
       loadBody(ref, identity.conversationId, generation); update({});
     },
-    loadHistory(identity, cursor) {
-      if (ownedIdentity(identity) && state.snapshot?.nextCursor === cursor) requestRefresh(identity.conversationId, generation);
-    },
     loadQuestion(identity, decisionId) {
       if (!ownedIdentity(identity)) return;
       const version = generation;

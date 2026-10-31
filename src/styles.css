@@ -194,29 +194,6 @@ h2 {
   letter-spacing: -.025em;
 }
 
-.ground-arrival {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
-  gap: clamp(2rem, 4vw, 4rem);
-  max-width: 76rem;
-  margin: 4rem auto 0;
-}
-
-.ground-welcome .brand-invitation { max-width: 9ch; color: var(--lantern); }
-.ground-welcome .placeholder-notice { margin-top: 2.75rem; max-width: 38ch; }
-.ground-art { width: 100%; max-width: 32rem; justify-self: center; }
-.ground-welcome .content-link {
-  justify-content: center;
-  padding: .625rem 1.25rem;
-  border-radius: 5px;
-  color: var(--night);
-  background: var(--lantern);
-  text-decoration: none;
-}
-.ground-welcome .content-link:hover { text-decoration: underline; }
-.ground-welcome .content-link:active { background: var(--parchment); }
-
 .app-shell--capture {
   height: 100svh;
   height: 100dvh;
@@ -380,10 +357,6 @@ h2 {
 
   .workspace { padding: 2rem 1.25rem; }
 
-  .ground-arrival { grid-template-columns: 1fr; gap: 2.5rem; margin-top: 2.5rem; }
-  .ground-welcome .brand-invitation { max-width: 12ch; font-size: clamp(3rem, 10vw, 4rem); }
-  .ground-welcome .placeholder-notice { margin-top: 1.75rem; }
-  .ground-art { max-width: 25rem; }
   .app-shell--capture .workspace { padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
   .think-invitation { gap: 1.5rem; margin-top: 3rem; }
   .think-invitation .brand-invitation { font-size: clamp(2.5rem, 7.5vw, 3.5rem); }

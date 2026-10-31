@@ -8,6 +8,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       const allowedOrigin = new URL(baseURL).origin;
       await page.setViewportSize(viewport);
       const failures: string[] = [];
+      const groundRequests = new Set<string>();
+      const groundPaths = new Set(['quick-actions', 'inspiration', 'prompts', 'goals', 'recent-captures'].map(path => `/api/ground/${path}`));
       let expectedConsoleErrors = 0;
       let expectedResponses = 0;
       const responseChecks: Promise<void>[] = [];
@@ -34,13 +36,19 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       });
       page.on('request', request => {
         const url = new URL(request.url());
-        if (url.origin !== allowedOrigin || (name !== 'Recall' && url.pathname.startsWith('/api/') && !(name === 'Think' && (url.pathname === '/api/think/conversations' || url.pathname.startsWith('/api/think/conversations/'))))) failures.push(request.url());
+        const groundRead = name === 'Ground' && groundPaths.has(url.pathname) && !url.search && request.method() === 'GET';
+        if (groundRead) groundRequests.add(url.pathname);
+        if (url.origin !== allowedOrigin || (name !== 'Recall' && url.pathname.startsWith('/api/') && !groundRead && !(name === 'Think' && (url.pathname === '/api/think/conversations' || url.pathname.startsWith('/api/think/conversations/'))))) failures.push(request.url());
       });
       await page.goto(`/${name.toLowerCase()}`);
       if (name === 'Think') await expect(page).toHaveURL(/\/think\?conversation=[0-9a-f-]{36}$/);
       await expect(page.getByRole('main')).toBeVisible();
       await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
       if (name === 'Recall') await expect(page.getByRole('navigation', { name: 'Vault files' }).getByRole('link', { name: 'alpha.md' })).toBeVisible();
+      if (name === 'Ground') {
+        for (const heading of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures']) await expect(page.getByRole('heading', { level: 2, name: heading })).toBeVisible();
+        await expect.poll(() => groundRequests.size).toBe(groundPaths.size);
+      }
       await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name })).toHaveAttribute('aria-current', 'page');
       await page.keyboard.press('Tab');
       await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();

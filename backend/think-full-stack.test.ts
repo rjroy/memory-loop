@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, lstat, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { relative } from 'node:path';
 import { OpenCode } from '@opencode/client';
@@ -10,6 +10,49 @@ import { fixtureLargeResponse, launchThinkFixture } from '../tests/think-fixture
 
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+it('Phase 2 Ground quick action creates an editable unsent native Think draft', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary });
+  let browser: Browser | undefined;
+  try {
+    const directory = `${fixture.workspace}/03_Resources/Memory-Loop`;
+    await mkdir(directory, { recursive: true });
+    await writeFile(`${directory}/quick-actions.md`, '## @fixture-skill\nA fictional fixture action.\n');
+    await writeFile(`${directory}/prompts.md`, '## Question\nWhat is a fixture question?\n');
+    const endpoint = await Service.discover({ file: `${fixture.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const page = await browser.newPage();
+    const forbiddenPosts: string[] = [];
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (request.method() === 'POST' && /^\/api\/think\/conversations\/[^/]+\/(messages|stop)$/.test(url.pathname)) forbiddenPosts.push(url.pathname);
+    });
+    const before = fixture.control.info();
+    await page.goto(new URL('/ground', fixture.webUrl).href);
+    await page.getByRole('button', { name: /A fictional fixture action.*@fixture-skill/ }).click();
+    await page.waitForURL(/\/think\?conversation=[0-9a-f-]{36}$/);
+    const id = new URL(page.url()).searchParams.get('conversation');
+    if (!id) throw new Error('fixture conversation missing');
+    const sid = `ses_memoryloop_${id.replaceAll('-', '')}`;
+    const editor = page.getByRole('textbox', { name: 'Message' });
+    await vi.waitFor(async () => expect(await editor.inputValue()).toBe('@fixture-skill'), { timeout: 30000 });
+    await vi.waitFor(async () => expect(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled()).toBe(true), { timeout: 30000 });
+    await editor.fill('@fixture-skill edited before send');
+    expect(await editor.inputValue()).toBe('@fixture-skill edited before send');
+    expect(await page.getByRole('button', { name: 'Stop', exact: true }).count()).toBe(0);
+    expect((await native.message.list({ sessionID: sid, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) })).data).toEqual([]);
+    expect((await native.session.active({ signal: AbortSignal.timeout(5000) }))[sid]?.type).not.toBe('running');
+    expect(fixture.control.info()).toEqual(before);
+    expect(forbiddenPosts).toEqual([]);
+  } finally {
+    try { await browser?.close(); } finally { await fixture.close(); }
+    await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+}, 240000);
 
 it('Phase 5 real UI preserves newer draft across held acknowledgement and background transcript conflict', async () => {
   const binary = process.env.OPENCODE_TEST_BINARY;

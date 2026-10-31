@@ -42,8 +42,16 @@ const components: Components = {
   table: ({ children }) => <div className="markdown-table-scroll" role="region" aria-label="Table" tabIndex={0}><table>{children}</table></div>,
 };
 
-export default function MarkdownDocument({ markdown }: { markdown: string }) {
+const cardComponents: Components = {
+  ...components,
+  h1: ({ children }) => <h3 className="markdown-h1">{children}</h3>,
+  h2: ({ children }) => <h4 className="markdown-h2">{children}</h4>,
+  h3: ({ children }) => <h5 className="markdown-h3">{children}</h5>,
+  h4: ({ children }) => <h6>{children}</h6>,
+};
+
+export default function MarkdownDocument({ markdown, headingStart = 2 }: { markdown: string; headingStart?: 2 | 3 }) {
   // No raw-HTML plugin: react-markdown escapes raw source instead of creating live DOM.
   // URL transforms never fetch data; components above render images and unsupported links as text.
-  return <div className="markdown-document"><Markdown remarkPlugins={[remarkGfm]} components={components}>{markdown}</Markdown></div>;
+  return <div className="markdown-document"><Markdown remarkPlugins={[remarkGfm]} components={headingStart === 3 ? cardComponents : components}>{markdown}</Markdown></div>;
 }

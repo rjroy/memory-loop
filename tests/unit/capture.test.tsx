@@ -190,7 +190,14 @@ function TestRoute() {
 
 it('keeps the pending draft and late save result across route navigation', async () => {
   const pending = deferred<Response>();
-  api.mockImplementation(() => pending.promise);
+  api.mockImplementation(async input => {
+    const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
+    if (url.pathname === '/api/capture') return pending.promise;
+    if (url.pathname === '/api/ground/recent-captures') return jsonResponse({ state: 'empty' });
+    const resource = /^\/api\/ground\/(quick-actions|inspiration|prompts|goals)$/.exec(url.pathname);
+    if (resource) return jsonResponse({ state: 'missing', noteId: ['03_Resources', 'Memory-Loop', `${resource[1]}.md`] });
+    throw new Error(`Unexpected fixture request: ${url.pathname}`);
+  });
   const user = userEvent.setup();
   render(<TestPresentation><TestRoute /></TestPresentation>);
   change('before navigation');
@@ -201,5 +208,17 @@ it('keeps the pending draft and late save result across route navigation', async
   await act(async () => { pending.resolve(jsonResponse({ ok: true })); });
   await user.click(screen.getByRole('button', { name: 'Switch route' }));
   expect(editor()).toHaveValue('newer draft');
-  expect(api).toHaveBeenCalledOnce();
+  const captureCalls = api.mock.calls.filter(([input]) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
+    return url.pathname === '/api/capture';
+  });
+  expect(captureCalls).toHaveLength(1);
+  const [input, init] = captureCalls[0];
+  const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
+  expect(url.origin).toBe(window.location.origin);
+  expect(url.search).toBe('');
+  expect((init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()).toBe('POST');
+  expect(typeof init?.body).toBe('string');
+  if (typeof init?.body !== 'string') throw new Error('Expected JSON request body');
+  expect(JSON.parse(init.body)).toEqual({ text: 'before navigation' });
 });

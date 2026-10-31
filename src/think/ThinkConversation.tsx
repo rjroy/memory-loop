@@ -183,6 +183,14 @@ function Conversation({ presentation }: ThinkPresenterProps) {
     previousIdentity.current = id;
     previousRun.current = state.run.state;
   }, [state.identity?.conversationId, state.creation, state.run.state]);
+  useLayoutEffect(() => {
+    const request = state.messageFocus;
+    if (!request || request.conversationId !== state.identity?.conversationId || state.creation !== 'ready' || !editor.current) return;
+    if (actions.claimMessageFocus && !actions.claimMessageFocus(request.token)) return;
+    editor.current.focus();
+    const end = editor.current.value.length;
+    editor.current.setSelectionRange(end, end);
+  }, [state.messageFocus, state.identity?.conversationId, state.creation, actions]);
   // Actual size changes drive anchoring. Re-projecting identical messages while
   // a question field is edited must not undo native focus scrolling.
   useLayoutEffect(settleReading, [state.identity?.conversationId, hasContent, selected]);

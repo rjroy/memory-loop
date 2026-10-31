@@ -1,6 +1,6 @@
 ---
 name: Memory Loop
-description: Four-mode personal-brand workspace with compact top navigation, reflective Recall and an implemented space-first Think conversation surface awaiting final review.
+description: Four-mode personal-brand workspace with compact top navigation, five resource-backed Ground cards, reflective Recall and a space-first Think conversation surface.
 colors:
   night: "#031315"
   parchment: "#fef6e1"
@@ -51,7 +51,7 @@ typography:
     lineHeight: 1.1
   invitation:
     fontFamily: "IM Fell English SC, Georgia, serif"
-    fontSize: "clamp(3rem, 5.3vw, 4.8rem)"
+    fontSize: "clamp(2rem, 3.9vw, 3.5rem)"
     fontWeight: 400
     lineHeight: 1.05
   reading:
@@ -155,11 +155,15 @@ components:
     typography: "{typography.compact-selected}"
     rounded: "{rounded.navigation}"
     padding: "8px 10px"
-  placeholder-notice:
-    textColor: "context foreground"
+  ground-card:
+    backgroundColor: "{colors.night}"
+    textColor: "{colors.parchment}"
     typography: "{typography.body}"
-    rounded: "0"
-    padding: "1.5rem 0 0"
+    padding: "1rem 0 0; top rule"
+  ground-inspiration:
+    backgroundColor: "{colors.parchment}"
+    textColor: "{colors.night}"
+    padding: "1.25rem"
   think-conversation:
     backgroundColor: "{colors.think-field}"
     textColor: "{colors.parchment}"
@@ -291,7 +295,7 @@ Ground gives the full, unaltered A.1 narrative artwork enough room beside its in
 - Flat boundaries, visible focus, and honest empty states.
 - Bounded file browsing and comfortable, unboxed Markdown reading.
 
-Extracted from `src/styles.css`, `src/recall/recall.css`, the shell and four views. `memory-loop-44w` is independently accepted: typecheck/build, frontend unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, fresh visual **SHIP** and technical **Accept**. Backend **87** remains prior unchanged evidence. 44W-T1 is resolved for initial unfocused pointer targets and natural keyboard operation at 844×390/200% text; history/UI-001/002/003 and MS4 regressions remain verified. [Integration provenance](.lore/work/design/character-integration.md) records seven unchanged copied files, three reused Source Sans files, rights, hashes and acceptance evidence. The historical [snapshot](.lore/work/design/personal-brand-snapshot.md) is unchanged. No real vault or remote API is activated.
+Extracted from `src/styles.css`, `src/ground/ground.css`, `src/recall/recall.css`, the shell and four views. `memory-loop-44w` is independently accepted: typecheck/build, frontend unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, fresh visual **SHIP** and technical **Accept**. Backend **87** remains prior unchanged evidence. 44W-T1 is resolved for initial unfocused pointer targets and natural keyboard operation at 844×390/200% text; history/UI-001/002/003 and MS4 regressions remain verified. [Integration provenance](.lore/work/design/character-integration.md) records seven unchanged copied files, three reused Source Sans files, rights, hashes and acceptance evidence. The historical [snapshot](.lore/work/design/personal-brand-snapshot.md) is unchanged. These historical checks do not imply activation of the current Ground build.
 
 **Think Phase 5 implementation record:** the [approved space-first UX](.lore/work/design/think-chat-ux.md) and its board extend that incumbent world. Current rules below also describe `src/think/think.css`, the controlled components and persistent shell integration. Independent technical verification and visual review accepted the fixture implementation after corrections. A nonblocking enlarged-text placeholder issue remains tracked as `memory-loop-2sj`. No personal Think activation or physical-device acceptance is claimed.
 
@@ -318,7 +322,7 @@ Core contrast: Parchment/Night 17.59:1; Lantern/Night 10.47:1; Horizon/Night 5.5
 
 Source Sans 3 regular/semibold remains the interface and reading-prose family. IM Fell English SC regular carries the Memory Loop wordmark and Ground/Think invitations. Libre Baskerville regular carries literal note identity and editorial Markdown headings. Each face is local and ships with its OFL; the two new fonts are preloaded. Native monospace remains code-only. Font synthesis stays disabled.
 
-Route/Files/status headings retain their Source Sans hierarchy. Shared identity is 28px IM Fell with one 40px A.5, at every viewport. Navigation remains 16px Source Sans rather than shrinking on phones; all text scales naturally at 200%. Ground's invitation scales up to 76.8px. Think's empty invitation is 54px desktop / 42px narrow, without space reserved after messages arrive. Recall retains 28/22/18/17px Markdown steps in Libre Baskerville 400 with 1.4 line height; Think uses 24/20/18px headings, 17px/1.65 prose and 14px semibold You/AI labels. These Think sizes are intentional surface rules, not changes to Recall's ramp. Code sizes stay relative/explicit as recorded above.
+Route/Files/status headings retain their Source Sans hierarchy. Shared identity is 28px IM Fell with one 40px A.5, at every viewport. Navigation remains 16px Source Sans rather than shrinking on phones; text scales naturally at 200%. Ground's invitation uses `clamp(2rem, 3.9vw, 3.5rem)`. Think's empty invitation is 54px desktop / 42px narrow, without space reserved after messages arrive. Recall retains 28/22/18/17px Markdown steps in Libre Baskerville 400 with 1.4 line height; Think uses 24/20/18px headings, 17px/1.65 prose and 14px semibold You/AI labels. These Think sizes are intentional surface rules, not changes to Recall's ramp. Code sizes stay relative/explicit as recorded above.
 
 Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.7 line height; filename/path stay compact in the dark section titlebar. Markdown paragraphs have 1.4em separation, headings 1.8em before / .65em after, and the first content block has no added top margin. These are measures, not a requirement to pad short copy.
 
@@ -329,9 +333,9 @@ Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.
 
 ## Layout
 
-One full-width header precedes the workspace: A.5/IM Fell identity at the start, horizontal Ground/Capture/Think/Recall links at the end when space permits. Flex wrapping moves the link group onto a second top row on phones or enlarged text; links may reflow naturally without clipping or reducing type. Header has 12px vertical padding, safe-area-aware gutters and 8px/24px group gaps. There is no permanent global app sidebar, fixed bottom navigation or reserved bottom-bar clearance. Ordinary workspace insets remain 3.5rem and `clamp(2rem, 4.4vw, 4.5rem)`; Ground keeps its two-column art composition. Capture and Think give their available workspaces to writing and conversation respectively.
+One full-width header precedes the workspace: A.5/IM Fell identity at the start, horizontal Ground/Capture/Think/Recall links at the end when space permits. Flex wrapping moves the link group onto a second top row on phones or enlarged text; links may reflow naturally without clipping or reducing type. Header has 12px vertical padding, safe-area-aware gutters and 8px/24px group gaps. There is no permanent global app sidebar, fixed bottom navigation or reserved bottom-bar clearance. Ground centers a maximum 76rem workspace, with invitation and uncropped art above its cards. Capture and Think give their available workspaces to writing and conversation respectively.
 
-Below 56rem the same top header precedes 2rem/1.25rem ordinary workspace insets. Ground's placeholder uses document scrolling. Capture has a compact top action and full-width textarea filling the remaining workspace, with 32px desktop and safe-area-aware 20px narrow side gutters. Short or enlarged layouts permit page scrolling and retain a six-line editor floor. Its textarea owns writing overflow; errors can reflow beside or below the stable action without covering the editor.
+Ground's card grid uses document scrolling: one column by default, two from a 44rem container and three from 66rem. Quick Actions and Recent captures span the grid; Goals spans both columns in the two-column layout. Capture has a compact top action and full-width textarea filling the remaining workspace, with 32px desktop and safe-area-aware 20px narrow side gutters. Short or enlarged layouts permit page scrolling and retain a six-line editor floor. Its textarea owns writing overflow; errors can reflow beside or below the stable action without covering the editor.
 
 **Think:** a centered 52rem maximum conversation/composer lane, with 68ch maximum messages; 32px desktop side gutters become safe-area-aware 20px gutters below 56rem. At normal portrait/desktop sizes the conversation owns reading scroll and the composer occupies an actual grid row beneath it, never covering the last message. Header height comes from layout, not a guessed deduction from `100dvh`. The textarea starts at 2.875rem (46px at ordinary text), grows only with the draft, then scrolls locally; Send/Stop stays bottom-aligned to its right with a 44px minimum target. No visible Think section bar, Chat details, routine hint or logging footer remains.
 
@@ -354,7 +358,7 @@ Surfaces are flat, but no longer emotionally uniform: Night, Parchment and the c
 
 ## Shapes
 
-Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground's notice is separated by a single rule. Capture uses a quiet editor boundary and 4px action/editor corners. Think uses 6px corners for the editor/user field and 4px for actions; AI prose is unboxed, not another bubble or status card. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
+Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground cards use a top rule except for the Parchment Inspiration field; actions have modest 4px corners. Capture uses a quiet editor boundary and 4px action/editor corners. Think uses 6px corners for the editor/user field and 4px for actions; AI prose is unboxed, not another bubble or status card. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
 
 All top app links use the same 2px Horizon selected underline, semibold text and programmatic current state across sizes. Current-file underline remains Horizon. None is a general callout stripe.
 
@@ -364,13 +368,13 @@ All top app links use the same 2px Horizon selected underline, semibold text and
 
 Real page links, not ARIA tab widgets. Existing dimensions, order, current-click/query guard and routing remain. Think's link retains its current opaque conversation target, including modified-link behavior; ordinary reactivation does not reset that chat. Current location combines Horizon underline, semibold and `aria-current="page"`; keyboard focus is an independent 2px Horizon outline inset 6px against Night.
 
-### Notice containers
+### Ground cards and handoff
 
-A section with H2 and explanatory children, at most 42rem wide. Text follows its heading after .5rem. Ground uses a quiet rule under its invitation. This placeholder is not a template for Capture or Think errors: those use concise contextual exceptions without disabling their editors or simulating service state.
+Five independent named H2 sections show Quick Actions, Inspiration, Prompts, Current Goals and Recent captures. Inspiration uses a Parchment field and Libre Baskerville quotation; Goals uses the safe Markdown renderer with source H1 at H3; captures use native links to Recall. Each card presents its own loading, empty, missing, malformed or unavailable state and recovery. No conversation list or generation controls are implied. Quick Actions and Prompts prepare editable unsent Think drafts; a nonempty existing draft triggers an inline confirmation that preserves it. Cancel receives focus using native scrolling so it is visible at enlarged text, and dismissal returns focus to the initiating control. This is separate from Think's own discard flow.
 
 ### Content links
 
-Native semibold links retain 44px minimum height. Ground's real Open Capture destination uses Lantern/Night primary-action styling; other content links stay underlined. Focus uses context focus color, 2px with 4px offset. These remain native links, not invented save/send buttons.
+Native Ground capture and source links remain real links with 44px minimum targets. Focus uses the context focus color, 2px with 4px offset. Quick Actions and Prompts use buttons because they initiate an unsent handoff rather than navigate directly.
 
 ### Skip and pane-jump controls
 
@@ -378,7 +382,7 @@ The app skip link is above the viewport until focus; its visible state is Lanter
 
 ### View heading and purpose
 
-A focusable H1 with a modest fixed type scale, followed by body-sized purpose after .75rem in Ground. Recall uses that H1 within its toolbar instead. Capture and Think register the same route focus anchor as an accessible, visually hidden H1, with no visible row or purpose paragraph. Exact route content and focus/history behavior stay in the surface/design records rather than becoming global typography tokens.
+A focusable H1 anchors each route. Ground, Capture and Think register it as an accessible, visually hidden heading; Ground's visible invitation precedes its card headings. Recall uses its H1 within the toolbar. Exact route content and focus/history behavior stay in the surface/design records rather than becoming global typography tokens.
 
 ### Capture editor and action
 
@@ -390,7 +394,7 @@ The conversation has a named reading region and chronological message articles w
 
 Message is a real labelled textarea (label visually hidden). It stays editable while busy, reconnecting, denied or unavailable. **Enter sends when eligible; Shift+Enter inserts a line. Ctrl/Cmd+Enter also sends, and no editor shortcut activates Stop.** IME/repeated key activation is guarded. Send uses the captured identity/draft version; acknowledgement cannot erase newer writing. Its captured original appears once while awaiting the manifest. Stop uses the known run, shows requesting/uncertain/failure states honestly and is best effort—not undo or cancellation caused by navigation.
 
-The shell owns one persistent Think session. `/think?conversation=<opaque-id>` is authoritative; one per-tab `sessionStorage` pointer stores only that ID. Initial bare Think creates once; an existing identity is looked up rather than recreated or resent. Drafts remain volatile through SPA navigation/reconnect and are lost on hard reload. New chat changes identity without stopping previous work; only a nonempty draft prompts the inline **Keep writing / Discard & start** safeguard. There is no prior-chat list or Ground replacement.
+The shell owns one persistent Think session. `/think?conversation=<opaque-id>` is authoritative; one per-tab `sessionStorage` pointer stores only that ID. Initial bare Think creates once; an existing identity is looked up rather than recreated or resent. Drafts remain volatile through SPA navigation/reconnect and are lost on hard reload. New chat changes identity without stopping previous work; only a nonempty draft prompts the inline **Keep writing / Discard & start** safeguard. Ground's separate prefill handoff preserves the prior keyed draft; there is no prior-chat list in this phase.
 
 The UI follows daemon snapshots/SSE state signals and separately retrieved, versioned body references; it does not own execution truth. Body loading/unloaded/error actions stay local to the part and never retry generation. Selection or reading older content suspends following; **Latest response** floats over the conversation immediately above the composer, aligned to the lane's right edge. Per the user's placement correction, it is outside layout flow: appearing/disappearing must not resize the transcript, editor or Send/Stop. It retains an opaque Night field, visible boundary, 44px minimum target and native keyboard access; activating it returns focus to the reading region when the button held focus. Reading anchors survive content growth. Reader resizing keeps an active question control within the boundary, including its focus outline, but waits until a pointer activation finishes before moving its target. Accessible absolute labels have local positioning contexts so they cannot extend document height outside the reader.
 

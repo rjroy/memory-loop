@@ -25,6 +25,8 @@ export interface Presentation {
   location: PresentationLocation;
   navigationType: NavigationType;
   isNavigating: boolean;
+  /** Read immediately before an async context commit, including unrendered intents. */
+  navigationGeneration?(): number;
   recallSnapshot?: RecallPosition;
   /** Capture the visible entry before an action changes its presentation. */
   rememberEntry(): void;

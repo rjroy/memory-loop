@@ -40,5 +40,5 @@ export async function loadConfig(projectRoot: string): Promise<VaultConfig> {
   } catch {
     throw new ConfigError('vault_unavailable', 'Vault directory is unavailable');
   }
-  return { vaultDirectory: parsed.vaultDirectory, ...('think' in parsed ? { think: parsed.think } : {}) };
+  return { vaultDirectory: parsed.vaultDirectory, ...('think' in parsed ? { think: parsed.think } : {}), ...('ground' in parsed ? { ground: parsed.ground } : {}) };
 }

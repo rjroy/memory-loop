@@ -9,6 +9,7 @@ import { parseContentRequest } from './think/content-transfer';
 import { parseVaultId, type VaultReader } from './vault';
 import { captureBodyLimit, captureErrors, parseCaptureRequest } from './capture-contract';
 import { CaptureError, type CaptureWriter } from './capture';
+import type { GroundReader } from './ground';
 
 export type VaultState = { reader: VaultReader } |
   { error: Extract<VaultErrorCode, 'config_missing' | 'config_invalid' | 'vault_unavailable'> };
@@ -18,6 +19,8 @@ export interface AppOptions {
   serviceToken?: string;
   vault: VaultState;
   capture?: CaptureWriter;
+  ground?: GroundReader;
+  groundError?: 'configuration' | 'io';
   think?: ThinkService | { error: ThinkUnavailableCode };
   watchPolicy?: { leaseMs: number; heartbeatMs: number };
 }
@@ -107,6 +110,19 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
       return Response.json({ error: { code, message: captureErrors[code].message } }, { status: captureErrors[code].status });
     }
   });
+  for (const [path, kind] of [
+    ['quick-actions', 'quickActions'], ['inspiration', 'inspiration'], ['prompts', 'prompts'], ['goals', 'goals'], ['recent-captures', 'captures'],
+  ] as const) {
+    app.get(`/api/ground/${path}`, async context => {
+      if (new URL(context.req.url).search) return Response.json({ error: { code: 'invalid_request', message: 'Invalid Ground request' } }, { status: 400 });
+      console.info('ground_read_attempt', { resource: path });
+      let result;
+      try { result = options.ground ? kind === 'captures' ? await options.ground.captures() : await options.ground.resource(kind) : { state: 'unavailable' as const, reason: options.groundError ?? 'configuration' }; }
+      catch { result = { state: 'unavailable' as const, reason: 'io' as const }; }
+      console.info('ground_read_outcome', { resource: path, state: result.state });
+      return Response.json(result, { status: result.state === 'unavailable' ? 503 : 200 });
+    });
+  }
   app.get('/api/vault/tree', async context => {
     if ('error' in options.vault) return publicError(options.vault.error);
     try { return context.json(await options.vault.reader.tree()); } catch (error: unknown) { return serviceError(error); }

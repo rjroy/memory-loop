@@ -3,7 +3,7 @@ import type { ThinkManifestEntry, ThinkSnapshot } from './client';
 import type { BodyRef } from '../../backend/think/body-store';
 import type { CommandReceipt, SendReceipt, StopReceipt, FormReplyReceipt, FormReplyCommand } from '../../backend/think/contract';
 import { finalReceipt, mergeReceipt, rejectedPost } from './receipts';
-import type { ThinkActivity, ThinkAdmission, ThinkDraft, ThinkIdentity, ThinkKnownIdentity, ThinkMessage, ThinkPresentation, ThinkPresentationActions, ThinkPresentationState, ThinkQuestion, ThinkRejectedSubmission, ThinkTextContent } from './types';
+import type { ThinkActivity, ThinkAdmission, ThinkDraft, ThinkHandoffState, ThinkIdentity, ThinkKnownIdentity, ThinkMessage, ThinkMessageFocus, ThinkPrefillRequest, ThinkPresentation, ThinkPresentationActions, ThinkPresentationState, ThinkQuestion, ThinkRejectedSubmission, ThinkTextContent } from './types';
 
 type Client = ReturnType<typeof createThinkClient>;
 export interface ThinkSessionClock {
@@ -17,6 +17,7 @@ export interface ThinkSessionOptions {
   /** This is the single current-chat pointer, not a draft or chat list. */
   pointer?: { read(): string | null; write(conversationId: string): void };
   navigate(href: string, options: { replace: true; focus?: 'preserve' }): void;
+  navigationGeneration?(): number | undefined;
 }
 export interface ThinkSessionState {
   readonly identity: ThinkIdentity | null;
@@ -26,12 +27,18 @@ export interface ThinkSessionState {
   readonly entries: readonly ThinkManifestEntry[];
   readonly history: 'loading' | 'complete' | 'unavailable';
   readonly newChat: 'idle' | 'confirm-discard' | 'starting' | 'unavailable';
+  readonly handoff: ThinkHandoffState | null;
+  readonly messageFocus?: ThinkMessageFocus;
 }
 export interface ThinkSession {
   getSnapshot(): ThinkSessionState;
   getPresentation(): ThinkPresentation;
   subscribe(listener: () => void): () => void;
-  setLocation(location: { pathname: string; search: string }): void;
+  setLocation(location: { pathname: string; search: string; hash?: string; key?: string; isNavigating?: boolean }): void;
+  requestHandoff(request: ThinkPrefillRequest): void;
+  confirmHandoff(): void;
+  cancelHandoff(): void;
+  checkHandoff(): void;
   editDraft(text: string): void;
   requestNewChat(): void;
   cancelNewChat(): void;
@@ -51,7 +58,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   const randomUUID = options.randomUUID ?? (() => crypto.randomUUID());
   const drafts = new Map<string, ThinkDraft>();
   const listeners = new Set<() => void>();
-  let state: ThinkSessionState = { identity: null, draft: emptyDraft, connection: 'inactive', snapshot: null, entries: [], history: 'loading', newChat: 'idle' };
+  let state: ThinkSessionState = { identity: null, draft: emptyDraft, connection: 'inactive', snapshot: null, entries: [], history: 'loading', newChat: 'idle', handoff: null };
   let active = false;
   let generation = 0;
   let closed = false;
@@ -63,6 +70,23 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   let retryDelay = 250;
   let readController: AbortController | undefined;
   let pendingCreate: { conversationId: string; clientCommandId: string } | undefined;
+  let navigationVersion = 0;
+  let locationSignature = '';
+  let locationPath = '';
+  let navigationPending = false;
+  type PrefillHandoff = {
+    request: ThinkPrefillRequest;
+    originId: string | null;
+    originDraftVersion: number;
+    navigationVersion: number;
+    shellNavigationGeneration?: number;
+    target?: { conversationId: string; clientCommandId: string; draftVersion: number; ready: boolean };
+    checking: boolean;
+  };
+  let handoff: PrefillHandoff | undefined;
+  let handoffTimer: ReturnType<typeof setTimeout> | undefined;
+  let handoffFocusAwaitingVisit = false;
+  let focusNavigationGeneration: number | undefined;
   type Command<R extends CommandReceipt> = { identity: ThinkKnownIdentity; commandId: string; receipt?: R; delivery: 'posting' | 'unknown' | 'known' | 'rejected' };
   type OwnedSend = Command<SendReceipt> & { kind: 'send'; text: string; draftVersion: number; stop?: OwnedStop };
   type OwnedStop = Command<StopReceipt> & { kind: 'stop'; runId: string };
@@ -164,7 +188,8 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       ...(state.snapshot?.permissionPending === undefined ? {} : { permissionPending: state.snapshot.permissionPending }),
       ...(transcript?.warning || state.snapshot?.otherTranscriptWarnings ? { transcriptWarning: { ...(transcript?.warning ? { current: { ...(transcript.reason ? { reason: transcript.reason } : {}) } } : {}), otherCount: state.snapshot?.otherTranscriptWarnings ?? 0 } } : {}),
       questions: identity ? questions.get(identity.conversationId) ?? [] : [], history: { state: state.history }, newChat: state.newChat,
-      rejectedSubmissions: identity?.epoch ? rejected.get(identityKey(identity)) ?? [] : [] };
+      rejectedSubmissions: identity?.epoch ? rejected.get(identityKey(identity)) ?? [] : [],
+      ...(state.messageFocus ? { messageFocus: state.messageFocus } : {}) };
   }
 
   const update = (changes: Partial<ThinkSessionState>) => {
@@ -623,6 +648,87 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     }
   }
 
+  function handoffPhase(owner: PrefillHandoff, phase: ThinkHandoffState['phase']): void {
+    if (closed || handoff !== owner) return;
+    update({ handoff: { source: owner.request.source, triggerId: owner.request.triggerId, phase, canCheck: !!owner.target } });
+  }
+  function unchangedHandoff(owner: PrefillHandoff): boolean {
+    return navigationVersion === owner.navigationVersion && (state.identity?.conversationId ?? null) === owner.originId &&
+      options.navigationGeneration?.() === owner.shellNavigationGeneration && state.draft.version === owner.originDraftVersion &&
+      !!owner.target && drafts.get(owner.target.conversationId)?.version === owner.target.draftVersion;
+  }
+  function commitHandoff(owner: PrefillHandoff): void {
+    const target = owner.target;
+    if (closed || handoff !== owner || !target?.ready) return;
+    if (!unchangedHandoff(owner)) { handoffPhase(owner, 'stale'); return; }
+    // This is a context commit, not New chat's explicit draft-discard branch.
+    const draft = drafts.get(target.conversationId)!;
+    stopWatch(); stopRead(); stopBodies(); stopCommands();
+    generation++;
+    refreshRequested = false;
+    handoff = undefined;
+    handoffFocusAwaitingVisit = true;
+    if (handoffTimer !== undefined) { clock.clearTimeout(handoffTimer); handoffTimer = undefined; }
+    update({ handoff: null, identity: { conversationId: target.conversationId, epoch: null }, draft,
+      snapshot: null, entries: [], history: 'loading', newChat: 'idle', connection: 'inactive' });
+    remember(target.conversationId);
+    console.info('think_handoff_commit', { source: owner.request.source });
+    options.navigate(`/think?${new URLSearchParams({ conversation: target.conversationId })}`, { replace: true, focus: 'preserve' });
+    focusNavigationGeneration = options.navigationGeneration?.();
+    if (!closed && state.identity?.conversationId === target.conversationId) update({ messageFocus: { conversationId: target.conversationId, token: target.clientCommandId } });
+  }
+  function acceptHandoffReceipt(owner: PrefillHandoff, receipt: CommandReceipt): void {
+    if (closed || handoff !== owner || !owner.target) return;
+    const target = owner.target;
+    if (receipt.kind !== 'create' || receipt.conversationId !== target.conversationId || receipt.clientCommandId !== target.clientCommandId || !uuid.test(receipt.epoch)) {
+      handoffPhase(owner, 'unavailable'); return;
+    }
+    if (receipt.state === 'rejected') { handoffPhase(owner, 'rejected'); return; }
+    if (receipt.state === 'ready') { target.ready = true; commitHandoff(owner); return; }
+    handoffPhase(owner, 'checking');
+    handoffTimer = clock.setTimeout(() => { handoffTimer = undefined; void reconcileHandoff(owner); }, 500);
+  }
+  async function reconcileHandoff(owner: PrefillHandoff): Promise<void> {
+    if (closed || handoff !== owner || !owner.target || owner.checking) return;
+    if (owner.target.ready) { commitHandoff(owner); return; }
+    if (handoffTimer !== undefined) { clock.clearTimeout(handoffTimer); handoffTimer = undefined; }
+    owner.checking = true;
+    handoffPhase(owner, 'checking');
+    console.info('think_handoff_check_attempt', { source: owner.request.source });
+    try {
+      const receipt = await client.receipt(owner.target.conversationId, owner.target.clientCommandId);
+      console.info('think_handoff_check_outcome', { state: receipt.state });
+      acceptHandoffReceipt(owner, receipt);
+    } catch {
+      console.info('think_handoff_check_outcome', { state: 'unavailable' });
+      handoffPhase(owner, 'unavailable');
+    } finally { owner.checking = false; }
+  }
+  async function prepareHandoff(owner: PrefillHandoff): Promise<void> {
+    if (closed || handoff !== owner || owner.target) return;
+    let conversationId: string;
+    let clientCommandId: string;
+    try { conversationId = randomUUID(); clientCommandId = randomUUID(); }
+    catch { handoffPhase(owner, 'rejected'); return; }
+    if (!uuid.test(conversationId) || !uuid.test(clientCommandId) || conversationId === state.identity?.conversationId || drafts.has(conversationId)) {
+      handoffPhase(owner, 'rejected'); return;
+    }
+    // Initialize exactly once, before the first create await, under its own key.
+    const draft: ThinkDraft = { text: owner.request.text, version: 1 };
+    drafts.set(conversationId, draft);
+    owner.target = { conversationId, clientCommandId, draftVersion: draft.version, ready: false };
+    handoffPhase(owner, 'starting');
+    console.info('think_handoff_create_attempt', { source: owner.request.source });
+    try {
+      const receipt = await client.create({ conversationId, clientCommandId });
+      console.info('think_handoff_create_outcome', { state: receipt.state });
+      acceptHandoffReceipt(owner, receipt);
+    } catch (error) {
+      console.info('think_handoff_create_outcome', { state: 'unavailable' });
+      handoffPhase(owner, rejectedPost(error) ? 'rejected' : 'unavailable');
+    }
+  }
+
   let session: ThinkSession;
   const actions: ThinkPresentationActions = {
     editDraft(text) { session.editDraft(text); },
@@ -685,6 +791,13 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       if (!ownedIdentity(identity) || !item || (state.draft.text.length && replaceDraftVersion !== state.draft.version)) return;
       session.editDraft(item.text);
     },
+    claimMessageFocus(token) {
+      if (state.messageFocus?.token !== token) return false;
+      const eligible = options.navigationGeneration?.() === focusNavigationGeneration;
+      handoffFocusAwaitingVisit = false;
+      update({ messageFocus: undefined });
+      return eligible;
+    },
   };
   presentation = { state: project(), actions };
   session = {
@@ -693,6 +806,28 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     setLocation(location) {
       if (closed) return;
+      const signature = JSON.stringify([location.pathname, location.search, location.hash ?? '', location.key ?? '']);
+      const locationChanged = signature !== locationSignature;
+      const pendingChanged = navigationPending !== !!location.isNavigating;
+      if (locationChanged || pendingChanged) {
+        locationSignature = signature;
+        locationPath = location.pathname;
+        navigationPending = !!location.isNavigating;
+        navigationVersion++;
+        if (handoff && !handoff.target) { handoff = undefined; update({ handoff: null }); }
+      }
+      // A Next transition can still render Ground while its requested Think URL
+      // is being prepared. Preserve our one-shot focus until that visit commits.
+      if (state.messageFocus) {
+        const expected = location.pathname === '/think' && new URLSearchParams(location.search).get('conversation') === state.messageFocus.conversationId;
+        const arriving = expected && locationChanged && handoffFocusAwaitingVisit;
+        if (expected && locationChanged) handoffFocusAwaitingVisit = false;
+        if ((!navigationPending && !expected) || (pendingChanged && navigationPending && !arriving && !handoffFocusAwaitingVisit) || (locationChanged && location.pathname !== '/ground' && !expected)) {
+          handoffFocusAwaitingVisit = false;
+          update({ messageFocus: undefined });
+        }
+      }
+      if (pendingChanged && !locationChanged) return;
       const nowActive = location.pathname === '/think';
       if (!nowActive) {
         if (active) { active = false; generation++; refreshRequested = false; stopWatch(); stopRead(); stopBodies(); stopCommands(); update({ connection: 'inactive' }); }
@@ -709,11 +844,42 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       select(selected);
       if (!wasActive && pendingCreate?.conversationId === selected) session.checkConnection();
     },
+    requestHandoff(request) {
+      if (closed || handoff || navigationPending || locationPath !== '/ground' || request.kind !== 'fresh-prefill' || !request.text.trim() || new TextEncoder().encode(request.text).length > 2048) return;
+      const owner: PrefillHandoff = { request: { ...request }, originId: state.identity?.conversationId ?? null,
+        originDraftVersion: state.draft.version, navigationVersion, shellNavigationGeneration: options.navigationGeneration?.(), checking: false };
+      handoff = owner;
+      if (state.identity) drafts.set(state.identity.conversationId, state.draft);
+      if (state.draft.text.length) handoffPhase(owner, 'confirm'); else void prepareHandoff(owner);
+    },
+    confirmHandoff() {
+      if (!handoff || navigationPending || state.handoff?.phase !== 'confirm' && state.handoff?.phase !== 'stale') return;
+      const owner = handoff;
+      owner.originId = state.identity?.conversationId ?? null;
+      owner.originDraftVersion = state.draft.version;
+      owner.navigationVersion = navigationVersion;
+      owner.shellNavigationGeneration = options.navigationGeneration?.();
+      if (owner.target) {
+        // Explicit reconfirmation honors later target edits; it never restores prefill.
+        owner.target.draftVersion = drafts.get(owner.target.conversationId)?.version ?? owner.target.draftVersion;
+        commitHandoff(owner);
+      } else void prepareHandoff(owner);
+    },
+    cancelHandoff() {
+      if (!handoff || !['confirm', 'stale', 'rejected'].includes(state.handoff?.phase ?? '')) return;
+      // Prepared drafts remain keyed in memory; dismissing never deletes/stops a chat.
+      handoff = undefined;
+      if (handoffTimer !== undefined) { clock.clearTimeout(handoffTimer); handoffTimer = undefined; }
+      update({ handoff: null });
+    },
+    checkHandoff() { if (handoff) void reconcileHandoff(handoff); },
     editDraft(text) {
       if (closed || typeof text !== 'string') return;
       const draft = { text, version: state.draft.version + 1 };
       if (state.identity) drafts.set(state.identity.conversationId, draft);
-      update({ draft });
+      // Someone already writing in the pending target does not need delayed focus.
+      if (state.messageFocus) handoffFocusAwaitingVisit = false;
+      update({ draft, ...(state.messageFocus ? { messageFocus: undefined } : {}) });
     },
     requestNewChat() { if (state.draft.text.length) update({ newChat: 'confirm-discard' }); else void startNew(); },
     cancelNewChat() { if (state.newChat === 'confirm-discard') update({ newChat: 'idle' }); },
@@ -736,7 +902,8 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       requestCommands(id, version, true);
       update({ connection: 'opening' }); requestRefresh(id, version);
     },
-    close() { if (closed) return; closed = true; generation++; stopWatch(); stopRead(); stopBodies(); stopCommands(); listeners.clear(); },
+    close() { if (closed) return; closed = true; generation++; stopWatch(); stopRead(); stopBodies(); stopCommands();
+      if (handoffTimer !== undefined) clock.clearTimeout(handoffTimer); handoff = undefined; listeners.clear(); },
   };
   return session;
 }

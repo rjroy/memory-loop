@@ -19,6 +19,32 @@ let output = '';
 let watchMode: 'normal' | 'redirect' | 'malformed' | 'oversized' = 'normal';
 let watchClosed = 0;
 let snapshotEligibility: unknown;
+let groundMalformed = false;
+const groundId = 'a'.repeat(64);
+const groundRevision = 'b'.repeat(64);
+const groundBase = ['03_Resources', 'Memory-Loop'];
+const groundResponses: Record<string, { projected: object; upstream: object }> = {
+  '/api/ground/quick-actions': {
+    projected: { state: 'ready', noteId: [...groundBase, 'quick-actions.md'], revision: groundRevision, data: { actions: [{ id: '@fixture', skill: '@fixture', description: 'Fixture action' }] } },
+    upstream: { state: 'ready', noteId: [...groundBase, 'quick-actions.md'], revision: groundRevision, data: { actions: [{ id: '@fixture', skill: '@fixture', description: 'Fixture action', privateField: 'fixture-private-action' }], privateField: 'fixture-private-data' }, privateField: 'fixture-private-root' },
+  },
+  '/api/ground/inspiration': {
+    projected: { state: 'ready', noteId: [...groundBase, 'inspiration.md'], revision: groundRevision, data: { quote: { id: groundId, text: 'Fictional fixture quote', attribution: 'Fixture author', source: { title: 'Fixture source', url: 'https://example.test/quote' } } } },
+    upstream: { state: 'ready', noteId: [...groundBase, 'inspiration.md'], revision: groundRevision, data: { quote: { id: groundId, text: 'Fictional fixture quote', attribution: 'Fixture author', source: { title: 'Fixture source', url: 'https://example.test/quote', privateField: 'fixture-private-source' }, privateField: 'fixture-private-quote' } }, privateField: 'fixture-private-root' },
+  },
+  '/api/ground/prompts': {
+    projected: { state: 'ready', noteId: [...groundBase, 'prompts.md'], revision: groundRevision, data: { question: { id: groundId, text: 'Fixture question' } } },
+    upstream: { state: 'ready', noteId: [...groundBase, 'prompts.md'], revision: groundRevision, data: { question: { id: groundId, text: 'Fixture question', privateField: 'fixture-private-question' } }, privateField: 'fixture-private-root' },
+  },
+  '/api/ground/goals': {
+    projected: { state: 'ready', noteId: [...groundBase, 'goals.md'], revision: groundRevision, data: { markdown: '# Fixture goal' } },
+    upstream: { state: 'ready', noteId: [...groundBase, 'goals.md'], revision: groundRevision, data: { markdown: '# Fixture goal', privateField: 'fixture-private-data' }, privateField: 'fixture-private-root' },
+  },
+  '/api/ground/recent-captures': {
+    projected: { state: 'ready', coverage: 'partial', items: [{ id: groundId, localDateTime: '2026-01-01T12:34', timeBasis: 'recorded-local', excerpt: 'Fixture capture\nsecond line', noteId: ['00_Inbox', '2026-01-01.md'] }] },
+    upstream: { state: 'ready', coverage: 'partial', items: [{ id: groundId, localDateTime: '2026-01-01T12:34', timeBasis: 'recorded-local', excerpt: 'Fixture capture\nsecond line', noteId: ['00_Inbox', '2026-01-01.md'], privateField: 'fixture-private-capture' }], privateField: 'fixture-private-root' },
+  },
+};
 const conversationId = '11111111-1111-4111-8111-111111111111';
 const commandId = '22222222-2222-4222-8222-222222222222';
 const epoch = '33333333-3333-4333-8333-333333333333';
@@ -182,6 +208,11 @@ describe('production Next HTTP boundary', () => {
       req.on('data', chunk => { body += chunk; });
       req.on('end', () => {
         calls.push({ url: req.url, method: req.method, headers: req.headers, body });
+        if (req.url && Object.hasOwn(groundResponses, req.url)) {
+          res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
+          res.end(JSON.stringify(groundMalformed ? { state: 'ready', noteId: ['..', 'fixture-private'], revision: 'bad', data: { markdown: 'fixture-private' } } : groundResponses[req.url].upstream));
+          return;
+        }
         if (req.url?.startsWith('/api/think/conversations')) {
           if (req.url.startsWith(`/api/think/conversations/${conversationId}/content/`)) {
             res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
@@ -251,6 +282,48 @@ describe('production Next HTTP boundary', () => {
     expect(calls[0].headers.authorization).toBe(`Bearer ${token}`);
     expect(calls[0].headers.cookie).toBeUndefined();
     expect(response.body + JSON.stringify(response.headers) + output).not.toContain(token);
+  });
+
+  it.each(Object.entries(groundResponses))('Ground BFF forwards and projects %s', async (path, fixtureData) => {
+    calls = [];
+    const response = await request(path, { origin: `http://127.0.0.1:${port}`, 'sec-fetch-site': 'same-origin', authorization: 'Bearer browser-secret', cookie: 'session=fixture', 'x-forwarded-host': 'fixture-hostile' });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual(fixtureData.projected);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(response.body + JSON.stringify(response.headers) + output).not.toMatch(/fixture-private|browser-secret|session=fixture/);
+    expect(response.body + JSON.stringify(response.headers) + output).not.toContain(token);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: 'GET', url: path, body: '' });
+    expect(calls[0].headers.authorization).toBe(`Bearer ${token}`);
+    expect(calls[0].headers.cookie).toBeUndefined();
+    expect(calls[0].headers.origin).toBeUndefined();
+    expect(calls[0].headers['sec-fetch-site']).toBeUndefined();
+    expect(calls[0].headers['x-forwarded-host']).toBeUndefined();
+  });
+  it.each<Record<string, string>>([{ host: 'hostile.example' }, { origin: 'null' }, { 'sec-fetch-site': 'cross-site' }])('Ground BFF rejects web policy violations without dispatch %o', async headers => {
+    calls = [];
+    const response = await request('/api/ground/goals', headers);
+    expect(response.status).toBe(403);
+    expect(calls).toHaveLength(0);
+  });
+  it('Ground BFF rejects malformed upstream data without disclosing it', async () => {
+    calls = [];
+    groundMalformed = true;
+    try {
+      const response = await request('/api/ground/goals');
+      expect(response.status).toBe(503);
+      expect(response.body + JSON.stringify(response.headers)).not.toContain('fixture-private');
+      expect(calls).toHaveLength(1);
+    } finally { groundMalformed = false; }
+  });
+  it('Ground BFF does not expose recent conversations before their real operations exist', async () => {
+    calls = [];
+    const response = await request('/api/ground/recent-conversations');
+    expect(response.status).toBe(404);
+    expect(calls).toHaveLength(0);
   });
 
   it('projects only validated authoritative Send eligibility on the real Next snapshot boundary', async () => {

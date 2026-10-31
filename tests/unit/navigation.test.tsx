@@ -10,8 +10,24 @@ beforeEach(() => window.sessionStorage.removeItem('memory-loop.think.current'));
 afterEach(() => window.sessionStorage.removeItem('memory-loop.think.current'));
 
 describe('shell component semantics', () => {
-  it('shows ordered navigation and the honest Ground placeholder', () => {
+  it('shows ordered navigation and the real Ground card destinations', async () => {
     window.history.replaceState(null, '', '/ground');
+    const hash = 'a'.repeat(64);
+    const resource = (name: string, data: object) => ({ state: 'ready', noteId: ['03_Resources', 'Memory-Loop', `${name}.md`], revision: hash, data });
+    const payloads: Record<string, object> = {
+      '/api/ground/quick-actions': resource('quick-actions', { actions: [{ id: '@fixture', skill: '@fixture', description: 'Fixture action' }] }),
+      '/api/ground/inspiration': resource('inspiration', { quote: { id: hash, text: 'Fictional fixture quote', attribution: 'Fixture author', source: { title: 'Fixture source' } } }),
+      '/api/ground/prompts': resource('prompts', { question: { id: hash, text: 'Fixture question' } }),
+      '/api/ground/goals': resource('goals', { markdown: 'Fixture goal' }),
+      '/api/ground/recent-captures': { state: 'ready', coverage: 'complete', items: [{ id: hash, localDateTime: '2026-01-01T12:34', timeBasis: 'recorded-local', excerpt: 'Fixture capture', noteId: ['00_Inbox', '2026-01-01.md'] }] },
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(input instanceof Request ? input.url : String(input), window.location.origin).pathname;
+      if (!Object.hasOwn(payloads, path)) throw new Error(`Unexpected fixture request: ${path}`);
+      return Response.json(payloads[path]);
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const historyLength = window.history.length;
     render(<TestPresentation><GroundView /></TestPresentation>);
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(within(nav).getAllByRole('link').map(link => [link.textContent?.trim(), link.getAttribute('href')])).toEqual([
@@ -22,11 +38,14 @@ describe('shell component semantics', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     const main = screen.getByRole('main');
     expect(within(main).getByRole('heading', { level: 1, name: 'Ground' })).toBeInTheDocument();
-    expect(within(main).getByText('An overview built from interchangeable panels.')).toBeInTheDocument();
-    expect(within(main).getByRole('heading', { level: 2, name: "Panels aren't available yet" })).toBeInTheDocument();
-    expect(within(main).getByText("Panel contents haven't been chosen. This preview doesn't display vault information.")).toBeInTheDocument();
-    expect(main.querySelector('form, input, textarea, select')).toBeNull();
-    expect(within(main).getByRole('link', { name: 'Open Capture' })).toHaveAttribute('href', '/capture');
+    for (const name of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures']) expect(within(main).getByRole('heading', { level: 2, name })).toBeInTheDocument();
+    expect(await within(main).findByRole('button', { name: /Fixture action/ })).toBeEnabled();
+    expect(within(main).getByRole('button', { name: /Fixture question/ })).toBeEnabled();
+    expect(within(main).getByRole('link', { name: /Fixture capture/ })).toHaveAttribute('href', `/recall?${new URLSearchParams({ file: JSON.stringify(['00_Inbox', '2026-01-01.md']) })}`);
+    expect(within(main).queryByRole('heading', { name: 'Recent conversations' })).not.toBeInTheDocument();
+    expect(within(main).queryByRole('button', { name: /resume|delete/i })).not.toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(window.history.length).toBe(historyLength);
   });
 
   it('keeps shell navigation and accessible editor focus on the live Capture route', () => {

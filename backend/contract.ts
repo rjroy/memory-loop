@@ -3,6 +3,7 @@ export interface VaultConfig {
   vaultDirectory: string;
   /** Validated independently so invalid Think settings do not disable Recall. */
   think?: unknown;
+  ground?: unknown;
 }
 
 /** Identifiers are vault-relative sequences of individual filename components. */

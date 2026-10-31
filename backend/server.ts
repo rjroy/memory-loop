@@ -14,6 +14,7 @@ import { nativeSessions } from './think/native';
 import { createThinkService, type ThinkService, type ThinkUnavailableCode } from './think/service';
 import { createBodyStore, type BodyStore } from './think/body-store';
 import { openCaptureWriter, type CaptureWriter } from './capture';
+import { openGround, type GroundReader } from './ground';
 
 export interface ServerOptions {
   /** Directory containing .memory-loop/config.json, independent of the web build. */
@@ -87,16 +88,21 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
   }
   const think = await prepareThink(config, vault, transportFile);
   let capture: CaptureWriter | undefined;
+  let ground: GroundReader | undefined;
+  let groundError: 'configuration' | 'io' = 'error' in vault && vault.error === 'vault_unavailable' ? 'io' : 'configuration';
   if (config && 'reader' in vault) {
     console.info('capture_setup_attempt');
     try { capture = await openCaptureWriter(config.vaultDirectory); console.info('capture_setup_outcome', { status: 'ready' }); }
     catch { console.info('capture_setup_outcome', { status: 'unavailable' }); }
+    console.info('ground_setup_attempt');
+    try { ground = await openGround(config.vaultDirectory, config.ground); console.info('ground_setup_outcome', { status: 'ready' }); }
+    catch { groundError = 'io'; console.info('ground_setup_outcome', { status: 'unavailable' }); }
   }
   async function close() {
-    try { if (!('error' in think)) await think.close(); } finally { try { await capture?.close(); } finally { if ('reader' in vault) await vault.reader.close(); } }
+    try { if (!('error' in think)) await think.close(); } finally { try { await ground?.close(); } finally { try { await capture?.close(); } finally { if ('reader' in vault) await vault.reader.close(); } } }
   }
   try {
-    const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault, think, capture });
+    const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault, think, capture, ground, groundError });
     return { fetch, close };
   } catch (error) {
     await close();

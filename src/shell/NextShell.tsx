@@ -11,33 +11,40 @@ import { createThinkSession } from '../think/session';
 import { ThinkSessionProvider, useThinkPresentation } from '../think/presentation';
 import ThinkNewChatButton from '../think/ThinkNewChatButton';
 import { CaptureSessionProvider } from '../capture/CaptureSession';
+import { createGroundSession } from '../ground/session';
+import { GroundSessionProvider } from '../ground/presentation';
 import '../think/think.css';
 
 export default function NextShell({ children }: { children: ReactNode }) {
-  const { location, navigate } = usePresentation();
+  const { location, navigate, isNavigating, navigationGeneration } = usePresentation();
   const navigation = useRef(navigate);
+  const navigationEpoch = useRef(navigationGeneration);
   navigation.current = navigate;
+  navigationEpoch.current = navigationGeneration;
   const [session] = useState(() => createThinkSession({
     navigate: (href, options) => navigation.current(href, options),
+    navigationGeneration: () => navigationEpoch.current?.(),
     pointer: {
       read: () => window.sessionStorage.getItem('memory-loop.think.current'),
       write: id => window.sessionStorage.setItem('memory-loop.think.current', id),
     },
   }));
+  const [ground] = useState(() => createGroundSession());
   const ownership = useRef(0);
   useEffect(() => {
     const lease = ++ownership.current;
     // StrictMode replays effect setup on this same instance. Close only after a
     // real departure, not its synchronous cleanup/setup rehearsal.
-    return () => { queueMicrotask(() => { if (ownership.current === lease) session.close(); }); };
-  }, [session]);
+    return () => { queueMicrotask(() => { if (ownership.current === lease) { session.close(); ground.close(); } }); };
+  }, [session, ground]);
   useLayoutEffect(() => {
-    session.setLocation({ pathname: location.pathname, search: location.search });
-  }, [session, location.pathname, location.search]);
+    session.setLocation({ pathname: location.pathname, search: location.search, hash: location.hash, key: location.key, isNavigating });
+    ground.setLocation(location.pathname);
+  }, [session, ground, location.pathname, location.search, location.hash, location.key, isNavigating]);
 
-  return <ThinkSessionProvider session={session}><CaptureSessionProvider>
+  return <ThinkSessionProvider session={session}><CaptureSessionProvider><GroundSessionProvider session={ground}>
     <ShellContent>{children}</ShellContent>
-  </CaptureSessionProvider></ThinkSessionProvider>;
+  </GroundSessionProvider></CaptureSessionProvider></ThinkSessionProvider>;
 }
 
 function ShellContent({ children }: { children: ReactNode }) {

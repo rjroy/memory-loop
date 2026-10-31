@@ -48,6 +48,7 @@ export default function PresentationProvider({ children }: { children: ReactNode
   const visit = useRef<Visit | null>(null);
   const intent = useRef<Intent | null>(null);
   const generation = useRef(0);
+  const navigationGeneration = useCallback(() => generation.current, []);
   const liveRecall = useRef<{ key: string; capture: () => RecallPosition } | null>(null);
   const mounted = useRef(false);
   const notified = useRef(false);
@@ -268,7 +269,7 @@ export default function PresentationProvider({ children }: { children: ReactNode
   }, [pathname, search, preparing, completedRepair, revision, notify, router, startTransition, focusHeading]);
 
   if (unsupported) return <main id="main-content"><h1>Browser update required</h1><p>Memory Loop requires an updated browser with the Navigation API.</p></main>;
-  return <PresentationContext.Provider value={{ ...display, isNavigating: Boolean(intent.current || (active && !active.published)), rememberEntry, registerRecallCapture, registerHeading, navigate, linkIntent }}>
+  return <PresentationContext.Provider value={{ ...display, isNavigating: Boolean(intent.current || (active && !active.published)), navigationGeneration, rememberEntry, registerRecallCapture, registerHeading, navigate, linkIntent }}>
     {children}
   </PresentationContext.Provider>;
 }

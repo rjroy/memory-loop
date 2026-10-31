@@ -1,0 +1,70 @@
+.app-shell--ground .workspace {
+  padding: 1.5rem max(clamp(20px, 4.4vw, 64px), env(safe-area-inset-right, 0px)) 3rem max(clamp(20px, 4.4vw, 64px), env(safe-area-inset-left, 0px));
+}
+.ground-view { max-width: 76rem; margin-inline: auto; container: ground / inline-size; }
+.ground-arrival { display: grid; grid-template-columns: minmax(0, 1fr) min(26%, 192px); align-items: center; gap: 1.5rem; margin-bottom: 1.75rem; }
+.ground-view .brand-invitation { color: var(--lantern); font-size: clamp(2rem, 3.9vw, 3.5rem); }
+.ground-art { width: 100%; aspect-ratio: 1; object-fit: contain; }
+.ground-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.75rem 1.5rem; align-items: start; }
+.ground-card { min-width: 0; border-top: 1px solid var(--rule); padding-top: 1rem; overflow-wrap: anywhere; }
+.ground-card h2 { margin: 0 0 1rem; font-size: 1.125rem; line-height: 1.4; }
+.ground-card p { margin: 0 0 .75rem; }
+.ground-card button { font-family: inherit; font-size: 1rem; line-height: 1.5; touch-action: manipulation; cursor: pointer; }
+.ground-card button[aria-disabled='true'] { cursor: default; }
+.ground-quick-actions { grid-column: 1 / -1; container: actions / inline-size; }
+.ground-action-strip { display: flex; flex-wrap: wrap; gap: .75rem; }
+.ground-skill-action { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-height: 44px; min-width: 44px; max-width: 100%; padding: .625rem 1rem; border: 1px solid var(--muted); border-radius: 4px; text-align: left; color: inherit; background: transparent; font-weight: 600; overflow-wrap: anywhere; }
+.ground-skill-ref { font-size: .875rem; font-weight: 400; color: var(--muted); }
+.ground-skill-action:hover:not([aria-disabled='true']) { background: var(--parchment); color: var(--night); }
+.ground-skill-action:hover:not([aria-disabled='true']) .ground-skill-ref { color: var(--night); }
+.ground-inspiration { background: var(--parchment); color: var(--night); padding: 1.25rem; border: 0; --focus: var(--night); color-scheme: light; }
+.ground-quotation { margin: 0; }
+.ground-quotation blockquote { margin: 0; font: 400 1.25rem/1.6 'Libre Baskerville', Georgia, serif; white-space: pre-line; }
+.ground-quotation blockquote p { margin: 0; }
+.ground-quotation figcaption { margin-top: 1rem; }
+.ground-quote-source { display: block; font-size: .875rem; line-height: 1.5; margin-top: .25rem; color: #344548; }
+.ground-quote-source a { display: inline-flex; min-height: 44px; align-items: center; }
+.ground-card .ground-question-action { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; min-height: 44px; width: 100%; padding: 0 .25rem .5rem 0; border: 0; text-align: left; color: inherit; background: transparent; font-size: 1.375rem; line-height: 1.35; overflow-wrap: anywhere; }
+.ground-question-action svg { flex-shrink: 0; margin-top: .3rem; }
+.ground-question-action:hover:not([aria-disabled='true']) span { text-decoration: underline; text-underline-offset: .2em; }
+.ground-goals .markdown-document { font-size: 1rem; line-height: 1.5; }
+.ground-goals .markdown-document :is(h3, h4, h5, h6) { margin: 1.25em 0 .65em; font-family: 'Libre Baskerville', Georgia, serif; font-weight: 400; line-height: 1.4; }
+.ground-goals .markdown-document .markdown-h1 { font-size: 1.375rem; }
+.ground-goals .markdown-document .markdown-h2 { font-size: 1.125rem; }
+.ground-goals .markdown-document .markdown-h3 { font-size: 1.0625rem; }
+.ground-goals .markdown-document > :first-child { margin-top: 0; }
+.ground-goals .markdown-document ul, .ground-goals .markdown-document ol { padding-left: 1.25rem; }
+.ground-goals .markdown-document li + li { margin-top: .625rem; }
+.ground-goals .markdown-document pre { max-width: 100%; overflow: auto; }
+.ground-captures { grid-column: 1 / -1; }
+.ground-capture-list { list-style: none; padding: 0; margin: 0; }
+.ground-capture-list li + li { border-top: 1px solid var(--rule); }
+.ground-capture-link { display: block; min-height: 44px; padding: 1rem 0; text-decoration: none; }
+.ground-capture-list li:first-child .ground-capture-link { padding-top: 0; }
+.ground-capture-excerpt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; max-width: 68ch; font-size: 1rem; line-height: 1.5; }
+.ground-capture-link:hover .ground-capture-excerpt { text-decoration: underline; text-underline-offset: .2em; }
+.ground-capture-time, .ground-capture-path { display: block; font-size: .875rem; line-height: 1.5; color: var(--muted); }
+.ground-capture-time { margin-top: .375rem; }
+.ground-coverage, .ground-guidance, .ground-resource-path { font-size: .875rem; }
+.ground-card .ground-resource-path { overflow-wrap: anywhere; }
+.ground-button { color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 4px; min-height: 44px; min-width: 44px; max-width: 100%; padding: .5rem .875rem; font-weight: 600; overflow-wrap: anywhere; }
+.ground-button:hover { background: var(--parchment); color: var(--night); }
+.ground-inspiration .ground-button:hover { background: var(--night); color: var(--parchment); }
+.ground-local-state { margin-top: .75rem; }
+.ground-handoff { margin-top: 1rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
+.ground-confirmation-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+@container ground (min-width: 44rem) {
+  .ground-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ground-goals { grid-column: 1 / -1; }
+}
+@container ground (min-width: 66rem) {
+  .ground-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ground-goals { grid-column: auto; }
+}
+@container actions (max-width: 26rem) { .ground-skill-action { width: 100%; } }
+@container ground (max-width: 14rem) {
+  .ground-arrival { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+  .ground-art { width: 26%; justify-self: end; }
+}
+@media (width < 35rem) { .app-shell--ground .workspace { padding-top: 1.25rem; } .ground-arrival { gap: 1rem; } }
+@media (forced-colors: active) { .ground-card, .ground-handoff, .ground-capture-list li + li { border-color: CanvasText; } }

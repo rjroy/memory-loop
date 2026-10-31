@@ -15,6 +15,21 @@ export interface ThinkDraft {
   readonly version: number;
 }
 
+export type ThinkHandoffSource = 'quickActions' | 'prompts';
+export interface ThinkPrefillRequest {
+  readonly kind: 'fresh-prefill';
+  readonly text: string;
+  readonly source: ThinkHandoffSource;
+  readonly triggerId: string;
+}
+export interface ThinkHandoffState {
+  readonly source: ThinkHandoffSource;
+  readonly triggerId: string;
+  readonly phase: 'confirm' | 'starting' | 'checking' | 'unavailable' | 'rejected' | 'stale';
+  readonly canCheck: boolean;
+}
+export interface ThinkMessageFocus { readonly conversationId: string; readonly token: string }
+
 /** The last verified text remains visible while a newer generation is loaded. */
 export type ThinkTextContent =
   | { readonly state: 'unloaded'; readonly ref: BodyRef; readonly previousText?: never }
@@ -100,6 +115,8 @@ export interface ThinkPresentationState {
   readonly history: ThinkHistory;
   readonly newChat: 'idle' | 'confirm-discard' | 'starting' | 'unavailable';
   readonly rejectedSubmissions: readonly ThinkRejectedSubmission[];
+  /** One explicit Ground handoff, not routine route/message focus. */
+  readonly messageFocus?: ThinkMessageFocus;
 }
 
 /** Identity arguments bind delayed actions to the chat that originated them. */
@@ -115,6 +132,7 @@ export interface ThinkPresentationActions {
   editQuestion(identity: ThinkKnownIdentity, decisionId: string, answer: FormReplyCommand['answer']): void;
   replyQuestion(identity: ThinkKnownIdentity, decisionId: string, answer: FormReplyCommand['answer']): void;
   recoverRejected(identity: ThinkKnownIdentity, clientCommandId: string, replaceDraftVersion?: number): void;
+  claimMessageFocus?(token: string): boolean;
 }
 
 export interface ThinkPresentation {

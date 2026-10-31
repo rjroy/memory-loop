@@ -150,20 +150,20 @@
       "css": ".ds-top-header{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-top-header *{box-sizing:border-box}.ds-top-header {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px 24px;\n  padding: max(12px, env(safe-area-inset-top, 0px)) clamp(20px, 4.4vw, 64px) 12px;\n  color: var(--parchment);\n  background: var(--night);\n  border-bottom: 1px solid var(--rule);\n}\n.ds-brand-identity {\n  display: flex;\n  min-width: 0;\n  align-items: center;\n  gap: 12px;\n}\n.ds-brand-identity img { width: 40px; height: 40px; flex-shrink: 0; }\n.ds-brand-identity span {\n  min-width: 0;\n  font: 400 1.75rem/1.1 'IM Fell English SC', Georgia, serif;\n  letter-spacing: -.02em;\n}\n.ds-primary-navigation {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 4px 8px;\n}\n.ds-navigation-link {\n  position: relative;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 44px;\n  padding: 8px 10px;\n  border-radius: 4px;\n  text-decoration: none;\n  overflow-wrap: anywhere;\n}\n.ds-navigation-link[aria-current='page'] { font-weight: 600; }\n.ds-navigation-link[aria-current='page']::before {\n  position: absolute;\n  inset: auto 10px 4px;\n  height: 2px;\n  background: var(--horizon);\n  content: '';\n}\n.ds-navigation-link:hover,\n.ds-navigation-link:active { text-decoration: underline; }\n.ds-navigation-link:focus-visible {\n  outline-color: var(--horizon);\n  outline-offset: -6px;\n}@media(width < 56rem){.ds-top-header{padding-inline:20px}.ds-primary-navigation{gap:4px}}"
     },
     {
-      "name": "Unavailable-feature notice",
+      "name": "Ground card",
       "kind": "custom",
-      "refersTo": "placeholder-notice",
-      "description": "Actual Capture notice on Parchment: a single rule and honest copy, not an editable field. Capture leaves breathing room above it; Ground/Think adapt the same semantic section.",
-      "html": "<section class=\"ds-notice\"><h2>Quick capture isn't available yet</h2><p>Note entry and saving are not available in this preview.</p></section>",
-      "css": ".ds-notice{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-notice{--ink:var(--night);--surface:var(--parchment);--rule:color-mix(in srgb,var(--night) 25%,var(--parchment));}.ds-notice {\n  max-width: 42rem;\n  margin-top: 2rem;\n  padding-top: 1.5rem;\n  border-top: 1px solid var(--rule);\n}\n.ds-notice p { margin: .5rem 0 0; }.ds-notice h2{margin:0;font-size:1.125rem;font-weight:600;line-height:1.4}"
+      "refersTo": "ground-card",
+      "description": "Schematic Ground section; real cards load independently and show their own recovery state. No user content is represented here.",
+      "html": "<section class=\"ds-ground-card\"><h2>Quick Actions</h2><button type=\"button\">[Action description] <span>[@skill]</span></button></section>",
+      "css": ".ds-ground-card{color:#fef6e1;background:#031315;border-top:1px solid color-mix(in srgb,#fef6e1 27%,#031315);padding-top:1rem;font:400 1rem/1.5 \"Source Sans 3\",system-ui,sans-serif}.ds-ground-card h2{margin:0 0 1rem;font-size:1.125rem;line-height:1.4}.ds-ground-card button{min-height:44px;max-width:100%;padding:.625rem 1rem;border:1px solid #d5d3c5;border-radius:4px;color:inherit;background:transparent;font:600 1rem/1.5 \"Source Sans 3\",system-ui,sans-serif;text-align:left}.ds-ground-card button span{display:block;color:#d5d3c5;font-size:.875rem;font-weight:400}.ds-ground-card button:focus-visible{outline:2px solid #5e8bd6;outline-offset:4px}"
     },
     {
-      "name": "Content link",
+      "name": "Ground capture link",
       "kind": "custom",
       "refersTo": "content-link",
-      "description": "Ground’s real Open Capture link, styled as a Lantern primary action without changing native link behavior.",
-      "html": "<a class=\"ds-content-link\" href=\"/capture\">Open Capture</a>",
-      "css": ".ds-content-link{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-content-link {\n  display: inline-flex;\n  align-items: center;\n  min-height: 44px;\n  margin-top: 1rem;\n  font-weight: 600;\n  text-decoration-line: underline;\n}\n.ds-content-link {\n  justify-content: center;\n  padding: .625rem 1.25rem;\n  border-radius: 5px;\n  color: var(--night);\n  background: var(--lantern);\n  text-decoration: none;\n}\n.ds-content-link:hover { text-decoration: underline; }\n.ds-content-link:active { background: var(--parchment); }.ds-content-link:focus-visible{outline:2px solid var(--horizon);outline-offset:4px}"
+      "description": "Schematic native Recall link from Recent captures; actual text and destination come from a validated capture source.",
+      "html": "<a class=\"ds-content-link\" href=\"/recall\">[Capture excerpt]</a>",
+      "css": ".ds-content-link{display:block;min-height:44px;padding:1rem 0;color:#fef6e1;background:#031315;font:400 1rem/1.5 \"Source Sans 3\",system-ui,sans-serif;text-decoration:none}.ds-content-link:hover{text-decoration:underline}.ds-content-link:focus-visible{outline:2px solid #5e8bd6;outline-offset:4px}"
     },
     {
       "name": "Recall toolbar",
@@ -241,21 +241,21 @@
       "name": "Ground narrative artwork",
       "kind": "custom",
       "refersTo": "view-heading",
-      "description": "Approved full A.1, uncropped and unaltered, placed beside the gold IM Fell Ground invitation—not behind reading text. This is brand artwork, not user content.",
+      "description": "Approved full A.1, uncropped and unaltered, alongside the Ground invitation above five resource-backed cards. This is brand artwork, not user content.",
       "html": "<figure class=\"ds-art-context\"><img src=\"/brand/the-guide/approved-a1.webp\" width=\"1254\" height=\"1254\" alt=\"A guide offers a lantern between a warm mountain path and a cool, far-off city.\"></figure>",
       "css": ".ds-art-context{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-art-context{margin:0;padding:1rem;max-width:32rem}.ds-art-context img{display:block;width:100%;height:auto}"
     }
   ],
   "narrative": {
     "northStar": "One familiar place, four different ways to arrive",
-    "overview": "User-approved board acfac1f applied in memory-loop-44w: inspiring Ground with full A.1; quiet Parchment Capture without a fake form; curious cool Think with a questioning IM Fell invitation; reflective Parchment Recall with Libre Baskerville editorial headings and Source Sans prose. Shared unchanged A.5/IM Fell identity connects all four. Prior no-art/single-font/uniform-dark adaptations are superseded. No future functionality, invented user content, generated artwork or external resource service is added. Accepted current-build typecheck/build, unit 25/25, Recall browser 26/26 and legacy browser 20/20; fresh visual SHIP and technical Accept. Backend 87 remains prior unchanged evidence. User navigation correction: the board’s compact top identity and horizontal real app links replace the permanent global rail and phone bottom bar. Shared identity appears once; independent Files sidebar stays. Reflow/enlargement can grow the page instead of clipping a zero-height workspace. Prior rail-layout captures are superseded. 44W-T1 initial unfocused pointer and natural keyboard operation at 844×390/200% text are independently verified; history/UI-001/002/003/MS4 remain intact. No real-vault or physical-device claim.",
+    "overview": "Four-mode workspace with the approved A.5/IM Fell identity and compact top navigation. Ground now presents five independent resource-backed cards beneath its invitation and uncropped A.1; Quick Actions and Prompts prepare unsent Think drafts. Capture is a real editor, Think a space-first conversation, and Recall a safe read-only Markdown reader. Source data is not included in these schematic components. Phase 2 Ground fixture verification and review are recorded in README.md; this is not activation of a live build or completion of the Ground roadmap. Physical-device and assistive-technology coverage remains unclaimed.",
     "keyCharacteristics": [
       "Compact shared top identity and horizontal real links; full-width workspace, no global app rail or bottom bar.",
       "Shared identity, four distinct emotional jobs.",
       "Full approved artwork only where it has room; never behind note text.",
       "Local IM Fell identity, Source Sans UI/prose, Libre Baskerville editorial headings.",
       "Horizon location/dark focus, Night light focus, Lantern warmth/actions.",
-      "Honest unfinished tabs and unchanged safe read-only Recall behavior."
+      "Independent Ground card states and validated, unsent prefill; unchanged safe read-only Recall behavior."
     ],
     "rules": [
       {

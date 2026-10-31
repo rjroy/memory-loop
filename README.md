@@ -3,8 +3,9 @@
 A personal workspace with four stable destinations: Ground, Capture,
 Think, and Recall. **Recall is built:** browse one configured vault and read
 Markdown without changing it. **Capture is built:** save thoughts to the same
-configured vault. **Think now has a working conversation UI in the isolated local
-fixture** below. Ground remains an honest placeholder.
+configured vault. **Think has a working conversation UI in the isolated local
+fixture** below. Ground's current resource layer presents five cards and can
+prepare an unsent Think draft; it is not the completed Ground roadmap.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
 curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
@@ -164,8 +165,9 @@ through the authenticated API.
 
 ### Start both tiers
 
-**Bare daemon startup reads the existing selected vault.** For the current
-private deployment, start from the project root in separate terminals:
+**Bare daemon startup reads the existing selected vault.** Start from the project
+root in separate terminals, retaining the existing transport selector where one
+is used:
 
 ```sh
 # Terminal 1: API-only Bun/Hono, default 127.0.0.1:3001; no frontend build needed.
@@ -176,8 +178,9 @@ bun --no-env-file run server
 bun --no-env-file run check:daemon
 ```
 
-Open **https://gsai.raptor-piranha.ts.net:9443/recall** on a device connected to
-the tailnet. To stop, press Ctrl-C in each terminal; to restart, run the daemon
+Open `/ground` or `/recall` at the configured web origin; retain the selected
+reverse-proxy origin and port, including `:10000` where configured. To stop,
+press Ctrl-C in each terminal; to restart, run the daemon
 and server commands again. Build with `bun --no-env-file run build` after source
 changes before restarting the production server. No OS autostart is configured;
 the background Tailscale Serve mapping alone does not start either process.
@@ -213,7 +216,8 @@ missing/invalid vault config remains a distinct read error after daemon startup.
 ### Browser and private deployment boundary
 
 The browser uses same-origin Next APIs. Recall uses `GET /api/vault/tree` and
-`GET /api/vault/note`; Capture uses `POST /api/capture`; the internal Think layer
+`GET /api/vault/note`; Capture uses `POST /api/capture`; Ground uses five fixed
+read routes under `/api/ground`; the internal Think layer
 adds fixed command, snapshot, watch, content and decision routes under the same web request policy, not a
 generic OpenCode proxy. The BFF creates fresh service headers
 for the authenticated daemon. Browser credentials, cookies and forwarding headers
@@ -257,12 +261,59 @@ unless the existing proxy independently enforces the required authentication.
 Verify the complete proxy path and unauthorized access with disposable fixtures
 before using private data; selecting the mode does not configure or verify a proxy.
 
-The **127.0.0.1:4173** static preview and its `dist/` remain the retained rollback.
-It has no vault API and is not the supported runtime. The current private mapping
-is 9443 → 3000; if rollback is needed, change only that mapping with
-`tailscale serve --bg --https=9443 http://127.0.0.1:4173`. Preserve the preview
-and unrelated mappings. A separate unauthorized tailnet principal has not been
-tested end-to-end; fixture identity-policy and actual proxy-header checks passed.
+The **127.0.0.1:4173** static preview and its `dist/` are a historical rollback;
+it has no vault API and is not the supported runtime. Do not change an existing
+proxy or Serve mapping as part of trying Ground. A separate unauthorized tailnet
+principal has not been tested end-to-end; fixture identity-policy and actual
+proxy-header checks passed.
+
+## What Ground does
+
+Open `/ground` after starting the existing daemon and web tiers above. The daemon
+reads resources from the configured vault; the browser uses same-origin APIs and
+does not open vault files or receive the server credential. The default resource
+paths, relative to the vault, are:
+
+| Card | Default resource |
+| --- | --- |
+| Quick Actions | `03_Resources/Memory-Loop/quick-actions.md` |
+| Inspiration | `03_Resources/Memory-Loop/inspiration.md` |
+| Prompts | `03_Resources/Memory-Loop/prompts.md` |
+| Current Goals | `03_Resources/Memory-Loop/goals.md` |
+
+Quick Actions uses a skill reference as an H2 and one descriptive paragraph:
+
+```markdown
+# Quick Actions
+
+## @intent
+Clarify what this work is for.
+```
+
+Selecting it prepares **only `@intent`** as an editable, unsent draft in a fresh
+Think chat; the description is not sent. A syntactically valid reference does not
+guarantee the skill is installed. Prompts similarly prepares the selected question
+as an unsent draft. Neither action sends a message or stops existing work. If the
+current chat has any nonempty draft, including whitespace, Ground offers a
+confirmation and preserves the prior conversation's draft. These per-conversation
+drafts are volatile: ordinary app navigation preserves them, but hard reload or
+browser closure does not. Think's own **New chat → Discard & start** behavior is
+unchanged.
+
+Inspiration displays a selected quotation with its attribution and source. Prompts
+and Inspiration use narrow Markdown entry formats; see the [resource format
+contract](.lore/work/design/ground-contracts.md#2-small-markdown-formats) for
+their syntax and limits. Goals accepts ordinary nonblank CommonMark/GFM with
+Recall's safe rendering: no live raw HTML or fetched images, and task boxes are
+read-only. Missing files are not created or overwritten by Ground reads. Empty,
+missing, malformed and unavailable resources are reported per card, so one does
+not hide the others. A quote or prompt selection stays stable during a Ground
+visit; leaving and returning starts a new selection.
+
+Recent captures links up to the five most recent recorded entries to their source
+notes in Recall. If source coverage is incomplete, the card says so rather than
+claiming a complete latest five. This phase does not provide a conversation
+registry, resume or delete controls, or a scheduler.
 
 ## What Capture does
 
@@ -320,6 +371,17 @@ guarantee; relocation/rename/delete can affect in-flight reads. Browsing is not 
 transactional snapshot.
 
 ## Checks and current acceptance
+
+Ground's Phase 2 resource and prefill slice passed independent validation in
+owned fixtures: frontend **108**, backend **581**, browser **59**, native UI
+**3 passed / 3 skipped**, both direct TypeScript checks and an isolated build.
+After the focused confirmation-focus correction, affected checks passed **63
+unit**, **3 browser**, both direct TypeScript checks and an isolated build; fresh
+independent visual review reported **25 checks passed / SHIP**, and technical
+verification accepted the correction. The earlier full-suite counts predate that
+small correction; they are not a claim that every suite was rerun afterward.
+Physical-device and assistive-technology coverage is not established by these
+fixture checks.
 
 Capture's controlled independent verification passed frontend **90**, backend
 **421**, browser **57**, both direct TypeScript programs and an isolated

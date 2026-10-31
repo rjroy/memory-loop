@@ -282,7 +282,7 @@ components:
 
 The user approved the [four-mode character board](.lore/work/design/memory-loop-character/index.html) at `acfac1f` and explicitly authorized its application in `memory-loop-44w`, then clarified that its compact horizontal top navigation—not the old app rail/bottom bar—is part of that approved direction. Shared A.5 identity and IM Fell English SC connect four emotional jobs: inspiring Ground, quiet blank-slate Capture, curious Think, and reflective Recall. Older assistant-authored restraint and retained navigation adaptations are superseded, not immutable brand rules.
 
-Ground gives the full, unaltered A.1 narrative artwork enough room beside its invitation. Capture uses Parchment and open space, with no illustration or fake input. Think uses a cool Night/Horizon mixture; its questioning invitation and compact A.5 give way completely to a real conversation. Recall keeps its dark navigation/hierarchy beside a Parchment editorial reader. Artwork frames identity, never reading text. The Think extension reuses the approved world, fonts and artwork without a theme switch, new imagery or invented runtime content.
+Ground gives the full, unaltered A.1 narrative artwork enough room beside its invitation. Capture uses Parchment and open space for a real writing editor, without illustration or placeholder prose. Think uses a cool Night/Horizon mixture; its questioning invitation and compact A.5 give way completely to a real conversation. Recall keeps its dark navigation/hierarchy beside a Parchment editorial reader. Artwork frames identity, never reading text. The Think extension reuses the approved world, fonts and artwork without a theme switch, new imagery or invented runtime content.
 
 **Key Characteristics:**
 - Stable navigation and replaceable content.
@@ -329,9 +329,9 @@ Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.
 
 ## Layout
 
-One full-width header precedes the workspace: A.5/IM Fell identity at the start, horizontal Ground/Capture/Think/Recall links at the end when space permits. Flex wrapping moves the link group onto a second top row on phones or enlarged text; links may reflow naturally without clipping or reducing type. Header has 12px vertical padding, safe-area-aware gutters and 8px/24px group gaps. There is no permanent global app sidebar, fixed bottom navigation or reserved bottom-bar clearance. Ordinary workspace insets remain 3.5rem and `clamp(2rem, 4.4vw, 4.5rem)`; Ground keeps its two-column art composition and Capture its 64rem measure. Think instead gives the available workspace to its conversation and compact composer.
+One full-width header precedes the workspace: A.5/IM Fell identity at the start, horizontal Ground/Capture/Think/Recall links at the end when space permits. Flex wrapping moves the link group onto a second top row on phones or enlarged text; links may reflow naturally without clipping or reducing type. Header has 12px vertical padding, safe-area-aware gutters and 8px/24px group gaps. There is no permanent global app sidebar, fixed bottom navigation or reserved bottom-bar clearance. Ordinary workspace insets remain 3.5rem and `clamp(2rem, 4.4vw, 4.5rem)`; Ground keeps its two-column art composition. Capture and Think give their available workspaces to writing and conversation respectively.
 
-Below 56rem the same top header precedes 2rem/1.25rem ordinary workspace insets. Ground/Capture placeholders use one document scroll. Capture's flex composition has a 24rem minimum inner height to preserve its intentional blank-slate space, not a calculation based on a removed bottom bar.
+Below 56rem the same top header precedes 2rem/1.25rem ordinary workspace insets. Ground's placeholder uses document scrolling. Capture has a compact top action and full-width textarea filling the remaining workspace, with 32px desktop and safe-area-aware 20px narrow side gutters. Short or enlarged layouts permit page scrolling and retain a six-line editor floor. Its textarea owns writing overflow; errors can reflow beside or below the stable action without covering the editor.
 
 **Think:** a centered 52rem maximum conversation/composer lane, with 68ch maximum messages; 32px desktop side gutters become safe-area-aware 20px gutters below 56rem. At normal portrait/desktop sizes the conversation owns reading scroll and the composer occupies an actual grid row beneath it, never covering the last message. Header height comes from layout, not a guessed deduction from `100dvh`. The textarea starts at 2.875rem (46px at ordinary text), grows only with the draft, then scrolls locally; Send/Stop stays bottom-aligned to its right with a 44px minimum target. No visible Think section bar, Chat details, routine hint or logging footer remains.
 
@@ -354,7 +354,7 @@ Surfaces are flat, but no longer emotionally uniform: Night, Parchment and the c
 
 ## Shapes
 
-Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground/Capture notices are separated by a single rule. Think uses 6px corners for the editor/user field and 4px for actions; AI prose is unboxed, not another bubble or status card. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
+Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground's notice is separated by a single rule. Capture uses a quiet editor boundary and 4px action/editor corners. Think uses 6px corners for the editor/user field and 4px for actions; AI prose is unboxed, not another bubble or status card. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
 
 All top app links use the same 2px Horizon selected underline, semibold text and programmatic current state across sizes. Current-file underline remains Horizon. None is a general callout stripe.
 
@@ -366,7 +366,7 @@ Real page links, not ARIA tab widgets. Existing dimensions, order, current-click
 
 ### Notice containers
 
-A section with H2 and explanatory children, at most 42rem wide. Text follows its heading after .5rem. Ground uses a quiet rule under its invitation; Capture rests its honest notice below open space. These remaining placeholders are not templates for Think's real errors: Think uses concise contextual exceptions without disabling its editor or simulating service state.
+A section with H2 and explanatory children, at most 42rem wide. Text follows its heading after .5rem. Ground uses a quiet rule under its invitation. This placeholder is not a template for Capture or Think errors: those use concise contextual exceptions without disabling their editors or simulating service state.
 
 ### Content links
 
@@ -378,7 +378,11 @@ The app skip link is above the viewport until focus; its visible state is Lanter
 
 ### View heading and purpose
 
-A focusable H1 with a modest fixed type scale, followed by body-sized purpose after .75rem in Ground/Capture. Recall uses that H1 within its toolbar instead. Think registers the same route focus anchor as an accessible, visually hidden H1, with no visible row or purpose paragraph. Exact route content and focus/history behavior stay in the surface/design records rather than becoming global typography tokens.
+A focusable H1 with a modest fixed type scale, followed by body-sized purpose after .75rem in Ground. Recall uses that H1 within its toolbar instead. Capture and Think register the same route focus anchor as an accessible, visually hidden H1, with no visible row or purpose paragraph. Exact route content and focus/history behavior stay in the surface/design records rather than becoming global typography tokens.
+
+### Capture editor and action
+
+The labelled textarea stays editable during saving; the compact top Capture action remains focusable and exposes its disabled state. Desktop Enter captures and Shift+Enter inserts a line; mobile Enter inserts a line and the button captures. Preserve composition, repeated-key protection, focus and newer drafts. A confirmed save clears only unchanged text; a rejected or uncertain save retains it. Uncertainty explicitly warns that another capture may duplicate the entry, without automatic retry. The persistent shell owns volatile draft state across navigation. See the [Capture UX brief](.lore/work/design/capture-ux.md); physical phone and assistive-technology checks remain open in `memory-loop-22s`.
 
 ### Think conversation, composer and New chat
 

@@ -2,13 +2,17 @@
 
 A personal workspace with four stable destinations: Ground, Capture,
 Think, and Recall. **Recall is built:** browse one configured vault and read
-Markdown without changing it. **Think now has a working conversation UI in the
-isolated local fixture** below. Ground and Capture remain honest placeholders.
+Markdown without changing it. **Capture is built:** save thoughts to the same
+configured vault. **Think now has a working conversation UI in the isolated local
+fixture** below. Ground remains an honest placeholder.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
 curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
-The native Next App Router migration (`memory-loop-1l0.2`) is accepted. Next presents the UI and proxies Recall's read-only API routes to
-the authenticated Bun/Hono daemon. Think command/stream/content foundations are
+The native Next App Router migration (`memory-loop-1l0.2`) is accepted. Next
+presents the UI and proxies Recall's read-only API and Capture's write route to
+the authenticated Bun/Hono daemon. Capture has been verified with a disposable
+vault; a running deployment needs the updated build and restarted tiers before it
+serves this version. Think command/stream/content foundations are
 available in the isolated fixture below, with conversation controls, reconnect,
 vault transcripts and automatic logging recovery. Phase 4 is independently
 accepted; Phase 5 is independently verified and accepted for fixture use.
@@ -209,8 +213,8 @@ missing/invalid vault config remains a distinct read error after daemon startup.
 ### Browser and private deployment boundary
 
 The browser uses same-origin Next APIs. Recall uses `GET /api/vault/tree` and
-`GET /api/vault/note`; the internal Think layer adds fixed command, snapshot,
-watch, content and decision routes under the same web request policy, not a
+`GET /api/vault/note`; Capture uses `POST /api/capture`; the internal Think layer
+adds fixed command, snapshot, watch, content and decision routes under the same web request policy, not a
 generic OpenCode proxy. The BFF creates fresh service headers
 for the authenticated daemon. Browser credentials, cookies and forwarding headers
 are not forwarded. The daemon rejects browser Origin/Fetch Metadata and has no
@@ -238,6 +242,29 @@ is 9443 → 3000; if rollback is needed, change only that mapping with
 `tailscale serve --bg --https=9443 http://127.0.0.1:4173`. Preserve the preview
 and unrelated mappings. A separate unauthorized tailnet principal has not been
 tested end-to-end; fixture identity-policy and actual proxy-header checks passed.
+
+## What Capture does
+
+Capture uses the existing selected vault and transport configuration; no new
+configuration is required. Start both tiers as above, then open `/capture`. The
+daemon creates `00_Inbox/YYYY-MM-DD.md` when needed and appends a Markdown entry
+such as `- [14:35] A thought`. The filename and time come from the same instant
+in the **daemon server's local timezone**. Continuation lines are indented two
+spaces, and existing note bytes are preserved. Each capture accepts up to 1 MiB
+of UTF-8 text; meaningful whitespace is retained.
+
+On desktop, **Enter** captures and **Shift+Enter** adds a line. On mobile,
+**Enter** adds a line and the **Capture** button submits, including with an
+attached keyboard. The editor remains usable while saving; a confirmed save
+clears only an unchanged draft. Drafts survive ordinary app navigation but not a
+hard reload or browser closure.
+
+A definite failure keeps the draft. **Save unconfirmed** means the write may
+have succeeded even though confirmation was lost; the draft stays visible and
+the app never retries automatically. Capturing again may create a duplicate.
+Physical phone keyboard/IME and assistive-technology behavior remain unverified;
+browser emulation does not establish them. Fixture-only manual verification is
+tracked as `memory-loop-22s`.
 
 ## What Recall does
 
@@ -272,6 +299,13 @@ guarantee; relocation/rename/delete can affect in-flight reads. Browsing is not 
 transactional snapshot.
 
 ## Checks and current acceptance
+
+Capture's controlled independent verification passed frontend **90**, backend
+**421**, browser **57**, both direct TypeScript programs and an isolated
+production build. Technical review accepted the layer and visual review shipped
+it; this evidence does not certify a physical phone or assistive technology.
+The test results are recorded in `/tmp/opencode/capture-phase4-full-validation.json`
+and visual evidence in `/tmp/opencode/capture-final-visual/`.
 
 The Hono daemon phase (`memory-loop-1l0.1`) passed independent fixture-based
 backend checks (**130 tests**) and typecheck. Fresh technical verification

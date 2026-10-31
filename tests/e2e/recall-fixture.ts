@@ -8,7 +8,8 @@ import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
+// An isolated checkout/build may be supplied without rebuilding a running checkout.
+const projectRoot = process.env.MEMORY_LOOP_E2E_PROJECT_ROOT ?? fileURLToPath(new URL('../../', import.meta.url));
 export const fixtureToken = 'f'.repeat(64);
 const execFileAsync = promisify(execFile);
 
@@ -109,9 +110,11 @@ async function stop(child: ChildProcessWithoutNullStreams | undefined) {
   await exit;
 }
 
-export const test = base.extend<object, { recallOrigin: string }>({
+export const test = base.extend<object, { recallOrigin: string; captureVault: string; ownedFixture: { origin: string; vault: string } }>({
   baseURL: async ({ recallOrigin }, use) => { await use(recallOrigin); },
-  recallOrigin: [async ({}, use) => {
+  recallOrigin: [async ({ ownedFixture }, use) => { await use(ownedFixture.origin); }, { scope: 'worker' }],
+  captureVault: [async ({ ownedFixture }, use) => { await use(ownedFixture.vault); }, { scope: 'worker' }],
+  ownedFixture: [async ({}, use) => {
     const fixture = await mkdtemp(join(tmpdir(), 'memory-loop-browser-'));
     let daemon: ChildProcessWithoutNullStreams | undefined;
     let web: ChildProcessWithoutNullStreams | undefined;
@@ -146,7 +149,7 @@ export const test = base.extend<object, { recallOrigin: string }>({
       web.stdout.on('data', data => { webLogs += String(data); });
       web.stderr.on('data', data => { webLogs += String(data); });
       await waitReady(web, webPort, '/ground', {}, () => webLogs);
-      await use(origin);
+      await use({ origin, vault });
     } finally {
       try {
         try { await stop(web); } finally { await stop(daemon); }

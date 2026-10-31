@@ -13,11 +13,11 @@ Modes: Experience on arrival, Operate for stable navigation; quiet working Captu
 
 THESIS: One familiar place, four different ways to arrive. Shared identity connects inspiring Ground, blank-slate Capture, curious Think and reflective Recall without flattening their different jobs.
 
-OWN-WORLD: Exact approved A.5 signature and full A.1 narrative artwork; IM Fell English SC identity/invitations, Source Sans controls/prose, Libre Baskerville editorial headings. Night navigation, warm Parchment Capture/reader, cool Horizon/Night Think. Horizon location/dark focus, Night light focus, Lantern warmth/action. Local pinned assets only; no redraw, crop, generated art, theme switch or new behavior.
+OWN-WORLD: Exact approved A.5 signature and full A.1 narrative artwork; IM Fell English SC identity/invitations, Source Sans controls/prose, Libre Baskerville editorial headings. Night navigation, warm Parchment Capture/reader, cool Horizon/Night Think. Horizon location/dark focus, Night light focus, Lantern warmth/action. Local pinned assets only; no redraw, crop, generated art or theme switch.
 
-STORY: Know where you are, reach any of four places, and distinguish working read-only Recall from the three honest unavailable-feature previews.
+STORY: Know where you are, reach any of four places, write in Capture and read in Recall. Ground remains an honest unavailable-feature preview; Think has an interactive conversation UI.
 
-FIRST VIEWPORT: A single compact A.5/IM Fell identity and horizontal Ground/Capture/Think/Recall links in the top header, matching the approved board. No global app rail or phone bottom tab bar. Header groups wrap as space/text size requires without shrinking labels; the workspace spans the full width below. Ground retains full A.1, Capture Parchment quiet and Think its questioning invitation. Existing copy, native links/current-query guard, routing/focus/history are preserved; no fake future-feature content.
+FIRST VIEWPORT: A single compact A.5/IM Fell identity and horizontal Ground/Capture/Think/Recall links in the top header, matching the approved board. No global app rail or phone bottom tab bar. Header groups wrap as space/text size requires without shrinking labels; the workspace spans the full width below. Ground retains full A.1; Capture pairs a compact top action with a full-space Parchment writing editor; Think retains its own conversation surface. Native links/current-query guard and routing/focus/history are preserved; no fake future-feature content.
 
 FORM: User-approved four-mode board applied to the existing shell, not a new identity or catalog of alternatives. Source assets remain byte-identical; see `.lore/work/design/character-integration.md`.
 

@@ -639,15 +639,16 @@ test('HN-001: rapid later app navigation wins over a superseded native repair', 
     window.addEventListener('popstate', () => {
       if (location.hash !== '#main-content') return;
       document.querySelector<HTMLElement>('nav[aria-label="Primary"] a[href="/capture"]')?.click();
-      document.querySelector<HTMLElement>('nav[aria-label="Primary"] a[href="/think"]')?.click();
+      document.querySelector<HTMLElement>('nav[aria-label="Primary"] a[href^="/think"]')?.click();
     }, { once: true });
   });
   await page.getByRole('link', { name: 'Skip to content' }).focus();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(`${recallOrigin}/think`);
+  await expect(page).toHaveURL(/\/think\?conversation=[0-9a-f-]{36}$/);
+  const thinkUrl = page.url();
   await expect(page.getByRole('heading', { level: 1, name: 'Think' })).toBeVisible();
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-  await expect(page).toHaveURL(`${recallOrigin}/think`);
+  await expect(page).toHaveURL(thinkUrl);
   await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Think' })).toHaveAttribute('aria-current', 'page');
   expect(await page.evaluate(() => Reflect.get(window, '__hnRetained'))).toBe(true);
 });

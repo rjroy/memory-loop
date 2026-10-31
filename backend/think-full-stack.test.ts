@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { appendFile, lstat, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { relative } from 'node:path';
 import { OpenCode } from '@opencode/client';
@@ -10,6 +10,212 @@ import { fixtureLargeResponse, launchThinkFixture } from '../tests/think-fixture
 
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+it('Phase 5 real UI preserves newer draft across held acknowledgement and background transcript conflict', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary });
+  let browser: Browser | undefined;
+  let releaseAck: () => void = () => {};
+  let handlerDone: Promise<void> | undefined;
+  let original: Buffer | undefined;
+  let transcriptPath: string | undefined;
+  let originalInode: number | undefined;
+  try {
+    const endpoint = await Service.discover({ file: `${fixture.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(new URL('/think', fixture.webUrl).href);
+    await page.waitForURL(/\/think\?conversation=[0-9a-f-]{36}$/);
+    const id = new URL(page.url()).searchParams.get('conversation');
+    if (!id || !/^[0-9a-f-]{36}$/.test(id)) throw new Error('fixture conversation missing');
+    const sid = `ses_memoryloop_${id.replaceAll('-', '')}`;
+    const editor = page.getByRole('textbox', { name: 'Message' });
+    const send = page.getByRole('button', { name: 'Send', exact: true });
+    const conversation = page.getByRole('region', { name: 'Conversation' });
+    const heldText = 'fixture-hold acknowledgement original';
+    await editor.fill(heldText);
+    await vi.waitFor(async () => expect(await send.isEnabled()).toBe(true), { timeout: 30000 });
+    let acceptedStatus: number | undefined;
+    const release = new Promise<void>(resolve => { releaseAck = resolve; });
+    const path = `/api/think/conversations/${id}/messages`;
+    const matches = (url: URL) => url.origin === new URL(fixture.webUrl).origin && url.pathname === path;
+    const intercept = (route: Route) => {
+      if (route.request().method() !== 'POST' || handlerDone) return route.continue();
+      handlerDone = (async () => {
+        const response = await route.fetch({ maxRetries: 0, timeout: 5000 });
+        acceptedStatus = response.status();
+        await release;
+        await route.fulfill({ response });
+        await response.dispose();
+      })();
+      return handlerDone;
+    };
+    await page.route(matches, intercept);
+    try {
+      await send.click();
+      await vi.waitFor(() => expect(acceptedStatus).toBe(202), { timeout: 10000 });
+      await editor.fill('newer unsent draft');
+      await vi.waitFor(async () => expect(await conversation.getByRole('article', { name: /^You, message / }).filter({ hasText: heldText }).count()).toBe(1), { timeout: 30000 });
+      releaseAck();
+      if (handlerDone) await handlerDone;
+    } finally {
+      releaseAck();
+      try { if (handlerDone) await handlerDone; } finally { await page.unroute(matches, intercept); }
+    }
+    await page.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 30000 });
+    expect(await editor.inputValue()).toBe('newer unsent draft');
+    await vi.waitFor(() => expect(fixture.control.info().held).toBeGreaterThan(0), { timeout: 30000 });
+    const fetchState = () => page.evaluate(async url => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('fixture snapshot failed');
+      return await response.json() as { transcript?: { state?: string } };
+    }, `/api/think/conversations/${id}`);
+    await vi.waitFor(async () => expect((await fetchState()).transcript?.state).toBe('up-to-date'), { timeout: 30000 });
+    const ownedPath = `${fixture.workspace}/Conversations/Memory Loop/think-${id}.md`;
+    transcriptPath = ownedPath;
+    await vi.waitFor(async () => { original = await readFile(ownedPath); expect(original.toString('utf8')).toContain(heldText); }, { timeout: 30000 });
+    if (!original) throw new Error('fixture transcript unavailable');
+    originalInode = (await lstat(transcriptPath)).ino;
+    await appendFile(transcriptPath, 'fixture external edit');
+    const form = await native.session.form.create({ sessionID: sid, title: 'Fixture background question', fields: [{ key: 'answer', type: 'string', title: 'Answer', required: true }] }, { signal: AbortSignal.timeout(5000) });
+    await page.getByRole('heading', { name: 'Fixture background question' }).waitFor({ timeout: 30000 });
+    await page.getByRole('textbox', { name: 'Answer (required)' }).fill('fixture answer');
+    await page.getByRole('button', { name: 'Send answer' }).click();
+    await vi.waitFor(async () => expect((await native.session.form.get({ sessionID: sid, formID: form.id }, { signal: AbortSignal.timeout(5000) })).state.status).toBe('answered'), { timeout: 30000 });
+    await page.getByText('Transcript needs attention: file changed.').waitFor({ timeout: 30000 });
+    expect(await editor.inputValue()).toBe('newer unsent draft');
+    expect(await page.getByRole('button', { name: 'Stop', exact: true }).isEnabled()).toBe(true);
+    expect(await page.getByRole('button', { name: /retry logging/i }).count()).toBe(0);
+    expect(await readFile(transcriptPath)).toEqual(Buffer.concat([original, Buffer.from('fixture external edit')]));
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
+    await page.getByRole('button', { name: 'Discard & start' }).click();
+    await vi.waitFor(() => expect(new URL(page.url()).searchParams.get('conversation')).not.toBe(id), { timeout: 30000 });
+    await page.getByText('Some transcripts need attention.').waitFor({ timeout: 30000 });
+    expect((await native.session.active({ signal: AbortSignal.timeout(5000) }))[sid]).toMatchObject({ type: 'running' });
+    const newId = new URL(page.url()).searchParams.get('conversation');
+    if (!newId || !/^[0-9a-f-]{36}$/.test(newId)) throw new Error('fixture new conversation missing');
+    await editor.fill('fixture new chat healthy');
+    await vi.waitFor(async () => expect(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled()).toBe(true), { timeout: 30000 });
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await vi.waitFor(async () => expect((await readFile(`${fixture.workspace}/Conversations/Memory Loop/think-${newId}.md`, 'utf8'))).toContain('fixture new chat healthy'), { timeout: 30000 });
+    expect(await page.getByText('Some transcripts need attention.').count()).toBe(1);
+    await editor.fill('new conversation draft');
+    expect((await lstat(transcriptPath)).ino).toBe(originalInode);
+    await writeFile(transcriptPath, original);
+    await vi.waitFor(async () => expect(await page.getByText('Some transcripts need attention.').count()).toBe(0), { timeout: 30000 });
+    expect(await editor.inputValue()).toBe('new conversation draft');
+    const caughtUp = await readFile(transcriptPath, 'utf8');
+    expect(caughtUp).toContain('fixture answer');
+    expect(caughtUp).not.toContain('fixture external edit');
+    const history = await native.message.list({ sessionID: sid, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    expect(history.data.filter(message => message.type === 'user' && message.text === heldText)).toHaveLength(1);
+    fixture.control.release();
+  } finally {
+    releaseAck();
+    if (handlerDone) await handlerDone.catch(() => {});
+    if (transcriptPath && original && originalInode !== undefined) {
+      const stat = await lstat(transcriptPath).catch(() => undefined);
+      if (stat?.ino === originalInode) {
+        const current = await readFile(transcriptPath);
+        if (current.equals(Buffer.concat([original, Buffer.from('fixture external edit')]))) await writeFile(transcriptPath, original);
+      }
+    }
+    try { await browser?.close(); } finally { await fixture.close(); }
+    await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+}, 240000);
+
+it('Phase 5 actual Think UI owns creation, tool work, questions and reconnect across browser navigation', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary });
+  let browser: Browser | undefined;
+  try {
+    const endpoint = await Service.discover({ file: `${fixture.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await context.newPage();
+    await page.goto(new URL('/think', fixture.webUrl).href);
+    await page.waitForURL(/\/think\?conversation=[0-9a-f-]{36}$/);
+    const id = new URL(page.url()).searchParams.get('conversation');
+    if (!id || !/^[0-9a-f-]{36}$/.test(id)) throw new Error('fixture conversation missing');
+    const sid = `ses_memoryloop_${id.replaceAll('-', '')}`;
+    const editor = page.getByRole('textbox', { name: 'Message' });
+    const sendButton = page.getByRole('button', { name: 'Send', exact: true });
+    await editor.waitFor();
+    await editor.fill('fixture-read actual UI original');
+    await vi.waitFor(async () => expect(await sendButton.isEnabled()).toBe(true), { timeout: 30000 });
+    const editorBox = await editor.boundingBox();
+    const sendBox = await sendButton.boundingBox();
+    if (!editorBox || !sendBox) throw new Error('fixture composer bounds missing');
+    expect(sendBox.x).toBeGreaterThanOrEqual(editorBox.x + editorBox.width - 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await sendButton.click();
+    const conversation = page.getByRole('region', { name: 'Conversation' });
+    const userMessage = conversation.getByRole('article', { name: /^You, message / }).filter({ hasText: 'fixture-read actual UI original' });
+    const aiResponses = conversation.getByRole('article', { name: /^AI, message / }).filter({ hasText: 'fixture-read-complete' });
+    await vi.waitFor(async () => expect(await userMessage.count()).toBe(1), { timeout: 30000 });
+    await vi.waitFor(async () => expect(await aiResponses.count()).toBe(1), { timeout: 30000 });
+    await vi.waitFor(async () => expect((await native.message.list({ sessionID: sid, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) })).data.some(message => message.type === 'assistant' && message.content.some(part => part.type === 'tool' && part.name === 'read' && part.state.status === 'completed'))).toBe(true), { timeout: 30000 });
+    expect(await page.locator('body').innerText()).not.toContain('sentinel.env');
+    const form = await native.session.form.create({ sessionID: sid, title: 'Fixture UI question', fields: [{ key: 'answer', type: 'string', title: 'Answer', required: true }] }, { signal: AbortSignal.timeout(5000) });
+    await page.getByRole('heading', { name: 'Fixture UI question' }).waitFor({ timeout: 30000 });
+    await page.getByRole('textbox', { name: 'Answer (required)' }).fill('fixture UI answer');
+    await page.getByRole('button', { name: 'Send answer' }).click();
+    await vi.waitFor(async () => expect((await native.session.form.get({ sessionID: sid, formID: form.id }, { signal: AbortSignal.timeout(5000) })).state).toEqual({ status: 'answered', answer: { answer: 'fixture UI answer' } }), { timeout: 30000 });
+    await editor.fill('fixture-hold UI background');
+    await vi.waitFor(async () => expect(await sendButton.isEnabled()).toBe(true), { timeout: 30000 });
+    await sendButton.click();
+    await page.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 30000 });
+    await vi.waitFor(() => expect(fixture.control.info().held).toBeGreaterThan(0), { timeout: 30000 });
+    await editor.fill('unsent through navigation');
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Ground' }).click();
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Think' }).click();
+    await vi.waitFor(async () => expect(await editor.inputValue()).toBe('unsent through navigation'), { timeout: 30000 });
+    expect(new URL(page.url()).searchParams.get('conversation')).toBe(id);
+    expect((await native.session.active({ signal: AbortSignal.timeout(5000) }))[sid]).toMatchObject({ type: 'running' });
+    await context.setOffline(true);
+    fixture.control.release();
+    await vi.waitFor(async () => {
+      expect((await native.session.active({ signal: AbortSignal.timeout(5000) }))[sid]?.type).not.toBe('running');
+      expect((await native.session.get({ sessionID: sid }, { signal: AbortSignal.timeout(5000) })).outcome).toBe('succeeded');
+    }, { timeout: 30000 });
+    await context.setOffline(false);
+    await vi.waitFor(async () => expect(await editor.inputValue()).toBe('unsent through navigation'), { timeout: 30000 });
+    await vi.waitFor(async () => expect(await sendButton.isEnabled()).toBe(true), { timeout: 30000 });
+    await vi.waitFor(async () => expect(await aiResponses.count()).toBeGreaterThanOrEqual(2), { timeout: 30000 });
+    const history = await native.message.list({ sessionID: sid, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    expect(history.data.filter(message => message.type === 'user' && message.text === 'fixture-hold UI background')).toHaveLength(1);
+    await page.reload();
+    await vi.waitFor(async () => expect(await editor.inputValue()).toBe(''), { timeout: 30000 });
+    expect(new URL(page.url()).searchParams.get('conversation')).toBe(id);
+    expect((await native.message.list({ sessionID: sid, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) })).data.filter(message => message.type === 'user' && message.text === 'fixture-hold UI background')).toHaveLength(1);
+    await editor.fill('fixture-hold UI old chat');
+    await vi.waitFor(async () => expect(await sendButton.isEnabled()).toBe(true), { timeout: 30000 });
+    await sendButton.click();
+    await page.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 30000 });
+    await vi.waitFor(() => expect(fixture.control.info().held).toBeGreaterThan(0), { timeout: 30000 });
+    await editor.fill('draft to protect');
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
+    await page.getByRole('button', { name: 'Keep writing' }).click();
+    expect(await editor.inputValue()).toBe('draft to protect');
+    expect(await editor.evaluate(element => element === document.activeElement)).toBe(true);
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
+    await page.getByRole('button', { name: 'Discard & start' }).click();
+    await vi.waitFor(() => expect(new URL(page.url()).searchParams.get('conversation')).not.toBe(id), { timeout: 30000 });
+    expect((await native.session.active({ signal: AbortSignal.timeout(5000) }))[sid]).toMatchObject({ type: 'running' });
+    fixture.control.release();
+  } finally {
+    try { await browser?.close(); } finally { await fixture.close(); }
+    await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+}, 240000);
 
 it('PH3-R1 keeps a quiet watch alive across two default heartbeats on the canonical Bun listener', async () => {
   const binary = process.env.OPENCODE_TEST_BINARY;

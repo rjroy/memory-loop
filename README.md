@@ -2,15 +2,17 @@
 
 A personal workspace with four stable destinations: Ground, Capture,
 Think, and Recall. **Recall is built:** browse one configured vault and read
-Markdown without changing it. The other three views remain honest placeholders.
+Markdown without changing it. **Think now has a working conversation UI in the
+isolated local fixture** below. Ground and Capture remain honest placeholders.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
 curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
 The native Next App Router migration (`memory-loop-1l0.2`) is accepted. Next presents the UI and proxies Recall's read-only API routes to
 the authenticated Bun/Hono daemon. Think command/stream/content foundations are
-available in the isolated fixture below, now with vault transcript writing and
-automatic logging recovery. Phase 4 is independently verified and accepted; this is
-not a working Think conversation UI or authorization to activate personal Think.
+available in the isolated fixture below, with conversation controls, reconnect,
+vault transcripts and automatic logging recovery. Phase 4 is independently
+accepted; Phase 5 is independently verified and accepted for fixture use.
+Personal Think activation remains Phase 6 and requires an authorized operator window.
 The daemon reads the JSON-configured vault
 when started. The private Tailscale deployment now uses the selected real vault;
 independent real-deployment verification passed and final review accepted it.
@@ -29,6 +31,8 @@ bun --no-env-file run build
 ```
 
 Build uses the supported default Turbopack and writes `.next/`, not `dist/`.
+Never rebuild an artifact while a live Next process is serving it: use a separate
+copy, as the Think fixture does, or stop the source-owned web process first.
 It needs neither transport/vault configuration nor a running daemon. Native
 `src/app/` pages/layout and explicit Route Handlers are the sole application
 path; there is no React Router, Vite application, static export or `preview` command.
@@ -104,8 +108,8 @@ no Retry logging route/button. Snapshot/watch health stays quiet for short
 storage failures; `warning` becomes true after one minute from the first failure,
 or immediately for a conflict, content gap or invalid logging configuration.
 It clears only after catch-up and synchronization. Other conversations' warnings
-remain in `otherTranscriptWarnings`. The Think UI is still a placeholder; this
-health is available through HTTP, not a shipped logging interface.
+remain in `otherTranscriptWarnings`. Think shows these meaningful warnings quietly
+beside the composer; healthy writes and brief retries have no routine status line.
 
 The **private original-body capture before native dispatch is different**: failure
 there rejects the Send as a resource failure, because the original bytes could
@@ -248,8 +252,8 @@ tested end-to-end; fixture identity-policy and actual proxy-header checks passed
   interpreted metadata. Source H1–H5 shift down one level beneath Recall H1;
   source H6 stays H6. Skipped source levels are not repaired.
 
-There is no search, editing, saving, media viewer, AI, dashboard data, or vault
-write action. Dot entries, symlinks and non-`.md` files are omitted. Empty trees,
+Recall has no search, editing, saving, media viewer, AI action or vault write
+control. Dot entries, symlinks and non-`.md` files are omitted. Empty trees,
 empty notes, config failures, unavailable notes/vaults and transport failures
 are distinct states. See the [approved Recall design](.lore/work/design/recall-read-only.md)
 and [daemon contract](backend/CONTRACT.md).
@@ -269,6 +273,13 @@ not physical-phone acceptance. Native Next and the API-only daemon are implement
 the migration was accepted after its checks and technical/visual review. Real-vault
 deployment has been activated and independently verified; final review accepted it.
 Historical results below do not substitute for the real-deployment verification.
+
+Think Phase 5 passed independent technical verification and visual review after
+TS01–04 and V1–V3 corrections. Later focused verification passed frontend 75,
+project/test TypeScript, build, browser 54 and two actual UI/native cases. This
+is fixture acceptance, not personal activation. A nonblocking enlarged-text
+placeholder issue is tracked in `memory-loop-2sj`; physical phone IME and
+assistive-technology behavior remain unverified.
 
 ```sh
 bun --no-env-file run typecheck
@@ -333,8 +344,9 @@ The visual application (`memory-loop-44w`) adds unchanged approved A.5/A.1 artwo
 IM Fell English SC identity and Libre Baskerville editorial headings, alongside
 the existing Source Sans interface/prose. Compact top navigation frames Parchment
 Capture/Recall reading and a cool Think field. Horizon now marks selected
-locations and dark-context focus; light-context focus is Night. Ground/Capture/Think
-remain unavailable-feature previews without fake forms, conversations or data.
+locations and dark-context focus; light-context focus is Night. At that historical
+44w checkpoint, Ground/Capture/Think were unavailable-feature previews without
+fake forms, conversations or data. Think's current interactive fixture is described below.
 Independent current-build typecheck/build, unit **25/25**, Recall browser **26/26**
 and legacy browser **20/20** pass, with fresh visual **SHIP** and technical
 **Accept**. Backend **87** remains prior unchanged evidence. 44W-T1 is resolved
@@ -352,13 +364,15 @@ and local paths are recorded in [integration provenance](.lore/work/design/chara
 The historical [guidance snapshot](.lore/work/design/personal-brand-snapshot.md)
 is unchanged. No new generated art, dependencies or theme switch were added. Manual
 assistive-technology use and physical-device safe areas have not been verified.
-## Local Think transport fixture
+## Local Think UI and transport fixture
 
 Phase 2 is checkpointed at `0f45fa1`; Phase 3 transport is independently verified
 and accepted at `3ab9a23`. Phase 4 transcript writing/recovery is independently
-verified and accepted after filesystem/security corrections. **This exercises HTTP and ordinary vault Markdown, not a functional
-Think UI.** Interactive Think remains Phase 5; personal/private-Serve activation
-remains Phase 6. `check:daemon` checks Recall's tree only, not Think readiness.
+verified and accepted after filesystem/security corrections. **The fixture now
+serves the real interactive Think UI**, backed by the actual Next/Bun/native
+path and a local scripted provider. Phase 5 is accepted for fixture use;
+personal/private-Serve activation remains Phase 6. `check:daemon` checks Recall's
+tree only, not Think readiness.
 
 Select the already verified OpenCode 2.2.2 native executable explicitly, using
 the characterization prerequisites above:
@@ -373,7 +387,41 @@ own vault/config/HOME/discovery/credentials; no personal setup or real provider
 is used. This is isolation, not an OS sandbox. Only the credential-free loopback
 web URL is printed; do not add credentials to URLs, commands or output.
 
-In a second terminal, substitute the printed URL and create one conversation:
+### Try the conversation UI first
+
+Open the printed web URL with **`/think`** appended. First entry starts a chat
+automatically and replaces the address with `/think?conversation=<opaque-id>`.
+Send **`fixture-read`** to exercise an owned file read and see the reply. In a
+fresh **New chat**, send **`fixture-stop`** to hold the scripted response and try
+Stop while writing another draft. These trigger words belong only to the local
+fixture provider, not normal Think conversations.
+
+- **Enter / Shift+Enter** add a line. Click Send or use **Ctrl+Enter / Cmd+Enter**
+  when eligible; that shortcut never activates Stop. The compact editor grows
+  with your text and stays editable while busy, disconnected or unavailable.
+- **Stop** is explicit and best effort. Disconnecting, changing app tabs or
+  choosing New chat does not stop accepted work; completed effects are not undone.
+- **New chat** starts a different conversation and protects a nonempty draft
+  with an inline discard choice. There is no previous-chat list or Ground resume
+  interface in this layer.
+- Reload/reconnect recovers the **current** chat from its URL (or one per-tab
+  opaque-ID pointer), while the daemon/service live. Drafts survive ordinary
+  app navigation/reconnect, but **not hard reload**. No messages, drafts or outbox
+  are stored in browser storage, and reconnect never auto-sends a draft.
+- Vault transcripts contain full messages and safe activity summaries, appended
+  at canonical boundaries rather than every token. Logging retries automatically;
+  meaningful warnings do not block chat/tools. There is no **Retry logging** button.
+
+The fixture also supports `fixture-large` in a fresh chat for a large-text reply.
+Open `/recall` to browse its **Conversations → Memory Loop** transcripts. Stop the
+fixture with Ctrl-C in its launcher terminal; it removes only its owned processes
+and private directory. Do not change the live Serve mapping or personal setup to
+try this loopback UI.
+
+### Optional HTTP exercise
+
+This lower-level exercise uses a separate fresh conversation. In a second
+terminal, substitute the printed URL and create it:
 
 ```sh
 export FIXTURE_URL='http://127.0.0.1:<printed-port>'
@@ -464,8 +512,8 @@ JS
 ```
 
 Open the printed fixture URL at `/recall`, then browse **Conversations → Memory
-Loop → think-&lt;conversation UUID&gt;.md** to read the ordinary Markdown. No Think
-UI is needed. For an inert built-in file-read exercise instead of the large-text
+Loop → think-&lt;conversation UUID&gt;.md** to read the ordinary Markdown. This HTTP
+exercise does not need the Think UI. For an inert built-in file-read exercise instead of the large-text
 response, repeat with fresh conversation/command IDs and replace `fixture-large`
 in the Send example with `fixture-read`; the scripted provider reads only its
 test-owned sentinel. Never reuse a command ID with changed text.

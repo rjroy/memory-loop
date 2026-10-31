@@ -94,6 +94,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   const watchers = new Map<string, Set<(state: ConversationState | null) => void>>();
   function setConversation(id: string, state: ConversationState): void {
     const previous = conversations.get(id);
+    state = { ...state, sendEligibility: sendEligibility(id, state) };
     conversations.set(id, state);
     if (!previous || state.revision <= previous.revision) return;
     for (const notify of watchers.get(id) ?? []) notify({ ...state });
@@ -149,6 +150,18 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   let identityChanged = false;
   let available = true;
   let closing: Promise<void> | undefined;
+
+  function sendEligibility(id: string, state: ConversationState): ConversationState['sendEligibility'] {
+    if (closed || identityChanged || !available || (monitor && !monitor.healthy) || state.creation !== 'ready') return 'unavailable';
+    return activeRuns.has(id) || activeSessions.has(id) ? 'busy' : 'available';
+  }
+  function refreshEligibility(id: string): void {
+    const state = conversations.get(id);
+    if (state && state.sendEligibility !== sendEligibility(id, state)) setConversation(id, { ...state, revision: state.revision + 1 });
+  }
+  function refreshAllEligibility(): void {
+    for (const id of conversations.keys()) refreshEligibility(id);
+  }
 
   const bodyBytes = async function* (value: string): AsyncIterable<Uint8Array> { yield Buffer.from(value, 'utf8'); };
   const refIdentity = (ref: BodyRef) => JSON.stringify([ref.key.conversationId, ref.key.owner.kind,
@@ -336,14 +349,15 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       if (info.pid !== identity.pid || info.version !== identity.version) {
         identityChanged = true;
         available = false;
+        refreshAllEligibility();
         monitor?.controller.abort();
         console.info('think_identity_outcome', { status: 'changed' });
         return false;
       }
-      if (!identityChanged && !closed) available = true;
+      if (!identityChanged && !closed) { available = true; refreshAllEligibility(); }
       return !identityChanged && !closed;
     } catch {
-      if (!closed) available = false;
+      if (!closed) { available = false; refreshAllEligibility(); }
       return false;
     }
   }
@@ -471,6 +485,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     const connected = new Promise<boolean>(resolve => { setConnected = resolve; });
     const current = { controller, connected, task: Promise.resolve(), healthy: false, generation: 0 };
     monitor = current;
+    refreshAllEligibility();
     current.task = (async () => {
       console.info('think_monitor_attempt');
       try {
@@ -492,6 +507,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
                 finally { controller.signal.removeEventListener('abort', abortIdentity); }
                 if (!valid || controller.signal.aborted) break;
                 current.healthy = true;
+                refreshAllEligibility();
                 current.generation++;
                 connectedAt = Date.now();
                 setConnected(true);
@@ -523,6 +539,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
             current.healthy = false;
             current.generation++;
             if (!closed) available = false;
+            refreshAllEligibility();
             if (iterator?.return) void Promise.resolve().then(() => iterator?.return?.()).catch(() => {});
           }
           if (controller.signal.aborted || identityChanged) break;
@@ -540,6 +557,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         current.healthy = false;
         setConnected(false);
         if (monitor === current) monitor = undefined;
+        refreshAllEligibility();
       }
     })();
     return current;
@@ -572,7 +590,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       console.info('think_original_capture_outcome', { status: 'failed' });
       originalCapture(receipt, 'failed');
       if (!stoppedRuns.has(receipt.runId)) updateSend(receipt, 'rejected');
-      if (activeRuns.get(receipt.conversationId) === receipt.runId) activeRuns.delete(receipt.conversationId);
+      if (activeRuns.get(receipt.conversationId) === receipt.runId) { activeRuns.delete(receipt.conversationId); refreshEligibility(receipt.conversationId); }
       return;
     }
     const current = startMonitor();
@@ -584,7 +602,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       updateSend(receipt, stoppedRuns.has(receipt.runId) ? 'cancelled-before-delivery' : 'monitor-unavailable');
       return;
     }
-    if (stoppedRuns.has(receipt.runId)) { updateSend(receipt, 'cancelled-before-delivery'); if (activeRuns.get(receipt.conversationId) === receipt.runId) activeRuns.delete(receipt.conversationId); return; }
+    if (stoppedRuns.has(receipt.runId)) { updateSend(receipt, 'cancelled-before-delivery'); if (activeRuns.get(receipt.conversationId) === receipt.runId) { activeRuns.delete(receipt.conversationId); refreshEligibility(receipt.conversationId); } return; }
     const id = messageId;
     dispatchedRuns.add(receipt.runId);
     try {
@@ -653,6 +671,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           // Only a successful read can replace its channel's facts; unrelated failures retain them.
           if (active) {
             if (active[sessionID]) activeSessions.add(conversationId); else activeSessions.delete(conversationId);
+            refreshEligibility(conversationId);
           }
           if (permissions) setPermissionPending(conversationId, permissions.data.some(permission => permission.sessionID === sessionID || childConversations.get(permission.sessionID) === conversationId));
           if (!session) break;
@@ -754,6 +773,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
             if (terminal) {
               updateSend(receipt, terminal);
               activeRuns.delete(conversationId);
+              refreshEligibility(conversationId);
               console.info('think_run_reconciled', { outcome: terminal });
             }
           }
@@ -781,7 +801,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     if (!send || send.kind !== 'send') { updateStop(receipt, 'upstream-unconfirmed'); return; }
     if (!dispatchedRuns.has(receipt.runId)) {
       updateSend(send, 'cancelled-before-delivery');
-      if (activeRuns.get(receipt.conversationId) === receipt.runId) activeRuns.delete(receipt.conversationId);
+      if (activeRuns.get(receipt.conversationId) === receipt.runId) { activeRuns.delete(receipt.conversationId); refreshEligibility(receipt.conversationId); }
       updateStop(receipt, 'cancelled-before-delivery');
       return;
     }
@@ -867,7 +887,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       if (conversations.has(conversationId)) throw new ThinkServiceError('command_conflict');
       const receipt: CreateReceipt = { kind: 'create', conversationId, clientCommandId, epoch, state: 'registered' };
       const otherTranscriptWarnings = transcripts.warningCount();
-      const state: ConversationState = { conversationId, epoch, revision: 1, creation: 'registered', ...(otherTranscriptWarnings ? { otherTranscriptWarnings } : {}) };
+      const state: ConversationState = { conversationId, epoch, revision: 1, creation: 'registered', sendEligibility: 'unavailable', ...(otherTranscriptWarnings ? { otherTranscriptWarnings } : {}) };
       commands.set(clientCommandId, receipt);
       setConversation(conversationId, state);
       lifecycle(receipt);
@@ -894,15 +914,15 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       requireAvailable();
       const conversation = conversations.get(conversationId);
       if (!conversation) throw new ThinkServiceError('not_found');
-      if (conversation.creation !== 'ready' || activeRuns.has(conversationId) || activeSessions.has(conversationId)) throw new ThinkServiceError('command_conflict');
+      if (sendEligibility(conversationId, conversation) !== 'available') throw new ThinkServiceError('command_conflict');
       const runId = randomUUID();
       const receipt: SendReceipt = { kind: 'send', conversationId, clientCommandId, runId, epoch, state: 'registered' };
       commands.set(clientCommandId, receipt);
+      runs.set(runId, { conversationId, sendCommandId: clientCommandId });
+      activeRuns.set(conversationId, runId);
       lifecycle(receipt);
       originalCapture(receipt, 'pending');
       sendDigests.set(clientCommandId, digest);
-      runs.set(runId, { conversationId, sendCommandId: clientCommandId });
-      activeRuns.set(conversationId, runId);
       console.info('think_send_registered');
       const controller = new AbortController();
       const task = Promise.resolve().then(() => dispatchSend(receipt, text, controller)).finally(() => { tasks.delete(controller); });

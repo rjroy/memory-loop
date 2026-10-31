@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { destinations } from '../navigation';
 import { PresentationContext, sameQuery } from './presentation';
-import type { NavigationType, PresentationLocation, RecallPosition } from './presentation';
+import type { NavigationType, PresentationLocation, PresentationNavigationOptions, RecallPosition } from './presentation';
 
 // Only the observational part of the standard Navigation API is used. Next owns
 // pushes/replacements; the browser owns traversal. No history state is touched.
@@ -16,8 +16,8 @@ type WindowPosition = { x: number; y: number; element: HTMLElement | null; eleme
 type Snapshot = { location: PresentationLocation; window?: WindowPosition; recall?: RecallPosition; prepared: boolean };
 type View = { location: PresentationLocation; navigationType: NavigationType; recallSnapshot?: RecallPosition };
 type Repair = { requested: boolean };
-type Visit = { view: View; url: string; generation: number; repair: Repair | null; published: boolean; inheritFrom?: string };
-type Intent = { url: string; navigationType: 'PUSH' | 'REPLACE'; generation: number };
+type Visit = { view: View; url: string; generation: number; repair: Repair | null; published: boolean; entryEffect: NavigationType | null; inheritFrom?: string };
+type Intent = { url: string; navigationType: 'PUSH' | 'REPLACE'; generation: number; focus?: 'preserve' };
 const relative = (url: URL) => `${url.pathname}${url.search}${url.hash}`;
 const asLocation = (url: URL, key: string, nativeHash = false): PresentationLocation => ({ key, pathname: url.pathname, search: url.search, hash: url.hash, nativeHash });
 const sameContent = (a: PresentationLocation, b: PresentationLocation) => a.pathname === b.pathname && sameQuery(a.search, b.search);
@@ -110,15 +110,15 @@ export default function PresentationProvider({ children }: { children: ReactNode
     return () => { if (heading.current === registration) heading.current = null; };
   }, [focusHeading]);
 
-  const linkIntent = useCallback((href: string, replace = false) => {
+  const linkIntent = useCallback((href: string, replace = false, focus?: 'preserve') => {
     const url = new URL(href, window.location.href);
     if (url.origin !== window.location.origin) throw new Error('App navigation must be same-origin');
     rememberEntry();
-    intent.current = { url: relative(url), navigationType: replace ? 'REPLACE' : 'PUSH', generation: ++generation.current };
+    intent.current = { url: relative(url), navigationType: replace ? 'REPLACE' : 'PUSH', generation: ++generation.current, focus };
     notify();
   }, [notify, rememberEntry]);
-  const navigate = useCallback((href: string, options?: { replace?: boolean }) => {
-    linkIntent(href, options?.replace);
+  const navigate = useCallback((href: string, options?: PresentationNavigationOptions) => {
+    linkIntent(href, options?.replace, options?.focus);
     if (options?.replace) router.replace(href, { scroll: false });
     else router.push(href, { scroll: false });
   }, [linkIntent, router]);
@@ -132,7 +132,7 @@ export default function PresentationProvider({ children }: { children: ReactNode
     const initial: Snapshot = { location: asLocation(new URL(window.location.href), initialKey), prepared: true };
     snapshots.current.set(initialKey, initial);
     const initialView = asView(initial, 'INITIAL');
-    visit.current = { view: initialView, url: relative(new URL(window.location.href)), generation: generation.current, repair: null, published: false };
+    visit.current = { view: initialView, url: relative(new URL(window.location.href)), generation: generation.current, repair: null, published: false, entryEffect: 'INITIAL' };
     setCommitted(initialView);
 
     const entryChanged = (event: Event) => {
@@ -167,9 +167,18 @@ export default function PresentationProvider({ children }: { children: ReactNode
       const intermediate = intent.current && !requested && !nativeHash && change.navigationType !== 'traverse';
       const epoch = requested?.generation ?? (intermediate ? generation.current - 1 : ++generation.current);
       if (!intermediate) intent.current = null;
+      // A bookkeeping replacement has no new entry effects. If a genuine route
+      // visit on this same browser slot has not committed yet, carry its pending
+      // focus/scroll work through canonicalization instead of losing it. This
+      // belongs only to this visit, never its saved snapshot or a future POP.
+      const entryEffect = requested?.focus === 'preserve'
+        ? action === 'REPLACE' && previous?.view.location.key === key && previous.view.location.pathname === url.pathname && !previous.published
+          ? previous.entryEffect : null
+        : action;
       const nextVisit: Visit = {
         view: asView(snapshot, action), url: targetURL, generation: epoch,
         repair: requested || snapshot.prepared ? null : { requested: false }, published: false,
+        entryEffect,
         inheritFrom: nativeHash ? change.from.key : undefined,
       };
       // Recall may replace its bare URL before its streamed H1 arrives. Keep
@@ -235,25 +244,27 @@ export default function PresentationProvider({ children }: { children: ReactNode
     const previous = rendered.current.location;
     rendered.current = item.view;
     setCommitted(item.view);
-    const { location, navigationType } = item.view;
+    const { location } = item.view;
     if (location.pathname !== '/recall') {
       const title = destinations.find(destination => destination.path === location.pathname)?.label ?? 'Page not found';
       document.title = `${title} · Memory Loop`;
     }
-    if (navigationType === 'INITIAL' || navigationType === 'HASH') return;
-    const hashTraversal = navigationType === 'POP' && (location.nativeHash || (sameContent(previous, location) && previous.hash !== location.hash));
+    const entryEffect = item.entryEffect;
+    if (entryEffect === null) { focusHeading(); return; } // Only an already-pending route-heading request can run.
+    if (entryEffect === 'INITIAL' || entryEffect === 'HASH') return;
+    const hashTraversal = entryEffect === 'POP' && (location.nativeHash || (sameContent(previous, location) && previous.hash !== location.hash));
     if (location.pathname === '/recall' && previous.pathname === '/recall' && !hashTraversal) { focusHeading(); return; }
     const saved = snapshot.window;
     const restored = saved?.elementId === 'view-heading' ? null : saved?.element?.isConnected ? saved.element : saved?.elementId ? document.getElementById(saved.elementId) : null;
-    if (navigationType === 'POP' && (location.pathname !== '/recall' || hashTraversal) && restored) {
+    if (entryEffect === 'POP' && (location.pathname !== '/recall' || hashTraversal) && restored) {
       applying.current = true;
       try { restored.focus({ preventScroll: true }); } finally { applying.current = false; }
     } else { headingFocus.current = item; focusHeading(); }
-    if (navigationType === 'POP' && saved) {
+    if (entryEffect === 'POP' && saved) {
       const frame = requestAnimationFrame(() => { if (isCurrent()) window.scrollTo(saved.x, saved.y); });
       return () => cancelAnimationFrame(frame);
     }
-    if (navigationType !== 'POP') window.scrollTo(0, 0);
+    if (entryEffect !== 'POP') window.scrollTo(0, 0);
   }, [pathname, search, preparing, completedRepair, revision, notify, router, startTransition, focusHeading]);
 
   if (unsupported) return <main id="main-content"><h1>Browser update required</h1><p>Memory Loop requires an updated browser with the Navigation API.</p></main>;

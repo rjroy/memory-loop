@@ -61,8 +61,10 @@ for (const name of views) {
     await page.goto(path);
     await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name })).not.toBeFocused();
+    if (name === 'Think') await expect(page).toHaveURL(/\/think\?conversation=[0-9a-f-]{36}$/);
+    const currentUrl = page.url();
     await page.reload();
-    await expect(page).toHaveURL(new RegExp(`${path}$`));
+    await expect(page).toHaveURL(name === 'Think' ? currentUrl : new RegExp(`${path}$`));
     await expect(page).toHaveTitle(`${name} · Memory Loop`);
   });
 }
@@ -74,7 +76,7 @@ test('navigation preserves history, current-link no-op and focus', async ({ page
   await expect(page.getByRole('heading', { level: 1, name: 'Capture' })).toBeFocused();
   await nav.getByRole('link', { name: 'Capture' }).click();
   await nav.getByRole('link', { name: 'Think' }).click();
-  await expect(page).toHaveURL(/\/think$/);
+  await expect(page).toHaveURL(/\/think\?conversation=[0-9a-f-]{36}$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Think' })).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/\/capture$/);

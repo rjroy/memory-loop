@@ -201,6 +201,15 @@ async function waitForCalls(calls: unknown[], count: number) {
   await vi.waitFor(() => expect(calls).toHaveLength(count));
 }
 
+async function authenticatedSnapshot(f: ReturnType<typeof setup>) {
+  const token = 'a'.repeat(64);
+  const app = createApp({ authority: '127.0.0.1:3000', serviceToken: token, think: f.service,
+    vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+  const response = await app(new Request(`http://127.0.0.1:3000/api/think/conversations/${a.conversationId}`, { headers: { host: '127.0.0.1:3000', authorization: `Bearer ${token}` } }));
+  expect(response.status).toBe(200);
+  return await response.json() as Record<string, unknown>;
+}
+
 describe('Phase 3 authenticated snapshot and watch', () => {
   const authority = '127.0.0.1:3000';
   const token = 'a'.repeat(64);
@@ -1677,6 +1686,7 @@ describe('daemon-owned upstream monitor recovery', () => {
       f.endStream('eof');
       await vi.waitFor(() => expect(f.getServerInfo).toHaveBeenCalled(), { timeout: 8000 });
       await vi.waitFor(async () => await expect(f.service.create(b)).rejects.toMatchObject({ code: 'think_unavailable' }), { timeout: 8000 });
+      expect(await authenticatedSnapshot(f)).toMatchObject({ sendEligibility: 'unavailable' });
       expect(await f.service.command(a.conversationId, send.clientCommandId)).not.toMatchObject({ state: 'completed' });
       expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ runId: receipt.runId });
       expect(f.createSession).toHaveBeenCalledOnce();
@@ -1877,6 +1887,7 @@ describe('R5 positively observed background execution', () => {
       emit('evt_fixture_background', 25);
       await vi.waitFor(() => { expect(f.activeSessions.mock.calls.length).toBeGreaterThan(beforeActive); expect(f.listMessages.mock.calls.length).toBeGreaterThan(beforeHistory); });
       await new Promise<void>(resolve => setImmediate(resolve));
+      await vi.waitFor(async () => expect(await authenticatedSnapshot(f)).toMatchObject({ sendEligibility: 'busy' }));
       await expect(f.service.send({ ...send, clientCommandId: '66666666-6666-4666-8666-666666666666' })).rejects.toMatchObject({ code: 'command_conflict' });
       expect(f.prompt).toHaveBeenCalledOnce();
       expect(f.replyPermission).not.toHaveBeenCalled();
@@ -1889,6 +1900,7 @@ describe('R5 positively observed background execution', () => {
     try {
       await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
       await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      expect(await authenticatedSnapshot(f)).toMatchObject({ sendEligibility: 'available' });
       const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: 'fixture original' };
       await f.service.send(send); await waitForCalls(f.prompts, 1);
       const pending = f.prompts[0];
@@ -1903,11 +1915,13 @@ describe('R5 positively observed background execution', () => {
         durable: { aggregateID: sid, seq, version: 1 }, data: { sessionID: sid } });
       emit('evt_fixture_completion_refresh', 24);
       await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ state: 'completed' }));
+      await vi.waitFor(async () => expect(await authenticatedSnapshot(f)).toMatchObject({ sendEligibility: 'available' }));
       f.active[sid] = { type: 'running' };
       const before = f.activeSessions.mock.calls.length;
       emit('evt_fixture_background', 25);
       await vi.waitFor(() => expect(f.activeSessions.mock.calls.length).toBeGreaterThan(before));
       await new Promise<void>(resolve => setImmediate(resolve));
+      await vi.waitFor(async () => expect(await authenticatedSnapshot(f)).toMatchObject({ sendEligibility: 'busy' }));
       const next = { ...send, clientCommandId: '66666666-6666-4666-8666-666666666666' };
       await expect(f.service.send(next)).rejects.toMatchObject({ code: 'command_conflict' });
       expect(f.prompt).toHaveBeenCalledOnce();
@@ -1915,6 +1929,7 @@ describe('R5 positively observed background execution', () => {
       const after = f.activeSessions.mock.calls.length;
       emit('evt_fixture_background_settled', 26);
       await vi.waitFor(() => expect(f.activeSessions.mock.calls.length).toBeGreaterThan(after));
+      await vi.waitFor(async () => expect(await authenticatedSnapshot(f)).toMatchObject({ sendEligibility: 'available' }));
       await vi.waitFor(async () => expect(await f.service.send(next)).toMatchObject({ kind: 'send' }));
     } finally { await f.service.close(); }
   });

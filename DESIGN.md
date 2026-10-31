@@ -1,11 +1,13 @@
 ---
 name: Memory Loop
-description: Accepted four-mode personal-brand workspace, compact top navigation and reflective read-only Recall.
+description: Four-mode personal-brand workspace with compact top navigation, reflective Recall and an implemented space-first Think conversation surface awaiting final review.
 colors:
   night: "#031315"
   parchment: "#fef6e1"
   lantern: "#efb83f"
   horizon: "#5e8bd6"
+  think-field: "color-mix(in srgb, #5e8bd6 10%, #031315)"
+  think-user: "color-mix(in srgb, #5e8bd6 20%, #031315)"
 typography:
   headline:
     fontFamily: "Source Sans 3, system-ui, sans-serif"
@@ -57,6 +59,31 @@ typography:
     fontSize: "1.0625rem"
     fontWeight: 400
     lineHeight: 1.7
+  think-reading:
+    fontFamily: "Source Sans 3, system-ui, sans-serif"
+    fontSize: "1.0625rem"
+    fontWeight: 400
+    lineHeight: 1.65
+  think-invitation:
+    fontFamily: "IM Fell English SC, Georgia, serif"
+    fontSize: "3.375rem"
+    fontWeight: 400
+    lineHeight: 1.05
+  think-phone-invitation:
+    fontFamily: "IM Fell English SC, Georgia, serif"
+    fontSize: "2.625rem"
+    fontWeight: 400
+    lineHeight: 1.05
+  think-markdown-headline:
+    fontFamily: "Libre Baskerville, Georgia, serif"
+    fontSize: "1.5rem"
+    fontWeight: 400
+    lineHeight: 1.4
+  think-markdown-title:
+    fontFamily: "Libre Baskerville, Georgia, serif"
+    fontSize: "1.25rem"
+    fontWeight: 400
+    lineHeight: 1.4
   note-identity:
     fontFamily: "Libre Baskerville, Georgia, serif"
     fontSize: "1.25rem"
@@ -129,10 +156,40 @@ components:
     rounded: "{rounded.navigation}"
     padding: "8px 10px"
   placeholder-notice:
-    textColor: "context foreground; Think uses Night on Horizon"
+    textColor: "context foreground"
     typography: "{typography.body}"
-    rounded: "0; Think 6px"
-    padding: "1.5rem 0 0; Think 1.75rem 2rem"
+    rounded: "0"
+    padding: "1.5rem 0 0"
+  think-conversation:
+    backgroundColor: "{colors.think-field}"
+    textColor: "{colors.parchment}"
+    typography: "{typography.think-reading}"
+    width: "100%"
+  think-user-message:
+    backgroundColor: "{colors.think-user}"
+    textColor: "{colors.parchment}"
+    typography: "{typography.think-reading}"
+    rounded: "{rounded.notice}"
+    padding: "14px 18px; narrow 12px 16px"
+  think-composer:
+    backgroundColor: "{colors.night}"
+    textColor: "{colors.parchment}"
+    typography: "{typography.body}"
+    rounded: "{rounded.notice}"
+    padding: ".625rem .75rem"
+  think-primary-action:
+    backgroundColor: "{colors.horizon}"
+    textColor: "{colors.night}"
+    typography: "{typography.emphasis}"
+    rounded: "{rounded.navigation}"
+    padding: ".5rem .75rem"
+    width: "5rem"
+  think-new-chat:
+    backgroundColor: "{colors.think-field}"
+    textColor: "{colors.parchment}"
+    typography: "{typography.emphasis}"
+    rounded: "{rounded.navigation}"
+    padding: ".5rem .75rem"
   content-link:
     textColor: "{colors.parchment}"
     typography: "{typography.emphasis}"
@@ -225,7 +282,7 @@ components:
 
 The user approved the [four-mode character board](.lore/work/design/memory-loop-character/index.html) at `acfac1f` and explicitly authorized its application in `memory-loop-44w`, then clarified that its compact horizontal top navigation—not the old app rail/bottom bar—is part of that approved direction. Shared A.5 identity and IM Fell English SC connect four emotional jobs: inspiring Ground, quiet blank-slate Capture, curious Think, and reflective Recall. Older assistant-authored restraint and retained navigation adaptations are superseded, not immutable brand rules.
 
-Ground gives the full, unaltered A.1 narrative artwork enough room beside its invitation. Capture uses Parchment and open space, with no illustration or fake input. Think uses a cool Night/Horizon mixture, a questioning display line and compact A.5. Recall keeps its dark navigation/hierarchy beside a Parchment editorial reader. Artwork frames identity, never note text. No new features, theme switch, invented user content, generated assets, or external resource services are added.
+Ground gives the full, unaltered A.1 narrative artwork enough room beside its invitation. Capture uses Parchment and open space, with no illustration or fake input. Think uses a cool Night/Horizon mixture; its questioning invitation and compact A.5 give way completely to a real conversation. Recall keeps its dark navigation/hierarchy beside a Parchment editorial reader. Artwork frames identity, never reading text. The Think extension reuses the approved world, fonts and artwork without a theme switch, new imagery or invented runtime content.
 
 **Key Characteristics:**
 - Stable navigation and replaceable content.
@@ -236,6 +293,8 @@ Ground gives the full, unaltered A.1 narrative artwork enough room beside its in
 
 Extracted from `src/styles.css`, `src/recall/recall.css`, the shell and four views. `memory-loop-44w` is independently accepted: typecheck/build, frontend unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, fresh visual **SHIP** and technical **Accept**. Backend **87** remains prior unchanged evidence. 44W-T1 is resolved for initial unfocused pointer targets and natural keyboard operation at 844×390/200% text; history/UI-001/002/003 and MS4 regressions remain verified. [Integration provenance](.lore/work/design/character-integration.md) records seven unchanged copied files, three reused Source Sans files, rights, hashes and acceptance evidence. The historical [snapshot](.lore/work/design/personal-brand-snapshot.md) is unchanged. No real vault or remote API is activated.
 
+**Think Phase 5 implementation record:** the [approved space-first UX](.lore/work/design/think-chat-ux.md) and its board extend that incumbent world. Current rules below also describe `src/think/think.css`, the controlled components and persistent shell integration. Independent technical verification and visual review accepted the fixture implementation after corrections. A nonblocking enlarged-text placeholder issue remains tracked as `memory-loop-2sj`. No personal Think activation or physical-device acceptance is claimed.
+
 ## Colors
 
 Night and Parchment carry complementary dark/light contexts. Horizon identifies location and dark-context focus; Lantern offers warmth and the Ground action. The four core values are unchanged. Muted Night `#344548` and Weathered Ivory `#d5d3c5` are source-guide functional neutrals, not new identity colors.
@@ -244,7 +303,7 @@ Night and Parchment carry complementary dark/light contexts. Horizon identifies 
 - **Lantern:** Ground invitation/action, browser text selection, focus-only pane-jump surfaces, and pressed Recall buttons. Night text on Lantern; not a connection-status signal.
 
 ### Secondary
-- **Horizon:** selected app-link/current-file underline; dark-context focus; Think's honest unavailable-feature surface and 10% Horizon/90% Night field. Selection also retains semibold text and `aria-current`.
+- **Horizon:** selected app-link/current-file underline, dark-context focus and Think's Send/Stop action with Night text. Think uses a 10% Horizon/90% Night field and a quiet 20% Horizon/80% Night user-message field. Selection also retains semibold text and `aria-current`.
 
 ### Neutral
 - **Night:** shared top identity/navigation, toolbar, hierarchy and Ground; text/focus on Parchment. Light supporting text is Muted Night.
@@ -259,7 +318,7 @@ Core contrast: Parchment/Night 17.59:1; Lantern/Night 10.47:1; Horizon/Night 5.5
 
 Source Sans 3 regular/semibold remains the interface and reading-prose family. IM Fell English SC regular carries the Memory Loop wordmark and Ground/Think invitations. Libre Baskerville regular carries literal note identity and editorial Markdown headings. Each face is local and ships with its OFL; the two new fonts are preloaded. Native monospace remains code-only. Font synthesis stays disabled.
 
-Route/Files/status headings retain their Source Sans hierarchy. Shared identity is 28px IM Fell with one 40px A.5, at every viewport. Navigation remains 16px Source Sans rather than shrinking on phones; all text scales naturally at 200%. Invitations use bounded fluid IM Fell scales, up to 76.8px on Ground and 68px on Think. Recall retains 28/22/18/17px Markdown steps in Libre Baskerville 400 with 1.4 line height. Code sizes stay relative/explicit as recorded above.
+Route/Files/status headings retain their Source Sans hierarchy. Shared identity is 28px IM Fell with one 40px A.5, at every viewport. Navigation remains 16px Source Sans rather than shrinking on phones; all text scales naturally at 200%. Ground's invitation scales up to 76.8px. Think's empty invitation is 54px desktop / 42px narrow, without space reserved after messages arrive. Recall retains 28/22/18/17px Markdown steps in Libre Baskerville 400 with 1.4 line height; Think uses 24/20/18px headings, 17px/1.65 prose and 14px semibold You/AI labels. These Think sizes are intentional surface rules, not changes to Recall's ramp. Code sizes stay relative/explicit as recorded above.
 
 Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.7 line height; filename/path stay compact in the dark section titlebar. Markdown paragraphs have 1.4em separation, headings 1.8em before / .65em after, and the first content block has no added top margin. These are measures, not a requirement to pad short copy.
 
@@ -270,9 +329,15 @@ Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.
 
 ## Layout
 
-One full-width header precedes the workspace: A.5/IM Fell identity at the start, horizontal Ground/Capture/Think/Recall links at the end when space permits. Flex wrapping moves the link group onto a second top row on phones or enlarged text; links may reflow naturally without clipping or reducing type. Header has 12px vertical padding, safe-area-aware gutters and 8px/24px group gaps. There is no permanent global app sidebar, fixed bottom navigation or reserved bottom-bar clearance. Ordinary workspace insets remain 3.5rem and `clamp(2rem, 4.4vw, 4.5rem)`; Ground keeps its two-column art composition, Capture/Think 64rem measures.
+One full-width header precedes the workspace: A.5/IM Fell identity at the start, horizontal Ground/Capture/Think/Recall links at the end when space permits. Flex wrapping moves the link group onto a second top row on phones or enlarged text; links may reflow naturally without clipping or reducing type. Header has 12px vertical padding, safe-area-aware gutters and 8px/24px group gaps. There is no permanent global app sidebar, fixed bottom navigation or reserved bottom-bar clearance. Ordinary workspace insets remain 3.5rem and `clamp(2rem, 4.4vw, 4.5rem)`; Ground keeps its two-column art composition and Capture its 64rem measure. Think instead gives the available workspace to its conversation and compact composer.
 
-Below 56rem the same top header precedes 2rem/1.25rem workspace insets. All three placeholders use one document scroll. Capture's flex composition has a 24rem minimum inner height to preserve its intentional blank-slate space, not a calculation based on a removed bottom bar.
+Below 56rem the same top header precedes 2rem/1.25rem ordinary workspace insets. Ground/Capture placeholders use one document scroll. Capture's flex composition has a 24rem minimum inner height to preserve its intentional blank-slate space, not a calculation based on a removed bottom bar.
+
+**Think:** a centered 52rem maximum conversation/composer lane, with 68ch maximum messages; 32px desktop side gutters become safe-area-aware 20px gutters below 56rem. At normal portrait/desktop sizes the conversation owns reading scroll and the composer occupies an actual grid row beneath it, never covering the last message. Header height comes from layout, not a guessed deduction from `100dvh`. The textarea starts at 2.875rem (46px at ordinary text), grows only with the draft, then scrolls locally; Send/Stop stays bottom-aligned to its right with a 44px minimum target. No visible Think section bar, Chat details, routine hint or logging footer remains.
+
+The single **New chat** button uses the existing spare desktop gutter at 32px left / 16px below the banner only when the banner's font-scaled container reaches 76em. Otherwise it stays in the existing banner, with a drawn plus below 21em and the same accessible name. It never reserves a side rail or overlays the reading/editor lane; the four native top links remain.
+
+Short views (below 32rem height), or a workspace below 20rem usable height, escape to ordinary page flow with visible reader overflow instead of a miniature reading pane. This also occurs in enlarged portrait layouts. The composer remains after the conversation in document flow; Skip to message and native focus scrolling keep it reachable. Current enlarged-portrait captures expose a residual transition from the cool workspace field to Night below the original viewport; this is an open visual-review finding, not a prescribed surface treatment. Physical OS keyboards/VisualViewport, safe areas and assistive technologies remain device checks, not claims from Chromium.
 
 Recall's app uses `auto minmax(12rem, 1fr)` grid rows within 100dvh: actual top-header height, then the workspace. The lower bound prevents enlarged headers from crushing the working area to zero; if content outgrows a short viewport the page can scroll, rather than clipping controls. Normal layouts keep independent pane scrollers. Desktop Files remains default-visible with the same `clamp(14rem, 22vw, 16rem)` split; the reader stays Parchment and bounded to 68ch.
 
@@ -289,7 +354,7 @@ Surfaces are flat, but no longer emotionally uniform: Night, Parchment and the c
 
 ## Shapes
 
-Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground/Capture notices are separated by a single rule; Think's Horizon notice has 6px corners. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
+Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground/Capture notices are separated by a single rule. Think uses 6px corners for the editor/user field and 4px for actions; AI prose is unboxed, not another bubble or status card. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
 
 All top app links use the same 2px Horizon selected underline, semibold text and programmatic current state across sizes. Current-file underline remains Horizon. None is a general callout stripe.
 
@@ -297,11 +362,11 @@ All top app links use the same 2px Horizon selected underline, semibold text and
 
 ### Navigation
 
-Real page links, not ARIA tab widgets. Existing dimensions, order, current-click/query guard and routing remain. Current location combines Horizon underline, semibold and `aria-current="page"`; keyboard focus is an independent 2px Horizon outline inset 6px against Night.
+Real page links, not ARIA tab widgets. Existing dimensions, order, current-click/query guard and routing remain. Think's link retains its current opaque conversation target, including modified-link behavior; ordinary reactivation does not reset that chat. Current location combines Horizon underline, semibold and `aria-current="page"`; keyboard focus is an independent 2px Horizon outline inset 6px against Night.
 
 ### Notice containers
 
-A section with H2 and explanatory children, at most 42rem wide. Text follows its heading after .5rem. Ground uses a quiet rule under its invitation, Capture rests its honest notice below open space, Think uses Night text on Horizon. Existing tested purpose/unavailable copy is unchanged. No skeleton, alert role, disabled form or simulated service state is added.
+A section with H2 and explanatory children, at most 42rem wide. Text follows its heading after .5rem. Ground uses a quiet rule under its invitation; Capture rests its honest notice below open space. These remaining placeholders are not templates for Think's real errors: Think uses concise contextual exceptions without disabling its editor or simulating service state.
 
 ### Content links
 
@@ -313,7 +378,21 @@ The app skip link is above the viewport until focus; its visible state is Lanter
 
 ### View heading and purpose
 
-A focusable H1 with a modest fixed type scale, followed by body-sized purpose after .75rem in the three placeholder views. Recall uses that H1 within its toolbar instead. Exact route content and focus/history behavior stay in the surface/design records rather than becoming global typography tokens.
+A focusable H1 with a modest fixed type scale, followed by body-sized purpose after .75rem in Ground/Capture. Recall uses that H1 within its toolbar instead. Think registers the same route focus anchor as an accessible, visually hidden H1, with no visible row or purpose paragraph. Exact route content and focus/history behavior stay in the surface/design records rather than becoming global typography tokens.
+
+### Think conversation, composer and New chat
+
+The conversation has a named reading region and chronological message articles with visible and accessible **You / AI** attribution; color is supplementary. Reuse `MarkdownDocument` unchanged: escaped raw HTML, no remote images/embeds, deliberate safe HTTP(S) links with accessible new-tab indication, read-only tasks, keyboard-accessible code and table scrollers. No code-copy toolbar, raw tool payloads, reasoning, message menus or approval controls are added. Native AI activity disclosures show only supplied category/state/duration and retain their expansion state. Ordinary owned questions use labelled native controls and an exact decision reply, never permission approval.
+
+Message is a real labelled textarea (label visually hidden). It stays editable while busy, reconnecting, denied or unavailable. **Enter and Shift+Enter insert lines; eligible Ctrl/Cmd+Enter sends only, never Stop.** IME/repeated key activation is guarded. Send uses the captured identity/draft version; acknowledgement cannot erase newer writing. Its captured original appears once while awaiting the manifest. Stop uses the known run, shows requesting/uncertain/failure states honestly and is best effort—not undo or cancellation caused by navigation.
+
+The shell owns one persistent Think session. `/think?conversation=<opaque-id>` is authoritative; one per-tab `sessionStorage` pointer stores only that ID. Initial bare Think creates once; an existing identity is looked up rather than recreated or resent. Drafts remain volatile through SPA navigation/reconnect and are lost on hard reload. New chat changes identity without stopping previous work; only a nonempty draft prompts the inline **Keep writing / Discard & start** safeguard. There is no prior-chat list or Ground replacement.
+
+The UI follows daemon snapshots/SSE state signals and separately retrieved, versioned body references; it does not own execution truth. Body loading/unloaded/error actions stay local to the part and never retry generation. Selection or reading older content suspends following; **Latest response** uses the existing action column, not a message overlay. Reading anchors survive content growth. Reader resizing keeps an active question control within the boundary, including its focus outline, but waits until a pointer activation finishes before moving its target. Accessible absolute labels have local positioning contexts so they cannot extend document height outside the reader.
+
+Healthy/transient transcript writes stay quiet. Only server-classified persistent/conflict warnings appear beside the composer, including background warnings across New chat. No routine Connected/All saved line, Retry logging control or generation retry is implied. Admission, run, monitoring, content and logging remain separate state facts without becoming five permanent status widgets.
+
+**Evidence boundary:** independent actual UI/native and held-acknowledgement/background-warning cases passed in `/tmp/opencode/think-phase5-actual-ui-verified.log` and `/tmp/opencode/think-phase5-ack-background-acceptance.log`; the integrated unit/TypeScript result is recorded in `/tmp/opencode/think-phase5-integrated-unit-green.log`. Author captures/geometry in `/tmp/opencode/think-phase5-refinement-after-v2/` cover 1440×900, 390×844, 320×568 and 844×390 at 100% and 200% text. At 320px document height fell from 745px to 568px; a focused question measured 402.08–446.47px inside reader 121–454px. Native answer state, replied receipt, settled UI and subsequent AI continuation were observed. These focused results do not close whole-phase convergence, fresh technical/visual reviews or the residual enlarged-portrait surface finding.
 
 ### Recall toolbar and buttons
 

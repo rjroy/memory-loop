@@ -74,6 +74,7 @@ export interface ConversationState {
   epoch: string;
   revision: number;
   creation: CreateState;
+  sendEligibility: 'available' | 'busy' | 'unavailable';
   permissionCompatibility?: 'incompatible';
   permissionPending?: boolean;
   transcript?: TranscriptHealth;

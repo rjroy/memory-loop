@@ -10,7 +10,7 @@ const clientCommandId = '22222222-2222-4222-8222-222222222222';
 const epoch = '33333333-3333-4333-8333-333333333333';
 const command: CreateConversationCommand = { conversationId, clientCommandId };
 const receipt: CreateReceipt = { ...command, kind: 'create', epoch, state: 'registered' };
-const state: ConversationState = { conversationId, epoch, revision: 1, creation: 'ready' };
+const state: ConversationState = { conversationId, epoch, revision: 1, creation: 'ready', sendEligibility: 'available' };
 const snapshot = { ...state, entries: [], contentHealth: 'complete' as const };
 const base = '/api/think/conversations';
 

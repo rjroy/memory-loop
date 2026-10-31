@@ -3,6 +3,11 @@
 import { createContext, useContext } from 'react';
 
 export type NavigationType = 'INITIAL' | 'PUSH' | 'REPLACE' | 'POP' | 'HASH';
+export interface PresentationNavigationOptions {
+  replace?: boolean;
+  /** URL bookkeeping does not start a new focus/scroll transition. */
+  focus?: 'preserve';
+}
 export interface PresentationLocation {
   key: string;
   pathname: string;
@@ -25,7 +30,7 @@ export interface Presentation {
   rememberEntry(): void;
   registerRecallCapture(key: string, capture: () => RecallPosition): () => void;
   registerHeading(route: string, element: HTMLHeadingElement): () => void;
-  navigate(href: string, options?: { replace?: boolean }): void;
+  navigate(href: string, options?: PresentationNavigationOptions): void;
   /** Registers a Next Link intent; Next itself performs the navigation. */
   linkIntent(href: string, replace?: boolean): void;
 }

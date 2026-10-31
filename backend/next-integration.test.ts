@@ -18,13 +18,14 @@ let calls: Array<{ url: string | undefined; method: string | undefined; headers:
 let output = '';
 let watchMode: 'normal' | 'redirect' | 'malformed' | 'oversized' = 'normal';
 let watchClosed = 0;
+let snapshotEligibility: unknown;
 const conversationId = '11111111-1111-4111-8111-111111111111';
 const commandId = '22222222-2222-4222-8222-222222222222';
 const epoch = '33333333-3333-4333-8333-333333333333';
 const watchPath = `/api/think/conversations/${conversationId}/events`;
 const bodyRef = { key: { conversationId, owner: { kind: 'original', clientCommandId: commandId, messageId: 'msg_fixture_owned' } },
   epoch, contentId: '44444444-4444-4444-8444-444444444444', generation: '55555555-5555-4555-8555-555555555555', through: 123, kind: 'canonical', sha256: 'a'.repeat(64) };
-const watchSnapshot = { conversationId, epoch, revision: 1, creation: 'ready', contentHealth: 'complete',
+const watchSnapshot = { conversationId, epoch, revision: 1, creation: 'ready', sendEligibility: 'available', contentHealth: 'complete',
   entries: [{ kind: 'original', displayOrder: 0, clientCommandId: commandId, messageId: 'msg_fixture_owned', body: bodyRef, nativeDebug: 'fixture-private-entry' }],
   nativeDebug: 'fixture-private-snapshot' };
 const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: '', NEXT_TELEMETRY_DISABLED: '1', NODE_ENV: 'production' };
@@ -197,7 +198,7 @@ describe('production Next HTTP boundary', () => {
             const timer = setTimeout(() => {
               if (mode === 'normal') {
                 res.write('event: heartbeat\ndata: {}\n\n');
-                res.write(`event: revision\ndata: ${JSON.stringify({ conversationId, epoch, revision: 2, creation: 'ready', nativeDebug: 'fixture-private-update' })}\n\n`);
+                res.write(`event: revision\ndata: ${JSON.stringify({ conversationId, epoch, revision: 2, creation: 'ready', sendEligibility: 'busy', nativeDebug: 'fixture-private-update' })}\n\n`);
               } else if (mode === 'malformed') res.end('event: revision\ndata: {"fixture-private-invalid":\n\n');
               else res.end(`event: revision\ndata: ${'fixture-private-oversized'.repeat(4000)}\n\n`);
             }, mode === 'normal' ? 5500 : 10);
@@ -207,7 +208,7 @@ describe('production Next HTTP boundary', () => {
           if (body.includes('44444444-4444-4444-8444-444444444444')) { res.destroy(); return; }
           const clientCommandId = commandId;
           const receipt = { kind: 'create', conversationId, clientCommandId, epoch, state: 'registered' };
-          const state = watchSnapshot;
+          const state = snapshotEligibility === undefined ? watchSnapshot : { ...watchSnapshot, sendEligibility: snapshotEligibility };
           res.writeHead(req.method === 'POST' ? 202 : 200, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
           res.end(JSON.stringify(req.url.includes('/commands/') || req.method === 'POST' ? receipt : state));
           return;
@@ -251,6 +252,24 @@ describe('production Next HTTP boundary', () => {
     expect(calls[0].headers.cookie).toBeUndefined();
     expect(response.body + JSON.stringify(response.headers) + output).not.toContain(token);
   });
+
+  it('projects only validated authoritative Send eligibility on the real Next snapshot boundary', async () => {
+    try {
+      for (const eligibility of ['available', 'busy', 'unavailable'] as const) {
+        snapshotEligibility = eligibility;
+        const response = await request(`/api/think/conversations/${conversationId}`);
+        expect(response.status).toBe(200);
+        const value: unknown = JSON.parse(response.body);
+        expect(value).toMatchObject({ conversationId, epoch, sendEligibility: eligibility });
+        expect(response.body).not.toContain('fixture-private-snapshot');
+      }
+      snapshotEligibility = { state: 'available', nativeDebug: 'fixture-private-eligibility' };
+      const malformed = await request(`/api/think/conversations/${conversationId}`);
+      expect(malformed.body).not.toContain('fixture-private-eligibility');
+      if (malformed.status === 200) expect(JSON.parse(malformed.body)).not.toHaveProperty('sendEligibility');
+      else expect(malformed.status).toBeGreaterThanOrEqual(400);
+    } finally { snapshotEligibility = undefined; }
+  });
   it('forwards fixed Think create, state and receipt routes with fresh daemon credentials', async () => {
     calls = [];
     const conversationId = '11111111-1111-4111-8111-111111111111';
@@ -267,7 +286,7 @@ describe('production Next HTTP boundary', () => {
     expect(calls[0].headers.cookie).toBeUndefined();
     const state = await request(base);
     expect(state.status).toBe(200);
-    expect(JSON.parse(state.body)).toMatchObject({ conversationId, creation: 'ready' });
+    expect(JSON.parse(state.body)).toMatchObject({ conversationId, creation: 'ready', sendEligibility: 'available' });
     const receipt = await request(`${base}/commands/${clientCommandId}`);
     expect(receipt.status).toBe(200);
     expect(JSON.parse(receipt.body)).toMatchObject({ kind: 'create', conversationId, clientCommandId });
@@ -294,7 +313,7 @@ describe('production Next HTTP boundary', () => {
     calls = [];
     const response = await request(`/api/think/conversations/${conversationId}`);
     expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toMatchObject({ conversationId, epoch, revision: 1, creation: 'ready', entries: [
+    expect(JSON.parse(response.body)).toMatchObject({ conversationId, epoch, revision: 1, creation: 'ready', sendEligibility: 'available', entries: [
       expect.objectContaining({ kind: 'original', clientCommandId: commandId, messageId: 'msg_fixture_owned', body: bodyRef }),
     ] });
     expect(response.body).not.toContain('fixture-private');
@@ -342,7 +361,7 @@ describe('production Next HTTP boundary', () => {
       const frames = watchFrames(res);
       const first = await frames.frame();
       expect(first.type).toBe('snapshot');
-      expect(first.value).toMatchObject({ conversationId, epoch, revision: 1, entries: [expect.objectContaining({ kind: 'original', body: bodyRef })] });
+      expect(first.value).toMatchObject({ conversationId, epoch, revision: 1, sendEligibility: 'available', entries: [expect.objectContaining({ kind: 'original', body: bodyRef })] });
       expect(first.raw).not.toContain('fixture-private');
       const start = Date.now();
       const heartbeat = await frames.frame(8000);
@@ -350,7 +369,7 @@ describe('production Next HTTP boundary', () => {
       expect(heartbeat.type).toBe('heartbeat');
       const later = await frames.frame();
       expect(later.type).toBe('revision');
-      expect(later.value).toMatchObject({ conversationId, epoch, revision: 2 });
+      expect(later.value).toMatchObject({ conversationId, epoch, revision: 2, sendEligibility: 'busy' });
       expect(later.raw).not.toContain('fixture-private');
       expect(calls).toHaveLength(1);
       expect(calls[0]).toMatchObject({ method: 'GET', url: watchPath });

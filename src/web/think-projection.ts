@@ -61,8 +61,10 @@ function transcriptHealth(value: unknown, conversationId: string): Record<string
 
 export function projectConversation(value: unknown, conversationId: string, snapshot: boolean): Record<string, unknown> {
   if (!obj(value) || value.conversationId !== conversationId || !id(value.epoch) || !number(value.revision) || !choices(value.creation, ['registered', 'ready', 'upstream-unconfirmed', 'rejected']) ||
+      !choices(value.sendEligibility, ['available', 'busy', 'unavailable']) ||
       (value.permissionCompatibility !== undefined && value.permissionCompatibility !== 'incompatible') || (value.permissionPending !== undefined && typeof value.permissionPending !== 'boolean')) throw new Error('invalid conversation');
   const result: Record<string, unknown> = { conversationId, epoch: value.epoch, revision: value.revision, creation: value.creation,
+    sendEligibility: value.sendEligibility,
     ...(value.permissionCompatibility === undefined ? {} : { permissionCompatibility: value.permissionCompatibility }), ...(value.permissionPending === undefined ? {} : { permissionPending: value.permissionPending }) };
   if (value.transcript !== undefined) result.transcript = transcriptHealth(value.transcript, conversationId);
   if (value.otherTranscriptWarnings !== undefined) {

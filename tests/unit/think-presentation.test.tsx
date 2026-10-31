@@ -17,7 +17,7 @@ function fixture(overrides: Partial<ThinkPresentationState> = {}) {
     draft: { text: 'fixture draft', version: 7 }, composer: { kind: 'send', eligible: true }, run: { state: 'none' },
     monitoring: 'following', questions: [], history: { state: 'complete' }, newChat: 'idle', rejectedSubmissions: [], ...overrides };
   const actions = { editDraft: vi.fn(), send: vi.fn(), stop: vi.fn(), requestNewChat: vi.fn(), cancelNewChat: vi.fn(), confirmNewChat: vi.fn(),
-    checkConnection: vi.fn(), retryBody: vi.fn(), loadQuestion: vi.fn(), editQuestion: vi.fn(), replyQuestion: vi.fn(), recoverRejected: vi.fn() } satisfies ThinkPresentationActions;
+    checkConnection: vi.fn(), retryBody: vi.fn(), editQuestion: vi.fn(), replyQuestion: vi.fn(), recoverRejected: vi.fn() } satisfies ThinkPresentationActions;
   const presentation: ThinkPresentation = { state, actions };
   return { presentation, actions };
 }

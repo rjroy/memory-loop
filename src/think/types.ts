@@ -62,9 +62,7 @@ export interface ThinkTranscriptWarning {
   readonly otherCount: number;
 }
 
-export type ThinkQuestionDetail =
-  | { readonly state: 'loading' | 'unavailable' | 'unsupported' }
-  | { readonly state: 'ready'; readonly title: string; readonly fields: ReadonlyArray<Readonly<ThinkFormField>> };
+export type ThinkQuestionDetail = { readonly state: 'ready'; readonly title: string; readonly fields: ReadonlyArray<Readonly<ThinkFormField>> };
 
 export interface ThinkQuestion {
   readonly decisionId: string;
@@ -114,7 +112,6 @@ export interface ThinkPresentationActions {
   confirmNewChat(): void;
   checkConnection(): void;
   retryBody(identity: ThinkKnownIdentity, ref: BodyRef): void;
-  loadQuestion(identity: ThinkKnownIdentity, decisionId: string): void;
   editQuestion(identity: ThinkKnownIdentity, decisionId: string, answer: FormReplyCommand['answer']): void;
   replyQuestion(identity: ThinkKnownIdentity, decisionId: string, answer: FormReplyCommand['answer']): void;
   recoverRejected(identity: ThinkKnownIdentity, clientCommandId: string, replaceDraftVersion?: number): void;

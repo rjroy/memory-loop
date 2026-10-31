@@ -75,7 +75,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   const identityKey = (identity: ThinkKnownIdentity) => JSON.stringify([identity.conversationId, identity.epoch]);
   const commandKey = (identity: ThinkKnownIdentity, commandId: string) => JSON.stringify([identity.conversationId, identity.epoch, commandId]);
   const questionKey = (identity: ThinkKnownIdentity, decisionId: string) => JSON.stringify([identity.conversationId, identity.epoch, decisionId]);
-  const questionRequest = (question: ThinkQuestion) => question.detail.state === 'ready' ? JSON.stringify([question.detail.title, question.detail.fields]) : undefined;
+  const questionRequest = (question: ThinkQuestion) => JSON.stringify([question.detail.title, question.detail.fields]);
   type CommandRead = { id: string; version: number; controller: AbortController; requested: boolean };
   let commandRead: CommandRead | undefined;
   let commandTimer: ReturnType<typeof setTimeout> | undefined;
@@ -92,9 +92,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   let bodyWorkers = 0;
   const questions = new Map<string, ThinkQuestion[]>();
   const questionReads = new Map<string, AbortController>();
-  const questionDetailReads = new Map<string, number>();
   const questionEpochs = new Map<string, string>();
-  let questionReadSequence = 0;
   let presentation: ThinkPresentation;
 
   function ownedIdentity(identity: ThinkKnownIdentity): boolean {
@@ -298,25 +296,19 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     const key = JSON.stringify([id, epoch, version, 'list']);
     if (questionReads.has(key)) return;
     const controller = new AbortController();
-    const sequence = ++questionReadSequence;
     questionReads.set(key, controller);
     void Promise.resolve().then(() => client.decisions(id, controller.signal)).then(items => {
       if (!scoped(identity, version) || controller.signal.aborted) return;
       const existing = questions.get(id) ?? [];
       const next = items.map(item => {
         const prior = existing.find(question => question.decisionId === item.decisionId);
-        const detailKey = questionKey(identity, item.decisionId);
-        const newerDetail = (questionDetailReads.get(detailKey) ?? 0) > sequence;
-        if (!newerDetail) questionDetailReads.set(detailKey, sequence);
-        const question: ThinkQuestion = prior && newerDetail ? prior
-          : { decisionId: item.decisionId, detail: { state: 'ready', title: item.title, fields: item.fields }, answer: prior?.answer ?? {}, reply: prior?.reply ?? 'idle' };
+        const question: ThinkQuestion = { decisionId: item.decisionId, detail: { state: 'ready', title: item.title, fields: item.fields }, answer: prior?.answer ?? {}, reply: prior?.reply ?? 'idle' };
         const reply = replies.get(questionKey(identity, item.decisionId));
         return withReply(!prior && reply && reply.request === questionRequest(question) ? { ...question, answer: reply.answer } : question, identity);
       });
       for (const prior of existing) {
         const reply = replies.get(questionKey(identity, prior.decisionId));
-        if (!next.some(item => item.decisionId === prior.decisionId) &&
-            (reply && commandPending(reply) || (questionDetailReads.get(questionKey(identity, prior.decisionId)) ?? 0) > sequence)) next.push(withReply(prior, identity));
+        if (!next.some(item => item.decisionId === prior.decisionId) && reply && commandPending(reply)) next.push(withReply(prior, identity));
       }
       questions.set(id, next);
       update({});
@@ -669,25 +661,6 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       if (!ownedIdentity(identity) || ref.key.conversationId !== identity.conversationId || ref.epoch !== identity.epoch || !state.entries.some(entry => 'body' in entry && keyOf(entry.body) === keyOf(ref))) return;
       loadBody(ref, identity.conversationId, generation); update({});
     },
-    loadQuestion(identity, decisionId) {
-      if (!ownedIdentity(identity)) return;
-      const version = generation;
-      const key = questionKey(identity, decisionId);
-      const sequence = ++questionReadSequence;
-      questionDetailReads.set(key, sequence);
-      const controller = new AbortController();
-      questionReads.get(key)?.abort(); questionReads.set(key, controller);
-      void client.decision(identity.conversationId, decisionId, controller.signal).then(detail => {
-        if (!scoped(identity, version) || controller.signal.aborted || questionDetailReads.get(key) !== sequence) return;
-        const previous = questions.get(identity.conversationId) ?? [];
-        const item = previous.find(question => question.decisionId === decisionId);
-        if (!item) return;
-        questions.set(identity.conversationId, previous.map(question => question.decisionId === decisionId ? withReply({ ...question, detail: { state: 'ready', title: detail.title, fields: detail.fields } }, identity) : question)); update({});
-      }).catch(() => {
-        if (!scoped(identity, version) || controller.signal.aborted || questionDetailReads.get(key) !== sequence) return;
-        questions.set(identity.conversationId, (questions.get(identity.conversationId) ?? []).map(question => question.decisionId === decisionId ? { ...question, detail: { state: 'unavailable' } } : question)); update({});
-      }).finally(() => { if (questionReads.get(key) === controller) questionReads.delete(key); });
-    },
     editQuestion(identity, decisionId, answer) {
       if (!ownedIdentity(identity)) return;
       const value = structuredClone(answer);
@@ -697,7 +670,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       if (!ownedIdentity(identity)) return;
       const list = questions.get(identity.conversationId) ?? [];
       const question = list.find(item => item.decisionId === decisionId);
-      if (!question || question.detail.state !== 'ready' || question.reply !== 'idle' && question.reply !== 'rejected') return;
+      if (!question || question.reply !== 'idle' && question.reply !== 'rejected') return;
       const clientCommandId = randomUUID();
       if (!uuid.test(clientCommandId)) return;
       const captured: FormReplyCommand['answer'] = structuredClone(answer);

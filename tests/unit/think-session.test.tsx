@@ -419,6 +419,25 @@ describe('Phase 5 reviewed command reconciliation', () => {
   const lifecycle = (clientCommandId: string, runId: string, state: 'completed' | 'admitted'): ThinkSnapshot['entries'][number] =>
     ({ kind: 'lifecycle', displayOrder: 1, clientCommandId, runId, state });
 
+  it('retains a pending reply and its answer when a refreshed question list omits it', async () => {
+    const f = fixture();
+    const held = deferred<Awaited<ReturnType<typeof f.client.reply>>>();
+    const answer = { answer: 'fixture retained answer' };
+    vi.mocked(f.client.decisions).mockResolvedValueOnce([form]).mockResolvedValue([]);
+    vi.mocked(f.client.reply).mockReturnValue(held.promise);
+    try {
+      f.session.setLocation(think(a));
+      await waitFor(() => expect(f.session.getPresentation().state.questions).toHaveLength(1));
+      f.session.getPresentation().actions.replyQuestion(identity, form.decisionId, answer);
+      await waitFor(() => expect(f.client.reply).toHaveBeenCalledOnce());
+      f.session.checkConnection();
+      await waitFor(() => expect(f.client.decisions).toHaveBeenCalledTimes(2));
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(f.session.getPresentation().state.questions[0]).toMatchObject({ decisionId: form.decisionId, answer, reply: 'registered' });
+      expect(f.client.reply).toHaveBeenCalledOnce();
+    } finally { f.session.close(); }
+  });
+
   it('THINK-TS-02 rejected local HTTP 409 does not veto the newly observed owned run', async () => {
     const f = fixture();
     let current = snapshot(a);

@@ -14,12 +14,6 @@ export default function ThinkQuestion({ identity, question, actions }: QuestionP
   const id = useId();
   const [validation, setValidation] = useState('');
   const detail = question.detail;
-  if (detail.state !== 'ready') return <section className="think-question" aria-label="AI question">
-    <p className="think-role">AI question</p>
-    <p>{detail.state === 'loading' ? 'Loading question…' : detail.state === 'unsupported' ? 'This question cannot be displayed.' : 'Couldn’t load this question.'}</p>
-    {detail.state === 'unavailable' && <button type="button" className="think-button think-secondary" onClick={() => actions.loadQuestion(identity, question.decisionId)}>Retry question</button>}
-  </section>;
-
   const answer = { ...question.answer };
   for (const field of detail.fields) {
     if (answer[field.key] === undefined && field.default !== undefined) answer[field.key] = field.default;

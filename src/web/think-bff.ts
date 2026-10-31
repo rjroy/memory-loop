@@ -3,6 +3,7 @@ import { allowsWebRequest } from './request-policy';
 import { projectConversation } from './think-projection';
 import { parseContentRequest } from '../../backend/think/content-transfer';
 import { thinkErrors } from '../../backend/think/contract';
+import { classifyThinkJsonRoute } from './think-json-route';
 
 type Method = 'GET' | 'POST';
 export interface ThinkBffDependencies {
@@ -14,17 +15,6 @@ export interface ThinkBffDependencies {
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const base = '/api/think/conversations';
 const decisionId = '[A-Za-z0-9_-]{1,128}';
-const routes = [
-  { method: 'POST', pattern: new RegExp(`^${base}$`) },
-  { method: 'GET', pattern: new RegExp(`^${base}/${uuid}$`) },
-  { method: 'GET', pattern: new RegExp(`^${base}/${uuid}/commands/${uuid}$`) },
-  { method: 'GET', pattern: new RegExp(`^${base}/${uuid}/content/${uuid}$`) },
-  { method: 'POST', pattern: new RegExp(`^${base}/${uuid}/messages$`) },
-  { method: 'POST', pattern: new RegExp(`^${base}/${uuid}/runs/${uuid}/stop$`) },
-  { method: 'GET', pattern: new RegExp(`^${base}/${uuid}/decisions$`) },
-  { method: 'GET', pattern: new RegExp(`^${base}/${uuid}/decisions/${decisionId}$`) },
-  { method: 'POST', pattern: new RegExp(`^${base}/${uuid}/decisions/${decisionId}/reply$`) },
-] as const;
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
 const errors = {
   ...thinkErrors,
@@ -141,11 +131,10 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
   let response: Response;
   try {
     const url = new URL(request.url);
-    const route = routes.find(item => item.pattern.test(url.pathname));
-    const segments = url.pathname.slice(base.length).split('/').filter(Boolean);
-    const content = request.method === 'GET' && segments[1] === 'content' && segments.length === 3;
+    const route = classifyThinkJsonRoute(url, request.method);
+    const content = request.method === 'GET' && route?.operation === 'content';
     if (!allowsWebRequest(request, dependencies.transport.config.web)) response = failure('forbidden');
-    else if (!route || url.hash || (content ? !parseContentRequest(segments[0], segments[2], url.searchParams) : (url.search && !(request.method === 'GET' && new RegExp(`^${base}/${uuid}$`).test(url.pathname) && [...url.searchParams.keys()].length === 1 && /^[A-Za-z0-9_-]{1,256}\.[a-f0-9]{64}$/.test(url.searchParams.get('cursor') ?? ''))))) response = failure('not_found');
+    else if (!route) response = failure('not_found');
     else if (request.method !== route.method) response = failure('method_not_allowed');
     else {
       let body: Uint8Array | undefined;

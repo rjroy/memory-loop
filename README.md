@@ -407,8 +407,8 @@ fresh **New chat**, send **`fixture-stop`** to hold the scripted response and tr
 Stop while writing another draft. These trigger words belong only to the local
 fixture provider, not normal Think conversations.
 
-- **Enter / Shift+Enter** add a line. Click Send or use **Ctrl+Enter / Cmd+Enter**
-  when eligible; that shortcut never activates Stop. The compact editor grows
+- **Enter** sends when eligible; **Shift+Enter** adds a line. Click Send or use
+  **Ctrl+Enter / Cmd+Enter** as alternatives; shortcuts never activate Stop. The compact editor grows
   with your text and stays editable while busy, disconnected or unavailable.
 - **Stop** is explicit and best effort. Disconnecting, changing app tabs or
   choosing New chat does not stop accepted work; completed effects are not undone.

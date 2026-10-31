@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ThinkView from '../../src/views/ThinkView';
 import type { ThinkPresentation, ThinkPresentationActions, ThinkPresentationState } from '../../src/think/types';
@@ -45,21 +46,40 @@ describe('Think presentation contract', () => {
     expect(editor).toHaveValue('fixture draft');
   });
 
-  it('sends only eligible Ctrl/Cmd Enter, never ordinary, repeated or composing Enter', () => {
+  it('sends eligible Enter and retains Ctrl/Cmd Enter shortcuts', () => {
     const { presentation, actions } = fixture();
     show(presentation);
     const editor = screen.getByRole('textbox', { name: 'Message' });
     fireEvent.keyDown(editor, { key: 'Enter' });
-    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
-    fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true, repeat: true });
-    fireEvent.compositionStart(editor);
-    fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true, isComposing: true });
-    fireEvent.compositionEnd(editor);
-    expect(actions.send).not.toHaveBeenCalled();
     fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true });
     fireEvent.keyDown(editor, { key: 'Enter', metaKey: true });
-    expect(actions.send).toHaveBeenCalledTimes(2);
+    expect(actions.send).toHaveBeenCalledTimes(3);
+    expect(actions.send).toHaveBeenCalledWith(identity, 7);
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveAttribute('aria-keyshortcuts', 'Enter Control+Enter Meta+Enter');
     expect(actions.stop).not.toHaveBeenCalled();
+  });
+
+  it('inserts a newline for Shift+Enter without sending', async () => {
+    const { presentation, actions } = fixture();
+    show(presentation);
+    const editor = screen.getByRole('textbox', { name: 'Message' });
+    await userEvent.click(editor);
+    await userEvent.keyboard('{Shift>}{Enter}{/Shift}');
+    expect(actions.editDraft).toHaveBeenCalledWith('fixture draft\n');
+    expect(actions.send).not.toHaveBeenCalled();
+  });
+
+  it('does not send repeated or composing Enter', () => {
+    const { presentation, actions } = fixture();
+    show(presentation);
+    const editor = screen.getByRole('textbox', { name: 'Message' });
+    fireEvent.keyDown(editor, { key: 'Enter', repeat: true });
+    fireEvent.compositionStart(editor);
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    fireEvent.compositionEnd(editor);
+    fireEvent.keyDown(editor, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(editor, { key: 'Enter', keyCode: 229 });
+    expect(actions.send).not.toHaveBeenCalled();
   });
 
   it('only an explicit Stop targets the recorded run, never an editor shortcut', () => {

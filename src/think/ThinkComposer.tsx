@@ -68,7 +68,7 @@ export default function ThinkComposer({ presentation: { state, actions }, editor
       aria-describedby={descriptionId} onChange={event => actions.editDraft(event.target.value)}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
       onKeyDown={event => {
-        if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+        if (event.key !== 'Enter' || event.shiftKey || event.altKey) return;
         if (composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
         event.preventDefault();
         if (!event.repeat) send();
@@ -76,8 +76,8 @@ export default function ThinkComposer({ presentation: { state, actions }, editor
     <div className="think-action-column">
       {latest && <button type="button" className="think-button think-latest" aria-label="Latest response" onClick={onLatest}>Latest</button>}
       <button type="button" className="think-button think-primary" disabled={!canSend && !canStop}
-        aria-keyshortcuts={action.kind === 'send' ? 'Control+Enter Meta+Enter' : undefined}
-        title={action.kind === 'send' ? 'Send (Ctrl+Enter / Cmd+Enter)' : undefined}
+        aria-keyshortcuts={action.kind === 'send' ? 'Enter Control+Enter Meta+Enter' : undefined}
+        title={action.kind === 'send' ? 'Send (Enter); new line (Shift+Enter)' : undefined}
         onPointerDown={() => { pointer.current = signature; }} onPointerCancel={() => { pointer.current = null; }}
         onKeyDown={event => {
           if (event.key !== 'Enter' && event.key !== ' ') return;

@@ -26,7 +26,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ## Interaction boundaries
 
 - Hidden registered route H1, visible/accessibly named You/AI articles, unchanged safe `MarkdownDocument`, native activity disclosures and owned ordinary question forms; no tool approvals or raw payloads.
-- Editor always editable. Enter/Shift+Enter insert lines; eligible Ctrl/Cmd+Enter sends, never stops; respect IME/repeats and captured draft versions. Stop is exact-target, explicit and best effort.
+- Editor always editable. Enter sends when eligible; Shift+Enter inserts a line; Ctrl/Cmd+Enter also sends. Editor shortcuts never stop; respect IME/repeats and captured draft versions. Stop is exact-target, explicit and best effort.
 - URL-first current conversation plus one opaque per-tab ID pointer; volatile SPA/reconnect draft, hard-reload draft loss, no prior-chat list. Initial bare Think creates once. Inline draft discard safeguard only when needed.
 - Consume authoritative snapshots/SSE signals and separately loaded body references. Content retries are not generation retries. Quiet automatic logging; only meaningful server warnings, including background issues across New chat.
 - Preserve selection/reading anchors; Latest belongs in the action column. Reader resizing reveals focused controls without moving a pointer target before activation completes. Native page-flow/focus scrolling remains available when space is insufficient.

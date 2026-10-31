@@ -29,7 +29,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 - Editor always editable. Enter sends when eligible; Shift+Enter inserts a line; Ctrl/Cmd+Enter also sends. Editor shortcuts never stop; respect IME/repeats and captured draft versions. Stop is exact-target, explicit and best effort.
 - URL-first current conversation plus one opaque per-tab ID pointer; volatile SPA/reconnect draft, hard-reload draft loss, no prior-chat list. Initial bare Think creates once. Inline draft discard safeguard only when needed.
 - Consume authoritative snapshots/SSE signals and separately loaded body references. Content retries are not generation retries. Quiet automatic logging; only meaningful server warnings, including background issues across New chat.
-- Preserve selection/reading anchors; Latest belongs in the action column. Reader resizing reveals focused controls without moving a pointer target before activation completes. Native page-flow/focus scrolling remains available when space is insufficient.
+- Preserve selection/reading anchors; Latest floats over the conversation above the composer, outside layout flow, without moving or resizing transcript/editor/Send/Stop. Reader resizing reveals focused controls without moving a pointer target before activation completes. Native page-flow/focus scrolling remains available when space is insufficient.
 
 ## Evidence and unresolved boundary
 

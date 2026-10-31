@@ -76,6 +76,7 @@
 .think-empty-invitation img { width: 64px; height: 64px; flex: none; }
 
 .think-compose-area { position: relative; min-width: 0; padding: 8px 32px max(16px, env(safe-area-inset-bottom, 0px)); background: var(--surface); }
+.think-compose-measure { position: relative; }
 .think-compose-row { display: flex; align-items: flex-end; gap: .5rem; }
 .think-compose-row textarea {
   display: block;
@@ -122,7 +123,9 @@
 .think-secondary { color: var(--parchment); background: transparent; border-color: var(--muted); }
 .think-secondary:hover:enabled { color: var(--night); background: var(--parchment); }
 .think-button:active:enabled { color: var(--night); background: var(--lantern); }
-.think-latest { width: 5rem; padding-inline: .25rem; color: var(--parchment); background: transparent; font-size: .875rem; font-weight: 400; }
+/* Float above the entire composer (including notices), never in its layout or
+   the scrolling transcript. Appearing must not resize either reading/writing area. */
+.think-latest { position: absolute; z-index: 1; inset-inline-end: 0; bottom: calc(100% + 1rem); width: 5rem; padding-inline: .25rem; color: var(--parchment); background: var(--night); border-color: var(--rule); font-size: .875rem; font-weight: 400; }
 .think-view--conversation .think-latest { font-size: .875rem; font-weight: 400; }
 .think-text-button { padding-inline: .25rem; color: var(--parchment); background: transparent; text-decoration: underline; text-underline-offset: .2em; }
 .think-latest:hover, .think-text-button:hover { text-decoration: underline; text-decoration-thickness: 2px; }

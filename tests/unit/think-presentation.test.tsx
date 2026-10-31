@@ -114,6 +114,46 @@ describe('Think presentation contract', () => {
     expect(screen.queryByText(/connected|saving|you can draft|keyboard hint/i)).not.toBeInTheDocument();
   });
 
+  it('keeps Latest outside composer layout and preserves draft focus until explicit keyboard activation', async () => {
+    const { presentation, actions } = fixture({ messages: [
+      { role: 'assistant', messageId: 'msg_ai', displayOrder: 1, activity: [], parts: [{ messageId: 'msg_ai', ordinal: 0, closure: 'closed', capture: 'complete', content: { state: 'ready', ref, text: 'Controlled response' } }] },
+    ] });
+    const { container } = show(presentation);
+    const reader = screen.getByRole('region', { name: 'Conversation' });
+    reader.style.overflowY = 'auto'; // Test-owned pane scroll model, not jsdom layout.
+    Object.defineProperties(reader, { scrollHeight: { value: 1000 }, clientHeight: { value: 300 } });
+    reader.scrollTop = 700;
+    fireEvent.scroll(reader);
+    expect(screen.queryByRole('button', { name: 'Latest response' })).not.toBeInTheDocument();
+    const editor = screen.getByRole('textbox', { name: 'Message' });
+    const send = screen.getByRole('button', { name: 'Send' });
+    const composeRow = container.querySelector('.think-compose-row')!;
+    const composeChildren = [...composeRow.children];
+    editor.focus();
+    reader.scrollTop = 100;
+    fireEvent.wheel(reader, { deltaY: -100 });
+    fireEvent.scroll(reader);
+    const latest = screen.getByRole('button', { name: 'Latest response' });
+    expect(latest).toHaveClass('think-latest');
+    expect(latest.parentElement).toHaveClass('think-compose-measure');
+    expect(composeRow).not.toContainElement(latest);
+    expect([...composeRow.children]).toEqual(composeChildren);
+    expect(screen.getByRole('textbox', { name: 'Message' })).toBe(editor);
+    expect(screen.getByRole('button', { name: 'Send' })).toBe(send);
+    expect(editor).toHaveFocus();
+    expect(editor).toHaveValue('fixture draft');
+    fireEvent.change(editor, { target: { value: 'still writing' } });
+    expect(actions.editDraft).toHaveBeenCalledExactlyOnceWith('still writing');
+    latest.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(reader.scrollTop).toBe(1000);
+    expect(reader).toHaveFocus();
+    expect(screen.queryByRole('button', { name: 'Latest response' })).not.toBeInTheDocument();
+    expect([...composeRow.children]).toEqual(composeChildren);
+    expect(actions.send).not.toHaveBeenCalled();
+    expect(actions.stop).not.toHaveBeenCalled();
+  });
+
   it('replies to the owned question with its exact identity, without permission approval controls', () => {
     const answer = { answer: 'fixture response' };
     const { presentation, actions } = fixture({ questions: [{ decisionId: 'form_fixture_question', detail: { state: 'ready', title: 'Fixture question', fields: [{ key: 'answer', type: 'string', title: 'Answer', required: true }] }, answer, reply: 'idle' }] });

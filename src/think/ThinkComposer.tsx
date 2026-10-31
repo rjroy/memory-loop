@@ -6,12 +6,10 @@ import type { ThinkPresenterProps } from './types';
 
 interface ComposerProps extends ThinkPresenterProps {
   editorRef: RefObject<HTMLTextAreaElement | null>;
-  latest: boolean;
-  onLatest(): void;
   descriptionId?: string;
 }
 
-export default function ThinkComposer({ presentation: { state, actions }, editorRef, latest, onLatest, descriptionId }: ComposerProps) {
+export default function ThinkComposer({ presentation: { state, actions }, editorRef, descriptionId }: ComposerProps) {
   const composing = useRef(false);
   const pressed = useRef<string | null>(null);
   const pointer = useRef<string | null>(null);
@@ -74,7 +72,6 @@ export default function ThinkComposer({ presentation: { state, actions }, editor
         if (!event.repeat) send();
       }} />
     <div className="think-action-column">
-      {latest && <button type="button" className="think-button think-latest" aria-label="Latest response" onClick={onLatest}>Latest</button>}
       <button type="button" className="think-button think-primary" disabled={!canSend && !canStop}
         aria-keyshortcuts={action.kind === 'send' ? 'Enter Control+Enter Meta+Enter' : undefined}
         title={action.kind === 'send' ? 'Send (Enter); new line (Shift+Enter)' : undefined}

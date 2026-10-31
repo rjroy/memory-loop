@@ -207,7 +207,7 @@ function Conversation({ presentation }: ThinkPresenterProps) {
     const finishPointer = () => {
       if (!readerPointer.current) return;
       // pointerup precedes mouseup/click. Finish that native activation before
-      // changing scroll position or the action column's height under its target.
+      // changing scroll position under its target.
       release = setTimeout(() => { readerPointer.current = false; settleReading(); }, 0);
     };
     window.addEventListener('pointerup', finishPointer, true);
@@ -308,6 +308,16 @@ function Conversation({ presentation }: ThinkPresenterProps) {
     </section>
     <div className="think-compose-area">
       <div className="think-compose-measure">
+        {latest && <button type="button" className="think-button think-latest" aria-label="Latest response" onClick={() => {
+          const region = reader.current;
+          if (!region) return;
+          const buttonFocused = document.activeElement instanceof HTMLElement && document.activeElement.getAttribute('aria-label') === 'Latest response';
+          if (getComputedStyle(region).overflowY === 'visible') region.scrollIntoView({ block: 'end', behavior: 'instant' });
+          else { following.current = true; region.scrollTop = region.scrollHeight; }
+          setLatest(false);
+          rememberAnchor();
+          if (buttonFocused) region.focus({ preventScroll: true });
+        }}>Latest</button>}
         {state.newChat === 'confirm-discard' && <div className="think-draft-confirm" role="group" aria-label="Discard draft" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); dismissNewChat(); } }}>
           <p>Discard this draft and start a new chat?</p>
           <div className="think-inline-actions"><button type="button" className="think-button think-secondary" ref={keepWriting} onClick={dismissNewChat}>Keep writing</button>
@@ -327,16 +337,7 @@ function Conversation({ presentation }: ThinkPresenterProps) {
           {exceptions.length > 0 && <p>{exceptions.join(' ')}</p>}
         </div>
         {canCheck && <button type="button" className="think-button think-text-button" onClick={actions.checkConnection}>{state.monitoring === 'denied' ? 'Check access' : 'Check connection'}</button>}
-        <ThinkComposer presentation={presentation} editorRef={editor} latest={latest} descriptionId={exceptions.length ? noticeId : undefined} onLatest={() => {
-          const region = reader.current;
-          if (!region) return;
-          const buttonFocused = document.activeElement instanceof HTMLElement && document.activeElement.getAttribute('aria-label') === 'Latest response';
-          if (getComputedStyle(region).overflowY === 'visible') region.scrollIntoView({ block: 'end', behavior: 'instant' });
-          else { following.current = true; region.scrollTop = region.scrollHeight; }
-          setLatest(false);
-          rememberAnchor();
-          if (buttonFocused) region.focus({ preventScroll: true });
-        }} />
+        <ThinkComposer presentation={presentation} editorRef={editor} descriptionId={exceptions.length ? noticeId : undefined} />
         <p className="visually-hidden" role="status" aria-live="polite">{announcement}</p>
       </div>
     </div>

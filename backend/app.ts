@@ -6,6 +6,8 @@ import type { ThinkService, ThinkUnavailableCode } from './think/service';
 import { ThinkServiceError } from './think/service';
 import { parseContentRequest } from './think/content-transfer';
 import { parseVaultId, type VaultReader } from './vault';
+import { captureBodyLimit, parseCaptureRequest } from './capture-contract';
+import { CaptureError, type CaptureWriter } from './capture';
 
 export type VaultState = { reader: VaultReader } |
   { error: Extract<VaultErrorCode, 'config_missing' | 'config_invalid' | 'vault_unavailable'> };
@@ -16,6 +18,7 @@ export interface AppOptions {
   allowedOrigins?: readonly string[];
   serviceToken?: string;
   vault: VaultState;
+  capture?: CaptureWriter;
   think?: ThinkService | { error: ThinkUnavailableCode };
   watchPolicy?: { leaseMs: number; heartbeatMs: number };
 }
@@ -89,7 +92,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.use('*', async (context, next) => {
     const requestId = randomUUID();
     const path = context.req.path;
-    const operation = path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === thinkBase || path.startsWith(`${thinkBase}/`) ? 'think' : 'other';
+    const operation = path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/capture' ? 'capture' : path === thinkBase || path.startsWith(`${thinkBase}/`) ? 'think' : 'other';
     console.info('vault_api_attempt', { requestId, operation });
     try {
       const headers = context.req.raw.headers;
@@ -100,7 +103,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         const match = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') ?? '');
         if (!match || !timingSafeEqual(expected, Buffer.from(match[1], 'hex'))) {
           context.res = Response.json({ error: { code: 'unauthorized', message: 'Service authentication required' } }, { status: 401 });
-        } else if (context.req.method !== 'GET' && !(context.req.method === 'POST' && (path === thinkBase ||
+        } else if (context.req.method !== 'GET' && !(context.req.method === 'POST' && (path === '/api/capture' || path === thinkBase ||
           /^\/api\/think\/conversations\/[^/]+\/(?:messages|runs\/[^/]+\/stop|decisions\/[^/]+\/reply)$/.test(path)))) {
           context.res = Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 });
         } else await next();
@@ -111,6 +114,18 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     context.header('Cache-Control', 'no-store');
     context.header('X-Content-Type-Options', 'nosniff');
     console.info('vault_api_outcome', { requestId, operation, status: context.res.status });
+  });
+  app.post('/api/capture', async context => {
+    const input = parseCaptureRequest(await jsonInput(context.req.raw, captureBodyLimit));
+    if (!input) return Response.json({ error: { code: 'invalid_request', message: 'Invalid Capture request (maximum 1 MiB of UTF-8 text)' } }, { status: 400 });
+    if (!options.capture) return Response.json({ error: { code: 'capture_unavailable', message: 'Capture is unavailable' } }, { status: 503 });
+    try {
+      await options.capture.capture(input.text);
+      return context.json({ ok: true });
+    } catch (error: unknown) {
+      const code = error instanceof CaptureError ? error.code : 'capture_uncertain';
+      return Response.json({ error: { code, message: code === 'capture_uncertain' ? 'Capture save is unconfirmed' : 'Capture is unavailable' } }, { status: 503 });
+    }
   });
   app.get('/api/vault/tree', async context => {
     if ('error' in options.vault) return publicError(options.vault.error);

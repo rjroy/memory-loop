@@ -13,6 +13,7 @@ import { parseThinkConfig } from './think/config';
 import { nativeSessions } from './think/native';
 import { createThinkService, type ThinkService, type ThinkUnavailableCode } from './think/service';
 import { createBodyStore, type BodyStore } from './think/body-store';
+import { openCaptureWriter, type CaptureWriter } from './capture';
 
 export interface ServerOptions {
   /** Directory containing .memory-loop/config.json, independent of the web build. */
@@ -85,11 +86,17 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
     vault = { error: code === 'config_missing' || code === 'config_invalid' ? code : 'vault_unavailable' };
   }
   const think = await prepareThink(config, vault, transportFile);
+  let capture: CaptureWriter | undefined;
+  if (config && 'reader' in vault) {
+    console.info('capture_setup_attempt');
+    try { capture = await openCaptureWriter(config.vaultDirectory); console.info('capture_setup_outcome', { status: 'ready' }); }
+    catch { console.info('capture_setup_outcome', { status: 'unavailable' }); }
+  }
   try {
-    const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault, think });
-    return { fetch, async close() { try { if (!('error' in think)) await think.close(); } finally { if ('reader' in vault) await vault.reader.close(); } } };
+    const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault, think, capture });
+    return { fetch, async close() { try { if (!('error' in think)) await think.close(); } finally { try { await capture?.close(); } finally { if ('reader' in vault) await vault.reader.close(); } } } };
   } catch (error) {
-    try { if (!('error' in think)) await think.close(); } finally { if ('reader' in vault) await vault.reader.close(); }
+    try { if (!('error' in think)) await think.close(); } finally { try { await capture?.close(); } finally { if ('reader' in vault) await vault.reader.close(); } }
     throw error;
   }
 }

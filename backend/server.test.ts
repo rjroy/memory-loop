@@ -2,6 +2,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer, type Server } from 'node:http';
+import type { SessionCreateInput, SessionInfo } from '@opencode/client';
+import { Service } from '@opencode/client/service';
 import { prepareServer, type PreparedServer } from './server';
 import * as configModule from './config';
 import * as vaultModule from './vault';
@@ -12,9 +15,11 @@ let fixture: string;
 let projectRoot: string;
 let vault: string;
 let server: PreparedServer | undefined;
+let nativeFixture: Server | undefined;
 
 beforeEach(async () => {
   server = undefined;
+  nativeFixture = undefined;
   fixture = await mkdtemp(join(tmpdir(), 'memory-loop-server-test-'));
   projectRoot = join(fixture, 'app');
   vault = join(fixture, 'vault');
@@ -29,10 +34,80 @@ beforeEach(async () => {
 afterEach(async () => {
   try {
     await server?.close();
+    if (nativeFixture) await new Promise<void>((resolve, reject) => nativeFixture?.close(error => error ? reject(error) : resolve()));
   } finally {
     vi.restoreAllMocks();
     if (fixture) await rm(fixture, { recursive: true, force: true });
   }
+});
+
+it('discovers the explicit fixture service and creates an owned native session through the daemon', async () => {
+  const fixturePassword = 'fixture-only-password';
+  const auth = `Basic ${Buffer.from(`opencode:${fixturePassword}`).toString('base64')}`;
+  const nativeCalls: string[] = [];
+  const created: SessionInfo[] = [];
+  nativeFixture = createServer(async (req, res) => {
+    nativeCalls.push(`${req.method} ${req.url}`);
+    if (req.headers.authorization !== auth) { res.writeHead(401).end('{}'); return; }
+    res.setHeader('content-type', 'application/json');
+    if (req.method === 'GET' && req.url === '/api/info') {
+      res.end(JSON.stringify({ version: '2.2.2', pid: process.pid, urls: [], paths: { tmp: fixture } }));
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/api/session') {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      const input: SessionCreateInput = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (!input.id || !input.location || !input.permissions || !input.metadata) { res.writeHead(400).end('{}'); return; }
+      const session: SessionInfo = { id: input.id, projectID: 'fixture-project', location: input.location,
+        metadata: input.metadata, permissions: input.permissions.map(rule => ({ ...rule })), cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, time: { created: 1, updated: 1 } };
+      created.push(session);
+      res.end(JSON.stringify({ data: session }));
+      return;
+    }
+    if (req.method === 'GET' && created[0] && req.url === `/api/session/${created[0].id}`) {
+      res.end(JSON.stringify({ data: created[0] }));
+      return;
+    }
+    res.writeHead(404).end('{}');
+  });
+  await new Promise<void>((resolve, reject) => nativeFixture?.listen(0, '127.0.0.1', resolve).once('error', reject));
+  const address = nativeFixture.address();
+  if (!address || typeof address === 'string') throw new Error('fixture listener unavailable');
+  const url = `http://127.0.0.1:${address.port}`;
+  const registrationFile = join(fixture, 'service.json');
+  await writeFile(registrationFile, JSON.stringify({ url, pid: process.pid, version: '2.2.2', password: fixturePassword }), { mode: 0o600 });
+  expect(await Service.discover({ file: registrationFile, version: '2.2.2' })).toBeDefined();
+  await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault,
+    think: { service: { registrationFile, requiredVersion: '2.2.2' }, location: { kind: 'vault' }, permissionMode: 'full' } }));
+  const request = await start();
+  const conversationId = '11111111-1111-4111-8111-111111111111';
+  const clientCommandId = '22222222-2222-4222-8222-222222222222';
+  const response = await request('/api/think/conversations', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ conversationId, clientCommandId }) });
+  expect(response.status).toBe(202);
+  expect(await response.json()).toMatchObject({ kind: 'create', conversationId, clientCommandId });
+  await vi.waitFor(() => expect(created).toHaveLength(1));
+  expect(created[0]).toMatchObject({ id: `ses_memoryloop_${conversationId.replaceAll('-', '')}`,
+    location: { directory: vault }, permissions: [{ action: '*', resource: '*', effect: 'allow' }] });
+  await vi.waitFor(async () => expect(await (await request(`/api/think/conversations/${conversationId}`)).json()).toMatchObject({ creation: 'ready' }));
+  expect(nativeCalls).toContain(`GET /api/session/ses_memoryloop_${conversationId.replaceAll('-', '')}`);
+  expect((await request('/api/vault/tree')).status).toBe(200);
+});
+
+it.each([
+  ['invalid mode', 'restricted', 'think_config_invalid'],
+  ['unavailable service', 'full', 'think_unavailable'],
+] as const)('keeps Recall available with %s', async (_label, permissionMode, code) => {
+  const think = { service: { registrationFile: join(fixture, 'missing-service.json'), requiredVersion: '2.2.2' }, location: { kind: 'vault' }, permissionMode };
+  await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault, think }));
+  const request = await start();
+  expect((await request('/api/vault/tree')).status).toBe(200);
+  const response = await request('/api/think/conversations', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ conversationId: '11111111-1111-4111-8111-111111111111', clientCommandId: '22222222-2222-4222-8222-222222222222' }) });
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({ error: { code } });
 });
 
 async function start() {

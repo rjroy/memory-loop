@@ -287,3 +287,26 @@ and local paths are recorded in [integration provenance](.lore/work/design/chara
 The historical [guidance snapshot](.lore/work/design/personal-brand-snapshot.md)
 is unchanged. No new generated art, dependencies or theme switch were added. Manual
 assistive-technology use and physical-device safe areas have not been verified.
+# Local Think fixture
+
+For an isolated, local HTTP exercise (not a functional Think UI), select the
+installed OpenCode 2.2.2 native executable explicitly and run:
+
+```sh
+OPENCODE_TEST_BINARY=/absolute/path/to/opencode.exe bun --no-env-file run think:fixture
+```
+
+The command builds a separate Next copy and prints its loopback URL. For example,
+substitute that URL below to register a conversation (use fresh UUIDs for each
+new command):
+
+```sh
+curl -X POST "$FIXTURE_URL/api/think/conversations" -H 'content-type: application/json' \
+  -d '{"conversationId":"11111111-1111-4111-8111-111111111111","clientCommandId":"22222222-2222-4222-8222-222222222222"}'
+curl "$FIXTURE_URL/api/think/conversations/11111111-1111-4111-8111-111111111111"
+```
+
+Use Ctrl-C to stop its owned processes and remove its private fixture
+directory. It uses only a local scripted model; it does not use a personal
+OpenCode configuration or a real provider. `bun --no-env-file run think:fixture
+--help` shows usage without starting services.

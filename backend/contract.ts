@@ -1,6 +1,8 @@
 /** One vault, configured by .memory-loop/config.json at daemon startup. */
 export interface VaultConfig {
   vaultDirectory: string;
+  /** Validated independently so invalid Think settings do not disable Recall. */
+  think?: unknown;
 }
 
 /** Identifiers are vault-relative sequences of individual filename components. */

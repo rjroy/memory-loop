@@ -1,0 +1,10 @@
+import { thinkRoute } from '../../../../../../../../web/think-route';
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const GET = thinkRoute;
+export const POST = thinkRoute;
+export const HEAD = thinkRoute;
+export const OPTIONS = thinkRoute;
+export const PUT = thinkRoute;
+export const PATCH = thinkRoute;
+export const DELETE = thinkRoute;

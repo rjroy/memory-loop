@@ -1,59 +1,22 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { createReadStream, writeFileSync } from 'node:fs';
-import { chmod, copyFile, lstat, mkdir, mkdtemp, open, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
-import { isAbsolute, join, normalize, relative } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { OpenCode } from '@opencode/client';
 import type { SessionMessageInfo } from '@opencode/client';
 import { Service } from '@opencode/client/service';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { prepareIsolatedLaunch, type Inspect } from '../tests/opencode/isolation';
 import { readinessFromOutput } from '../tests/opencode/readiness';
+import { preflightExecutable } from '../tests/opencode/native-binary';
+import { prepareServer, type PreparedServer } from './server';
 
 const anchor = '/tmp/opencode';
 const forbiddenPorts = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
-const cliSuffix = '/@opencode+cli@2.2.2/node_modules/@opencode/cli/bin/opencode.exe';
-
-async function hashFile(path: string): Promise<string> {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
-  return hash.digest('hex');
-}
-
-async function preflightExecutable(executable: string): Promise<void> {
-  if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('unsupported native fixture platform');
-  if (!isAbsolute(executable) || normalize(executable) !== executable || executable.includes('\0') || !executable.endsWith(cliSuffix)) throw new Error('invalid native binary selector');
-  const install = executable.slice(0, -cliSuffix.length);
-  const cliPackage = join(install, '@opencode+cli@2.2.2/node_modules/@opencode/cli');
-  const platformPackage = join(install, '@opencode+cli-linux-x64@2.2.2/node_modules/@opencode/cli-linux-x64');
-  const platformExecutable = join(platformPackage, 'bin/opencode');
-  for (const path of [cliPackage, platformPackage, executable, platformExecutable, join(cliPackage, 'package.json'), join(platformPackage, 'package.json')]) {
-    if (await realpath(path) !== path) throw new Error('native installation contains a symlink');
-  }
-  const [cliStat, platformStat, cliRaw, platformRaw] = await Promise.all([
-    lstat(executable), lstat(platformExecutable), readFile(join(cliPackage, 'package.json'), 'utf8'), readFile(join(platformPackage, 'package.json'), 'utf8'),
-  ]);
-  if (!cliStat.isFile() || !platformStat.isFile() || !(cliStat.mode & 0o111) || !(platformStat.mode & 0o111)) throw new Error('native executable is not an executable regular file');
-  const file = await open(executable, 'r');
-  try {
-    const signature = Buffer.alloc(4);
-    const { bytesRead } = await file.read(signature, 0, 4, 0);
-    if (bytesRead !== 4 || !signature.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) throw new Error('native executable is not ELF');
-  } finally { await file.close(); }
-  const cli: unknown = JSON.parse(cliRaw);
-  const platform: unknown = JSON.parse(platformRaw);
-  if (typeof cli !== 'object' || cli === null || !('name' in cli) || cli.name !== '@opencode/cli' || !('version' in cli) || cli.version !== '2.2.2' ||
-      typeof platform !== 'object' || platform === null || !('name' in platform) || platform.name !== '@opencode/cli-linux-x64' || !('version' in platform) || platform.version !== '2.2.2') {
-    throw new Error('native package metadata mismatch');
-  }
-  if (cliStat.dev !== platformStat.dev || cliStat.ino !== platformStat.ino) {
-    if (await hashFile(executable) !== await hashFile(platformExecutable)) throw new Error('native binary does not match installed platform package');
-  }
-}
-
 const inspect: Inspect = async path => {
   try {
     const stat = await lstat(path);
@@ -99,7 +62,7 @@ async function stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
   catch (error: unknown) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; }
 }
 
-it.each(['baseline', 'agent', 'mcp'] as const)('characterizes native capabilities using the %s fixture profile', async profile => {
+it.each(['baseline', 'agent', 'mcp', 'daemon'] as const)('characterizes native capabilities using the %s fixture profile', async profile => {
   // No contents of the system configuration are read, even when inspection fails.
   if (await inspect('/etc/opencode') !== 'missing') throw new Error('system OpenCode configuration is not definitely absent');
   if (await inspect(anchor) !== 'directory' || await realpath(anchor) !== anchor) throw new Error('untrusted fixture anchor');
@@ -120,6 +83,7 @@ it.each(['baseline', 'agent', 'mcp'] as const)('characterizes native capabilitie
   const readRequested = deferred<void>();
   const readResultSeen = deferred<void>();
   const stopPartial = deferred<void>();
+  const daemonStopStarted = deferred<void>();
   const sentinelPath = join(root, 'owned-external', 'sentinel.env');
   let allowInterruption = false;
   let readAdvertised = false;
@@ -129,6 +93,10 @@ it.each(['baseline', 'agent', 'mcp'] as const)('characterizes native capabilitie
   const watchers: Array<{ controller: AbortController; outcome: Promise<{ kind: 'complete' } | { kind: 'error'; error: unknown }> }> = [];
   let diagnostics: (() => Promise<void>) | undefined;
   let child: ChildProcessWithoutNullStreams | undefined;
+  let daemon: PreparedServer | undefined;
+  let restoreDaemonLogs: (() => void) | undefined;
+  let daemonMainFinished = false;
+  const daemonQueryAfterFinish: Record<string, number> = { status: 0, active: 0, history: 0 };
   const pending = new Set<ServerResponse>();
   let requests = 0;
   let responsesFinished = 0;
@@ -273,11 +241,13 @@ it.each(['baseline', 'agent', 'mcp'] as const)('characterizes native capabilitie
         emit({ content: 'fixture-aux' }, 'stop');
       } else if (stopTurn) {
         countProvider(requestPhase, 'stop-response');
+        daemonStopStarted.resolve();
         response.writeHead(200, { 'content-type': 'text/event-stream' });
         response.write(`data: ${JSON.stringify({ id: 'fixture-stop', object: 'chat.completion.chunk', created: 1, model: 'fixture-model', choices: [{ index: 0, delta: { content: 'fixture-stop-partial' }, finish_reason: null }] })}\n\n`);
         void stopRelease.promise.then(() => { if (!response.destroyed && !response.writableEnded) response.end('data: [DONE]\n\n'); });
       } else if (userText.includes('fixture prompt')) {
         countProvider(requestPhase, 'recovery-response');
+        if (requestPhase === 'daemon-recovery') response.once('finish', () => { daemonMainFinished = true; });
         requestSeen.resolve();
         void release.promise.then(() => emit({ content: 'fixture-ok' }, 'stop'));
       } else { countProvider(requestPhase, 'auxiliary-response'); emit({ content: 'fixture-aux' }, 'stop'); }
@@ -430,6 +400,180 @@ it.each(['baseline', 'agent', 'mcp'] as const)('characterizes native capabilitie
     expect(discoveredInfo.version).toBe(info.version);
     expect(await bounded(Service.discover({ file: wrongDescriptor, version: '2.2.2' }), 'wrong-auth discovery')).toBeUndefined();
     recordReceipt({ explicitDiscovery: 'verified', wrongAuthDiscovery: 'denied' });
+
+    if (profile === 'daemon') {
+      phase = 'daemon-setup';
+      const originalInfo = console.info.bind(console);
+      const logSpy = vi.spyOn(console, 'info').mockImplementation((...args: unknown[]) => {
+        const [message, details] = args;
+        if (daemonMainFinished && message === 'think_native_attempt' && typeof details === 'object' && details !== null && 'operation' in details &&
+            typeof details.operation === 'string' && Object.hasOwn(daemonQueryAfterFinish, details.operation)) {
+          daemonQueryAfterFinish[details.operation] = (daemonQueryAfterFinish[details.operation] ?? 0) + 1;
+        }
+        originalInfo(...args);
+      });
+      restoreDaemonLogs = () => logSpy.mockRestore();
+      const projectRoot = join(root, 'daemon-app');
+      const metadata = join(projectRoot, '.memory-loop');
+      const authority = '127.0.0.1:31234'; // Listener-free daemon; only OpenCode uses its owned listener.
+      const token = randomBytes(32).toString('hex');
+      await mkdir(metadata, { recursive: true, mode: 0o700 });
+      await writeFile(join(metadata, 'service.token'), token, { mode: 0o600 });
+      await writeFile(join(metadata, 'transport.json'), JSON.stringify({ daemonOrigin: `http://${authority}`, web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } }), { mode: 0o600 });
+      await writeFile(join(metadata, 'config.json'), JSON.stringify({ vaultDirectory: cwd, think: {
+        service: { registrationFile: descriptor, requiredVersion: '2.2.2' }, location: { kind: 'vault' }, permissionMode: 'full',
+        model: { providerID: 'fixture-provider', id: 'fixture-model' },
+      } }), { mode: 0o600 });
+      daemon = await bounded(prepareServer({ projectRoot, authority }), 'daemon startup');
+      const prepared = daemon;
+      const call = (path: string, method = 'GET', body?: object, signal?: AbortSignal) => prepared.fetch(new Request(`http://${authority}${path}`, {
+        method, signal, headers: { host: authority, authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }));
+      const value = async (response: Response, status: number): Promise<Record<string, unknown>> => {
+        expect(response.status).toBe(status);
+        const parsed: unknown = await response.json();
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid daemon fixture response');
+        return Object.fromEntries(Object.entries(parsed));
+      };
+      const poll = async (path: string, predicate: (entry: Record<string, unknown>) => boolean, label: string, onCreationFailure?: () => Promise<void>) => {
+        const deadline = Date.now() + 20000;
+        while (Date.now() < deadline) {
+          const entry = await value(await call(path), 200);
+          if (predicate(entry)) return entry;
+          if (entry.creation === 'rejected' || entry.creation === 'upstream-unconfirmed') {
+            await onCreationFailure?.();
+            throw new Error(`${label} ${entry.creation}`);
+          }
+          if (entry.state === 'failed' || entry.state === 'monitor-unavailable' || entry.state === 'rejected') throw new Error(`${label} failed`);
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        throw new Error(`${label} timed out`);
+      };
+      const conversationId = randomUUID();
+      const base = `/api/think/conversations/${conversationId}`;
+      const nativeId = `ses_memoryloop_${conversationId.replaceAll('-', '')}`;
+      const created = await value(await call('/api/think/conversations', 'POST', { conversationId, clientCommandId: randomUUID() }), 202);
+      const creationDiagnostic = async () => {
+        try {
+          const readback = await client.session.get({ sessionID: nativeId }, { signal: AbortSignal.timeout(3000) });
+          const marker = readback.metadata?.memoryLoop;
+          const owned = typeof marker === 'object' && marker !== null && !Array.isArray(marker) ? marker : undefined;
+          recordReceipt({ daemonCreationReadback: JSON.stringify({
+            id: readback.id === nativeId, root: readback.parentID == null,
+            markerOwner: owned?.owner === 'memory-loop', markerConversation: owned?.conversationId === conversationId,
+            markerEpoch: owned?.epoch === created.epoch, directory: readback.location.directory === cwd,
+            grants: readback.permissions?.length === 1 && readback.permissions[0]?.action === '*' && readback.permissions[0]?.resource === '*' && readback.permissions[0]?.effect === 'allow',
+            agentUnspecified: readback.agent === undefined, providerID: readback.model?.providerID === 'fixture-provider',
+            modelID: readback.model?.id === 'fixture-model', variantAbsent: readback.model?.variant === undefined,
+            variantDefault: readback.model?.variant === 'default',
+          }) });
+        } catch { recordReceipt({ daemonCreationReadback: 'unavailable' }); }
+      };
+      await poll(base, entry => entry.creation === 'ready', 'daemon session creation', creationDiagnostic);
+      const nativeSession = await client.session.get({ sessionID: nativeId }, { signal: AbortSignal.timeout(5000) });
+      expect(nativeSession.parentID).toBeUndefined();
+      expect(nativeSession.location.directory).toBe(cwd);
+      expect(nativeSession.permissions).toEqual([{ action: '*', resource: '*', effect: 'allow' }]);
+      const commandId = randomUUID();
+      const caller = new AbortController();
+      const text = 'fixture prompt daemon owned';
+      phase = 'daemon-recovery';
+      const accepted = await value(await call(`${base}/messages`, 'POST', { clientCommandId: commandId, text }, caller.signal), 202);
+      expect(accepted).toMatchObject({ kind: 'send', clientCommandId: commandId, state: 'registered' });
+      diagnostics = async () => {
+        const promptId = `msg_memoryloop_${commandId.replaceAll('-', '')}`;
+        const summary: Record<string, string | number | boolean> = {
+          providerMainFinished: daemonMainFinished, queriesAfterProvider: JSON.stringify(daemonQueryAfterFinish),
+        };
+        const [sessionResult, activeResult, commandResult] = await Promise.allSettled([
+          client.session.get({ sessionID: nativeId }, { signal: AbortSignal.timeout(3000) }),
+          client.session.active({ signal: AbortSignal.timeout(3000) }),
+          bounded(call(`${base}/commands/${commandId}`).then(response => value(response, 200)), 'diagnostic receipt', 3000),
+        ]);
+        if (sessionResult.status === 'fulfilled') {
+          const session = sessionResult.value;
+          const marker = session.metadata?.memoryLoop;
+          const owned = typeof marker === 'object' && marker !== null && !Array.isArray(marker) ? marker : undefined;
+          summary.sessionRead = true;
+          summary.nativeOutcome = session.outcome ?? 'none';
+          summary.busyTime = session.time.busy ?? 0;
+          summary.idleTime = session.time.idle ?? 0;
+          summary.markerOwner = owned?.owner === 'memory-loop';
+          summary.markerConversation = owned?.conversationId === conversationId;
+          summary.markerEpoch = owned?.epoch === created.epoch;
+          summary.modelMatches = session.model?.providerID === 'fixture-provider' && session.model.id === 'fixture-model';
+        } else summary.sessionRead = false;
+        summary.activeRead = activeResult.status === 'fulfilled';
+        if (activeResult.status === 'fulfilled') summary.active = activeResult.value[nativeId]?.type === 'running';
+        if (commandResult.status === 'fulfilled') {
+          const entry = commandResult.value;
+          const states = ['registered', 'admitted', 'upstream-unconfirmed', 'monitor-unavailable', 'completed', 'failed', 'interrupted', 'cancelled-before-delivery'];
+          summary.receiptState = typeof entry.state === 'string' && states.includes(entry.state) ? entry.state : 'unknown';
+          const failure = entry.failure;
+          summary.receiptError = typeof failure === 'object' && failure !== null && 'code' in failure && failure.code === 'execution_failed' ? 'execution_failed' : 'none-or-unknown';
+          summary.receiptRunMatches = entry.runId === accepted.runId;
+        } else summary.receiptState = 'unavailable';
+        try {
+          const items: SessionMessageInfo[] = [];
+          let cursor: string | undefined;
+          for (let page = 0; page < 3; page++) {
+            const result = await client.message.list(cursor ? { sessionID: nativeId, cursor, limit: 50 } : { sessionID: nativeId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(3000) });
+            items.push(...result.data);
+            cursor = result.cursor.next ?? undefined;
+            if (!cursor || result.data.length === 0) break;
+          }
+          const userIndex = items.findIndex(message => message.type === 'user' && message.id === promptId);
+          const assistants = items.slice(userIndex < 0 ? items.length : userIndex + 1).filter(message => message.type === 'assistant');
+          const assistant = assistants.at(-1);
+          summary.historyRead = true;
+          summary.historyCount = items.length;
+          summary.historyMore = cursor !== undefined;
+          summary.promptPresent = userIndex >= 0;
+          const user = items[userIndex];
+          summary.userTime = user?.type === 'user' ? user.time.created : 0;
+          summary.userMetadataRun = user?.type === 'user' && typeof user.metadata?.memoryLoop === 'object' && user.metadata.memoryLoop !== null && !Array.isArray(user.metadata.memoryLoop) && user.metadata.memoryLoop.runId === accepted.runId;
+          summary.assistantCount = assistants.length;
+          summary.assistantParentPresent = assistant !== undefined && 'parentID' in assistant;
+          summary.assistantParentMatches = assistant !== undefined && 'parentID' in assistant && assistant.parentID === promptId;
+          summary.assistantCreated = assistant?.time.created ?? 0;
+          summary.assistantCompleted = assistant?.time.completed ?? 0;
+          summary.assistantFinish = assistant?.finish ?? 'none';
+          summary.assistantError = assistant?.error !== undefined;
+        } catch { summary.historyRead = false; }
+        recordReceipt({ daemonFirstSendDiagnostic: JSON.stringify(summary) });
+      };
+      caller.abort();
+      await bounded(requestSeen.promise, 'daemon held provider request');
+      expect((await client.session.active({ signal: AbortSignal.timeout(5000) }))[nativeId]).toMatchObject({ type: 'running' });
+      const otherId = randomUUID();
+      await value(await call('/api/think/conversations', 'POST', { conversationId: otherId, clientCommandId: randomUUID() }), 202);
+      await poll(`/api/think/conversations/${otherId}`, entry => entry.creation === 'ready', 'new chat creation');
+      expect((await client.session.active({ signal: AbortSignal.timeout(5000) }))[nativeId]).toMatchObject({ type: 'running' });
+      release.resolve();
+      await poll(`${base}/commands/${commandId}`, entry => entry.state === 'completed', 'daemon first send');
+      const history = await client.message.list({ sessionID: nativeId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+      expect(history.data.some(message => message.type === 'user' && message.id === `msg_memoryloop_${commandId.replaceAll('-', '')}` && message.text === text)).toBe(true);
+      phase = 'interrupt';
+      const stopSendId = randomUUID();
+      const stopSend = await value(await call(`${base}/messages`, 'POST', { clientCommandId: stopSendId, text: 'fixture-stop-request' }), 202);
+      if (typeof stopSend.runId !== 'string') throw new Error('daemon send lacks run identity');
+      await bounded(daemonStopStarted.promise, 'daemon stop work started');
+      await poll(`${base}/commands/${stopSendId}`, entry => entry.state === 'admitted', 'daemon stop send admission');
+      expect((await client.session.active({ signal: AbortSignal.timeout(5000) }))[nativeId]).toMatchObject({ type: 'running' });
+      const stopId = randomUUID();
+      const stopping = await value(await call(`${base}/runs/${stopSend.runId}/stop`, 'POST', { clientCommandId: stopId }), 202);
+      expect(stopping).toMatchObject({ kind: 'stop', runId: stopSend.runId, state: 'registered' });
+      const stopped = await poll(`${base}/commands/${stopId}`, entry => entry.state === 'requested' || entry.state === 'upstream-unconfirmed', 'daemon stop request');
+      expect(stopped.state).toBe('requested');
+      await poll(`${base}/commands/${stopSendId}`, entry => entry.state === 'interrupted', 'daemon interrupted send');
+      expect((await client.session.get({ sessionID: nativeId }, { signal: AbortSignal.timeout(5000) })).outcome).toBe('interrupted');
+      stopRelease.resolve();
+      recordReceipt({ phase: 'daemon-completed', daemonCreation: 'verified', callerDisconnect: 'verified', newChatBackground: 'verified', firstSendCompleted: 'verified', stopRequest: String(stopped.state) });
+      recordProvider();
+      expect(badRequest).toBe(false);
+      return;
+    }
 
     const resourceSessionId = `ses_fixture_${randomBytes(12).toString('hex')}`;
     const resourcePromptId = `msg_fixture_${randomBytes(12).toString('hex')}`;
@@ -808,9 +952,13 @@ it.each(['baseline', 'agent', 'mcp'] as const)('characterizes native capabilitie
     else recordReceipt({ phase, diagnosticStatus: 'session-unavailable', eventCounts: JSON.stringify(eventCounts), providerRequests: requests, providerFinished: responsesFinished, providerClosed: responsesClosed });
     throw error;
   } finally {
+    restoreDaemonLogs?.();
     for (const watcher of watchers) watcher.controller.abort(cleanupAbort);
     release.resolve();
     stopRelease.resolve();
+    let daemonCleanupError: unknown;
+    try { if (daemon) await bounded(daemon.close(), 'daemon cleanup', 5000); }
+    catch (error: unknown) { daemonCleanupError = error; }
     for (const response of pending) response.destroy();
     try {
       const outcomes = await Promise.allSettled(watchers.map(async watcher => {
@@ -859,5 +1007,6 @@ it.each(['baseline', 'agent', 'mcp'] as const)('characterizes native capabilitie
       finally { await rm(root, { recursive: true, force: true }); }
     }
     }
+    if (daemonCleanupError) throw daemonCleanupError;
   }
 }, 120000);

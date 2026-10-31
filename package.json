@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:backend": "vitest run --config backend/vitest.config.ts",
     "test:opencode": "vitest run --config backend/vitest.opencode.config.ts",
+    "think:fixture": "bun --no-env-file tests/think-fixture.ts",
     "test:watch": "vitest",
     "build": "node node_modules/next/dist/bin/next typegen && tsc --noEmit && node node_modules/next/dist/bin/next build",
     "test:e2e": "playwright test"

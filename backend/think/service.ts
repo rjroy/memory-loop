@@ -1,4 +1,4 @@
-import type { CommandReceipt, ConversationState, CreateConversationCommand, CreateReceipt, FormDecision, FormReplyCommand, FormReplyReceipt, SendCommand, SendReceipt, StopCommand, StopReceipt } from './contract';
+import type { CommandReceipt, ConversationState, CreateConversationCommand, CreateReceipt, FormDecision, FormReplyCommand, FormReplyReceipt, SendCommand, SendReceipt, StopCommand, StopReceipt, ThinkErrorCode } from './contract';
 import type { FormInfo, SessionCreateInput } from '@opencode/client';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isAbsolute, normalize } from 'node:path';
@@ -15,7 +15,7 @@ export interface ConversationWatch {
   close(): void;
 }
 
-export type ThinkServiceErrorCode = 'invalid_request' | 'command_conflict' | 'not_found' | 'think_unavailable' | 'decision_unavailable' | 'content_unavailable';
+export type ThinkServiceErrorCode = Exclude<ThinkErrorCode, 'think_config_missing' | 'think_config_invalid'>;
 
 export class ThinkServiceError extends Error {
   constructor(readonly code: ThinkServiceErrorCode) {

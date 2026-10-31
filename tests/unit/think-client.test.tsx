@@ -27,6 +27,16 @@ class Watch extends EventTarget {
 const handlers = (): ThinkWatchHandlers => ({ snapshot: vi.fn(), revision: vi.fn(), heartbeat: vi.fn(), error: vi.fn() });
 
 describe('Think browser protocol client', () => {
+  it.each([
+    ['command_conflict', 'command_conflict'],
+    ['service_unavailable', 'service_unavailable'],
+    ['__proto__', undefined],
+    ['constructor', undefined],
+  ])('recognizes only public API error codes (%s)', async (code, expected) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({ error: { code } }, 503));
+    await expect(createThinkClient({ fetch: fetcher }).snapshot(conversationId)).rejects.toMatchObject({ kind: 'api', status: 503, code: expected });
+  });
+
   it('requests same-origin paginated snapshots and preserves sanitized original, capture and compaction facts', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(snapshot));
     const client = createThinkClient({ fetch: fetcher });

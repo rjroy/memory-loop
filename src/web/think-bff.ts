@@ -2,6 +2,7 @@ import type { LoadedTransport } from '../../backend/transport';
 import { allowsWebRequest } from './request-policy';
 import { projectConversation } from './think-projection';
 import { parseContentRequest } from '../../backend/think/content-transfer';
+import { thinkErrors } from '../../backend/think/contract';
 
 type Method = 'GET' | 'POST';
 export interface ThinkBffDependencies {
@@ -26,16 +27,13 @@ const routes = [
 ] as const;
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
 const errors = {
-  forbidden: [403, 'Request is not permitted'], invalid_request: [400, 'Invalid Think request'],
-  command_conflict: [409, 'Command conflicts with a previous request'], not_found: [404, 'Think resource not found'],
-  method_not_allowed: [405, 'Method is not allowed'], think_unavailable: [503, 'Think service is unavailable'],
-  think_config_missing: [503, 'Think setup is required'], think_config_invalid: [503, 'Think configuration is invalid'],
-  service_unavailable: [503, 'Think service unavailable'],
-  decision_unavailable: [503, 'Decision details are unavailable'],
-  content_unavailable: [404, 'Content is unavailable'],
+  ...thinkErrors,
+  forbidden: { status: 403, message: 'Request is not permitted' },
+  method_not_allowed: { status: 405, message: 'Method is not allowed' },
+  service_unavailable: { status: 503, message: 'Think service unavailable' },
 } as const;
 function failure(code: keyof typeof errors): Response {
-  const [status, message] = errors[code];
+  const { status, message } = errors[code];
   return Response.json({ error: { code, message } }, { status, headers });
 }
 function record(value: unknown): value is Record<string, unknown> {
@@ -166,7 +164,7 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
           if (result.status === (route.method === 'POST' ? 202 : 200)) return Response.json(project(data, route.method, url.pathname, url.searchParams), { status: result.status, headers });
           if (record(data) && record(data.error) && typeof data.error.code === 'string' && Object.hasOwn(errors, data.error.code)) {
             const code = data.error.code as keyof typeof errors;
-            if (errors[code][0] === result.status) return failure(code);
+            if (errors[code].status === result.status) return failure(code);
           }
           return failure('service_unavailable');
         };

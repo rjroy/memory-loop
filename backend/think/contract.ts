@@ -81,5 +81,21 @@ export interface ConversationState {
   otherTranscriptWarnings?: number;
 }
 
-export type ThinkUnavailableCode = 'think_unavailable' | 'think_config_missing' | 'think_config_invalid';
+export const thinkErrors = {
+  invalid_request: { status: 400, message: 'Invalid Think request' },
+  command_conflict: { status: 409, message: 'Command conflicts with a previous request' },
+  not_found: { status: 404, message: 'Think resource not found' },
+  think_unavailable: { status: 503, message: 'Think service is unavailable' },
+  think_config_missing: { status: 503, message: 'Think setup is required' },
+  think_config_invalid: { status: 503, message: 'Think configuration is invalid' },
+  decision_unavailable: { status: 503, message: 'Decision details are unavailable' },
+  content_unavailable: { status: 404, message: 'Content is unavailable' },
+} as const;
+
+export type ThinkErrorCode = keyof typeof thinkErrors;
+export function isThinkErrorCode(value: unknown): value is ThinkErrorCode {
+  return typeof value === 'string' && Object.hasOwn(thinkErrors, value);
+}
+
+export type ThinkUnavailableCode = Extract<ThinkErrorCode, 'think_unavailable' | 'think_config_missing' | 'think_config_invalid'>;
 import type { FormField, SessionFormReplyInput } from '@opencode/client';

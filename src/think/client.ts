@@ -1,6 +1,7 @@
 import { projectConversation } from '../web/think-projection';
 import type { BodyRef } from '../../backend/think/body-store';
 import type { CommandReceipt, ConversationState, CreateConversationCommand, FormReplyCommand, SendCommand, StopCommand } from '../../backend/think/contract';
+import { isThinkErrorCode } from '../../backend/think/contract';
 import type { ProjectionEntry } from '../../backend/think/projection';
 import type { ContentChunk } from '../../backend/think/content-transfer';
 
@@ -58,7 +59,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const opaque = /^[A-Za-z0-9_-]{1,128}$/;
 const cursorPattern = /^[A-Za-z0-9_-]{1,256}\.[a-f0-9]{64}$/;
 const base = '/api/think/conversations';
-const allowedErrors = new Set(['forbidden', 'invalid_request', 'command_conflict', 'not_found', 'method_not_allowed', 'think_unavailable', 'think_config_missing', 'think_config_invalid', 'service_unavailable', 'decision_unavailable', 'content_unavailable']);
+const boundaryErrors = new Set(['forbidden', 'method_not_allowed', 'service_unavailable']);
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const identifier = (value: string) => { if (!uuid.test(value)) throw new ThinkClientError('invalid-input'); return value; };
 const decision = (value: string) => { if (!opaque.test(value)) throw new ThinkClientError('invalid-input'); return value; };
@@ -196,7 +197,7 @@ export function createThinkClient(options: ThinkClientOptions = {}) {
           ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
         const value = await readJSON(response, limit, controller.signal);
         if (!response.ok) {
-          const code = object(value) && object(value.error) && typeof value.error.code === 'string' && allowedErrors.has(value.error.code) ? value.error.code : undefined;
+          const code = object(value) && object(value.error) && typeof value.error.code === 'string' && (isThinkErrorCode(value.error.code) || boundaryErrors.has(value.error.code)) ? value.error.code : undefined;
           throw new ThinkClientError('api', response.status, code);
         }
         if (response.status !== (method === 'POST' ? 202 : 200)) throw new ThinkClientError('invalid-response');

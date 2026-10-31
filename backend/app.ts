@@ -4,6 +4,7 @@ import { streamSSE } from 'hono/streaming';
 import { isVaultErrorCode, vaultErrors, type VaultErrorCode } from './contract';
 import type { ThinkService, ThinkUnavailableCode } from './think/service';
 import { ThinkServiceError } from './think/service';
+import { thinkErrors, type ThinkErrorCode } from './think/contract';
 import { parseContentRequest } from './think/content-transfer';
 import { parseVaultId, type VaultReader } from './vault';
 import { captureBodyLimit, captureErrors, parseCaptureRequest } from './capture-contract';
@@ -31,18 +32,7 @@ function serviceError(error: unknown): Response {
   return publicError(isVaultErrorCode(code) ? code : 'vault_unavailable');
 }
 
-const thinkErrors = {
-  invalid_request: { status: 400, message: 'Invalid Think request' },
-  command_conflict: { status: 409, message: 'Command conflicts with a previous request' },
-  not_found: { status: 404, message: 'Think resource not found' },
-  think_unavailable: { status: 503, message: 'Think service is unavailable' },
-  think_config_missing: { status: 503, message: 'Think setup is required' },
-  think_config_invalid: { status: 503, message: 'Think configuration is invalid' },
-  decision_unavailable: { status: 503, message: 'Decision details are unavailable' },
-  content_unavailable: { status: 404, message: 'Content is unavailable' },
-} as const;
-
-function thinkError(code: keyof typeof thinkErrors): Response {
+function thinkError(code: ThinkErrorCode): Response {
   const { status, message } = thinkErrors[code];
   return Response.json({ error: { code, message } }, { status });
 }

@@ -10,6 +10,7 @@ import { destinations } from '../navigation';
 import { createThinkSession } from '../think/session';
 import { ThinkSessionProvider, useThinkPresentation } from '../think/presentation';
 import ThinkNewChatButton from '../think/ThinkNewChatButton';
+import { CaptureSessionProvider } from '../capture/CaptureSession';
 import '../think/think.css';
 
 export default function NextShell({ children }: { children: ReactNode }) {
@@ -34,7 +35,9 @@ export default function NextShell({ children }: { children: ReactNode }) {
     session.setLocation({ pathname: location.pathname, search: location.search });
   }, [session, location.pathname, location.search]);
 
-  return <ThinkSessionProvider session={session}><ShellContent>{children}</ShellContent></ThinkSessionProvider>;
+  return <ThinkSessionProvider session={session}><CaptureSessionProvider>
+    <ShellContent>{children}</ShellContent>
+  </CaptureSessionProvider></ThinkSessionProvider>;
 }
 
 function ShellContent({ children }: { children: ReactNode }) {

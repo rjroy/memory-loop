@@ -6,31 +6,48 @@ import ThinkView from '../../src/views/ThinkView';
 import NotFoundView from '../../src/views/NotFoundView';
 import { TestPresentation } from './fixtures/presentation';
 
-const placeholders = [
-  ['Ground', '/ground', GroundView, 'An overview built from interchangeable panels.', "Panels aren't available yet", "Panel contents haven't been chosen. This preview doesn't display vault information."],
-  ['Capture', '/capture', CaptureView, 'Save thoughts as timestamped entries in a daily Markdown note.', "Quick capture isn't available yet", 'Note entry and saving are not available in this preview.'],
-] as const;
 beforeEach(() => window.sessionStorage.removeItem('memory-loop.think.current'));
 afterEach(() => window.sessionStorage.removeItem('memory-loop.think.current'));
 
 describe('shell component semantics', () => {
-  it.each(placeholders)('%s shows ordered navigation and its approved honest placeholder', (name, path, View, purpose, heading, body) => {
-    window.history.replaceState(null, '', path);
-    render(<TestPresentation><View /></TestPresentation>);
+  it('shows ordered navigation and the honest Ground placeholder', () => {
+    window.history.replaceState(null, '', '/ground');
+    render(<TestPresentation><GroundView /></TestPresentation>);
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(within(nav).getAllByRole('link').map(link => [link.textContent?.trim(), link.getAttribute('href')])).toEqual([
       ['Ground', '/ground'], ['Capture', '/capture'], ['Think', '/think'], ['Recall', '/recall'],
     ]);
-    expect(within(nav).getByRole('link', { name })).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('link', { name: 'Ground' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveAttribute('href', '#main-content');
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     const main = screen.getByRole('main');
-    expect(within(main).getByRole('heading', { level: 1, name })).toBeInTheDocument();
-    expect(within(main).getByText(purpose)).toBeInTheDocument();
-    expect(within(main).getByRole('heading', { level: 2, name: heading })).toBeInTheDocument();
-    expect(within(main).getByText(body)).toBeInTheDocument();
+    expect(within(main).getByRole('heading', { level: 1, name: 'Ground' })).toBeInTheDocument();
+    expect(within(main).getByText('An overview built from interchangeable panels.')).toBeInTheDocument();
+    expect(within(main).getByRole('heading', { level: 2, name: "Panels aren't available yet" })).toBeInTheDocument();
+    expect(within(main).getByText("Panel contents haven't been chosen. This preview doesn't display vault information.")).toBeInTheDocument();
     expect(main.querySelector('form, input, textarea, select')).toBeNull();
-    if (name === 'Ground') expect(within(main).getByRole('link', { name: 'Open Capture' })).toHaveAttribute('href', '/capture');
+    expect(within(main).getByRole('link', { name: 'Open Capture' })).toHaveAttribute('href', '/capture');
+  });
+
+  it('keeps shell navigation and accessible editor focus on the live Capture route', () => {
+    window.history.replaceState(null, '', '/capture');
+    const historyLength = window.history.length;
+    render(<TestPresentation><CaptureView /></TestPresentation>);
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(within(nav).getAllByRole('link').map(link => [link.textContent?.trim(), link.getAttribute('href')])).toEqual([
+      ['Ground', '/ground'], ['Capture', '/capture'], ['Think', '/think'], ['Recall', '/recall'],
+    ]);
+    expect(within(nav).getByRole('link', { name: 'Capture' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveAttribute('href', '#main-content');
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    const main = screen.getByRole('main');
+    expect(within(main).getByRole('heading', { level: 1, name: 'Capture' })).toBeInTheDocument();
+    const editor = within(main).getByRole('textbox', { name: 'Thought' });
+    expect(editor).toBeEnabled();
+    expect(editor).not.toHaveFocus();
+    editor.focus();
+    expect(editor).toHaveFocus();
+    expect(window.history.length).toBe(historyLength);
   });
 
   it('keeps shell navigation and accessible message composition on the live Think route', () => {

@@ -164,6 +164,22 @@ describe('Think presentation contract', () => {
     expect(screen.queryByRole('button', { name: /approve|deny permission/i })).not.toBeInTheDocument();
   });
 
+  it.each(['   ', '\n\n'])('confirms before replacing a whitespace-only draft (%j)', draft => {
+    const { presentation, actions } = fixture({ draft: { text: draft, version: 7 },
+      rejectedSubmissions: [{ clientCommandId, text: 'unsent fixture', reason: 'unknown' }] });
+    show(presentation);
+    const editor = screen.getByRole('textbox', { name: 'Message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Use unsent message' }));
+    expect(actions.recoverRejected).not.toHaveBeenCalled();
+    expect(screen.getByText('Replace your current draft?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep writing' }));
+    expect(editor).toHaveValue(draft);
+    expect(actions.recoverRejected).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Use unsent message' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Replace draft' }));
+    expect(actions.recoverRejected).toHaveBeenCalledExactlyOnceWith(identity, clientCommandId, 7);
+  });
+
   it('surfaces a server-classified persistent transcript warning without a Retry logging control', () => {
     const { presentation } = fixture({ transcriptWarning: { current: { reason: 'conflict' }, otherCount: 0 } });
     show(presentation);

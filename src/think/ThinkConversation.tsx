@@ -322,11 +322,11 @@ function Conversation({ presentation }: ThinkPresenterProps) {
         </div>}
         {state.rejectedSubmissions.map(submission => <div className="think-exception" key={submission.clientCommandId}>
           <p>Message wasn’t accepted.{submission.reason === 'resource_failure' ? ' The service ran out of available resources.' : ''}</p>
-          {identity && state.draft.text !== submission.text && (recover === submission.clientCommandId && state.draft.text.trim()
+          {identity && state.draft.text !== submission.text && (recover === submission.clientCommandId && state.draft.text.length > 0
             ? <div className="think-inline-actions"><span>Replace your current draft?</span><button type="button" className="think-button think-text-button" onClick={() => setRecover(null)}>Keep writing</button>
               <button type="button" className="think-button think-text-button" onClick={() => { actions.recoverRejected(identity, submission.clientCommandId, state.draft.version); setRecover(null); editor.current?.focus(); }}>Replace draft</button></div>
             : <button type="button" className="think-button think-text-button" onClick={() => {
-              if (state.draft.text.trim()) setRecover(submission.clientCommandId);
+              if (state.draft.text.length > 0) setRecover(submission.clientCommandId);
               else { actions.recoverRejected(identity, submission.clientCommandId); editor.current?.focus(); }
             }}>Use unsent message</button>)}
         </div>)}

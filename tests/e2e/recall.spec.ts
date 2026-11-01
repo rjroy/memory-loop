@@ -65,9 +65,9 @@ test('44W-T1: Files controls and primary destinations remain operable at 200% te
 test('MS4-R1: reopened Files reveals the focused current row below its sticky header', async ({ page, recallOrigin }) => {
   const entries = Array.from({ length: 100 }, (_, index) => {
     const name = `fixture-${String(index).padStart(3, '0')}.md`;
-    return { kind: 'note', name, id: [name] };
+    return { kind: 'note', name, id: [name], identity: `fixture-identity-${index}`, version: `fixture-version-${index}` };
   });
-  await page.route('**/api/vault/tree', route => route.fulfill({ json: { entries } }));
+  await page.route('**/api/vault/tree', route => route.fulfill({ json: { rootIdentity: 'fixture-root-identity', entries } }));
   await page.route('**/api/vault/note?*', route => route.fulfill({ json: { name: 'fixture-030.md', markdown: '# Fixture note', revision: 'fixture-revision', editable: true } }));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${recallOrigin}/recall`);
@@ -275,7 +275,7 @@ test('desktop Files is visible, toggleable, and note history survives direct ent
   await expect(page).toHaveTitle('alpha.md · Recall · Memory Loop');
   await page.reload();
   await expect(page.getByRole('article')).toContainText('Alpha fixture body.');
-  await files.getByRole('button', { name: 'folder' }).click();
+  await files.getByRole('button', { name: 'folder', exact: true }).click();
   await files.getByRole('link', { name: 'beta.md' }).click();
   await expect(page).toHaveURL(noteUrl(recallOrigin, ['folder', 'beta.md']));
   await expect(page.getByRole('article')).toContainText('Beta fixture body.');
@@ -351,7 +351,7 @@ test('a late A response cannot replace the selected B document or move focus', a
     const files = page.getByRole('navigation', { name: 'Vault files' });
     await files.getByRole('link', { name: 'alpha.md' }).click();
     await started;
-    await files.getByRole('button', { name: 'folder' }).click();
+    await files.getByRole('button', { name: 'folder', exact: true }).click();
     await files.getByRole('link', { name: 'beta.md' }).click();
     await expect(page.getByRole('article')).toContainText('Beta fixture body.');
     await expect(page.locator(':focus')).toHaveText('beta.md');
@@ -401,9 +401,11 @@ for (const [code, heading] of [
 }
 
 test('distinguishes empty tree, empty note, and transport failure', async ({ page, recallOrigin }) => {
-  await page.route('**/api/vault/tree', route => route.fulfill({ json: { entries: [] } }));
+  await page.route('**/api/vault/tree', route => route.fulfill({ json: { rootIdentity: 'fixture-root-identity', entries: [] } }));
   await page.goto(`${recallOrigin}/recall`);
-  await expect(page.getByRole('heading', { name: 'No Markdown notes to show', exact: true })).toBeVisible();
+  await expect(page.getByText('No Markdown notes to show', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Vault actions' }).click();
+  await expect(page.getByRole('menuitem', { name: 'New file…' })).toBeEnabled();
   await page.unroute('**/api/vault/tree');
   await page.goto(noteUrl(recallOrigin, ['empty.md']));
   await expect(page.getByText('This note is empty.')).toBeVisible();
@@ -443,7 +445,7 @@ test('RECALL-UI-002: Files restores its scroll only after delayed hierarchy cont
   await page.setViewportSize({ width: 1440, height: 900 });
   const entries = Array.from({ length: 100 }, (_, index) => {
     const name = `fixture-${String(index).padStart(3, '0')}.md`;
-    return { kind: 'note', name, id: [name] };
+    return { kind: 'note', name, id: [name], identity: `fixture-identity-${index}`, version: `fixture-version-${index}` };
   });
   let calls = 0;
   let releaseTree: () => void = () => {};
@@ -453,7 +455,7 @@ test('RECALL-UI-002: Files restores its scroll only after delayed hierarchy cont
   await page.route('**/api/vault/tree', async route => {
     calls++;
     if (calls > 1) { startTree(); await held; }
-    await route.fulfill({ json: { entries } }).catch(() => {});
+    await route.fulfill({ json: { rootIdentity: 'fixture-root-identity', entries } }).catch(() => {});
   });
   try {
     await page.goto(`${recallOrigin}/recall`);
@@ -512,7 +514,7 @@ test('HN-001: native Skip entry reconciles with note selection on Back and Forwa
   await expect(page).toHaveURL(`${noteUrl(recallOrigin, ['alpha.md'])}#main-content`);
   await expect(files).toBeVisible();
   await expect(page.locator(':focus')).toHaveAttribute('id', 'main-content');
-  await files.getByRole('button', { name: 'folder' }).click();
+  await files.getByRole('button', { name: 'folder', exact: true }).click();
   await files.getByRole('link', { name: 'beta.md' }).click();
   await expect(page.getByRole('article')).toContainText('Beta fixture body.');
   await expect.poll(() => page.evaluate(() => history.length)).toBe(initialLength + 2);

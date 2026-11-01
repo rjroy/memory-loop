@@ -10,11 +10,31 @@ export interface VaultConfig {
 export type VaultId = readonly string[];
 
 export type VaultEntry =
-  | { kind: 'directory'; name: string; id: VaultId; children: VaultEntry[] }
-  | { kind: 'note'; name: string; id: VaultId };
+  | { kind: 'directory'; name: string; id: VaultId; identity: string; version: string; children: VaultEntry[] }
+  | { kind: 'note'; name: string; id: VaultId; identity: string; version: string };
 
 export interface VaultTreeResponse {
+  rootIdentity: string;
   entries: VaultEntry[];
+}
+
+export type VaultAction =
+  | { action: 'create-note'; parentId: VaultId; expectedParentIdentity: string; name: string }
+  | { action: 'create-directory'; parentId: VaultId; expectedParentIdentity: string; name: string }
+  | { action: 'move'; kind: 'note' | 'directory'; id: VaultId; expectedVersion: string; destinationParentId: VaultId; expectedDestinationIdentity: string }
+  | { action: 'delete'; kind: 'note' | 'directory'; id: VaultId; expectedVersion: string };
+export type VaultActionResponse = { id: VaultId; revision?: string };
+export const vaultActionBodyLimit = 65536;
+const opaque = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 128;
+const parentId = (v: unknown): v is VaultId => Array.isArray(v) && v.length <= 64 && v.every(isVaultComponent);
+export function parseVaultAction(value: unknown): VaultAction | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  const v = value as Record<string, unknown>;
+  if ((v.action === 'create-note' || v.action === 'create-directory') && Object.keys(v).length === 4 && parentId(v.parentId) && opaque(v.expectedParentIdentity) && isVaultComponent(v.name) && new TextEncoder().encode(v.name).length <= 255 && (v.action !== 'create-note' || v.name.endsWith('.md'))) return { action: v.action, parentId: v.parentId, expectedParentIdentity: v.expectedParentIdentity, name: v.name };
+  if ((v.action === 'move' || v.action === 'delete') && (v.kind === 'note' || v.kind === 'directory') && isVaultId(v.id) && v.id.length <= 64 && opaque(v.expectedVersion)) {
+    if (v.action === 'delete' && Object.keys(v).length === 4) return { action: v.action, kind: v.kind, id: v.id, expectedVersion: v.expectedVersion };
+    if (v.action === 'move' && Object.keys(v).length === 6 && parentId(v.destinationParentId) && opaque(v.expectedDestinationIdentity)) return { action: v.action, kind: v.kind, id: v.id, expectedVersion: v.expectedVersion, destinationParentId: v.destinationParentId, expectedDestinationIdentity: v.expectedDestinationIdentity };
+  }
 }
 
 export interface VaultNoteResponse {
@@ -50,6 +70,14 @@ export const vaultErrors = {
   note_not_editable: { status: 422, message: 'Note cannot be edited' },
   note_save_unavailable: { status: 503, message: 'Note could not be saved' },
   note_save_uncertain: { status: 503, message: 'Note save outcome is uncertain' },
+  entry_unavailable: { status: 404, message: 'Entry is unavailable' },
+  entry_conflict: { status: 409, message: 'Entry has changed' },
+  entry_exists: { status: 409, message: 'Destination already exists' },
+  folder_not_empty: { status: 409, message: 'Folder is not empty' },
+  move_cross_device: { status: 409, message: 'Move crosses devices' },
+  move_unsupported: { status: 503, message: 'Move is unsupported' },
+  file_action_unavailable: { status: 503, message: 'File action is unavailable' },
+  file_action_uncertain: { status: 503, message: 'File action outcome is uncertain' },
 } as const;
 
 export type VaultErrorCode = keyof typeof vaultErrors;

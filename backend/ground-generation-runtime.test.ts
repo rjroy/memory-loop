@@ -399,14 +399,21 @@ describe('lazy Ground freshness', () => {
     state.quoteCandidate = quoteCandidate;
     const owned = launch(state, false, saturday); await ready(owned, false, saturday); await open(state);
     expect(await until(() => questionSends(state).length === 1, 2000)).toBe(true);
+    expect(await until(() => probe(state.database).attempts.filter(item => item.occurrenceState === 'admitted').length === 2 &&
+      owned.output.split('ground_fixture_generation_poll_armed').length - 1 >= 2, 2000),
+    'both jobs must be admitted and have armed observation timers before advancing the clock').toBe(true);
     owned.child.stdin.write(`${JSON.stringify({ id: 'observe-invalid', advanceMs: 30000 })}\n`);
     expect(await until(() => owned.output.includes('"id":"observe-invalid"'))).toBe(true);
     expect(await until(() => questionFacts(probe(state.database)).some(item => item.occurrenceState === 'failed'), 2000)).toBe(true);
+    expect(await until(() => probe(state.database).attempts.some(item => item.job === 'quotes' && item.occurrenceState === 'settled'), 2000)).toBe(true);
     expect(await readFile(state.prompts, 'utf8')).toBe(promptsBefore);
+    const armedBeforeRetry = owned.output.split('ground_fixture_generation_poll_armed').length - 1;
     state.candidate = questionCandidate;
     await open(state);
     expect(await until(() => questionSends(state).length === 2, 2000), 'recoverable failure must not consume the day').toBe(true);
     expect(await until(() => questionFacts(probe(state.database)).some(item => item.occurrenceState === 'admitted'), 2000)).toBe(true);
+    expect(await until(() => owned.output.split('ground_fixture_generation_poll_armed').length - 1 > armedBeforeRetry, 2000),
+      'the retry must arm its observation timer before advancing the clock').toBe(true);
     owned.child.stdin.write(`${JSON.stringify({ id: 'observe-retry', advanceMs: 30000 })}\n`);
     expect(await until(() => owned.output.includes('"id":"observe-retry"'))).toBe(true);
     expect(await until(() => readFileSync(state.prompts, 'utf8').includes('A new owned question?'), 2000)).toBe(true);

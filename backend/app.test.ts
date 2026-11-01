@@ -9,9 +9,10 @@ const token = 'a'.repeat(64);
 
 function setup(vault?: VaultState) {
   const reader: VaultReader = {
-    tree: vi.fn(async () => ({ entries: [{ kind: 'note' as const, name: 'note.md', id: ['note.md'] }] })),
+    tree: vi.fn(async () => ({ rootIdentity: 'root', entries: [{ kind: 'note' as const, name: 'note.md', id: ['note.md'], identity: 'note-id', version: 'note-version' }] })),
     note: vi.fn(async () => ({ name: 'note.md', markdown: '# Test note\n', revision: 'fixture', editable: true })),
     save: vi.fn(),
+    action: vi.fn(),
     close: vi.fn(async () => {}),
   };
   const options = { authority, vault: vault ?? { reader }, serviceToken: token } satisfies AppOptions & { serviceToken: string };
@@ -42,7 +43,7 @@ describe('vault HTTP API', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
-    expect(await response.json()).toEqual({ entries: [{ kind: 'note', name: 'note.md', id: ['note.md'] }] });
+    expect(await response.json()).toEqual({ rootIdentity: 'root', entries: [{ kind: 'note', name: 'note.md', id: ['note.md'], identity: 'note-id', version: 'note-version' }] });
     expect(reader.tree).toHaveBeenCalledOnce();
   });
 
@@ -99,6 +100,7 @@ describe('vault HTTP API', () => {
       tree: vi.fn(),
       note: vi.fn(async () => { throw Object.assign(new Error(secret), { code: 'note_unavailable' }); }),
       save: vi.fn(),
+      action: vi.fn(),
       close: vi.fn(),
     };
     const { request } = setup({ reader });
@@ -110,6 +112,7 @@ describe('vault HTTP API', () => {
       tree: vi.fn(async () => { throw new Error(secret); }),
       note: vi.fn(),
       save: vi.fn(),
+      action: vi.fn(),
       close: vi.fn(),
     };
     const { request } = setup({ reader });
@@ -138,7 +141,7 @@ describe('vault HTTP API', () => {
   });
 
   it('rejects a missing Host header', async () => {
-    const reader: VaultReader = { tree: vi.fn(), note: vi.fn(), save: vi.fn(), close: vi.fn() };
+    const reader: VaultReader = { tree: vi.fn(), note: vi.fn(), save: vi.fn(), action: vi.fn(), close: vi.fn() };
     const options = { authority, vault: { reader }, serviceToken: token };
     const app = createApp(options);
     const response = await app(new Request(`http://${authority}/api/vault/tree`, { headers: { authorization: `Bearer ${token}` } }));

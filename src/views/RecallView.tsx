@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { usePresentation } from '../shell/presentation';
 import type { Presentation } from '../shell/presentation';
-import type { VaultId } from '../../backend/contract';
-import { failureCopy, findNote, idKey, noteLocation, readNote, readTree, selectionFromSearch } from '../recall/api';
+import type { VaultAction as VaultActionRequest, VaultActionResponse, VaultId, VaultTreeResponse } from '../../backend/contract';
+import { containsId, failureCopy, findNote, idKey, noteLocation, readNote, readTree, selectionFromSearch } from '../recall/api';
 import type { RecallFailure } from '../recall/api';
 import { useRecallSession } from '../recall/RecallSession';
 import { useDesktop } from '../recall/useDesktop';
@@ -12,6 +12,7 @@ import { useVaultRead } from '../recall/useVaultRead';
 import MarkdownDocument from '../recall/MarkdownDocument';
 import VaultFiles from '../recall/VaultFiles';
 import FilesToggle from '../recall/FilesToggle';
+import FileActions, { FileActionRecovery, FileActionTrigger, FileBackground } from '../recall/FileActions';
 import RouteHeading from '../shell/RouteHeading';
 import '../recall/recall.css';
 
@@ -63,7 +64,7 @@ export default function RecallView() {
   return presentation.location.pathname === '/recall' ? <RecallContent {...presentation} /> : null;
 }
 
-function RecallContent({ location, navigate, navigationType, isNavigating, recallSnapshot, rememberEntry, registerRecallCapture, registerNavigationGuard }: Presentation) {
+function RecallContent({ location, navigate, navigationType, isNavigating, navigationGeneration, recallSnapshot, rememberEntry, registerRecallCapture, registerNavigationGuard }: Presentation) {
   const session = useRecallSession();
   const editor = session.editor;
   const editing = useSyncExternalStore(editor.subscribe, editor.getSnapshot, editor.getSnapshot);
@@ -74,10 +75,32 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   const entryKey = location.key;
   const [treeRevision, setTreeRevision] = useState(0);
   const [noteRevision, setNoteRevision] = useState(0);
-  const tree = useVaultRead('tree', treeRevision, readTree);
+  const treeRead = useVaultRead('tree', treeRevision, readTree);
+  const [actionTree, setActionTree] = useState<VaultTreeResponse | null>(null);
+  const tree = actionTree ? { status: 'ready' as const, data: actionTree } : treeRead;
+  const [fileBusy, setFileBusy] = useState(false);
+  const fileBusyRef = useRef(false);
+  const fileMounted = useRef(false);
+  const renderedGeneration = navigationGeneration?.();
+  const fileView = useRef({ location, isNavigating, generation: renderedGeneration });
+  useLayoutEffect(() => { fileView.current = { location, isNavigating, generation: renderedGeneration }; });
+  useLayoutEffect(() => { fileMounted.current = true; return () => { fileMounted.current = false; }; }, []);
+  const ownsFileView = () => {
+    const current = fileView.current;
+    return fileMounted.current && !current.isNavigating && current.location.key === location.key &&
+      current.location.pathname === location.pathname && current.location.search === location.search && current.location.hash === location.hash &&
+      current.generation === renderedGeneration && (navigationGeneration === undefined || navigationGeneration() === renderedGeneration);
+  };
+  const affectedAction = useRef(false);
+  const uncertainAffectedId = useRef<VaultId | null>(null);
+  const actionNavigation = useRef(false);
+  const [fileFenced, setFileFenced] = useState(session.fileActionFenced);
+  const actionPresentation = useRef<{ key: string; scroll: number; narrowOpen: boolean } | null>(null);
+  const actionFocus = useRef<string | null>(null);
   const read = useVaultRead(key, noteRevision, readNote);
   const note = editing.confirmed?.key === key ? { status: 'ready' as const, data: editing.confirmed.note } : read;
   const draft = editing.draft && idKey(editing.draft.id) === key ? editing.draft : null;
+  const selectedFenced = fileFenced && session.fileActionAffectedId !== null && idKey(session.fileActionAffectedId) === key;
   const dirty = Boolean(draft && draft.markdown !== draft.base.markdown);
   // A route POP can remount this controller rather than transition an existing
   // one. Seed it from that entry just as the transition effect would below.
@@ -126,11 +149,13 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   const blocked: RecallFailure | null = configFailure ?? (tree.status === 'error' && note.status !== 'ready' &&
     (!selection.id || note.status === 'error') ? tree.error : null);
   const empty = !selection.id && !selection.invalid && tree.status === 'ready' && tree.data.entries.length === 0;
-  const canBrowse = !blocked && !empty;
+  const canBrowse = !blocked;
   const showFiles = canBrowse && (desktop ? desktopVisible : narrowOpen);
   const showReader = canBrowse && (desktop || !narrowOpen);
 
   useLayoutEffect(() => registerNavigationGuard?.(resume => {
+    if (actionNavigation.current) return true;
+    if (fileBusyRef.current) return false;
     const leave = () => { editor.leave(); resume(); };
     if (!editor.request(leave)) return false;
     editor.leave();
@@ -140,7 +165,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   useEffect(() => {
     const unload = (event: BeforeUnloadEvent) => {
       const current = editor.getSnapshot();
-      if (!editor.dirty() && !current.saving && !current.reloading) return;
+      if (!editor.dirty() && !current.saving && !current.reloading && !fileBusyRef.current) return;
       event.preventDefault();
       event.returnValue = '';
     };
@@ -243,13 +268,15 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
     revealSelection.current = true;
     const restoration = restoreOnEntry.current;
     // Returning through bare /recall replaces its URL; that is not a new-note reset.
-    pendingScroll.current = restoration?.replacing && key === idKey(restoration.id) ? restoration.scroll
+    const moved = actionPresentation.current?.key === (key ?? '') ? actionPresentation.current : null;
+    pendingScroll.current = moved ? moved.scroll : restoration?.replacing && key === idKey(restoration.id) ? restoration.scroll
       : navigationType === 'POP' ? recallSnapshot?.readerScroll ?? 0 : 0;
     restoreOnEntry.current = null;
     const hashPresentation = navigationType === 'POP' && location.nativeHash ? recallSnapshot : undefined;
     if (navigationType === 'POP' && recallSnapshot) session.treeScroll = { ...recallSnapshot.treeScroll };
     if (navigationType === 'POP') pendingFocus.current = selection.id && !hashPresentation ? 'identity' : null;
-    setNarrowOpen(hashPresentation?.narrowOpen ?? false);
+    setNarrowOpen(moved ? moved.narrowOpen : hashPresentation?.narrowOpen ?? false);
+    if (moved) actionPresentation.current = null;
     if (hashPresentation) setDesktopVisible(hashPresentation.desktopVisible);
   }, [entryKey, location.pathname, location.search, location.hash, navigationType, session, key]);
 
@@ -294,18 +321,20 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   useLayoutEffect(() => {
     // A selection can close Files while Next still displays the outgoing note.
     // Keep its focus intent until the selected entry is actually committed.
-    if (isNavigating) return;
+    if (isNavigating || fileBusy) return;
     const target = pendingFocus.current;
     if (!target) return;
     const element = target === 'files'
-      ? filesRef.current?.querySelector<HTMLElement>('a[aria-current="page"]') ?? filesHeading.current
+      ? (actionFocus.current ? Array.from(filesRef.current?.querySelectorAll<HTMLElement>('[data-entry-id]') ?? []).find(row => row.dataset.entryId === actionFocus.current)?.querySelector<HTMLElement>('.file-row') : null)
+        ?? filesRef.current?.querySelector<HTMLElement>('a[aria-current="page"]') ?? filesHeading.current
       : target === 'identity' ? identityRef.current : target === 'editor' ? textareaRef.current : target === 'edit' ? editRef.current : showFiles ? collapseRef.current : expandRef.current;
     if (element && (target !== 'files' || showFiles) && (!['identity', 'editor', 'edit'].includes(target) || showReader)) {
       if (target === 'editor') restoreEditor(); else element.focus({ preventScroll: true });
       if (target === 'files') element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       pendingFocus.current = null;
+      actionFocus.current = null;
     }
-  }, [entryKey, isNavigating, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded, editing]);
+  }, [entryKey, isNavigating, fileBusy, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded, editing]);
 
   useLayoutEffect(() => {
     document.title = filename ? `${filename} · Recall · Memory Loop`
@@ -339,6 +368,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   };
 
   const selectNote = (id: VaultId) => {
+    if (fileBusyRef.current) return;
     if (idKey(id) === key && draft) {
       pendingFocus.current = 'editor';
       setNarrowOpen(false);
@@ -365,6 +395,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   };
 
   const retryAll = () => {
+    setActionTree(null);
     editor.clearConfirmed();
     if (tree.status !== 'loading') setTreeRevision(value => value + 1);
     if (selection.id && note.status !== 'loading') setNoteRevision(value => value + 1);
@@ -381,10 +412,104 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
     : note.status === 'loading' ? 'Opening note…' : note.status === 'ready' ? 'Note opened.'
       : note.status === 'error' ? failureCopy[note.error].heading : tree.status === 'loading' ? 'Loading files…' : '';
 
-  return <div className="recall" onKeyDown={event => {
+  const refreshFiles = async () => {
+    if (!ownsFileView()) return;
+    const next = await readTree('tree', new AbortController().signal);
+    if (!ownsFileView()) return;
+    setActionTree(next);
+  };
+
+  const reconcileFiles = async () => {
+    await refreshFiles();
+    if (!ownsFileView()) return;
+    // A read-only reconciliation must not resurrect a stale selected body after
+    // an unconfirmed move/delete. An unrelated dirty draft remains untouched.
+    if (selection.id && !editor.getSnapshot().draft) {
+      editor.clearConfirmed();
+      setNoteRevision(value => value + 1);
+    }
+  };
+
+  const guardFileAction = (request: VaultActionRequest, run: () => void) => {
+    if (fileBusyRef.current || !ownsFileView()) return;
+    const current = editor.getSnapshot();
+    const affects = request.action === 'create-note' || ((request.action === 'move' || request.action === 'delete') &&
+      ((selection.id && containsId(request.id, selection.id)) || (current.draft && containsId(request.id, current.draft.id))));
+    const proceed = () => {
+      if (!ownsFileView()) return;
+      affectedAction.current = Boolean(affects);
+      uncertainAffectedId.current = (request.action === 'move' || request.action === 'delete') && selection.id && containsId(request.id, selection.id) ? selection.id : null;
+      // The guard may discard a draft, but the last acknowledged body/revision
+      // still belongs to this note until a confirmed move/delete replaces it.
+      if (affects) { rememberReader(); editor.finish(); }
+      run();
+    };
+    if (!affects || editor.request(proceed)) proceed();
+  };
+
+  const fileActionSucceeded = async (request: VaultActionRequest, result: VaultActionResponse, owns: () => boolean) => {
+    if (!owns()) return false;
+    const commitLocation = (href: string, replace = false) => {
+      if (!owns()) return;
+      actionNavigation.current = true;
+      try { navigate(href, { replace }); } finally { actionNavigation.current = false; }
+    };
+    await refreshFiles();
+    if (!owns()) return false;
+    if (request.action === 'create-note') {
+      // Creation acknowledgement is not a readable/editable note snapshot.
+      const created = await readNote(idKey(result.id), new AbortController().signal);
+      if (!owns()) return false;
+      editor.leave();
+      revealAncestors(result.id);
+      pendingScroll.current = 0;
+      pendingFocus.current = 'editor';
+      setNarrowOpen(false);
+      editor.start(result.id, created);
+      commitLocation(noteLocation(result.id));
+    } else if (request.action === 'create-directory') {
+      revealAncestors([...result.id, '_']);
+      actionFocus.current = idKey(result.id);
+      pendingFocus.current = 'files';
+    } else if (request.action === 'move') {
+      const remap = (id: VaultId): VaultId => containsId(request.id, id) ? [...result.id, ...id.slice(request.id.length)] : id;
+      setExpanded(previous => new Set([...previous].map(value => idKey(remap(JSON.parse(value) as VaultId)))));
+      revealAncestors(result.id);
+      if (selection.id && containsId(request.id, selection.id)) {
+        const nextId = remap(selection.id);
+        const scroll = draft ? editor.position.readingScroll : readerRef.current?.scrollTop ?? session.readerScroll;
+        actionPresentation.current = { key: idKey(nextId), scroll, narrowOpen };
+        editor.leave(); session.lastId = nextId; session.readerScroll = scroll;
+        revealAncestors(nextId);
+        pendingFocus.current = narrowOpen ? 'files' : 'identity';
+        commitLocation(noteLocation(nextId), true);
+      } else {
+        actionFocus.current = idKey(result.id);
+        pendingFocus.current = 'files';
+      }
+    } else if (request.action === 'delete') {
+      setExpanded(previous => new Set([...previous].filter(value => !containsId(request.id, JSON.parse(value) as VaultId))));
+      if (selection.id && containsId(request.id, selection.id)) {
+        editor.leave(); session.lastId = null; session.readerScroll = 0;
+        pendingScroll.current = 0;
+        setNarrowOpen(true); session.narrowClosed = false;
+        actionPresentation.current = { key: '', scroll: 0, narrowOpen: true };
+        commitLocation('/recall', true);
+      }
+      actionFocus.current = idKey(request.id.slice(0, -1));
+      pendingFocus.current = 'files';
+    }
+    return true;
+  };
+
+  return <FileActions tree={tree.status === 'ready' ? tree.data : null} guard={guardFileAction} onSuccess={fileActionSucceeded}
+    isCurrent={ownsFileView}
+    refresh={reconcileFiles} onBusy={busy => { fileBusyRef.current = busy; setFileBusy(busy); }} fenced={fileFenced}
+    setFenced={fenced => { session.fileActionFenced = fenced; session.fileActionAffectedId = fenced ? uncertainAffectedId.current : null; setFileFenced(fenced); }} unavailable={Boolean(editing.pending) || isNavigating}>
+    <div className="recall" onKeyDown={event => {
     if (draft && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
       event.preventDefault();
-      if (!event.nativeEvent.isComposing && !event.repeat) void editor.save();
+      if (!event.nativeEvent.isComposing && !event.repeat && !(fileBusyRef.current && affectedAction.current)) void editor.save();
     }
     if (editing.pending && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); keepEditing(); return; }
     if (showFiles && event.key === 'Escape' && filesRef.current?.contains(event.target as Node)) {
@@ -398,14 +523,16 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
         {filename && <p className="note-path">{selection.id.join(' / ')}</p>}
       </div>}
       <div className="recall-edit-actions" ref={actionRef} aria-busy={editing.saving || editing.reloading}>
+        {selectedFenced && <span className="visually-hidden" id="recall-file-action-fence">Refresh files before editing this note.</span>}
         {draft ? <>
-          <button className="recall-button" type="button" disabled={editing.saving || editing.reloading} onClick={() => {
+          <button className="recall-button" type="button" disabled={editing.saving || editing.reloading || (fileBusy && affectedAction.current)} onClick={() => {
             const cancel = () => { pendingFocus.current = 'edit'; editor.finish(); };
             if (editor.request(cancel)) cancel();
           }}>Cancel</button>
-          <button className="recall-button recall-save" type="button" disabled={!dirty || editing.saving || editing.reloading || Boolean(editing.pending) || editing.fenced}
+          <button className="recall-button recall-save" type="button" disabled={!dirty || editing.saving || editing.reloading || Boolean(editing.pending) || editing.fenced || (fileBusy && affectedAction.current)}
             aria-describedby={editing.issue ? 'recall-edit-error' : undefined} onClick={() => void editor.save()}>{editing.saving ? 'Saving…' : 'Save'}</button>
-        </> : note.status === 'ready' && note.data.editable ? <button className="recall-button" type="button" ref={editRef} onClick={() => {
+        </> : note.status === 'ready' && note.data.editable ? <button className="recall-button" type="button" ref={editRef}
+          disabled={selectedFenced || (fileBusy && affectedAction.current)} aria-describedby={selectedFenced ? 'recall-file-action-fence' : undefined} onClick={() => {
           if (!selection.id) return;
           editor.position.readingScroll = readerRef.current?.scrollTop ?? session.readerScroll;
           pendingFocus.current = 'editor';
@@ -414,6 +541,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
         }}>Edit</button> : note.status === 'ready' ? <p className="read-only-label">Read-only</p> : null}
       </div>
     </header>
+    <FileActionRecovery />
     {editing.pending && <section className="recall-discard" aria-labelledby="recall-discard-title" aria-describedby="recall-discard-copy">
       <div><h2 id="recall-discard-title">Discard unsaved changes?</h2><p id="recall-discard-copy">Your changes to “{filename}” haven't been saved.</p></div>
       <div className="recall-confirm-actions"><button className="recall-button" type="button" ref={keepRef} onClick={keepEditing}>Keep editing</button>
@@ -421,9 +549,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
     </section>}
     <div className={editing.notice.includes('Please wait') ? 'recall-notice' : 'visually-hidden'} role="status" aria-live="polite" aria-atomic="true">{editing.notice || (announcement ? `Recall: ${announcement}` : '')}</div>
     {blocked ? <div className="recall-blocking"><Failure code={blocked} retry={retryAll} /></div>
-      : empty ? <div className="recall-blocking"><Message heading="No Markdown notes to show"
-        body="Recall lists Markdown files and folders only. Other files and hidden entries aren't shown." /></div>
-        : <div className={`recall-panes${showFiles && desktop ? ' recall-panes--split' : ''}`}>
+      : <div className={`recall-panes${showFiles && desktop ? ' recall-panes--split' : ''}`}>
           <nav className="recall-files" id="recall-files" aria-label="Vault files" ref={filesRef} hidden={!showFiles}
             aria-busy={tree.status === 'loading'} onScroll={() => {
               if (showFiles && tree.status === 'ready' && filesRef.current) {
@@ -433,18 +559,18 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
             }}>
             <header className="files-header">
               <h2 ref={filesHeading} tabIndex={-1}>Files</h2>
-              <FilesToggle expanded active={showFiles} ref={collapseRef} onToggle={closeFiles} />
+              <div className="files-header-actions"><FileActionTrigger target={null} /><FilesToggle expanded active={showFiles} ref={collapseRef} onToggle={closeFiles} /></div>
             </header>
             {desktop && selection.id && <button className="pane-jump" type="button" onClick={() => draft ? restoreEditor() : articleRef.current?.focus({ preventScroll: true })}>Skip to note</button>}
-            {tree.status === 'loading' ? <p className="files-status">Loading files…</p>
+            <FileBackground>{tree.status === 'loading' ? <p className="files-status">Loading files…</p>
               : tree.status === 'error' ? <Message heading="Couldn't load files" body="The file list couldn't be retrieved. Try again."
-                action="Retry files" onAction={() => setTreeRevision(value => value + 1)} />
+                action="Retry files" onAction={() => { setActionTree(null); setTreeRevision(value => value + 1); }} />
                 : tree.status === 'ready' && <>
                   {tree.data.entries.length ? <VaultFiles entries={tree.data.entries} selected={key} expanded={expanded}
                     toggle={toggleFolder}
                     select={selectNote} /> : <p className="files-status">No Markdown notes to show</p>}
                   <p className="files-footnote">Markdown files only.</p>
-                </>}
+                </>}</FileBackground>
           </nav>
           <section className={`recall-reader${draft ? ' recall-reader--editing' : ''}`} ref={readerRef} hidden={!showReader} aria-label="Note reader" onScroll={rememberReader}>
             {showReader && !showFiles && <div className="reader-controls">
@@ -467,8 +593,8 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
                       }}>{editing.reloading ? 'Reloading…' : 'Reload saved note'}</button>}
                     </div>}
                     <div className="recall-editor-label"><label id="recall-markdown-label" htmlFor="recall-markdown">Markdown</label>{dirty && <span>Unsaved changes</span>}</div>
-                    <textarea id="recall-markdown" ref={textareaRef} value={draft.markdown} spellCheck={false} aria-labelledby="recall-markdown-label note-identity"
-                      aria-describedby={editing.issue ? 'recall-edit-error' : undefined} readOnly={editing.reloading}
+                      <textarea id="recall-markdown" ref={textareaRef} value={draft.markdown} spellCheck={false} aria-labelledby="recall-markdown-label note-identity"
+                      aria-describedby={editing.issue ? 'recall-edit-error' : undefined} readOnly={editing.reloading || (fileBusy && affectedAction.current)}
                       onChange={event => editor.change(event.target.value)} onSelect={event => {
                         const field = event.currentTarget;
                         Object.assign(editor.position, { start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection });
@@ -483,5 +609,5 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
             </div>}
           </section>
         </div>}
-  </div>;
+  </div></FileActions>;
 }

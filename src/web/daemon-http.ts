@@ -1,17 +1,17 @@
 import 'server-only';
 import { request } from 'node:http';
-import { vaultSaveBodyLimit } from '../../backend/contract';
+import { vaultActionBodyLimit, vaultSaveBodyLimit } from '../../backend/contract';
 
 /** Node fetch adds Sec-Fetch-Mode even with fresh headers. The service protocol
  * deliberately forbids browser metadata, so use the standard Node HTTP client. */
 export async function daemonFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (!(input instanceof URL)) throw new Error('Invalid service target');
   if (input.protocol !== 'http:' || input.hostname !== '127.0.0.1' || input.username || input.password ||
-      !['/api/vault/tree', '/api/vault/note'].includes(input.pathname) || input.hash) throw new Error('Invalid service target');
+      !['/api/vault/tree', '/api/vault/note', '/api/vault/actions'].includes(input.pathname) || input.hash) throw new Error('Invalid service target');
   const method = init?.method ?? 'GET';
-  const saving = method === 'POST' && input.pathname === '/api/vault/note' && !input.search;
-  if (method !== 'GET' && !saving) throw new Error('Invalid service method');
-  if (saving && (typeof init?.body !== 'string' || Buffer.byteLength(init.body) > vaultSaveBodyLimit)) throw new Error('Invalid service body');
+  const saving = method === 'POST' && (input.pathname === '/api/vault/note' || input.pathname === '/api/vault/actions') && !input.search;
+  if (method !== 'GET' && !saving || method === 'GET' && input.pathname === '/api/vault/actions') throw new Error('Invalid service method');
+  if (saving && (typeof init?.body !== 'string' || Buffer.byteLength(init.body) > (input.pathname === '/api/vault/actions' ? vaultActionBodyLimit : vaultSaveBodyLimit))) throw new Error('Invalid service body');
   const supplied = new Headers(init?.headers);
   const headers = { Accept: supplied.get('accept') ?? 'application/json', Authorization: supplied.get('authorization') ?? '', ...(saving ? { 'Content-Type': 'application/json' } : {}) };
   return new Promise<Response>((resolve, reject) => {

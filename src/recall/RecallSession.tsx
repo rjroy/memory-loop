@@ -12,6 +12,8 @@ export function createRecallSession() {
     narrowClosed: false,
     treeScroll: { top: 0, left: 0 },
     readerScroll: 0,
+    fileActionFenced: false,
+    fileActionAffectedId: null as VaultId | null,
   };
 }
 

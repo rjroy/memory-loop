@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RecallView from '../../src/views/RecallView';
 import { TestPresentation } from './fixtures/presentation';
 import {
-  alphaId, betaId, deferred, errorResponse, expectOnlyVaultReads,
+  alphaId, betaId, deferred, errorResponse, expectOnlyVaultReads, fixtureTree,
   installVaultApi, installViewport, jsonResponse, noteLocation, rootId, vaultTree,
 } from './fixtures/recall';
 
@@ -254,7 +254,7 @@ describe('Recall: native file selection and reading', () => {
 describe('Recall: truthful failures and short-query recovery', () => {
   it('distinguishes the three 503 codes from an empty eligible tree and retries without editing config', async () => {
     const replies = [errorResponse('config_missing', 503), errorResponse('config_invalid', 503),
-      errorResponse('vault_unavailable', 503), jsonResponse({ entries: [] })];
+      errorResponse('vault_unavailable', 503), jsonResponse(fixtureTree([]))];
     api = installVaultApi({ tree: () => replies.shift()! });
     const user = userEvent.setup();
     mount();
@@ -270,8 +270,10 @@ describe('Recall: truthful failures and short-query recovery', () => {
     expect(screen.queryByText('No Markdown notes to show')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await screen.findByText('No Markdown notes to show');
-    expect(screen.queryByText('Choose a Markdown note')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^(Collapse|Expand) files sidebar$/ })).not.toBeInTheDocument();
+    expect(screen.getByText('Choose a Markdown note')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Vault files' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Vault actions' }));
+    expect(screen.getByRole('menuitem', { name: /New file/ })).toBeEnabled();
     expect(requestedNotes()).toEqual([]);
     expect(push).not.toHaveBeenCalled();
   });
@@ -319,7 +321,7 @@ describe('Recall: truthful failures and short-query recovery', () => {
       attempts++;
       if (attempts === 1) return new Response('<html>Static fixture fallback</html>', { headers: { 'Content-Type': 'text/html' } });
       if (attempts === 2) throw new TypeError('Controlled transport diagnostic');
-      return jsonResponse({ entries: [] });
+      return jsonResponse(fixtureTree([]));
     } });
     const user = userEvent.setup();
     mount();

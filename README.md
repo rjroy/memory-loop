@@ -1,8 +1,8 @@
 # Memory Loop
 
 A personal workspace with four stable destinations: Ground, Capture,
-Think, and Recall. **Recall is built:** browse one configured vault and read
-Markdown without changing it. **Capture is built:** save thoughts to the same
+Think, and Recall. **Recall is built:** browse one configured vault, read and
+edit Markdown, and manage notes and folders. **Capture is built:** save thoughts to the same
 configured vault. **Think has a working conversation UI in the isolated local
 fixture** below. Ground now presents six independent cards, including recent
 registered conversations with Resume and Delete, and can prepare an unsent Think
@@ -14,7 +14,7 @@ The user-approved character board is now applied: inspiring Ground, quiet Captur
 curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
 The native Next App Router migration (`memory-loop-1l0.2`) is accepted. Next
-presents the UI and proxies Recall's read-only API and Capture's write route to
+presents the UI and proxies Recall's vault API and Capture's write route to
 the authenticated Bun/Hono daemon. Capture has been verified with a disposable
 vault. Think command/stream/content foundations are
 available in the isolated fixture below, with conversation controls, reconnect,
@@ -424,8 +424,8 @@ missing/invalid vault config remains a distinct read error after daemon startup.
 
 ### Browser and private deployment boundary
 
-The browser uses same-origin Next APIs. Recall uses `GET /api/vault/tree` and
-`GET /api/vault/note`; Capture uses `POST /api/capture`; Ground uses six fixed
+The browser uses same-origin Next APIs. Recall uses `GET /api/vault/tree`,
+`GET` and `POST /api/vault/note`, and `POST /api/vault/actions`; Capture uses `POST /api/capture`; Ground uses six fixed
 read routes under `/api/ground`; the internal Think layer
 adds fixed command, snapshot, watch, content and decision routes under the same web request policy, not a
 generic OpenCode proxy. The BFF creates fresh service headers
@@ -606,8 +606,15 @@ tracked as `memory-loop-22s`.
   interpreted metadata. Source H1–H5 shift down one level beneath Recall H1;
   source H6 stays H6. Skipped source levels are not repaired.
 
-Recall has no search, editing, saving, media viewer, AI action or vault write
-control. Dot entries, symlinks and non-`.md` files are omitted. Empty trees,
+Recall can save edits to existing Markdown notes, create blank Markdown notes and
+folders, move notes or whole folders without renaming them, and delete notes or
+empty folders. Moves do not overwrite destinations; folder deletion is not
+recursive, including when hidden or non-Markdown contents are present. Conflicts
+require a fresh read before another action. An uncertain outcome is not
+automatically retried as a destructive request.
+
+Recall has no search, media viewer or AI action. Dot entries, symlinks and
+non-`.md` files are omitted from the tree. Empty trees,
 empty notes, config failures, unavailable notes/vaults and transport failures
 are distinct states. See the [approved Recall design](.lore/work/design/recall-read-only.md)
 and [daemon contract](backend/CONTRACT.md).

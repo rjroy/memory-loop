@@ -1,12 +1,29 @@
 import { expect, vi } from 'vitest';
-import type { VaultErrorCode, VaultId, VaultTreeResponse } from '../../../backend/contract';
+import type { VaultErrorCode, VaultId } from '../../../backend/contract';
 
 // All names/content here belong to the tests. Never read application config or disk.
 export const alphaId = ['Test shelf & café', 'Alpha #1.md'] as const;
 export const betaId = ['Test shelf & café', 'Beta.md'] as const;
 export const rootId = ['Root.md'] as const;
-export const vaultTree: VaultTreeResponse = {
-  entries: [
+type FixtureEntry =
+  | { kind: 'directory'; name: string; id: VaultId; children: FixtureEntry[] }
+  | { kind: 'note'; name: string; id: VaultId };
+type FixtureEntryWithMetadata =
+  | { kind: 'directory'; name: string; id: VaultId; identity: string; version: string; children: FixtureEntryWithMetadata[] }
+  | { kind: 'note'; name: string; id: VaultId; identity: string; version: string };
+
+/** Stable opaque metadata for test-owned trees; never derives from a real vault. */
+export function fixtureTree(entries: FixtureEntry[]) {
+  function withMetadata(entry: FixtureEntry): FixtureEntryWithMetadata {
+    const metadata = { identity: `identity:${JSON.stringify(entry.id)}`, version: `version:${JSON.stringify(entry.id)}` };
+    return entry.kind === 'directory'
+      ? { ...entry, ...metadata, children: entry.children.map(withMetadata) }
+      : { ...entry, ...metadata };
+  }
+  return { rootIdentity: 'fixture-root-identity', entries: entries.map(withMetadata) };
+}
+
+export const vaultTree = fixtureTree([
     {
       kind: 'directory', name: 'Test shelf & café', id: ['Test shelf & café'],
       children: [
@@ -16,8 +33,7 @@ export const vaultTree: VaultTreeResponse = {
       ],
     },
     { kind: 'note', name: 'Root.md', id: rootId },
-  ],
-};
+]);
 
 export function noteLocation(id: VaultId): string {
   return `/recall?${new URLSearchParams({ file: JSON.stringify(id) })}`;

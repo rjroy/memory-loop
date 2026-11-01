@@ -294,7 +294,7 @@ describe('production Next HTTP boundary', () => {
           return;
         }
         res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
-        res.end(JSON.stringify(req.url?.startsWith('/api/vault/note') ? { name: 'fixture.md', markdown: '# fixture', revision: 'fixture-revision', editable: true } : { entries: [] }));
+        res.end(JSON.stringify(req.url?.startsWith('/api/vault/note') ? { name: 'fixture.md', markdown: '# fixture', revision: 'fixture-revision', editable: true } : { rootIdentity: 'root', entries: [] }));
       });
     });
     const upstreamPort = await listen(upstream);
@@ -371,7 +371,7 @@ describe('production Next HTTP boundary', () => {
     calls = [];
     const response = await request('/api/vault/tree', { origin: `http://127.0.0.1:${port}`, authorization: 'Bearer browser-secret', cookie: 'session=fixture' });
     expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({ entries: [] });
+    expect(JSON.parse(response.body)).toEqual({ rootIdentity: 'root', entries: [] });
     expect(response.headers['cache-control']).toBe('no-store');
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['set-cookie']).toBeUndefined();

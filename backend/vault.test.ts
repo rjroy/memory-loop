@@ -34,12 +34,12 @@ it('lists sorted Markdown and folders, excluding dot entries, other files and sy
   await symlink('zeta.md', join(root, 'link.md'));
   await symlink('alpha', join(root, 'link-dir'));
 
-  expect(await reader.tree()).toEqual({ entries: [
-    { kind: 'directory', name: 'alpha', id: ['alpha'], children: [
-      { kind: 'note', name: 'first.md', id: ['alpha', 'first.md'] },
-      { kind: 'note', name: 'second.md', id: ['alpha', 'second.md'] },
+  expect(await reader.tree()).toEqual({ rootIdentity: expect.any(String), entries: [
+    { kind: 'directory', name: 'alpha', id: ['alpha'], identity: expect.any(String), version: expect.any(String), children: [
+      { kind: 'note', name: 'first.md', id: ['alpha', 'first.md'], identity: expect.any(String), version: expect.any(String) },
+      { kind: 'note', name: 'second.md', id: ['alpha', 'second.md'], identity: expect.any(String), version: expect.any(String) },
     ] },
-    { kind: 'note', name: 'zeta.md', id: ['zeta.md'] },
+    { kind: 'note', name: 'zeta.md', id: ['zeta.md'], identity: expect.any(String), version: expect.any(String) },
   ] });
 });
 
@@ -50,7 +50,7 @@ it('returns the exact Markdown and display name of a nested note', async () => {
 });
 
 it('returns an empty tree for an empty vault', async () => {
-  expect(await reader.tree()).toEqual({ entries: [] });
+  expect(await reader.tree()).toEqual({ rootIdentity: expect.any(String), entries: [] });
 });
 
 it('continues using the pinned root if its configured pathname is replaced', async () => {

@@ -5,7 +5,7 @@ import { handleVaultRequest } from './vault-bff';
 
 const token = 'a'.repeat(64);
 const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001' }, serviceToken: token };
-const tree: VaultTreeResponse = { entries: [{ kind: 'directory', name: 'folder', id: ['folder'], children: [{ kind: 'note', name: 'a.md', id: ['folder', 'a.md'] }] }] };
+const tree: VaultTreeResponse = { rootIdentity: 'root', entries: [{ kind: 'directory', name: 'folder', id: ['folder'], identity: 'folder-id', version: 'folder-version', children: [{ kind: 'note', name: 'a.md', id: ['folder', 'a.md'], identity: 'note-id', version: 'note-version' }] }] };
 const note: VaultNoteResponse = { name: 'a.md', markdown: '# fixture', revision: 'revision-1', editable: true };
 const json = (body: unknown, status = 200, headers: HeadersInit = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 function setup(upstream: () => Promise<Response> = async () => json(tree), selected = transport) {

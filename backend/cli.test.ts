@@ -82,8 +82,8 @@ async function checkFixture(body: string, contentType: string) {
 }
 
 it.each([
-  { entries: [{ kind: 'note', name: 'private-fixture-name.md', id: ['private-fixture-name.md'] }] },
-  { entries: [] },
+  { rootIdentity: 'root', entries: [{ kind: 'note', name: 'private-fixture-name.md', id: ['private-fixture-name.md'], identity: 'note-id', version: 'note-version' }] },
+  { rootIdentity: 'root', entries: [] },
 ])('check:daemon accepts a valid fixture tree without printing its contents', async tree => {
   const result = await checkFixture(JSON.stringify(tree), 'application/json');
   expect(result.code).toBe(0);

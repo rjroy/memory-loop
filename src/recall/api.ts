@@ -1,4 +1,4 @@
-import { isVaultComponent, isVaultErrorCode, isVaultId, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultTreeResponse, type VaultSaveRequest, type VaultSaveResponse } from '../../backend/contract';
+import { isVaultComponent, isVaultErrorCode, isVaultId, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultTreeResponse, type VaultSaveRequest, type VaultSaveResponse, type VaultAction as VaultActionRequest, type VaultActionResponse } from '../../backend/contract';
 
 export type RecallFailure = VaultErrorCode | 'transport';
 
@@ -34,12 +34,15 @@ export function selectionFromSearch(search: string): { id: VaultId | null; inval
 function isTree(value: unknown): value is VaultTreeResponse {
   const entriesValid = (entries: unknown, parent: VaultId): boolean => Array.isArray(entries) && entries.every(entry => {
     if (!record(entry) || !isVaultComponent(entry.name) || !isVaultId(entry.id) ||
+      !opaque(entry.identity) || !opaque(entry.version) ||
       idKey(entry.id) !== idKey([...parent, entry.name])) return false;
     if (entry.kind === 'note') return entry.name.endsWith('.md');
     return entry.kind === 'directory' && entriesValid(entry.children, entry.id);
   });
-  return record(value) && entriesValid(value.entries, []);
+  return record(value) && opaque(value.rootIdentity) && entriesValid(value.entries, []);
 }
+
+function opaque(value: unknown): value is string { return typeof value === 'string' && value.length > 0 && value.length <= 512; }
 
 let readSequence = 0;
 
@@ -107,6 +110,41 @@ export async function saveNote(body: VaultSaveRequest): Promise<VaultSaveRespons
   } finally { console.info('vault_save_outcome', { requestId, status: outcome }); }
 }
 
+/** Only an explicit call mutates. Missing acknowledgement never schedules a retry. */
+export async function actOnFiles(body: VaultActionRequest): Promise<VaultActionResponse> {
+  const requestId = ++readSequence;
+  let outcome: RecallFailure | 'confirmed' = 'file_action_uncertain';
+  console.info('vault_action_attempt', { requestId, action: body.action });
+  try {
+    const response = await fetch('/api/vault/actions', { method: 'POST', cache: 'no-store',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') throw new RecallReadError('file_action_uncertain');
+    const value: unknown = await response.json();
+    if (!response.ok) {
+      if (record(value) && record(value.error) && isVaultErrorCode(value.error.code)) throw new RecallReadError(value.error.code);
+      throw new RecallReadError('file_action_uncertain');
+    }
+    const expected = body.action === 'create-note' || body.action === 'create-directory' ? [...body.parentId, body.name]
+      : body.action === 'move' ? [...body.destinationParentId, body.id.at(-1)!] : body.action === 'delete' ? body.id : [];
+    if (!record(value) || !isVaultId(value.id) || idKey(value.id) !== idKey(expected) ||
+      (body.action === 'create-note' && !opaque(value.revision))) throw new RecallReadError('file_action_uncertain');
+    outcome = 'confirmed';
+    return value as unknown as VaultActionResponse;
+  } catch (error: unknown) {
+    if (error instanceof RecallReadError) { outcome = error.code; throw error; }
+    throw new RecallReadError('file_action_uncertain');
+  } finally { console.info('vault_action_outcome', { requestId, action: body.action, status: outcome }); }
+}
+
+export function containsId(parent: VaultId, id: VaultId): boolean { return parent.length <= id.length && parent.every((part, index) => part === id[index]); }
+
+export function findEntry(entries: VaultEntry[], id: VaultId): VaultEntry | undefined {
+  for (const entry of entries) {
+    if (idKey(entry.id) === idKey(id)) return entry;
+    if (entry.kind === 'directory') { const found = findEntry(entry.children, id); if (found) return found; }
+  }
+}
+
 export function findNote(entries: VaultEntry[], id: VaultId): VaultEntry | undefined {
   const key = idKey(id);
   for (const entry of entries) {
@@ -128,5 +166,13 @@ export const failureCopy: Record<RecallFailure, { heading: string; body: string;
   note_not_editable: { heading: 'Note cannot be edited', body: 'This note can still be viewed.', action: 'Retry note' },
   note_save_unavailable: { heading: 'Save unavailable', body: 'The note could not be saved.', action: 'Retry note' },
   note_save_uncertain: { heading: 'Save outcome uncertain', body: 'Check the note before trying again.', action: 'Retry note' },
+  entry_unavailable: { heading: 'Item unavailable', body: 'This item may have moved or been removed. Refresh files.', action: 'Refresh files' },
+  entry_conflict: { heading: 'Item changed', body: 'This item has changed. Refresh files before trying again.', action: 'Refresh files' },
+  entry_exists: { heading: 'Name already exists', body: 'An item with this name already exists in that folder. Choose another name or folder.', action: 'Refresh files' },
+  folder_not_empty: { heading: 'Folder not empty', body: "This folder isn't empty. Only empty folders can be deleted.", action: 'Refresh files' },
+  move_cross_device: { heading: 'Move unavailable', body: 'These folders are on different filesystems. Choose another folder.', action: 'Refresh files' },
+  move_unsupported: { heading: 'Move unavailable', body: 'Safe moves are not supported by this vault service.', action: 'Refresh files' },
+  file_action_unavailable: { heading: 'Action unavailable', body: "The action couldn't be completed. Refresh files before trying again.", action: 'Refresh files' },
+  file_action_uncertain: { heading: 'Action not confirmed', body: 'Refresh files to check what happened before trying again.', action: 'Refresh files' },
   transport: { heading: 'Vault service unavailable', body: "Recall couldn't reach the vault service. Check the local service and try again.", action: 'Try again' },
 };

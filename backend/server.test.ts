@@ -176,8 +176,8 @@ it('loads fixture config once and serves the real tree and selected note through
   const tree = await request('/api/vault/tree');
   expect(tree.status).toBe(200);
   expect(tree.headers.get('cache-control')).toBe('no-store');
-  expect(await tree.json()).toEqual({ entries: [{ kind: 'directory', name: 'folder', id: ['folder'], children: [
-    { kind: 'note', name: 'note.md', id: ['folder', 'note.md'] },
+  expect(await tree.json()).toEqual({ rootIdentity: expect.any(String), entries: [{ kind: 'directory', name: 'folder', id: ['folder'], identity: expect.any(String), version: expect.any(String), children: [
+    { kind: 'note', name: 'note.md', id: ['folder', 'note.md'], identity: expect.any(String), version: expect.any(String) },
   ] }] });
   const note = await request(`/api/vault/note?${new URLSearchParams({ id: JSON.stringify(['folder', 'note.md']) })}`);
   expect(note.status).toBe(200);

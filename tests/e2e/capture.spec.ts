@@ -38,7 +38,7 @@ test('desktop captures real multiline and appended entries, then reads the daily
 
   await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Recall' }).click();
   const files = page.getByRole('navigation', { name: 'Vault files' });
-  await files.getByRole('button', { name: '00_Inbox' }).click();
+  await files.getByRole('button', { name: '00_Inbox', exact: true }).click();
   await files.getByRole('link', { name: names[0] }).click();
   const article = page.getByRole('article');
   await expect(article).toContainText('First fixture line');

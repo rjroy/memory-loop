@@ -1,5 +1,5 @@
 import type { LoadedTransport } from '../../backend/transport';
-import { isVaultErrorCode, isVaultId, parseVaultSaveRequest, vaultErrors, vaultSaveBodyLimit, type VaultEntry, type VaultId, type VaultErrorCode } from '../../backend/contract';
+import { isVaultErrorCode, isVaultId, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultEntry, type VaultId, type VaultErrorCode } from '../../backend/contract';
 import { allowsWebRequest } from './request-policy';
 
 export interface BffDependencies {
@@ -24,20 +24,20 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 function entry(value: unknown): VaultEntry {
-  if (!record(value) || typeof value.name !== 'string' || !isVaultId(value.id)) throw new Error('invalid');
+  if (!record(value) || typeof value.name !== 'string' || !isVaultId(value.id) || typeof value.identity !== 'string' || !value.identity || typeof value.version !== 'string' || !value.version) throw new Error('invalid');
   const id = [...value.id];
-  if (value.kind === 'note') return { kind: 'note', name: value.name, id };
-  if (value.kind === 'directory' && Array.isArray(value.children)) return { kind: 'directory', name: value.name, id, children: value.children.map(entry) };
+  if (value.kind === 'note') return { kind: 'note', name: value.name, id, identity: value.identity, version: value.version };
+  if (value.kind === 'directory' && Array.isArray(value.children)) return { kind: 'directory', name: value.name, id, identity: value.identity, version: value.version, children: value.children.map(entry) };
   throw new Error('invalid');
 }
 function project(value: unknown, operation: 'tree' | 'note') {
   if (!record(value)) throw new Error('invalid');
-  if (operation === 'tree' && Array.isArray(value.entries)) return { entries: value.entries.map(entry) };
+  if (operation === 'tree' && typeof value.rootIdentity === 'string' && value.rootIdentity && Array.isArray(value.entries)) return { rootIdentity: value.rootIdentity, entries: value.entries.map(entry) };
   if (operation === 'note' && typeof value.name === 'string' && typeof value.markdown === 'string' && typeof value.revision === 'string' && value.revision.length > 0 && typeof value.editable === 'boolean') return { name: value.name, markdown: value.markdown, revision: value.revision, editable: value.editable };
   throw new Error('invalid');
 }
 
-async function saveBody(request: Request): Promise<string> {
+async function saveBody(request: Request, action: boolean): Promise<string> {
   if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers.get('content-type') ?? '') || !request.body) throw new Error('invalid');
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -49,10 +49,11 @@ async function saveBody(request: Request): Promise<string> {
         const { done, value } = await reader.read();
         if (done) break;
         size += value.byteLength;
-        if (size > vaultSaveBodyLimit) { void reader.cancel().catch(() => {}); throw new Error('invalid'); }
+        if (size > (action ? vaultActionBodyLimit : vaultSaveBodyLimit)) { void reader.cancel().catch(() => {}); throw new Error('invalid'); }
         chunks.push(value);
       }
-      const input = parseVaultSaveRequest(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))) as unknown);
+      const raw: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
+      const input = action ? parseVaultAction(raw) : parseVaultSaveRequest(raw);
       if (!input) throw new Error('invalid');
       return JSON.stringify(input);
     };
@@ -78,21 +79,23 @@ function domainError(value: unknown, status: number): VaultErrorCode | undefined
 export async function handleVaultRequest(request: Request, dependencies: BffDependencies): Promise<Response> {
   const { transport, log } = dependencies;
   const url = new URL(request.url);
-  const operation = url.pathname === '/api/vault/tree' ? 'tree' : url.pathname === '/api/vault/note' ? 'note' : 'other';
+  const operation = url.pathname === '/api/vault/tree' ? 'tree' : url.pathname === '/api/vault/note' ? 'note' : url.pathname === '/api/vault/actions' ? 'actions' : 'other';
   const requestId = crypto.randomUUID();
   log('vault_bff_attempt', { requestId, operation });
   let response: Response;
   let dispatched = false;
   const saving = operation === 'note' && request.method === 'POST';
+  const acting = operation === 'actions' && request.method === 'POST';
+  const mutating = saving || acting;
   try {
     if (!allowsWebRequest(request)) response = failure('forbidden');
     else if (operation === 'other') response = failure('not_found');
-    else if (request.method !== 'GET' && !saving) response = failure('method_not_allowed');
+    else if (operation === 'actions' ? !acting : request.method !== 'GET' && !saving) response = failure('method_not_allowed');
     else {
       let id: VaultId | undefined;
       let body: string | undefined;
-      if (saving) {
-        try { if (url.search) throw new Error('invalid'); body = await saveBody(request); }
+      if (mutating) {
+        try { if (url.search) throw new Error('invalid'); body = await saveBody(request, acting); }
         catch { response = failure('invalid_request'); log('vault_bff_outcome', { requestId, operation, status: response.status }); return response; }
       }
       if (operation === 'note' && !saving) {
@@ -115,8 +118,8 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
             timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, 5000);
           });
           const upstream = async () => {
-            dispatched = saving;
-            const result = await dependencies.fetch(target, { ...(saving ? { method: 'POST', body } : {}), headers: { Accept: 'application/json', Authorization: `Bearer ${transport.serviceToken}`, ...(saving ? { 'Content-Type': 'application/json' } : {}) }, cache: 'no-store', redirect: 'error', signal: controller.signal });
+            dispatched = mutating;
+            const result = await dependencies.fetch(target, { ...(mutating ? { method: 'POST', body } : {}), headers: { Accept: 'application/json', Authorization: `Bearer ${transport.serviceToken}`, ...(mutating ? { 'Content-Type': 'application/json' } : {}) }, cache: 'no-store', redirect: 'error', signal: controller.signal });
             if (!/^application\/json(?:\s*;|\s*$)/i.test(result.headers.get('content-type') ?? '')) throw new Error('invalid');
             const value: unknown = await result.json();
             if (result.status === 200) {
@@ -124,16 +127,29 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
                 if (!record(value) || typeof value.revision !== 'string' || !value.revision || value.revision.length > 128) throw new Error('invalid');
                 return Response.json({ revision: value.revision }, { headers });
               }
-              return Response.json(project(value, operation), { headers });
+              if (acting) {
+                if (!record(value) || !isVaultId(value.id)) throw new Error('invalid');
+                const sent = parseVaultAction(JSON.parse(body ?? 'null') as unknown);
+                if (!sent) throw new Error('invalid');
+                const expectedId = sent.action === 'create-note' || sent.action === 'create-directory' ? [...sent.parentId, sent.name]
+                  : sent.action === 'move' ? [...sent.destinationParentId, sent.id[sent.id.length - 1]] : sent.id;
+                if (value.id.length !== expectedId.length || value.id.some((part, i) => part !== expectedId[i])) throw new Error('invalid');
+                if (sent.action === 'create-note') {
+                  if (typeof value.revision !== 'string' || !value.revision || value.revision.length > 128) throw new Error('invalid');
+                  return Response.json({ id: value.id, revision: value.revision }, { headers });
+                }
+                return Response.json({ id: value.id }, { headers });
+              }
+              return Response.json(project(value, operation === 'tree' ? 'tree' : 'note'), { headers });
             }
             const code = domainError(value, result.status);
-            return code ? failure(code) : failure(saving ? 'note_save_uncertain' : 'service_unavailable');
+            return code ? failure(code) : failure(acting ? 'file_action_uncertain' : saving ? 'note_save_uncertain' : 'service_unavailable');
           };
           response = await Promise.race([upstream(), timeout]);
         } finally { if (timer !== undefined) clearTimeout(timer); }
       }
     }
-  } catch { response = failure(dispatched ? 'note_save_uncertain' : 'service_unavailable'); }
+  } catch { response = failure(dispatched ? acting ? 'file_action_uncertain' : 'note_save_uncertain' : 'service_unavailable'); }
   log('vault_bff_outcome', { requestId, operation, status: response.status });
   return response;
 }

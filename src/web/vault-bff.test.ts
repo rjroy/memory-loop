@@ -4,7 +4,7 @@ import type { VaultNoteResponse, VaultTreeResponse } from '../../backend/contrac
 import { handleVaultRequest } from './vault-bff';
 
 const token = 'a'.repeat(64);
-const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } }, serviceToken: token };
+const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001' }, serviceToken: token };
 const tree: VaultTreeResponse = { entries: [{ kind: 'directory', name: 'folder', id: ['folder'], children: [{ kind: 'note', name: 'a.md', id: ['folder', 'a.md'] }] }] };
 const note: VaultNoteResponse = { name: 'a.md', markdown: '# fixture' };
 const json = (body: unknown, status = 200, headers: HeadersInit = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -34,7 +34,7 @@ async function safe(response: Response) {
 describe('server-only vault BFF boundary', () => {
   it('projects a valid tree and makes a fresh fixed authenticated request', async () => {
     const { request, fetcher } = setup();
-    const response = await request('/api/vault/tree', { headers: { authorization: 'Bearer browser-secret', cookie: 'session=private', 'x-forwarded-host': 'evil.test', 'tailscale-user-login': 'attacker', origin: transport.config.web.origin, 'sec-fetch-site': 'same-origin' } });
+    const response = await request('/api/vault/tree', { headers: { authorization: 'Bearer browser-secret', cookie: 'session=private', 'x-forwarded-host': 'evil.test', 'tailscale-user-login': 'attacker', origin: 'http://127.0.0.1:3000', 'sec-fetch-site': 'same-origin' } });
     expect(response.status).toBe(200);
     expect(JSON.parse(await safe(response))).toEqual(tree);
     expect(fetcher).toHaveBeenCalledOnce();
@@ -78,7 +78,7 @@ describe('server-only vault BFF boundary', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
   it.each<Record<string, string>>([
-    { host: 'evil.test', 'x-forwarded-host': '127.0.0.1:3000' },
+    { host: 'evil.test', origin: 'http://127.0.0.1:3000', 'x-forwarded-host': '127.0.0.1:3000' },
     { origin: 'null' }, { origin: 'http://evil.test' }, { 'sec-fetch-site': 'cross-site' },
     { 'sec-fetch-site': 'same-site' },
   ])('denies browser policy violations without upstream call %o', async headers => {
@@ -88,12 +88,11 @@ describe('server-only vault BFF boundary', () => {
     await safe(response);
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it('enforces tailnet identity at the relay before upstream', async () => {
-    const selected: LoadedTransport = { ...transport, config: { ...transport.config, web: { mode: 'tailscale', origin: 'https://recall.example.test:9443', allowedLogin: 'person@example.test' } } };
-    const { request, fetcher } = setup(undefined, selected);
-    const response = await request('/api/vault/tree', { headers: { host: 'recall.example.test:9443', 'tailscale-user-login': 'other@example.test' } });
-    expect(response.status).toBe(403);
-    expect(fetcher).not.toHaveBeenCalled();
+  it('accepts matching request-local authority without an injected identity', async () => {
+    const { request, fetcher } = setup();
+    const response = await request('/api/vault/tree', { headers: { host: 'recall.example.test:9443', origin: 'https://recall.example.test:9443' } });
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledOnce();
     await safe(response);
   });
   it.each(['config_missing', 'config_invalid', 'vault_unavailable'] as const)('projects known canonical %s error', async code => {

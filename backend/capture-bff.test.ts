@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { LoadedTransport } from './transport';
-import { parseTransport } from './transport';
 import { handleCaptureRequest, type CaptureBffDependencies } from '../src/web/capture-bff';
 
 const token = 'a'.repeat(64);
-const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } }, serviceToken: token };
+const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001' }, serviceToken: token };
 const json = (value: unknown, status = 200) => Response.json(value, { status });
 
 function setup(upstream: CaptureBffDependencies['fetch'] = async () => json({ ok: true }), selected = transport) {
@@ -27,12 +26,9 @@ async function expectError(response: Response, status: number, code: string) {
 }
 
 describe('Capture same-origin BFF boundary', () => {
-  it('keeps the daemon token server-side for the authenticated reverse-proxy origin', async () => {
-    const selected: LoadedTransport = { config: parseTransport({ daemonOrigin: 'http://127.0.0.1:3001', web: {
-      mode: 'reverse-proxy', origin: 'https://proxy.example.test:10000', externalAuth: 'operator-managed',
-    } }), serviceToken: token };
-    const { request, fetch, log } = setup(undefined, selected);
-    const response = await request('/api/capture', { host: 'proxy.example.test:10000', origin: selected.config.web.origin,
+  it('keeps the daemon token server-side for a TLS-terminated request', async () => {
+    const { request, fetch, log } = setup();
+    const response = await request('/api/capture', { host: 'proxy.example.test:10000', origin: 'https://proxy.example.test:10000',
       'sec-fetch-site': 'same-origin', authorization: 'Bearer browser-secret', cookie: 'session=browser-secret' });
     expect(response.status).toBe(200);
     expect(await response.text()).not.toContain(token);
@@ -47,7 +43,7 @@ describe('Capture same-origin BFF boundary', () => {
   });
   it('dispatches only the fixed target, service token and body, never browser credentials', async () => {
     const { request, fetch, log } = setup();
-    const response = await request('/api/capture', { origin: transport.config.web.origin, 'sec-fetch-site': 'same-origin', authorization: 'Bearer browser-secret', cookie: 'session=browser-secret', 'x-forwarded-host': 'evil.test' });
+    const response = await request('/api/capture', { origin: 'http://127.0.0.1:3000', 'sec-fetch-site': 'same-origin', authorization: 'Bearer browser-secret', cookie: 'session=browser-secret', 'x-forwarded-host': 'evil.test' });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(fetch).toHaveBeenCalledOnce();
@@ -62,7 +58,7 @@ describe('Capture same-origin BFF boundary', () => {
   });
 
   it.each<Record<string, string>>([
-    { host: 'evil.test', 'x-forwarded-host': '127.0.0.1:3000' },
+    { host: 'evil.test', origin: 'http://127.0.0.1:3000', 'x-forwarded-host': '127.0.0.1:3000' },
     { origin: 'http://evil.test' },
     { 'sec-fetch-site': 'cross-site' },
   ])('rejects untrusted browser metadata without dispatch: %o', async headers => {
@@ -71,11 +67,10 @@ describe('Capture same-origin BFF boundary', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('rejects tailnet identity mismatch before dispatch', async () => {
-    const selected: LoadedTransport = { ...transport, config: { ...transport.config, web: { mode: 'tailscale', origin: 'https://capture.example.test', allowedLogin: 'user@example.test' } } };
-    const { request, fetch } = setup(undefined, selected);
-    await expectError(await request('/api/capture', { host: 'capture.example.test', 'tailscale-user-login': 'other@example.test' }), 403, 'forbidden');
-    expect(fetch).not.toHaveBeenCalled();
+  it('does not require an injected identity for matching request-local authority', async () => {
+    const { request, fetch } = setup();
+    expect((await request('/api/capture', { host: 'capture.example.test', origin: 'https://capture.example.test' })).status).toBe(200);
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   it.each(['/api/capture?path=other', '/api/elsewhere'])('does not dispatch an unfixed route %s', async path => {

@@ -49,7 +49,7 @@ export async function handleCaptureRequest(request: Request, dependencies: Captu
   let dispatched = false;
   try {
     const url = new URL(request.url);
-    if (!allowsWebRequest(request, dependencies.transport.config.web)) response = failure('forbidden');
+    if (!allowsWebRequest(request)) response = failure('forbidden');
     else if (url.pathname !== '/api/capture' || url.search || url.hash) response = failure('not_found');
     else if (request.method !== 'POST') response = failure('method_not_allowed');
     else {

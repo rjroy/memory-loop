@@ -5,9 +5,7 @@ import { join } from 'node:path';
 import { loadTransport, parseTransport, setupTransport } from './transport';
 
 const roots: string[] = [];
-const valid = { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } };
-const tailnet = { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'tailscale', origin: 'https://fixture.tailnet.example:9443', allowedLogin: 'fixture@example.invalid' } };
-const proxy = { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'reverse-proxy', origin: 'https://proxy.example.test:10000', externalAuth: 'operator-managed' } };
+const valid = { daemonOrigin: 'http://127.0.0.1:3001' };
 const token = 'a'.repeat(64);
 
 async function fixture() {
@@ -27,26 +25,20 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
 });
 
-it('parses the exact loopback and personal-tailnet configuration shapes', () => {
-  expect(parseTransport(valid)).toEqual(valid);
-  expect(parseTransport(tailnet)).toEqual(tailnet);
+it('accepts private daemon transport without any browser-origin configuration', async () => {
+  const files = await fixture();
+  await writeFile(files.transportFile, JSON.stringify({ daemonOrigin: valid.daemonOrigin }));
+  expect(await loadTransport(files.transportFile)).toMatchObject({ config: { daemonOrigin: valid.daemonOrigin }, serviceToken: token });
 });
 
-it('parses an explicitly authenticated reverse-proxy origin', () => {
-  expect(parseTransport(proxy)).toEqual(proxy);
+it('ignores obsolete web fields rather than requiring a public origin or proxy identity', () => {
+  expect(parseTransport({ daemonOrigin: valid.daemonOrigin, web: { mode: 'tailscale', origin: 'http://fixture.test:7319', allowedLogin: '' } })).toMatchObject({ daemonOrigin: valid.daemonOrigin });
 });
 
-it.each([
-  'http://proxy.example.test:10000', 'https://*.example.test:10000',
-  'https://user:password@proxy.example.test:10000', 'https://proxy.example.test:10000/path',
-  'https://proxy.example.test:10000?query=1', 'https://proxy.example.test:10000#fragment',
-  'https://proxy.example.test:443', 'https://127.0.0.1:10000',
-])('rejects unsafe reverse-proxy origin %s', origin => {
-  expect(() => parseTransport({ ...proxy, web: { ...proxy.web, origin } })).toThrow(expect.objectContaining({ code: 'transport_invalid' }));
-});
-
-it.each([undefined, false, true, 'none'])('requires an explicit operator-managed authentication assertion: %s', externalAuth => {
-  expect(() => parseTransport({ ...proxy, web: { ...proxy.web, externalAuth } })).toThrow(expect.objectContaining({ code: 'transport_invalid' }));
+it.each([null, 'obsolete', { mode: 'loopback', origin: 'http://localhost:9876' },
+  { mode: 'reverse-proxy', origin: 'invalid', externalAuth: false },
+  { mode: 'tailscale', allowedLogin: '*' }])('discards obsolete web configuration %o', web => {
+  expect(parseTransport({ ...valid, web })).toEqual(valid);
 });
 
 it.each([
@@ -56,11 +48,6 @@ it.each([
   { ...valid, daemonOrigin: 'http://127.0.0.1:3001/path' },
   { ...valid, daemonOrigin: 'http://127.0.0.1:3001?x=1' },
   { ...valid, daemonOrigin: 'http://127.0.0.1:3001#fragment' },
-  { ...valid, web: { mode: 'loopback', origin: 'http://localhost:3000' } },
-  { ...tailnet, web: { mode: 'tailscale', origin: 'http://fixture.tailnet.example:9443', allowedLogin: 'fixture@example.invalid' } },
-  { ...tailnet, web: { ...tailnet.web, allowedLogin: '*' } },
-  { ...tailnet, web: { ...tailnet.web, allowedLogin: '' } },
-  { ...tailnet, web: { ...tailnet.web, origin: 'https://*.tailnet.example:9443' } },
 ])('rejects unsafe or malformed transport configuration', value => {
   expect(() => parseTransport(value)).toThrow(expect.objectContaining({ code: 'transport_invalid' }));
 });
@@ -123,6 +110,7 @@ it('creates private transport metadata without reading or changing vault config 
     expect((await lstat(tokenFile)).uid).toBe(process.getuid());
   }
   const firstTransport = await readFile(transportFile, 'utf8');
+  expect(JSON.parse(firstTransport)).toEqual(valid);
   const firstToken = await readFile(tokenFile, 'utf8');
   expect(firstToken).toMatch(/^[a-f0-9]{64}$/);
   expect(JSON.stringify(JSON.parse(firstTransport))).not.toContain(firstToken);

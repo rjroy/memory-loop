@@ -20,6 +20,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "@opencode/client": "2.2.2",
     "croner": "11.0.0",
     "hono": "4.13.14",
@@ -28,7 +29,8 @@
     "react-dom": "19.3.1",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
-    "server-only": "0.0.1"
+    "server-only": "0.0.1",
+    "uuid": "14.0.3"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

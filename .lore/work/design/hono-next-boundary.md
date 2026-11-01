@@ -9,6 +9,14 @@ related: [.lore/work/intents/project-restart.md, .lore/work/intents/recall.md, .
 
 # Hono daemon and native Next web boundary
 
+**2026-11-01 deployment clarification:** The earlier web-mode, configured-origin,
+proxy identity and fixed-listener requirements below are historical and are
+superseded by the [restart intent](../intents/project-restart.md#deployment-clarification--2026-11-01).
+Current browser access is deployment-neutral; request-local authority checks do
+not authenticate users. The private daemon origin, bearer and browser-header
+guards remain. See the [operator guide](../../../README.md#browser-and-private-deployment-boundary)
+for the current boundary.
+
 ## Scope and authority
 
 The user selected **native Next App Router → Bun/Hono daemon → vault**, including private Tailscale phone access. This design supplies implementation contracts for `memory-loop-1l0`; durable sequencing/status remains in Beads: **1l0.1 Hono → 1l0.2 Next → 1l0.3 private cutover**. Parent and fresh design review accepted the architecture and HN-001 amendment at the design level; runtime evidence remains separate.

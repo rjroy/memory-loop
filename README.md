@@ -8,8 +8,8 @@ fixture** below. Ground now presents six independent cards, including recent
 registered conversations with Resume and Delete, and can prepare an unsent Think
 draft. Opt-in daemon-resident daily questions and weekly model-attributed quotes
 publish to its Prompts and Inspiration resources.
-This source/fixture-accepted version is not yet published to the live app, and
-the Ground roadmap is not complete.
+The latest deployment-neutral source changes have not been applied to running
+services; the Ground roadmap is not complete.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
 curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
@@ -29,9 +29,8 @@ draft; independent verification confirmed it is disabled when empty and enabled
 after entering an unsent draft. This does not measure token-by-token streaming or
 exact native terminal latency. The address is ephemeral. Network deployment is
 user-managed and is not a prerequisite.
-The daemon reads the JSON-configured vault
-when started. The private Tailscale deployment now uses the selected real vault;
-independent real-deployment verification passed and final review accepted it.
+The daemon reads the JSON-configured vault when started. Earlier deployment
+checks do not establish that the latest source is running.
 
 ## Operator guide
 
@@ -41,6 +40,10 @@ Use Bun 1.4.3 and Node 26.13.0 (Next requires Node >=20.9). Bun manages packages
 and runs the daemon. Next build, development and production run under **Node**,
 not Bun's experimental Next adapter or a custom HTTP server.
 
+For an existing live checkout, do not run the build below until **all** web
+processes serving its `.next` have stopped. Follow the authorized stop/build/start
+sequence in the [safe publication handoff](#safe-publication-handoff).
+
 ```sh
 bun --no-env-file install --frozen-lockfile
 bun --no-env-file run build
@@ -48,7 +51,7 @@ bun --no-env-file run build
 
 Build uses the supported default Turbopack and writes `.next/`, not `dist/`.
 Never rebuild an artifact while a live Next process is serving it: use a separate
-copy, as the Think fixture does, or stop the source-owned web process first.
+copy, as the Think fixture does, or stop **every** web process serving that artifact.
 It needs neither transport/vault configuration nor a running daemon. Native
 `src/app/` pages/layout and explicit Route Handlers are the sole application
 path; there is no React Router, Vite application, static export or `preview` command.
@@ -61,7 +64,7 @@ Ignored configuration and private state have separate responsibilities:
 | File | Purpose |
 | --- | --- |
 | `.memory-loop/config.json` | The single selected vault, read only by the daemon at startup. |
-| `.memory-loop/transport.json` | Daemon origin and web request policy, read by both server tiers. |
+| `.memory-loop/transport.json` | Private daemon origin, read by both server tiers. |
 | `.memory-loop/service.token` | Shared server-only bearer credential; never sent to the browser. |
 | `.memory-loop/application.sqlite` | Private Think ownership, originals, command/activity facts, leases, transcript checkpoints/pending appends, deletion progress and generation/publication facts; not configuration or a chat-history mirror. |
 
@@ -249,8 +252,9 @@ requested from the model, **not independently verified**. Both counts default to
 five and are configurable from 1–50; valid partial and empty batches are accepted.
 External search, source fetching and evidence/API-key workflows are removed from
 the quote scope, not deferred.
-Real-vault/model activation and the normal-checkout handoff remain separately
-authorized work in `memory-loop-9ya.9`; this documentation enables nothing.
+The `memory-loop-9ya.9` validation/operator handoff is prepared; applying the
+latest source and activating generation require separate authorization. This
+documentation enables nothing and does not establish the current private setting.
 
 At that handoff, `enabled: true` plus daemon restart activates both jobs using the
 existing configured OpenCode service and Think agent/model selection/native
@@ -322,19 +326,19 @@ permissions and a different owner are rejected. The generated transport defaults
 
 ```json
 {
-  "daemonOrigin": "http://127.0.0.1:3001",
-  "web": { "mode": "loopback", "origin": "http://127.0.0.1:3000" }
+  "daemonOrigin": "http://127.0.0.1:3001"
 }
 ```
 
 An absolute server-only `MEMORY_LOOP_TRANSPORT_FILE` selects another
 `transport.json`; its credential is always the sibling `service.token`.
 `--project-root` selects the daemon's vault-config root, independently of that
-transport selector. Restart both tiers after transport/credential changes and
+transport selector. Existing transport files may contain obsolete `web` fields;
+they are ignored and need no migration. Restart both tiers after transport/credential changes and
 the daemon after a vault-config change. Setup always targets its `--project-root`.
 
-No `.env` file is required. `VAULTS_DIR`, `PORT` and `HOSTNAME` are not application
-configuration; bind/port come from explicit launcher arguments and transport.
+No `.env` file is required. `VAULTS_DIR` is not application configuration.
+The web launcher passes standard Next arguments through; Next also accepts `PORT`.
 Use the outer Bun `--no-env-file` flag for launches; it does not scrub inherited
 variables or disable Next's own dotenv loading. Never put credentials in `NEXT_PUBLIC_*`, Next
 config `env` mappings, CLI arguments or URLs. The launcher resolves and passes the
@@ -345,24 +349,44 @@ through the authenticated API.
 ### Start both tiers
 
 **Bare daemon startup reads the existing selected vault.** Start from the project
-root in separate terminals, retaining the existing transport selector where one
-is used:
+root in separate terminals, retaining the existing transport selector and daemon
+project root where one is used. These examples are not a replacement for the
+existing instance's known selectors or an authorization to interrupt it:
 
 ```sh
-# Terminal 1: API-only Bun/Hono, default 127.0.0.1:3001; no frontend build needed.
+# Terminal 1: API-only Bun/Hono; no frontend build needed.
 bun --no-env-file run daemon
-# Terminal 2: transport preflight, then standard Node next start on 127.0.0.1:3000.
+# Terminal 2: transport preflight, then standard Node next start.
 bun --no-env-file run server
 # Terminal 3: authenticated tree status/shape, without printing notes or tokens.
 bun --no-env-file run check:daemon
 ```
 
-Open `/ground` or `/recall` at the configured web origin; retain the selected
-reverse-proxy origin and port, including `:10000` where configured. To stop,
-press Ctrl-C in each terminal; to restart, run the daemon
-and server commands again. Build with `bun --no-env-file run build` after source
-changes before restarting the production server. No OS autostart is configured;
-the background Tailscale Serve mapping alone does not start either process.
+Open `/ground` or `/recall` at the address chosen for the deployment. The browser
+uses relative API paths; no browser hostname, port or protocol is configured in
+Memory Loop. Optional standard Next `--hostname` and `--port` arguments or `PORT`
+select the web listener. The daemon's listener must match its private
+`daemonOrigin`; the web listener need not match it.
+
+#### Safe publication handoff
+
+The current source cleanup has not been applied to running services. Before any
+in-place publication, wait for and save active Think work and obtain permission
+for interruption. Identify the intended daemon root, selector and owned processes;
+do not silently substitute or migrate private configuration or state. Stop the
+app daemon and **every** web process serving the shared `.next`, confirm they have
+exited, then build once and restart only the authorized instances with their own
+selectors. Do not interrupt the separate native service or change network access
+settings as an incidental part of publication. Existing unregistered native
+sessions are not automatically adopted into Recent or Resume.
+
+An earlier app-tier publication occurred; its prior active Think work could not be
+established. A later read-only check found generation disabled, but that is not a
+permanent state guarantee. Publication and generation are separate decisions:
+confirm jobs remain off before a jobs-off startup. Enabling them requires separate
+authorization; recent vault excerpts can reach the selected model/provider, may
+incur charges and can write the designated resources. This documentation enables
+nothing and authorizes no restart or model call.
 
 During Think development, use only controlled fixture data and an explicit
 scratch root/transport instead (separate terminals, after creating fixture vault
@@ -377,14 +401,10 @@ MEMORY_LOOP_TRANSPORT_FILE=/absolute/scratch/app/.memory-loop/transport.json \
   bun --no-env-file run check:daemon --project-root /absolute/scratch/app
 ```
 
-Open `http://127.0.0.1:3000/recall` for loopback mode. Both launchers accept
-`--port <port>`; the daemon port must match `daemonOrigin`, and the web port must
-match the loopback web origin. In tailscale and reverse-proxy modes the public HTTPS origin is
-distinct from the private web listen port. Occupied ports fail without fallback
-or eviction. Missing/invalid transport or credentials fail before serving vault
+Occupied ports fail without fallback or eviction. Missing/invalid transport or credentials fail before serving vault
 data; correct the private files/permissions rather than weakening validation.
 
-`bun --no-env-file run dev` launches standard Node `next dev`, also on loopback.
+`bun --no-env-file run dev` launches standard Node `next dev`.
 It requires the same transport preflight and fixed BFF routes, not a dev proxy.
 Framework development access logging is disabled to keep note IDs out of logs;
 application attempt/outcome/error logs remain visible. Bun configuration suppresses
@@ -409,42 +429,24 @@ use the public `navigation.currentEntry.key`; unsupported browsers show “Brows
 update required” rather than a URL-identity fallback. Chromium fixture checks do
 not establish actual phone support: the physical phone browser remains unverified.
 
-Loopback is not user authentication against local processes. The selected
-phase-three topology is **private Tailscale Serve → loopback Node Next → loopback
-Bun/Hono → vault**. Only Next may be exposed. Tailscale transport replaces `web`
-with `{ "mode": "tailscale", "origin": "https://<self-DNS>:9443", "allowedLogin":
-"<exact-personal-login>" }`; the exact public Host/origin and Serve-injected human
-login are required, with no wildcard or simultaneous loopback API bypass. A
-tailnet connection alone is not authorization. Verify actual proxy header
-replacement and denied-principal behavior with fixtures before real notes.
-Never expose the daemon or bind either tier to LAN/all interfaces. Tailscale mode
-rejects Funnel requests.
+The application checks the actual incoming Host, any supplied Origin and Fetch
+Metadata for request integrity; these checks are **not end-user authentication**.
+Direct access or a proxy may use HTTP or HTTPS and any deployment-selected
+hostname and port. A proxy must preserve the actual Host; forwarded authority
+headers do not override it. The private daemon stays on loopback and requires its
+server-only bearer token, exact daemon Host and no browser Origin/Fetch Metadata.
 
-For a separately secured, operator-managed authenticated reverse proxy, replace
-`web` with, for example:
+Network exposure, user authentication and encryption are deployment choices and
+responsibilities. Access to the web tier can expose private vault data; loopback
+alone does not authenticate local processes. If an access-control layer is used,
+it must cover pages, APIs and assets and be verified separately with disposable
+data. No particular provider, proxy or TLS setup is required by the app.
 
-```json
-{ "mode": "reverse-proxy", "origin": "https://proxy.example.test:10000", "externalAuth": "operator-managed" }
-```
-
-The origin must be a canonical HTTPS DNS origin, including any non-default public
-port and without credentials, path, query or fragment. The explicit assertion is
-an operator declaration, **not** application authentication: the proxy must enforce
-authentication for every request, including all API routes and static assets, and
-preserve the actual public Host. Next and the daemon must remain bound to loopback;
-local processes able to reach Next are trusted and can bypass proxy authentication.
-The app checks actual Host, any supplied Origin and Fetch Metadata; it neither
-trusts forwarded authority nor expects Tailscale identity in this mode. The daemon
-service token stays server-side. Do not expose this mode through a public Funnel
-unless the existing proxy independently enforces the required authentication.
-Verify the complete proxy path and unauthorized access with disposable fixtures
-before using private data; selecting the mode does not configure or verify a proxy.
-
-The **127.0.0.1:4173** static preview and its `dist/` are a historical rollback;
-it has no vault API and is not the supported runtime. Do not change an existing
-proxy or Serve mapping as part of trying Ground. A separate unauthorized tailnet
-principal has not been tested end-to-end; fixture identity-policy and actual
-proxy-header checks passed.
+Think uses cryptographic random bytes for UUIDs and verifies canonical content
+with SHA-256 on ordinary HTTP as well as HTTPS. A controlled non-localhost HTTP
+Chromium/native fixture exercised new chat, Send and a verified scripted reply;
+a unit test rejects a wrong digest. This does not certify every browser or a
+particular network deployment, nor make all secure-context APIs available on HTTP.
 
 ## What Ground does
 
@@ -548,9 +550,9 @@ automatic status polling, repeated destructive POST or destructive retry on
 restart. Do not restart expecting an incomplete deletion to finish automatically.
 
 Opt-in daily questions and weekly model-attributed inspiration are implemented
-and verified as described in the operator guide. The final configuration/deployment
-handoff (`memory-loop-9ya.9`) remains pending. This version is not yet published
-to the live app and background jobs have not been activated against personal data.
+and verified as described in the operator guide. Validation/operator handoff
+evidence (`memory-loop-9ya.9`) is prepared. The latest source cleanup is not yet
+published; separate authorization is needed for further interruption or job activation.
 
 ## What Capture does
 
@@ -617,6 +619,12 @@ production build. Terminal cross-boundary review accepted the tested source with
 no findings and no subsequent code changes. Evidence:
 `/tmp/opencode/ground-9ya8-final-validation.log` and
 `/tmp/opencode/ground-9ya8-final-validation.json`.
+Fresh final six-card visual review at **`a20e932`** returned **SHIP**, with **163
+focused browser assertions** across desktop 1440×900, phone 390×844, landscape
+844×390 and 320×568 at 200% root text. Evidence:
+`/tmp/opencode/ground-9ya9-final-visual-review/report.md`. These controlled
+production-component/CSS checks are separate from the 60-test Playwright suite,
+not live deployment or physical-device/assistive-technology verification.
 The earlier list/Resume/selection (`memory-loop-3ry`) and paired deletion
 (`memory-loop-9ya.6`) remain accepted; the unchanged Delete UI's visual evidence is
 `/tmp/opencode/ground-9ya6-ui-visual-review/report.md`.
@@ -631,8 +639,8 @@ extra native sessions/prompts. Its fictional scripted quote does not test factua
 attribution accuracy.
 These checks do not certify physical-device, assistive-technology, direct-MCP deny
 or arbitrary-hook isolation. They did not deploy this version or enable generation
-against personal data. The final handoff (`memory-loop-9ya.9`) remains; the Ground
-plan is not complete. No tests, builds or services were run for this documentation update.
+against personal data. Further publication, interruption or generation activation
+requires user authorization; it is not automatic execution or epic closure.
 
 On **2026-10-31**, Ground's Phase 3b registry-bound transcript slice passed
 independent validation: frontend **111**, backend **631**, browser **60**, native
@@ -982,7 +990,7 @@ HTTP without duplicate input/output, adoption, or changes to the prior transcrip
 or sentinel. Its one sample was **4,059 transcript bytes, 8 entries, 1,012 ms from
 fault start through catch-up**—not a benchmark, retry deadline or size limit.
 Subsequent independent convergence and filesystem/security correction verification
-accepted Phase 4; this does not activate Think on the live Tailscale path. The retained case is:
+accepted Phase 4; that fixture result did not activate Think in a live deployment. The retained case is:
 
 ```sh
 OPENCODE_TEST_BINARY=/absolute/path/to/verified/opencode.exe \

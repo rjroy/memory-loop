@@ -10,7 +10,7 @@ export async function handleThinkWatch(request: Request, dependencies: {
   transport: LoadedTransport;
   fetch: (target: URL, token: string, signal: AbortSignal) => Promise<Response>;
 }): Promise<Response> {
-  if (!allowsWebRequest(request, dependencies.transport.config.web)) return fail(403, 'forbidden', 'Request is not permitted');
+  if (!allowsWebRequest(request)) return fail(403, 'forbidden', 'Request is not permitted');
   const url = new URL(request.url);
   const match = route.exec(url.pathname);
   if (!match || url.search || url.hash) return fail(404, 'not_found', 'Think resource not found');

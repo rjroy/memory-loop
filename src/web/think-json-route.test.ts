@@ -16,7 +16,7 @@ const content = `${snapshot}/content/${other}`;
 const query = `generation=${id}&through=7&offset=0`;
 const cursor = `page.${'a'.repeat(64)}`;
 const token = 'a'.repeat(64);
-const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } }, serviceToken: token };
+const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001' }, serviceToken: token };
 const routes = [
   ['POST', base, 'create'], ['GET', snapshot, 'snapshot'], ['GET', `${snapshot}/commands/${other}`, 'command'],
   ['GET', `${content}?${query}`, 'content'], ['POST', `${snapshot}/messages`, 'send'],
@@ -71,7 +71,7 @@ describe('Think BFF target policy', () => {
   });
   it('preserves denial and wrong-method precedence without upstream calls', async () => {
     const { call, fetcher } = setup();
-    expect((await call('POST', `${content}?${query}`, 'evil.example')).status).toBe(403);
+    expect((await call('POST', `${content}?${query}`, 'evil.example,fixture.example')).status).toBe(403);
     expect((await call('POST', content)).status).toBe(405);
     expect((await call('POST', `${content}?${query}`)).status).toBe(404);
     expect(fetcher).not.toHaveBeenCalled();

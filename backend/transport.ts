@@ -6,9 +6,6 @@ import { dirname, isAbsolute, join } from 'node:path';
 
 export type TransportConfig = {
   daemonOrigin: string;
-  web: { mode: 'loopback'; origin: string }
-    | { mode: 'tailscale'; origin: string; allowedLogin: string }
-    | { mode: 'reverse-proxy'; origin: string; externalAuth: 'operator-managed' };
 };
 export interface LoadedTransport { config: TransportConfig; serviceToken: string }
 
@@ -20,36 +17,18 @@ function invalid(): never { throw new TransportError('transport_invalid'); }
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-function origin(value: unknown, mode: 'daemon' | 'loopback' | 'tailscale' | 'reverse-proxy'): string {
+function origin(value: unknown): string {
   if (typeof value !== 'string') return invalid();
   let url: URL;
   try { url = new URL(value); } catch { return invalid(); }
   if (url.origin !== value || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return invalid();
-  if (mode === 'tailscale') {
-    if (url.protocol !== 'https:' || !/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9-]+$/.test(url.hostname)) return invalid();
-  } else if (mode === 'reverse-proxy') {
-    const labels = url.hostname.split('.');
-    if (url.protocol !== 'https:' || labels.length < 2 || url.hostname.length > 253 ||
-        labels.some(label => label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)) ||
-        labels.every(label => /^\d+$/.test(label))) return invalid();
-  } else if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') return invalid();
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') return invalid();
   return value;
 }
 
 export function parseTransport(value: unknown): TransportConfig {
-  if (!record(value) || !record(value.web)) return invalid();
-  const daemonOrigin = origin(value.daemonOrigin, 'daemon');
-  const web = value.web;
-  if (web.mode === 'loopback') return { daemonOrigin, web: { mode: 'loopback', origin: origin(web.origin, 'loopback') } };
-  if (web.mode === 'tailscale') {
-    if (typeof web.allowedLogin !== 'string' || !/^[^\s*@]+@[^\s*@]+$/.test(web.allowedLogin)) return invalid();
-    return { daemonOrigin, web: { mode: 'tailscale', origin: origin(web.origin, 'tailscale'), allowedLogin: web.allowedLogin } };
-  }
-  if (web.mode === 'reverse-proxy') {
-    if (web.externalAuth !== 'operator-managed') return invalid();
-    return { daemonOrigin, web: { mode: 'reverse-proxy', origin: origin(web.origin, 'reverse-proxy'), externalAuth: 'operator-managed' } };
-  }
-  return invalid();
+  if (!record(value)) return invalid();
+  return { daemonOrigin: origin(value.daemonOrigin) };
 }
 
 const dirFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
@@ -104,7 +83,7 @@ export async function setupTransport(projectRoot: string): Promise<void> {
       if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST')) throw error;
     }
     dir = await metadata(path);
-    const config: TransportConfig = { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } };
+    const config: TransportConfig = { daemonOrigin: 'http://127.0.0.1:3001' };
     for (const [name, content] of [['service.token', randomBytes(32).toString('hex')], ['transport.json', `${JSON.stringify(config, null, 2)}\n`]]) {
       const handle = await open(descriptor(dir, name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
       created.push({ name, handle });

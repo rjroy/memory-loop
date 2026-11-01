@@ -15,6 +15,34 @@ import type { BodyRef } from './think/body-store';
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
+it('Think creates and renders a verified native reply on non-localhost HTTP', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary });
+  let browser: Browser | undefined;
+  try {
+    browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true,
+      args: ['--no-sandbox', '--host-resolver-rules=MAP memory-loop.test 127.0.0.1', '--no-proxy-server'] });
+    const page = await browser.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const url = new URL('/think', fixture.webUrl);
+    url.hostname = 'memory-loop.test';
+    await page.goto(url.href);
+    expect(await page.evaluate(() => ({ secure: isSecureContext, random: typeof crypto.getRandomValues, uuid: typeof crypto.randomUUID, subtle: typeof crypto.subtle })))
+      .toEqual({ secure: false, random: 'function', uuid: 'undefined', subtle: 'undefined' });
+    try { await page.waitForURL(/\/think\?conversation=[0-9a-f-]{36}$/, { timeout: 10000 }); }
+    catch (error) { console.error('owned HTTP fixture page errors', JSON.stringify(errors)); throw error; }
+    const editor = page.getByRole('textbox', { name: 'Message' });
+    const send = page.getByRole('button', { name: 'Send', exact: true });
+    await editor.fill('Owned HTTP crypto fixture');
+    await vi.waitFor(async () => expect(await send.isEnabled()).toBe(true), { timeout: 30000 });
+    await send.click();
+    const conversation = page.getByRole('region', { name: 'Conversation' });
+    await vi.waitFor(async () => expect(await conversation.getByRole('article', { name: /^AI, message / }).filter({ hasText: 'fixture-ok' }).count()).toBe(1), { timeout: 30000 });
+  } finally { try { await browser?.close(); } finally { await fixture.close(); } }
+}, 180000);
+
 it('Ground real native scheduled questions and quotes publish without a browser and deny Code Mode', async () => {
   const binary = process.env.OPENCODE_TEST_BINARY;
   if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');

@@ -1,5 +1,6 @@
 import type { DeleteBlockReason, DeleteReceipt, RecentConversation } from '../../backend/think/contract';
 import { GroundDeleteRefusal, type createGroundClient } from './client';
+import { secureUuid } from '../browser-crypto';
 
 export interface DeletionPermit { viewToken: string; valid(): boolean; invalidate(): void }
 export type GroundDeletion = null | { phase: 'completed'; conversationId: string } | {
@@ -61,7 +62,7 @@ export function createGroundDeletion(client: Pick<ReturnType<typeof createGround
         if (!permit || !permit.valid() || !options.allowed(value.conversationId)) {
           phase(value, 'refused', 'status_unknown'); options.refresh(); return;
         }
-        value.commandId = crypto.randomUUID();
+        value.commandId = secureUuid();
         phase(value, 'posting');
         if (closed || owner !== value) return;
         if (!permit.valid() || !options.allowed(value.conversationId)) {

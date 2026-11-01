@@ -19,7 +19,7 @@ function deferred<T>() {
   const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
   return { promise, resolve, reject };
 }
-function fixture(pointerValue: string | null = null, navigationGeneration?: () => number, suppliedView?: NonNullable<ThinkSessionOptions['view']>) {
+function fixture(pointerValue: string | null = null, navigationGeneration?: () => number, suppliedView?: NonNullable<ThinkSessionOptions['view']>, defaultIds = false) {
   const watches: Array<{ id: string; handlers: ThinkWatchHandlers; close: ReturnType<typeof vi.fn> }> = [];
   const client: NonNullable<ThinkSessionOptions['client']> = {
     snapshot: vi.fn(async id => snapshot(id)),
@@ -56,7 +56,7 @@ function fixture(pointerValue: string | null = null, navigationGeneration?: () =
     select: vi.fn(async (_token, selectionRevision, conversationId) => ({ selectionRevision, conversationId, expiresAt: '2099-01-01T00:00:00.000Z' })),
     resume: vi.fn<NonNullable<ThinkSessionOptions['conversations']>['resume']>(async (conversationId, clientCommandId) => ({ kind: 'resume', conversationId, clientCommandId, epoch, state: 'ready' })),
   };
-  const session = createThinkSession({ client, conversations, pointer, navigate, view: suppliedView ?? view, navigationGeneration, randomUUID: () => ids.shift() ?? commandId });
+  const session = createThinkSession({ client, conversations, pointer, navigate, view: suppliedView ?? view, navigationGeneration, ...(defaultIds ? {} : { randomUUID: () => ids.shift() ?? commandId }) });
   return { client, conversations, pointer, navigate, session, view: suppliedView ?? view, watches };
 }
 const think = (id: string) => ({ pathname: '/think', search: `?conversation=${id}` });
@@ -80,6 +80,19 @@ function delayedView() {
 afterEach(() => vi.useRealTimers());
 
 describe('Think read-side session ownership', () => {
+  it('creates a conversation using default cryptographic IDs on non-secure HTTP', async () => {
+    vi.stubGlobal('crypto', { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) });
+    const f = fixture(null, undefined, undefined, true);
+    try {
+      f.session.setLocation({ pathname: '/think', search: '' });
+      await waitFor(() => expect(f.client.create).toHaveBeenCalledOnce());
+      const command = vi.mocked(f.client.create).mock.calls[0][0];
+      const uuid4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+      expect(command.conversationId).toMatch(uuid4);
+      expect(command.clientCommandId).toMatch(uuid4);
+      expect(command.conversationId).not.toBe(command.clientCommandId);
+    } finally { f.session.close(); vi.unstubAllGlobals(); }
+  });
   it.each(['selection before failure', 'selection after failure'] as const)('3RY-FE-04 automatically recovers initial history when %s', async ordering => {
     vi.useFakeTimers();
     const lease = delayedView();
@@ -481,6 +494,23 @@ describe('Think session content and decision ownership', () => {
   };
   const withBody = (ref: BodyRef, revision = 1): ThinkSnapshot => snapshot(a, { revision, entries: [{ kind: 'assistant-text', displayOrder: 1, messageId: 'msg_fixture', ordinal: 0, body: ref, closure: 'closed', capture: 'complete' }] });
   const content = (f: ReturnType<typeof fixture>) => f.session.getPresentation().state.messages[0]?.parts[0]?.content;
+
+  it('verifies canonical bodies on non-secure HTTP and rejects a mismatched digest', async () => {
+    vi.stubGlobal('crypto', { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) });
+    const f = fixture();
+    const ref = makeRef('valid 🧠', '77777777-7777-4777-8777-777777777777');
+    const bad = makeRef('expected', '88888888-8888-4888-8888-888888888888');
+    vi.mocked(f.client.snapshot).mockResolvedValueOnce(withBody(ref)).mockResolvedValue(withBody(bad, 2));
+    vi.mocked(f.client.chunk).mockImplementation(async current => ({ conversationId: a, epoch, contentId: current.contentId, generation: current.generation,
+      through: current.through, offset: 0, bytes: Buffer.from(current.generation === ref.generation ? 'valid 🧠' : 'mismatch').toString('base64'), nextOffset: current.through, transfer }));
+    try {
+      f.session.setLocation(think(a));
+      await waitFor(() => expect(content(f)).toMatchObject({ state: 'ready', text: 'valid 🧠', ref }));
+      f.watches[0].handlers.revision({ conversationId: a, epoch, revision: 2, creation: 'ready', sendEligibility: 'available' });
+      await waitFor(() => expect(content(f)).toMatchObject({ state: 'error', reason: 'unavailable' }));
+      expect(content(f)).not.toMatchObject({ state: 'ready', text: 'mismatch' });
+    } finally { f.session.close(); vi.unstubAllGlobals(); }
+  });
 
   it('retries a failed multibyte chunk at the same offset and transfer without resending or restarting the watch', async () => {
     const f = fixture();

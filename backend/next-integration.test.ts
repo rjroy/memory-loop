@@ -253,6 +253,10 @@ describe('production Next HTTP boundary', () => {
           res.end(JSON.stringify(conversationOverride?.body ?? value));
           return;
         }
+        if (req.url === '/api/capture' && body === JSON.stringify({ text: 'origin fixture capture' })) {
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }));
+          return;
+        }
         if (req.url && Object.hasOwn(groundResponses, req.url)) {
           res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
           res.end(JSON.stringify(groundMalformed ? { state: 'ready', noteId: ['..', 'fixture-private'], revision: 'bad', data: { markdown: 'fixture-private' } } : groundResponses[req.url].upstream));
@@ -315,6 +319,54 @@ describe('production Next HTTP boundary', () => {
     if (upstream?.listening) await close(upstream);
     if (fixture) await rm(fixture, { recursive: true, force: true });
   });
+  it('launcher accepts an independent OS-assigned listening port despite the obsolete web origin', async () => {
+    const reservation = createServer();
+    const alternate = await listen(reservation);
+    await close(reservation);
+    const launcher = spawn('bun', ['--no-env-file', join(fixture, 'project/src/web/start.ts'), 'start', '--hostname', '127.0.0.1', '--port', String(alternate)], {
+      cwd: fixture, env: { ...env, HOME: fixture, MEMORY_LOOP_TRANSPORT_FILE: join(fixture, 'metadata/transport.json') }, stdio: 'pipe',
+    });
+    let logs = '';
+    launcher.stdout.on('data', data => { logs += String(data); });
+    launcher.stderr.on('data', data => { logs += String(data); });
+    try {
+      const deadline = Date.now() + 15_000;
+      let status: number | undefined;
+      while (Date.now() < deadline && launcher.exitCode === null && launcher.signalCode === null) {
+        try { status = (await request('/ground', {}, alternate)).status; break; }
+        catch { await new Promise(resolveWait => setTimeout(resolveWait, 30)); }
+      }
+      expect(status, `launcher did not listen: ${logs}`).toBe(200);
+    } finally {
+      if (launcher.exitCode === null && launcher.signalCode === null) {
+        const exited = new Promise<void>(resolveExit => launcher.once('exit', () => resolveExit()));
+        launcher.kill('SIGTERM');
+        await exited;
+      }
+    }
+  }, 20_000);
+  it('serves Ground, Recall, Capture and Think under an arbitrary proxy-shaped browser authority', async () => {
+    calls = [];
+    const host = 'browser.fixture.test:8719';
+    const headers = { host, origin: `https://${host}`, 'sec-fetch-site': 'same-origin', authorization: 'Bearer browser-secret', cookie: 'session=fixture', 'x-forwarded-host': 'hostile.fixture' };
+    const capture = JSON.stringify({ text: 'origin fixture capture' });
+    const cases = [
+      { path: '/api/ground/prompts', method: 'GET', body: undefined, status: 200 },
+      { path: '/api/vault/tree', method: 'GET', body: undefined, status: 200 },
+      { path: '/api/capture', method: 'POST', body: capture, status: 200 },
+      { path: `/api/think/conversations/${conversationId}`, method: 'GET', body: undefined, status: 200 },
+    ];
+    for (const item of cases) {
+      const response = await request(item.path, { ...headers, ...(item.body ? { 'content-type': 'application/json' } : {}) }, port, item.method, item.body);
+      expect(response.status, item.path).toBe(item.status);
+      expect(JSON.parse(response.body)).toBeTypeOf('object');
+    }
+    expect(calls).toHaveLength(cases.length);
+    for (const call of calls) {
+      expect(call.headers.authorization).toBe(`Bearer ${token}`);
+      for (const key of ['cookie', 'origin', 'sec-fetch-site', 'x-forwarded-host']) expect(call.headers[key]).toBeUndefined();
+    }
+  });
   it('relays tree with server-only authorization and projects safe headers', async () => {
     calls = [];
     const response = await request('/api/vault/tree', { origin: `http://127.0.0.1:${port}`, authorization: 'Bearer browser-secret', cookie: 'session=fixture' });
@@ -348,7 +400,7 @@ describe('production Next HTTP boundary', () => {
     expect(calls[0].headers['sec-fetch-site']).toBeUndefined();
     expect(calls[0].headers['x-forwarded-host']).toBeUndefined();
   });
-  it.each<Record<string, string>>([{ host: 'hostile.example' }, { origin: 'null' }, { 'sec-fetch-site': 'cross-site' }])('Ground BFF rejects web policy violations without dispatch %o', async headers => {
+  it.each<Record<string, string>>([{ host: 'hostile.example', origin: 'http://fixture.example:7319' }, { origin: 'null' }, { 'sec-fetch-site': 'cross-site' }])('Ground BFF rejects web policy violations without dispatch %o', async headers => {
     calls = [];
     const response = await request('/api/ground/goals', headers);
     expect(response.status).toBe(403);
@@ -543,7 +595,7 @@ describe('production Next HTTP boundary', () => {
     it('rejects hostile policy, invalid methods, paths, queries and bodies before dispatch', async () => {
       const cases: Array<{ path: string; method: string; body?: string; headers?: Record<string, string>; status: number }> = [
         { path: deletePath, method: 'POST', body: payload, headers: { origin: 'https://hostile.invalid' }, status: 403 },
-        { path: deletePath, method: 'POST', body: payload, headers: { host: 'hostile.invalid' }, status: 403 },
+        { path: deletePath, method: 'POST', body: payload, headers: { host: 'hostile.invalid', origin: 'https://fixture.example:7319', 'x-forwarded-host': 'fixture.example:7319' }, status: 403 },
         { path: deletePath, method: 'POST', body: payload, headers: { 'sec-fetch-site': 'cross-site' }, status: 403 },
         { path: deletePath, method: 'GET', status: 405 },
         { path: `${deletePath}?unknown=1`, method: 'POST', body: payload, status: 404 },
@@ -554,7 +606,7 @@ describe('production Next HTTP boundary', () => {
       for (const item of cases) {
         calls = [];
         const response = await request(item.path, { 'content-type': 'application/json', ...item.headers }, port, item.method, item.body);
-        expect(response.status, `${item.method} ${item.path}`).toBe(item.status);
+        expect(response.status, `${item.method} ${item.path} headers=${JSON.stringify(item.headers ?? {})}`).toBe(item.status);
         expect(calls).toHaveLength(0);
       }
     });
@@ -645,7 +697,7 @@ describe('production Next HTTP boundary', () => {
     ]);
     expect(create.body + state.body + receipt.body + output).not.toContain(token);
   });
-  it.each<Record<string, string>>([{ host: 'hostile.example', 'x-forwarded-host': '127.0.0.1' }, { origin: 'null' }, { 'sec-fetch-site': 'cross-site' }])('rejects Think command policy violations before forwarding %o', async headers => {
+  it.each<Record<string, string>>([{ host: 'hostile.example', origin: 'http://fixture.example:7319', 'x-forwarded-host': 'fixture.example:7319' }, { origin: 'null' }, { 'sec-fetch-site': 'cross-site' }])('rejects Think command policy violations before forwarding %o', async headers => {
     calls = [];
     const response = await request('/api/think/conversations', { ...headers, 'content-type': 'application/json' }, port, 'POST', JSON.stringify({ conversationId: '11111111-1111-4111-8111-111111111111', clientCommandId: '22222222-2222-4222-8222-222222222222' }));
     expect(response.status).toBe(403);
@@ -732,7 +784,7 @@ describe('production Next HTTP boundary', () => {
     await vi.waitFor(() => expect(watchClosed).toBeGreaterThan(closedBefore), { timeout: 3000 });
     expect(calls.every(call => call.method === 'GET' && call.url === watchPath)).toBe(true);
   }, 15000);
-  it.each<Record<string, string>>([{ host: 'hostile.example', 'x-forwarded-host': `127.0.0.1` }, { origin: 'null' }, { 'sec-fetch-site': 'cross-site' }])('denies a Think watch before the upstream boundary %o', async headers => {
+  it.each<Record<string, string>>([{ host: 'hostile.example', origin: 'http://fixture.example:7319', 'x-forwarded-host': 'fixture.example:7319' }, { origin: 'null' }, { 'sec-fetch-site': 'cross-site' }])('denies a Think watch before the upstream boundary %o', async headers => {
     calls = [];
     const response = await request(watchPath, headers);
     expect(response.status).toBe(403);
@@ -769,7 +821,7 @@ describe('production Next HTTP boundary', () => {
     expect(calls).toHaveLength(1);
     expect(new URL(calls[0].url ?? '', 'http://127.0.0.1').searchParams.getAll('id')).toEqual([JSON.stringify(id)]);
   });
-  it.each<Record<string, string>>([{ host: 'hostile.example', 'x-forwarded-host': '127.0.0.1' }, { origin: 'https://evil.example' }, { 'sec-fetch-site': 'cross-site' }])('denies real HTTP hostile headers %o without upstream', async headers => {
+  it.each<Record<string, string>>([{ host: 'hostile.example', origin: 'http://fixture.example:7319', 'x-forwarded-host': 'fixture.example:7319' }, { origin: 'https://evil.example' }, { 'sec-fetch-site': 'cross-site' }])('denies real HTTP hostile headers %o without upstream', async headers => {
     calls = [];
     const response = await request('/api/vault/tree', headers);
     expect(response.status).toBe(403);

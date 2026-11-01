@@ -58,7 +58,7 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
   log('vault_bff_attempt', { requestId, operation });
   let response: Response;
   try {
-    if (!allowsWebRequest(request, transport.config.web)) response = failure('forbidden');
+    if (!allowsWebRequest(request)) response = failure('forbidden');
     else if (operation === 'other') response = failure('not_found');
     else if (request.method !== 'GET') response = failure('method_not_allowed');
     else {

@@ -3,7 +3,7 @@ import type { LoadedTransport } from '../../backend/transport';
 import { handleGroundRequest, type GroundBffDependencies } from './ground-bff';
 
 const token = 'a'.repeat(64);
-const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001', web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } }, serviceToken: token };
+const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001' }, serviceToken: token };
 const revision = 'b'.repeat(64);
 const noteId = ['03_Resources', 'Memory-Loop', 'goals.md'];
 const goals = (markdown: string) => ({ state: 'ready', noteId, revision, data: { markdown } });

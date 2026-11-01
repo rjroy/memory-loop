@@ -7,6 +7,7 @@ import CaptureView from '../../src/views/CaptureView';
 import NextShell from '../../src/shell/NextShell';
 import { PresentationContext, usePresentation, type PresentationLocation } from '../../src/shell/presentation';
 import { useThinkPresentation } from '../../src/think/presentation';
+import { webcrypto } from 'node:crypto';
 
 const oldId = '11111111-1111-4111-8111-111111111111';
 const targetId = '22222222-2222-4222-8222-222222222222';
@@ -158,6 +159,19 @@ beforeEach(() => { window.sessionStorage.clear(); window.localStorage.clear(); }
 afterEach(() => { vi.useRealTimers(); window.sessionStorage.clear(); window.localStorage.clear(); });
 
 describe('Ground recent conversations and view ownership', () => {
+  it('sends one deletion with a cryptographic command ID on non-secure HTTP', async () => {
+    const fixture = setup({ deleteMode: 'completed' }); render(<Router />);
+    const region = await toGround();
+    const { confirm } = await openDelete(region);
+    vi.stubGlobal('crypto', { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) });
+    try {
+      fireEvent.click(confirm);
+      await waitFor(() => expect(requests(fixture.fetcher, `${base}/${targetId}/delete`, 'POST')).toHaveLength(1));
+      const call = requests(fixture.fetcher, `${base}/${targetId}/delete`, 'POST')[0];
+      expect(JSON.parse(String(call[1]?.body))).toEqual({ clientCommandId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/), viewToken });
+      noSendOrCreate(fixture.fetcher);
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('renders six independent cards and up to ten ordered conversations with unavailable Delete controls', async () => {
     const rows = Array.from({ length: 10 }, (_, i) => row(`11111111-1111-4111-8111-${String(i + 1).padStart(12, '0')}`, i === 0 ? 'Fixture 🧭 first' : i === 9 ? null : `Fixture ${i}`, i === 0, i !== 8));
     const fixture = setup({ list: { state: 'ready', items: rows } }); render(<Router />);

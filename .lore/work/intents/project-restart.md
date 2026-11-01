@@ -15,6 +15,17 @@ This document is the complete starting brief. It assumes no access to a previous
 
 The intended deployment is personal, single-user access from a desktop and phone on the home network. Public hosting, access away from home, and multi-user accounts are not current requirements. Authentication and network exposure still need deliberate choices for that deployment.
 
+### Deployment clarification — 2026-11-01
+
+The application must work with deployment-selected browser hostnames and ports,
+over HTTP or HTTPS, directly or through a proxy. It must not require a configured
+public origin, proxy provider or injected identity. Validate the actual request
+authority and Origin/Fetch Metadata without trusting forwarded authority; these
+checks are not user authentication. Network access, authentication and encryption
+are deployment responsibilities. Keep the daemon's loopback endpoint and
+server-only credential private. This is current, revisable intent, not authorization
+to interrupt or reconfigure running services.
+
 ## Starting point
 
 **Quick capture is the core feature.** Record a thought with minimal friction and save it as a timestamped entry in a daily Markdown note. Keep capture available independently of dashboard configuration.

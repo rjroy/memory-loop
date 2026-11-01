@@ -49,7 +49,7 @@ export async function handleGroundRequest(request: Request, dependencies: Ground
   try {
     const url = new URL(request.url);
     const route = url.pathname.slice('/api/ground/'.length);
-    if (!allowsWebRequest(request, dependencies.transport.config.web)) response = groundFailure('forbidden');
+    if (!allowsWebRequest(request)) response = groundFailure('forbidden');
     else if (url.pathname !== `/api/ground/${route}` || !isGroundRoute(route)) response = groundFailure('not_found');
     else if (request.method !== 'GET') response = groundFailure('method_not_allowed');
     else if (url.search || url.hash) response = groundFailure('invalid_request');

@@ -6,6 +6,7 @@ import { finalReceipt, mergeReceipt, rejectedPost } from './receipts';
 import type { ThinkActivity, ThinkAdmission, ThinkDraft, ThinkHandoffRequest, ThinkHandoffState, ThinkIdentity, ThinkKnownIdentity, ThinkMessage, ThinkMessageFocus, ThinkPresentation, ThinkPresentationActions, ThinkPresentationState, ThinkQuestion, ThinkRejectedSubmission, ThinkTextContent } from './types';
 import { createConversationClient } from './conversation-client';
 import { createThinkView, type ThinkViewState } from './view';
+import { secureUuid, sha256Hex } from '../browser-crypto';
 
 type Client = ReturnType<typeof createThinkClient>;
 export interface ThinkSessionClock {
@@ -64,7 +65,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   const clock = options.clock ?? defaultClock;
   const conversations = options.conversations ?? createConversationClient();
   const view = options.view ?? createThinkView(conversations, clock);
-  const randomUUID = options.randomUUID ?? (() => crypto.randomUUID());
+  const randomUUID = options.randomUUID ?? secureUuid;
   const drafts = new Map<string, ThinkDraft>();
   const listeners = new Set<() => void>();
   let state: ThinkSessionState = { identity: null, draft: emptyDraft, connection: 'inactive', snapshot: null, entries: [], history: 'loading', newChat: 'idle', handoff: null, view: view.getSnapshot() };
@@ -284,12 +285,10 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
           } while (progress.offset < item.ref.through);
           const text = progress.text + progress.decoder.decode();
           if (item.ref.kind === 'canonical') {
-            if (!globalThis.crypto?.subtle) throw new Error('digest unavailable');
             const bytes = new Uint8Array(item.ref.through);
             let index = 0;
             for (const chunk of progress.chunks) { bytes.set(chunk, index); index += chunk.length; }
-            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-            if ([...digest].map(value => value.toString(16).padStart(2, '0')).join('') !== item.ref.sha256) throw new Error('digest mismatch');
+            if (await sha256Hex(bytes) !== item.ref.sha256) throw new Error('digest mismatch');
           }
           if (!current(item.id, item.version) || controller.signal.aborted || bodyProgress.get(key) !== progress || !state.entries.some(entry => 'body' in entry && keyOf(entry.body) === key)) return;
           bodyProgress.delete(key);

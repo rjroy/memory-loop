@@ -156,7 +156,7 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
     const url = new URL(request.url);
     const route = classifyThinkJsonRoute(url, request.method);
     const content = request.method === 'GET' && route?.operation === 'content';
-    if (!allowsWebRequest(request, dependencies.transport.config.web)) response = failure('forbidden');
+    if (!allowsWebRequest(request)) response = failure('forbidden');
     else if (!route) response = failure('not_found');
     else if (request.method !== route.method) response = failure('method_not_allowed');
     else if (route.operation === 'selection' && request.method === 'GET' && !validViewToken(request.headers.get('x-memory-loop-view'))) response = failure('lease_unavailable');

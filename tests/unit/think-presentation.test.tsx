@@ -191,13 +191,25 @@ describe('Think presentation contract', () => {
 
 it('default Think entrypoint requests the selected conversation snapshot without sending a command', async () => {
   window.history.replaceState(null, '', `/think?conversation=${identity.conversationId}`);
-  const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ conversationId: identity.conversationId, epoch: identity.epoch, revision: 1, creation: 'ready', entries: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  const token = 'fixture_view_token_012345678901234567890123456789';
+  const expiresAt = new Date(Date.now() + 120_000).toISOString();
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(input instanceof Request ? input.url : String(input), window.location.origin).pathname;
+    if (path === '/api/think/views' && init?.method === 'POST') return Response.json({ viewToken: token, selectionRevision: 0, conversationId: null, expiresAt }, { status: 201 });
+    if (path === '/api/think/selection' && init?.method === 'POST') return Response.json({ selectionRevision: 1, conversationId: identity.conversationId, expiresAt });
+    if (path === '/api/think/selection' && (init?.method ?? 'GET') === 'GET') return Response.json({ selectionRevision: 1, conversationId: identity.conversationId, expiresAt });
+    if (path === `/api/think/conversations/${identity.conversationId}/decisions`) return Response.json({ decisions: [] });
+    if (path === `/api/think/conversations/${identity.conversationId}`) return Response.json({ ...identity, revision: 1, creation: 'ready', sendEligibility: 'available', entries: [] });
+    throw new Error(`Unexpected fixture request: ${path}`);
+  });
   vi.stubGlobal('fetch', fetcher);
   render(<TestPresentation><ThinkView /></TestPresentation>);
   await waitFor(() => expect(fetcher).toHaveBeenCalled());
   const calls = fetcher.mock.calls;
   const requestUrl = (input: RequestInfo | URL) => new URL(input instanceof Request ? input.url : String(input), window.location.origin);
   expect(calls.some(([input]) => requestUrl(input).pathname === `/api/think/conversations/${identity.conversationId}`)).toBe(true);
-  expect(calls.every(([input, init]) => requestUrl(input).origin === window.location.origin && (init?.method ?? (input instanceof Request ? input.method : 'GET')) === 'GET')).toBe(true);
+  expect(calls.every(([input]) => requestUrl(input).origin === window.location.origin)).toBe(true);
+  expect(calls.filter(([input, init]) => (init?.method ?? (input instanceof Request ? input.method : 'GET')) !== 'GET')
+    .every(([input, init]) => init?.method === 'POST' && ['/api/think/views', '/api/think/selection'].includes(requestUrl(input).pathname))).toBe(true);
   expect(calls.every(([input, init]) => !new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).has('authorization'))).toBe(true);
 });

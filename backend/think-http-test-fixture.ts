@@ -16,6 +16,11 @@ export function thinkHttpService() {
     decisions: vi.fn<ThinkService['decisions']>(unexpected),
     decision: vi.fn<ThinkService['decision']>(unexpected),
     reply: vi.fn<ThinkService['reply']>(unexpected),
+    recentConversations: vi.fn<ThinkService['recentConversations']>(unexpected),
+    resume: vi.fn<ThinkService['resume']>(unexpected),
+    registerView: vi.fn<ThinkService['registerView']>(unexpected),
+    selection: vi.fn<ThinkService['selection']>(unexpected),
+    select: vi.fn<ThinkService['select']>(unexpected),
     content: { page: vi.fn<ThinkService['content']['page']>(unexpected), open: vi.fn<ThinkService['content']['open']>(unexpected) },
     close: vi.fn<ThinkService['close']>(async () => {}),
   } satisfies ThinkService;
@@ -33,6 +38,11 @@ export function expectNoThinkDispatch(think: ReturnType<typeof thinkHttpService>
   expect(think.decisions).not.toHaveBeenCalled();
   expect(think.decision).not.toHaveBeenCalled();
   expect(think.reply).not.toHaveBeenCalled();
+  expect(think.recentConversations).not.toHaveBeenCalled();
+  expect(think.resume).not.toHaveBeenCalled();
+  expect(think.registerView).not.toHaveBeenCalled();
+  expect(think.selection).not.toHaveBeenCalled();
+  expect(think.select).not.toHaveBeenCalled();
   expect(think.content.page).not.toHaveBeenCalled();
   expect(think.content.open).not.toHaveBeenCalled();
 }

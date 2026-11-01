@@ -9,7 +9,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       await page.setViewportSize(viewport);
       const failures: string[] = [];
       const groundRequests = new Set<string>();
-      const groundPaths = new Set(['quick-actions', 'inspiration', 'prompts', 'goals', 'recent-captures'].map(path => `/api/ground/${path}`));
+      const groundPaths = new Set(['quick-actions', 'inspiration', 'prompts', 'goals', 'recent-captures', 'recent-conversations'].map(path => `/api/ground/${path}`));
       let expectedConsoleErrors = 0;
       let expectedResponses = 0;
       const responseChecks: Promise<void>[] = [];
@@ -29,7 +29,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
           try {
             const value: unknown = await response.json();
             if (url.origin === allowedOrigin && url.pathname === '/api/think/conversations' && !url.search && response.request().method() === 'POST' && response.status() === 503 &&
-                typeof value === 'object' && value !== null && 'error' in value && typeof value.error === 'object' && value.error !== null && 'code' in value.error && value.error.code === 'think_config_missing') { expectedResponses++; return; }
+                typeof value === 'object' && value !== null && 'error' in value && typeof value.error === 'object' && value.error !== null && 'code' in value.error && value.error.code === 'think_unavailable') { expectedResponses++; return; }
           } catch { /* Unexpected or unreadable error responses remain failures. */ }
           failures.push('Unexpected Think HTTP error response');
         })());
@@ -37,8 +37,9 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       page.on('request', request => {
         const url = new URL(request.url());
         const groundRead = name === 'Ground' && groundPaths.has(url.pathname) && !url.search && request.method() === 'GET';
+        const viewMetadata = !url.search && (url.pathname === '/api/think/views' && request.method() === 'POST' || url.pathname === '/api/think/selection' && ['GET', 'POST'].includes(request.method()));
         if (groundRead) groundRequests.add(url.pathname);
-        if (url.origin !== allowedOrigin || (name !== 'Recall' && url.pathname.startsWith('/api/') && !groundRead && !(name === 'Think' && (url.pathname === '/api/think/conversations' || url.pathname.startsWith('/api/think/conversations/'))))) failures.push(request.url());
+        if (url.origin !== allowedOrigin || (name !== 'Recall' && url.pathname.startsWith('/api/') && !groundRead && !viewMetadata && !(name === 'Think' && (url.pathname === '/api/think/conversations' || url.pathname.startsWith('/api/think/conversations/'))))) failures.push(request.url());
       });
       await page.goto(`/${name.toLowerCase()}`);
       if (name === 'Think') await expect(page).toHaveURL(/\/think\?conversation=[0-9a-f-]{36}$/);
@@ -46,7 +47,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
       if (name === 'Recall') await expect(page.getByRole('navigation', { name: 'Vault files' }).getByRole('link', { name: 'alpha.md' })).toBeVisible();
       if (name === 'Ground') {
-        for (const heading of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures']) await expect(page.getByRole('heading', { level: 2, name: heading })).toBeVisible();
+        for (const heading of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures', 'Recent conversations']) await expect(page.getByRole('heading', { level: 2, name: heading })).toBeVisible();
         await expect.poll(() => groundRequests.size).toBe(groundPaths.size);
       }
       await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name })).toHaveAttribute('aria-current', 'page');
@@ -79,7 +80,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         }
       }
       await Promise.all(responseChecks);
-      if (name === 'Think') { expect(expectedResponses).toBeGreaterThan(0); expect(expectedConsoleErrors).toBe(expectedResponses); }
+      if (name === 'Think') { expect(expectedResponses).toBe(1); expect(expectedConsoleErrors).toBe(1); }
       expect(failures).toEqual([]);
     });
   }

@@ -250,6 +250,7 @@ function Conversation({ presentation }: ThinkPresenterProps) {
   else if (state.monitoring === 'reconnecting') exceptions.push(`Reconnecting. Work may continue.${state.composer.kind === 'stop' && state.composer.state === 'unavailable' ? ' Stop unavailable.' : ''}`);
   else if (state.monitoring === 'resynchronizing') exceptions.push('Catching up…');
   else if (state.monitoring === 'opening' || state.creation === 'opening') exceptions.push('Opening current chat…');
+  else if (state.selectionUnavailable) exceptions.push('This chat isn’t ready to send. Check connection.');
   if (state.permissionCompatibility === 'incompatible' || state.permissionPending) exceptions.push('Tool access doesn’t match this chat’s full-access setup. This chat cannot resolve that request here.');
   if (state.transcriptWarning?.current) {
     const reason = state.transcriptWarning.current.reason;
@@ -260,7 +261,7 @@ function Conversation({ presentation }: ThinkPresenterProps) {
   if (state.composer.kind === 'stop' && state.composer.state === 'retry') exceptions.push('Couldn’t request Stop. Work may still be running.');
   const terminal = state.run.state === 'interrupted' ? 'Stopped' : state.run.state === 'cancelled-before-delivery' ? 'Stopped before starting'
     : state.run.state === 'failed' ? 'Response ended with an error.' : '';
-  const canCheck = ['denied', 'unavailable'].includes(state.monitoring) || state.newChat === 'unavailable';
+  const canCheck = ['denied', 'unavailable'].includes(state.monitoring) || state.newChat === 'unavailable' || !!state.selectionUnavailable;
   const dismissNewChat = () => { actions.cancelNewChat(); editor.current?.focus({ preventScroll: true }); };
 
   return <div className="think-view think-view--conversation">
@@ -305,7 +306,7 @@ function Conversation({ presentation }: ThinkPresenterProps) {
           {message.role === 'assistant' && <Activity items={message.activity} onOpen={() => { if (!nearBottom()) pause(); }} />}
         </article>)}
         {state.backgroundActivity.length > 0 && <section className="think-background" aria-label="Background activity"><p className="think-role">AI · Background activity</p><Activity items={state.backgroundActivity} onOpen={() => { if (!nearBottom()) pause(); }} /></section>}
-        {identity && state.questions.map(question => <ThinkQuestion key={question.decisionId} identity={identity} question={question} actions={actions} />)}
+        {identity && state.questions.map(question => <ThinkQuestion key={question.decisionId} identity={identity} question={question} actions={actions} canReply={state.mutationsAvailable !== false} />)}
         {state.history.state === 'loading' && <p className="think-part-status">Loading messages…</p>}
         {state.history.state === 'unavailable' && <p className="think-part-status">Some messages couldn’t be loaded.</p>}
         {terminal && hasContent && <p className="think-part-status" role="status">{terminal}</p>}

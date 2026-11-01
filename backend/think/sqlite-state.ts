@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { CommandReceipt, CreateReceipt, CreateFailureCode, FormReplyReceipt, SendReceipt, StopReceipt } from './contract';
+import type { CommandReceipt, CreateReceipt, CreateFailureCode, FormReplyReceipt, ResumeReceipt, SendReceipt, StopReceipt } from './contract';
 import { ThinkStateError, type CommandPosition, type OwnedConversation, type RegisteredConversation, type StoredCommand, type ThinkRegistryReader, type ThinkStateStore, type TranscriptStateStore } from './state';
 import { isAbsolute, normalize } from 'node:path';
 import { ThinkStateFile } from './state-file';
 import type { NativeSession } from './native';
 import { SQLiteTranscriptState, transcriptSchemaV2, validateTranscriptSchema } from './sqlite-transcript-state';
+import { SQLiteConversations, conversationSchemaV4, validateConversationSchema } from './sqlite-conversations';
 
 type Parameter = string | number | Uint8Array | null;
 type Row = Record<string, unknown>;
@@ -93,6 +94,15 @@ function decodeCommand(row: Row): StoredCommand {
     nativeMessageId: nullableText(row, 'native_message_id') };
 }
 
+function decodeResume(row: Row): StoredCommand {
+  const state = oneOf(text(row, 'state'), ['registered', 'ready', 'upstream-unconfirmed', 'rejected']);
+  const base = { kind: 'resume' as const, conversationId: text(row, 'conversation_id'), clientCommandId: text(row, 'command_id'), epoch: text(row, 'registration_epoch') };
+  if (!uuid.test(base.conversationId) || !uuid.test(base.clientCommandId) || !uuid.test(base.epoch)) unavailable();
+  const receipt: ResumeReceipt = state === 'rejected' ? { ...base, state,
+    failure: { code: oneOf(text(row, 'failure_code'), ['ownership_mismatch', 'service_unavailable']) } } : { ...base, state };
+  return { receipt, original: null, payloadSha256: null, registeredAt: integer(row, 'registered_at'), attempted: false, nativeMessageId: null };
+}
+
 const record = (value: unknown): value is Row => value !== null && typeof value === 'object' && !Array.isArray(value);
 function selection(value: unknown): NonNullable<RegisteredConversation['selection']> {
   if (!record(value) || (value.agent != null && (typeof value.agent !== 'string' || !value.agent))) unavailable();
@@ -122,7 +132,9 @@ function decodeConversation(row: Row, installationId: string): RegisteredConvers
     owner: { owner: 'memory-loop', conversationId, epoch, installationId },
     ...(context.agent === undefined ? {} : { agent: context.agent }), ...(context.model ? { model: context.model } : {}),
     createdAt: integer(row, 'created_at'), creation: oneOf(text(row, 'creation_state'), ['registered', 'ready', 'upstream-unconfirmed', 'rejected']),
-    selection: effective === null ? null : selection(JSON.parse(effective)) };
+    selection: effective === null ? null : selection(JSON.parse(effective)),
+    purpose: oneOf(text(row, 'purpose'), ['think', 'ground-generation']),
+    lifecycle: oneOf(text(row, 'lifecycle_state'), ['live', 'deleting']), rowVersion: integer(row, 'row_version') };
 }
 
 const schemaV1 = `
@@ -192,6 +204,7 @@ class SQLiteThinkState implements ThinkStateStore {
   private closed = false;
   readonly installationId: string;
   readonly transcripts: SQLiteTranscriptState;
+  readonly conversations: SQLiteConversations;
   readonly registry: ThinkRegistryReader = {
     conversation: id => this.readConversation(id),
     commands: (id, after) => this.readCommands(id, after),
@@ -201,11 +214,11 @@ class SQLiteThinkState implements ThinkStateStore {
     file.validate();
     if (db.get('PRAGMA quick_check')?.quick_check !== 'ok') unavailable();
     const version = Number(db.get('PRAGMA user_version')?.user_version);
-    if (version !== 0 && version !== 1 && version !== 2 && version !== 3) unavailable();
+    if (![0, 1, 2, 3, 4].includes(version)) unavailable();
     if (version === 0) {
       const existing = db.get("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
       if (existing?.count !== 0) unavailable();
-    } else { validateV1(db); if (version >= 2) validateTranscriptSchema(db); if (version === 3) validateV3(db); }
+    } else { validateV1(db); if (version >= 2) validateTranscriptSchema(db); if (version >= 3) validateV3(db); if (version === 4) validateConversationSchema(db); }
     db.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = EXTRA; PRAGMA busy_timeout = 1000;');
     if (db.get('PRAGMA foreign_keys')?.foreign_keys !== 1 || db.get('PRAGMA synchronous')?.synchronous !== 3) unavailable();
     // EXTRA syncs rollback-journal deletion too; no WAL/checkpointer service is needed.
@@ -228,16 +241,24 @@ class SQLiteThinkState implements ThinkStateStore {
       db.exec(schemaV3);
       db.exec('PRAGMA user_version = 3');
     });
+    if (version < 4) this.write('migrate', () => {
+      if (Number(db.get('PRAGMA user_version')?.user_version) !== 3) unavailable();
+      db.exec(conversationSchemaV4);
+      db.exec('PRAGMA user_version = 4');
+    });
     this.installationId = validateV1(db);
     validateTranscriptSchema(db);
     validateV3(db);
+    validateConversationSchema(db);
+    this.conversations = new SQLiteConversations(db, () => this.check(), (name, operation) => this.write(name, operation),
+      this.installationId, row => decodeConversation(row, this.installationId));
     this.transcripts = new SQLiteTranscriptState(db, () => this.check(), operation => this.write('transcript', operation), this.installationId);
     file.syncDirectory();
   }
 
   private check(): void { if (this.closed) unavailable(); this.file.validate(); }
 
-  private write<T>(name: 'migrate' | 'create-register' | 'command-register' | 'dispatch-attempt' | 'outcome' | 'transcript', operation: () => T): T {
+  private write<T>(name: 'migrate' | 'create-register' | 'command-register' | 'dispatch-attempt' | 'outcome' | 'transcript' | 'view-register' | 'selection' | 'activity', operation: () => T): T {
     console.info('think_state_write_attempt', { operation: name });
     let inTransaction = false;
     let committed = false;
@@ -261,7 +282,9 @@ class SQLiteThinkState implements ThinkStateStore {
     try {
       this.check();
       const row = this.db.get('SELECT * FROM commands WHERE command_id = ?', commandId);
-      return row ? decodeCommand(row) : null;
+      if (row) return decodeCommand(row);
+      const resume = this.db.get('SELECT * FROM resume_commands WHERE command_id = ?', commandId);
+      return resume ? decodeResume(resume) : null;
     } catch (error) { if (error instanceof ThinkStateError) throw error; return unavailable(); }
   }
 
@@ -309,13 +332,21 @@ class SQLiteThinkState implements ThinkStateStore {
     // Same short admission transaction as the immutable command/original; no sequence is
     // allocated by reading the wall clock or by native work, and failed admissions roll back both.
     this.db.run('INSERT INTO command_order(command_id, conversation_id) VALUES (?, ?)', receipt.clientCommandId, receipt.conversationId);
+    this.db.run(`UPDATE conversations SET row_version = row_version + 1,
+      last_activity_at = CASE WHEN ? IN ('send', 'form-reply') THEN max(coalesce(last_activity_at, 0), ?) ELSE last_activity_at END
+      WHERE conversation_id = ?`, receipt.kind, at, receipt.conversationId);
+  }
+
+  private hasCommand(commandId: string): boolean {
+    return !!(this.db.get('SELECT 1 FROM commands WHERE command_id = ?', commandId) ||
+      this.db.get('SELECT 1 FROM resume_commands WHERE command_id = ?', commandId));
   }
 
   registerConversation(conversation: OwnedConversation, receipt: CreateReceipt, at: number): void {
     if (conversation.owner.installationId !== this.installationId || conversation.owner.conversationId !== receipt.conversationId ||
         conversation.conversationId !== receipt.conversationId || receipt.state !== 'registered' || !Number.isSafeInteger(at) || at < 0) unavailable();
     this.write('create-register', () => {
-      if (this.db.get('SELECT 1 FROM commands WHERE command_id = ?', receipt.clientCommandId) ||
+      if (this.hasCommand(receipt.clientCommandId) ||
           this.db.get('SELECT 1 FROM conversations WHERE conversation_id = ?', receipt.conversationId)) conflict();
       this.db.run(`INSERT INTO conversations(conversation_id, native_session_id, vault_directory, owner_marker_json,
         creation_epoch, context_json, created_at, creation_state) VALUES (?, ?, ?, ?, ?, ?, ?, 'registered')`,
@@ -330,9 +361,16 @@ class SQLiteThinkState implements ThinkStateStore {
     if (receipt.state !== 'registered' || !Number.isSafeInteger(at) || at < 0) unavailable();
     checkOriginal(receipt, original, digest);
     this.write('command-register', () => {
-      if (this.db.get('SELECT 1 FROM commands WHERE command_id = ?', receipt.clientCommandId)) conflict();
-      const owner = this.db.get('SELECT creation_state FROM conversations WHERE conversation_id = ?', receipt.conversationId);
-      if (owner?.creation_state !== 'ready') unavailable();
+      if (this.hasCommand(receipt.clientCommandId)) conflict();
+      const owner = this.conversations.requireLive(receipt.conversationId);
+      if (receipt.kind === 'resume') {
+        if (owner.creation === 'rejected') unavailable();
+        this.db.run(`INSERT INTO resume_commands(command_id, conversation_id, state, registration_epoch, registered_at)
+          VALUES (?, ?, 'registered', ?, ?)`, receipt.clientCommandId, receipt.conversationId, receipt.epoch, at);
+        this.db.run('UPDATE conversations SET row_version = row_version + 1 WHERE conversation_id = ?', receipt.conversationId);
+        return;
+      }
+      if (owner.creation !== 'ready') unavailable();
       this.insert(receipt, original, digest, at);
     });
   }
@@ -348,10 +386,18 @@ class SQLiteThinkState implements ThinkStateStore {
   outcome(receipt: CommandReceipt, verifiedSelection?: Pick<NativeSession, 'agent' | 'model' | 'permissions'>): void {
     if (receipt.kind === 'create' && receipt.state === 'ready' && !verifiedSelection) unavailable();
     this.write('outcome', () => {
+      if (receipt.kind === 'resume') {
+        const row = this.db.get('SELECT conversation_id FROM resume_commands WHERE command_id = ?', receipt.clientCommandId);
+        if (row?.conversation_id !== receipt.conversationId) conflict();
+        this.db.run('UPDATE resume_commands SET state = ?, failure_code = ? WHERE command_id = ?', receipt.state,
+          receipt.state === 'rejected' ? receipt.failure.code : null, receipt.clientCommandId);
+        return;
+      }
       const row = this.db.get('SELECT conversation_id, kind FROM commands WHERE command_id = ?', receipt.clientCommandId);
       if (row?.conversation_id !== receipt.conversationId || row.kind !== receipt.kind) conflict();
       this.db.run('UPDATE commands SET state = ?, failure_code = ? WHERE command_id = ?', receipt.state,
         'failure' in receipt ? receipt.failure?.code ?? null : null, receipt.clientCommandId);
+      this.db.run('UPDATE conversations SET row_version = row_version + 1 WHERE conversation_id = ?', receipt.conversationId);
       if (receipt.kind === 'create') this.db.run('UPDATE conversations SET creation_state = ? WHERE conversation_id = ?', receipt.state, receipt.conversationId);
       if (receipt.kind === 'create' && receipt.state === 'ready' && verifiedSelection) {
         this.db.run('UPDATE conversations SET effective_context_json = ? WHERE conversation_id = ?', JSON.stringify({
@@ -376,7 +422,7 @@ export async function openThinkState(projectRoot: string, vaultDirectory: string
     file = new ThinkStateFile(projectRoot, vaultDirectory);
     db = await connect(file.path);
     const store = new SQLiteThinkState(db, file);
-    console.info('think_state_setup_outcome', { status: 'ready', schema: 3 });
+    console.info('think_state_setup_outcome', { status: 'ready', schema: 4 });
     return store;
   } catch {
     try { db?.close(); } catch { console.info('think_state_cleanup_outcome', { status: 'failed' }); }

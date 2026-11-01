@@ -2,11 +2,20 @@ import { createHash } from 'node:crypto';
 import type { MessageListOutput, SessionMessageInfo } from '@opencode/client';
 import type { BodyRef, BodyStore } from './body-store';
 import type { ProjectionEntry, ToolCategory } from './projection';
-import type { CommandPosition, StoredCommand, ThinkRegistryReader, TranscriptStateStore } from './state';
+import type { CanonicalActivity, CommandPosition, StoredCommand, ThinkRegistryReader, TranscriptStateStore } from './state';
 
 const bytes = async function* (value: Uint8Array): AsyncIterable<Uint8Array> { yield value; };
 export const textIdentity = (messageId: string, ordinal: number) => JSON.stringify([messageId, ordinal]);
 export const terminalSend = (state: string) => ['completed', 'failed', 'interrupted', 'cancelled-before-delivery', 'rejected'].includes(state);
+
+/** Metadata only, committed by the caller AFTER its ownership/process/source fences. */
+export function canonicalActivities(message: SessionMessageInfo, entries: readonly ProjectionEntry[]): CanonicalActivity[] {
+  if (message.type !== 'assistant' || message.time.completed === undefined) return [];
+  const at = message.time.completed;
+  return entries.flatMap(entry => entry.kind === 'assistant-text' && entry.messageId === message.id && entry.closure === 'closed' &&
+    entry.capture === 'complete' && entry.body.kind === 'canonical' ? [{ messageId: entry.messageId, ordinal: entry.ordinal,
+      sha256: entry.body.sha256, length: entry.body.through, at }] : []);
+}
 
 /** Shared ordinary-history projection. Text ordinals exclude reasoning/tools; raw payloads never escape. */
 export async function projectNativeMessage(conversationId: string, message: SessionMessageInfo, bodies: BodyStore,
@@ -50,6 +59,7 @@ export interface RestoredHistory {
   commands: RestoredCommand[];
   users: Set<string>;
   missing: Set<string>;
+  activities: CanonicalActivity[];
 }
 
 /** Build privately, then the service verifies ownership/process fences again before publishing any refs. */
@@ -61,7 +71,7 @@ export async function restoreHistory(options: {
   stopping(): boolean;
 }): Promise<RestoredHistory> {
   const { conversationId, registry, bodies } = options;
-  const result: RestoredHistory = { entries: [], commands: [], users: new Set(), missing: new Set() };
+  const result: RestoredHistory = { entries: [], commands: [], users: new Set(), missing: new Set(), activities: [] };
   const originals = new Map<string, Extract<ProjectionEntry, { kind: 'original' }>>();
   const originalOrder: Array<{ entry: Extract<ProjectionEntry, { kind: 'original' }>; nativeMessageId?: string | null; undelivered: boolean }> = [];
   const unattached: Array<Extract<ProjectionEntry, { kind: 'original' }>> = [];
@@ -116,6 +126,7 @@ export async function restoreHistory(options: {
       } else if (message.type === 'synthetic') runId = undefined;
       const projected = await projectNativeMessage(conversationId, message, bodies, [], runId, true);
       result.entries.push(...projected.entries);
+      result.activities.push(...canonicalActivities(message, projected.entries));
       for (const key of projected.missing) result.missing.add(key);
     }
     cursor = page.cursor.next ?? undefined;

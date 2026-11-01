@@ -34,6 +34,19 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** Admission/hydration units mock this derivative boundary; real SQLite behavior has its own fixture. */
+function conversationStateSpies() {
+  const unexpected = () => { throw new Error('Unexpected recent/view operation in this controlled unit'); };
+  return {
+    canonical: vi.fn<ThinkStateStore['conversations']['canonical']>(),
+    recent: vi.fn<ThinkStateStore['conversations']['recent']>(unexpected),
+    mintView: vi.fn<ThinkStateStore['conversations']['mintView']>(unexpected),
+    view: vi.fn<ThinkStateStore['conversations']['view']>(unexpected),
+    select: vi.fn<ThinkStateStore['conversations']['select']>(unexpected),
+    protection: vi.fn<ThinkStateStore['conversations']['protection']>(unexpected),
+  } satisfies ThinkStateStore['conversations'];
+}
+
 function unitBodies(): BodyStore {
   const data = new Map<string, Buffer>();
   let generation = 0;
@@ -887,6 +900,7 @@ describe('durable admission storage faults', () => {
     };
     const state = {
       installationId: '99999999-9999-4999-8999-999999999999',
+      conversations: conversationStateSpies(),
       command: vi.fn<ThinkStateStore['command']>(id => { const found = records.get(id); return found ? structuredClone(found) : null; }),
       registerConversation: vi.fn<ThinkStateStore['registerConversation']>((_owner, receipt, at) => put(receipt, null, null, at)),
       registerCommand: vi.fn<ThinkStateStore['registerCommand']>(put),
@@ -1957,7 +1971,7 @@ describe('registry-owned restart hydration fences', () => {
     const owner: RegisteredConversation = { conversationId: a.conversationId, nativeSessionId: sessionId(a.conversationId),
       directory: vaultDirectory, owner: { owner: 'memory-loop', conversationId: a.conversationId, epoch: creationEpoch,
         installationId: '99999999-9999-4999-8999-999999999999' }, agent, model, createdAt: 1, creation: 'ready',
-      selection: { agent, model, permissions: permissions.map(rule => ({ ...rule })) } };
+      selection: { agent, model, permissions: permissions.map(rule => ({ ...rule })) }, purpose: 'think', lifecycle: 'live', rowVersion: 0 };
     const facts: StoredCommand[] = [
       { receipt: { kind: 'create', ...a, epoch: creationEpoch, state: 'ready' }, payloadSha256: null, original: null,
         registeredAt: 1, attempted: true, nativeMessageId: null },
@@ -1969,6 +1983,7 @@ describe('registry-owned restart hydration fences', () => {
     let registered = true;
     const state = {
       installationId: owner.owner.installationId ?? '',
+      conversations: conversationStateSpies(),
       registry: { conversation: vi.fn((id: string) => registered && id === a.conversationId ? structuredClone(owner) : null),
         commands: vi.fn<NonNullable<ThinkStateStore['registry']>['commands']>((id, after) =>
           id === a.conversationId && !after ? structuredClone(facts) : []) },
@@ -2012,6 +2027,7 @@ describe('registry-owned restart hydration fences', () => {
       expect(x.f.getSession).not.toHaveBeenCalled();
       expect(x.f.listMessages).not.toHaveBeenCalled();
       expect(x.state.registry.commands).not.toHaveBeenCalled();
+      expect(x.state.conversations.canonical).not.toHaveBeenCalled();
       expect(x.f.sessions.get(x.owner.nativeSessionId)).toEqual(nativeBefore);
       noMutation(x);
     } finally { await x.f.service.close(); }
@@ -2033,6 +2049,7 @@ describe('registry-owned restart hydration fences', () => {
         results.push({ binding, denied: result, staged: x.staged.length });
         expect(x.owner).toEqual(storedBefore);
         expect(x.f.sessions.get(x.owner.nativeSessionId)).toEqual(nativeBefore);
+        expect(x.state.conversations.canonical).not.toHaveBeenCalled();
         noMutation(x);
       } finally { await x.f.service.close(); }
     }
@@ -2088,6 +2105,7 @@ describe('registry-owned restart hydration fences', () => {
         } else {
           for (const outcome of outcomes) expect(outcome).toMatchObject({ error: { code: 'think_unavailable' } });
           await expect(x.f.service.content.open(staged)).rejects.toMatchObject({ code: change === 'service-close' ? 'think_unavailable' : 'not_found' });
+          expect(x.state.conversations.canonical).not.toHaveBeenCalled();
         }
         noMutation(x);
       } finally { held.resolve({ data: [], cursor: {} }); await x.f.service.close(); }

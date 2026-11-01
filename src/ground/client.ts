@@ -1,5 +1,7 @@
 import { projectGround, type GroundRoute } from '../web/ground-projection';
 import type { CapturesRead, GoalsData, InspirationData, PromptsData, QuickActionsData, ResourceRead } from '../../backend/ground-contract';
+import type { RecentConversations } from '../../backend/think/contract';
+import { projectRecentConversations } from '../web/ground-conversations-projection';
 
 export interface GroundReads {
   quickActions: ResourceRead<QuickActionsData>;
@@ -7,10 +9,12 @@ export interface GroundReads {
   prompts: ResourceRead<PromptsData>;
   goals: ResourceRead<GoalsData>;
   captures: CapturesRead;
+  conversations: RecentConversations | { state: 'unavailable' };
 }
 export type GroundKey = keyof GroundReads;
-const routes: Record<GroundKey, GroundRoute> = {
+const routes: Record<GroundKey, GroundRoute | 'recent-conversations'> = {
   quickActions: 'quick-actions', inspiration: 'inspiration', prompts: 'prompts', goals: 'goals', captures: 'recent-captures',
+  conversations: 'recent-conversations',
 };
 let sequence = 0;
 
@@ -44,7 +48,7 @@ async function json(response: Response, limit: number, signal: AbortSignal): Pro
 /** Fixed same-origin targets and the shared public projection, never service credentials. */
 export function createGroundClient(fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
   return {
-    async read<K extends GroundKey>(key: K, signal: AbortSignal): Promise<GroundReads[K]> {
+    async read<K extends GroundKey>(key: K, signal: AbortSignal, viewToken?: string | null): Promise<GroundReads[K]> {
       const requestId = ++sequence;
       const controller = new AbortController();
       const abort = () => controller.abort();
@@ -57,11 +61,14 @@ export function createGroundClient(fetcher: typeof fetch = globalThis.fetch.bind
         const operation = (async () => {
           if (controller.signal.aborted) throw new Error('Aborted');
           const response = await fetcher(`/api/ground/${routes[key]}`, {
-            signal: controller.signal, credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: { Accept: 'application/json' },
+            signal: controller.signal, credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: {
+              Accept: 'application/json', ...(key === 'conversations' && viewToken ? { 'X-Memory-Loop-View': viewToken } : {}),
+            },
           });
           const value = await json(response, key === 'goals' || key === 'quickActions' ? 524288 : 65536, controller.signal);
           // The fixed key→route mapping binds this route-specific validated projection.
-          return projectGround(value, routes[key], response.status) as GroundReads[K];
+          const route = routes[key];
+          return (route === 'recent-conversations' ? projectRecentConversations(value, response.status) : projectGround(value, route, response.status)) as GroundReads[K];
         })();
         const result = await Promise.race([operation, new Promise<never>((_, reject) => {
           timer = setTimeout(() => { controller.abort(); reject(new Error('Ground read timed out')); }, 5000);

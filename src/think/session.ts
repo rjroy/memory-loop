@@ -3,7 +3,9 @@ import type { ThinkManifestEntry, ThinkSnapshot } from './client';
 import type { BodyRef } from '../../backend/think/body-store';
 import type { CommandReceipt, SendReceipt, StopReceipt, FormReplyReceipt, FormReplyCommand } from '../../backend/think/contract';
 import { finalReceipt, mergeReceipt, rejectedPost } from './receipts';
-import type { ThinkActivity, ThinkAdmission, ThinkDraft, ThinkHandoffState, ThinkIdentity, ThinkKnownIdentity, ThinkMessage, ThinkMessageFocus, ThinkPrefillRequest, ThinkPresentation, ThinkPresentationActions, ThinkPresentationState, ThinkQuestion, ThinkRejectedSubmission, ThinkTextContent } from './types';
+import type { ThinkActivity, ThinkAdmission, ThinkDraft, ThinkHandoffRequest, ThinkHandoffState, ThinkIdentity, ThinkKnownIdentity, ThinkMessage, ThinkMessageFocus, ThinkPresentation, ThinkPresentationActions, ThinkPresentationState, ThinkQuestion, ThinkRejectedSubmission, ThinkTextContent } from './types';
+import { createConversationClient } from './conversation-client';
+import { createThinkView, type ThinkViewState } from './view';
 
 type Client = ReturnType<typeof createThinkClient>;
 export interface ThinkSessionClock {
@@ -18,6 +20,8 @@ export interface ThinkSessionOptions {
   pointer?: { read(): string | null; write(conversationId: string): void };
   navigate(href: string, options: { replace: true; focus?: 'preserve' }): void;
   navigationGeneration?(): number | undefined;
+  conversations?: ReturnType<typeof createConversationClient>;
+  view?: ReturnType<typeof createThinkView>;
 }
 export interface ThinkSessionState {
   readonly identity: ThinkIdentity | null;
@@ -29,13 +33,14 @@ export interface ThinkSessionState {
   readonly newChat: 'idle' | 'confirm-discard' | 'starting' | 'unavailable';
   readonly handoff: ThinkHandoffState | null;
   readonly messageFocus?: ThinkMessageFocus;
+  readonly view: ThinkViewState;
 }
 export interface ThinkSession {
   getSnapshot(): ThinkSessionState;
   getPresentation(): ThinkPresentation;
   subscribe(listener: () => void): () => void;
   setLocation(location: { pathname: string; search: string; hash?: string; key?: string; isNavigating?: boolean }): void;
-  requestHandoff(request: ThinkPrefillRequest): void;
+  requestHandoff(request: ThinkHandoffRequest): void;
   confirmHandoff(): void;
   cancelHandoff(): void;
   checkHandoff(): void;
@@ -44,6 +49,7 @@ export interface ThinkSession {
   cancelNewChat(): void;
   confirmNewChat(): void;
   checkConnection(): void;
+  refreshView(): void;
   close(): void;
 }
 
@@ -55,10 +61,12 @@ const defaultClock: ThinkSessionClock = { setTimeout: (callback, milliseconds) =
 export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   const client = options.client ?? createThinkClient();
   const clock = options.clock ?? defaultClock;
+  const conversations = options.conversations ?? createConversationClient();
+  const view = options.view ?? createThinkView(conversations, clock);
   const randomUUID = options.randomUUID ?? (() => crypto.randomUUID());
   const drafts = new Map<string, ThinkDraft>();
   const listeners = new Set<() => void>();
-  let state: ThinkSessionState = { identity: null, draft: emptyDraft, connection: 'inactive', snapshot: null, entries: [], history: 'loading', newChat: 'idle', handoff: null };
+  let state: ThinkSessionState = { identity: null, draft: emptyDraft, connection: 'inactive', snapshot: null, entries: [], history: 'loading', newChat: 'idle', handoff: null, view: view.getSnapshot() };
   let active = false;
   let generation = 0;
   let closed = false;
@@ -69,19 +77,24 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryDelay = 250;
   let readController: AbortController | undefined;
+  let initialReadRecovery: { attempts: number; timer?: ReturnType<typeof setTimeout> } | undefined;
   let pendingCreate: { conversationId: string; clientCommandId: string } | undefined;
+  let selectionAfterCreate: string | undefined;
   let navigationVersion = 0;
   let locationSignature = '';
+  let initialEntry: { url: string; navigationGeneration: number | undefined } | undefined;
   let locationPath = '';
   let navigationPending = false;
+  let viewStarted = false;
   type PrefillHandoff = {
-    request: ThinkPrefillRequest;
+    request: ThinkHandoffRequest;
     originId: string | null;
     originDraftVersion: number;
     navigationVersion: number;
     shellNavigationGeneration?: number;
-    target?: { conversationId: string; clientCommandId: string; draftVersion: number };
+    target?: { conversationId: string; clientCommandId: string; draftVersion: number; dispatched: boolean; snapshot?: ThinkSnapshot };
     checking: boolean;
+    pollDelay: number;
   };
   let handoff: PrefillHandoff | undefined;
   let handoffTimer: ReturnType<typeof setTimeout> | undefined;
@@ -121,6 +134,11 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
 
   function ownedIdentity(identity: ThinkKnownIdentity): boolean {
     return active && state.connection !== 'service-changed' && state.connection !== 'denied' && state.identity?.conversationId === identity.conversationId && state.identity.epoch === identity.epoch;
+  }
+  function mutationLease(id: string): boolean {
+    if (view.canMutate(id)) return true;
+    view.refresh();
+    return false; // Reauthorization never queues or replays the user's mutation.
   }
   const keyOf = (ref: BodyRef) => JSON.stringify(ref);
   const checkingSend = (send: OwnedSend | undefined) => !!send && !send.receipt && (send.delivery === 'posting' || send.delivery === 'unknown');
@@ -168,7 +186,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       if (message?.role === 'assistant') grouped.set(messageId, { ...message, activity: items });
       else backgroundActivity.push(...items);
     }
-    const unavailable = !identity?.epoch || !state.snapshot || state.snapshot.sendEligibility === 'unavailable' || state.connection === 'unavailable' || state.connection === 'denied' || state.connection === 'service-changed' || state.connection === 'inactive';
+    const unavailable = !identity?.epoch || !view.canMutate(identity.conversationId) || !state.snapshot || state.snapshot.sendEligibility === 'unavailable' || state.connection === 'unavailable' || state.connection === 'denied' || state.connection === 'service-changed' || state.connection === 'inactive';
     const sendUnavailable = unavailable || state.connection === 'reconnecting';
     const composer: ThinkPresentationState['composer'] = validRun(currentSend)
       ? { kind: 'stop', runId: currentSend.receipt.runId, state: unavailable ? 'unavailable' : stopState(currentSend.stop), ...(currentSend.stop?.receipt ? { receiptState: currentSend.stop.receipt.state } : {}) }
@@ -189,7 +207,8 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       ...(transcript?.warning || state.snapshot?.otherTranscriptWarnings ? { transcriptWarning: { ...(transcript?.warning ? { current: { ...(transcript.reason ? { reason: transcript.reason } : {}) } } : {}), otherCount: state.snapshot?.otherTranscriptWarnings ?? 0 } } : {}),
       questions: identity ? questions.get(identity.conversationId) ?? [] : [], history: { state: state.history }, newChat: state.newChat,
       rejectedSubmissions: identity?.epoch ? rejected.get(identityKey(identity)) ?? [] : [],
-      ...(state.messageFocus ? { messageFocus: state.messageFocus } : {}) };
+      ...(state.messageFocus ? { messageFocus: state.messageFocus } : {}),
+      selectionUnavailable: !!identity && state.view.status === 'unavailable', mutationsAvailable: !unavailable && state.connection !== 'reconnecting' };
   }
 
   const update = (changes: Partial<ThinkSessionState>) => {
@@ -204,7 +223,11 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     watchHealthy = false;
     if (retryTimer !== undefined) { clock.clearTimeout(retryTimer); retryTimer = undefined; }
   };
-  const stopRead = () => { readController?.abort(); readController = undefined; };
+  const stopInitialReadRecovery = () => {
+    if (initialReadRecovery?.timer !== undefined) clock.clearTimeout(initialReadRecovery.timer);
+    initialReadRecovery = undefined;
+  };
+  const stopRead = () => { readController?.abort(); readController = undefined; stopInitialReadRecovery(); };
   const stopCommands = () => {
     commandRead?.controller.abort(); commandRead = undefined;
     if (commandTimer !== undefined) { clock.clearTimeout(commandTimer); commandTimer = undefined; }
@@ -553,6 +576,27 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     } catch { if (current(id, version)) update({ connection: 'unavailable' }); }
   }
 
+  function retryInitialRead(id: string, version: number, error: unknown): void {
+    if (!current(id, version)) return;
+    const transient = error instanceof ThinkClientError && (error.kind === 'transport' ||
+      error.kind === 'api' && [408, 429, 500, 502, 503, 504].includes(error.status ?? 0));
+    if (!transient || state.identity?.epoch) { stopInitialReadRecovery(); return; }
+    // Bootstrap has no SSE connection yet. Recover transient hydration/selection
+    // races with at most five extra reads, never by replaying a native command.
+    const recovery = initialReadRecovery ??= { attempts: 0 };
+    if (recovery.timer !== undefined) return;
+    if (recovery.attempts >= 5) {
+      console.info('think_initial_read_recovery_outcome', { state: 'exhausted', attempts: recovery.attempts });
+      return;
+    }
+    const delay = 250 * 2 ** recovery.attempts++;
+    console.info('think_initial_read_retry_scheduled', { attempt: recovery.attempts, delay });
+    recovery.timer = clock.setTimeout(() => {
+      recovery.timer = undefined;
+      if (initialReadRecovery === recovery && current(id, version) && !state.identity?.epoch) requestRefresh(id, version);
+    }, delay);
+  }
+
   function requestRefresh(id: string, version: number): void {
     if (!current(id, version)) return;
     refreshRequested = true;
@@ -581,8 +625,14 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
               cursor = page.nextCursor;
             }
             if (!current(id, version)) return;
+            if (initialReadRecovery) console.info('think_initial_read_recovery_outcome', { state: 'ready', attempts: initialReadRecovery.attempts });
+            stopInitialReadRecovery();
             if (questionEpochs.get(id) !== first.epoch) { questions.delete(id); questionEpochs.set(id, first.epoch); }
             update({ identity: { conversationId: id, epoch: first.epoch }, snapshot: first, entries, history: 'complete', connection: watchHealthy ? 'following' : 'opening' });
+            if (first.creation === 'ready' && selectionAfterCreate === id) {
+              selectionAfterCreate = undefined;
+              view.setDesired(id);
+            }
             for (const entry of entries.filter(entry => entry.kind === 'original' || entry.kind === 'assistant-text').slice(-12)) {
               if ('body' in entry && (!bodies.has(keyOf(entry.body)) || bodies.get(keyOf(entry.body))?.state === 'unloaded')) loadBody(entry.body, id, version);
             }
@@ -600,6 +650,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
             const connection = classify(error);
             if (connection === 'denied') { stopWatch(); stopCommands(); }
             update({ connection, history: 'unavailable' });
+            retryInitialRead(id, version, error);
           } finally { if (readController === controller) readController = undefined; }
         }
       } finally {
@@ -610,6 +661,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   }
 
   function select(id: string): void {
+    if (pendingCreate?.conversationId !== id) view.setDesired(uuid.test(id) ? id : null, !view.canMutate(id));
     if (state.identity?.conversationId === id && active) { if (pendingCreate?.conversationId !== id) requestRefresh(id, generation); return; }
     stopWatch(); stopRead(); stopBodies(); stopCommands();
     generation++;
@@ -621,6 +673,13 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
 
   async function startNew(initial = false): Promise<void> {
     if (!active || closed || state.newChat === 'starting') return;
+    const source = { id: state.identity?.conversationId, draft: state.draft.version, navigation: options.navigationGeneration?.(), version: navigationVersion };
+    update({ newChat: 'starting' });
+    if (!await view.ensureRegistered()) { if (!closed) update({ newChat: 'unavailable' }); return; }
+    if (closed || !active || source.id !== state.identity?.conversationId || (!initial && source.draft !== state.draft.version) || source.version !== navigationVersion || source.navigation !== options.navigationGeneration?.()) {
+      if (!closed) update({ newChat: 'idle' });
+      return;
+    }
     const old = state.identity;
     const draft = initial ? state.draft : emptyDraft;
     if (!initial && old) drafts.delete(old.conversationId);
@@ -628,6 +687,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     const clientCommandId = randomUUID();
     if (!uuid.test(conversationId) || !uuid.test(clientCommandId)) { update({ newChat: 'unavailable' }); return; }
     pendingCreate = { conversationId, clientCommandId };
+    selectionAfterCreate = conversationId;
     stopWatch(); stopRead(); stopBodies(); stopCommands();
     generation++;
     refreshRequested = false;
@@ -650,27 +710,47 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
 
   function handoffPhase(owner: PrefillHandoff, phase: ThinkHandoffState['phase']): void {
     if (closed || handoff !== owner) return;
-    update({ handoff: { source: owner.request.source, triggerId: owner.request.triggerId, phase, canCheck: !!owner.target } });
+    update({ handoff: { source: owner.request.source, triggerId: owner.request.triggerId, kind: owner.request.kind, phase, canCheck: !!owner.target?.dispatched } });
   }
   function unchangedHandoff(owner: PrefillHandoff): boolean {
     return navigationVersion === owner.navigationVersion && (state.identity?.conversationId ?? null) === owner.originId &&
       options.navigationGeneration?.() === owner.shellNavigationGeneration && state.draft.version === owner.originDraftVersion &&
-      !!owner.target && drafts.get(owner.target.conversationId)?.version === owner.target.draftVersion;
+      (!owner.target || drafts.get(owner.target.conversationId)?.version === owner.target.draftVersion);
+  }
+  function clearObsoleteResumedTransport(id: string, epoch: string): void {
+    // A same-epoch Resume changes selection, not ownership of pending commands
+    // or their recoverable text. Only a verified new epoch obsoletes that state.
+    for (const [key, command] of commands) if (command.identity.conversationId === id && command.identity.epoch !== epoch) commands.delete(key);
+    for (const [key, value] of bodies) if (value.ref.key.conversationId === id && value.ref.epoch !== epoch) { bodies.delete(key); bodyProgress.delete(key); }
+    for (const key of bodyOwners.keys()) {
+      const [ownerEpoch, body] = JSON.parse(key);
+      if (body.conversationId === id && ownerEpoch !== epoch) bodyOwners.delete(key);
+    }
+    for (const map of [receipts, replies, rejected]) for (const key of map.keys()) {
+      const [conversationId, ownerEpoch] = JSON.parse(key);
+      if (conversationId === id && ownerEpoch !== epoch) map.delete(key);
+    }
+    if (sends.get(id)?.identity.epoch !== epoch) sends.delete(id);
+    if (questionEpochs.get(id) !== epoch) { questions.delete(id); questionEpochs.delete(id); }
   }
   function commitHandoff(owner: PrefillHandoff): void {
     const target = owner.target;
-    if (closed || handoff !== owner || !target) return;
+    if (closed || handoff !== owner || !target?.snapshot) return;
     if (!unchangedHandoff(owner)) { handoffPhase(owner, 'stale'); return; }
     // This is a context commit, not New chat's explicit draft-discard branch.
     const draft = drafts.get(target.conversationId)!;
     stopWatch(); stopRead(); stopBodies(); stopCommands();
+    if (owner.request.kind === 'resume') clearObsoleteResumedTransport(target.conversationId, target.snapshot.epoch);
     generation++;
     refreshRequested = false;
     handoff = undefined;
     handoffFocusAwaitingVisit = true;
     if (handoffTimer !== undefined) { clock.clearTimeout(handoffTimer); handoffTimer = undefined; }
-    update({ handoff: null, identity: { conversationId: target.conversationId, epoch: null }, draft,
-      snapshot: null, entries: [], history: 'loading', newChat: 'idle', connection: 'inactive' });
+    // Only an explicit, target-verified Resume can adopt a fresh transport epoch.
+    const snapshot = target.snapshot;
+    if (selectionAfterCreate === target.conversationId) selectionAfterCreate = undefined;
+    update({ handoff: null, identity: { conversationId: target.conversationId, epoch: snapshot.epoch }, draft,
+      snapshot, entries: snapshot.entries, history: snapshot.nextCursor ? 'loading' : 'complete', newChat: 'idle', connection: 'inactive' });
     remember(target.conversationId);
     console.info('think_handoff_commit', { source: owner.request.source });
     options.navigate(`/think?${new URLSearchParams({ conversation: target.conversationId })}`, { replace: true, focus: 'preserve' });
@@ -680,7 +760,8 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   async function acceptHandoffReceipt(owner: PrefillHandoff, receipt: CommandReceipt): Promise<void> {
     if (closed || handoff !== owner || !owner.target) return;
     const target = owner.target;
-    if (receipt.kind !== 'create' || receipt.conversationId !== target.conversationId || receipt.clientCommandId !== target.clientCommandId || !uuid.test(receipt.epoch)) {
+    const expectedKind = owner.request.kind === 'resume' ? 'resume' : 'create';
+    if (receipt.kind !== expectedKind || receipt.conversationId !== target.conversationId || receipt.clientCommandId !== target.clientCommandId || !uuid.test(receipt.epoch)) {
       handoffPhase(owner, 'unavailable'); return;
     }
     if (receipt.state === 'rejected') { handoffPhase(owner, 'rejected'); return; }
@@ -691,15 +772,19 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       try {
         const snapshot = await client.snapshot(target.conversationId);
         if (snapshot.conversationId !== target.conversationId || snapshot.epoch !== receipt.epoch || snapshot.creation !== 'ready') throw new ThinkClientError('invalid-response');
+        target.snapshot = snapshot;
         console.info('think_handoff_target_outcome', { state: 'ready' });
       } catch {
         console.info('think_handoff_target_outcome', { state: 'unavailable' });
         handoffPhase(owner, 'unavailable'); return;
       }
-      commitHandoff(owner); return;
+      const result = await view.transition(target.conversationId, () => !closed && handoff === owner && unchangedHandoff(owner), () => commitHandoff(owner));
+      if (result !== 'committed') handoffPhase(owner, result === 'stale' ? 'stale' : 'unavailable');
+      return;
     }
     handoffPhase(owner, 'checking');
-    handoffTimer = clock.setTimeout(() => { handoffTimer = undefined; void reconcileHandoff(owner); }, 500);
+    handoffTimer = clock.setTimeout(() => { handoffTimer = undefined; void reconcileHandoff(owner); }, owner.pollDelay);
+    owner.pollDelay = Math.min(owner.pollDelay * 2, 5000);
   }
   async function reconcileHandoff(owner: PrefillHandoff): Promise<void> {
     if (closed || handoff !== owner || !owner.target || owner.checking) return;
@@ -720,23 +805,28 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     if (closed || handoff !== owner || owner.target) return;
     let conversationId: string;
     let clientCommandId: string;
-    try { conversationId = randomUUID(); clientCommandId = randomUUID(); }
+    try { conversationId = owner.request.kind === 'resume' ? owner.request.conversationId : randomUUID(); clientCommandId = randomUUID(); }
     catch { handoffPhase(owner, 'rejected'); return; }
-    if (!uuid.test(conversationId) || !uuid.test(clientCommandId) || conversationId === state.identity?.conversationId || drafts.has(conversationId)) {
+    if (!uuid.test(conversationId) || !uuid.test(clientCommandId) || owner.request.kind === 'fresh-prefill' && (conversationId === state.identity?.conversationId || drafts.has(conversationId))) {
       handoffPhase(owner, 'rejected'); return;
     }
     // Initialize exactly once, before the first create await, under its own key.
-    const draft: ThinkDraft = { text: owner.request.text, version: 1 };
+    const draft: ThinkDraft = owner.request.kind === 'fresh-prefill' ? { text: owner.request.text, version: 1 } : drafts.get(conversationId) ?? emptyDraft;
     drafts.set(conversationId, draft);
-    owner.target = { conversationId, clientCommandId, draftVersion: draft.version };
+    owner.target = { conversationId, clientCommandId, draftVersion: draft.version, dispatched: false };
     handoffPhase(owner, 'starting');
-    console.info('think_handoff_create_attempt', { source: owner.request.source });
+    if (!await view.ensureRegistered()) { handoffPhase(owner, 'rejected'); return; }
+    if (closed || handoff !== owner) return;
+    if (!unchangedHandoff(owner)) { handoffPhase(owner, 'rejected'); return; }
+    const operation = owner.request.kind === 'resume' ? 'resume' : 'create';
+    console.info(`think_handoff_${operation}_attempt`, { source: owner.request.source });
     try {
-      const receipt = await client.create({ conversationId, clientCommandId });
-      console.info('think_handoff_create_outcome', { state: receipt.state });
+      owner.target.dispatched = true;
+      const receipt = owner.request.kind === 'resume' ? await conversations.resume(conversationId, clientCommandId) : await client.create({ conversationId, clientCommandId });
+      console.info(`think_handoff_${operation}_outcome`, { state: receipt.state });
       await acceptHandoffReceipt(owner, receipt);
     } catch (error) {
-      console.info('think_handoff_create_outcome', { state: 'unavailable' });
+      console.info(`think_handoff_${operation}_outcome`, { state: 'unavailable' });
       handoffPhase(owner, rejectedPost(error) ? 'rejected' : 'unavailable');
     }
   }
@@ -745,7 +835,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   const actions: ThinkPresentationActions = {
     editDraft(text) { session.editDraft(text); },
     send(identity, draftVersion) {
-      if (!ownedIdentity(identity) || state.draft.version !== draftVersion || !state.draft.text.trim() || state.snapshot?.sendEligibility !== 'available' || state.connection === 'denied' || state.connection === 'service-changed' || state.connection === 'unavailable' || state.connection === 'inactive' || state.connection === 'reconnecting') return;
+      if (!ownedIdentity(identity) || !mutationLease(identity.conversationId) || state.draft.version !== draftVersion || !state.draft.text.trim() || state.snapshot?.sendEligibility !== 'available' || state.connection === 'denied' || state.connection === 'service-changed' || state.connection === 'unavailable' || state.connection === 'inactive' || state.connection === 'reconnecting') return;
       const existing = sends.get(identity.conversationId);
       if (existing && (checkingSend(existing) || validRun(existing))) return;
       const commandId = randomUUID();
@@ -759,7 +849,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     },
     stop(identity, runId) {
       const send = sends.get(identity.conversationId);
-      if (!ownedIdentity(identity) || !validRun(send) || send.receipt.runId !== runId || stopState(send.stop) === 'requesting' || state.snapshot?.sendEligibility === 'unavailable' || state.connection === 'denied' || state.connection === 'service-changed' || state.connection === 'unavailable') return;
+      if (!ownedIdentity(identity) || !mutationLease(identity.conversationId) || !validRun(send) || send.receipt.runId !== runId || stopState(send.stop) === 'requesting' || state.snapshot?.sendEligibility === 'unavailable' || state.connection === 'denied' || state.connection === 'service-changed' || state.connection === 'unavailable') return;
       const commandId = randomUUID();
       if (!uuid.test(commandId)) return;
       const stop: OwnedStop = { kind: 'stop', identity: { ...identity }, commandId, runId, delivery: 'posting' };
@@ -784,7 +874,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       questions.set(identity.conversationId, (questions.get(identity.conversationId) ?? []).map(question => question.decisionId === decisionId && (question.reply === 'idle' || question.reply === 'rejected') ? { ...question, answer: value } : question)); update({});
     },
     replyQuestion(identity, decisionId, answer) {
-      if (!ownedIdentity(identity)) return;
+      if (!ownedIdentity(identity) || !mutationLease(identity.conversationId)) return;
       const list = questions.get(identity.conversationId) ?? [];
       const question = list.find(item => item.decisionId === decisionId);
       if (!question || question.reply !== 'idle' && question.reply !== 'rejected') return;
@@ -821,6 +911,18 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       const signature = JSON.stringify([location.pathname, location.search, location.hash ?? '', location.key ?? '']);
       const locationChanged = signature !== locationSignature;
       const pendingChanged = navigationPending !== !!location.isNavigating;
+      const url = JSON.stringify([location.pathname, location.search, location.hash ?? '']);
+      const shellGeneration = options.navigationGeneration?.();
+      const adoptingInitialEntry = initialEntry && !!location.key && location.key !== 'initial' &&
+        initialEntry.url === url && initialEntry.navigationGeneration === shellGeneration && !navigationPending && !location.isNavigating;
+      if (!locationSignature && location.key === 'initial' && !location.isNavigating) initialEntry = { url, navigationGeneration: shellGeneration };
+      else if (locationChanged || pendingChanged) initialEntry = undefined;
+      if (adoptingInitialEntry) {
+        // Presentation's one-time synthetic key adoption is the same activation,
+        // not a navigation that cancels creation waiting on view registration.
+        locationSignature = signature;
+        return;
+      }
       if (locationChanged || pendingChanged) {
         locationSignature = signature;
         locationPath = location.pathname;
@@ -841,6 +943,14 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       }
       if (pendingChanged && !locationChanged) return;
       const nowActive = location.pathname === '/think';
+      if (!viewStarted) {
+        viewStarted = true;
+        if (!nowActive && !state.identity) {
+          const pointer = readPointer();
+          if (pointer && uuid.test(pointer)) update({ identity: { conversationId: pointer, epoch: null }, draft: drafts.get(pointer) ?? emptyDraft });
+        }
+        view.setDesired(state.identity?.conversationId ?? null);
+      } else if (locationChanged && !nowActive) view.refresh();
       if (!nowActive) {
         if (active) { active = false; generation++; refreshRequested = false; stopWatch(); stopRead(); stopBodies(); stopCommands(); update({ connection: 'inactive' }); }
         return;
@@ -857,12 +967,13 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       if (!wasActive && pendingCreate?.conversationId === selected) session.checkConnection();
     },
     requestHandoff(request) {
-      if (closed || handoff || navigationPending || locationPath !== '/ground' || request.kind !== 'fresh-prefill' || !request.text.trim() || new TextEncoder().encode(request.text).length > 2048) return;
+      if (closed || handoff || navigationPending || locationPath !== '/ground') return;
+      if (request.kind === 'fresh-prefill' ? !request.text.trim() || new TextEncoder().encode(request.text).length > 2048 : !uuid.test(request.conversationId)) return;
       const owner: PrefillHandoff = { request: { ...request }, originId: state.identity?.conversationId ?? null,
-        originDraftVersion: state.draft.version, navigationVersion, shellNavigationGeneration: options.navigationGeneration?.(), checking: false };
+        originDraftVersion: state.draft.version, navigationVersion, shellNavigationGeneration: options.navigationGeneration?.(), checking: false, pollDelay: 500 };
       handoff = owner;
       if (state.identity) drafts.set(state.identity.conversationId, state.draft);
-      if (state.draft.text.length) handoffPhase(owner, 'confirm'); else void prepareHandoff(owner);
+      if (state.draft.text.length && (request.kind !== 'resume' || request.conversationId !== state.identity?.conversationId)) handoffPhase(owner, 'confirm'); else void prepareHandoff(owner);
     },
     confirmHandoff() {
       if (!handoff || navigationPending || state.handoff?.phase !== 'confirm' && state.handoff?.phase !== 'stale') return;
@@ -885,6 +996,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       update({ handoff: null });
     },
     checkHandoff() { if (handoff) void reconcileHandoff(handoff); },
+    refreshView() { view.refresh(); },
     editDraft(text) {
       if (closed || typeof text !== 'string') return;
       const draft = { text, version: state.draft.version + 1 };
@@ -897,6 +1009,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     cancelNewChat() { if (state.newChat === 'confirm-discard') update({ newChat: 'idle' }); },
     confirmNewChat() { if (state.newChat === 'confirm-discard') void startNew(); },
     checkConnection() {
+      view.refresh();
       const id = state.identity?.conversationId;
       if (!id || !uuid.test(id) || !active) return;
       const version = generation;
@@ -915,7 +1028,8 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       update({ connection: 'opening' }); requestRefresh(id, version);
     },
     close() { if (closed) return; closed = true; generation++; stopWatch(); stopRead(); stopBodies(); stopCommands();
-      if (handoffTimer !== undefined) clock.clearTimeout(handoffTimer); handoff = undefined; listeners.clear(); },
+      if (handoffTimer !== undefined) clock.clearTimeout(handoffTimer); handoff = undefined; unsubscribeView(); view.close(); listeners.clear(); },
   };
+  const unsubscribeView = view.subscribe(() => update({ view: view.getSnapshot() }));
   return session;
 }

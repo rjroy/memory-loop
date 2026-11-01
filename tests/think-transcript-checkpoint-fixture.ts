@@ -115,6 +115,7 @@ interface CommandOrder { commandId: string; conversationId: string; sequence: nu
 export interface OrderMigrationReport {
   pid: number; versionBefore: number; orderTableBefore: boolean; insertionIds: string[];
   schemaVersion: number; before: V2Facts; after: V2Facts; registryIds: string[]; order: CommandOrder[];
+  metadata: { purpose: string | null; lifecycle: string | null; rowVersion: number | null; activityAt: number | null; title: string | null };
 }
 export interface OrderReopenReport {
   pid: number; schemaVersion: number; vacuumIntegrity: string;
@@ -161,7 +162,7 @@ const migrationSchemaV2 = `
   PRAGMA user_version = 2;
 `;
 
-// Checkpoint tables introduced in v2, retained unchanged by v3 command ordering:
+// Checkpoint tables introduced in v2, retained unchanged by v3 order and v4 recent/views:
 // transcripts(conversation_id PK REFERENCES conversations, note_id_json, creation_state,
 //   file_dev, file_ino, file_fingerprint, confirmed_offset, confirmed_sha256,
 //   pending_entry_id, pending_length, pending_sha256).
@@ -335,7 +336,9 @@ function v2Facts(root: string): V2Facts {
   const db = new Database(join(root, 'project', '.memory-loop', 'application.sqlite'), { readonly: true, create: false });
   try {
     const metadata = db.query<{ installationId: string }, []>('SELECT installation_id AS installationId FROM application_metadata WHERE singleton = 1').get();
-    const owner = db.query<V2Facts['owner'], [string]>('SELECT * FROM conversations WHERE conversation_id = ?').get(conversationId);
+    // Compare EVERY historical ownership column, not v4's newly added derivative fields.
+    const owner = db.query<V2Facts['owner'], [string]>(`SELECT conversation_id, native_session_id, vault_directory, owner_marker_json,
+      creation_epoch, context_json, effective_context_json, created_at, creation_state FROM conversations WHERE conversation_id = ?`).get(conversationId);
     const transcript = db.query<V2Facts['transcript'], [string]>('SELECT * FROM transcripts WHERE conversation_id = ?').get(conversationId);
     if (!metadata || !owner || !transcript) throw new Error('fixture v2 ownership/checkpoint facts missing');
     return { installationId: metadata.installationId, owner, transcript,
@@ -377,9 +380,16 @@ async function migrateV2Order(root: string): Promise<OrderMigrationReport> {
   } finally { db.close(); }
   const state = await openThinkState(join(root, 'project'), join(root, 'vault'));
   let ids: string[];
-  try { ids = registryIds(state); } finally { state.close(); }
+  let metadata: OrderMigrationReport['metadata'];
+  try {
+    ids = registryIds(state);
+    const owner = state.registry?.conversation(conversationId);
+    const recent = state.conversations.recent(join(root, 'vault'))[0];
+    metadata = { purpose: owner?.purpose ?? null, lifecycle: owner?.lifecycle ?? null, rowVersion: owner?.rowVersion ?? null,
+      activityAt: recent?.lastActivityAt ?? null, title: recent?.title ?? null };
+  } finally { state.close(); }
   return { pid: process.pid, versionBefore, orderTableBefore, insertionIds, schemaVersion: probe(join(root, 'project', '.memory-loop', 'application.sqlite')).schemaVersion,
-    before, after: v2Facts(root), registryIds: ids, order: commandOrder(root) };
+    before, after: v2Facts(root), registryIds: ids, order: commandOrder(root), metadata };
 }
 
 async function reopenV3Order(root: string): Promise<OrderReopenReport> {
@@ -574,7 +584,7 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
       if (scenario === 'confirm-ack-lost' && args[1] === `user:${sendCommandId}`) fault('after-confirm');
     },
   };
-  const serviceState: ThinkStateStore = { installationId: state.installationId, transcripts: transcriptState,
+  const serviceState: ThinkStateStore = { installationId: state.installationId, transcripts: transcriptState, conversations: state.conversations,
     command: (...args) => state.command(...args), registerConversation: (...args) => state.registerConversation(...args),
     registerCommand: (...args) => state.registerCommand(...args), attempted: (...args) => state.attempted(...args),
     outcome: (...args) => state.outcome(...args), close: () => state.close() };

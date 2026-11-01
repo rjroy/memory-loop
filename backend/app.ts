@@ -3,13 +3,14 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { isVaultErrorCode, vaultErrors, type VaultErrorCode } from './contract';
 import type { ThinkService, ThinkUnavailableCode } from './think/service';
-import { ThinkServiceError } from './think/service';
+import { ThinkServiceError } from './think/errors';
 import { thinkErrors, type ThinkErrorCode } from './think/contract';
 import { parseContentRequest } from './think/content-transfer';
 import { parseVaultId, type VaultReader } from './vault';
 import { captureBodyLimit, captureErrors, parseCaptureRequest } from './capture-contract';
 import { CaptureError, type CaptureWriter } from './capture';
 import type { GroundReader } from './ground';
+import { validViewToken, type ConversationService } from './think/conversations';
 
 export type VaultState = { reader: VaultReader } |
   { error: Extract<VaultErrorCode, 'config_missing' | 'config_invalid' | 'vault_unavailable'> };
@@ -22,6 +23,8 @@ export interface AppOptions {
   ground?: GroundReader;
   groundError?: 'configuration' | 'io';
   think?: ThinkService | { error: ThinkUnavailableCode };
+  /** Registry-only capabilities remain usable without an authorized native attachment. */
+  conversations?: ConversationService;
   watchPolicy?: { leaseMs: number; heartbeatMs: number };
 }
 
@@ -75,7 +78,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.use('*', async (context, next) => {
     const requestId = randomUUID();
     const path = context.req.path;
-    const operation = path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/capture' ? 'capture' : path === thinkBase || path.startsWith(`${thinkBase}/`) ? 'think' : 'other';
+    const operation = path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
     console.info('vault_api_attempt', { requestId, operation });
     try {
       const headers = context.req.raw.headers;
@@ -87,7 +90,8 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         if (!match || !timingSafeEqual(expected, Buffer.from(match[1], 'hex'))) {
           context.res = Response.json({ error: { code: 'unauthorized', message: 'Service authentication required' } }, { status: 401 });
         } else if (context.req.method !== 'GET' && !(context.req.method === 'POST' && (path === '/api/capture' || path === thinkBase ||
-          /^\/api\/think\/conversations\/[^/]+\/(?:messages|runs\/[^/]+\/stop|decisions\/[^/]+\/reply)$/.test(path)))) {
+          path === '/api/think/views' || path === '/api/think/selection' ||
+          /^\/api\/think\/conversations\/[^/]+\/(?:resume|messages|runs\/[^/]+\/stop|decisions\/[^/]+\/reply)$/.test(path)))) {
           context.res = Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 });
         } else await next();
       }
@@ -123,6 +127,51 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
       return Response.json(result, { status: result.state === 'unavailable' ? 503 : 200 });
     });
   }
+  app.get('/api/ground/recent-conversations', async context => {
+    if (new URL(context.req.url).search) return thinkError('invalid_request');
+    const viewToken = context.req.header('X-Memory-Loop-View');
+    if (viewToken !== undefined && !validViewToken(viewToken)) return thinkError('invalid_request');
+    const service = options.conversations ?? options.think;
+    console.info('ground_read_attempt', { resource: 'recent-conversations' });
+    try {
+      if (!service || 'error' in service) throw new Error('Registry unavailable');
+      const result = await service.recentConversations(viewToken);
+      console.info('ground_read_outcome', { resource: 'recent-conversations', state: result.state });
+      return context.json(result);
+    } catch {
+      console.info('ground_read_outcome', { resource: 'recent-conversations', state: 'unavailable' });
+      return context.json({ state: 'unavailable' }, 503);
+    }
+  });
+  app.post('/api/think/views', async context => {
+    const value = await jsonInput(context.req.raw, 4096);
+    if (new URL(context.req.url).search || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length) return thinkError('invalid_request');
+    const service = options.conversations ?? options.think;
+    if (!service) return thinkError('think_config_missing');
+    if ('error' in service) return thinkError(service.error);
+    try { return context.json(await service.registerView(), 201); } catch (error) { return thinkServiceError(error); }
+  });
+  app.get('/api/think/selection', async context => {
+    if (new URL(context.req.url).search) return thinkError('invalid_request');
+    const viewToken = context.req.header('X-Memory-Loop-View');
+    if (!validViewToken(viewToken)) return thinkError('lease_unavailable');
+    const service = options.conversations ?? options.think;
+    if (!service) return thinkError('think_config_missing');
+    if ('error' in service) return thinkError(service.error);
+    try { return context.json(await service.selection(viewToken)); } catch (error) { return thinkServiceError(error); }
+  });
+  app.post('/api/think/selection', async context => {
+    const value = await jsonInput(context.req.raw, 4096);
+    if (new URL(context.req.url).search || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 3 ||
+        !('viewToken' in value) || !validViewToken(value.viewToken) || !('expectedRevision' in value) || typeof value.expectedRevision !== 'number' ||
+        !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0 || !('conversationId' in value) ||
+        value.conversationId !== null && (typeof value.conversationId !== 'string' || !uuid.test(value.conversationId))) return thinkError('invalid_request');
+    const service = options.conversations ?? options.think;
+    if (!service) return thinkError('think_config_missing');
+    if ('error' in service) return thinkError(service.error);
+    try { return context.json(await service.select({ viewToken: value.viewToken, expectedRevision: value.expectedRevision, conversationId: value.conversationId })); }
+    catch (error) { return thinkServiceError(error); }
+  });
   app.get('/api/vault/tree', async context => {
     if ('error' in options.vault) return publicError(options.vault.error);
     try { return context.json(await options.vault.reader.tree()); } catch (error: unknown) { return serviceError(error); }
@@ -150,6 +199,17 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     if ('error' in service) return thinkError(service.error);
     try { return context.json(await service.create(command), 202); }
     catch (error: unknown) { return thinkServiceError(error); }
+  });
+  app.post(`${thinkBase}/:id/resume`, async context => {
+    const conversationId = context.req.param('id');
+    const value = await jsonInput(context.req.raw, 4096);
+    if (new URL(context.req.url).search || !uuid.test(conversationId) || !value || typeof value !== 'object' || Array.isArray(value) ||
+        Object.keys(value).length !== 1 || !('clientCommandId' in value) || typeof value.clientCommandId !== 'string' || !uuid.test(value.clientCommandId)) return thinkError('invalid_request');
+    const service = options.conversations ?? options.think;
+    if (!service) return thinkError('think_config_missing');
+    if ('error' in service) return thinkError(service.error);
+    try { return context.json(await service.resume({ conversationId, clientCommandId: value.clientCommandId }), 202); }
+    catch (error) { return thinkServiceError(error); }
   });
   app.post(`${thinkBase}/:id/messages`, async context => {
     const conversationId = context.req.param('id');
@@ -232,10 +292,10 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     const { id, commandId } = context.req.param();
     if (!uuid.test(id) || !uuid.test(commandId)) return thinkError('invalid_request');
     const service = options.think;
-    if (!service) return thinkError('think_config_missing');
-    if ('error' in service) return thinkError(service.error);
+    if ((!service || 'error' in service) && !options.conversations) return thinkError(service && 'error' in service ? service.error : 'think_config_missing');
     try {
-      const receipt = await service.command(id, commandId);
+      const receipt = service && !('error' in service) ? await service.command(id, commandId)
+        : await options.conversations?.resumeCommand(id, commandId);
       return receipt ? context.json(receipt) : thinkError('not_found');
     } catch (error: unknown) { return thinkServiceError(error); }
   });

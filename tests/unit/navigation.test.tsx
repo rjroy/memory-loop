@@ -20,9 +20,14 @@ describe('shell component semantics', () => {
       '/api/ground/prompts': resource('prompts', { question: { id: hash, text: 'Fixture question' } }),
       '/api/ground/goals': resource('goals', { markdown: 'Fixture goal' }),
       '/api/ground/recent-captures': { state: 'ready', coverage: 'complete', items: [{ id: hash, localDateTime: '2026-01-01T12:34', timeBasis: 'recorded-local', excerpt: 'Fixture capture', noteId: ['00_Inbox', '2026-01-01.md'] }] },
+      '/api/ground/recent-conversations': { state: 'ready', items: [] },
     };
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const viewToken = 'fixture_view_token_012345678901234567890123456789';
+    const expiresAt = new Date(Date.now() + 120_000).toISOString();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(input instanceof Request ? input.url : String(input), window.location.origin).pathname;
+      if (path === '/api/think/views' && init?.method === 'POST') return Response.json({ viewToken, selectionRevision: 0, conversationId: null, expiresAt }, { status: 201 });
+      if (path === '/api/think/selection' && init?.method === 'POST') return Response.json({ selectionRevision: 0, conversationId: null, expiresAt });
       if (!Object.hasOwn(payloads, path)) throw new Error(`Unexpected fixture request: ${path}`);
       return Response.json(payloads[path]);
     });
@@ -38,13 +43,14 @@ describe('shell component semantics', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     const main = screen.getByRole('main');
     expect(within(main).getByRole('heading', { level: 1, name: 'Ground' })).toBeInTheDocument();
-    for (const name of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures']) expect(within(main).getByRole('heading', { level: 2, name })).toBeInTheDocument();
+    for (const name of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures', 'Recent conversations']) expect(within(main).getByRole('heading', { level: 2, name })).toBeInTheDocument();
     expect(await within(main).findByRole('button', { name: /Fixture action/ })).toBeEnabled();
     expect(within(main).getByRole('button', { name: /Fixture question/ })).toBeEnabled();
     expect(within(main).getByRole('link', { name: /Fixture capture/ })).toHaveAttribute('href', `/recall?${new URLSearchParams({ file: JSON.stringify(['00_Inbox', '2026-01-01.md']) })}`);
-    expect(within(main).queryByRole('heading', { name: 'Recent conversations' })).not.toBeInTheDocument();
+    expect(await within(main).findByText('No recent conversations yet.')).toBeInTheDocument();
     expect(within(main).queryByRole('button', { name: /resume|delete/i })).not.toBeInTheDocument();
-    expect(fetcher).toHaveBeenCalledTimes(5);
+    const groundPaths = new Set(fetcher.mock.calls.map(([input]) => String(input)).filter(path => path.startsWith('/api/ground/')));
+    expect(groundPaths).toEqual(new Set(Object.keys(payloads)));
     expect(window.history.length).toBe(historyLength);
   });
 

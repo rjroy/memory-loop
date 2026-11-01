@@ -7,6 +7,7 @@ import InspirationCard from '../ground/InspirationCard';
 import PromptsCard from '../ground/PromptsCard';
 import GoalsCard from '../ground/GoalsCard';
 import RecentCapturesCard from '../ground/RecentCapturesCard';
+import RecentConversationsCard from '../ground/RecentConversationsCard';
 import '../ground/ground.css';
 
 export default function GroundView() {
@@ -24,6 +25,7 @@ export default function GroundView() {
         <CardBoundary name="Prompts"><PromptsCard /></CardBoundary>
         <CardBoundary name="Current Goals"><GoalsCard /></CardBoundary>
         <CardBoundary name="Recent captures"><RecentCapturesCard /></CardBoundary>
+        <CardBoundary name="Recent conversations"><RecentConversationsCard /></CardBoundary>
       </div>
     </div>
   );

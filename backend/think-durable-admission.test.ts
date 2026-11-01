@@ -56,9 +56,9 @@ function durable(probe: Probe | undefined, at: string): Probe {
   expect(probe.exists, `application.sqlite must contain committed application facts ${at}`).toBe(true);
   expect(probe.error, 'the independent SQLite reader must open successfully').toBeUndefined();
   expect(probe.integrity).toBe('ok');
-  // v2 added transcript checkpoints; v3 adds command order without changing these v1 relational facts.
+  // v2 added checkpoints, v3 command order and v4 recent/views; these v1 relational facts remain unchanged.
   // Probe controls read unmigrated v1 snapshots too, so enumerate supported versions explicitly.
-  expect([1, 2, 3]).toContain(probe.schemaVersion);
+  expect([1, 2, 3, 4]).toContain(probe.schemaVersion);
   expect(probe.fileMode).toBe(0o600);
   expect(probe.directoryMode).toBe(0o700);
   expect(probe.ownerMatches).toBe(true);

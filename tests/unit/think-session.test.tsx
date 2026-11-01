@@ -1,5 +1,5 @@
 import { waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createThinkSession, type ThinkSessionOptions } from '../../src/think/session';
 import { createThinkClient, ThinkClientError, type ThinkSnapshot, type ThinkWatchHandlers } from '../../src/think/client';
 import type { CreateReceipt, SendReceipt } from '../../backend/think/contract';
@@ -19,7 +19,7 @@ function deferred<T>() {
   const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
   return { promise, resolve, reject };
 }
-function fixture(pointerValue: string | null = null) {
+function fixture(pointerValue: string | null = null, navigationGeneration?: () => number, suppliedView?: NonNullable<ThinkSessionOptions['view']>) {
   const watches: Array<{ id: string; handlers: ThinkWatchHandlers; close: ReturnType<typeof vi.fn> }> = [];
   const client: NonNullable<ThinkSessionOptions['client']> = {
     snapshot: vi.fn(async id => snapshot(id)),
@@ -36,12 +36,178 @@ function fixture(pointerValue: string | null = null) {
   const pointer = { read: vi.fn(() => pointerValue), write: vi.fn() };
   const navigate = vi.fn();
   const ids = [c, commandId];
-  const session = createThinkSession({ client, pointer, navigate, randomUUID: () => ids.shift() ?? commandId });
-  return { client, pointer, navigate, session, watches };
+  // These tests isolate session ownership with a healthy, synchronously selected view;
+  // lease registration, uncertainty and stale CAS are exercised in Ground tests.
+  let selected: string | null = null;
+  const viewListeners = new Set<() => void>();
+  const view: NonNullable<ThinkSessionOptions['view']> = {
+    getSnapshot: () => ({ token: 'fixture_view_token_012345678901234567890123456789', selection: { conversationId: selected, selectionRevision: 0, expiresAt: '2099-01-01T00:00:00.000Z' }, status: 'ready', change: 0 }),
+    subscribe: listener => { viewListeners.add(listener); return () => { viewListeners.delete(listener); }; },
+    canMutate: id => selected === id,
+    setDesired: id => { selected = id; for (const listener of viewListeners) listener(); },
+    refresh: () => {},
+    ensureRegistered: async () => true,
+    transition: async (target, valid, commit) => { if (!valid()) return 'stale'; selected = target; commit(); return 'committed'; },
+    close: () => { viewListeners.clear(); },
+  };
+  const conversations: NonNullable<ThinkSessionOptions['conversations']> = {
+    register: vi.fn(async () => ({ viewToken: 'fixture_view_token_012345678901234567890123456789', selectionRevision: 0, conversationId: null, expiresAt: '2099-01-01T00:00:00.000Z' })),
+    inspect: vi.fn(async () => ({ selectionRevision: 0, conversationId: null, expiresAt: '2099-01-01T00:00:00.000Z' })),
+    select: vi.fn(async (_token, selectionRevision, conversationId) => ({ selectionRevision, conversationId, expiresAt: '2099-01-01T00:00:00.000Z' })),
+    resume: vi.fn<NonNullable<ThinkSessionOptions['conversations']>['resume']>(async (conversationId, clientCommandId) => ({ kind: 'resume', conversationId, clientCommandId, epoch, state: 'ready' })),
+  };
+  const session = createThinkSession({ client, conversations, pointer, navigate, view: suppliedView ?? view, navigationGeneration, randomUUID: () => ids.shift() ?? commandId });
+  return { client, conversations, pointer, navigate, session, view: suppliedView ?? view, watches };
 }
 const think = (id: string) => ({ pathname: '/think', search: `?conversation=${id}` });
 
+/** Separately deliver view selection acknowledgements and snapshot responses. */
+function delayedView() {
+  let desired: string | null = null;
+  let acknowledged: string | null = null;
+  const listeners = new Set<() => void>();
+  const view: NonNullable<ThinkSessionOptions['view']> = {
+    getSnapshot: () => ({ token: 'fixture_view_token_012345678901234567890123456789', selection: { conversationId: acknowledged, selectionRevision: acknowledged ? 1 : 0, expiresAt: '2099-01-01T00:00:00.000Z' }, status: acknowledged === desired && acknowledged !== null ? 'ready' : 'checking', change: acknowledged ? 1 : 0 }),
+    subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    canMutate: id => acknowledged === id,
+    setDesired: id => { desired = id; for (const listener of listeners) listener(); },
+    refresh: () => {}, ensureRegistered: async () => true,
+    transition: async (target, valid, commit) => { if (!valid()) return 'stale'; desired = target; acknowledged = target; commit(); return 'committed'; },
+    close: () => { listeners.clear(); },
+  };
+  return { view, acknowledge() { acknowledged = desired; for (const listener of listeners) listener(); } };
+}
+afterEach(() => vi.useRealTimers());
+
 describe('Think read-side session ownership', () => {
+  it.each(['selection before failure', 'selection after failure'] as const)('3RY-FE-04 automatically recovers initial history when %s', async ordering => {
+    vi.useFakeTimers();
+    const lease = delayedView();
+    const f = fixture(null, undefined, lease.view);
+    const first = deferred<ThinkSnapshot>();
+    const entry: ThinkSnapshot['entries'][number] = { kind: 'compaction', displayOrder: 1, sessionId: 'ses_fixture', eventId: 'evt_fixture', phase: 'ended', sourceTime: 1, sourceSequence: 1 };
+    vi.mocked(f.client.snapshot).mockImplementationOnce(() => first.promise).mockResolvedValue(snapshot(a, { entries: [entry] }));
+    try {
+      f.session.setLocation(think(a));
+      expect(f.client.snapshot).toHaveBeenCalledOnce();
+      if (ordering === 'selection before failure') lease.acknowledge();
+      first.reject(new ThinkClientError('api', 503, 'think_unavailable'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.session.getSnapshot().identity).toEqual({ conversationId: a, epoch: null });
+      if (ordering === 'selection after failure') lease.acknowledge();
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(f.session.getSnapshot().identity).toEqual({ conversationId: a, epoch });
+      expect(f.session.getSnapshot().history).toBe('complete');
+      expect(f.session.getSnapshot().entries).toEqual([entry]);
+      expect(f.client.snapshot).toHaveBeenCalledTimes(2);
+      expect(f.client.create).not.toHaveBeenCalled();
+      expect(f.client.send).not.toHaveBeenCalled();
+      expect(f.client.stop).not.toHaveBeenCalled();
+      expect(f.client.reply).not.toHaveBeenCalled();
+      expect(f.conversations.resume).not.toHaveBeenCalled();
+    } finally { f.session.close(); }
+  });
+
+  it('3RY-FE-04 fences a failed initial read and its retry after selecting a different conversation', async () => {
+    vi.useFakeTimers();
+    const lease = delayedView();
+    const f = fixture(null, undefined, lease.view);
+    const first = deferred<ThinkSnapshot>();
+    vi.mocked(f.client.snapshot).mockImplementation(id => id === a ? first.promise : Promise.resolve(snapshot(id)));
+    try {
+      f.session.setLocation(think(a));
+      first.reject(new ThinkClientError('api', 503, 'think_unavailable'));
+      await vi.advanceTimersByTimeAsync(0);
+      f.session.setLocation(think(b));
+      lease.acknowledge();
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(f.session.getSnapshot().identity).toEqual({ conversationId: b, epoch });
+      expect(f.session.getSnapshot().snapshot?.conversationId).toBe(b);
+      expect(vi.mocked(f.client.snapshot).mock.calls.filter(([id]) => id === a)).toHaveLength(1);
+      expect(f.client.create).not.toHaveBeenCalled(); expect(f.client.send).not.toHaveBeenCalled(); expect(f.conversations.resume).not.toHaveBeenCalled();
+    } finally { f.session.close(); }
+  });
+
+  it('3RY-FE-04 keeps persistent bootstrap failure bounded without issuing mutations', async () => {
+    vi.useFakeTimers();
+    const lease = delayedView();
+    const f = fixture(null, undefined, lease.view);
+    vi.mocked(f.client.snapshot).mockRejectedValue(new ThinkClientError('api', 503, 'think_unavailable'));
+    try {
+      f.session.setLocation(think(a));
+      lease.acknowledge();
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(vi.mocked(f.client.snapshot).mock.calls.length).toBeGreaterThan(1);
+      expect(vi.mocked(f.client.snapshot).mock.calls.length).toBeLessThanOrEqual(12);
+      expect(f.session.getSnapshot().identity).toEqual({ conversationId: a, epoch: null });
+      expect(f.session.getPresentation().state.composer).toMatchObject({ kind: 'send', eligible: false });
+      expect(f.client.create).not.toHaveBeenCalled(); expect(f.client.send).not.toHaveBeenCalled(); expect(f.client.stop).not.toHaveBeenCalled(); expect(f.conversations.resume).not.toHaveBeenCalled();
+    } finally { f.session.close(); }
+  });
+
+  it('3RY-FE-03 creates once when the initial browser entry key is adopted during registration', async () => {
+    const f = fixture(null, () => 0);
+    const registration = deferred<boolean>();
+    vi.spyOn(f.view, 'ensureRegistered').mockReturnValue(registration.promise);
+    try {
+      f.session.setLocation({ pathname: '/think', search: '', hash: '', key: 'initial', isNavigating: false });
+      expect(f.session.getSnapshot().newChat).toBe('starting');
+      f.session.editDraft('typing while the view registers');
+      f.session.setLocation({ pathname: '/think', search: '', hash: '', key: 'fixture-browser-entry', isNavigating: false });
+      expect(f.client.create).not.toHaveBeenCalled();
+      registration.resolve(true);
+      await waitFor(() => expect(f.client.create).toHaveBeenCalledOnce());
+      expect(f.client.create).toHaveBeenCalledWith({ conversationId: c, clientCommandId: commandId });
+      expect(f.navigate).toHaveBeenCalledExactlyOnceWith(`/think?conversation=${c}`, { replace: true, focus: 'preserve' });
+      f.session.setLocation(think(c));
+      await waitFor(() => expect(f.session.getPresentation().state.composer).toMatchObject({ kind: 'send', eligible: true }));
+      expect(f.session.getSnapshot().draft.text).toBe('typing while the view registers');
+      expect(f.client.create).toHaveBeenCalledOnce();
+      expect(f.client.send).not.toHaveBeenCalled();
+    } finally { f.session.close(); }
+  });
+
+  it.each(['route departure', 'shell navigation generation'] as const)('3RY-FE-03 cancels initial creation on a genuine %s change', async change => {
+    let navigationGeneration = 0;
+    const f = fixture(null, () => navigationGeneration);
+    const registration = deferred<boolean>();
+    vi.spyOn(f.view, 'ensureRegistered').mockReturnValue(registration.promise);
+    try {
+      f.session.setLocation({ pathname: '/think', search: '', hash: '', key: 'initial', isNavigating: false });
+      f.session.editDraft('retain this typed draft');
+      if (change === 'route departure') f.session.setLocation({ pathname: '/ground', search: '', hash: '', key: 'fixture-other-entry', isNavigating: false });
+      else navigationGeneration++;
+      registration.resolve(true);
+      await waitFor(() => expect(f.session.getSnapshot().newChat).toBe('idle'));
+      expect(f.client.create).not.toHaveBeenCalled();
+      expect(f.client.send).not.toHaveBeenCalled();
+      expect(f.navigate).not.toHaveBeenCalled();
+      expect(f.session.getSnapshot().identity).toBeNull();
+      expect(f.session.getSnapshot().draft.text).toBe('retain this typed draft');
+    } finally { f.session.close(); }
+  });
+
+  it('3RY-FE-02 keeps initial typed draft and creates once after delayed view registration', async () => {
+    const f = fixture();
+    const registration = deferred<boolean>();
+    vi.spyOn(f.view, 'ensureRegistered').mockReturnValue(registration.promise);
+    try {
+      f.session.setLocation({ pathname: '/think', search: '' });
+      expect(f.session.getSnapshot().newChat).toBe('starting');
+      f.session.editDraft('typing during registration');
+      expect(f.session.getSnapshot().draft.text).toBe('typing during registration');
+      expect(f.client.create).not.toHaveBeenCalled();
+      registration.resolve(true);
+      await waitFor(() => expect(f.client.create).toHaveBeenCalledOnce());
+      expect(f.client.create).toHaveBeenCalledWith({ conversationId: c, clientCommandId: commandId });
+      f.session.setLocation(think(c));
+      await waitFor(() => expect(f.session.getPresentation().state.composer).toMatchObject({ kind: 'send', eligible: true }));
+      expect(f.session.getSnapshot().draft.text).toBe('typing during registration');
+      expect(f.client.create).toHaveBeenCalledOnce();
+      expect(f.client.send).not.toHaveBeenCalled();
+    } finally { f.session.close(); }
+  });
+
   it('creates exactly one first conversation only on bare Think activation and keeps typing during creation', async () => {
     const f = fixture();
     const ack = deferred<CreateReceipt>();
@@ -200,6 +366,35 @@ describe('Think read-side session ownership', () => {
 });
 
 describe('Think session command ownership', () => {
+  it('3RY-FE-01 preserves unresolved Send ownership across same-epoch Resume and a late rejection', async () => {
+    const f = fixture();
+    const ack = deferred<SendReceipt>();
+    vi.mocked(f.client.send).mockReturnValue(ack.promise);
+    try {
+      const identity = { conversationId: a, epoch };
+      f.session.setLocation(think(a));
+      await waitFor(() => expect(f.session.getSnapshot().identity).toEqual(identity));
+      f.session.editDraft('original unsent text');
+      f.session.getPresentation().actions.send(identity, f.session.getSnapshot().draft.version);
+      await waitFor(() => expect(f.client.send).toHaveBeenCalledOnce());
+      f.session.editDraft('newer draft');
+      f.session.setLocation({ pathname: '/ground', search: '' });
+      f.session.requestHandoff({ kind: 'resume', conversationId: a, source: 'conversations', triggerId: a });
+      await waitFor(() => expect(f.conversations.resume).toHaveBeenCalledOnce());
+      await waitFor(() => expect(f.navigate).toHaveBeenCalledWith(`/think?conversation=${a}`, { replace: true, focus: 'preserve' }));
+      f.session.setLocation(think(a));
+      await waitFor(() => expect(f.session.getSnapshot().connection).not.toBe('inactive'));
+      expect(f.session.getSnapshot().draft.text).toBe('newer draft');
+      f.session.getPresentation().actions.send(identity, f.session.getSnapshot().draft.version);
+      ack.resolve({ conversationId: a, clientCommandId: c, epoch, kind: 'send', state: 'rejected', runId: b, failure: { code: 'resource_failure' } });
+      await waitFor(() => expect(f.session.getPresentation().state.rejectedSubmissions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ clientCommandId: c, text: 'original unsent text' }),
+      ])));
+      expect(f.session.getSnapshot().draft.text).toBe('newer draft');
+      expect(f.client.send).toHaveBeenCalledOnce();
+    } finally { f.session.close(); }
+  });
+
   it('sends one immutable command for a draft version and preserves a newer edit after acknowledgement', async () => {
     const f = fixture();
     const ack = deferred<SendReceipt>();

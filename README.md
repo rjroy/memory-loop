@@ -4,8 +4,10 @@ A personal workspace with four stable destinations: Ground, Capture,
 Think, and Recall. **Recall is built:** browse one configured vault and read
 Markdown without changing it. **Capture is built:** save thoughts to the same
 configured vault. **Think has a working conversation UI in the isolated local
-fixture** below. Ground's current resource layer presents five cards and can
-prepare an unsent Think draft; it is not the completed Ground roadmap.
+fixture** below. Ground now presents six independent cards, including recent
+registered conversations with Resume, and can prepare an unsent Think draft.
+This source/fixture-accepted version is not yet published to the live app, and
+the Ground roadmap is not complete.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
 curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
@@ -59,7 +61,7 @@ Ignored configuration and private state have separate responsibilities:
 | `.memory-loop/config.json` | The single selected vault, read only by the daemon at startup. |
 | `.memory-loop/transport.json` | Daemon origin and web request policy, read by both server tiers. |
 | `.memory-loop/service.token` | Shared server-only bearer credential; never sent to the browser. |
-| `.memory-loop/application.sqlite` | Private Think ownership, originals, command facts, transcript checkpoints and pending appends; not configuration or a chat-history mirror. |
+| `.memory-loop/application.sqlite` | Private Think ownership, originals, command/activity facts, selection leases, transcript checkpoints and pending appends; not configuration or a chat-history mirror. |
 
 Vault configuration is JSON, not environment-based discovery:
 
@@ -159,7 +161,8 @@ acknowledgements remain uncertain and are never automatically replayed. Native
 OpenCode remains authoritative for assistant history and execution. The body
 cache is disposable, not the durable original-input store.
 
-Schema v3 adds an explicit durable command-registration sequence to the transcript
+Schema v4 adds conversation activity, Resume receipts and per-view selection leases.
+Schema v3 added an explicit durable command-registration sequence to the transcript
 mappings/checkpoints, stable-entry facts and bounded pending-append chunks
 introduced in v2. The additive v1/v2-to-v3 migrations freeze existing command
 insertion order without changing original bytes or timestamps, ownership or
@@ -200,8 +203,8 @@ registration times; verified transcripts continue without duplicate old entries.
 
 Unregistered legacy transcripts/native chats are not scanned or adopted. Durable
 history is not durable browser draft storage: unsent drafts still do not survive
-a hard reload or browser closure. Ground's conversation-list/resume-entry controls
-remain future work.
+a hard reload or browser closure. Ground's Recent conversations card provides
+explicit Resume for eligible registered chats; it does not import legacy chats.
 
 #### Initialize transport
 
@@ -291,7 +294,7 @@ missing/invalid vault config remains a distinct read error after daemon startup.
 ### Browser and private deployment boundary
 
 The browser uses same-origin Next APIs. Recall uses `GET /api/vault/tree` and
-`GET /api/vault/note`; Capture uses `POST /api/capture`; Ground uses five fixed
+`GET /api/vault/note`; Capture uses `POST /api/capture`; Ground uses six fixed
 read routes under `/api/ground`; the internal Think layer
 adds fixed command, snapshot, watch, content and decision routes under the same web request policy, not a
 generic OpenCode proxy. The BFF creates fresh service headers
@@ -393,10 +396,35 @@ visit; leaving and returning starts a new selection.
 
 Recent captures links up to the five most recent recorded entries to their source
 notes in Recall. If source coverage is incomplete, the card says so rather than
-claiming a complete latest five. Ground does not yet offer a recent-conversation
-list or resume-entry buttons. Selection-protection leases, deletion and scheduled
-generation also remain future work; same-URL chat restoration does not complete
-the Ground plan.
+claiming a complete latest five.
+
+Recent conversations shows up to ten registered Think chats with at least one
+registered user Send. New Send/form input and confirmed assistant content advance
+recency; reading, polling, selection and Resume do not. Titles come from the first
+original input, not generated summaries. An unused fresh or prefilled chat stays
+out of the list. Ten is a display limit, not a retention rule.
+
+**Resume** opens that existing conversation and its verified history, without
+creating a chat, sending a prompt or stopping background work. Opening another
+chat protects any nonempty current draft, including whitespace, with an inline
+confirmation; both keyed drafts are preserved. Resume of the current chat also
+verifies its current serving epoch before reopening after a daemon restart.
+Pending or failed opening feedback stays beside the chosen row;
+**Check chat** checks the same request rather than issuing a second Resume.
+Empty lists, individual unavailable chats and card-local failures are distinct.
+
+Each browser view keeps its selection token only in memory. The persistent shell
+renews selection every 30 seconds across all four app destinations, independently
+of the conversation stream; the daemon protects each live selection for two
+minutes, including selections in other browser tabs. A returning view must
+reconcile or register again before Think mutations are enabled. The editor stays
+editable, and other Ground resources, Capture and Recall remain usable if Think
+is unavailable. A transient initial history-read failure gets a bounded automatic
+read retry; recovery never replays a native command.
+
+There is no Delete control yet; deletion belongs to `memory-loop-9ya.6`.
+Scheduled generation and the later configuration/deployment handoff are also
+outside this slice. The live app still needs a separately authorized publication.
 
 ## What Capture does
 
@@ -455,18 +483,20 @@ transactional snapshot.
 
 ## Checks and current acceptance
 
-On **2026-10-31**, Ground's Phase 3c registered-chat restoration and schema-v3
-slice passed independent validation: frontend **111**, backend **648**, browser
-**60**, native UI **4 passed / 3 skipped**, both direct TypeScript checks and an
-isolated Next production build. Fresh technical verification accepted
-`GROUND-HYDRATE-01` (later exact-ID admission/explicit Stop) and
-`GROUND-HYDRATE-02` (ledger-established original ordering). Evidence:
-`/tmp/opencode/ground-phase3c-v3-final-validation.json`. An owned official OpenCode
-2.2.2/scripted-provider/Chromium fixture verified same-URL chat restoration after
-restarting only the app daemon, without replay or duplicate transcript entries.
-These checks do not cover every native capability, physical-device or
-assistive-technology behavior. They did not publish this slice to the live app or
-activate its private database against personal data; the Ground plan is not complete.
+Ground's recent-conversation/Resume and selection-lease slice (`memory-loop-3ry`)
+is independently accepted. Current evidence covers frontend **135**, backend
+**693** (retained accepted backend run), browser **60**, native UI **5 passed /
+3 skipped**, both direct TypeScript checks and an isolated Next production build.
+Fresh technical verification accepted `3RY-FE-01–04`; visual verification accepted
+the row-local handoff correction `3RY-V1`. Evidence:
+`/tmp/opencode/ground-3ry-fe04-final-validation.json` and
+`/tmp/opencode/ground-3ry-correction1-fresh-visual/review-report.md`.
+Owned OpenCode 2.2.2/scripted-provider/Chromium fixtures
+verified Ground Resume and same-URL reload after restarting only the app daemon,
+without native-work replay or duplicate transcript entries. These checks do not
+certify physical-device or assistive-technology behavior. They did not publish
+this version to the live app or activate it against personal data; deletion,
+scheduled jobs and the final handoff remain outside this acceptance.
 
 On **2026-10-31**, Ground's Phase 3b registry-bound transcript slice passed
 independent validation: frontend **111**, backend **631**, browser **60**, native
@@ -645,14 +675,16 @@ fixture provider, not normal Think conversations.
 - **Stop** is explicit and best effort. Disconnecting, changing app tabs or
   choosing New chat does not stop accepted work; completed effects are not undone.
 - **New chat** starts a different conversation and protects a nonempty draft
-  with an inline discard choice. There is no previous-chat list or Ground
-  resume-entry button in this layer.
+  with an inline discard choice. Ground's **Recent conversations → Resume** opens
+  an existing registered chat instead, preserving both conversations' keyed drafts.
 - Reload/reconnect recovers the **current** chat from its URL (or one per-tab
   opaque-ID pointer). For registered chats, a fresh reload of that same URL can
   restore history after the app daemon restarts, provided native ownership/history
   can be verified. Existing epoch fences still reject stale responses. Drafts
   survive ordinary app navigation/reconnect, but **not hard reload**. No messages,
   drafts or outbox are stored in browser storage, and reconnect never auto-sends a draft.
+  Transient initial history failures retry reads a bounded number of times;
+  established-session epoch changes still require explicit reauthorization.
 - Vault transcripts contain full messages and safe activity summaries, appended
   at canonical boundaries rather than every token. Logging retries automatically;
   meaningful warnings do not block chat/tools. There is no **Retry logging** button.

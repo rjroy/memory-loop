@@ -69,10 +69,22 @@ function setup(options: { origin?: 'ground' | 'think'; delayedCreate?: boolean; 
   let restarted = false;
   let createdTarget: string | undefined;
   let heldTargetSnapshot = false;
+  let selected: string | null = null;
+  let selectionRevision = 0;
+  const viewToken = 'fixture_view_token_012345678901234567890123456789';
+  const expiresAt = new Date(Date.now() + 120_000).toISOString();
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
     const method = init?.method ?? 'GET';
     const path = url.pathname;
+    if (path === '/api/think/views' && method === 'POST') return json({ viewToken, selectionRevision: 0, conversationId: null, expiresAt }, 201);
+    if (path === '/api/think/selection' && method === 'GET') return json({ selectionRevision, conversationId: selected, expiresAt });
+    if (path === '/api/think/selection' && method === 'POST') {
+      const command: { viewToken: string; expectedRevision: number; conversationId: string | null } = JSON.parse(String(init?.body));
+      if (command.viewToken !== viewToken || command.expectedRevision !== selectionRevision) return json({ error: { code: 'selection_conflict', message: 'Think selection has changed' } }, 409);
+      if (command.conversationId !== selected) { selected = command.conversationId; selectionRevision++; }
+      return json({ selectionRevision, conversationId: selected, expiresAt });
+    }
     if (path.startsWith('/api/ground/')) {
       const count = (readCounts.get(path) ?? 0) + 1;
       readCounts.set(path, count);
@@ -83,6 +95,7 @@ function setup(options: { origin?: 'ground' | 'think'; delayedCreate?: boolean; 
       if (path === '/api/ground/prompts') return json({ state: 'ready', noteId: note('prompts'), revision, data: { question: { id: hash, text: count === 1 ? prompt : 'Second fixture question' } } });
       if (path === '/api/ground/goals') return json({ state: 'ready', noteId: note('goals'), revision, data: { markdown: goals } });
       if (path === '/api/ground/recent-captures') return json({ state: 'ready', coverage: 'complete', items: [{ id: hash, localDateTime: '2026-01-01T12:34', timeBasis: 'recorded-local', excerpt: 'Fixture capture excerpt', noteId: ['00_Inbox', '2026-01-01.md'] }] });
+      if (path === '/api/ground/recent-conversations') return json({ state: 'ready', items: [] });
     }
     if (path === base && method === 'POST') {
       if (options.delayedCreate) return pending.promise;
@@ -115,11 +128,11 @@ beforeEach(() => window.sessionStorage.clear());
 afterEach(() => window.sessionStorage.clear());
 
 describe('Ground cards and shell-owned prefill', () => {
-  it('renders five real independent cards, safe Goals and Recall source links without conversation placeholders', async () => {
+  it('renders six independent cards, safe Goals and Recall source links without invented conversations', async () => {
     const { fetcher } = setup();
     render(<TestRouter />);
-    for (const name of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures']) expect(await screen.findByRole('heading', { level: 2, name })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Recent conversations' })).not.toBeInTheDocument();
+    for (const name of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures', 'Recent conversations']) expect(await screen.findByRole('heading', { level: 2, name })).toBeInTheDocument();
+    expect(await screen.findByText('No recent conversations yet.')).toBeInTheDocument();
     expect(screen.getByText(quote)).toBeInTheDocument();
     expect(screen.getByText('Fixture author')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Fixture goal' })).toBeInTheDocument();
@@ -127,7 +140,8 @@ describe('Ground cards and shell-owned prefill', () => {
     expect(document.querySelector('script')).toBeNull();
     expect(document.querySelector('img[src="https://example.test/fixture.png"]')).toBeNull();
     expect(screen.getByRole('link', { name: /Fixture capture excerpt/ })).toHaveAttribute('href', `/recall?${new URLSearchParams({ file: JSON.stringify(['00_Inbox', '2026-01-01.md']) })}`);
-    expect(fetcher.mock.calls.filter(([input]) => String(input).startsWith('/api/ground/'))).toHaveLength(5);
+    const groundPaths = new Set(fetcher.mock.calls.map(([input]) => String(input)).filter(path => path.startsWith('/api/ground/')));
+    expect(groundPaths).toEqual(new Set(['/api/ground/quick-actions', '/api/ground/inspiration', '/api/ground/prompts', '/api/ground/goals', '/api/ground/recent-captures', '/api/ground/recent-conversations']));
   });
 
   it('keeps sibling empty, missing, malformed and failed reads local to their cards', async () => {

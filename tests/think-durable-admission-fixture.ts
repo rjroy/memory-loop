@@ -204,8 +204,8 @@ export interface FixtureReport {
   };
 }
 
-// Physical admission schema introduced in v1 for 9ya.3, retained by v2 checkpoints and v3 order:
-// Standalone probe controls remain v1; production-opened databases now have user_version = 3.
+// Physical admission schema introduced in v1, retained by v2 checkpoints, v3 order and v4 recent/views:
+// Standalone probe controls remain v1; production-opened databases now have user_version = 4.
 // conversations(conversation_id PK, native_session_id UNIQUE, vault_directory,
 //   owner_marker_json, creation_epoch): all TEXT NOT NULL.
 // commands(command_id TEXT PK NOT NULL, conversation_id TEXT NOT NULL REFERENCES conversations,

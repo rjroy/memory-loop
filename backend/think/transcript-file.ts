@@ -45,7 +45,8 @@ const dirFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLL
 const fileFlags = constants.O_RDWR | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 const descriptor = (handle: TranscriptHandle, name: string) => `/proc/self/fd/${handle.fd}/${name}`;
 const sameIdentity = (a: Pick<Stats, 'dev' | 'ino'>, b: Pick<Stats, 'dev' | 'ino'>) => a.dev === b.dev && a.ino === b.ino;
-const fingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeMs, s.ctimeMs, s.nlink, s.uid, s.mode]);
+export const transcriptFingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeMs, s.ctimeMs, s.nlink, s.uid, s.mode]);
+const fingerprint = transcriptFingerprint;
 function code(error: unknown): unknown { return typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined; }
 function conflict(): never { throw new TranscriptError('conflict'); }
 function fileStat(stat: Stats): void {

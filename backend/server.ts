@@ -17,6 +17,7 @@ import { openCaptureWriter, type CaptureWriter } from './capture';
 import { openGround, type GroundReader } from './ground';
 import { openThinkState } from './think/sqlite-state';
 import type { ThinkStateStore } from './think/state';
+import { createConversationService, type ConversationService } from './think/conversations';
 
 export interface ServerOptions {
   /** Directory containing .memory-loop/config.json, independent of the web build. */
@@ -28,16 +29,34 @@ export interface PreparedServer {
   close(): Promise<void>;
 }
 
-async function prepareThink(config: VaultConfig | undefined, vault: VaultState, transportFile: string, projectRoot: string): Promise<ThinkService | { error: ThinkUnavailableCode }> {
-  if (config?.think === undefined) return { error: 'think_config_missing' };
+interface PreparedThink {
+  think: ThinkService | { error: ThinkUnavailableCode };
+  conversations?: ConversationService;
+  close(): Promise<void>;
+}
+const unavailableThink = (error: ThinkUnavailableCode): PreparedThink => ({ think: { error }, async close() {} });
+
+async function prepareThink(config: VaultConfig | undefined, vault: VaultState, transportFile: string, projectRoot: string): Promise<PreparedThink> {
+  // Read-only/unconfigured applications must not acquire a private application database.
+  if (config?.think === undefined) return unavailableThink('think_config_missing');
   const think = parseThinkConfig(config.think);
-  if (!think) return { error: 'think_config_invalid' };
-  if ('error' in vault) return { error: 'think_unavailable' };
+  if (!think) return unavailableThink('think_config_invalid');
+  if ('error' in vault) return unavailableThink('think_unavailable');
   console.info('think_setup_attempt');
-  let bodies: BodyStore | undefined;
-  let state: ThinkStateStore | undefined;
+  let directory: string;
+  let state: ThinkStateStore;
   try {
-    const directory = await realpath(config.vaultDirectory);
+    directory = await realpath(config.vaultDirectory);
+    // Registry ownership and metadata outlive the optional native attachment descriptor.
+    // The same private-root/mode/migration checks apply to both startup paths.
+    state = await openThinkState(projectRoot, directory);
+  } catch {
+    console.info('think_setup_outcome', { status: 'unavailable' });
+    return unavailableThink('think_unavailable');
+  }
+  const epoch = randomUUID();
+  let bodies: BodyStore | undefined;
+  try {
     // The registration is explicitly selected by the operator, never discovered from HOME.
     const registration: unknown = JSON.parse(await readFile(think.registrationFile, 'utf8'));
     if (!registration || typeof registration !== 'object' || !('url' in registration) || typeof registration.url !== 'string' ||
@@ -45,36 +64,47 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     const url = new URL(registration.url);
     if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
         url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('nonlocal registration');
-    const endpoint = await Service.discover({ file: think.registrationFile, version: '2.2.2' });
-    if (!endpoint || endpoint.url !== registration.url) throw new Error('service unavailable');
+    if ('password' in registration && typeof registration.password !== 'string' ||
+        'version' in registration && registration.version !== '2.2.2') throw new Error('invalid registration');
+    // The public registered Endpoint is connection configuration, NOT proof that native is
+    // currently available. Keep the healthy private registry/list/leases usable offline;
+    // every owned native operation still checks the real server PID/version before publishing.
+    const endpoint = { url: registration.url, ...('password' in registration && typeof registration.password === 'string' && registration.password.length > 0
+      ? { auth: { type: 'basic' as const, username: 'opencode', password: registration.password } } : {}) };
     const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
-    const info = await client.server.info({ signal: AbortSignal.timeout(5000) });
-    if (info.version !== '2.2.2' || info.pid !== registration.pid) throw new Error('service identity mismatch');
     const location = { directory };
-    if (think.agent) {
-      const agents = await client.agent.list({ location }, { signal: AbortSignal.timeout(5000) });
-      if (!agents.data.some(agent => agent.id === think.agent && agent.mode !== 'subagent')) throw new Error('selected agent unavailable');
-    }
-    if (think.model) {
-      const models = await client.model.list({ location, types: ['chat'] }, { signal: AbortSignal.timeout(5000) });
-      const selected = models.data.find(model => model.enabled && model.type === 'chat' && model.providerID === think.model?.providerID && model.id === think.model.id);
-      if (!selected || (think.model.variant !== undefined && !selected.variants.some(variant => variant.id === think.model?.variant))) throw new Error('selected model unavailable');
-    }
-    const epoch = randomUUID();
-    state = await openThinkState(projectRoot, directory);
+    // Current new-chat defaults must not invalidate a registered chat's stored creation baseline.
+    const validateCreation = async (signal: AbortSignal): Promise<void> => {
+      if (think.agent) {
+        const agents = await client.agent.list({ location }, { signal });
+        if (!agents.data.some(agent => agent.id === think.agent && agent.mode !== 'subagent')) throw new Error('selected agent unavailable');
+      }
+      if (think.model) {
+        const models = await client.model.list({ location, types: ['chat'] }, { signal });
+        const selected = models.data.find(model => model.enabled && model.type === 'chat' && model.providerID === think.model?.providerID && model.id === think.model.id);
+        if (!selected || (think.model.variant !== undefined && !selected.variants.some(variant => variant.id === think.model?.variant))) throw new Error('selected model unavailable');
+      }
+    };
     bodies = await createBodyStore({ directory: join(dirname(transportFile), `think-bodies-${epoch}`), epoch, vaultDirectory: directory });
-    const service = createThinkService({ native: nativeSessions(client), bodies, state, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch, serviceIdentity: { pid: info.pid, version: info.version }, transcript: { directory: think.transcriptDirectory } });
+    const service = createThinkService({ native: nativeSessions(client), bodies, state, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch,
+      serviceIdentity: { pid: registration.pid, version: '2.2.2' }, validateCreation, transcript: { directory: think.transcriptDirectory } });
     console.info('think_setup_outcome', { status: 'ready' });
-    return service;
+    // Ownership transfers only after construction succeeds; Think closes its store.
+    return { think: service, close: () => service.close() };
   } catch {
     if (bodies) {
       try { await bodies.close(); }
       catch { console.info('think_body_cleanup_outcome', { status: 'failed' }); }
     }
-    try { state?.close(); }
-    catch { console.info('think_state_cleanup_outcome', { status: 'failed' }); }
-    console.info('think_setup_outcome', { status: 'unavailable' });
-    return { error: 'think_unavailable' };
+    // No native adapter/body store is fabricated for this path. List, leases and
+    // controlled unavailable Resume receipts use exactly the normal registry capability.
+    const conversations = createConversationService({ state, directory, epoch });
+    let closing: Promise<void> | undefined;
+    console.info('think_setup_outcome', { status: 'registry-only' });
+    return { think: { error: 'think_unavailable' }, conversations, close() {
+      closing ??= (async () => { try { await conversations.close(); } finally { state.close(); } })();
+      return closing;
+    } };
   }
 }
 
@@ -92,7 +122,7 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
     const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
     vault = { error: code === 'config_missing' || code === 'config_invalid' ? code : 'vault_unavailable' };
   }
-  const think = await prepareThink(config, vault, transportFile, options.projectRoot);
+  const preparedThink = await prepareThink(config, vault, transportFile, options.projectRoot);
   let capture: CaptureWriter | undefined;
   let ground: GroundReader | undefined;
   let groundError: 'configuration' | 'io' = 'error' in vault && vault.error === 'vault_unavailable' ? 'io' : 'configuration';
@@ -104,11 +134,16 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
     try { ground = await openGround(config.vaultDirectory, config.ground); console.info('ground_setup_outcome', { status: 'ready' }); }
     catch { groundError = 'io'; console.info('ground_setup_outcome', { status: 'unavailable' }); }
   }
-  async function close() {
-    try { if (!('error' in think)) await think.close(); } finally { try { await ground?.close(); } finally { try { await capture?.close(); } finally { if ('reader' in vault) await vault.reader.close(); } } }
+  let closing: Promise<void> | undefined;
+  function close(): Promise<void> {
+    closing ??= (async () => {
+      try { await preparedThink.close(); } finally { try { await ground?.close(); } finally { try { await capture?.close(); } finally { if ('reader' in vault) await vault.reader.close(); } } }
+    })();
+    return closing;
   }
   try {
-    const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault, think, capture, ground, groundError });
+    const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault,
+      think: preparedThink.think, conversations: preparedThink.conversations, capture, ground, groundError });
     return { fetch, close };
   } catch (error) {
     await close();

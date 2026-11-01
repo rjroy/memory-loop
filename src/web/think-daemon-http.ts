@@ -3,14 +3,16 @@ import { request } from 'node:http';
 import { classifyThinkJsonRoute } from './think-json-route';
 
 /** Fixed Think routes only; never forwards browser headers or follows redirects. */
-export async function thinkDaemonFetch(target: URL, options: { method: 'GET' | 'POST'; token: string; body?: Uint8Array; signal: AbortSignal }): Promise<Response> {
+export async function thinkDaemonFetch(target: URL, options: { method: 'GET' | 'POST'; token: string; body?: Uint8Array; signal: AbortSignal; viewToken?: string }): Promise<Response> {
   const route = classifyThinkJsonRoute(target, options.method);
   const content = route?.operation === 'content' && options.method === 'GET';
   if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || target.username || target.password ||
-      !route || route.method !== options.method || !/^[a-f0-9]{64}$/.test(options.token)) throw new Error('Invalid Think target');
+      !route || route.method !== options.method || !/^[a-f0-9]{64}$/.test(options.token) ||
+      options.viewToken !== undefined && (route.operation !== 'selection' || options.method !== 'GET' || !/^[A-Za-z0-9_-]{43,256}$/.test(options.viewToken))) throw new Error('Invalid Think target');
   return new Promise((resolve, reject) => {
     const upstream = request(target, { method: options.method, signal: options.signal, headers: {
       Accept: 'application/json', Authorization: `Bearer ${options.token}`,
+      ...(options.viewToken === undefined ? {} : { 'X-Memory-Loop-View': options.viewToken }),
       ...(options.method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
     } }, response => {
       const chunks: Buffer[] = [];

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { usePresentation } from './presentation';
 import { RecallSessionProvider } from '../recall/RecallSession';
@@ -30,6 +30,7 @@ export default function NextShell({ children }: { children: ReactNode }) {
     },
   }));
   const [ground] = useState(() => createGroundSession());
+  const thinkState = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const ownership = useRef(0);
   useEffect(() => {
     const lease = ++ownership.current;
@@ -37,10 +38,26 @@ export default function NextShell({ children }: { children: ReactNode }) {
     // real departure, not its synchronous cleanup/setup rehearsal.
     return () => { queueMicrotask(() => { if (ownership.current === lease) { session.close(); ground.close(); } }); };
   }, [session, ground]);
+  useEffect(() => {
+    const refresh = () => session.refreshView();
+    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('pageshow', refresh);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('pageshow', refresh);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [session]);
   useLayoutEffect(() => {
     session.setLocation({ pathname: location.pathname, search: location.search, hash: location.hash, key: location.key, isNavigating });
     ground.setLocation(location.pathname);
   }, [session, ground, location.pathname, location.search, location.hash, location.key, isNavigating]);
+  useLayoutEffect(() => {
+    const view = thinkState.view;
+    ground.setView(view.token, view.change, view.status === 'ready' || view.status === 'unavailable');
+  }, [ground, thinkState.view.token, thinkState.view.change, thinkState.view.status]);
 
   return <ThinkSessionProvider session={session}><CaptureSessionProvider><GroundSessionProvider session={ground}>
     <ShellContent>{children}</ShellContent>

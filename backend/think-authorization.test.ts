@@ -88,6 +88,45 @@ describe('Think HTTP command boundary', () => {
     expectNoThinkDispatch(think);
   });
 
+  // Daemon policy only: these spies do not establish external proxy/human authentication.
+  it.each([
+    ['wrong service credential', { authorization: `Bearer ${'b'.repeat(64)}` }, 401],
+    ['browser Origin', { origin: 'https://fixture.invalid' }, 403],
+    ['browser Fetch Metadata', { 'sec-fetch-site': 'same-origin' }, 403],
+  ] as const)('denies %s before ANY new recent/Resume/view service operation', async (_name, deniedHeaders, status) => {
+    const { request, think } = setup();
+    const routes = [
+      { path: '/api/ground/recent-conversations' },
+      { path: '/api/think/views', body: {} },
+      { path: '/api/think/selection', body: { viewToken: 'b'.repeat(64), expectedRevision: 0, conversationId } },
+      { path: '/api/think/selection' },
+      { path: `${base}/${conversationId}/resume`, body: { clientCommandId } },
+    ];
+    for (const route of routes) {
+      const response = await request(route.path, { method: route.body === undefined ? 'GET' : 'POST',
+        headers: { ...deniedHeaders, 'content-type': 'application/json', 'X-Memory-Loop-View': 'b'.repeat(64) },
+        ...(route.body === undefined ? {} : { body: JSON.stringify(route.body) }) });
+      expect(response.status, route.path).toBe(status);
+      expectNoThinkDispatch(think);
+    }
+  });
+
+  it.each([
+    { name: 'caller-chosen view token', path: '/api/think/views', body: { viewToken: 'b'.repeat(64) }, status: 400 },
+    { name: 'unknown view-registration key', path: '/api/think/views', body: { deviceId: 'not a client identity' }, status: 400 },
+    { name: 'missing read header', path: '/api/think/selection', status: 403 },
+    { name: 'malformed read header', path: '/api/think/selection', header: 'not a view token', status: 403 },
+    { name: 'malformed selection token', path: '/api/think/selection', body: { viewToken: 'bad', expectedRevision: 0, conversationId }, status: 400 },
+    { name: 'negative selection revision', path: '/api/think/selection', body: { viewToken: 'b'.repeat(64), expectedRevision: -1, conversationId }, status: 400 },
+  ])('rejects $name before dispatch, including nested content operations', async input => {
+    const { request, think } = setup();
+    const response = await request(input.path, { method: input.body === undefined ? 'GET' : 'POST',
+      headers: { 'content-type': 'application/json', ...(input.header ? { 'X-Memory-Loop-View': input.header } : {}) },
+      ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }) });
+    expect(response.status).toBe(input.status);
+    expectNoThinkDispatch(think);
+  });
+
   it.each(['not json', JSON.stringify({ ...command, conversationId: 'not-a-uuid' }), JSON.stringify({ conversationId })])(
     'rejects invalid create input without calling the service', async body => {
       const { post, think } = setup();

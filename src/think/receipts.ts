@@ -5,6 +5,7 @@ import { ThinkClientError } from './client';
 export function finalReceipt(receipt: CommandReceipt): boolean {
   switch (receipt.kind) {
     case 'create': return receipt.state === 'ready' || receipt.state === 'rejected';
+    case 'resume': return receipt.state === 'ready' || receipt.state === 'rejected';
     case 'send': return ['completed', 'failed', 'interrupted', 'cancelled-before-delivery', 'rejected'].includes(receipt.state);
     case 'stop': return receipt.state !== 'registered';
     case 'form-reply': return ['replied', 'stale', 'rejected'].includes(receipt.state);

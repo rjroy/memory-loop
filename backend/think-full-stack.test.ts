@@ -57,6 +57,102 @@ it('Phase 2 Ground quick action creates an editable unsent native Think draft', 
   }
 }, 240000);
 
+it('Ground 3ry browser lists and resumes a registered chat through Next and daemon without another native prompt', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary });
+  let browser: Browser | undefined;
+  try {
+    const endpoint = await Service.discover({ file: `${fixture.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const page = await browser.newPage();
+    const writes: string[] = [];
+    const thinkStatuses: string[] = [];
+    page.on('response', response => {
+      const url = new URL(response.url());
+      if (url.origin === fixture.webUrl && url.pathname.startsWith('/api/think/')) thinkStatuses.push(`${response.request().method()} ${url.pathname.replace(/[0-9a-f-]{36}/g, ':id')} ${response.status()}`);
+    });
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (request.method() === 'POST' && url.origin === fixture.webUrl && url.pathname.startsWith('/api/think/')) writes.push(url.pathname);
+    });
+    await page.goto(new URL('/think', fixture.webUrl).href);
+    try { await page.waitForURL(/\/think\?conversation=[0-9a-f-]{36}$/); }
+    catch { throw new Error(`fixture initial Think creation did not navigate; Think responses: ${JSON.stringify(thinkStatuses)}`); }
+    const firstId = new URL(page.url()).searchParams.get('conversation');
+    if (!firstId) throw new Error('fixture conversation missing');
+    const nativeId = `ses_memoryloop_${firstId.replaceAll('-', '')}`;
+    const base = `/api/think/conversations/${firstId}`;
+    const original = 'Fixture Ground resume original';
+    const editor = page.getByRole('textbox', { name: 'Message' });
+    const send = page.getByRole('button', { name: 'Send', exact: true });
+    await editor.fill(original);
+    await vi.waitFor(async () => expect(await send.isEnabled()).toBe(true), { timeout: 30000 });
+    const sendResponse = page.waitForResponse(response => new URL(response.url()).pathname === `${base}/messages` && response.request().method() === 'POST');
+    await send.click();
+    const sent = await sendResponse;
+    expect(sent.status()).toBe(202);
+    const receipt = await sent.json() as SendReceipt;
+    await vi.waitFor(async () => {
+      const response = await page.request.get(new URL(`${base}/commands/${receipt.clientCommandId}`, fixture.webUrl).href);
+      expect(response.status()).toBe(200);
+      expect((await response.json() as SendReceipt).state).toBe('completed');
+    }, { timeout: 30000 });
+    const conversation = page.getByRole('region', { name: 'Conversation' });
+    await vi.waitFor(async () => expect(await conversation.getByRole('article', { name: /^AI, message / }).filter({ hasText: 'fixture-ok' }).count()).toBe(1), { timeout: 30000 });
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
+    await vi.waitFor(() => expect(new URL(page.url()).searchParams.get('conversation')).not.toBe(firstId), { timeout: 30000 });
+    const secondId = new URL(page.url()).searchParams.get('conversation');
+    if (!secondId) throw new Error('second fixture conversation missing');
+    await editor.fill('Keep this other unsent draft');
+    await vi.waitFor(async () => expect(await send.isEnabled()).toBe(true), { timeout: 30000 });
+    const beforeProvider = fixture.control.info();
+    const nativeSessions = await native.session.list({ directory: fixture.workspace, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    const beforeIds = nativeSessions.data.map(item => item.id).sort();
+    expect(beforeIds).toContain(nativeId);
+    const beforeWrites = [...writes];
+    const recent = page.waitForResponse(response => new URL(response.url()).pathname === '/api/ground/recent-conversations' && response.status() === 200);
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Ground' }).click();
+    const listResponse = await recent;
+    const list = await listResponse.json() as { state: string; items: Array<{ conversationId: string; title: string | null }> };
+    expect(list.state).toBe('ready');
+    expect(list.items).toEqual(expect.arrayContaining([expect.objectContaining({ conversationId: firstId, title: original })]));
+    expect(listResponse.request().headers()['x-memory-loop-view']).toMatch(/^[A-Za-z0-9_-]{43,256}$/);
+    const card = page.getByRole('region', { name: 'Recent conversations' });
+    await card.getByRole('link', { name: `Resume ${original}` }).click();
+    const confirmation = page.getByRole('group', { name: 'Open conversation' });
+    await confirmation.getByRole('button', { name: 'Cancel' }).waitFor();
+    const resumed = page.waitForResponse(response => new URL(response.url()).pathname === `${base}/resume` && response.request().method() === 'POST');
+    const selection = page.waitForResponse(response => {
+      if (new URL(response.url()).pathname !== '/api/think/selection' || response.request().method() !== 'POST') return false;
+      const value: unknown = response.request().postDataJSON();
+      return typeof value === 'object' && value !== null && 'conversationId' in value && value.conversationId === firstId;
+    });
+    await confirmation.getByRole('button', { name: 'Open conversation' }).click();
+    const resumeResponse = await resumed;
+    expect(resumeResponse.status()).toBe(202);
+    expect(await resumeResponse.json()).toMatchObject({ kind: 'resume', conversationId: firstId, state: 'ready' });
+    const selectionResponse = await selection;
+    expect(selectionResponse.status()).toBe(200);
+    expect(await selectionResponse.json()).toMatchObject({ conversationId: firstId });
+    await vi.waitFor(() => expect(new URL(page.url()).searchParams.get('conversation')).toBe(firstId), { timeout: 30000 });
+    await vi.waitFor(async () => expect(await conversation.getByRole('article', { name: /^You, message / }).filter({ hasText: original }).count()).toBe(1), { timeout: 30000 });
+    await vi.waitFor(async () => expect(await conversation.getByRole('article', { name: /^AI, message / }).filter({ hasText: 'fixture-ok' }).count()).toBe(1), { timeout: 30000 });
+    expect(fixture.control.info()).toEqual(beforeProvider);
+    const afterSessions = await native.session.list({ directory: fixture.workspace, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    expect(afterSessions.data.map(item => item.id).sort()).toEqual(beforeIds);
+    expect(writes.slice(beforeWrites.length).filter(path => path === '/api/think/conversations' || /\/(messages|stop)$/.test(path))).toEqual([]);
+    expect(writes.slice(beforeWrites.length).filter(path => path === `${base}/resume`)).toHaveLength(1);
+    const messages = await native.message.list({ sessionID: nativeId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    expect(messages.data.filter(message => message.type === 'user' && message.text === original)).toHaveLength(1);
+  } finally {
+    try { await browser?.close(); } finally { await fixture.close(); }
+    await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+}, 240000);
+
 it('Ground 9ya.5 real browser resumes the same native chat after only the owned daemon restarts', async () => {
   const binary = process.env.OPENCODE_TEST_BINARY;
   if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
@@ -210,7 +306,10 @@ it('Ground 9ya.5 real browser resumes the same native chat after only the owned 
     await editor.fill('unsent after daemon restart');
     await vi.waitFor(async () => expect(await send.isEnabled()).toBe(true), { timeout: 30000 });
     expect(await editor.inputValue()).toBe('unsent after daemon restart');
-    expect(writes).toEqual(writesBefore);
+    const reloadWrites = writes.slice(writesBefore.length);
+    expect(reloadWrites.every(path => path === '/api/think/views' || path === '/api/think/selection')).toBe(true);
+    expect(reloadWrites.filter(path => path === '/api/think/views')).toHaveLength(2);
+    expect(reloadWrites.filter(path => path === '/api/think/selection').length).toBeGreaterThanOrEqual(2);
     expect(fixture.control.info()).toEqual(providerBefore);
     expect((await lstat(transcriptPath)).ino).toBe(fileBefore.ino);
     expect((await lstat(databasePath)).ino).toBe(databaseBefore.ino);

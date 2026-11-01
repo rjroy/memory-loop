@@ -57,7 +57,21 @@ export interface FormReplyReceipt extends CreateConversationCommand {
   failure?: { code: 'resource_failure' };
 }
 
-export type CommandReceipt = CreateReceipt | SendReceipt | StopReceipt | FormReplyReceipt;
+export type ResumeReceipt = CreateConversationCommand & { kind: 'resume'; epoch: string } & (
+  | { state: 'registered' | 'ready' | 'upstream-unconfirmed'; failure?: never }
+  | { state: 'rejected'; failure: { code: 'ownership_mismatch' | 'service_unavailable' } }
+);
+export interface ViewSelection { selectionRevision: number; conversationId: string | null; expiresAt: string }
+export interface ViewRegistration extends ViewSelection { viewToken: string }
+export interface SelectConversationCommand { viewToken: string; expectedRevision: number; conversationId: string | null }
+export interface RecentConversation {
+  conversationId: string; title: string | null; lastActivityAt: string; transcriptNoteId?: string[];
+  state: 'ready' | 'recovering' | 'unavailable' | 'deleting';
+  resume: { available: boolean; reason?: 'recovering' | 'unavailable' | 'deleting' };
+  delete: { available: boolean; reason?: 'current' | 'selected_elsewhere' | 'running' | 'status_unknown' | 'deleting' };
+}
+export interface RecentConversations { state: 'ready'; items: RecentConversation[] }
+export type CommandReceipt = CreateReceipt | SendReceipt | StopReceipt | FormReplyReceipt | ResumeReceipt;
 
 export interface TranscriptHealth {
   state: 'not-started' | 'writing' | 'up-to-date' | 'degraded' | 'retrying';
@@ -84,6 +98,8 @@ export interface ConversationState {
 export const thinkErrors = {
   invalid_request: { status: 400, message: 'Invalid Think request' },
   command_conflict: { status: 409, message: 'Command conflicts with a previous request' },
+  selection_conflict: { status: 409, message: 'Think selection has changed' },
+  lease_unavailable: { status: 403, message: 'Think view is unavailable' },
   not_found: { status: 404, message: 'Think resource not found' },
   think_unavailable: { status: 503, message: 'Think service is unavailable' },
   think_config_missing: { status: 503, message: 'Think setup is required' },

@@ -123,7 +123,10 @@ export const test = base.extend<object, { recallOrigin: string; captureVault: st
       const vault = join(fixture, 'vault');
       await mkdir(join(app, '.memory-loop'), { recursive: true, mode: 0o700 });
       await mkdir(join(vault, 'folder'), { recursive: true });
-      await writeFile(join(app, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault }));
+      // Real registry and lease service, deliberately without a native attachment.
+      // The nonexistent descriptor is confined to this owned fixture directory.
+      await writeFile(join(app, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault,
+        think: { service: { registrationFile: join(fixture, 'no-native-registration.json'), requiredVersion: '2.2.2' }, location: { kind: 'vault' }, permissionMode: 'full' } }));
       await writeFile(join(vault, 'alpha.md'), '# Alpha heading\n\nAlpha fixture body.\n');
       await writeFile(join(vault, 'folder', 'beta.md'), '# Beta heading\n\nBeta fixture body.\n');
       await writeFile(join(vault, 'danger.md'), hostileMarkdown);

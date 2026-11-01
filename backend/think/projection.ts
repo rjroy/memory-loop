@@ -1,5 +1,5 @@
 import type { BodyReader, BodyRef } from './body-store';
-import type { CommandReceipt, CreateReceipt, FormReplyReceipt, SendReceipt, StopReceipt } from './contract';
+import type { CommandReceipt } from './contract';
 
 export type CaptureCompleteness = 'complete' | 'incomplete' | 'unknown';
 export type ToolCategory = 'file-read' | 'file-write' | 'shell' | 'search' | 'subagent' | 'custom';
@@ -23,7 +23,7 @@ export type ProjectionEntry =
   | (ProjectionEntryBase & { kind: 'tool'; messageId: string; toolCallId: string; category: ToolCategory; state: ToolState; sourceTime?: number; durationMs?: number })
   /** Observed live boundary only; the native summary/error/provider payload is deliberately absent. */
   | (ProjectionEntryBase & { kind: 'compaction'; sessionId: string; eventId: string; phase: 'started' | 'ended' | 'failed'; sourceTime: number; sourceSequence: number })
-  | (ProjectionEntryBase & { kind: 'lifecycle'; commandKind: CommandReceipt['kind']; clientCommandId: string; runId?: string; state: CreateReceipt['state'] | SendReceipt['state'] | StopReceipt['state'] | FormReplyReceipt['state']; sourceTime?: number });
+  | (ProjectionEntryBase & { kind: 'lifecycle'; commandKind: CommandReceipt['kind']; clientCommandId: string; runId?: string; state: CommandReceipt['state']; sourceTime?: number });
 
 export interface ProjectionPage {
   conversationId: string;

@@ -36,7 +36,18 @@
 .ground-goals .markdown-document ul, .ground-goals .markdown-document ol { padding-left: 1.25rem; }
 .ground-goals .markdown-document li + li { margin-top: .625rem; }
 .ground-goals .markdown-document pre { max-width: 100%; overflow: auto; }
-.ground-captures { grid-column: 1 / -1; }
+.ground-conversations { container: conversations / inline-size; }
+.ground-conversation-list { list-style: none; padding: 0; margin: 0; }
+.ground-conversation-row { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: .5rem 1rem; padding: .875rem 0; }
+.ground-conversation-row:first-child { padding-top: 0; }
+.ground-conversation-row + .ground-conversation-row { border-top: 1px solid var(--rule); }
+.ground-conversation-row > .ground-handoff { grid-column: 1 / -1; scroll-margin-block: .5rem; }
+.ground-card .ground-conversation-title { font-weight: 600; line-height: 1.4; margin: 0; }
+.ground-conversation-time, .ground-conversation-current, .ground-conversation-unavailable { display: block; color: var(--muted); font-size: .875rem; line-height: 1.5; }
+.ground-conversation-current { margin-top: .125rem; }
+.ground-resume-link { display: inline-flex; align-items: center; justify-content: center; justify-self: start; min-height: 44px; min-width: 44px; padding: .5rem .625rem; font-weight: 600; border-radius: 4px; }
+.ground-resume-link[aria-disabled='true'] { text-decoration: none; }
+@container conversations (min-width: 27rem) { .ground-conversation-row { grid-template-columns: minmax(0, 1fr) auto; } }
 .ground-capture-list { list-style: none; padding: 0; margin: 0; }
 .ground-capture-list li + li { border-top: 1px solid var(--rule); }
 .ground-capture-link { display: block; min-height: 44px; padding: 1rem 0; text-decoration: none; }
@@ -60,6 +71,7 @@
 @container ground (min-width: 66rem) {
   .ground-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ground-goals { grid-column: auto; }
+  .ground-conversations { grid-column: span 2; }
 }
 @container actions (max-width: 26rem) { .ground-skill-action { width: 100%; } }
 @container ground (max-width: 14rem) {

@@ -43,15 +43,44 @@ function requestUrl(input: RequestInfo | URL): URL {
   return new URL(input instanceof Request ? input.url : String(input), window.location.origin);
 }
 
+/** Independent shell metadata, kept separate from Capture and vault operations. */
+export function leaseFixture() {
+  const token = 'fixture_view_token_012345678901234567890123456789';
+  const expiresAt = new Date(Date.now() + 120_000).toISOString();
+  let conversationId: string | null = null;
+  let selectionRevision = 0;
+  return (input: RequestInfo | URL, init?: RequestInit): Response | undefined => {
+    const url = requestUrl(input);
+    const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    if (url.origin !== window.location.origin || url.search) return;
+    if (url.pathname === '/api/think/views' && method === 'POST') {
+      if (JSON.stringify(JSON.parse(String(init?.body))) !== '{}') throw new Error('Invalid fixture registration');
+      return jsonResponse({ viewToken: token, selectionRevision: 0, conversationId: null, expiresAt }, 201);
+    }
+    if (url.pathname !== '/api/think/selection') return;
+    if (method === 'GET') {
+      if (new Headers(init?.headers).get('x-memory-loop-view') !== token) throw new Error('Invalid fixture view token');
+    } else if (method === 'POST') {
+      const command: { viewToken: string; expectedRevision: number; conversationId: string | null } = JSON.parse(String(init?.body));
+      if (command.viewToken !== token || command.expectedRevision !== selectionRevision) throw new Error('Invalid fixture selection');
+      if (conversationId !== command.conversationId) { conversationId = command.conversationId; selectionRevision++; }
+    } else return;
+    return jsonResponse({ selectionRevision, conversationId, expiresAt });
+  };
+}
+
 /** In-process fetch only; even malformed/unexpected calls can never reach a live daemon. */
 export function installVaultApi(options: {
   tree?: () => Response | Promise<Response>;
   note?: (id: VaultId) => Response | Promise<Response>;
 } = {}) {
   // Browser call signature only; Bun's extra static fetch.preconnect is not a UI API.
+  const lease = leaseFixture();
   const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input, init) => {
     const url = requestUrl(input);
     const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+    const metadata = lease(input, init);
+    if (metadata) return metadata;
     if (url.origin !== window.location.origin || method.toUpperCase() !== 'GET') {
       throw new Error('Unexpected non-local/read-only request in unit test');
     }
@@ -75,6 +104,20 @@ export function expectOnlyVaultReads(fetchMock: ReturnType<typeof installVaultAp
   for (const [input, init] of fetchMock.mock.calls) {
     const url = requestUrl(input);
     expect(url.origin).toBe(window.location.origin);
+    if (url.pathname === '/api/think/views' || url.pathname === '/api/think/selection') {
+      expect(url.search).toBe('');
+      expect(new Headers(init?.headers).has('authorization')).toBe(false);
+      const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+      if (url.pathname === '/api/think/views') { expect(method).toBe('POST'); expect(JSON.parse(String(init?.body))).toEqual({}); }
+      else if (method === 'GET') expect(new Headers(init?.headers).get('x-memory-loop-view')).toMatch(/^[A-Za-z0-9_-]{43,256}$/);
+      else {
+        expect(method).toBe('POST');
+        const command: unknown = JSON.parse(String(init?.body));
+        expect(command).toMatchObject({ viewToken: expect.stringMatching(/^[A-Za-z0-9_-]{43,256}$/), expectedRevision: expect.any(Number) });
+        expect(typeof command === 'object' && command !== null && 'conversationId' in command && (command.conversationId === null || typeof command.conversationId === 'string')).toBe(true);
+      }
+      continue;
+    }
     expect((init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()).toBe('GET');
     expect(['/api/vault/tree', '/api/vault/note']).toContain(url.pathname);
     expect([...url.searchParams.keys()]).toEqual(url.pathname.endsWith('/note') ? ['id'] : []);

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CaptureView from '../../src/views/CaptureView';
 import { usePresentation } from '../../src/shell/presentation';
 import { TestPresentation } from './fixtures/presentation';
-import { deferred, jsonResponse } from './fixtures/recall';
+import { deferred, jsonResponse, leaseFixture } from './fixtures/recall';
 
 type BrowserFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 let api: ReturnType<typeof vi.fn<BrowserFetch>>;
@@ -24,7 +24,11 @@ beforeEach(() => {
   window.sessionStorage.removeItem('memory-loop.think.current');
   device(false);
   api = vi.fn<BrowserFetch>(async () => jsonResponse({ ok: true }));
-  vi.stubGlobal('fetch', api);
+  const lease = leaseFixture();
+  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = lease(input, init);
+    return response ? Promise.resolve(response) : api(input, init);
+  });
 });
 afterEach(() => {
   if (originalUserAgentData) Object.defineProperty(navigator, 'userAgentData', originalUserAgentData);
@@ -194,6 +198,7 @@ it('keeps the pending draft and late save result across route navigation', async
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
     if (url.pathname === '/api/capture') return pending.promise;
     if (url.pathname === '/api/ground/recent-captures') return jsonResponse({ state: 'empty' });
+    if (url.pathname === '/api/ground/recent-conversations') return jsonResponse({ state: 'ready', items: [] });
     const resource = /^\/api\/ground\/(quick-actions|inspiration|prompts|goals)$/.exec(url.pathname);
     if (resource) return jsonResponse({ state: 'missing', noteId: ['03_Resources', 'Memory-Loop', `${resource[1]}.md`] });
     throw new Error(`Unexpected fixture request: ${url.pathname}`);

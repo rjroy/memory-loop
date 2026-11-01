@@ -48,6 +48,21 @@ const groundResponses: Record<string, { projected: object; upstream: object }> =
 const conversationId = '11111111-1111-4111-8111-111111111111';
 const commandId = '22222222-2222-4222-8222-222222222222';
 const epoch = '33333333-3333-4333-8333-333333333333';
+const viewToken = 'c'.repeat(64);
+const expiry = '2026-12-01T12:00:00.000Z';
+const recentPath = '/api/ground/recent-conversations';
+const resumePath = `/api/think/conversations/${conversationId}/resume`;
+const commandPath = `/api/think/conversations/${conversationId}/commands/${commandId}`;
+const selection = { selectionRevision: 1, conversationId, expiresAt: expiry };
+const resumeReceipt = { kind: 'resume', conversationId, clientCommandId: commandId, epoch, state: 'ready' };
+const recentItems = Array.from({ length: 10 }, (_, index) => ({
+  conversationId: `11111111-1111-4111-8111-${String(index + 1).padStart(12, '0')}`,
+  title: index === 0 ? null : `Fixture conversation ${index}`, lastActivityAt: '2026-11-01T12:00:00.000Z',
+  state: 'ready', resume: { available: true }, delete: { available: false, ...(index === 0 ? { reason: 'current' } : {}) },
+  ...(index === 1 ? { transcriptNoteId: ['Conversations', 'Memory Loop', 'fixture.md'] } : {}),
+}));
+let conversationFixture = false;
+let conversationOverride: { status: number; body: object } | undefined;
 const watchPath = `/api/think/conversations/${conversationId}/events`;
 const bodyRef = { key: { conversationId, owner: { kind: 'original', clientCommandId: commandId, messageId: 'msg_fixture_owned' } },
   epoch, contentId: '44444444-4444-4444-8444-444444444444', generation: '55555555-5555-4555-8555-555555555555', through: 123, kind: 'canonical', sha256: 'a'.repeat(64) };
@@ -208,6 +223,33 @@ describe('production Next HTTP boundary', () => {
       req.on('data', chunk => { body += chunk; });
       req.on('end', () => {
         calls.push({ url: req.url, method: req.method, headers: req.headers, body });
+        if (conversationFixture && (req.url === recentPath || req.url === '/api/think/views' || req.url === '/api/think/selection' || req.url === resumePath || req.url === commandPath)) {
+          if (!conversationOverride && req.url === '/api/think/selection' && req.method === 'GET' && !/^[a-f0-9]{64}$/.test(String(req.headers['x-memory-loop-view'] ?? ''))) {
+            res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { code: 'lease_unavailable', message: 'View is unavailable' } }));
+            return;
+          }
+          if (!conversationOverride && req.method === 'POST' && (req.url === '/api/think/views' || req.url === '/api/think/selection')) {
+            let input: unknown;
+            try { input = JSON.parse(body); } catch { input = null; }
+            const object = typeof input === 'object' && input !== null && !Array.isArray(input) ? input as Record<string, unknown> : null;
+            const valid = object && (req.url === '/api/think/views' ? Object.keys(object).length === 0 :
+              Object.keys(object).length === 3 && typeof object.viewToken === 'string' && /^[a-f0-9]{64}$/.test(object.viewToken) &&
+              typeof object.expectedRevision === 'number' && Number.isSafeInteger(object.expectedRevision) && object.expectedRevision >= 0 &&
+              (object.conversationId === null || object.conversationId === conversationId));
+            if (!valid) {
+              res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { code: 'invalid_request', message: 'Invalid Think request' } }));
+              return;
+            }
+          }
+          const status = req.url === '/api/think/views' ? 201 : req.url === resumePath ? 202 : 200;
+          const value = req.url === recentPath ? { state: 'ready', items: recentItems.map(item => ({ ...item, tokenHash: 'fixture-private-hash', resume: { ...item.resume, nativeDebug: 'fixture-private' } })), viewToken, nativeDebug: 'fixture-private' }
+            : req.url === '/api/think/views' ? { viewToken, selectionRevision: 0, conversationId: null, expiresAt: expiry, tokenHash: 'fixture-private-hash' }
+            : req.url === '/api/think/selection' ? { ...selection, viewToken, tokenHash: 'fixture-private-hash' }
+            : { ...resumeReceipt, nativeDebug: 'fixture-private' };
+          res.writeHead(conversationOverride?.status ?? status, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
+          res.end(JSON.stringify(conversationOverride?.body ?? value));
+          return;
+        }
         if (req.url && Object.hasOwn(groundResponses, req.url)) {
           res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
           res.end(JSON.stringify(groundMalformed ? { state: 'ready', noteId: ['..', 'fixture-private'], revision: 'bad', data: { markdown: 'fixture-private' } } : groundResponses[req.url].upstream));
@@ -319,11 +361,121 @@ describe('production Next HTTP boundary', () => {
       expect(calls).toHaveLength(1);
     } finally { groundMalformed = false; }
   });
-  it('Ground BFF does not expose recent conversations before their real operations exist', async () => {
-    calls = [];
-    const response = await request('/api/ground/recent-conversations');
-    expect(response.status).toBe(404);
-    expect(calls).toHaveLength(0);
+  describe('Ground conversation BFF', () => {
+    beforeAll(() => { conversationFixture = true; });
+    afterAll(() => { conversationFixture = false; conversationOverride = undefined; });
+
+    it.each([
+      { name: 'recent list', path: recentPath, method: 'GET', status: 200, body: undefined, expected: { state: 'ready', items: recentItems }, header: viewToken },
+      { name: 'recent list without view', path: recentPath, method: 'GET', status: 200, body: undefined, expected: { state: 'ready', items: recentItems } },
+      { name: 'mint view', path: '/api/think/views', method: 'POST', status: 201, body: {}, expected: { viewToken, selectionRevision: 0, conversationId: null, expiresAt: expiry } },
+      { name: 'read selection', path: '/api/think/selection', method: 'GET', status: 200, body: undefined, expected: selection, header: viewToken },
+      { name: 'select conversation', path: '/api/think/selection', method: 'POST', status: 200, body: { viewToken, expectedRevision: 0, conversationId }, expected: selection },
+      { name: 'resume', path: resumePath, method: 'POST', status: 202, body: { clientCommandId: commandId }, expected: resumeReceipt },
+      { name: 'lookup resume receipt', path: commandPath, method: 'GET', status: 200, body: undefined, expected: resumeReceipt },
+    ])('forwards and safely projects $name', async ({ path, method, status, body, expected, header }) => {
+      calls = [];
+      const payload = body === undefined ? undefined : JSON.stringify(body);
+      const response = await request(path, { origin: `http://127.0.0.1:${port}`, 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors',
+        authorization: 'Basic browser-secret', cookie: 'session=fixture', 'x-forwarded-host': 'fixture-hostile',
+        ...(header ? { 'x-memory-loop-view': header } : {}), ...(payload ? { 'content-type': 'application/json' } : {}) }, port, method, payload);
+      expect(response.status).toBe(status);
+      expect(JSON.parse(response.body)).toEqual(expected);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(response.body + JSON.stringify(response.headers) + output).not.toMatch(/fixture-private|browser-secret|session=fixture/);
+      expect(response.body + JSON.stringify(response.headers) + output).not.toContain(token);
+      if (path !== '/api/think/views') expect(response.body).not.toContain(viewToken);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ url: path, method, body: payload ?? '' });
+      expect(calls[0].headers.authorization).toBe(`Bearer ${token}`);
+      for (const key of ['cookie', 'origin', 'sec-fetch-site', 'sec-fetch-mode', 'x-forwarded-host']) expect(calls[0].headers[key]).toBeUndefined();
+      expect(calls[0].headers['x-memory-loop-view']).toBe(header);
+    });
+
+    it.each([
+      { path: recentPath, method: 'GET', body: undefined },
+      { path: '/api/think/views', method: 'POST', body: '{}' },
+      { path: '/api/think/selection', method: 'GET', body: undefined },
+      { path: '/api/think/selection', method: 'POST', body: JSON.stringify({ viewToken, expectedRevision: 0, conversationId }) },
+      { path: resumePath, method: 'POST', body: JSON.stringify({ clientCommandId: commandId }) },
+    ])('denies hostile origin before dispatch for $method $path', async ({ path, method, body }) => {
+      calls = [];
+      const response = await request(path, { origin: 'https://hostile.invalid', 'x-memory-loop-view': viewToken, 'content-type': 'application/json' }, port, method, body);
+      expect(response.status).toBe(403);
+      expect(calls).toHaveLength(0);
+    });
+
+    it.each([
+      { name: 'caller-chosen token', path: '/api/think/views', method: 'POST', body: { viewToken }, status: 400 },
+      { name: 'invalid revision', path: '/api/think/selection', method: 'POST', body: { viewToken, expectedRevision: -1, conversationId }, status: 400 },
+      { name: 'invalid selection token', path: '/api/think/selection', method: 'POST', body: { viewToken: 'bad', expectedRevision: 0, conversationId }, status: 400 },
+      { name: 'missing read token', path: '/api/think/selection', method: 'GET', body: undefined, status: 403 },
+    ])('rejects $name', async ({ path, method, body, status }) => {
+      calls = [];
+      const response = await request(path, body ? { 'content-type': 'application/json' } : {}, port, method, body ? JSON.stringify(body) : undefined);
+      expect(response.status).toBe(status);
+      expect(response.body).not.toContain(viewToken);
+    });
+
+    it.each([
+      { name: 'invalid expiry', path: '/api/think/selection', method: 'GET', upstream: { ...selection, expiresAt: 'not-a-date', private: 'fixture-private' }, status: 200 },
+      { name: 'wrong status', path: '/api/think/views', method: 'POST', upstream: { viewToken, selectionRevision: 0, conversationId: null, expiresAt: expiry, private: 'fixture-private' }, status: 200 },
+      { name: 'eleven rows', path: recentPath, method: 'GET', upstream: { state: 'ready', items: [...recentItems, recentItems[0]], private: 'fixture-private' }, status: 200 },
+      { name: 'mismatched resume target', path: resumePath, method: 'POST', upstream: { ...resumeReceipt, conversationId: commandId, private: 'fixture-private' }, status: 202 },
+    ])('sanitizes $name from upstream', async ({ path, method, upstream: value, status }) => {
+      calls = [];
+      conversationOverride = { status, body: value };
+      try {
+        const body = path === resumePath ? JSON.stringify({ clientCommandId: commandId }) : method === 'POST' ? '{}' : undefined;
+        const response = await request(path, { 'x-memory-loop-view': viewToken, ...(body ? { 'content-type': 'application/json' } : {}) }, port, method, body);
+        expect(response.status).toBe(503);
+        expect(response.body + JSON.stringify(response.headers)).not.toMatch(/fixture-private|cccccccc/);
+        expect(calls).toHaveLength(1);
+      } finally { conversationOverride = undefined; }
+    });
+
+    it.each([
+      { name: 'stale selection', status: 409, code: 'selection_conflict', method: 'POST', body: JSON.stringify({ viewToken, expectedRevision: 0, conversationId }) },
+      { name: 'unknown lease', status: 403, code: 'lease_unavailable', method: 'GET', body: undefined },
+    ])('preserves controlled $name without upstream details', async ({ status, code, method, body }) => {
+      calls = [];
+      conversationOverride = { status, body: { error: { code, message: 'fixture-private', tokenHash: 'fixture-private' } } };
+      try {
+        const response = await request('/api/think/selection', { 'x-memory-loop-view': viewToken, ...(body ? { 'content-type': 'application/json' } : {}) }, port, method, body);
+        expect(response.status).toBe(status);
+        expect(JSON.parse(response.body)).toMatchObject({ error: { code } });
+        expect(response.body).not.toMatch(/fixture-private|cccccccc/);
+        expect(calls).toHaveLength(1);
+      } finally { conversationOverride = undefined; }
+    });
+
+    it.each([
+      { path: `${recentPath}?unknown=1`, status: 400 },
+      { path: '/api/think/selection?viewToken=cccc', status: 404 },
+    ])('rejects query on fixed target $path without dispatch', async ({ path, status }) => {
+      calls = [];
+      const response = await request(path, { 'x-memory-loop-view': viewToken });
+      expect(response.status).toBe(status);
+      expect(calls).toHaveLength(0);
+    });
+    it('does not forward view tokens to unrelated Ground or Think reads', async () => {
+      calls = [];
+      for (const path of ['/api/ground/goals', `/api/think/conversations/${conversationId}`]) {
+        expect((await request(path, { 'x-memory-loop-view': viewToken })).status).toBe(200);
+      }
+      expect(calls).toHaveLength(2);
+      for (const call of calls) expect(call.headers['x-memory-loop-view']).toBeUndefined();
+    });
+    it.each([
+      { path: '/api/think/selection', status: 405 },
+      { path: '/api/think/selection?unknown=1', status: 404 },
+    ])('applies fixed-target classification for wrong method $path', async ({ path, status }) => {
+      calls = [];
+      const response = await request(path, {}, port, 'PUT');
+      expect(response.status).toBe(status);
+      expect(calls).toHaveLength(0);
+    });
   });
 
   it('projects only validated authoritative Send eligibility on the real Next snapshot boundary', async () => {

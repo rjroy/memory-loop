@@ -29,7 +29,7 @@ test('real Ground resources render safely and a capture opens its source in Reca
   const externalRequests: string[] = [];
   page.on('request', request => { if (request.url().includes('ground-fixture.png')) externalRequests.push(request.url()); });
   await page.goto('/ground');
-  for (const name of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures']) {
+  for (const name of ['Quick Actions', 'Inspiration', 'Prompts', 'Current Goals', 'Recent captures', 'Recent conversations']) {
     await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
   }
   await expect(page.getByRole('button', { name: /A fictional fixture action.*@fixture-skill/ })).toBeVisible();
@@ -41,7 +41,8 @@ test('real Ground resources render safely and a capture opens its source in Reca
   await expect(page.getByRole('checkbox')).toBeDisabled();
   expect(await page.evaluate(() => 'groundFixtureScriptRan' in window)).toBe(false);
   expect(externalRequests).toEqual([]);
-  await expect(page.getByRole('heading', { name: 'Recent conversations' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Recent conversations' }).getByText('No recent conversations yet.')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Recent conversations' }).getByRole('button', { name: /delete/i })).toHaveCount(0);
   const captures = page.getByRole('region', { name: 'Recent captures' }).getByRole('link');
   await expect(captures).toHaveCount(5);
   expect(await captures.allTextContents()).toEqual(expect.arrayContaining([
@@ -89,11 +90,26 @@ test('keyboard confirmation keeps focused Cancel in view at 200% text on a small
     Object.defineProperty(window, 'EventSource', { value: FixtureWatch });
   }, { conversationId, epoch });
   const unexpectedRequests: string[] = [];
+  const viewToken = 'fixture_view_token_012345678901234567890123456789';
+  let selected: string | null = null;
+  let selectionRevision = 0;
+  const expiresAt = new Date(Date.now() + 120_000).toISOString();
   await page.route('**/api/think/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
     const base = `/api/think/conversations/${conversationId}`;
-    if (request.method() === 'GET' && url.pathname === base) {
+    if (request.method() === 'POST' && url.pathname === '/api/think/views' && JSON.stringify(request.postDataJSON()) === '{}') {
+      await route.fulfill({ status: 201, json: { viewToken, selectionRevision: 0, conversationId: null, expiresAt } });
+    } else if (request.method() === 'GET' && url.pathname === '/api/think/selection' && request.headers()['x-memory-loop-view'] === viewToken) {
+      await route.fulfill({ json: { selectionRevision, conversationId: selected, expiresAt } });
+    } else if (request.method() === 'POST' && url.pathname === '/api/think/selection') {
+      const body: unknown = request.postDataJSON();
+      if (typeof body !== 'object' || body === null || !('viewToken' in body) || body.viewToken !== viewToken || !('expectedRevision' in body) || body.expectedRevision !== selectionRevision || !('conversationId' in body) || !(body.conversationId === null || body.conversationId === conversationId)) {
+        unexpectedRequests.push('invalid fixture selection'); await route.abort(); return;
+      }
+      if (selected !== body.conversationId) { selected = body.conversationId; selectionRevision++; }
+      await route.fulfill({ json: { selectionRevision, conversationId: selected, expiresAt } });
+    } else if (request.method() === 'GET' && url.pathname === base) {
       await route.fulfill({ json: { conversationId, epoch, revision: 1, creation: 'ready', sendEligibility: 'available', entries: [] } });
     } else if (request.method() === 'GET' && url.pathname === `${base}/decisions`) {
       await route.fulfill({ json: { decisions: [] } });

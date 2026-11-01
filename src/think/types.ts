@@ -15,18 +15,26 @@ export interface ThinkDraft {
   readonly version: number;
 }
 
-export type ThinkHandoffSource = 'quickActions' | 'prompts';
+export type ThinkHandoffSource = 'quickActions' | 'prompts' | 'conversations';
 export interface ThinkPrefillRequest {
   readonly kind: 'fresh-prefill';
   readonly text: string;
-  readonly source: ThinkHandoffSource;
+  readonly source: 'quickActions' | 'prompts';
   readonly triggerId: string;
 }
+export interface ThinkResumeRequest {
+  readonly kind: 'resume';
+  readonly conversationId: string;
+  readonly source: 'conversations';
+  readonly triggerId: string;
+}
+export type ThinkHandoffRequest = ThinkPrefillRequest | ThinkResumeRequest;
 export interface ThinkHandoffState {
   readonly source: ThinkHandoffSource;
   readonly triggerId: string;
   readonly phase: 'confirm' | 'starting' | 'checking' | 'unavailable' | 'rejected' | 'stale';
   readonly canCheck: boolean;
+  readonly kind: ThinkHandoffRequest['kind'];
 }
 export interface ThinkMessageFocus { readonly conversationId: string; readonly token: string }
 
@@ -117,6 +125,8 @@ export interface ThinkPresentationState {
   readonly rejectedSubmissions: readonly ThinkRejectedSubmission[];
   /** One explicit Ground handoff, not routine route/message focus. */
   readonly messageFocus?: ThinkMessageFocus;
+  readonly selectionUnavailable?: boolean;
+  readonly mutationsAvailable?: boolean;
 }
 
 /** Identity arguments bind delayed actions to the chat that originated them. */

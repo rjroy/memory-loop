@@ -32,6 +32,24 @@ export interface RegisteredConversation extends OwnedConversation {
   createdAt: number;
   creation: CreateReceipt['state'];
   selection: Pick<NativeSession, 'agent' | 'model' | 'permissions'> | null;
+  purpose: 'think' | 'ground-generation';
+  lifecycle: 'live' | 'deleting';
+  rowVersion: number;
+}
+export interface CanonicalActivity { messageId: string; ordinal: number; sha256: string; length: number; at: number }
+export interface RecentRegistration {
+  conversationId: string; title: string | null; lastActivityAt: number; rowVersion: number;
+  lifecycle: RegisteredConversation['lifecycle']; owner: RegisteredConversation | null; uncertain: boolean;
+}
+export interface StoredView { conversationId: string | null; selectionRevision: number; expiresAt: number }
+/** Concrete recent-chat/selection operations; all writes are short local transactions. */
+export interface ConversationStateStore {
+  recent(directory: string): RecentRegistration[];
+  canonical(conversationId: string, facts: readonly CanonicalActivity[]): void;
+  mintView(tokenHash: string, now: number): StoredView;
+  view(tokenHash: string, now: number): StoredView | null;
+  select(tokenHash: string, revision: number, conversationId: string | null, now: number, directory: string): StoredView;
+  protection(conversationId: string, tokenHash: string | null, now: number): 'current' | 'selected_elsewhere' | undefined;
 }
 export interface CommandPosition { commandId: string }
 export interface ThinkRegistryReader {
@@ -86,7 +104,7 @@ export interface TranscriptStateStore {
 }
 
 export class ThinkStateError extends Error {
-  constructor(readonly code: 'conflict' | 'unavailable') {
+  constructor(readonly code: 'conflict' | 'unavailable' | 'selection_conflict' | 'lease_unavailable' | 'not_found') {
     super('Think durable state is unavailable or conflicts with this command');
     this.name = 'ThinkStateError';
   }
@@ -99,6 +117,7 @@ export interface ThinkStateStore {
   readonly transcripts?: TranscriptStateStore;
   /** SQLite supplies registry reads; admission-only controlled adapters may omit them. */
   readonly registry?: ThinkRegistryReader;
+  readonly conversations: ConversationStateStore;
   command(commandId: string): StoredCommand | null;
   registerConversation(conversation: OwnedConversation, receipt: CreateReceipt, registeredAt: number): void;
   registerCommand(receipt: Exclude<CommandReceipt, CreateReceipt>, original: Uint8Array | null, digest: string | null, registeredAt: number): void;

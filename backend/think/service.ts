@@ -1,4 +1,4 @@
-import type { CommandReceipt, ConversationState, CreateConversationCommand, CreateReceipt, FormDecision, FormReplyCommand, FormReplyReceipt, SendCommand, SendReceipt, StopCommand, StopReceipt, ThinkErrorCode } from './contract';
+import type { CommandReceipt, ConversationState, CreateConversationCommand, CreateReceipt, FormDecision, FormReplyCommand, FormReplyReceipt, RecentConversations, ResumeReceipt, SelectConversationCommand, SendCommand, SendReceipt, StopCommand, StopReceipt, ViewRegistration, ViewSelection } from './contract';
 import type { FormInfo, SessionCreateInput } from '@opencode/client';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isAbsolute, normalize } from 'node:path';
@@ -7,23 +7,17 @@ import type { BodyKey, BodyReader, BodyRef, BodyStore, PreviewBodyRef } from './
 import type { OriginalCaptureState, ProjectionEntry, ProjectionPage, ThinkContentReader } from './projection';
 import type { ContentChunk, ContentChunkRequest } from './content-transfer';
 import { createTranscriptWriter, type TranscriptOptions } from './transcript';
-import { ThinkStateError, type RegisteredConversation, type ThinkOwner, type ThinkStateStore } from './state';
-import { missingConfirmedText, projectNativeMessage, restoreHistory, terminalSend } from './history';
+import { ThinkStateError, type CanonicalActivity, type RegisteredConversation, type ThinkOwner, type ThinkStateStore } from './state';
+import { canonicalActivities, missingConfirmedText, projectNativeMessage, restoreHistory, terminalSend } from './history';
+import { createConversationService, type ConversationAvailability } from './conversations';
+import { ThinkServiceError } from './errors';
+export { ThinkServiceError, type ThinkServiceErrorCode } from './errors';
 
 export type ConversationSnapshot = ConversationState & Pick<ProjectionPage, 'entries' | 'contentHealth' | 'nextCursor'>;
 export interface ConversationWatch {
   snapshot: ConversationSnapshot;
   next(): Promise<ConversationState | null>;
   close(): void;
-}
-
-export type ThinkServiceErrorCode = Exclude<ThinkErrorCode, 'think_config_missing' | 'think_config_invalid'>;
-
-export class ThinkServiceError extends Error {
-  constructor(readonly code: ThinkServiceErrorCode) {
-    super('Think service request failed');
-    this.name = 'ThinkServiceError';
-  }
 }
 
 /** Daemon-lifetime ownership boundary; request cancellation does not cancel accepted work. */
@@ -39,6 +33,11 @@ export interface ThinkService {
   decisions(conversationId: string): Promise<FormDecision[]>;
   decision(conversationId: string, decisionId: string): Promise<FormDecision | null>;
   reply(command: FormReplyCommand): Promise<FormReplyReceipt>;
+  recentConversations(viewToken?: string): Promise<RecentConversations>;
+  resume(command: CreateConversationCommand): Promise<ResumeReceipt>;
+  registerView(): Promise<ViewRegistration>;
+  selection(viewToken: string): Promise<ViewSelection>;
+  select(command: SelectConversationCommand): Promise<ViewSelection>;
   close(): Promise<void>;
   content: ThinkContentReader;
 }
@@ -58,6 +57,8 @@ export interface ThinkServiceOptions {
   transcript?: TranscriptOptions;
   /** Production prepareServer always supplies durable state; direct fixtures can inject this seam. */
   state?: ThinkStateStore;
+  /** Operator-selected new-chat defaults; stored creation selections govern restored chats. */
+  validateCreation?(signal: AbortSignal): Promise<void>;
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -66,6 +67,7 @@ function copyReceipt(receipt: CommandReceipt): CommandReceipt {
   if (receipt.kind === 'create' && receipt.state === 'rejected') return { ...receipt, failure: { ...receipt.failure } };
   if (receipt.kind === 'send' && receipt.failure) return { ...receipt, failure: { ...receipt.failure } };
   if (receipt.kind === 'form-reply' && receipt.failure) return { ...receipt, failure: { ...receipt.failure } };
+  if (receipt.kind === 'resume' && receipt.state === 'rejected') return { ...receipt, failure: { ...receipt.failure } };
   return { ...receipt };
 }
 
@@ -101,6 +103,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   const activityUnknown = new Set<string>();
   const checkpointReadsPending = new Set<string>();
   const hydrations = new Map<string, Promise<void>>();
+  const activityWritesPending = new Set<string>();
   const watchers = new Map<string, Set<(state: ConversationState | null) => void>>();
   function setConversation(id: string, state: ConversationState): void {
     const previous = conversations.get(id);
@@ -181,7 +184,10 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   }
 
   function stateFailure(error: unknown): never {
-    if (error instanceof ThinkStateError && error.code === 'conflict') throw new ThinkServiceError('command_conflict');
+    if (error instanceof ThinkStateError) {
+      if (error.code === 'conflict') throw new ThinkServiceError('command_conflict');
+      if (error.code !== 'unavailable') throw new ThinkServiceError(error.code);
+    }
     disablePersistence();
     throw new ThinkServiceError('think_unavailable');
   }
@@ -207,6 +213,17 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     catch {
       // Native observations remain factual in memory; a failed local write is never a native rejection.
       disablePersistence();
+    }
+  }
+
+  function persistCanonical(conversationId: string, facts: readonly CanonicalActivity[]): void {
+    if (!options.state || !facts.length) return;
+    try { options.state.conversations.canonical(conversationId, facts); activityWritesPending.delete(conversationId); }
+    catch {
+      // Derivative recency failure never rewrites a native outcome or stops accepted work.
+      // Keep retrying the verified source; do not present stale activity as a complete recent card.
+      activityWritesPending.add(conversationId);
+      console.info('think_activity_outcome', { status: 'unavailable' });
     }
   }
 
@@ -336,7 +353,8 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     for (const conversationId of conversations.keys()) {
       // Restored completed chats need no continual history polling without a reader or unresolved work.
       if (restoredOwners.has(conversationId) && !watchers.has(conversationId) && !activeRuns.has(conversationId) &&
-          !activeSessions.has(conversationId) && !activityUnknown.has(conversationId) && !checkpointReadsPending.has(conversationId) && !missingCanonical.get(conversationId)?.size) continue;
+          !activeSessions.has(conversationId) && !activityUnknown.has(conversationId) && !checkpointReadsPending.has(conversationId) &&
+          !activityWritesPending.has(conversationId) && !missingCanonical.get(conversationId)?.size) continue;
       if (!refreshes.get(conversationId)?.running) requestRefresh(conversationId);
     }
   }, 5000);
@@ -410,7 +428,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       inbox?.some(item => item.type === 'user' && item.sessionID === sessionID && item.id === messageID) === true);
   }
 
-  async function nativeCall<T>(controller: AbortController, operation: 'create' | 'readback' | 'monitor-connect' | 'prompt' | 'inbox-list' | 'inbox-cancel' | 'interrupt' | 'status' | 'active' | 'history' | 'identity' | 'form-list' | 'form-get' | 'form-reply' | 'permission-list' | 'message-get', call: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  async function nativeCall<T>(controller: AbortController, operation: 'create' | 'creation-selection' | 'readback' | 'monitor-connect' | 'prompt' | 'inbox-list' | 'inbox-cancel' | 'interrupt' | 'status' | 'active' | 'history' | 'identity' | 'form-list' | 'form-get' | 'form-reply' | 'permission-list' | 'message-get', call: (signal: AbortSignal) => Promise<T>): Promise<T> {
     console.info('think_native_attempt', { operation });
     const signal = controller.signal;
     if (signal.aborted) {
@@ -516,11 +534,19 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
 
   async function verifyBeforeCreate(): Promise<void> {
     const controller = new AbortController();
-    const check = verifyIdentity(controller);
-    const owned = check.then(() => {});
+    const check = (async () => {
+      if (!await verifyIdentity(controller)) throw new ThinkServiceError('think_unavailable');
+      if (options.validateCreation) {
+        const validateCreation = options.validateCreation;
+        try { await nativeCall(controller, 'creation-selection', signal => validateCreation(signal)); }
+        catch { throw new ThinkServiceError('think_unavailable'); }
+        if (!await verifyIdentity(controller)) throw new ThinkServiceError('think_unavailable');
+      }
+    })();
+    const owned = check.catch(() => {});
     tasks.set(controller, owned);
     try {
-      if (!await check) throw new ThinkServiceError('think_unavailable');
+      await check;
       requireAvailable();
     } finally { tasks.delete(controller); }
   }
@@ -692,7 +718,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     if (hydrations.size >= 2) throw new ThinkServiceError('think_unavailable');
     const registered = stateOperation(() => registry.conversation(conversationId));
     if (!registered) return; // Native metadata alone never authorizes adoption.
-    if (registered.directory !== directory || registered.creation === 'rejected') throw new ThinkServiceError('think_unavailable');
+    if (registered.directory !== directory || registered.creation === 'rejected' || registered.lifecycle !== 'live' || registered.purpose !== 'think') throw new ThinkServiceError('think_unavailable');
     const controller = new AbortController();
     const task = Promise.resolve().then(async () => {
       console.info('think_hydration_attempt', { conversationId });
@@ -715,6 +741,9 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         ]);
         if (!matchesRegistered(current, registered) || !await verifyIdentity(controller) || closed || controller.signal.aborted ||
             monitor !== monitored || !monitored.healthy || monitored.generation !== generation) throw new Error('Hydration authority changed');
+        const latest = stateOperation(() => registry.conversation(conversationId));
+        if (!latest || latest.lifecycle !== 'live' || latest.rowVersion !== registered.rowVersion) throw new Error('Hydration registry changed');
+        persistCanonical(conversationId, history.activities);
         const unresolved = history.commands.filter(command => command.receipt.kind === 'send' && !terminalSend(command.receipt.state));
         if (unresolved.length > 1) throw new Error('Multiple unresolved Send reservations');
         // Transcript read failure is a logging gap, never failure of original admission or native work.
@@ -872,6 +901,8 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (runId && !run) break;
           const sessionID = `ses_memoryloop_${conversationId.replaceAll('-', '')}`;
           const promptID = run?.nativeMessageId;
+          const registryAtStart = options.state?.registry?.conversation(conversationId);
+          if (registryAtStart && (registryAtStart.lifecycle !== 'live' || registryAtStart.purpose !== 'think')) break;
           if (!await verifyIdentity(controller)) break;
           // A failed read cancels its batch, not the owner needed to fence successful observations.
           const batch = new AbortController();
@@ -922,12 +953,14 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           const captured: ProjectionEntry[] = [];
           const succeededKeys = new Set<string>();
           const failedKeys = new Set<string>();
+          const activities: CanonicalActivity[] = [];
           do {
             const page = await nativeCall(controller, 'history', signal => native.listMessages(cursor
               ? { sessionID, cursor, limit: 50 } : { sessionID, order: 'asc', limit: 50 }, signal));
             for (const message of page.data) {
               const projected = await projectNativeMessage(conversationId, message, bodies, projections.get(conversationId) ?? [], runId && userTime !== undefined ? runId : undefined);
               captured.push(...projected.entries);
+              activities.push(...canonicalActivities(message, projected.entries));
               for (const key of projected.succeeded) succeededKeys.add(key);
               for (const key of projected.missing) failedKeys.add(key);
               if (message.type === 'user') {
@@ -954,6 +987,10 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (!await verifyIdentity(controller)) break;
           if (state.generation !== generation) continue;
           if (closed || identityChanged || monitor !== monitored || !monitor?.healthy || monitored.generation !== monitorGeneration || activeRuns.get(conversationId) !== runId) break;
+          const registration = options.state?.registry?.conversation(conversationId);
+          if (registration && (registration.lifecycle !== 'live' || registration.purpose !== 'think')) break;
+          if (registryAtStart && (!registration || registration.rowVersion !== registryAtStart.rowVersion)) continue;
+          persistCanonical(conversationId, activities);
           const wasIncomplete = (missingCanonical.get(conversationId)?.size ?? 0) > 0;
           let missing = missingCanonical.get(conversationId);
           if (!missing) { missing = new Set(); missingCanonical.set(conversationId, missing); }
@@ -1099,7 +1136,62 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     return { conversationId, epoch, revision: state.revision, entries: page, contentHealth: (missingCanonical.get(conversationId)?.size ?? 0) > 0 ? 'incomplete' : 'complete', ...(nextCursor ? { nextCursor } : {}) };
   }
 
+  function managedState(): ThinkStateStore {
+    requireOpen();
+    if (!options.state?.registry) throw new ThinkServiceError('think_unavailable');
+    return options.state;
+  }
+
+  /** A bounded read, not history hydration or native mutation. Private version checks follow all external calls. */
+  async function inspectConversation(owner: RegisteredConversation, deadline?: AbortSignal): Promise<ConversationAvailability> {
+    requireOpen();
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    deadline?.addEventListener('abort', abort, { once: true });
+    if (deadline?.aborted) controller.abort();
+    const task = (async (): Promise<ConversationAvailability> => {
+      let session: Awaited<ReturnType<NativeSessions['getSession']>>;
+      let active: Awaited<ReturnType<NativeSessions['activeSessions']>>;
+      let inbox: Awaited<ReturnType<NativeSessions['listInbox']>>;
+      const unavailable: ConversationAvailability = { state: 'unavailable', busy: false, uncertain: true };
+      try {
+        if (!await verifyIdentity(controller)) return unavailable;
+        [session, active, inbox] = await Promise.all([
+          nativeCall(controller, 'status', signal => native.getSession({ sessionID: owner.nativeSessionId }, signal)),
+          nativeCall(controller, 'active', signal => native.activeSessions(signal)),
+          nativeCall(controller, 'inbox-list', signal => native.listInbox({ sessionID: owner.nativeSessionId }, signal)),
+        ]);
+        if (!await verifyIdentity(controller)) return unavailable;
+      } catch { return unavailable; }
+      requireOpen();
+      if (controller.signal.aborted || identityChanged) return unavailable;
+      const latest = stateOperation(() => managedState().registry?.conversation(owner.conversationId));
+      if (!latest || latest.lifecycle !== 'live') return { ...unavailable, state: latest?.lifecycle === 'deleting' ? 'deleting' : 'unavailable' };
+      if (!matchesRegistered(session, owner)) { invalidateOwnership(owner.conversationId); return { ...unavailable, ownershipMismatch: true }; }
+      if (latest.rowVersion !== owner.rowVersion) return { ...unavailable, state: 'recovering' };
+      const busy = nativeBusy(session) || inbox.length > 0 || Object.keys(active).some(id => id === owner.nativeSessionId || childConversations.get(id) === owner.conversationId);
+      return { state: owner.creation === 'ready' ? 'ready' : 'recovering', busy, uncertain: false };
+    })();
+    tasks.set(controller, task.then(() => {}, () => {}));
+    try { return await task; } finally { tasks.delete(controller); deadline?.removeEventListener('abort', abort); }
+  }
+
+  const registryConversations = createConversationService({ state: options.state, directory, epoch, clock,
+    requireOpen, onPersistenceFailure: disablePersistence, activityPending: () => activityWritesPending.size > 0,
+    commands: { previous: previousCommand, pending: id => preparingReplies.has(id), remember: receipt => { commands.set(receipt.clientCommandId, receipt); } },
+    native: { inspect: inspectConversation, async prepare(conversationId) {
+      await ensureConversation(conversationId);
+      const current = stateOperation(() => managedState().registry?.conversation(conversationId));
+      const observed = current ? await inspectConversation(current) : { state: 'unavailable' as const, busy: false, uncertain: true };
+      return conversations.get(conversationId)?.creation === 'ready' ? observed : { state: 'unavailable', busy: false, uncertain: true };
+    } } });
+
   const service: ThinkService = {
+    registerView: registryConversations.registerView,
+    selection: registryConversations.selection,
+    select: registryConversations.select,
+    recentConversations: registryConversations.recentConversations,
+    resume: registryConversations.resume,
     content: {
       async page(conversationId, cursor) {
         requireOpen();
@@ -1445,11 +1537,14 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       if (typeof conversationId !== 'string' || !uuid.test(conversationId) ||
           typeof clientCommandId !== 'string' || !uuid.test(clientCommandId)) throw new ThinkServiceError('invalid_request');
       const receipt = previousCommand(clientCommandId);
+      if (receipt?.conversationId === conversationId && receipt.kind === 'resume' &&
+          (receipt.state === 'registered' || receipt.state === 'upstream-unconfirmed')) return service.resume({ conversationId, clientCommandId });
       return receipt?.conversationId === conversationId ? copyReceipt(receipt) : null;
     },
     async close() {
       if (!closing) {
         closed = true;
+        const registryClose = registryConversations.close();
         const transcriptClose = transcripts.close();
         void transcriptClose.catch(() => {});
         for (const listeners of watchers.values()) for (const notify of listeners) notify(null);
@@ -1459,12 +1554,19 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         const ownedMonitor = monitor;
         ownedMonitor?.controller.abort();
         for (const [controller] of pending) controller.abort();
-        closing = Promise.all([...pending.map(([, task]) => task), ...(ownedMonitor ? [ownedMonitor.task] : [])]).then(async () => {
-          await Promise.allSettled([...transferWork]);
-          await Promise.all([...transfers.values()].map(transfer => transfer.reader.close()));
-          transfers.clear();
-          try { await transcriptClose; } finally { try { await bodies.close(); } finally { options.state?.close(); } }
-        });
+        closing = (async () => {
+          try {
+            const settled = await Promise.allSettled([...pending.map(([, task]) => task), ...(ownedMonitor ? [ownedMonitor.task] : []), registryClose]);
+            const failed = settled.find(result => result.status === 'rejected');
+            if (failed?.status === 'rejected') throw failed.reason;
+          } finally {
+            try {
+              await Promise.allSettled([...transferWork]);
+              await Promise.all([...transfers.values()].map(transfer => transfer.reader.close()));
+              transfers.clear();
+            } finally { try { await transcriptClose; } finally { try { await bodies.close(); } finally { options.state?.close(); } } }
+          }
+        })();
       }
       await closing;
     },

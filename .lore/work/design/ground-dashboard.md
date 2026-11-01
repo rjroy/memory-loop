@@ -12,7 +12,7 @@ Implementation-ready UX proposal for `memory-loop-9ya.1`, following approval of
 the Ground implementation plan. The [composition](ground-dashboard/index.html)
 is a static design artifact with fictional notes, questions, goals and chats;
 its actions do not contact the application. [Before](ground-dashboard/before.html)
-reconstructs the current placeholder from its source and existing stylesheet.
+reconstructs the pre-Ground placeholder from its source and existing stylesheet.
 Neither is a live Ground implementation or evidence of real vault access.
 
 ## Authority and direction

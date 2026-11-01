@@ -7,10 +7,11 @@ interface QuestionProps {
   identity: ThinkKnownIdentity;
   question: Question;
   actions: ThinkPresentationActions;
+  canReply?: boolean;
 }
 
 /** Only ordinary, session-owned questions enter this component. Never approvals. */
-export default function ThinkQuestion({ identity, question, actions }: QuestionProps) {
+export default function ThinkQuestion({ identity, question, actions, canReply = true }: QuestionProps) {
   const id = useId();
   const [validation, setValidation] = useState('');
   const detail = question.detail;
@@ -33,7 +34,7 @@ export default function ThinkQuestion({ identity, question, actions }: QuestionP
     <h2 id={`${id}-title`}>{detail.title}</h2>
     <form onSubmit={event => {
       event.preventDefault();
-      if (pending || settled) return;
+      if (pending || settled || !canReply) return;
       for (const field of fields) {
         if (field.type !== 'multiselect') continue;
         const selected = answer[field.key];
@@ -91,7 +92,7 @@ export default function ThinkQuestion({ identity, question, actions }: QuestionP
       </fieldset>
       {validation && <p className="think-exception" role="alert">{validation}</p>}
       {settled ? <p className="think-exception">This question was already answered or changed.</p>
-        : <><button type="submit" className="think-button think-secondary" disabled={pending}>{pending ? 'Sending answer…' : 'Send answer'}</button>
+        : <><button type="submit" className="think-button think-secondary" disabled={pending || !canReply}>{pending ? 'Sending answer…' : 'Send answer'}</button>
           {question.reply === 'rejected' && <p className="think-exception">The answer wasn’t accepted. Check your answers.</p>}</>}
     </form>
   </section>;

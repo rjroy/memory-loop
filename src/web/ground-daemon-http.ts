@@ -3,12 +3,13 @@ import { request } from 'node:http';
 import { isGroundRoute } from './ground-bff';
 
 /** The daemon rejects browser Fetch Metadata; forward only fixed routes via Node HTTP. */
-export async function groundDaemonFetch(target: URL, options: { token: string; signal: AbortSignal; limit: number }): Promise<Response> {
+export async function groundDaemonFetch(target: URL, options: { token: string; signal: AbortSignal; limit: number; viewToken?: string }): Promise<Response> {
   const route = target.pathname.slice('/api/ground/'.length);
   if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || target.username || target.password || target.search || target.hash ||
-      target.pathname !== `/api/ground/${route}` || !isGroundRoute(route) || !/^[a-f0-9]{64}$/.test(options.token)) throw new Error('Invalid Ground target');
+      target.pathname !== `/api/ground/${route}` || !isGroundRoute(route) || !/^[a-f0-9]{64}$/.test(options.token) ||
+      options.viewToken !== undefined && (route !== 'recent-conversations' || !/^[A-Za-z0-9_-]{43,256}$/.test(options.viewToken))) throw new Error('Invalid Ground target');
   return new Promise((resolve, reject) => {
-    const upstream = request(target, { method: 'GET', signal: options.signal, headers: { Accept: 'application/json', Authorization: `Bearer ${options.token}` } }, response => {
+    const upstream = request(target, { method: 'GET', signal: options.signal, headers: { Accept: 'application/json', Authorization: `Bearer ${options.token}`, ...(options.viewToken === undefined ? {} : { 'X-Memory-Loop-View': options.viewToken }) } }, response => {
       const chunks: Buffer[] = [];
       let size = 0;
       response.on('data', (chunk: Buffer) => {

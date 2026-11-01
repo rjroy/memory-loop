@@ -48,15 +48,15 @@
   min-height: 44px;
   max-width: 100%;
   padding: .5rem .875rem;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--control-boundary);
   border-radius: 4px;
   color: var(--ink);
   background: var(--surface);
   cursor: pointer;
 }
 
-.recall-button:hover { color: var(--surface); background: var(--ink); }
-.recall-button:active { color: var(--night); background: var(--lantern); }
+.recall-button:hover { color: var(--text-strong); background: var(--surface-raised); }
+.recall-button:active { color: var(--text-strong); background: var(--surface-selected); }
 .recall-button:disabled { cursor: wait; text-decoration: none; }
 
 .files-header {
@@ -69,7 +69,7 @@
   justify-content: space-between;
   gap: .5rem;
   margin-bottom: 1rem;
-  background: var(--night);
+  background: var(--surface);
 }
 
 .files-control { position: relative; display: inline-flex; flex: 0 0 44px; }
@@ -86,8 +86,8 @@
   cursor: pointer;
 }
 .files-toggle svg { width: 20px; height: 20px; }
-.files-toggle:hover { color: var(--surface); background: var(--ink); }
-.files-toggle:active { color: var(--night); background: var(--lantern); }
+.files-toggle:hover { color: var(--text-strong); background: var(--surface-raised); }
+.files-toggle:active { color: var(--text-strong); background: var(--surface-selected); }
 .files-tooltip {
   position: absolute;
   z-index: 3;
@@ -96,10 +96,10 @@
   width: max-content;
   max-width: min(16rem, calc(100vw - 3rem));
   padding: .5rem .75rem;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--control-boundary);
   border-radius: 4px;
   color: var(--ink);
-  background: var(--surface);
+  background: var(--surface-raised);
   font-size: .875rem;
   line-height: 1.5;
 }
@@ -129,9 +129,11 @@
 }
 
 .recall-files {
+  --surface: var(--surface-navigation);
   --files-top-inset: 1.5rem;
   padding: var(--files-top-inset) 1rem 2rem;
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--control-boundary);
+  background: var(--surface);
   scroll-padding-top: calc(var(--files-top-inset) + 44px + .5rem);
 }
 .recall-files h2 { margin: 0 .5rem; }
@@ -149,8 +151,8 @@
   border: 0;
   border-radius: 0;
   text-align: left;
-  color: var(--parchment);
-  background: var(--night);
+  color: var(--ink);
+  background: transparent;
   line-height: 1.5;
   text-decoration: none;
   overflow-wrap: anywhere;
@@ -162,7 +164,9 @@
 .folder-chevron { flex: 0 0 16px; margin-top: .25rem; }
 .folder-disclosure[aria-expanded='true'] .folder-chevron { transform: rotate(90deg); }
 .file-link { padding-left: 1.875rem; }
+.file-row:hover { background: var(--surface-raised); }
 .file-row:hover span { text-decoration: underline; }
+.file-link[aria-current='page'] { color: var(--text-strong); background: var(--surface-selected); }
 .file-row:focus-visible { outline-offset: -2px; }
 .file-link[aria-current='page'] span {
   font-weight: 600;
@@ -176,19 +180,14 @@
 .empty-folder { padding: .5rem 0 .75rem 1.875rem; font-size: .875rem; }
 .files-footnote { margin-top: 2rem; font-size: .875rem; color: var(--muted); }
 .recall-reader {
-  --surface: var(--parchment);
-  --ink: var(--night);
-  --muted: #344548;
-  --rule: color-mix(in srgb, var(--night) 25%, var(--parchment));
-  --focus: var(--night);
+  --surface: var(--surface-document);
   padding: 1.75rem 2rem 4rem;
   color: var(--ink);
   background: var(--surface);
-  color-scheme: light;
-  scrollbar-color: var(--muted) var(--surface);
+  scrollbar-color: var(--control-boundary) var(--surface);
 }
 .reader-measure { max-width: 68ch; margin-inline: auto; font-size: 1.0625rem; line-height: 1.7; }
-.note-identity { width: fit-content; max-width: 100%; margin: 0; font: 400 1.25rem/1.5 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.note-identity { width: fit-content; max-width: 100%; margin: 0; color: var(--text-strong); font: 400 1.25rem/1.5 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .note-path { margin: .25rem 0 0; color: var(--muted); font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; }
 .recall-message { max-width: 60ch; }
 .recall-message h2 { font-size: 1.125rem; }
@@ -232,24 +231,25 @@
 .markdown-document > :first-child { margin-top: 0; }
 .markdown-document p { margin: 0 0 1.4em; }
 .markdown-document h2, .markdown-document h3, .markdown-document h4,
-.markdown-document h5, .markdown-document h6 { margin: 1.8em 0 .65em; font: 400 1.0625rem/1.4 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; text-wrap: balance; }
+.markdown-document h5, .markdown-document h6 { margin: 1.8em 0 .65em; color: var(--text-strong); font: 400 1.0625rem/1.4 'Libre Baskerville', Georgia, serif; letter-spacing: -.02em; text-wrap: balance; }
 .markdown-document .markdown-h1 { font-size: 1.75rem; }
 .markdown-document .markdown-h2 { font-size: 1.375rem; }
 .markdown-document .markdown-h3 { font-size: 1.125rem; }
 .markdown-document strong { font-weight: 600; }
-.markdown-document a { text-decoration-thickness: 1px; }
+.markdown-document a { color: var(--link); text-decoration-thickness: 1px; }
 .markdown-document a:hover { text-decoration-thickness: 2px; }
 .markdown-document ul, .markdown-document ol { padding-left: 1.5em; margin-block: 0 1.4em; }
 .markdown-document li > p { margin-bottom: .5em; }
 .markdown-document li + li { margin-top: .3em; }
 .markdown-document .task-list-item { list-style: none; }
-.markdown-document input[type='checkbox'] { accent-color: var(--night); margin-right: .5em; }
+.markdown-document input[type='checkbox'] { accent-color: var(--horizon); margin-right: .5em; }
 .markdown-document code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .875em; }
 .markdown-document pre {
   max-width: 100%;
   overflow: auto;
   margin: 1.4em 0;
   padding: 1rem;
+  background: var(--surface-frame);
   border: 1px solid var(--rule);
   font-size: .9375rem;
   line-height: 1.6;

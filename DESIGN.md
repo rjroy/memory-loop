@@ -6,6 +6,19 @@ colors:
   parchment: "#fef6e1"
   lantern: "#efb83f"
   horizon: "#5e8bd6"
+  ivory: "#d5d3c5"
+  supporting-text: "#a8b4ae"
+  horizon-bright: "#8eaef2"
+  lantern-bright: "#ffd477"
+  danger: "#f18a83"
+  navigation-surface: "#0b1c20"
+  working-surface: "#142629"
+  document-surface: "#1a2e30"
+  raised-surface: "#243b3e"
+  warm-surface: "#292f29"
+  selected-surface: "#213c50"
+  rule: "#344b4e"
+  control-boundary: "#718788"
   think-field: "color-mix(in srgb, #5e8bd6 10%, #031315)"
   think-user: "color-mix(in srgb, #5e8bd6 20%, #031315)"
 typography:
@@ -59,6 +72,11 @@ typography:
     fontSize: "1.0625rem"
     fontWeight: 400
     lineHeight: 1.7
+  capture-writing:
+    fontFamily: "Source Sans 3, system-ui, sans-serif"
+    fontSize: "1.0625rem"
+    fontWeight: 400
+    lineHeight: 1.6
   think-reading:
     fontFamily: "Source Sans 3, system-ui, sans-serif"
     fontSize: "1.0625rem"
@@ -132,11 +150,11 @@ spacing:
 components:
   navigation-header:
     backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
     typography: "{typography.body}"
     padding: "12px clamp(20px, 4.4vw, 64px); safe-area-aware"
   navigation-link:
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
     typography: "{typography.body}"
     rounded: "{rounded.navigation}"
     padding: "8px 10px"
@@ -146,7 +164,7 @@ components:
     rounded: "{rounded.navigation}"
     padding: "8px 10px"
   compact-navigation-link:
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
     typography: "{typography.body}"
     rounded: "{rounded.navigation}"
     padding: "8px 10px"
@@ -157,27 +175,27 @@ components:
     padding: "8px 10px"
   ground-card:
     backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
     typography: "{typography.body}"
     padding: "1rem 0 0; top rule"
   ground-inspiration:
-    backgroundColor: "{colors.parchment}"
-    textColor: "{colors.night}"
+    backgroundColor: "{colors.warm-surface}"
+    textColor: "{colors.ivory}"
     padding: "1.25rem"
   think-conversation:
     backgroundColor: "{colors.think-field}"
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
     typography: "{typography.think-reading}"
     width: "100%"
   think-user-message:
     backgroundColor: "{colors.think-user}"
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
     typography: "{typography.think-reading}"
     rounded: "{rounded.notice}"
     padding: "14px 18px; narrow 12px 16px"
   think-composer:
     backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
     typography: "{typography.body}"
     rounded: "{rounded.notice}"
     padding: ".625rem .75rem"
@@ -190,12 +208,12 @@ components:
     width: "5rem"
   think-new-chat:
     backgroundColor: "{colors.think-field}"
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
     typography: "{typography.emphasis}"
     rounded: "{rounded.navigation}"
     padding: ".5rem .75rem"
   content-link:
-    textColor: "{colors.parchment}"
+    textColor: "{colors.horizon-bright}"
     typography: "{typography.emphasis}"
   skip-link:
     backgroundColor: "{colors.lantern}"
@@ -207,57 +225,57 @@ components:
     typography: "{typography.headline}"
   recall-toolbar:
     backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
     padding: "12px 2rem; narrow 8px 20px"
   recall-button:
-    backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    backgroundColor: "context dark surface"
+    textColor: "{colors.ivory}"
     rounded: "{rounded.navigation}"
     padding: ".5rem .875rem"
   recall-button-hover:
-    backgroundColor: "{colors.parchment}"
-    textColor: "{colors.night}"
+    backgroundColor: "{colors.raised-surface}"
+    textColor: "{colors.parchment}"
     rounded: "{rounded.navigation}"
     padding: ".5rem .875rem"
   recall-button-active:
-    backgroundColor: "{colors.lantern}"
-    textColor: "{colors.night}"
+    backgroundColor: "{colors.selected-surface}"
+    textColor: "{colors.parchment}"
     rounded: "{rounded.navigation}"
     padding: ".5rem .875rem"
   files-toggle:
-    backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    backgroundColor: "{colors.navigation-surface}"
+    textColor: "{colors.ivory}"
     rounded: "{rounded.navigation}"
     padding: "12px"
     width: "44px"
     height: "44px"
   files-tooltip:
-    backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    backgroundColor: "{colors.raised-surface}"
+    textColor: "{colors.ivory}"
     typography: "{typography.label}"
     rounded: "{rounded.navigation}"
     padding: ".5rem .75rem"
   reader-files-toggle:
-    backgroundColor: "{colors.parchment}"
-    textColor: "{colors.night}"
+    backgroundColor: "{colors.document-surface}"
+    textColor: "{colors.ivory}"
     rounded: "{rounded.navigation}"
     padding: "12px"
     width: "44px"
     height: "44px"
   vault-folder:
-    backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    backgroundColor: "{colors.navigation-surface}"
+    textColor: "{colors.ivory}"
     typography: "{typography.emphasis}"
     rounded: "{rounded.square}"
     padding: ".625rem .5rem"
   vault-file:
-    backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    backgroundColor: "{colors.navigation-surface}"
+    textColor: "{colors.ivory}"
     typography: "{typography.body}"
     rounded: "{rounded.square}"
     padding: ".625rem .5rem .625rem 1.875rem"
   vault-file-current:
-    backgroundColor: "{colors.night}"
+    backgroundColor: "{colors.selected-surface}"
     textColor: "{colors.parchment}"
     typography: "{typography.emphasis}"
     rounded: "{rounded.square}"
@@ -266,16 +284,27 @@ components:
     textColor: "{colors.parchment}"
     typography: "{typography.note-identity}"
   markdown-document:
-    backgroundColor: "{colors.parchment}"
-    textColor: "{colors.night}"
+    backgroundColor: "{colors.document-surface}"
+    textColor: "{colors.ivory}"
     typography: "{typography.reading}"
   markdown-code:
-    textColor: "{colors.night}"
+    backgroundColor: "{colors.night}"
+    textColor: "{colors.ivory}"
     typography: "{typography.code-block}"
     padding: "{spacing.standard}"
   recall-state:
     backgroundColor: "{colors.night}"
-    textColor: "{colors.parchment}"
+    textColor: "{colors.ivory}"
+  capture-workspace:
+    backgroundColor: "{colors.working-surface}"
+    textColor: "{colors.ivory}"
+  capture-editor:
+    backgroundColor: "{colors.document-surface}"
+    textColor: "{colors.ivory}"
+    typography: "{typography.capture-writing}"
+  capture-action:
+    backgroundColor: "{colors.lantern}"
+    textColor: "{colors.night}"
 ---
 
 # Design System: Memory Loop
@@ -286,7 +315,7 @@ components:
 
 The user approved the [four-mode character board](.lore/work/design/memory-loop-character/index.html) at `acfac1f` and explicitly authorized its application in `memory-loop-44w`, then clarified that its compact horizontal top navigation—not the old app rail/bottom bar—is part of that approved direction. Shared A.5 identity and IM Fell English SC connect four emotional jobs: inspiring Ground, quiet blank-slate Capture, curious Think, and reflective Recall. Older assistant-authored restraint and retained navigation adaptations are superseded, not immutable brand rules.
 
-Ground gives the full, unaltered A.1 narrative artwork enough room beside its invitation. Capture uses Parchment and open space for a real writing editor, without illustration or placeholder prose. Think uses a cool Night/Horizon mixture; its questioning invitation and compact A.5 give way completely to a real conversation. Recall keeps its dark navigation/hierarchy beside a Parchment editorial reader. Artwork frames identity, never reading text. The Think extension reuses the approved world, fonts and artwork without a theme switch, new imagery or invented runtime content.
+Ground gives the full, unaltered A.1 narrative artwork enough room beside its invitation. The user-approved dark-first refinement (`memory-loop-kqk`) makes Parchment an accent, not a working background: Capture has an open dark editor, Ground's quotation has a warm dark inset, and Recall pairs darker Files with a lighter dark editorial reader. Think retains its cool Night/Horizon mixture; its questioning invitation and compact A.5 give way completely to a real conversation. Artwork frames identity, never reading text. The same fonts, layouts and behavior remain, without a theme switch, new imagery or invented runtime content.
 
 **Key Characteristics:**
 - Stable navigation and replaceable content.
@@ -295,28 +324,32 @@ Ground gives the full, unaltered A.1 narrative artwork enough room beside its in
 - Flat boundaries, visible focus, and honest empty states.
 - Bounded file browsing and comfortable, unboxed Markdown reading.
 
-Extracted from `src/styles.css`, `src/ground/ground.css`, `src/recall/recall.css`, the shell and four views. `memory-loop-44w` is independently accepted: typecheck/build, frontend unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, fresh visual **SHIP** and technical **Accept**. Backend **87** remains prior unchanged evidence. 44W-T1 is resolved for initial unfocused pointer targets and natural keyboard operation at 844×390/200% text; history/UI-001/002/003 and MS4 regressions remain verified. [Integration provenance](.lore/work/design/character-integration.md) records seven unchanged copied files, three reused Source Sans files, rights, hashes and acceptance evidence. The historical [snapshot](.lore/work/design/personal-brand-snapshot.md) is unchanged. These historical checks do not imply activation of the current Ground build.
+Extracted from `src/styles.css`, `src/ground/ground.css`, `src/recall/recall.css`, the shell and four views. `memory-loop-44w` is independently accepted: typecheck/build, frontend unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, fresh visual **SHIP** and technical **Accept**. Backend **87** remains prior unchanged evidence. 44W-T1 is resolved for initial unfocused pointer targets and natural keyboard operation at 844×390/200% text; history/UI-001/002/003 and MS4 regressions remain verified. [Integration provenance](.lore/work/design/character-integration.md) records seven unchanged copied files, three reused Source Sans files, rights, hashes and acceptance evidence. The [brand snapshot](.lore/work/design/personal-brand-snapshot.md) preserves history and records the kqk source reread. Historical acceptance does not establish acceptance or publication of this palette refinement.
 
 **Think Phase 5 implementation record:** the [approved space-first UX](.lore/work/design/think-chat-ux.md) and its board extend that incumbent world. Current rules below also describe `src/think/think.css`, the controlled components and persistent shell integration. Independent technical verification and visual review accepted the fixture implementation after corrections. A nonblocking enlarged-text placeholder issue remains tracked as `memory-loop-2sj`. No personal Think activation or physical-device acceptance is claimed.
 
 ## Colors
 
-Night and Parchment carry complementary dark/light contexts. Horizon identifies location and dark-context focus; Lantern offers warmth and the Ground action. The four core values are unchanged. Muted Night `#344548` and Weathered Ivory `#d5d3c5` are source-guide functional neutrals, not new identity colors.
+The user approved dark working surfaces throughout after reviewing the current personal-brand guide. Night anchors the frame; restrained app-specific dark mixtures distinguish work areas. Weathered Ivory carries everyday text, while Parchment is reserved for identity, headings and emphasis. The four core identity colors and approved artwork remain unchanged. The guide's functional extension supplies bright Horizon, bright Lantern and bright Ember; these are not new identity colors.
 
 ### Primary
-- **Lantern:** Ground invitation/action, browser text selection, focus-only pane-jump surfaces, and pressed Recall buttons. Night text on Lantern; not a connection-status signal.
+- **Lantern:** Ground invitation, Capture action, browser text selection and focus-only pane-jump surfaces. Capture hover uses the guide's bright Lantern; Night text remains. Not a connection-status signal.
 
 ### Secondary
-- **Horizon:** selected app-link/current-file underline, dark-context focus and Think's Send/Stop action with Night text. Think uses a 10% Horizon/90% Night field and a quiet 20% Horizon/80% Night user-message field. Selection also retains semibold text and `aria-current`.
+- **Horizon:** selected app-link/current-file underline and Think's Send/Stop action with Night text. Bright Horizon supplies content links, focus and primary Think hover; original Horizon is not small body-link text on the lighter dark reader. Think retains a 10% Horizon/90% Night field and a quiet 20% Horizon/80% Night user-message field. Selection also retains semibold text and `aria-current`.
 
 ### Neutral
-- **Night:** shared top identity/navigation, toolbar, hierarchy and Ground; text/focus on Parchment. Light supporting text is Muted Night.
-- **Parchment:** Capture and reader surfaces; dark-context text. Dark supporting text is Weathered Ivory. Rules mix context foreground/background; secondary control hover reverses that context's pair.
+- **Night:** shared top identity/navigation, Recall toolbar, Ground canvas and code wells. Files uses `#0b1c20`, Capture's surrounding field `#142629`, reader/editor `#1a2e30`, Inspiration `#292f29`, hover `#243b3e` and selected file/pressed secondary controls `#213c50`.
+- **Text:** Weathered Ivory `#d5d3c5` for prose/controls, tinted supporting text `#a8b4ae`, Parchment `#fef6e1` for identity/editorial headings/current location. No Parchment working surfaces or secondary hover inversions.
+- **Boundaries:** quiet decorative rules `#344b4e`; control boundaries and the desktop Files/document divider `#718788`. Native controls retain dark color-scheme, including Capture and Recall. Focus is bright Horizon, with the retained Parchment outline on filled Think actions and skip links.
+- **Destructive action:** bright Ember `#f18a83` text/border on a dark field distinguishes Delete conversation; hover remains dark. Existing confirmation, labels, disabled reasons and recovery stay unchanged. No new status widgets or color-only meanings are introduced.
 
 ### Named Rules
 **The Purposeful Accents Rule.** Give warmth, curiosity, selection and focus explicit roles; do not make color the only indication of a state.
 
-Core contrast: Parchment/Night 17.59:1; Lantern/Night 10.47:1; Horizon/Night 5.54:1. Contextual source-pair calculations and rendered-resource checks are recorded with the author evidence. Decorative separators are not control boundaries. Native disabled-checkbox appearance is not thereby contrast-approved. Sidecar tonal ramps remain inspection aids, not runtime tokens.
+Core contrast remains Parchment/Night 17.59:1; Lantern/Night 10.47:1; Horizon/Night 5.54:1. Ivory/reader is 9.44:1, supporting text/reader 6.64:1, bright Horizon/reader 6.42:1. Control boundaries against reader/raised surfaces are 3.74/3.12:1; bright Ember retains at least 4.76:1 across the dark fields. Decorative separators are not control boundaries. Native disabled-checkbox appearance is not thereby contrast-approved. Sidecar tonal ramps remain inspection aids, not runtime tokens.
+
+**kqk author evidence:** `/tmp/opencode/kqk-dark-first/before/` and `after/` contain 20 paired captures plus three after-only enabled Think/focus captures. Actual production components are bundled in isolation with controlled browser API/presentation adapters, without Next/daemon integration, personal notes or model access. Desktop 1440×900, phone 390×844 and 320×568 at 200% text retain identical measured layout/document dimensions across the paired states. `checks.json` records 324 focused geometry, dark-field and computed-color contrast assertions; `detector.json` is empty. Before/after bundle builds pass and fixture listeners/browsers close. Independent regression and fresh visual review remain required; author evidence is not a shipping verdict or physical-device/assistive-technology acceptance.
 
 ## Typography
 
@@ -343,7 +376,7 @@ The single **New chat** button uses the existing spare desktop gutter at 32px le
 
 Short views (below 32rem height), or a workspace below 20rem usable height, escape to ordinary page flow with visible reader overflow instead of a miniature reading pane. This also occurs in enlarged portrait layouts. The composer remains after the conversation in document flow; Skip to message and native focus scrolling keep it reachable. Current enlarged-portrait captures expose a residual transition from the cool workspace field to Night below the original viewport; this is an open visual-review finding, not a prescribed surface treatment. Physical OS keyboards/VisualViewport, safe areas and assistive technologies remain device checks, not claims from Chromium.
 
-Recall's app uses `auto minmax(12rem, 1fr)` grid rows within 100dvh: actual top-header height, then the workspace. The lower bound prevents enlarged headers from crushing the working area to zero; if content outgrows a short viewport the page can scroll, rather than clipping controls. Normal layouts keep independent pane scrollers. Desktop Files remains default-visible with the same `clamp(14rem, 22vw, 16rem)` split; the reader stays Parchment and bounded to 68ch.
+Recall's app uses `auto minmax(12rem, 1fr)` grid rows within 100dvh: actual top-header height, then the workspace. The lower bound prevents enlarged headers from crushing the working area to zero; if content outgrows a short viewport the page can scroll, rather than clipping controls. Normal layouts keep independent pane scrollers. Desktop Files remains default-visible with the same `clamp(14rem, 22vw, 16rem)` split; the dark reader remains bounded to 68ch.
 
 Narrow Recall has the same shared top identity/navigation and a compact Recall/Read-only section titlebar—no duplicate logo. The selected filename/path wraps onto a second titlebar row, outside both pane scrollers. Files or reader fills the remaining work area non-modally. Titlebar padding is 8px vertically on narrow/short viewports; short-height layouts tighten its row gap and use a rem-scaled 18px Recall heading when a file is selected. Files/reader top insets remain 16px. The independent collapsible Files tree is not the removed global app sidebar. The 53h titlebar and reader-local Skip correction require renewed independent verification; earlier 44w checks are baseline evidence, not acceptance of this refinement.
 
@@ -351,14 +384,14 @@ Reused spacing steps are recorded above. Header/workspace insets belong to their
 
 ## Elevation & Depth
 
-Surfaces are flat, but no longer emotionally uniform: Night, Parchment and the cool Think mixture separate moods. Full approved artwork supplies narrative richness, not invented texture or shadow. No blur, gradient or timed entrance is added. Native browser surfaces use light color-scheme in Capture/reader and dark elsewhere; thin contextual scrollbars and Lantern text selection complete the treatment.
+Surfaces are flat, but not emotionally uniform: deep Night, warm quotation and cool Think mixtures separate moods. Recall's darker Files and lighter dark document are divided by a single visible rule; the reader remains unboxed. Full approved artwork supplies narrative richness, not invented texture or shadow. No blur, gradient or timed entrance is added. Native browser surfaces use dark color-scheme throughout; thin contextual scrollbars, ivory carets and Lantern text selection complete the treatment.
 
 ### Named Rules
 **The Flat Surface Rule.** Separate work areas with fields, spacing, or a single rule rather than decorative depth.
 
 ## Shapes
 
-Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground cards use a top rule except for the Parchment Inspiration field; actions have modest 4px corners. Capture uses a quiet editor boundary and 4px action/editor corners. Think uses 6px corners for the editor/user field and 4px for actions; AI prose is unboxed, not another bubble or status card. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
+Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground cards use a top rule except for the warm dark Inspiration field; actions have modest 4px corners. Capture uses a visible editor boundary and 4px action/editor corners. Think uses 6px corners for the editor/user field and 4px for actions; AI prose is unboxed, not another bubble or status card. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
 
 All top app links use the same 2px Horizon selected underline, semibold text and programmatic current state across sizes. Current-file underline remains Horizon. None is a general callout stripe.
 
@@ -366,15 +399,15 @@ All top app links use the same 2px Horizon selected underline, semibold text and
 
 ### Navigation
 
-Real page links, not ARIA tab widgets. Existing dimensions, order, current-click/query guard and routing remain. Think's link retains its current opaque conversation target, including modified-link behavior; ordinary reactivation does not reset that chat. Current location combines Horizon underline, semibold and `aria-current="page"`; keyboard focus is an independent 2px Horizon outline inset 6px against Night.
+Real page links, not ARIA tab widgets. Existing dimensions, order, current-click/query guard and routing remain. Think's link retains its current opaque conversation target, including modified-link behavior; ordinary reactivation does not reset that chat. Current location combines Horizon underline, semibold and `aria-current="page"`; keyboard focus is an independent 2px bright Horizon outline inset 6px against Night.
 
 ### Ground cards and handoff
 
-Six independent named H2 sections show Quick Actions, Inspiration, Prompts, Current Goals, Recent captures and Recent conversations. Inspiration uses a Parchment field and Libre Baskerville quotation; Goals uses the safe Markdown renderer with source H1 at H3; captures use native links to Recall. Each card presents its own applicable loading, empty, missing, malformed or unavailable state and recovery; one failure cannot hide the others. Quick Actions and Prompts prepare editable unsent Think drafts; a nonempty existing draft, including whitespace, triggers an inline confirmation that preserves it. This is separate from Think's own discard flow.
+Six independent named H2 sections show Quick Actions, Inspiration, Prompts, Current Goals, Recent captures and Recent conversations. Inspiration uses a warm dark field and Libre Baskerville quotation; Goals uses the safe Markdown renderer with source H1 at H3; captures use native links to Recall. Each card presents its own applicable loading, empty, missing, malformed or unavailable state and recovery; one failure cannot hide the others. Quick Actions and Prompts prepare editable unsent Think drafts; a nonempty existing draft, including whitespace, triggers an inline confirmation that preserves it. This is separate from Think's own discard flow.
 
 Recent conversations shows at most ten registered chats with a user Send, ordered by meaningful input/confirmed assistant activity rather than reads or Resume. Rows show the original-input title (or Untitled conversation), activity time, the current-chat badge when applicable and a native Resume link for an available chat. Resume verifies existing history and its current serving epoch before selecting/navigating, preserving both keyed drafts. Its single active notice follows the initiating row in every phase, with concise target context. Cancel receives native focus/scrolling on confirmation; Escape or dismissal returns focus to the trigger. Pending/error recovery scrolls into view only while focus remains with that action, not after the user moves elsewhere. Refreshing this list or renewing selection does not reshuffle the quote or question.
 
-Delete is a compact control beside Resume, disabled with a visible, associated reason for current/elsewhere-selected, busy, unknown, unavailable or deleting targets. The server independently rechecks safety and conservatively blocks **any child session**, including idle children; it never stops work or cascades through children. An eligible Delete opens one row-local named confirmation, not a modal or typed-name exercise: **Delete “{title}”? Chat and transcript file. No undo.** Untitled targets include their activity date/time. Cancel receives initial focus; Escape/Cancel returns to the trigger. The distinct Parchment/Night **Delete conversation** button is the only destructive confirmation; controls retain 44px targets, wrapping and ordinary document scrolling.
+Delete is a compact control beside Resume, disabled with a visible, associated reason for current/elsewhere-selected, busy, unknown, unavailable or deleting targets. The server independently rechecks safety and conservatively blocks **any child session**, including idle children; it never stops work or cascades through children. An eligible Delete opens one row-local named confirmation, not a modal or typed-name exercise: **Delete “{title}”? Chat and transcript file. No undo.** Untitled targets include their activity date/time. Cancel receives initial focus; Escape/Cancel returns to the trigger. The distinct bright Ember/dark **Delete conversation** button is the only destructive confirmation; controls retain 44px targets, wrapping and ordinary document scrolling.
 
 Confirmed completion removes the owned chat, mapped transcript and conversation-owned private application data, then removes the row and refreshes only this list. Other chats' drafts and selection remain intact. Focus moves from the removed row to a nearby Resume or the section heading, never away from a user who moved elsewhere. A refusal stays local and refreshes availability. Accepted/incomplete, partially failed or unconfirmed deletion keeps the target fenced with only **Check status**, a read-only GET of the same command. No Undo, Retry Delete, automatic GET polling, repeated destructive POST or destructive retry on restart is implied. Technical and visual reviews accepted this source/fixture implementation; it is not live publication. Daily/weekly jobs and the final handoff remain unimplemented.
 
@@ -412,15 +445,15 @@ Healthy/transient transcript writes stay quiet. Only server-classified persisten
 
 ### Recall toolbar and buttons
 
-The dark section titlebar sits below the shared top app header, without duplicated branding. Desktop groups Recall H1, the selected literal filename with its relative breadcrumb, and Read-only across one row; the filename/path group wraps below Recall/Read-only on narrow screens. Full names and paths wrap rather than truncate. Recovery buttons use their context's ink/surface/border and reverse on hover; pressed uses Lantern/Night. Night contexts focus Horizon; the reader focuses Night on Parchment. Pending/read/retry behavior is unchanged.
+The dark section titlebar sits below the shared top app header, without duplicated branding. Desktop groups Recall H1, the selected literal filename with its relative breadcrumb, and Read-only across one row; the filename/path group wraps below Recall/Read-only on narrow screens. Full names and paths wrap rather than truncate. Recovery buttons use ivory text and visible boundaries on dark surfaces, raised dark hover and selected dark pressed states. Both Files and reader focus bright Horizon. Pending/read/retry behavior is unchanged.
 
 Files visibility uses a quiet icon-only button, not a detached toolbar text action. A 20px plain left chevron sits in a 44×44px target at the upper-right of the sticky Files header; when collapsed, a plain right chevron sits at the upper-left of the reader, outside the centered prose measure. Its local controls row remains reachable while the reader scrolls. No destination-icon rail or empty Files column remains. Both desktop and narrow use the accessible names Collapse files sidebar / Expand files sidebar, `aria-expanded`, and `aria-controls` targeting the retained, hidden Files navigation. The SVG is hidden from assistive technology. Closing focuses the visible expand control; opening targets the current file or Files heading. Narrow selection still closes Files immediately without changing note/history/scroll semantics.
 
-Matching tooltips use the surrounding context's ink/surface: Parchment/Night in Files, Night/Parchment in the reader. Their hover/focus/Escape behavior, 20px/44px geometry, local placement, sticky clearance and focus return are unchanged. The source site's compound glyph and retained destination rail are not imported. Current 44w verification is unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, typecheck/build, visual **SHIP** and technical **Accept**; 44W-T1 and the protected MS4/history findings are resolved.
+Matching tooltips use ivory text, raised dark fields and visible boundaries in both Files and reader. Their hover/focus/Escape behavior, 20px/44px geometry, local placement, sticky clearance and focus return are unchanged. The source site's compound glyph and retained destination rail are not imported. Historical 44w verification is unit **25/25**, Recall browser **26/26**, legacy browser **20/20**, typecheck/build, visual **SHIP** and technical **Accept**; 44W-T1 and the protected MS4/history findings are resolved.
 
 ### Vault file hierarchy
 
-Native nested lists, folder buttons and note links remain unchanged. Rows target 44px, wrap names/extensions, and deep nesting scrolls inside Files. Current-file semibold/Horizon underline is distinct from the Horizon focus outline inset 2px. Collapsing a folder does not close its selected document.
+Native nested lists, folder buttons and note links remain unchanged. Rows target 44px, wrap names/extensions, and deep nesting scrolls inside Files. A dark selected fill and current-file semibold/Horizon underline are distinct from the bright Horizon focus outline inset 2px. Sticky Files header and transparent rows share the sidebar field rather than hardcoded Night patches. Collapsing a folder does not close its selected document.
 
 ### Markdown reader
 

@@ -13,16 +13,16 @@
 .ground-card button[aria-disabled='true'] { cursor: default; }
 .ground-quick-actions { grid-column: 1 / -1; container: actions / inline-size; }
 .ground-action-strip { display: flex; flex-wrap: wrap; gap: .75rem; }
-.ground-skill-action { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-height: 44px; min-width: 44px; max-width: 100%; padding: .625rem 1rem; border: 1px solid var(--muted); border-radius: 4px; text-align: left; color: inherit; background: transparent; font-weight: 600; overflow-wrap: anywhere; }
+.ground-skill-action { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-height: 44px; min-width: 44px; max-width: 100%; padding: .625rem 1rem; border: 1px solid var(--control-boundary); border-radius: 4px; text-align: left; color: inherit; background: transparent; font-weight: 600; overflow-wrap: anywhere; }
 .ground-skill-ref { font-size: .875rem; font-weight: 400; color: var(--muted); }
-.ground-skill-action:hover:not([aria-disabled='true']) { background: var(--parchment); color: var(--night); }
-.ground-skill-action:hover:not([aria-disabled='true']) .ground-skill-ref { color: var(--night); }
-.ground-inspiration { background: var(--parchment); color: var(--night); padding: 1.25rem; border: 0; --focus: var(--night); color-scheme: light; }
+.ground-skill-action:hover:not([aria-disabled='true']) { background: var(--surface-raised); color: var(--text-strong); }
+.ground-inspiration { --surface: var(--surface-warm); background: var(--surface); color: var(--ink); padding: 1.25rem; border: 0; }
 .ground-quotation { margin: 0; }
 .ground-quotation blockquote { margin: 0; font: 400 1.25rem/1.6 'Libre Baskerville', Georgia, serif; white-space: pre-line; }
 .ground-quotation blockquote p { margin: 0; }
 .ground-quotation figcaption { margin-top: 1rem; }
-.ground-quote-source { display: block; font-size: .875rem; line-height: 1.5; margin-top: .25rem; color: #344548; }
+.ground-quote-source { display: block; font-size: .875rem; line-height: 1.5; margin-top: .25rem; color: var(--muted); }
+.ground-quote-source a { color: var(--link); }
 .ground-quote-source a { display: inline-flex; min-height: 44px; align-items: center; }
 .ground-card .ground-question-action { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; min-height: 44px; width: 100%; padding: 0 .25rem .5rem 0; border: 0; text-align: left; color: inherit; background: transparent; font-size: 1.375rem; line-height: 1.35; overflow-wrap: anywhere; }
 .ground-question-action svg { flex-shrink: 0; margin-top: .3rem; }
@@ -43,15 +43,15 @@
 .ground-conversation-row + .ground-conversation-row { border-top: 1px solid var(--rule); }
 .ground-conversation-row > .ground-handoff { grid-column: 1 / -1; scroll-margin-block: .5rem; }
 .ground-conversation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.ground-delete-action { color: inherit; background: transparent; border: 1px solid var(--muted); border-radius: 4px; padding: .5rem .625rem; min-height: 44px; min-width: 44px; }
-.ground-delete-action:hover:not(:disabled) { color: var(--night); background: var(--parchment); }
+.ground-delete-action { color: inherit; background: transparent; border: 1px solid var(--control-boundary); border-radius: 4px; padding: .5rem .625rem; min-height: 44px; min-width: 44px; }
+.ground-delete-action:hover:not(:disabled) { color: var(--danger); background: var(--surface-raised); }
 .ground-delete-action:disabled, .ground-delete-confirm:disabled { color: var(--muted); cursor: default; }
 .ground-delete-action:disabled { border-color: transparent; }
 .ground-delete-reason { grid-column: 1 / -1; color: var(--muted); font-size: .875rem; line-height: 1.5; }
 .ground-delete-notice { grid-column: 1 / -1; border-top: 1px solid var(--rule); margin-top: .5rem; padding-top: 1rem; scroll-margin-block: .5rem; }
 .ground-delete-target { font-weight: 600; }
-.ground-card .ground-delete-confirm { background: var(--parchment); color: var(--night); border-color: var(--parchment); }
-.ground-delete-confirm:hover:not(:disabled) { background: var(--lantern); border-color: var(--lantern); }
+.ground-card .ground-delete-confirm { background: var(--surface); color: var(--danger); border-color: var(--danger); }
+.ground-delete-confirm:hover:not(:disabled) { background: var(--surface-raised); border-color: var(--danger); }
 .ground-card .ground-delete-confirm:disabled { background: transparent; color: var(--muted); border-color: var(--muted); }
 .ground-card .ground-conversation-title { font-weight: 600; line-height: 1.4; margin: 0; }
 .ground-conversation-time, .ground-conversation-current, .ground-conversation-unavailable { display: block; color: var(--muted); font-size: .875rem; line-height: 1.5; }
@@ -69,9 +69,8 @@
 .ground-capture-time { margin-top: .375rem; }
 .ground-coverage, .ground-guidance, .ground-resource-path { font-size: .875rem; }
 .ground-card .ground-resource-path { overflow-wrap: anywhere; }
-.ground-button { color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 4px; min-height: 44px; min-width: 44px; max-width: 100%; padding: .5rem .875rem; font-weight: 600; overflow-wrap: anywhere; }
-.ground-button:hover { background: var(--parchment); color: var(--night); }
-.ground-inspiration .ground-button:hover { background: var(--night); color: var(--parchment); }
+.ground-button { color: inherit; background: transparent; border: 1px solid var(--control-boundary); border-radius: 4px; min-height: 44px; min-width: 44px; max-width: 100%; padding: .5rem .875rem; font-weight: 600; overflow-wrap: anywhere; }
+.ground-button:hover { background: var(--surface-raised); color: var(--text-strong); }
 .ground-local-state { margin-top: .75rem; }
 .ground-handoff { margin-top: 1rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
 .ground-confirmation-actions { display: flex; flex-wrap: wrap; gap: .75rem; }

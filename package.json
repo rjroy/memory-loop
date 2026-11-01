@@ -10,6 +10,7 @@
     "check:daemon": "bun --no-env-file backend/check-daemon.ts",
     "dev": "bun --no-env-file src/web/start.ts dev",
     "server": "bun --no-env-file src/web/start.ts start",
+    "restart": "bun --no-env-file scripts/restart.ts",
     "typecheck": "node node_modules/next/dist/bin/next typegen && tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run",
     "test:backend": "vitest run --config backend/vitest.config.ts",

@@ -359,6 +359,16 @@ bun --no-env-file run server
 bun --no-env-file run check:daemon
 ```
 
+For an already managed deployment, `bun run restart` stops its recorded web
+processes, builds once, then restarts its recorded daemons and webs. Recorded working
+directories, executables, arguments, transport selectors and process identities are
+kept in the ignored `.memory-loop/restart.json`. Other environment variables come
+from the shell running the command; they are not restored from a snapshot. The command
+refuses stale or unrelated PIDs rather than stopping a process by port. It does not
+change generation settings or restart the native service. If a stop, build or
+startup fails, it exits with an error; inspect the managed services and metadata
+before attempting recovery. Use this command only when interruption is acceptable.
+
 Open `/ground` or `/recall` at the address chosen for the deployment. The browser
 uses relative API paths; no browser hostname, port or protocol is configured in
 Memory Loop. Optional standard Next `--hostname` and `--port` arguments or `PORT`

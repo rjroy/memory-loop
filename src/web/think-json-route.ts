@@ -12,6 +12,7 @@ const routes = [
   { operation: 'content', method: 'GET', pattern: new RegExp(`^${base}/(${uuid})/content/(${uuid})$`) },
   { operation: 'send', method: 'POST', pattern: new RegExp(`^${base}/(${uuid})/messages$`) },
   { operation: 'resume', method: 'POST', pattern: new RegExp(`^${base}/(${uuid})/resume$`) },
+  { operation: 'delete', method: 'POST', pattern: new RegExp(`^${base}/(${uuid})/delete$`) },
   { operation: 'stop', method: 'POST', pattern: new RegExp(`^${base}/(${uuid})/runs/(${uuid})/stop$`) },
   { operation: 'decisions', method: 'GET', pattern: new RegExp(`^${base}/(${uuid})/decisions$`) },
   { operation: 'decision', method: 'GET', pattern: new RegExp(`^${base}/(${uuid})/decisions/(${decision})$`) },

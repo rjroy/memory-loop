@@ -1,9 +1,8 @@
 import { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { createServer, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
-import { OpenCode } from '@opencode/client';
 import type { SessionInfo, SessionMessageInfo } from '@opencode/client';
 import { prepareServer, type PreparedServer } from '../backend/server';
 import { createApp } from '../backend/app';
@@ -12,12 +11,12 @@ import { openGround } from '../backend/ground';
 import { openCaptureWriter } from '../backend/capture';
 import { createThinkService } from '../backend/think/service';
 import { createBodyStore } from '../backend/think/body-store';
-import { nativeSessions } from '../backend/think/native';
+import { createNativeClient, nativeSessions } from '../backend/think/native';
 import { openThinkState } from '../backend/think/sqlite-state';
 
 // Current production factories + real Bun SQLite, talking only to our owned HTTP native fake.
 // No future module imports, fake application routes, native executable or model requests.
-export type Mode = 'recent' | 'resume' | 'leases' | 'unknown-selection' | 'canonical' | 'offline' | 'lease-lost-ack' | 'resume-unknown' | 'registration-absent';
+export type Mode = 'recent' | 'resume' | 'leases' | 'unknown-selection' | 'canonical' | 'offline' | 'lease-lost-ack' | 'resume-unknown' | 'registration-absent' | 'delete-idle' | 'delete-selected' | 'delete-lease' | 'delete-busy' | 'delete-child' | 'delete-transcript-conflict' | 'delete-remove-ack-lost';
 export interface Http { status: number; body: unknown }
 export const instant = 1_700_000_000_000;
 export const id = (group: number, index: number) => `${(group * 0x10000 + index).toString(16).padStart(8, '0')}-1111-4111-8111-000000000001`;
@@ -66,6 +65,10 @@ export interface Report {
     stale: Http; beforeCorrectCas: LeaseProof; changed?: Http; afterChange: LeaseProof };
   resumeUnknown?: { first: Http; beforeRestart: ResumeFact; unknownAfterRestart: Http; afterUnknown: ResumeFact;
     known: Http; retry: Http; afterKnown: ResumeFact; snapshot: Http; listBefore: Http; listAfter: Http };
+  deletion?: { registration: Http; selected?: Http; own?: Http; other?: Http; unknown?: Http; expired?: Http; expiredRead?: Http;
+    requested?: Http; receipt?: Http; retry?: Http; reopenedReceipt?: Http; reopenedRetry?: Http; transcriptBefore: TranscriptProof; transcriptAfter?: TranscriptProof; transcriptExists: boolean; nativePresent: boolean; childPresent?: boolean;
+    removals: string[]; removalCounts?: { afterReceipt: number; afterRetry: number; afterRestart: number; afterReopenedRead: number; afterReopenedRetry: number };
+    payloadRows: number; transcriptRows: number; transcriptEntryRows: number; pendingChunkRows: number; unrelatedIntact: boolean };
   leases?: {
     registration: Http; tokenShape?: boolean; tokensDistinct?: boolean; secondRegistration?: Http;
     selected?: Http; renewed?: Http; stale?: Http; staleRenewal?: Http; readback?: Http; otherSelected?: Http; cleared?: Http;
@@ -77,12 +80,12 @@ export interface Report {
   };
 }
 
-function stateFacts(database: string): StateFacts {
+function stateFacts(database: string, index = 1): StateFacts {
   const db = new Database(database, { readonly: true, create: false });
   try {
     const fact = db.query<{ originalHex: string; originalSha256: string; nativeSessionId: string }, [string]>(`
       SELECT lower(hex(d.original_input)) AS originalHex, d.payload_sha256 AS originalSha256, c.native_session_id AS nativeSessionId
-      FROM commands d JOIN conversations c ON c.conversation_id = d.conversation_id WHERE d.command_id = ?`).get(id(3, 1));
+      FROM commands d JOIN conversations c ON c.conversation_id = d.conversation_id WHERE d.command_id = ?`).get(id(3, index));
     if (!fact) throw new Error('fixture registered original/ownership join missing');
     return { ...fact, conversationIds: db.query<{ id: string }, []>('SELECT conversation_id AS id FROM conversations ORDER BY conversation_id').all().map(row => row.id),
       sendCount: Number(db.query<{ count: number }, []>("SELECT count(*) AS count FROM commands WHERE kind = 'send'").get()?.count) };
@@ -222,14 +225,21 @@ async function run(root: string, mode: Mode): Promise<Report> {
   sessions.set(lookalike.id, lookalike); sessions.set(job.id, job);
   const lookalikesBefore = JSON.stringify([lookalike, job]);
   const effects = { creates: 0, prompts: 0, cancels: 0, interrupts: 0, replies: 0 };
+  const removals: string[] = [];
   const unexpected: string[] = []; const streams = new Set<ServerResponse>();
   let nativeOffline = false;
+  let deletionBusy = false;
   let nativeUrl = '';
   const native = createServer((request, response) => {
     if (request.headers.authorization !== authorization) { response.writeHead(401).end('{}'); return; }
     const url = new URL(request.url ?? '/', nativeUrl); const path = url.pathname;
     response.setHeader('content-type', 'application/json');
     const respond = (body: object) => { response.end(JSON.stringify(body)); };
+    if (mode.startsWith('delete-') && request.method === 'DELETE' && path === `/api/session/${nativeId(1)}`) {
+      removals.push(nativeId(1)); sessions.delete(nativeId(1)); histories.delete(nativeId(1));
+      if (mode === 'delete-remove-ack-lost') { response.destroy(); return; }
+      response.writeHead(204).end(); return;
+    }
     if (request.method === 'POST') {
       if (path === '/api/session') effects.creates++;
       else if (path.endsWith('/prompt')) effects.prompts++;
@@ -245,10 +255,18 @@ async function run(root: string, mode: Mode): Promise<Report> {
       response.write(`data: ${JSON.stringify({ id: 'evt_fixture_connected', type: 'server.connected', data: {} })}\n\n`);
       streams.add(response); response.on('close', () => streams.delete(response)); return;
     }
-    if (path === '/api/session/active') { respond({ data: mode === 'resume' ? { [nativeId(1)]: { type: 'running' } } : {} }); return; }
+    if (path === '/api/session/active') { respond({ data: mode === 'resume' || deletionBusy ? { [nativeId(1)]: { type: 'running' } } : {} }); return; }
+    const parent = url.searchParams.get('parentID');
+    if (request.method === 'GET' && path === '/api/session' && parent !== null && sessions.has(parent) &&
+        Array.from({ length: 14 }, (_, index) => nativeId(index + 1)).includes(parent) &&
+        url.searchParams.get('order') === 'asc' && url.searchParams.get('limit') === '1' &&
+        [...url.searchParams.keys()].length === 3) {
+      respond({ data: [...sessions.values()].filter(session => session.parentID === parent).slice(0, 1), cursor: {} }); return;
+    }
     if (path === '/api/permission/request') { respond({ location: { directory: vault }, data: [] }); return; }
     const match = /^\/api\/session\/([^/]+)(.*)$/.exec(path);
     const session = match ? sessions.get(match[1]) : undefined;
+    if (mode.startsWith('delete-') && match?.[1] === nativeId(1) && !session && !match[2]) { response.writeHead(404).end('{}'); return; }
     if (match && session) {
       const suffix = match[2]; const history = histories.get(session.id) ?? [];
       if (!suffix) { respond({ data: session }); return; }
@@ -276,15 +294,15 @@ async function run(root: string, mode: Mode): Promise<Report> {
   let clock = instant + 1_000_000;
   let app: PreparedServer | undefined;
   const open = async (): Promise<PreparedServer> => {
-    if (!['leases', 'canonical', 'lease-lost-ack'].includes(mode)) return prepareServer({ projectRoot, authority });
+    if (!['leases', 'canonical', 'lease-lost-ack'].includes(mode) && !mode.startsWith('delete-')) return prepareServer({ projectRoot, authority });
     // Same production composition, using its existing injected clock for lease expiry.
     // No global Date/timer replacement and no future option on prepareServer.
     const state = await openThinkState(projectRoot, vault); const servingEpoch = randomUUID();
     const bodies = await createBodyStore({ directory: join(transport, `bodies-${servingEpoch}`), epoch: servingEpoch, vaultDirectory: vault });
     const reader = await openVault(vault); const ground = await openGround(vault); const capture = await openCaptureWriter(vault);
-    const think = createThinkService({ native: nativeSessions(OpenCode.make({ baseUrl: nativeUrl, headers: { authorization } })), state, bodies,
+    const think = createThinkService({ native: nativeSessions(createNativeClient({ baseUrl: nativeUrl, headers: { authorization } })), state, bodies,
       context: { directory: vault }, epoch: servingEpoch, clock: { now: () => clock }, serviceIdentity: { pid: process.pid, version: '2.2.2' } });
-    return { fetch: createApp({ authority, serviceToken, vault: { reader }, think, ground, capture }), async close() {
+    return { fetch: createApp({ authority, serviceToken, vault: { reader }, think, ground, capture }), startRecovery: () => think.startRecovery(), async close() {
       try { await think.close(); } finally { try { await capture.close(); } finally { try { await ground.close(); } finally { await reader.close(); } } }
     } };
   };
@@ -425,6 +443,93 @@ async function run(root: string, mode: Mode): Promise<Report> {
         report.resume.snapshot = await request(path);
         report.resume.listAfter = await request('/api/ground/recent-conversations');
       }
+    } else if (mode.startsWith('delete-')) {
+      // Require a real, owned mapped transcript before making any delete request.
+      let synced = false;
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const current = await request(`/api/think/conversations/${conversation(1)}`);
+        if (record(current.body) && record(current.body.transcript) && current.body.transcript.state === 'up-to-date') { synced = true; break; }
+        await new Promise<void>(resolve => setTimeout(resolve, 5));
+      }
+      if (!synced) throw new Error('owned transcript must settle before deletion checks');
+      const transcriptBefore = await mappedTranscriptProof(database, vault);
+      const registration = await request('/api/think/views', {});
+      if (registration.status !== 201 || !record(registration.body) || typeof registration.body.viewToken !== 'string') throw new Error('controlled deletion view must be registered');
+      const token = registration.body.viewToken;
+      const sanitizedRegistration = { status: registration.status, body: { selectionRevision: registration.body.selectionRevision, conversationId: registration.body.conversationId, expiresAt: registration.body.expiresAt } };
+      const path = `/api/think/conversations/${conversation(1)}`;
+      const deletion: NonNullable<Report['deletion']> = { registration: sanitizedRegistration, transcriptBefore, transcriptExists: true,
+        nativePresent: true, removals, payloadRows: 0, transcriptRows: 0, transcriptEntryRows: 0, pendingChunkRows: 0, unrelatedIntact: false };
+      if (mode === 'delete-idle') {
+        deletion.requested = await request(`${path}/delete`, { clientCommandId: id(7, 1), viewToken: token });
+        if (deletion.requested.status === 202) {
+          for (let attempt = 0; attempt < 200; attempt++) {
+            deletion.receipt = await request(`${path}/commands/${id(7, 1)}`);
+            if (record(deletion.receipt.body) && deletion.receipt.body.state === 'completed') break;
+            await new Promise<void>(resolve => setTimeout(resolve, 10));
+          }
+        }
+      } else if (mode === 'delete-busy' || mode === 'delete-child') {
+        deletionBusy = mode === 'delete-busy';
+        if (mode === 'delete-child') {
+          const parent = sessions.get(nativeId(1));
+          if (!parent) throw new Error('controlled child needs its owned parent');
+          const child = { ...structuredClone(parent), id: 'ses_fixture_cross_directory_child', parentID: nativeId(1), location: { directory: join(root, 'other-directory') } };
+          sessions.set(child.id, child);
+        }
+        deletion.requested = await request(`${path}/delete`, { clientCommandId: id(7, 6), viewToken: token });
+        if (mode === 'delete-child') deletion.childPresent = sessions.has('ses_fixture_cross_directory_child');
+      } else if (mode === 'delete-transcript-conflict' || mode === 'delete-remove-ack-lost') {
+        if (mode === 'delete-transcript-conflict') await appendFile(join(vault, ...transcriptBefore.noteId), '\nfixture external edit must survive\n');
+        const command = { clientCommandId: id(7, 7), viewToken: token };
+        deletion.requested = await request(`${path}/delete`, command);
+        if (deletion.requested.status === 202) {
+          for (let attempt = 0; attempt < 200; attempt++) {
+            deletion.receipt = await request(`${path}/commands/${command.clientCommandId}`);
+            if (record(deletion.receipt.body) && deletion.receipt.body.state === 'pending') break;
+            await new Promise<void>(resolve => setTimeout(resolve, 10));
+          }
+          const afterReceipt = removals.length;
+          deletion.retry = await request(`${path}/delete`, command);
+          const afterRetry = removals.length;
+          if (mode === 'delete-remove-ack-lost') {
+            await app.close(); app = undefined;
+            app = await open(); app.startRecovery();
+            const afterRestart = removals.length;
+            deletion.reopenedReceipt = await request(`${path}/commands/${command.clientCommandId}`);
+            const afterReopenedRead = removals.length;
+            deletion.reopenedRetry = await request(`${path}/delete`, command);
+            deletion.removalCounts = { afterReceipt, afterRetry, afterRestart, afterReopenedRead, afterReopenedRetry: removals.length };
+          }
+        }
+      } else if (mode === 'delete-selected') {
+        deletion.selected = await request('/api/think/selection', { viewToken: token, expectedRevision: 0, conversationId: conversation(1) });
+        const other = await request('/api/think/views', {});
+        if (other.status !== 201 || !record(other.body) || typeof other.body.viewToken !== 'string') throw new Error('controlled second view must be registered');
+        deletion.own = await request(`${path}/delete`, { clientCommandId: id(7, 2), viewToken: token });
+        deletion.other = await request(`${path}/delete`, { clientCommandId: id(7, 3), viewToken: other.body.viewToken });
+      } else {
+        deletion.unknown = await request(`${path}/delete`, { clientCommandId: id(7, 4), viewToken: 'z'.repeat(64) });
+        clock += 120001;
+        deletion.expiredRead = await request('/api/think/selection', undefined, token);
+        deletion.expired = await request(`${path}/delete`, { clientCommandId: id(7, 5), viewToken: token });
+      }
+      deletion.transcriptExists = await lstat(join(vault, ...transcriptBefore.noteId)).then(() => true, (error: unknown) => {
+        if (record(error) && error.code === 'ENOENT') return false; throw error;
+      });
+      deletion.nativePresent = sessions.has(nativeId(1));
+      if (deletion.transcriptExists) deletion.transcriptAfter = await mappedTranscriptProof(database, vault);
+      const db = new Database(database, { readonly: true, create: false });
+      try {
+        const count = (sql: string, idValue: string) => Number(db.query<{ count: number }, [string]>(sql).get(idValue)?.count);
+        deletion.payloadRows = count('SELECT count(*) AS count FROM commands WHERE conversation_id = ? AND (original_input IS NOT NULL OR payload_sha256 IS NOT NULL)', conversation(1));
+        deletion.transcriptRows = count('SELECT count(*) AS count FROM transcripts WHERE conversation_id = ?', conversation(1));
+        deletion.transcriptEntryRows = count('SELECT count(*) AS count FROM transcript_entries WHERE conversation_id = ?', conversation(1));
+        deletion.pendingChunkRows = count('SELECT count(*) AS count FROM transcript_pending_chunks WHERE conversation_id = ?', conversation(1));
+        deletion.unrelatedIntact = count('SELECT count(*) AS count FROM conversations WHERE conversation_id = ?', conversation(2)) === 1 &&
+          count('SELECT count(*) AS count FROM commands WHERE conversation_id = ? AND kind = \'send\' AND original_input IS NOT NULL', conversation(2)) === 1;
+      } finally { db.close(); }
+      report.deletion = deletion;
     } else if (mode === 'unknown-selection') {
       report.unknownSelection = await request('/api/think/selection', { viewToken: 'b'.repeat(64), expectedRevision: 0, conversationId: conversation(1) });
       report.unknownRead = await request('/api/think/selection', undefined, 'b'.repeat(64));
@@ -469,7 +574,7 @@ async function run(root: string, mode: Mode): Promise<Report> {
         report.leases.tokenDataExposed = [token, otherToken, sha(token), sha(otherToken)].some(secret => listData.includes(secret));
       }
     }
-    report.after = stateFacts(database);
+    report.after = stateFacts(database, mode.startsWith('delete-') && !sessions.has(nativeId(1)) ? 2 : 1);
     report.legacyUnchanged = await readFile(legacy, 'utf8') === legacyText;
     report.nativeLookalikesUnchanged = JSON.stringify([sessions.get(lookalike.id), sessions.get(job.id)]) === lookalikesBefore;
     return report;
@@ -483,5 +588,5 @@ async function run(root: string, mode: Mode): Promise<Report> {
 
 const [root, mode, output] = process.argv.slice(2);
 if (!root?.startsWith('/tmp/opencode/ground-conversations-') || !output?.startsWith(`${root}/`) ||
-    !['recent', 'resume', 'leases', 'unknown-selection', 'canonical', 'offline', 'lease-lost-ack', 'resume-unknown', 'registration-absent'].includes(mode ?? '')) throw new Error('Use an owned Ground conversation fixture root/mode');
+    !['recent', 'resume', 'leases', 'unknown-selection', 'canonical', 'offline', 'lease-lost-ack', 'resume-unknown', 'registration-absent', 'delete-idle', 'delete-selected', 'delete-lease', 'delete-busy', 'delete-child', 'delete-transcript-conflict', 'delete-remove-ack-lost'].includes(mode ?? '')) throw new Error('Use an owned Ground conversation fixture root/mode');
 await writeFile(output, JSON.stringify(await run(root, mode as Mode)));

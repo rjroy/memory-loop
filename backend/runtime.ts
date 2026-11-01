@@ -60,6 +60,7 @@ async function main(): Promise<void> {
     throw error;
   }
   console.info('daemon_start_outcome', { status: 'listening', port });
+  prepared.startRecovery();
 
   let shuttingDown = false;
   const shutdown = async (signal: 'SIGINT' | 'SIGTERM') => {

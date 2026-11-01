@@ -54,7 +54,9 @@ async function exercise(mode: Mode): Promise<Report> {
   expect(report.before.conversationIds).toEqual(Array.from({ length: 14 }, (_, index) => conversation(index + 1)));
   expect(report.before).toMatchObject({ sendCount: 13, originalHex: Buffer.from(firstOriginal).toString('hex'),
     originalSha256: sha(firstOriginal), nativeSessionId: `ses_memoryloop_${conversation(1).replaceAll('-', '')}` });
-  expect(report.after, 'latest ten is not retention: item eleven, empty chat and all immutable originals stay registered').toEqual(report.before);
+  if (!(mode.startsWith('delete-') && report.deletion?.requested?.status === 202)) {
+    expect(report.after, 'reads and rejected deletions must not remove registrations or immutable originals').toEqual(report.before);
+  }
   expect(report.legacyUnchanged).toBe(true);
   expect(report.nativeLookalikesUnchanged).toBe(true);
   return report;
@@ -266,5 +268,114 @@ describe('Ground 3ry real registry listing, explicit Resume and view selection r
     const report = await exercise('unknown-selection');
     expect(report.unknownSelection).toMatchObject({ status: 403, body: { error: { code: 'lease_unavailable' } } });
     expect(report.unknownRead).toMatchObject({ status: 403, body: { error: { code: 'lease_unavailable' } } });
+  });
+});
+
+describe('Ground 9ya.6 paired deletion routes', () => {
+  it.each([
+    ['delete-busy', 'running'],
+    ['delete-child', 'status_unknown'],
+  ] as const)('blocks %s without native removal, Stop or transcript changes', async (mode, reason) => {
+    const report = await exercise(mode);
+    const value = report.deletion;
+    if (!value) throw new Error('missing deletion-guard observations');
+    expect(value.registration).toMatchObject({ status: 201, body: { conversationId: null } });
+    expect(value.requested).toMatchObject({ status: 409, body: { error: { code: 'delete_blocked', reason } } });
+    expect(value.removals).toEqual([]);
+    expect(value.nativePresent).toBe(true);
+    if (mode === 'delete-child') expect(value.childPresent).toBe(true);
+    expect(value.transcriptExists).toBe(true);
+    expect(value.transcriptAfter).toEqual(value.transcriptBefore);
+    expect(value).toMatchObject({ payloadRows: 2, transcriptRows: 1, unrelatedIntact: true });
+  });
+
+  it('preserves an externally edited mapped transcript and private payloads as a pending conflict', async () => {
+    const report = await exercise('delete-transcript-conflict');
+    const value = report.deletion;
+    if (!value) throw new Error('missing edited-transcript observations');
+    expect(value.requested).toMatchObject({ status: 202, body: { kind: 'delete', conversationId: conversation(1), clientCommandId: id(7, 7) } });
+    expect(value.receipt).toMatchObject({ status: 200, body: { kind: 'delete', state: 'pending', reason: 'conflict' } });
+    expect(value.retry).toMatchObject({ status: 202, body: { kind: 'delete', state: 'pending', reason: 'conflict' } });
+    expect(value.transcriptExists).toBe(true);
+    expect(value.transcriptAfter?.bytesHex).toBe(Buffer.concat([Buffer.from(value.transcriptBefore.bytesHex, 'hex'), Buffer.from('\nfixture external edit must survive\n')]).toString('hex'));
+    expect(value.removals.length).toBeLessThanOrEqual(1);
+    expect(value).toMatchObject({ payloadRows: 2, transcriptRows: 1, unrelatedIntact: true });
+  });
+
+  it('does not replay a native removal whose acknowledgement was lost on GET, repeated POST or a fresh daemon lifetime', async () => {
+    const report = await exercise('delete-remove-ack-lost');
+    const value = report.deletion;
+    if (!value) throw new Error('missing lost-removal observations');
+    expect(value.requested).toMatchObject({ status: 202, body: { kind: 'delete', conversationId: conversation(1), clientCommandId: id(7, 7) } });
+    for (const [response, status] of [[value.receipt, 200], [value.retry, 202], [value.reopenedReceipt, 200], [value.reopenedRetry, 202]] as const) {
+      expect(response).toMatchObject({ status, body: { kind: 'delete', conversationId: conversation(1), clientCommandId: id(7, 7), state: 'pending' } });
+      expect(['io_unavailable', 'status_unknown']).toContain((response?.body as { reason?: string }).reason);
+    }
+    expect(value.removalCounts).toBeDefined();
+    if (!value.removalCounts) throw new Error('missing removal boundary observations');
+    expect(value.removalCounts.afterRetry).toBe(value.removalCounts.afterReceipt);
+    expect(value.removalCounts.afterRestart).toBe(value.removalCounts.afterReceipt);
+    expect(value.removalCounts.afterReopenedRead).toBe(value.removalCounts.afterReceipt);
+    expect(value.removalCounts.afterReopenedRetry).toBe(value.removalCounts.afterReceipt);
+    expect(value.removalCounts.afterReceipt, 'the initial native effect must not be transparently replayed after a lost acknowledgement').toBe(1);
+    expect(value.removals).toEqual([`ses_memoryloop_${conversation(1).replaceAll('-', '')}`]);
+    expect(value.nativePresent).toBe(false);
+    expect(value.transcriptExists).toBe(true);
+    expect(value.transcriptAfter).toEqual(value.transcriptBefore);
+    expect(value).toMatchObject({ payloadRows: 2, transcriptRows: 1, unrelatedIntact: true });
+  });
+
+  it('deletes one idle unselected registered chat, its mapped transcript and private payloads', async () => {
+    const report = await exercise('delete-idle');
+    const value = report.deletion;
+    expect(value).toBeDefined();
+    if (!value) throw new Error('missing deletion observations');
+    expect(value.registration).toMatchObject({ status: 201, body: { selectionRevision: 0, conversationId: null } });
+    expect(value.transcriptBefore.noteId).toEqual(['Conversations', 'Memory Loop', `think-${conversation(1)}.md`]);
+    expect(Buffer.from(value.transcriptBefore.bytesHex, 'hex').toString('utf8')).toContain(firstOriginal);
+    expect(value.requested, 'valid owned idle target and live unselected caller must be accepted').toMatchObject({ status: 202,
+      body: { kind: 'delete', conversationId: conversation(1), clientCommandId: id(7, 1), epoch: (report.controls.snapshot.body as { epoch: string }).epoch } });
+    expect(['accepted', 'pending', 'completed']).toContain((value.requested?.body as { state?: string }).state);
+    expect(value.receipt).toMatchObject({ status: 200, body: { kind: 'delete', conversationId: conversation(1), clientCommandId: id(7, 1), state: 'completed' } });
+    expect(value.removals).toEqual([`ses_memoryloop_${conversation(1).replaceAll('-', '')}`]);
+    expect(value.nativePresent).toBe(false);
+    expect(value.transcriptExists).toBe(false);
+    expect(value).toMatchObject({ payloadRows: 0, transcriptRows: 0, transcriptEntryRows: 0, pendingChunkRows: 0, unrelatedIntact: true });
+    expect(report.after.conversationIds).not.toContain(conversation(1));
+    expect(report.after.conversationIds).toContain(conversation(2));
+    expect(report.legacyUnchanged).toBe(true);
+    expect(report.nativeLookalikesUnchanged).toBe(true);
+  });
+
+  it('blocks both the selecting view and another live caller without any destructive native or transcript effect', async () => {
+    const report = await exercise('delete-selected');
+    const value = report.deletion;
+    expect(value).toBeDefined();
+    if (!value) throw new Error('missing selection-guard observations');
+    expect(value.registration.status).toBe(201);
+    expect(value.selected).toMatchObject({ status: 200, body: { conversationId: conversation(1), selectionRevision: 1 } });
+    expect(value.own).toMatchObject({ status: 409, body: { error: { code: 'delete_blocked', reason: 'current' } } });
+    expect(value.other).toMatchObject({ status: 409, body: { error: { code: 'delete_blocked', reason: 'selected_elsewhere' } } });
+    expect(value.removals).toEqual([]);
+    expect(value.nativePresent).toBe(true);
+    expect(value.transcriptExists).toBe(true);
+    expect(value.transcriptAfter).toEqual(value.transcriptBefore);
+    expect(value).toMatchObject({ payloadRows: 2, transcriptRows: 1, unrelatedIntact: true });
+  });
+
+  it('rejects unknown and expired caller leases without deleting an unselected target', async () => {
+    const report = await exercise('delete-lease');
+    const value = report.deletion;
+    expect(value).toBeDefined();
+    if (!value) throw new Error('missing lease-guard observations');
+    expect(value.registration).toMatchObject({ status: 201, body: { selectionRevision: 0, conversationId: null } });
+    expect(value.expiredRead).toMatchObject({ status: 403, body: { error: { code: 'lease_unavailable' } } });
+    expect(value.unknown).toMatchObject({ status: 403, body: { error: { code: 'lease_unavailable' } } });
+    expect(value.expired).toMatchObject({ status: 403, body: { error: { code: 'lease_unavailable' } } });
+    expect(value.removals).toEqual([]);
+    expect(value.nativePresent).toBe(true);
+    expect(value.transcriptExists).toBe(true);
+    expect(value.transcriptAfter).toEqual(value.transcriptBefore);
+    expect(value).toMatchObject({ payloadRows: 2, transcriptRows: 1, unrelatedIntact: true });
   });
 });

@@ -1,23 +1,31 @@
 import { createGroundClient, type GroundKey, type GroundReads } from './client';
+import { createGroundDeletion, type DeletionPermit, type GroundDeletion } from './deletion';
+import type { RecentConversation } from '../../backend/think/contract';
 
 export interface CardRead<T> { readonly read: T | null; readonly loading: boolean; readonly failed: boolean }
-export type GroundState = { readonly [K in GroundKey]: CardRead<GroundReads[K]> };
+type GroundCards = { readonly [K in GroundKey]: CardRead<GroundReads[K]> };
+export type GroundState = GroundCards & { readonly deletion: GroundDeletion };
 export interface GroundSession {
   subscribe(listener: () => void): () => void;
   getSnapshot(): GroundState;
   setLocation(pathname: string): void;
   setView(token: string | null, change: number, settled: boolean): void;
   retry(key: GroundKey): void;
+  requestDeletion(item: RecentConversation, onComplete?: () => void): void;
+  cancelDeletion(): void;
+  confirmDeletion(): Promise<void>;
+  checkDeletion(onComplete?: () => void): Promise<void>;
   close(): void;
 }
 const initial = (): GroundState => ({
   quickActions: { read: null, loading: true, failed: false }, inspiration: { read: null, loading: true, failed: false },
   prompts: { read: null, loading: true, failed: false }, goals: { read: null, loading: true, failed: false }, captures: { read: null, loading: true, failed: false },
   conversations: { read: null, loading: true, failed: false },
+  deletion: null,
 });
 
 /** One in-memory visit, with independent resource and conversation reads. */
-export function createGroundSession(client = createGroundClient()): GroundSession {
+export function createGroundSession(client = createGroundClient(), prepareDeletion: (id: string) => Promise<DeletionPermit | null> = async () => null): GroundSession {
   let state = initial();
   let active = false;
   let closed = false;
@@ -37,7 +45,8 @@ export function createGroundSession(client = createGroundClient()): GroundSessio
     const controller = new AbortController();
     const owner = visit;
     requests.set(key, controller);
-    const previous = state[key].read;
+    const cards: GroundCards = state;
+    const previous = cards[key].read;
     publish(key, { read: previous, loading: true, failed: false });
     const current = () => !closed && active && owner === visit && requests.get(key) === controller;
     try {
@@ -49,6 +58,25 @@ export function createGroundSession(client = createGroundClient()): GroundSessio
       if (current()) publish(key, { read: previous?.state === 'ready' ? previous : null, loading: false, failed: true });
     } finally { if (requests.get(key) === controller) requests.delete(key); }
   }
+  function refreshConversations() {
+    conversationsDirty = true;
+    requests.get('conversations')?.abort(); requests.delete('conversations');
+    if (active) { conversationsDirty = false; void load('conversations'); }
+  }
+  const deletion = createGroundDeletion(client, {
+    prepare: prepareDeletion,
+    allowed(id) {
+      const card = state.conversations;
+      return active && !closed && !card.loading && !card.failed && card.read?.state === 'ready' &&
+        card.read.items.some(item => item.conversationId === id && item.state === 'ready' && item.delete.available);
+    },
+    publish(value) { state = { ...state, deletion: value }; for (const listener of listeners) listener(); },
+    refresh: refreshConversations,
+    remove(id) {
+      const card = state.conversations;
+      if (card.read?.state === 'ready') publish('conversations', { ...card, read: { ...card.read, items: card.read.items.filter(item => item.conversationId !== id) } });
+    },
+  });
   return {
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => state,
@@ -56,6 +84,7 @@ export function createGroundSession(client = createGroundClient()): GroundSessio
       const next = pathname.replace(/\/$/, '') === '/ground';
       if (closed || next === active) return;
       active = next;
+      if (!active) deletion.leave();
       ++visit;
       for (const controller of requests.values()) controller.abort();
       requests.clear();
@@ -78,6 +107,7 @@ export function createGroundSession(client = createGroundClient()): GroundSessio
       if (active && settled && conversationsDirty) { conversationsDirty = false; void load('conversations'); }
     },
     retry(key) { void load(key); },
-    close() { closed = true; ++visit; for (const controller of requests.values()) controller.abort(); requests.clear(); listeners.clear(); },
+    requestDeletion: deletion.request, cancelDeletion: deletion.cancel, confirmDeletion: deletion.confirm, checkDeletion: deletion.check,
+    close() { closed = true; deletion.close(); ++visit; for (const controller of requests.values()) controller.abort(); requests.clear(); listeners.clear(); },
   };
 }

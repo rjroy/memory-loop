@@ -44,6 +44,9 @@ function thinkError(code: ThinkErrorCode): Response {
 }
 
 function thinkServiceError(error: unknown): Response {
+  if (error instanceof ThinkServiceError && error.code === 'delete_blocked' && error.reason) {
+    return Response.json({ error: { code: error.code, message: thinkErrors.delete_blocked.message, reason: error.reason } }, { status: 409 });
+  }
   return thinkError(error instanceof ThinkServiceError ? error.code : 'think_unavailable');
 }
 
@@ -91,7 +94,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
           context.res = Response.json({ error: { code: 'unauthorized', message: 'Service authentication required' } }, { status: 401 });
         } else if (context.req.method !== 'GET' && !(context.req.method === 'POST' && (path === '/api/capture' || path === thinkBase ||
           path === '/api/think/views' || path === '/api/think/selection' ||
-          /^\/api\/think\/conversations\/[^/]+\/(?:resume|messages|runs\/[^/]+\/stop|decisions\/[^/]+\/reply)$/.test(path)))) {
+          /^\/api\/think\/conversations\/[^/]+\/(?:resume|delete|messages|runs\/[^/]+\/stop|decisions\/[^/]+\/reply)$/.test(path)))) {
           context.res = Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 });
         } else await next();
       }
@@ -211,6 +214,18 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     try { return context.json(await service.resume({ conversationId, clientCommandId: value.clientCommandId }), 202); }
     catch (error) { return thinkServiceError(error); }
   });
+  app.post(`${thinkBase}/:id/delete`, async context => {
+    const conversationId = context.req.param('id');
+    const value = await jsonInput(context.req.raw, 4096);
+    if (new URL(context.req.url).search || !uuid.test(conversationId) || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 2 ||
+        !('clientCommandId' in value) || typeof value.clientCommandId !== 'string' || !uuid.test(value.clientCommandId) || !('viewToken' in value)) return thinkError('invalid_request');
+    if (!validViewToken(value.viewToken)) return thinkError('lease_unavailable');
+    const service = options.conversations ?? options.think;
+    if (!service) return thinkError('think_config_missing');
+    if ('error' in service) return thinkError(service.error);
+    try { return context.json(await service.delete({ conversationId, clientCommandId: value.clientCommandId, viewToken: value.viewToken }), 202); }
+    catch (error) { return thinkServiceError(error); }
+  });
   app.post(`${thinkBase}/:id/messages`, async context => {
     const conversationId = context.req.param('id');
     const value = await jsonInput(context.req.raw, 6 * 1024 * 1024 + 4096);
@@ -295,7 +310,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     if ((!service || 'error' in service) && !options.conversations) return thinkError(service && 'error' in service ? service.error : 'think_config_missing');
     try {
       const receipt = service && !('error' in service) ? await service.command(id, commandId)
-        : await options.conversations?.resumeCommand(id, commandId);
+        : await options.conversations?.command(id, commandId);
       return receipt ? context.json(receipt) : thinkError('not_found');
     } catch (error: unknown) { return thinkServiceError(error); }
   });

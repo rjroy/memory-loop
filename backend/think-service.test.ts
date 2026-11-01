@@ -47,6 +47,17 @@ function conversationStateSpies() {
   } satisfies ThinkStateStore['conversations'];
 }
 
+/** These admission-only units never accept or recover a deletion. */
+function deletionStateSpies() {
+  const unexpected = () => { throw new Error('Unexpected deletion/cache operation in this controlled unit'); };
+  const deletions: ThinkStateStore['deletions'] = {
+    get: vi.fn(unexpected), pending: vi.fn(unexpected), blocked: vi.fn(() => false), accept: vi.fn(unexpected),
+    attempted: vi.fn(unexpected), progress: vi.fn(unexpected), pendingReason: vi.fn(unexpected), complete: vi.fn(unexpected),
+  };
+  const cache: ThinkStateStore['cache'] = { intent: vi.fn(unexpected), acquire: vi.fn(unexpected), namespaces: vi.fn(unexpected), removed: vi.fn(unexpected) };
+  return { deletions, cache };
+}
+
 function unitBodies(): BodyStore {
   const data = new Map<string, Buffer>();
   let generation = 0;
@@ -77,6 +88,9 @@ function unitBodies(): BodyStore {
     },
     async evict() { return 'protected'; },
     async restore() { throw new Error('unexpected fixture restore'); },
+    bind() {},
+    revoke() { throw new Error('unexpected fixture revoke'); },
+    async purge() { throw new Error('unexpected fixture purge'); },
     async close() { data.clear(); },
   };
 }
@@ -169,7 +183,9 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
   const replyForm = vi.fn(async (_input: SessionFormReplyInput, _signal: AbortSignal): Promise<SessionFormReplyOutput> => {});
   const listPermissionRequests = vi.fn(async (_input: PermissionRequestListInput, _signal: AbortSignal): Promise<PermissionRequestListOutput> => ({ location: { directory }, data: [...pendingPermissions] }));
   const replyPermission = vi.fn(async (_input: PermissionReplyInput, _signal: AbortSignal): Promise<void> => {});
-  const native = { createSession, getSession, subscribe, prompt, listInbox, cancelInbox, interruptSession, activeSessions, listMessages, getMessage, getServerInfo, listForms, getForm, replyForm, listPermissionRequests, replyPermission } satisfies NativeSessions & { replyPermission(input: PermissionReplyInput, signal: AbortSignal): Promise<void> };
+  const listSessions = vi.fn<NativeSessions['listSessions']>(async () => { throw new Error('unexpected fixture child scan'); });
+  const removeSession = vi.fn<NativeSessions['removeSession']>(async () => { throw new Error('unexpected fixture removal'); });
+  const native = { createSession, getSession, listSessions, removeSession, subscribe, prompt, listInbox, cancelInbox, interruptSession, activeSessions, listMessages, getMessage, getServerInfo, listForms, getForm, replyForm, listPermissionRequests, replyPermission } satisfies NativeSessions & { replyPermission(input: PermissionReplyInput, signal: AbortSignal): Promise<void> };
   const options = { native, context: { directory, agent, model: selectedModel }, epoch,
     serviceIdentity: { pid: 49123, version: '2.2.2' }, bodies: bodies ?? unitBodies(), ...serviceOptions, ...(transcript ? { transcript } : {}) } satisfies ThinkServiceOptions;
   const service = createThinkService(options);
@@ -901,6 +917,7 @@ describe('durable admission storage faults', () => {
     const state = {
       installationId: '99999999-9999-4999-8999-999999999999',
       conversations: conversationStateSpies(),
+      ...deletionStateSpies(),
       command: vi.fn<ThinkStateStore['command']>(id => { const found = records.get(id); return found ? structuredClone(found) : null; }),
       registerConversation: vi.fn<ThinkStateStore['registerConversation']>((_owner, receipt, at) => put(receipt, null, null, at)),
       registerCommand: vi.fn<ThinkStateStore['registerCommand']>(put),
@@ -1127,6 +1144,9 @@ describe('daemon-owned original body foundation', () => {
       open: vi.fn<BodyStore['open']>(async () => { throw new Error('unexpected open'); }),
       evict: vi.fn<BodyStore['evict']>(async () => 'protected'),
       restore: vi.fn<BodyStore['restore']>(async () => { throw new Error('unexpected restore'); }),
+      bind: vi.fn<BodyStore['bind']>(),
+      revoke: vi.fn<BodyStore['revoke']>(() => { throw new Error('unexpected revoke'); }),
+      purge: vi.fn<BodyStore['purge']>(async () => { throw new Error('unexpected purge'); }),
       close: vi.fn(async () => {}),
     };
     const ref = (): BodyRef => ({ key: observedKey ?? { conversationId: send.conversationId, owner: { kind: 'original', clientCommandId: send.clientCommandId, messageId: `msg_memoryloop_${send.clientCommandId.replaceAll('-', '')}` } },
@@ -1984,6 +2004,7 @@ describe('registry-owned restart hydration fences', () => {
     const state = {
       installationId: owner.owner.installationId ?? '',
       conversations: conversationStateSpies(),
+      ...deletionStateSpies(),
       registry: { conversation: vi.fn((id: string) => registered && id === a.conversationId ? structuredClone(owner) : null),
         commands: vi.fn<NonNullable<ThinkStateStore['registry']>['commands']>((id, after) =>
           id === a.conversationId && !after ? structuredClone(facts) : []) },

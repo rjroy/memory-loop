@@ -1,5 +1,18 @@
+import { OpenCode } from '@opencode/client';
 import type { EventSubscribeInput, MessageListInput, MessageListOutput, OpenCodeEvent, SessionActiveOutput, SessionCreateInput, SessionGetInput, SessionInfo, SessionPromptInput, SessionPromptOutput, SessionInboxListInput, SessionInboxListOutput, SessionInboxCancelInput, SessionInboxCancelOutput, SessionInterruptInput, SessionInterruptOutput } from '@opencode/client';
 import type { OpenCodeClient, ServerInfo, SessionFormListInput, SessionFormListOutput, SessionFormGetInput, SessionFormGetOutput, SessionFormReplyInput, SessionFormReplyOutput, PermissionRequestListInput, PermissionRequestListOutput, SessionMessageGetInput, SessionMessageGetOutput } from '@opencode/client';
+import type { SessionListInput, SessionListOutput, SessionRemoveInput } from '@opencode/client';
+
+/** Keep DELETE out of Bun's transparent pooled-socket retries; other SDK requests stay unchanged. */
+export function createNativeClient(options: Omit<OpenCode.ClientOptions, 'fetch'>): OpenCodeClient {
+  const transport = globalThis.fetch;
+  const sdkFetch = Object.assign(
+    (input: Parameters<typeof transport>[0], init?: Parameters<typeof transport>[1]) =>
+      transport(input, init?.method === 'DELETE' ? { ...init, keepalive: false, redirect: 'error' } : init),
+    { preconnect: transport.preconnect },
+  );
+  return OpenCode.make({ ...options, fetch: sdkFetch });
+}
 
 /** Only the public session fields needed for ownership and creation readback. */
 export type NativeSession = Pick<SessionInfo, 'id' | 'parentID' | 'metadata' | 'location' | 'permissions' | 'agent' | 'model'>;
@@ -7,6 +20,8 @@ export type NativeSession = Pick<SessionInfo, 'id' | 'parentID' | 'metadata' | '
 export interface NativeSessions {
   createSession(input: SessionCreateInput, signal: AbortSignal): Promise<NativeSession>;
   getSession(input: SessionGetInput, signal: AbortSignal): Promise<NativeSession & Pick<SessionInfo, 'time' | 'outcome'>>;
+  listSessions(input: SessionListInput, signal: AbortSignal): Promise<SessionListOutput>;
+  removeSession(input: SessionRemoveInput, signal: AbortSignal): Promise<void>;
   subscribe(input: EventSubscribeInput, signal: AbortSignal): AsyncIterable<OpenCodeEvent>;
   prompt(input: SessionPromptInput, signal: AbortSignal): Promise<SessionPromptOutput>;
   listInbox(input: SessionInboxListInput, signal: AbortSignal): Promise<SessionInboxListOutput>;
@@ -27,6 +42,8 @@ export function nativeSessions(client: OpenCodeClient): NativeSessions {
   return {
     createSession: (input, signal) => client.session.create(input, { signal }),
     getSession: (input, signal) => client.session.get(input, { signal }),
+    listSessions: (input, signal) => client.session.list(input, { signal }),
+    removeSession: (input, signal) => client.session.remove(input, { signal }),
     subscribe: (input, signal) => client.event.subscribe({ ...input, signal }),
     prompt: (input, signal) => client.session.prompt(input, { signal }),
     listInbox: (input, signal) => client.session.inbox.list(input, { signal }),

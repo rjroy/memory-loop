@@ -38,6 +38,10 @@ export interface BodyStore {
   open(ref: BodyRef): Promise<BodyReader>;
   evict(ref: BodyRef): Promise<'evicted' | 'deferred' | 'protected' | 'already-evicted'>;
   restore(ref: Extract<BodyRef, { kind: 'canonical' }>, source: AsyncIterable<Uint8Array>): Promise<BodyReader>;
+  /** Bind before the first body; SQLite retains cleanup attribution across daemon crashes. */
+  bind(state: BodyCacheStateStore): void;
+  revoke(conversationId: string): void;
+  purge(conversationId: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -46,6 +50,8 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath, rmdir, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import type { BodyCacheStateStore, CacheNamespace } from './state';
+import { removeCacheNamespace } from './body-cleanup';
 
 class StoreError extends Error implements BodyStoreError {
   constructor(readonly code: BodyStoreErrorCode, readonly reason?: 'evicted') { super('Think body store operation failed'); }
@@ -90,13 +96,49 @@ export async function createBodyStore(options: { directory: string; epoch: strin
   const contentIds = new Map<string, string>();
   const locks = new Map<string, Promise<void>>();
   const readers = new Set<FileHandle>();
+  const readerClosers = new Map<FileHandle, { conversationId: string; close(): Promise<void> }>();
+  const revoked = new Set<string>();
+  const spaces = new Map<string, Promise<{ handle: FileHandle; record: CacheNamespace }>>();
+  const spaceIntents = new Map<string, CacheNamespace>();
+  let cache: BodyCacheStateStore | undefined;
   let closed = false;
   let closing: Promise<void> | undefined;
-  const pathFor = (name: string) => `/proc/self/fd/${directoryHandle.fd}/${name}`;
+  const namespaceFor = (conversationId: string) => {
+    let work = spaces.get(conversationId);
+    if (!work) {
+      work = (async () => {
+        if (!/^[0-9a-f-]{36}$/.test(conversationId) || revoked.has(conversationId)) throw new StoreError('closed');
+        const record: CacheNamespace = { conversationId, epoch, path: directory, root: { dev: namespace.dev, ino: namespace.ino }, directory: null };
+        spaceIntents.set(conversationId, record);
+        cache?.intent(record); // Commit attribution before creating a directory or writing any content.
+        const path = `/proc/self/fd/${directoryHandle.fd}/${conversationId}`;
+        await mkdir(path, { mode: 0o700 });
+        const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+        try {
+          const stat = await handle.stat();
+          if (!stat.isDirectory() || stat.uid !== process.getuid?.() || (stat.mode & 0o7777) !== 0o700) throw new StoreError('resource_failure');
+          record.directory = { dev: stat.dev, ino: stat.ino };
+          cache?.acquire(conversationId, epoch, record.directory);
+          await directoryHandle.sync();
+          return { handle, record };
+        } catch (error) { await handle.close(); throw error; }
+      })();
+      spaces.set(conversationId, work);
+    }
+    return work;
+  };
+  const pathFor = async (conversationId: string, name: string) => {
+    const space = await namespaceFor(conversationId);
+    const root = await lstat(directory); const named = await lstat(`/proc/self/fd/${directoryHandle.fd}/${conversationId}`); const held = await space.handle.stat();
+    if (!root.isDirectory() || root.dev !== namespace.dev || root.ino !== namespace.ino || !named.isDirectory() || !held.isDirectory() ||
+        named.dev !== space.record.directory?.dev || named.ino !== space.record.directory.ino || held.dev !== named.dev || held.ino !== named.ino) throw new StoreError('unavailable');
+    return `/proc/self/fd/${space.handle.fd}/${name}`;
+  };
   const fingerprint = (key: BodyKey) => JSON.stringify([key.conversationId, key.owner.kind, key.owner.kind === 'assistant-text' ? key.owner.messageId : key.owner.clientCommandId,
     key.owner.kind === 'assistant-text' ? key.owner.ordinal : key.owner.kind === 'original' ? key.owner.messageId : key.owner.decisionId]);
   const snapshot = (ref: BodyRef): BodyRef => structuredClone(ref);
   const checkOpen = () => { if (closed) throw new StoreError('closed'); };
+  const checkConversation = (id: string) => { checkOpen(); if (revoked.has(id)) throw new StoreError('closed'); };
   const verify = async (handle: FileHandle, expected?: StoredBody) => {
     const stat = await handle.stat();
     if (!stat.isFile() || stat.uid !== process.getuid?.() || (stat.mode & 0o7777) !== 0o600 || stat.nlink !== 1 ||
@@ -105,6 +147,7 @@ export async function createBodyStore(options: { directory: string; epoch: strin
   };
   const get = (ref: BodyRef): StoredBody => {
     try {
+      checkConversation(ref.key.conversationId);
       const stored = records.get(ref.generation);
       if (!stored || ref.epoch !== epoch || ref.contentId !== stored.ref.contentId || fingerprint(ref.key) !== fingerprint(stored.ref.key) ||
           ref.kind !== stored.ref.kind || !Number.isSafeInteger(ref.through) || !stored.prefixes.has(ref.through) ||
@@ -113,8 +156,9 @@ export async function createBodyStore(options: { directory: string; epoch: strin
     } catch { throw new StoreError('stale_ref'); }
   };
   const remove = async (item: StoredBody) => {
-    const handle = await open(pathFor(item.name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    try { await verify(handle, item); await unlink(pathFor(item.name)); } finally { await handle.close(); }
+    const path = await pathFor(item.ref.key.conversationId, item.name);
+    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try { await verify(handle, item); await unlink(path); } finally { await handle.close(); }
   };
   const serial = async <T>(key: string, work: () => Promise<T>): Promise<T> => {
     const previous = locks.get(key) ?? Promise.resolve();
@@ -123,7 +167,7 @@ export async function createBodyStore(options: { directory: string; epoch: strin
     const queued = previous.then(() => gate);
     locks.set(key, queued);
     await previous;
-    try { checkOpen(); return await work(); }
+    try { checkConversation(JSON.parse(key)[0]); return await work(); }
     finally { release(); if (locks.get(key) === queued) locks.delete(key); }
   };
   const write = async (handle: FileHandle, source: AsyncIterable<Uint8Array>, offset: number, hash?: ReturnType<typeof createHash>) => {
@@ -145,15 +189,16 @@ export async function createBodyStore(options: { directory: string; epoch: strin
     item.pins++;
     let handle: FileHandle;
     try {
-      handle = await open(pathFor(item.name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-      try { const stat = await verify(handle, item); if (stat.size < requested.through) throw new StoreError('unavailable'); checkOpen(); }
+      handle = await open(await pathFor(requested.key.conversationId, item.name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try { const stat = await verify(handle, item); if (stat.size < requested.through) throw new StoreError('unavailable'); checkConversation(requested.key.conversationId); }
       catch (error) { await handle.close(); throw error; }
     } catch { item.pins--; throw new StoreError('unavailable'); }
     readers.add(handle);
     let readerClosed = false;
-    return {
+    const reader: BodyReader = {
       async read(offset, length) {
-        if (readerClosed || closed) throw new StoreError('closed');
+        if (readerClosed) throw new StoreError('closed');
+        checkConversation(requested.key.conversationId);
         if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0 || length > 65536 || offset + length > requested.through) throw new StoreError('invalid_range');
         try {
           await verify(handle, item);
@@ -164,21 +209,47 @@ export async function createBodyStore(options: { directory: string; epoch: strin
             if (!read.bytesRead) throw new Error();
             count += read.bytesRead;
           }
+          checkConversation(requested.key.conversationId);
           return result;
         } catch { throw new StoreError('unavailable'); }
       },
       async close() {
         if (readerClosed) return;
-        readerClosed = true; readers.delete(handle); await handle.close();
-        if (closed) return;
+        readerClosed = true; readers.delete(handle); readerClosers.delete(handle); await handle.close();
+        if (closed || revoked.has(requested.key.conversationId)) { item.pins--; return; }
         await serial(fingerprint(requested.key), async () => {
           item.pins--;
           if (!item.pins && item.evictPending && item.resident) { await remove(item); item.resident = false; item.evictPending = false; }
         });
       },
     };
+    readerClosers.set(handle, { conversationId: requested.key.conversationId, close: () => reader.close() });
+    return reader;
+  };
+  const purge = async (conversationId: string) => {
+    revoked.add(conversationId);
+    await Promise.all([...locks].filter(([key]) => JSON.parse(key)[0] === conversationId).map(([, work]) => work));
+    await Promise.all([...readerClosers.values()].filter(reader => reader.conversationId === conversationId).map(reader => reader.close()));
+    const work = spaces.get(conversationId);
+    if (work) {
+      const space = await work.catch(() => undefined);
+      if (space) { await space.handle.close(); await removeCacheNamespace(space.record, vaultDirectory); }
+      else {
+        const record = spaceIntents.get(conversationId);
+        if (!record) throw new StoreError('resource_failure');
+        await removeCacheNamespace(record, vaultDirectory);
+      }
+      cache?.removed(conversationId, epoch);
+      spaces.delete(conversationId);
+      spaceIntents.delete(conversationId);
+    }
+    for (const [generation, item] of records) if (item.ref.key.conversationId === conversationId) records.delete(generation);
+    for (const [key, item] of current) if (item.ref.key.conversationId === conversationId) { current.delete(key); contentIds.delete(key); }
   };
   return {
+    bind(state) { if (cache || spaces.size || records.size || closed) throw new StoreError('resource_failure'); cache = state; },
+    revoke(conversationId) { revoked.add(conversationId); },
+    purge,
     async replace(key, source, kind) {
       checkOpen();
       const ownedKey = structuredClone(key);
@@ -188,7 +259,7 @@ export async function createBodyStore(options: { directory: string; epoch: strin
         let handle: FileHandle | undefined;
         let item: StoredBody | undefined;
         try {
-          handle = await open(pathFor(name), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+          handle = await open(await pathFor(key.conversationId, name), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
           const stat = await verify(handle);
           const contentId = contentIds.get(logical) ?? randomUUID();
           const generation = randomUUID();
@@ -198,7 +269,7 @@ export async function createBodyStore(options: { directory: string; epoch: strin
           const digest = hash.digest('hex');
           await verify(handle, item);
           await handle.close(); handle = undefined;
-          checkOpen();
+          checkConversation(key.conversationId);
           const previous = current.get(logical);
           if (kind === 'canonical' && previous?.ref.kind === 'canonical' && previous.ref.through === through && previous.ref.sha256 === digest) {
             checkOpen();
@@ -230,12 +301,13 @@ export async function createBodyStore(options: { directory: string; epoch: strin
         let handle: FileHandle | undefined;
         let verified = false;
         try {
-          handle = await open(pathFor(item.name), constants.O_WRONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+          handle = await open(await pathFor(requested.key.conversationId, item.name), constants.O_WRONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
           const stat = await verify(handle, item);
           verified = true;
           if (stat.size !== requested.through) throw new StoreError('unavailable');
           const through = await write(handle, source, requested.through);
           await verify(handle, item);
+          checkConversation(requested.key.conversationId);
           item.ref = { ...requested, through };
           item.prefixes.add(through);
           return snapshot(item.ref) as PreviewBodyRef;
@@ -274,14 +346,14 @@ export async function createBodyStore(options: { directory: string; epoch: strin
         let handle: FileHandle | undefined;
         let candidate: StoredBody | undefined;
         try {
-          handle = await open(pathFor(name), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+          handle = await open(await pathFor(requested.key.conversationId, name), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
           const stat = await verify(handle);
           candidate = { ...item, name, dev: stat.dev, ino: stat.ino, resident: true, pins: 0, evictPending: false };
           const hash = createHash('sha256');
           const length = await write(handle, source, 0, hash);
           if (length !== requested.through || hash.digest('hex') !== requested.sha256) throw new Error('restore mismatch');
           await verify(handle, candidate); await handle.close(); handle = undefined;
-          checkOpen();
+          checkConversation(requested.key.conversationId);
           item.name = name; item.dev = stat.dev; item.ino = stat.ino; item.resident = true; item.evictPending = false;
           candidate = undefined;
           return await pin(requested, item);
@@ -297,9 +369,9 @@ export async function createBodyStore(options: { directory: string; epoch: strin
         closed = true;
         closing = (async () => {
           await Promise.all([...locks.values()]);
-          await Promise.all([...readers].map(handle => handle.close())); readers.clear();
           let failed = false;
-          for (const item of records.values()) { if (item.resident) try { await remove(item); } catch { failed = true; } }
+          for (const id of [...spaces.keys()]) { try { await purge(id); } catch { failed = true; } }
+          await Promise.all([...readerClosers.values()].map(reader => reader.close())); readers.clear();
           try {
             const stat = await lstat(directory);
             if (!stat.isDirectory() || stat.dev !== namespace.dev || stat.ino !== namespace.ino) throw new Error();

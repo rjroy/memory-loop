@@ -58,16 +58,16 @@ export class SQLiteTranscriptState implements TranscriptStateStore {
     try { this.check(); return operation(); }
     catch (error) { if (error instanceof ThinkStateError) throw error; return fail(); }
   }
-  private owner(conversationId: string, vault?: string): void {
-    const row = this.db.get('SELECT native_session_id, vault_directory, owner_marker_json, creation_epoch FROM conversations WHERE conversation_id = ?', conversationId);
+  private owner(conversationId: string, vault?: string, writing = false): void {
+    const row = this.db.get('SELECT native_session_id, vault_directory, owner_marker_json, creation_epoch, lifecycle_state FROM conversations WHERE conversation_id = ?', conversationId);
     if (!row || !uuid.test(conversationId) || (vault !== undefined && row.vault_directory !== vault) ||
-        row.native_session_id !== `ses_memoryloop_${conversationId.replaceAll('-', '')}`) fail('conflict');
+        row.native_session_id !== `ses_memoryloop_${conversationId.replaceAll('-', '')}` || writing && row.lifecycle_state !== 'live') fail('conflict');
     const marker: unknown = JSON.parse(text(row, 'owner_marker_json'));
     if (!object(marker) || marker.owner !== 'memory-loop' || marker.conversationId !== conversationId ||
         marker.installationId !== this.installationId || marker.epoch !== row.creation_epoch) fail('conflict');
   }
   private required(conversationId: string): Row {
-    this.owner(conversationId);
+    this.owner(conversationId, undefined, true);
     return this.db.get('SELECT * FROM transcripts WHERE conversation_id = ?', conversationId) ?? fail('conflict');
   }
   load(conversationId: string, vaultDirectory: string): StoredTranscript | null {
@@ -104,7 +104,7 @@ export class SQLiteTranscriptState implements TranscriptStateStore {
       let cursor = after;
       for (let index = 0; index < 100; index++) {
         const row = this.db.get(`SELECT t.conversation_id FROM transcripts t JOIN conversations c ON c.conversation_id = t.conversation_id
-          WHERE c.vault_directory = ? AND t.pending_entry_id IS NOT NULL AND t.conversation_id > ? ORDER BY t.conversation_id LIMIT 1`, vaultDirectory, cursor);
+          WHERE c.vault_directory = ? AND c.lifecycle_state = 'live' AND t.pending_entry_id IS NOT NULL AND t.conversation_id > ? ORDER BY t.conversation_id LIMIT 1`, vaultDirectory, cursor);
         if (!row) break;
         cursor = text(row, 'conversation_id'); this.owner(cursor, vaultDirectory); ids.push(cursor);
       }
@@ -113,7 +113,7 @@ export class SQLiteTranscriptState implements TranscriptStateStore {
   }
   intent(conversationId: string, vaultDirectory: string, noteId: string[], createdAt: number, namespace: TranscriptDirectoryIdentity[]): void {
     this.write(() => {
-      this.owner(conversationId, vaultDirectory); count(createdAt);
+      this.owner(conversationId, vaultDirectory, true); count(createdAt);
       if (noteId.at(-1) !== `think-${conversationId}.md` || namespace.length !== noteId.length || noteId.length < 2 ||
           noteId.some(part => !part || part.startsWith('.') || /[/\\\0]/.test(part))) fail();
       for (const node of namespace) { count(node.dev); count(node.ino); }

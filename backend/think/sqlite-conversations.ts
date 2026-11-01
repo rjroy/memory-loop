@@ -71,7 +71,9 @@ export class SQLiteConversations implements ConversationStateStore {
         rowVersion: count(row.row_version), lifecycle: row.lifecycle_state === 'live' ? 'live' : row.lifecycle_state === 'deleting' ? 'deleting' : fail(), owner: null,
         uncertain: !!this.db.get(`SELECT 1 FROM commands WHERE conversation_id = ? AND
           (kind = 'send' AND state NOT IN ('completed', 'failed', 'interrupted', 'cancelled-before-delivery', 'rejected')
-          OR kind = 'form-reply' AND state IN ('registered', 'upstream-unconfirmed')) LIMIT 1`, conversationId) };
+           OR kind = 'form-reply' AND state IN ('registered', 'upstream-unconfirmed')) LIMIT 1`, conversationId) };
+      // Accepted deletion must not even load an original/title or transcript mapping for a DTO.
+      if (result.lifecycle === 'deleting') return result;
       // A bad individual owner/original is local unavailability, not permission to use native prepared text.
       const first = this.db.get(`SELECT d.original_input, d.payload_sha256 FROM commands d JOIN command_order o
         ON o.command_id = d.command_id AND o.conversation_id = d.conversation_id

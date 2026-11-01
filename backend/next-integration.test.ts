@@ -52,6 +52,7 @@ const viewToken = 'c'.repeat(64);
 const expiry = '2026-12-01T12:00:00.000Z';
 const recentPath = '/api/ground/recent-conversations';
 const resumePath = `/api/think/conversations/${conversationId}/resume`;
+const deletePath = `/api/think/conversations/${conversationId}/delete`;
 const commandPath = `/api/think/conversations/${conversationId}/commands/${commandId}`;
 const selection = { selectionRevision: 1, conversationId, expiresAt: expiry };
 const resumeReceipt = { kind: 'resume', conversationId, clientCommandId: commandId, epoch, state: 'ready' };
@@ -63,6 +64,7 @@ const recentItems = Array.from({ length: 10 }, (_, index) => ({
 }));
 let conversationFixture = false;
 let conversationOverride: { status: number; body: object } | undefined;
+let dropDelete = false;
 const watchPath = `/api/think/conversations/${conversationId}/events`;
 const bodyRef = { key: { conversationId, owner: { kind: 'original', clientCommandId: commandId, messageId: 'msg_fixture_owned' } },
   epoch, contentId: '44444444-4444-4444-8444-444444444444', generation: '55555555-5555-4555-8555-555555555555', through: 123, kind: 'canonical', sha256: 'a'.repeat(64) };
@@ -223,7 +225,8 @@ describe('production Next HTTP boundary', () => {
       req.on('data', chunk => { body += chunk; });
       req.on('end', () => {
         calls.push({ url: req.url, method: req.method, headers: req.headers, body });
-        if (conversationFixture && (req.url === recentPath || req.url === '/api/think/views' || req.url === '/api/think/selection' || req.url === resumePath || req.url === commandPath)) {
+        if (conversationFixture && (req.url === recentPath || req.url === '/api/think/views' || req.url === '/api/think/selection' || req.url === resumePath || req.url === deletePath || req.url === commandPath)) {
+          if (req.url === deletePath && dropDelete) { res.destroy(); return; }
           if (!conversationOverride && req.url === '/api/think/selection' && req.method === 'GET' && !/^[a-f0-9]{64}$/.test(String(req.headers['x-memory-loop-view'] ?? ''))) {
             res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { code: 'lease_unavailable', message: 'View is unavailable' } }));
             return;
@@ -475,6 +478,128 @@ describe('production Next HTTP boundary', () => {
       const response = await request(path, {}, port, 'PUT');
       expect(response.status).toBe(status);
       expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe('Ground delete BFF', () => {
+    const payload = JSON.stringify({ clientCommandId: commandId, viewToken });
+    const receipt = { kind: 'delete', conversationId, clientCommandId: commandId, epoch, state: 'pending', reason: 'status_unknown' };
+    beforeAll(() => { conversationFixture = true; });
+    afterAll(() => { conversationFixture = false; conversationOverride = undefined; dropDelete = false; });
+
+    it('forwards one delete with service credentials and projects each receipt state', async () => {
+      try {
+        for (const state of ['accepted', 'pending', 'completed'] as const) {
+          calls = [];
+          const expected = { kind: 'delete', conversationId, clientCommandId: commandId, epoch, state, ...(state === 'pending' ? { reason: 'io_unavailable' } : {}) };
+          conversationOverride = { status: 202, body: { ...expected, viewToken, private: 'fixture-private' } };
+          const response = await request(deletePath, { 'content-type': 'application/json', origin: `http://127.0.0.1:${port}`,
+            'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors', authorization: 'Basic browser-secret', cookie: 'session=fixture', 'x-memory-loop-view': viewToken }, port, 'POST', payload);
+          expect(response.status).toBe(202);
+          expect(JSON.parse(response.body)).toEqual(expected);
+          expect(response.headers['cache-control']).toBe('no-store');
+          expect(response.headers['set-cookie']).toBeUndefined();
+          expect(response.body + JSON.stringify(response.headers) + output).not.toMatch(/fixture-private|browser-secret|session=fixture/);
+          expect(response.body + JSON.stringify(response.headers) + output).not.toContain(viewToken);
+          expect(calls).toHaveLength(1);
+          expect(calls[0]).toMatchObject({ url: deletePath, method: 'POST', body: payload });
+          expect(calls[0].headers.authorization).toBe(`Bearer ${token}`);
+          for (const key of ['cookie', 'origin', 'sec-fetch-site', 'sec-fetch-mode', 'x-memory-loop-view']) expect(calls[0].headers[key]).toBeUndefined();
+        }
+      } finally { conversationOverride = undefined; }
+    });
+
+    it('reconciles a delete receipt on the existing command GET without private fields', async () => {
+      calls = [];
+      conversationOverride = { status: 200, body: { ...receipt, viewToken, private: 'fixture-private' } };
+      try {
+        const response = await request(commandPath, { 'x-memory-loop-view': viewToken });
+        expect(response.status).toBe(200);
+        expect(JSON.parse(response.body)).toEqual(receipt);
+        expect(response.body).not.toMatch(/fixture-private|cccccccc/);
+        expect(calls).toHaveLength(1);
+        expect(calls[0].headers['x-memory-loop-view']).toBeUndefined();
+      } finally { conversationOverride = undefined; }
+    });
+
+    it('preserves controlled lease, selection and deletion refusals without private details', async () => {
+      try {
+        for (const { status, code, reason } of [
+          { status: 403, code: 'lease_unavailable' },
+          { status: 409, code: 'selection_conflict' },
+          { status: 409, code: 'delete_blocked', reason: 'status_unknown' },
+        ]) {
+          calls = [];
+          conversationOverride = { status, body: { error: { code, ...(reason ? { reason } : {}), message: 'fixture-private', viewToken } } };
+          const response = await request(deletePath, { 'content-type': 'application/json' }, port, 'POST', payload);
+          expect(response.status).toBe(status);
+          expect(JSON.parse(response.body)).toMatchObject({ error: { code, ...(reason ? { reason } : {}) } });
+          expect(response.body).not.toMatch(/fixture-private|cccccccc/);
+          expect(calls).toHaveLength(1);
+        }
+      } finally { conversationOverride = undefined; }
+    });
+
+    it('rejects hostile policy, invalid methods, paths, queries and bodies before dispatch', async () => {
+      const cases: Array<{ path: string; method: string; body?: string; headers?: Record<string, string>; status: number }> = [
+        { path: deletePath, method: 'POST', body: payload, headers: { origin: 'https://hostile.invalid' }, status: 403 },
+        { path: deletePath, method: 'POST', body: payload, headers: { host: 'hostile.invalid' }, status: 403 },
+        { path: deletePath, method: 'POST', body: payload, headers: { 'sec-fetch-site': 'cross-site' }, status: 403 },
+        { path: deletePath, method: 'GET', status: 405 },
+        { path: `${deletePath}?unknown=1`, method: 'POST', body: payload, status: 404 },
+        { path: '/api/think/conversations/not-a-uuid/delete', method: 'POST', body: payload, status: 404 },
+        { path: deletePath, method: 'POST', body: JSON.stringify({ clientCommandId: commandId, viewToken: 'bad' }), status: 400 },
+        { path: deletePath, method: 'POST', body: JSON.stringify({ clientCommandId: commandId, viewToken, extra: true }), status: 400 },
+      ];
+      for (const item of cases) {
+        calls = [];
+        const response = await request(item.path, { 'content-type': 'application/json', ...item.headers }, port, item.method, item.body);
+        expect(response.status, `${item.method} ${item.path}`).toBe(item.status);
+        expect(calls).toHaveLength(0);
+      }
+    });
+
+    it('does not retry an ambiguous upstream disconnect', async () => {
+      calls = [];
+      dropDelete = true;
+      try {
+        const response = await request(deletePath, { 'content-type': 'application/json' }, port, 'POST', payload);
+        expect(response.status).toBe(503);
+        expect(calls).toHaveLength(1);
+        expect(calls[0].body).toBe(payload);
+        expect(response.body).not.toContain(viewToken);
+      } finally { dropDelete = false; }
+    });
+
+    it('projects available and safely blocked delete capabilities on recent rows', async () => {
+      calls = [];
+      const items = [ { ...recentItems[0], delete: { available: true } }, { ...recentItems[1], delete: { available: false, reason: 'status_unknown' } } ];
+      conversationOverride = { status: 200, body: { state: 'ready', items: items.map(item => ({ ...item, delete: { ...item.delete, private: 'fixture-private' } })), viewToken, private: 'fixture-private' } };
+      try {
+        const response = await request(recentPath, { 'x-memory-loop-view': viewToken });
+        expect(response.status).toBe(200);
+        expect(JSON.parse(response.body)).toEqual({ state: 'ready', items });
+        expect(response.body).not.toMatch(/fixture-private|cccccccc/);
+        expect(calls).toHaveLength(1);
+      } finally { conversationOverride = undefined; }
+    });
+
+    it('sanitizes mismatched delete receipts and invalid refusal reasons', async () => {
+      try {
+        for (const override of [
+          { status: 202, body: { ...receipt, conversationId: commandId, private: 'fixture-private' } },
+          { status: 202, body: { ...receipt, clientCommandId: conversationId, private: 'fixture-private' } },
+          { status: 409, body: { error: { code: 'delete_blocked', reason: 'fixture-private', message: 'fixture-private' } } },
+          { status: 200, body: { ...receipt, private: 'fixture-private' } },
+        ]) {
+          calls = [];
+          conversationOverride = override;
+          const response = await request(deletePath, { 'content-type': 'application/json' }, port, 'POST', payload);
+          expect(response.status).toBe(503);
+          expect(response.body).not.toMatch(/fixture-private|cccccccc/);
+          expect(calls).toHaveLength(1);
+        }
+      } finally { conversationOverride = undefined; }
     });
   });
 

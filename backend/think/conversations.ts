@@ -1,21 +1,20 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { lstat, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { CommandReceipt, CreateConversationCommand, RecentConversation, RecentConversations, ResumeReceipt, SelectConversationCommand, ViewRegistration, ViewSelection } from './contract';
+import type { CommandReceipt, CreateConversationCommand, DeleteConversationCommand, DeleteReceipt, RecentConversation, RecentConversations, ResumeReceipt, SelectConversationCommand, ViewRegistration, ViewSelection } from './contract';
 import { ThinkStateError, type RegisteredConversation, type StoredView, type StoredTranscript, type ThinkStateStore } from './state';
 import { ThinkServiceError } from './errors';
 import { transcriptFingerprint } from './transcript-file';
+import { createDeletionService, type DeletionService } from './deletion';
+import { mintViewToken, viewHash } from './view-token';
+export { validViewToken, viewHash, mintViewToken } from './view-token';
 
-export const validViewToken = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43,256}$/.test(value);
-export const mintViewToken = () => randomBytes(32).toString('base64url');
-export function viewHash(token: string): string {
-  if (!validViewToken(token)) throw new ThinkStateError('lease_unavailable');
-  return createHash('sha256').update(token).digest('hex');
-}
 export const publicView = (view: StoredView): ViewSelection => ({ conversationId: view.conversationId,
   selectionRevision: view.selectionRevision, expiresAt: new Date(view.expiresAt).toISOString() });
 
-export interface ConversationAvailability { state: RecentConversation['state']; busy: boolean; uncertain: boolean; ownershipMismatch?: boolean }
+export interface ConversationAvailability {
+  state: RecentConversation['state']; busy: boolean; uncertain: boolean; ownershipMismatch?: boolean;
+  delete?: RecentConversation['delete'];
+}
 
 /** Registry capabilities do not require an attached native service. Native access, when
  * present, only supplies bounded ownership/activity checks and verified hydration. */
@@ -25,7 +24,9 @@ export interface ConversationService {
   selection(viewToken: string): Promise<ViewSelection>;
   select(command: SelectConversationCommand): Promise<ViewSelection>;
   resume(command: CreateConversationCommand): Promise<ResumeReceipt>;
-  resumeCommand(conversationId: string, clientCommandId: string): Promise<ResumeReceipt | null>;
+  delete(command: DeleteConversationCommand): Promise<DeleteReceipt>;
+  command(conversationId: string, clientCommandId: string): Promise<ResumeReceipt | DeleteReceipt | null>;
+  startRecovery(): void;
   close(): Promise<void>;
 }
 
@@ -44,9 +45,10 @@ interface ConversationServiceOptions {
     remember(receipt: ResumeReceipt): void;
   };
   native?: {
-    inspect(owner: RegisteredConversation, deadline?: AbortSignal): Promise<ConversationAvailability>;
+    inspect(owner: RegisteredConversation, deadline?: AbortSignal, checkDelete?: boolean): Promise<ConversationAvailability>;
     prepare(conversationId: string): Promise<ConversationAvailability>;
   };
+  deletion?: DeletionService;
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -76,7 +78,7 @@ export function createConversationService(options: ConversationServiceOptions): 
     try { return action(); } catch (error) {
       if (error instanceof ThinkStateError) {
         if (error.code === 'conflict') throw new ThinkServiceError('command_conflict');
-        if (error.code !== 'unavailable') throw new ThinkServiceError(error.code);
+        if (error.code !== 'unavailable') throw new ThinkServiceError(error.code, error.reason);
       }
       options.onPersistenceFailure?.();
       throw new ThinkServiceError('think_unavailable');
@@ -93,10 +95,13 @@ export function createConversationService(options: ConversationServiceOptions): 
     receipts.set(receipt.clientCommandId, receipt);
     options.commands?.remember(receipt);
   }
-  const inspect = (owner: RegisteredConversation, signal?: AbortSignal): Promise<ConversationAvailability> =>
-    options.native ? options.native.inspect(owner, signal) : Promise.resolve(unavailable);
+  const inspect = (owner: RegisteredConversation, signal?: AbortSignal, checkDelete = false): Promise<ConversationAvailability> =>
+    options.native ? options.native.inspect(owner, signal, checkDelete) : Promise.resolve(unavailable);
+  const deletion = options.deletion ?? createDeletionService({ state: options.state, directory, epoch, now: () => clock.now(), requireOpen });
 
   const service: ConversationService = {
+    delete: deletion.delete,
+    startRecovery: deletion.startRecovery,
     async registerView() {
       const store = state(); const viewToken = mintViewToken();
       const selected = operation(() => store.conversations.mintView(viewHash(viewToken), clock.now()));
@@ -127,30 +132,42 @@ export function createConversationService(options: ConversationServiceOptions): 
       // Ten rows, at most one row's bounded native reads at a time; no history scan.
       try {
         for (const row of rows) {
+          const protectedAtStart = operation(() => store.conversations.protection(row.conversationId, ownHash, clock.now()));
           const observed = row.lifecycle === 'deleting' ? { ...unavailable, state: 'deleting' as const }
-            : row.owner ? await inspect(row.owner, deadline.signal) : unavailable;
+            : row.owner ? await inspect(row.owner, deadline.signal, !protectedAtStart && !row.uncertain && row.owner.creation === 'ready') : unavailable;
           requireOpen();
-          const protection = operation(() => store.conversations.protection(row.conversationId, ownHash, clock.now()));
           let transcriptNoteId: string[] | undefined;
           if (row.owner && observed.state !== 'deleting') {
             try { transcriptNoteId = await verifiedTranscriptNote(directory, store.transcripts?.load(row.conversationId, directory) ?? null); }
             catch { /* Logging/mapping availability is independent of chat Resume. */ }
           }
           requireOpen();
+          const protection = operation(() => store.conversations.protection(row.conversationId, ownHash, clock.now()));
+          const deleteReason: RecentConversation['delete']['reason'] = protection ?? (observed.state === 'deleting' ? 'deleting'
+            : observed.busy ? 'running' : observed.state !== 'ready' || observed.uncertain || row.uncertain ? 'status_unknown'
+              : observed.delete?.available ? undefined : observed.delete?.reason ?? 'status_unknown');
           items.push({ conversationId: row.conversationId, title: observed.state === 'deleting' ? null : row.title,
             lastActivityAt: new Date(row.lastActivityAt).toISOString(), state: observed.state,
             ...(transcriptNoteId ? { transcriptNoteId } : {}),
             resume: observed.state === 'ready' ? { available: true } : { available: false, reason: observed.state },
-            // No Delete capability before its real removal workflow exists.
-            delete: { available: false, ...(protection ? { reason: protection } : observed.state === 'deleting' ? { reason: 'deleting' }
-              : observed.busy ? { reason: 'running' } : observed.uncertain || row.uncertain ? { reason: 'status_unknown' } : {}) } });
+            delete: deleteReason ? { available: false, reason: deleteReason } : { available: true } });
         }
-        return { state: 'ready', items };
+        // A deletion may have committed while another row or its mapped file was being read.
+        // Final synchronous fences cover the ENTIRE response, not just the last awaited row.
+        const current: RecentConversations['items'] = [];
+        for (const item of items) {
+          if (!operation(() => store.deletions?.blocked(item.conversationId))) { current.push(item); continue; }
+          if (!operation(() => store.registry?.conversation(item.conversationId))) continue;
+          current.push({ conversationId: item.conversationId, title: null, lastActivityAt: item.lastActivityAt, state: 'deleting',
+            resume: { available: false, reason: 'deleting' }, delete: { available: false, reason: 'deleting' } });
+        }
+        return { state: 'ready', items: current };
       } finally { clearTimeout(timer); deadlines.delete(deadline); }
     },
     async resume(command) {
       const store = state();
       if (!uuid.test(command.conversationId) || !uuid.test(command.clientCommandId)) throw new ThinkServiceError('invalid_request');
+      if (operation(() => store.deletions?.blocked(command.conversationId))) throw new ThinkServiceError('not_found');
       const previous = previousCommand(command.clientCommandId);
       if (previous && (previous.kind !== 'resume' || previous.conversationId !== command.conversationId) || options.commands?.pending(command.clientCommandId)) throw new ThinkServiceError('command_conflict');
       const preparing = preparations.get(command.clientCommandId);
@@ -186,10 +203,11 @@ export function createConversationService(options: ConversationServiceOptions): 
       preparations.set(command.clientCommandId, work);
       return copyResume(await work);
     },
-    async resumeCommand(conversationId, clientCommandId) {
+    async command(conversationId, clientCommandId) {
       state();
       if (!uuid.test(conversationId) || !uuid.test(clientCommandId)) throw new ThinkServiceError('invalid_request');
       const receipt = previousCommand(clientCommandId);
+      if (receipt?.kind === 'delete') return deletion.command(conversationId, clientCommandId);
       if (receipt?.kind !== 'resume' || receipt.conversationId !== conversationId) return null;
       return receipt.state === 'registered' || receipt.state === 'upstream-unconfirmed'
         ? service.resume({ conversationId, clientCommandId }) : copyResume(receipt);
@@ -198,7 +216,7 @@ export function createConversationService(options: ConversationServiceOptions): 
       if (!closing) {
         closed = true;
         for (const controller of deadlines) controller.abort();
-        closing = Promise.allSettled([...preparations.values()]).then(() => {});
+        closing = Promise.allSettled([...preparations.values(), deletion.close()]).then(() => {});
       }
       await closing;
     },

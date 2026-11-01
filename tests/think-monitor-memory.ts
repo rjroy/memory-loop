@@ -27,6 +27,8 @@ const native: NativeSessions = {
     if (!session) throw new Error('fixture session missing');
     return { ...session, time: { created: 1, updated: 1 } };
   },
+  async listSessions() { throw new Error('unexpected fixture child scan'); },
+  async removeSession() { throw new Error('unexpected fixture removal'); },
   subscribe(_input, signal) {
     monitorSignal = signal;
     return {
@@ -74,6 +76,9 @@ const bodies: BodyStore = {
   async open() { throw new Error('unexpected fixture open'); },
   async evict() { return 'protected'; },
   async restore() { throw new Error('unexpected fixture restore'); },
+  bind() {},
+  revoke() { throw new Error('unexpected fixture revoke'); },
+  async purge() { throw new Error('unexpected fixture purge'); },
   async close() {},
 };
 const service = createThinkService({ native, bodies, context: { directory: '/fixture/vault' }, epoch,

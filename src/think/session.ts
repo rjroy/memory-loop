@@ -50,6 +50,7 @@ export interface ThinkSession {
   confirmNewChat(): void;
   checkConnection(): void;
   refreshView(): void;
+  prepareDeletion(conversationId: string): Promise<{ viewToken: string; valid(): boolean; invalidate(): void } | null>;
   close(): void;
 }
 
@@ -997,6 +998,20 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     },
     checkHandoff() { if (handoff) void reconcileHandoff(handoff); },
     refreshView() { view.refresh(); },
+    async prepareDeletion(conversationId) {
+      const origin = state.identity?.conversationId ?? null;
+      const version = navigationVersion;
+      const shellGeneration = options.navigationGeneration?.();
+      const valid = () => !closed && locationPath === '/ground' && !navigationPending && !handoff &&
+        navigationVersion === version && options.navigationGeneration?.() === shellGeneration &&
+        (state.identity?.conversationId ?? null) === origin && conversationId !== origin &&
+        view.getSnapshot().status === 'ready' && view.getSnapshot().selection?.conversationId === origin &&
+        (origin === null || view.canMutate(origin));
+      if (closed || locationPath !== '/ground' || navigationPending || handoff || conversationId === origin) return null;
+      if (!await view.ensureRegistered() || !valid()) return null;
+      const token = view.getSnapshot().token;
+      return token ? { viewToken: token, valid: () => valid() && view.getSnapshot().token === token, invalidate: () => view.refresh() } : null;
+    },
     editDraft(text) {
       if (closed || typeof text !== 'string') return;
       const draft = { text, version: state.draft.version + 1 };

@@ -21,6 +21,8 @@ export function thinkHttpService() {
     registerView: vi.fn<ThinkService['registerView']>(unexpected),
     selection: vi.fn<ThinkService['selection']>(unexpected),
     select: vi.fn<ThinkService['select']>(unexpected),
+    delete: vi.fn<ThinkService['delete']>(unexpected),
+    startRecovery: vi.fn<ThinkService['startRecovery']>(() => { throw new Error('Unexpected recovery call'); }),
     content: { page: vi.fn<ThinkService['content']['page']>(unexpected), open: vi.fn<ThinkService['content']['open']>(unexpected) },
     close: vi.fn<ThinkService['close']>(async () => {}),
   } satisfies ThinkService;
@@ -43,6 +45,7 @@ export function expectNoThinkDispatch(think: ReturnType<typeof thinkHttpService>
   expect(think.registerView).not.toHaveBeenCalled();
   expect(think.selection).not.toHaveBeenCalled();
   expect(think.select).not.toHaveBeenCalled();
+  expect(think.delete).not.toHaveBeenCalled();
   expect(think.content.page).not.toHaveBeenCalled();
   expect(think.content.open).not.toHaveBeenCalled();
 }

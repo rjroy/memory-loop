@@ -29,7 +29,7 @@ export default function NextShell({ children }: { children: ReactNode }) {
       write: id => window.sessionStorage.setItem('memory-loop.think.current', id),
     },
   }));
-  const [ground] = useState(() => createGroundSession());
+  const [ground] = useState(() => createGroundSession(undefined, id => session.prepareDeletion(id)));
   const thinkState = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const ownership = useRef(0);
   useEffect(() => {

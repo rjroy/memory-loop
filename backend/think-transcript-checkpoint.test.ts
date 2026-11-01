@@ -55,8 +55,8 @@ function checkpoint(probe: Probe, at: string): Checkpoint {
   expect(probe.checkpoint, `registry-bound transcript checkpoint must be committed ${at}; ${probe.issue ?? ''}`).not.toBeNull();
   if (!probe.checkpoint) throw new Error('missing durable transcript checkpoint');
   expect(probe.issue).toBeUndefined();
-  // Checkpoints were introduced in v2 and retained by v3/v4; production opening now requires v4.
-  expect(probe.schemaVersion).toBe(4);
+  // Checkpoints were introduced in v2 and retained through v5 deletion migration.
+  expect(probe.schemaVersion).toBe(5);
   expect(probe.writerAvailable).toBe(true);
   expect(probe.checkpoint).toMatchObject({ conversationId, ownerConversationId: conversationId,
     nativeSessionId: nativeId, vaultDirectory: join(root, 'vault') });
@@ -331,16 +331,16 @@ describe('fresh Bun process registered transcript reopening', () => {
 });
 
 describe('production Think SQLite transcript checkpoints', () => {
-  it('migrates test-owned v1 admission facts through additive v2 checkpoints, v3 order and v4 recent/views without replacing originals or adopting transcripts', async () => {
+  it('migrates test-owned v1 admission facts through v5 without replacing originals or adopting transcripts', async () => {
     const result = await child<MigrationReport>('migrate-v1', 'migration.json');
     const original = `  durable fixture original 🧠\r\n\`\`\`\n<!-- fixture literal -->\n${'x'.repeat(70 * 1024)}\nlast  `;
     expect(result).toMatchObject({ installationId: '44444444-4444-4444-8444-444444444444',
       originalHex: Buffer.from(original).toString('hex'), payloadSha256: sha(original), commandState: 'upstream-unconfirmed',
       conversationId, nativeSessionId: nativeId, legacy: 'pre-checkpoint transcript must not be adopted or changed', transcriptMapped: false });
-    expect(result.schemaVersion, 'the additive v1 → v2 → v3 → v4 chain must retain the existing private database').toBe(4);
+    expect(result.schemaVersion, 'the additive v1 → v2 → v3 → v4 → v5 chain must retain the existing private database').toBe(5);
   });
 
-  it('preserves v2 insertion order and all old facts through v3/v4 migration, a fresh Bun process, VACUUM and subsequent admission', async () => {
+  it('preserves v2 insertion order and all old facts through v3/v4/v5 migration, a fresh Bun process, VACUUM and subsequent admission', async () => {
     const bId = '00000000-0000-4000-8000-000000000001';
     const stopId = '88888888-8888-4888-8888-888888888888';
     const formId = '66666666-6666-4666-8666-666666666666';
@@ -349,7 +349,7 @@ describe('production Think SQLite transcript checkpoints', () => {
     const seed = await child<OrderMigrationReport>('migrate-v2-order', 'order-migration.json');
     expect(seed.versionBefore).toBe(2);
     expect(seed.orderTableBefore, 'a real historical v2 input must not already contain v3 order metadata').toBe(false);
-    expect(seed.schemaVersion).toBe(4);
+    expect(seed.schemaVersion).toBe(5);
     expect(seed.insertionIds, 'observe old SQLite insertion order before the migration').toEqual(expectedIds);
     const a = seed.before.commands.find(command => command.command_id === commandId);
     const b = seed.before.commands.find(command => command.command_id === bId);
@@ -395,7 +395,7 @@ describe('production Think SQLite transcript checkpoints', () => {
 
     const reopened = await child<OrderReopenReport>('reopen-v3-order', 'order-reopened.json');
     expect(reopened.pid).not.toBe(seed.pid);
-    expect(reopened.schemaVersion).toBe(4);
+    expect(reopened.schemaVersion).toBe(5);
     expect(reopened.vacuumIntegrity).toBe('ok');
     expect(reopened.before).toEqual(seed.after);
     expect(reopened.afterVacuum).toEqual(seed.after);

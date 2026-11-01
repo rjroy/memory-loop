@@ -465,6 +465,8 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
       return { ...session, time: counts.prompts ? { created: now, updated: now + 24, busy: now + 19, idle: now + 24 } : { created: now, updated: now },
         ...(counts.prompts ? { outcome: 'succeeded' as const } : {}) };
     },
+    async listSessions() { throw new Error('unexpected fixture child scan'); },
+    async removeSession() { throw new Error('unexpected fixture removal'); },
     subscribe(_input, signal) { return { async *[Symbol.asyncIterator](): AsyncGenerator<OpenCodeEvent> {
       yield { id: 'evt_fixture_connected', type: 'server.connected', data: {} };
       if (!signal.aborted) await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
@@ -584,7 +586,7 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
       if (scenario === 'confirm-ack-lost' && args[1] === `user:${sendCommandId}`) fault('after-confirm');
     },
   };
-  const serviceState: ThinkStateStore = { installationId: state.installationId, transcripts: transcriptState, conversations: state.conversations,
+  const serviceState: ThinkStateStore = { installationId: state.installationId, transcripts: transcriptState, conversations: state.conversations, deletions: state.deletions, cache: state.cache,
     command: (...args) => state.command(...args), registerConversation: (...args) => state.registerConversation(...args),
     registerCommand: (...args) => state.registerCommand(...args), attempted: (...args) => state.attempted(...args),
     outcome: (...args) => state.outcome(...args), close: () => state.close() };

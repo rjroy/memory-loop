@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
-import { lstat, mkdir, open, realpath } from 'node:fs/promises';
+import { lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
 import { isAbsolute, normalize } from 'node:path';
 import type { TranscriptDirectoryIdentity, TranscriptFileCheckpoint } from './state';
 
@@ -23,11 +23,12 @@ export interface TranscriptIO {
   mkdir(path: string, mode: number): Promise<void>;
   lstat(path: string): Promise<Stats>;
   realpath(path: string): Promise<string>;
+  unlink(path: string): Promise<void>;
 }
 export const transcriptIO: TranscriptIO = {
   open,
   async mkdir(path, mode) { await mkdir(path, { mode }); },
-  lstat, realpath,
+  lstat, realpath, unlink,
 };
 export interface TranscriptBytes {
   readonly length: number;
@@ -130,8 +131,11 @@ export class TranscriptNamespace {
   }
   async close(): Promise<void> {
     this.stopped = true;
-    const nodes = this.nodes.splice(0).reverse();
+    const nodes = [...this.nodes].reverse();
     const results = await Promise.allSettled(nodes.map(node => node.handle.close()));
+    for (const [index, result] of results.entries()) if (result.status === 'fulfilled') {
+      const at = this.nodes.indexOf(nodes[index]); if (at >= 0) this.nodes.splice(at, 1);
+    }
     if (results.some(result => result.status === 'rejected')) throw new TranscriptError('io_unavailable');
   }
 }

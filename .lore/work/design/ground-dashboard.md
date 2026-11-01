@@ -15,6 +15,11 @@ its actions do not contact the application. [Before](ground-dashboard/before.htm
 reconstructs the pre-Ground placeholder from its source and existing stylesheet.
 Neither is a live Ground implementation or evidence of real vault access.
 
+The later user instruction favors simple, conservative deletion. The verified
+implementation uses the compact inline confirmation described below, superseding
+the older static artifact's modal study. Source/fixture acceptance is not live
+publication or completion of the daily/weekly jobs and final handoff.
+
 ## Authority and direction
 
 The updated [Ground intent](../intents/ground.md) and approved local implementation
@@ -267,45 +272,42 @@ user choice; resource cards and this layout are not blocked by that question.
 - Delete stays visible but unavailable for **Current in Think**, **Open in Think
   elsewhere**, **Work in progress**, or **Work status unavailable**, as appropriate
   to supplied authority. Expose the reason as visible text and an accessible
-  description, not a tooltip only. Use `aria-disabled` with guarded activation
-  if keeping it focusable; absence of focus must not hide the reason. No Stop
-  suggestion/action to make deletion possible. Selected protection applies even
+  description, not a tooltip only. Use native disabled buttons; absence of focus
+  must not hide the reason. No Stop suggestion/action to make deletion possible.
+  Selected protection applies even
   while the user is on Ground; unknown status is not permission to delete.
-- Eligible Delete opens a compact **modal confirmation**, because this removes
-  both a chat and its ordinary vault file. Title: **Delete “{conversation title}”?**
-  Body: **This deletes the conversation and its transcript file. This cannot be
-  undone.** If untitled, include the safe date/time to disambiguate. Show the
-  vault-relative transcript path only when supplied and helpful; never a private
-  absolute metadata path. Buttons: **Cancel**, **Delete conversation**.
-- Initial focus Cancel; contain Tab/Shift+Tab within the dialog, Escape cancels,
-  return focus to the original Delete control. No typed-name exercise, double
-  confirmation, red invented palette or automatic focus on the destructive action.
-  Deletion can use a clearly labelled outlined button in the existing palette;
-  dangerousness is in wording, separation and confirmation, not color alone.
-  The dialog is at most 32rem wide with 20px viewport clearance and padding capped
-  at 24px, including enlarged text. Action inline padding caps at 14px so labels
-  wrap at spaces rather than splitting “Cancel.” A short/enlarged dialog may scroll
-  vertically within the viewport; this is not permission for scrolling card bodies.
+- Eligible Delete opens a compact **inline confirmation directly after its row**.
+  Title: **Delete “{conversation title}”?** Body: **Chat and transcript file. No
+  undo.** Untitled targets include the activity date/time. Confirmed completion
+  removes the owned chat, its mapped transcript file and conversation-owned
+  private application data, not unrelated notes or external backups.
+- Initial focus Cancel; Escape or Cancel closes the unsubmitted confirmation and
+  returns focus to the original Delete control, or the section heading if it is
+  no longer available. Normal Tab order continues through **Delete conversation**;
+  there is no focus trap, typed-name exercise or second confirmation. The distinct
+  Parchment/Night confirm button and Horizon focus reuse the existing palette.
+  Actions have 44px minimum targets and wrap with enlarged text. Use ordinary
+  document scrolling, never a nested card scroller or overlay.
 - Confirm submits one target-bound deletion. The daemon rechecks ownership,
-  all protected selections and native execution status. If the target becomes
-  selected/running/unknown, keep it and explain the returned reason; no implicit
-  Stop and no dismissal-as-success.
-- While the operation is accepted/pending, keep the row and show **Deleting…**;
-  disable that row's Resume/Delete. Do not optimistically remove it. Close the
-  confirmation after authoritative acceptance, announce progress once and focus
-  that row's status. Escape/dismissal is never a claim to cancel accepted deletion.
-  Other cards and nonconflicting rows remain usable.
-- Partial/uncertain deletion: **Deletion isn’t complete.** with the supplied safe
-  outcome/recovery action. Keep a content-minimized row, no Resume if the chat is
-  deleting or partially removed. Do not claim “nothing was deleted,” offer Undo,
-  expose original private content, or blindly create a second deletion command.
-  Technical contracts own reconciliation and durable cleanup, not the card.
+  all protected selections and native execution status independently of cached
+  card availability. **Any child session blocks deletion, even an idle child.**
+  If the target is selected/running/unknown or otherwise unsafe, keep the row,
+  explain the refusal and refresh availability; no implicit Stop or child cascade.
+- While the POST is in flight, show **Deleting…** locally. Accepted/incomplete or
+  partially failed deletion shows **Deletion isn’t complete.**; a lost
+  acknowledgement shows **Deletion unconfirmed.** Keep the row and disable its
+  Resume/Delete; never remove it optimistically. **Check status** reads the same
+  command by GET without advancing destructive work. There is no Undo, Retry
+  Delete, automatic status GET, repeated destructive POST or destructive retry
+  after restart. Escape/dismissal cannot cancel an accepted deletion. Other cards
+  and nonconflicting Resume links remain usable.
 - Remove the row only when both owned chat/transcript removals and logical
   private-content cleanup are confirmed. Announce **Conversation and transcript
   deleted.** If focus is within the removed row, move to the next row's Resume,
   otherwise the previous row, otherwise the section heading. Do not disturb focus
-  elsewhere. Refill up to ten from the authoritative list without shifting focus
-  to an unrelated new first item. Item eleven aging into/out of view never deletes.
+  elsewhere. Refresh only the recent list, refill up to ten without focusing an
+  unrelated new first item, and preserve other chats' drafts and selection.
+  Item eleven aging into/out of view never deletes.
 
 ## Accessibility and interaction finish requirements
 
@@ -316,7 +318,8 @@ and clickable card containers. Plain descriptions are associated with their
 controls. Every control has a minimum **44 × 44px** hit area; wrapped controls
 grow vertically, targets do not overlap. Tab order follows the DOM order above.
 
-Dark focus: 2px Horizon with 4px clearance; Parchment quote/dialog focus: Night.
+Dark focus: 2px Horizon with 4px clearance; Parchment quote focus: Night. Inline
+confirmations retain the surrounding Night/Horizon focus treatment.
 Navigation keeps its incumbent inset focus; focus must remain distinct from
 the selected underline. Hover underlines text links and gives buttons their
 contextual reverse state; no hover-only action. No opacity-only unavailable

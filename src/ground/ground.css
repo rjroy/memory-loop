@@ -42,6 +42,17 @@
 .ground-conversation-row:first-child { padding-top: 0; }
 .ground-conversation-row + .ground-conversation-row { border-top: 1px solid var(--rule); }
 .ground-conversation-row > .ground-handoff { grid-column: 1 / -1; scroll-margin-block: .5rem; }
+.ground-conversation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.ground-delete-action { color: inherit; background: transparent; border: 1px solid var(--muted); border-radius: 4px; padding: .5rem .625rem; min-height: 44px; min-width: 44px; }
+.ground-delete-action:hover:not(:disabled) { color: var(--night); background: var(--parchment); }
+.ground-delete-action:disabled, .ground-delete-confirm:disabled { color: var(--muted); cursor: default; }
+.ground-delete-action:disabled { border-color: transparent; }
+.ground-delete-reason { grid-column: 1 / -1; color: var(--muted); font-size: .875rem; line-height: 1.5; }
+.ground-delete-notice { grid-column: 1 / -1; border-top: 1px solid var(--rule); margin-top: .5rem; padding-top: 1rem; scroll-margin-block: .5rem; }
+.ground-delete-target { font-weight: 600; }
+.ground-card .ground-delete-confirm { background: var(--parchment); color: var(--night); border-color: var(--parchment); }
+.ground-delete-confirm:hover:not(:disabled) { background: var(--lantern); border-color: var(--lantern); }
+.ground-card .ground-delete-confirm:disabled { background: transparent; color: var(--muted); border-color: var(--muted); }
 .ground-card .ground-conversation-title { font-weight: 600; line-height: 1.4; margin: 0; }
 .ground-conversation-time, .ground-conversation-current, .ground-conversation-unavailable { display: block; color: var(--muted); font-size: .875rem; line-height: 1.5; }
 .ground-conversation-current { margin-top: .125rem; }

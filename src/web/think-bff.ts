@@ -104,6 +104,14 @@ function project(value: unknown, method: Method, path: string, query: URLSearchP
       typeof value.creation === 'string' && ['registered', 'ready', 'upstream-unconfirmed', 'rejected'].includes(value.creation)) {
     return projectConversation(value, String(value.conversationId), Array.isArray(value.entries));
   }
+  if (value.kind === 'delete') {
+    if (typeof value.clientCommandId !== 'string' || !validConversationId(value.clientCommandId) ||
+        !(method === 'POST' && segments[1] === 'delete' || method === 'GET' && segments[1] === 'commands' && value.clientCommandId === segments[2]) ||
+        !['accepted', 'pending', 'completed'].includes(String(value.state)) ||
+        value.reason !== undefined && value.reason !== 'io_unavailable' && value.reason !== 'conflict' && value.reason !== 'status_unknown') throw new Error('invalid delete receipt');
+    return { kind: 'delete', conversationId: value.conversationId, clientCommandId: value.clientCommandId, epoch: value.epoch, state: value.state,
+      ...(value.reason === undefined ? {} : { reason: value.reason }) };
+  }
   if (typeof value.clientCommandId !== 'string' || !new RegExp(`^${uuid}$`).test(value.clientCommandId) ||
       !['create', 'send', 'stop', 'form-reply', 'resume'].includes(String(value.kind)) || typeof value.state !== 'string') throw new Error('invalid receipt');
   if ((segments[1] === 'commands' && value.clientCommandId !== segments[2]) ||
@@ -128,13 +136,14 @@ function project(value: unknown, method: Method, path: string, query: URLSearchP
     ...(value.kind === 'send' || value.kind === 'stop' ? { runId: value.runId } : {}), ...(value.kind === 'form-reply' ? { decisionId: value.decisionId } : {}), ...(failureValue ? { failure: failureValue } : {}) };
 }
 
-function validNewCommand(bytes: Uint8Array, operation: 'views' | 'selection' | 'resume'): boolean {
+function validNewCommand(bytes: Uint8Array, operation: 'views' | 'selection' | 'resume' | 'delete'): boolean {
   if (bytes.length > 4096) return false;
   let value: unknown;
   try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { return false; }
   if (!record(value)) return false;
   if (operation === 'views') return Object.keys(value).length === 0;
   if (operation === 'resume') return Object.keys(value).length === 1 && validConversationId(value.clientCommandId);
+  if (operation === 'delete') return Object.keys(value).length === 2 && validConversationId(value.clientCommandId) && validViewToken(value.viewToken);
   return Object.keys(value).length === 3 && validViewToken(value.viewToken) && typeof value.expectedRevision === 'number' &&
     Number.isSafeInteger(value.expectedRevision) && value.expectedRevision >= 0 && (value.conversationId === null || validConversationId(value.conversationId));
 }
@@ -153,9 +162,9 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
     else if (route.operation === 'selection' && request.method === 'GET' && !validViewToken(request.headers.get('x-memory-loop-view'))) response = failure('lease_unavailable');
     else {
       let body: Uint8Array | undefined;
-      try { if (route.method === 'POST') body = await bodyBytes(request, route.operation === 'views' || route.operation === 'selection' || route.operation === 'resume' ? 4096 : undefined); }
+      try { if (route.method === 'POST') body = await bodyBytes(request, route.operation === 'views' || route.operation === 'selection' || route.operation === 'resume' || route.operation === 'delete' ? 4096 : undefined); }
       catch { response = failure('invalid_request'); dependencies.log('think_bff_outcome', { requestId, status: response.status }); return response; }
-      if (body && (route.operation === 'views' || route.operation === 'selection' || route.operation === 'resume') && !validNewCommand(body, route.operation)) {
+      if (body && (route.operation === 'views' || route.operation === 'selection' || route.operation === 'resume' || route.operation === 'delete') && !validNewCommand(body, route.operation)) {
         response = failure('invalid_request'); dependencies.log('think_bff_outcome', { requestId, status: response.status }); return response;
       }
       const origin = new URL(dependencies.transport.config.daemonOrigin);
@@ -172,9 +181,9 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
           const success = route.operation === 'views' ? 201 : route.operation === 'selection' ? 200 : route.method === 'POST' ? 202 : 200;
           if (result.status === success) {
             const projected = route.operation === 'views' ? projectView(data, true) : route.operation === 'selection' ? projectView(data, false) : project(data, route.method, url.pathname, url.searchParams);
-            if (body && (route.operation === 'resume' || route.operation === 'selection')) {
+            if (body && (route.operation === 'resume' || route.operation === 'delete' || route.operation === 'selection')) {
               const command: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body));
-              if (!record(command) || !record(projected) || (route.operation === 'resume' && projected.clientCommandId !== command.clientCommandId) ||
+              if (!record(command) || !record(projected) || ((route.operation === 'resume' || route.operation === 'delete') && projected.clientCommandId !== command.clientCommandId) ||
                   (route.operation === 'selection' && (projected.conversationId !== command.conversationId || typeof command.expectedRevision !== 'number' ||
                     (projected.selectionRevision !== command.expectedRevision && projected.selectionRevision !== command.expectedRevision + 1)))) throw new Error('command response mismatch');
             }
@@ -182,6 +191,11 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
           }
           if (record(data) && record(data.error) && typeof data.error.code === 'string' && Object.hasOwn(errors, data.error.code)) {
             const code = data.error.code as keyof typeof errors;
+            if (code === 'delete_blocked') {
+              const reason = data.error.reason;
+              if (route.operation !== 'delete' || result.status !== 409 || reason !== 'current' && reason !== 'selected_elsewhere' && reason !== 'running' && reason !== 'status_unknown' && reason !== 'deleting') return failure('service_unavailable');
+              return Response.json({ error: { code, message: errors.delete_blocked.message, reason } }, { status: 409, headers });
+            }
             if (errors[code].status === result.status) return failure(code);
           }
           return failure('service_unavailable');

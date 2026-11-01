@@ -1,5 +1,5 @@
 import type { SessionCreateInput } from '@opencode/client';
-import type { CommandReceipt, CreateReceipt } from './contract';
+import type { CommandReceipt, CreateReceipt, DeleteBlockReason, DeleteReceipt } from './contract';
 import type { NativeSession } from './native';
 
 export interface ThinkOwner {
@@ -42,6 +42,35 @@ export interface RecentRegistration {
   lifecycle: RegisteredConversation['lifecycle']; owner: RegisteredConversation | null; uncertain: boolean;
 }
 export interface StoredView { conversationId: string | null; selectionRevision: number; expiresAt: number }
+export interface StoredDeletion {
+  receipt: DeleteReceipt;
+  registeredAt: number;
+  fence: number;
+  nativeAttempted: boolean;
+  nativeRemoved: boolean;
+  transcriptRemoved: boolean;
+}
+export interface CacheNamespace {
+  conversationId: string; epoch: string; path: string;
+  root: TranscriptDirectoryIdentity; directory: TranscriptDirectoryIdentity | null;
+}
+export interface BodyCacheStateStore {
+  intent(namespace: CacheNamespace): void;
+  acquire(conversationId: string, epoch: string, identity: TranscriptDirectoryIdentity): void;
+  namespaces(conversationId: string, afterEpoch?: string): CacheNamespace[];
+  removed(conversationId: string, epoch: string): void;
+}
+/** Concrete, restartable paired removal facts. No operation performs external I/O. */
+export interface DeletionStateStore {
+  get(commandId: string): StoredDeletion | null;
+  pending(directory: string, after?: string): StoredDeletion[];
+  blocked(conversationId: string): boolean;
+  accept(receipt: DeleteReceipt, viewHash: string, revision: number, rowVersion: number, directory: string, now: number): StoredDeletion;
+  attempted(commandId: string): void;
+  progress(commandId: string, effect: 'native' | 'transcript'): void;
+  pendingReason(commandId: string, reason: NonNullable<DeleteReceipt['reason']>): void;
+  complete(commandId: string): void;
+}
 /** Concrete recent-chat/selection operations; all writes are short local transactions. */
 export interface ConversationStateStore {
   recent(directory: string): RecentRegistration[];
@@ -104,7 +133,7 @@ export interface TranscriptStateStore {
 }
 
 export class ThinkStateError extends Error {
-  constructor(readonly code: 'conflict' | 'unavailable' | 'selection_conflict' | 'lease_unavailable' | 'not_found') {
+  constructor(readonly code: 'conflict' | 'unavailable' | 'selection_conflict' | 'lease_unavailable' | 'not_found' | 'delete_blocked', readonly reason?: DeleteBlockReason) {
     super('Think durable state is unavailable or conflicts with this command');
     this.name = 'ThinkStateError';
   }
@@ -118,6 +147,8 @@ export interface ThinkStateStore {
   /** SQLite supplies registry reads; admission-only controlled adapters may omit them. */
   readonly registry?: ThinkRegistryReader;
   readonly conversations: ConversationStateStore;
+  readonly deletions: DeletionStateStore;
+  readonly cache: BodyCacheStateStore;
   command(commandId: string): StoredCommand | null;
   registerConversation(conversation: OwnedConversation, receipt: CreateReceipt, registeredAt: number): void;
   registerCommand(receipt: Exclude<CommandReceipt, CreateReceipt>, original: Uint8Array | null, digest: string | null, registeredAt: number): void;

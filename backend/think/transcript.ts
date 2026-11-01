@@ -25,6 +25,8 @@ export interface TranscriptWriter {
   retains(ref: BodyRef): boolean;
   health(conversationId: string): TranscriptHealth;
   warningCount(): number;
+  /** Irrevocable target fence; drains its append without closing other writers. */
+  quiesce(conversationId: string): Promise<void>;
   close(): Promise<void>;
 }
 interface WriterState {
@@ -69,6 +71,8 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
   const ready = new Set<WriterState>();
   const active = new Map<WriterState, Promise<void>>();
   const retained = new Map<string, number>();
+  const revoked = new Set<string>();
+  const quiescing = new Map<string, Promise<void>>();
   let namespace: TranscriptNamespace | undefined;
   let configurationError = false;
   try {
@@ -85,6 +89,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
   let closing: Promise<void> | undefined;
   let cancelRecovery: (() => void) | undefined;
   let recoveryFailures = 0;
+  const stopping = (writer: WriterState) => stopped || revoked.has(writer.id);
 
   function health(writer: WriterState): TranscriptHealth {
     const invalid = configurationError && writer.started && !writer.noteId;
@@ -96,18 +101,19 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
       ...(writer.headerSynced && (writer.noteId || namespace) ? { noteId: writer.noteId ?? [...(namespace?.components ?? []), `think-${writer.id}.md`] } : {}) };
   }
   function publish(writer: WriterState): void {
-    if (stopped) return;
+    if (stopping(writer)) return;
     const encoded = JSON.stringify(health(writer));
     if (encoded === writer.published) return;
     writer.published = encoded;
     onHealth();
   }
   function enqueue(writer: WriterState): void {
-    if (stopped || active.has(writer) || writer.cancelRetry) return;
+    if (stopping(writer) || active.has(writer) || writer.cancelRetry) return;
     ready.add(writer);
     queueMicrotask(pump);
   }
   function failed(writer: WriterState, reason: TranscriptFailure): void {
+    if (stopping(writer)) return;
     writer.reason = reason; writer.state = 'retrying';
     if (writer.firstFailure === undefined) {
       writer.firstFailure = runtime.now();
@@ -128,7 +134,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
   async function observeInputIntent(writer: WriterState): Promise<void> {
     let cursor: string | undefined;
     do {
-      if (stopped) return;
+      if (stopping(writer)) return;
       const page = await content.page(writer.id, cursor);
       if (page.entries.some(isTranscriptInput)) { writer.started = true; return; }
       cursor = page.nextCursor;
@@ -147,7 +153,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
     const entries: ProjectionEntry[] = [];
     let contentGap = false;
     do {
-      if (stopped) return;
+      if (stopping(writer)) return;
       const page = await content.page(writer.id, cursor);
       if (revision !== undefined && revision !== page.revision) throw new TranscriptError('io_unavailable');
       revision = page.revision; contentGap ||= page.contentHealth === 'incomplete';
@@ -210,7 +216,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
   async function attempt(writer: WriterState): Promise<void> {
     try {
       await startup;
-      if (stopped) return;
+      if (stopping(writer)) return;
       if (options.state && namespace) {
         writer.durable ??= new RegisteredTranscript(options.state, vaultDirectory, writer.id, namespace, options.io);
         // A mapped transcript has started even if verifying its file/namespace fails next.
@@ -224,7 +230,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
           }
           throw error;
         }
-        const record = await writer.durable.recover(() => stopped);
+        const record = await writer.durable.recover(() => stopping(writer));
         if (record) {
           writer.started = true; writer.createdAt = record.createdAt;
           writer.header ??= transcriptHeader(writer.id, record.createdAt);
@@ -234,7 +240,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
         }
       }
       if (writer.dirty || !writer.started) await scan(writer);
-      if (!writer.started || stopped) return;
+      if (!writer.started || stopping(writer)) return;
       if ((configurationError && !writer.noteId) || !namespace || (!writer.file && !writer.durable) || !writer.header) throw new TranscriptError('invalid_configuration');
       const hasWrites = !writer.headerSynced || writer.prepared || writer.pending.size;
       if (hasWrites) {
@@ -242,21 +248,21 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
         console.info('think_transcript_attempt', { conversationId: writer.id });
       }
       if (!writer.headerSynced) {
-        if (writer.durable) await writer.durable.append(writer.header, writer.createdAt, null, () => stopped);
-        else if (writer.file) await writer.file.append(writer.header, () => stopped);
+        if (writer.durable) await writer.durable.append(writer.header, writer.createdAt, null, () => stopping(writer));
+        else if (writer.file) await writer.file.append(writer.header, () => stopping(writer));
         writer.noteId = writer.durable?.noteId ?? writer.noteId;
         writer.headerSynced = true; writer.lastSyncedAt = new Date(runtime.now()).toISOString();
       }
-      while (!stopped) {
+      while (!stopping(writer)) {
         if (writer.dirty) await scan(writer);
         const entry = writer.prepared?.entry ?? writer.pending.values().next().value;
         if (!entry) break;
         if (!writer.prepared) {
-          try { writer.prepared = { entry, value: await prepareTranscriptEntry(entry, content, () => stopped) }; }
+          try { writer.prepared = { entry, value: await prepareTranscriptEntry(entry, content, () => stopping(writer)) }; }
           catch { throw new TranscriptError('content_gap'); }
         }
-        if (writer.durable) await writer.durable.append(writer.prepared.value.source, writer.createdAt, entry, () => stopped);
-        else if (writer.file) await writer.file.append(writer.prepared.value.source, () => stopped);
+        if (writer.durable) await writer.durable.append(writer.prepared.value.source, writer.createdAt, entry, () => stopping(writer));
+        else if (writer.file) await writer.file.append(writer.prepared.value.source, () => stopping(writer));
         // Confirm only after append + file/directory sync; failed attempts retain the same pinned source.
         writer.confirmed.set(entry.id, transcriptEntryIdentity(entry));
         const wasPending = writer.pending.delete(entry.id);
@@ -268,24 +274,24 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
         writer.lastSyncedAt = new Date(runtime.now()).toISOString();
         await writer.prepared.value.close(); writer.prepared = undefined;
       }
-      if (stopped) return;
+      if (stopping(writer)) return;
       // Fresh source observations cannot erase unresolved durable append work.
       if (writer.gap || writer.durable?.load()?.pending) throw new TranscriptError('content_gap');
       if (writer.awaitingOriginal) { writer.state = 'writing'; publish(writer); return; }
       if (!hasWrites && writer.firstFailure !== undefined) {
         console.info('think_transcript_attempt', { conversationId: writer.id });
-        if (writer.durable) await writer.durable.checkpoint(() => stopped);
-        else if (writer.file) await writer.file.checkpoint(() => stopped);
+        if (writer.durable) await writer.durable.checkpoint(() => stopping(writer));
+        else if (writer.file) await writer.file.checkpoint(() => stopping(writer));
         writer.lastSyncedAt = new Date(runtime.now()).toISOString();
       }
       // A fact arriving during checkpoint I/O still needs a fresh scan and synchronization.
-      if (stopped || writer.dirty) return;
+      if (stopping(writer) || writer.dirty) return;
       if (hasWrites || writer.firstFailure !== undefined) console.info('think_transcript_outcome', { conversationId: writer.id, outcome: 'synced' });
       writer.state = 'up-to-date'; writer.reason = undefined; writer.firstFailure = undefined; writer.failures = 0; writer.attention = false;
       writer.cancelWarning?.(); writer.cancelWarning = undefined;
       publish(writer);
     } catch (error) {
-      if (!stopped) failed(writer, error instanceof TranscriptError ? error.reason : 'io_unavailable');
+      if (!stopping(writer)) failed(writer, error instanceof TranscriptError ? error.reason : 'io_unavailable');
     }
   }
   function pump(): void {
@@ -320,7 +326,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
     console.info('think_transcript_recovery_attempt');
     try {
       const ids = options.state.pending(vaultDirectory, after);
-      for (const id of ids) { const writer = writerFor(id, false); writer.started = true; enqueue(writer); }
+      for (const id of ids) if (!revoked.has(id)) { const writer = writerFor(id, false); writer.started = true; enqueue(writer); }
       recoveryFailures = 0;
       console.info('think_transcript_recovery_outcome', { status: 'ready', pending: ids.length });
       if (ids.length === 100) queueMicrotask(() => recoverPending(ids.at(-1)));
@@ -331,8 +337,26 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
   }
   if (options.state) queueMicrotask(() => recoverPending());
   return {
+    quiesce(conversationId) {
+      revoked.add(conversationId);
+      let work = quiescing.get(conversationId);
+      if (!work) {
+        const writer = writers.get(conversationId);
+        if (writer) { ready.delete(writer); writer.cancelRetry?.(); writer.cancelWarning?.(); }
+        work = (async () => {
+          if (!writer) return;
+          await active.get(writer);
+          try { await writer.prepared?.value.close(); } finally { await writer.durable?.close(); }
+          for (const entry of writer.pending.values()) if (entry.body) retained.delete(retainedKey(entry.body));
+          writers.delete(conversationId);
+        })();
+        quiescing.set(conversationId, work);
+        void work.catch(() => { if (quiescing.get(conversationId) === work) quiescing.delete(conversationId); });
+      }
+      return work;
+    },
     changed(conversationId) {
-      if (stopped) return;
+      if (stopped || revoked.has(conversationId)) return;
       const writer = writerFor(conversationId, true);
       writer.dirty = true; enqueue(writer);
     },

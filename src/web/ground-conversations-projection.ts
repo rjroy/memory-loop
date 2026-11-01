@@ -24,7 +24,7 @@ export function projectView(value: unknown, registration: boolean): ViewRegistra
 function projectItem(value: unknown): RecentConversation {
   if (!record(value) || !validConversationId(value.conversationId) || !(value.title === null || typeof value.title === 'string' && !!value.title.trim() && Array.from(value.title).length <= 120) ||
       !timestamp(value.lastActivityAt) || !['ready', 'recovering', 'unavailable', 'deleting'].includes(String(value.state)) ||
-      !record(value.resume) || typeof value.resume.available !== 'boolean' || !record(value.delete) || value.delete.available !== false) throw new Error('invalid conversation');
+      !record(value.resume) || typeof value.resume.available !== 'boolean' || !record(value.delete) || typeof value.delete.available !== 'boolean') throw new Error('invalid conversation');
   const resumeReason = value.resume.reason;
   const deleteReason = value.delete.reason;
   if (resumeReason !== undefined && resumeReason !== 'recovering' && resumeReason !== 'unavailable' && resumeReason !== 'deleting' ||

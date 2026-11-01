@@ -5,7 +5,8 @@ Think, and Recall. **Recall is built:** browse one configured vault and read
 Markdown without changing it. **Capture is built:** save thoughts to the same
 configured vault. **Think has a working conversation UI in the isolated local
 fixture** below. Ground now presents six independent cards, including recent
-registered conversations with Resume, and can prepare an unsent Think draft.
+registered conversations with Resume and Delete, and can prepare an unsent Think
+draft.
 This source/fixture-accepted version is not yet published to the live app, and
 the Ground roadmap is not complete.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
@@ -422,9 +423,30 @@ editable, and other Ground resources, Capture and Recall remain usable if Think
 is unavailable. A transient initial history-read failure gets a bounded automatic
 read retry; recovery never replays a native command.
 
-There is no Delete control yet; deletion belongs to `memory-loop-9ya.6`.
-Scheduled generation and the later configuration/deployment handoff are also
-outside this slice. The live app still needs a separately authorized publication.
+**Delete** stays visible but disabled, with a reason, for the current chat,
+selections in other views, running work, unknown status or an incomplete deletion.
+The server also blocks any chat with a child session, even an idle child. It
+independently rechecks ownership, selection and activity before deleting; there
+is no implicit Stop or child-session cascade.
+
+An available Delete opens a compact confirmation beside that row, naming the
+chat: **Chat and transcript file. No undo.** Cancel receives focus; Cancel or
+Escape closes the confirmation and returns focus without deleting. Only
+**Delete conversation** submits the request. Completion removes the owned chat,
+its mapped transcript file and conversation-owned private application data—not
+unrelated notes or external backups. The row disappears only after confirmed
+completion; other chats' drafts remain intact and only the recent list refreshes.
+
+A definite refusal leaves the row and explains why. An accepted but incomplete
+deletion, a partial failure or a lost acknowledgement stays unresolved, with
+Resume/Delete blocked for that target. **Check status** only reads the same
+command; it does not advance or retry deletion. There is no Undo, Retry Delete,
+automatic status polling, repeated destructive POST or destructive retry on
+restart. Do not restart expecting an incomplete deletion to finish automatically.
+
+Daily question/weekly inspiration jobs and the final configuration/deployment
+handoff remain unimplemented. This verified version is not yet published to the
+live app; publication still needs separate authorization.
 
 ## What Capture does
 
@@ -483,20 +505,20 @@ transactional snapshot.
 
 ## Checks and current acceptance
 
-Ground's recent-conversation/Resume and selection-lease slice (`memory-loop-3ry`)
-is independently accepted. Current evidence covers frontend **135**, backend
-**693** (retained accepted backend run), browser **60**, native UI **5 passed /
+Ground's recent-conversation/Resume, selection-lease and paired-deletion slices
+(`memory-loop-3ry`, `memory-loop-9ya.6`) are independently accepted. Current evidence
+covers frontend **142**, backend **707**, browser **60**, native UI **6 passed /
 3 skipped**, both direct TypeScript checks and an isolated Next production build.
-Fresh technical verification accepted `3RY-FE-01–04`; visual verification accepted
-the row-local handoff correction `3RY-V1`. Evidence:
-`/tmp/opencode/ground-3ry-fe04-final-validation.json` and
-`/tmp/opencode/ground-3ry-correction1-fresh-visual/review-report.md`.
-Owned OpenCode 2.2.2/scripted-provider/Chromium fixtures
-verified Ground Resume and same-URL reload after restarting only the app daemon,
-without native-work replay or duplicate transcript entries. These checks do not
-certify physical-device or assistive-technology behavior. They did not publish
-this version to the live app or activate it against personal data; deletion,
-scheduled jobs and the final handoff remain outside this acceptance.
+Fresh technical and visual reviews accepted the compact inline Delete flow;
+the earlier Resume/startup safeguards remain covered. Evidence:
+`/tmp/opencode/ground-9ya6-final-validation.json` and
+`/tmp/opencode/ground-9ya6-ui-visual-review/report.md`.
+Owned OpenCode 2.2.2/scripted-provider/Chromium fixtures cover paired deletion,
+Ground Resume and same-URL reload after restarting only the app daemon, without
+native-work replay or duplicate transcript entries. These checks do not certify
+physical-device or assistive-technology behavior. They did not publish this
+version to the live app or activate it against personal data; daily/weekly jobs
+and the final handoff remain unimplemented, and the Ground plan is not complete.
 
 On **2026-10-31**, Ground's Phase 3b registry-bound transcript slice passed
 independent validation: frontend **111**, backend **631**, browser **60**, native

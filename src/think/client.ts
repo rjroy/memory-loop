@@ -73,6 +73,8 @@ function isReceipt(value: unknown): value is CommandReceipt {
     value.state === 'rejected' && object(value.failure) && has(value.failure.code, ['upstream_rejected', 'ownership_mismatch', 'configuration_invalid', 'service_unavailable']);
   if (value.kind === 'resume') return has(value.state, ['registered', 'ready', 'upstream-unconfirmed']) && value.failure === undefined ||
     value.state === 'rejected' && object(value.failure) && has(value.failure.code, ['ownership_mismatch', 'service_unavailable']);
+  if (value.kind === 'delete') return has(value.state, ['accepted', 'pending', 'completed']) && value.failure === undefined &&
+    (value.reason === undefined || has(value.reason, ['io_unavailable', 'conflict', 'status_unknown']));
   if (value.kind === 'send' || value.kind === 'stop') {
     if (typeof value.runId !== 'string' || !uuid.test(value.runId)) return false;
     if (value.kind === 'stop') return has(value.state, ['registered', 'requested', 'upstream-unconfirmed', 'cancelled-before-delivery']);
@@ -88,6 +90,7 @@ function receipt(value: CommandReceipt): CommandReceipt {
   const base = { conversationId: value.conversationId, clientCommandId: value.clientCommandId, epoch: value.epoch };
   if (value.kind === 'create') return value.state === 'rejected' ? { ...base, kind: value.kind, state: value.state, failure: { code: value.failure.code } } : { ...base, kind: value.kind, state: value.state };
   if (value.kind === 'resume') return value.state === 'rejected' ? { ...base, kind: value.kind, state: value.state, failure: { code: value.failure.code } } : { ...base, kind: value.kind, state: value.state };
+  if (value.kind === 'delete') return { ...base, kind: value.kind, state: value.state, ...(value.reason === undefined ? {} : { reason: value.reason }) };
   if (value.kind === 'send') return { ...base, kind: value.kind, runId: value.runId, state: value.state, ...(value.failure ? { failure: { code: value.failure.code } } : {}) };
   if (value.kind === 'stop') return { ...base, kind: value.kind, runId: value.runId, state: value.state };
   return { ...base, kind: value.kind, decisionId: value.decisionId, state: value.state, ...(value.failure ? { failure: { code: value.failure.code } } : {}) };

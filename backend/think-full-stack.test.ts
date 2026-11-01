@@ -8,7 +8,7 @@ import { expect, it, vi } from 'vitest';
 import { chromium, type Browser, type Page, type Route } from '@playwright/test';
 import { fixtureLargeResponse, launchThinkFixture } from '../tests/think-fixture';
 import type { ConversationSnapshot } from './think/service';
-import type { SendReceipt } from './think/contract';
+import type { DeleteReceipt, SendReceipt } from './think/contract';
 import type { BodyRef } from './think/body-store';
 
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
@@ -51,6 +51,123 @@ it('Phase 2 Ground quick action creates an editable unsent native Think draft', 
     expect((await native.session.active({ signal: AbortSignal.timeout(5000) }))[sid]?.type).not.toBe('running');
     expect(fixture.control.info()).toEqual(before);
     expect(forbiddenPosts).toEqual([]);
+  } finally {
+    try { await browser?.close(); } finally { await fixture.close(); }
+    await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+}, 240000);
+
+it('Ground 9ya.6 browser deletes only the unselected owned native chat and transcript', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary });
+  let browser: Browser | undefined;
+  try {
+    const endpoint = await Service.discover({ file: `${fixture.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const page = await browser.newPage();
+    const writes: Array<{ method: string; path: string; body: string | null }> = [];
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (url.origin === fixture.webUrl && url.pathname.startsWith('/api/think/') && request.method() !== 'GET') writes.push({ method: request.method(), path: url.pathname, body: request.postData() });
+    });
+    await page.goto(new URL('/think', fixture.webUrl).href);
+    await page.waitForURL(/\/think\?conversation=[0-9a-f-]{36}$/);
+    const editor = page.getByRole('textbox', { name: 'Message' });
+    const send = page.getByRole('button', { name: 'Send', exact: true });
+    async function sendFixture(text: string) {
+      const id = new URL(page.url()).searchParams.get('conversation');
+      if (!id) throw new Error('fixture conversation missing');
+      const base = `/api/think/conversations/${id}`;
+      await editor.fill(text);
+      await vi.waitFor(async () => expect(await send.isEnabled()).toBe(true), { timeout: 30000 });
+      const responsePromise = page.waitForResponse(response => new URL(response.url()).pathname === `${base}/messages` && response.request().method() === 'POST');
+      await send.click();
+      const response = await responsePromise;
+      expect(response.status()).toBe(202);
+      const receipt = await response.json() as SendReceipt;
+      let snapshot: ConversationSnapshot | undefined;
+      await vi.waitFor(async () => {
+        const reply = await page.request.get(new URL(`${base}/commands/${receipt.clientCommandId}`, fixture.webUrl).href);
+        expect((await reply.json() as SendReceipt).state).toBe('completed');
+        const state = await page.request.get(new URL(base, fixture.webUrl).href);
+        expect(state.status()).toBe(200);
+        snapshot = await state.json() as ConversationSnapshot;
+        expect(snapshot.transcript?.state).toBe('up-to-date');
+      }, { timeout: 30000 });
+      if (!snapshot) throw new Error('fixture snapshot missing');
+      const original = snapshot.entries.find(entry => entry.kind === 'original' && entry.clientCommandId === receipt.clientCommandId);
+      if (!original || original.kind !== 'original') throw new Error('fixture original body missing');
+      return { id, base, body: original.body, nativeId: `ses_memoryloop_${id.replaceAll('-', '')}`,
+        transcript: `${fixture.workspace}/Conversations/Memory Loop/think-${id}.md` };
+    }
+    const targetText = 'Fixture deletion target';
+    const target = await sendFixture(targetText);
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
+    await vi.waitFor(() => expect(new URL(page.url()).searchParams.get('conversation')).not.toBe(target.id), { timeout: 30000 });
+    const sentinelText = 'Fixture preserved conversation';
+    const sentinel = await sendFixture(sentinelText);
+    await editor.fill('Fixture unsent sentinel draft');
+    const targetTranscript = await readFile(target.transcript, 'utf8');
+    const sentinelTranscript = await readFile(sentinel.transcript);
+    expect(targetTranscript).toContain(targetText);
+    expect(sentinelTranscript.toString('utf8')).toContain(sentinelText);
+    const query = new URLSearchParams({ generation: target.body.generation, through: String(target.body.through), offset: '0' });
+    const contentUrl = new URL(`${target.base}/content/${target.body.contentId}?${query}`, fixture.webUrl).href;
+    expect((await page.request.get(contentUrl)).status()).toBe(200);
+    const providerBefore = fixture.control.info();
+    const beforeWrites = writes.length;
+    const recentResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/ground/recent-conversations' && response.status() === 200);
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Ground' }).click();
+    const recent = await recentResponse;
+    const card = page.getByRole('region', { name: 'Recent conversations' });
+    const selectedDelete = card.getByRole('button', { name: `Delete ${sentinelText}` });
+    await vi.waitFor(async () => expect(await selectedDelete.isDisabled()).toBe(true), { timeout: 30000 });
+    const targetDelete = card.getByRole('button', { name: `Delete ${targetText}` });
+    try { await vi.waitFor(async () => expect(await targetDelete.isEnabled()).toBe(true), { timeout: 30000 }); }
+    catch (error) {
+      console.error('owned deletion fixture eligibility', JSON.stringify({ list: await recent.json(), row: await targetDelete.locator('..').locator('..').innerText() }));
+      throw error;
+    }
+    await targetDelete.click();
+    const notice = card.getByRole('group', { name: `Delete ${targetText}` });
+    expect(await notice.getByRole('button', { name: 'Cancel' }).evaluate(element => element === document.activeElement)).toBe(true);
+    const deletionResponse = page.waitForResponse(response => new URL(response.url()).pathname === `${target.base}/delete` && response.request().method() === 'POST');
+    await notice.getByRole('button', { name: 'Delete conversation' }).click();
+    const accepted = await deletionResponse;
+    expect(accepted.status()).toBe(202);
+    const receipt = await accepted.json() as DeleteReceipt;
+    expect(receipt).toMatchObject({ kind: 'delete', conversationId: target.id });
+    await vi.waitFor(async () => {
+      const response = await page.request.get(new URL(`${target.base}/commands/${receipt.clientCommandId}`, fixture.webUrl).href);
+      expect(response.status()).toBe(200);
+      expect((await response.json() as DeleteReceipt).state).toBe('completed');
+    }, { timeout: 30000 });
+    const check = notice.getByRole('button', { name: 'Check status' });
+    if (await check.isVisible()) await check.click();
+    await vi.waitFor(async () => expect(await card.getByRole('button', { name: `Delete ${targetText}` }).count()).toBe(0), { timeout: 30000 });
+    await expect(lstat(target.transcript)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(sentinel.transcript)).toEqual(sentinelTranscript);
+    expect((await page.request.get(contentUrl)).status()).not.toBe(200);
+    const sessions = await native.session.list({ directory: fixture.workspace, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    expect(sessions.data.map(item => item.id)).not.toContain(target.nativeId);
+    expect(sessions.data.map(item => item.id)).toContain(sentinel.nativeId);
+    const messages = await native.message.list({ sessionID: sentinel.nativeId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    expect(messages.data.filter(message => message.type === 'user' && message.text === sentinelText)).toHaveLength(1);
+    expect(fixture.control.info()).toEqual(providerBefore);
+    const laterWrites = writes.slice(beforeWrites);
+    const deleteWrites = laterWrites.filter(write => write.path === `${target.base}/delete`);
+    expect(deleteWrites).toHaveLength(1);
+    expect(deleteWrites[0].method).toBe('POST');
+    expect(JSON.parse(deleteWrites[0].body ?? '')).toEqual({ clientCommandId: receipt.clientCommandId, viewToken: expect.stringMatching(/^[A-Za-z0-9_-]{43,256}$/) });
+    expect(laterWrites.filter(write => write.method === 'DELETE' || write.path === '/api/think/conversations' || /\/(messages|stop)$/.test(write.path))).toEqual([]);
+    const thinkLink = page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Think' });
+    expect(await thinkLink.getAttribute('href')).toBe(`/think?conversation=${sentinel.id}`);
+    await thinkLink.click();
+    await vi.waitFor(() => expect(new URL(page.url()).searchParams.get('conversation')).toBe(sentinel.id), { timeout: 30000 });
+    expect(await editor.inputValue()).toBe('Fixture unsent sentinel draft');
   } finally {
     try { await browser?.close(); } finally { await fixture.close(); }
     await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });

@@ -11,5 +11,5 @@ export function useGround() {
   const session = useContext(Context);
   if (!session) throw new Error('Ground requires the persistent app shell');
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
-  return { state, retry: session.retry };
+  return { state, retry: session.retry, session };
 }

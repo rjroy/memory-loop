@@ -61,6 +61,12 @@ export type ResumeReceipt = CreateConversationCommand & { kind: 'resume'; epoch:
   | { state: 'registered' | 'ready' | 'upstream-unconfirmed'; failure?: never }
   | { state: 'rejected'; failure: { code: 'ownership_mismatch' | 'service_unavailable' } }
 );
+export interface DeleteConversationCommand extends CreateConversationCommand { viewToken: string }
+export type DeleteBlockReason = 'current' | 'selected_elsewhere' | 'running' | 'status_unknown' | 'deleting';
+export interface DeleteReceipt extends CreateConversationCommand {
+  kind: 'delete'; epoch: string; state: 'accepted' | 'pending' | 'completed';
+  reason?: 'io_unavailable' | 'conflict' | 'status_unknown';
+}
 export interface ViewSelection { selectionRevision: number; conversationId: string | null; expiresAt: string }
 export interface ViewRegistration extends ViewSelection { viewToken: string }
 export interface SelectConversationCommand { viewToken: string; expectedRevision: number; conversationId: string | null }
@@ -71,7 +77,7 @@ export interface RecentConversation {
   delete: { available: boolean; reason?: 'current' | 'selected_elsewhere' | 'running' | 'status_unknown' | 'deleting' };
 }
 export interface RecentConversations { state: 'ready'; items: RecentConversation[] }
-export type CommandReceipt = CreateReceipt | SendReceipt | StopReceipt | FormReplyReceipt | ResumeReceipt;
+export type CommandReceipt = CreateReceipt | SendReceipt | StopReceipt | FormReplyReceipt | ResumeReceipt | DeleteReceipt;
 
 export interface TranscriptHealth {
   state: 'not-started' | 'writing' | 'up-to-date' | 'degraded' | 'retrying';
@@ -99,6 +105,7 @@ export const thinkErrors = {
   invalid_request: { status: 400, message: 'Invalid Think request' },
   command_conflict: { status: 409, message: 'Command conflicts with a previous request' },
   selection_conflict: { status: 409, message: 'Think selection has changed' },
+  delete_blocked: { status: 409, message: 'Conversation cannot be deleted now' },
   lease_unavailable: { status: 403, message: 'Think view is unavailable' },
   not_found: { status: 404, message: 'Think resource not found' },
   think_unavailable: { status: 503, message: 'Think service is unavailable' },

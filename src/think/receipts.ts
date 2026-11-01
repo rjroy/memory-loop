@@ -6,6 +6,7 @@ export function finalReceipt(receipt: CommandReceipt): boolean {
   switch (receipt.kind) {
     case 'create': return receipt.state === 'ready' || receipt.state === 'rejected';
     case 'resume': return receipt.state === 'ready' || receipt.state === 'rejected';
+    case 'delete': return receipt.state === 'completed';
     case 'send': return ['completed', 'failed', 'interrupted', 'cancelled-before-delivery', 'rejected'].includes(receipt.state);
     case 'stop': return receipt.state !== 'registered';
     case 'form-reply': return ['replied', 'stale', 'rejected'].includes(receipt.state);
@@ -23,6 +24,12 @@ export function mergeReceipt(previous: CommandReceipt | undefined, incoming: Com
   if (previous.kind !== incoming.kind || previous.epoch !== incoming.epoch || previous.conversationId !== incoming.conversationId || previous.clientCommandId !== incoming.clientCommandId ||
       ('runId' in previous && (!('runId' in incoming) || previous.runId !== incoming.runId)) ||
       ('decisionId' in previous && (!('decisionId' in incoming) || previous.decisionId !== incoming.decisionId))) return previous;
+  if (previous.kind === 'delete' && incoming.kind === 'delete') {
+    // Pending is not completion or permission to retry. Preserve forward progress,
+    // but allow a newer safe pending reason without freezing the first observation.
+    if (previous.state === 'completed' || previous.state === 'pending' && incoming.state === 'accepted') return previous;
+    return previous.state === incoming.state && previous.reason === incoming.reason ? previous : incoming;
+  }
   if (finalReceipt(previous) || progress(incoming) < progress(previous) || previous.state === incoming.state) return previous;
   return incoming;
 }

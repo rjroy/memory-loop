@@ -567,7 +567,7 @@ async function run(root: string, scenario: Scenario): Promise<FixtureReport> {
     const think = createThinkService({ native: nativeSessions(OpenCode.make({ baseUrl: nativeUrl, headers: { authorization: auth } })),
       bodies: controlledBodies, state, epoch, context: { directory: vault }, clock: { now: () => orderClock },
       serviceIdentity: { pid: process.pid, version: '2.2.2' } });
-    return { fetch: createApp({ authority, serviceToken: token, vault: { reader }, think }),
+    return { fetch: createApp({ authority, serviceToken: token, vault: { reader }, think }), startRecovery: () => think.startRecovery(),
       async close() { try { await think.close(); } finally { await reader.close(); } } };
   }
   try {

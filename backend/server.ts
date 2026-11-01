@@ -6,11 +6,10 @@ import { transportFileFor } from './runtime-options';
 import { randomUUID } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { OpenCode } from '@opencode/client';
 import { Service } from '@opencode/client/service';
 import type { VaultConfig } from './contract';
 import { parseThinkConfig } from './think/config';
-import { nativeSessions } from './think/native';
+import { createNativeClient, nativeSessions } from './think/native';
 import { createThinkService, type ThinkService, type ThinkUnavailableCode } from './think/service';
 import { createBodyStore, type BodyStore } from './think/body-store';
 import { openCaptureWriter, type CaptureWriter } from './capture';
@@ -26,6 +25,8 @@ export interface ServerOptions {
 }
 export interface PreparedServer {
   fetch(request: Request): Promise<Response>;
+  /** Runtime calls this only after successfully binding its single-daemon listener. */
+  startRecovery(): void;
   close(): Promise<void>;
 }
 
@@ -33,8 +34,9 @@ interface PreparedThink {
   think: ThinkService | { error: ThinkUnavailableCode };
   conversations?: ConversationService;
   close(): Promise<void>;
+  startRecovery(): void;
 }
-const unavailableThink = (error: ThinkUnavailableCode): PreparedThink => ({ think: { error }, async close() {} });
+const unavailableThink = (error: ThinkUnavailableCode): PreparedThink => ({ think: { error }, async close() {}, startRecovery() {} });
 
 async function prepareThink(config: VaultConfig | undefined, vault: VaultState, transportFile: string, projectRoot: string): Promise<PreparedThink> {
   // Read-only/unconfigured applications must not acquire a private application database.
@@ -71,7 +73,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     // every owned native operation still checks the real server PID/version before publishing.
     const endpoint = { url: registration.url, ...('password' in registration && typeof registration.password === 'string' && registration.password.length > 0
       ? { auth: { type: 'basic' as const, username: 'opencode', password: registration.password } } : {}) };
-    const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    const client = createNativeClient({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
     const location = { directory };
     // Current new-chat defaults must not invalidate a registered chat's stored creation baseline.
     const validateCreation = async (signal: AbortSignal): Promise<void> => {
@@ -90,7 +92,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
       serviceIdentity: { pid: registration.pid, version: '2.2.2' }, validateCreation, transcript: { directory: think.transcriptDirectory } });
     console.info('think_setup_outcome', { status: 'ready' });
     // Ownership transfers only after construction succeeds; Think closes its store.
-    return { think: service, close: () => service.close() };
+    return { think: service, close: () => service.close(), startRecovery: () => service.startRecovery() };
   } catch {
     if (bodies) {
       try { await bodies.close(); }
@@ -101,7 +103,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     const conversations = createConversationService({ state, directory, epoch });
     let closing: Promise<void> | undefined;
     console.info('think_setup_outcome', { status: 'registry-only' });
-    return { think: { error: 'think_unavailable' }, conversations, close() {
+    return { think: { error: 'think_unavailable' }, conversations, startRecovery: () => conversations.startRecovery(), close() {
       closing ??= (async () => { try { await conversations.close(); } finally { state.close(); } })();
       return closing;
     } };
@@ -144,7 +146,7 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
   try {
     const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault,
       think: preparedThink.think, conversations: preparedThink.conversations, capture, ground, groundError });
-    return { fetch, close };
+    return { fetch, close, startRecovery: () => preparedThink.startRecovery() };
   } catch (error) {
     await close();
     throw error;

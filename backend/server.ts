@@ -15,6 +15,8 @@ import { createThinkService, type ThinkService, type ThinkUnavailableCode } from
 import { createBodyStore, type BodyStore } from './think/body-store';
 import { openCaptureWriter, type CaptureWriter } from './capture';
 import { openGround, type GroundReader } from './ground';
+import { openThinkState } from './think/sqlite-state';
+import type { ThinkStateStore } from './think/state';
 
 export interface ServerOptions {
   /** Directory containing .memory-loop/config.json, independent of the web build. */
@@ -26,13 +28,14 @@ export interface PreparedServer {
   close(): Promise<void>;
 }
 
-async function prepareThink(config: VaultConfig | undefined, vault: VaultState, transportFile: string): Promise<ThinkService | { error: ThinkUnavailableCode }> {
+async function prepareThink(config: VaultConfig | undefined, vault: VaultState, transportFile: string, projectRoot: string): Promise<ThinkService | { error: ThinkUnavailableCode }> {
   if (config?.think === undefined) return { error: 'think_config_missing' };
   const think = parseThinkConfig(config.think);
   if (!think) return { error: 'think_config_invalid' };
   if ('error' in vault) return { error: 'think_unavailable' };
   console.info('think_setup_attempt');
   let bodies: BodyStore | undefined;
+  let state: ThinkStateStore | undefined;
   try {
     const directory = await realpath(config.vaultDirectory);
     // The registration is explicitly selected by the operator, never discovered from HOME.
@@ -58,8 +61,9 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
       if (!selected || (think.model.variant !== undefined && !selected.variants.some(variant => variant.id === think.model?.variant))) throw new Error('selected model unavailable');
     }
     const epoch = randomUUID();
+    state = await openThinkState(projectRoot, directory);
     bodies = await createBodyStore({ directory: join(dirname(transportFile), `think-bodies-${epoch}`), epoch, vaultDirectory: directory });
-    const service = createThinkService({ native: nativeSessions(client), bodies, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch, serviceIdentity: { pid: info.pid, version: info.version }, transcript: { directory: think.transcriptDirectory } });
+    const service = createThinkService({ native: nativeSessions(client), bodies, state, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch, serviceIdentity: { pid: info.pid, version: info.version }, transcript: { directory: think.transcriptDirectory } });
     console.info('think_setup_outcome', { status: 'ready' });
     return service;
   } catch {
@@ -67,6 +71,8 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
       try { await bodies.close(); }
       catch { console.info('think_body_cleanup_outcome', { status: 'failed' }); }
     }
+    try { state?.close(); }
+    catch { console.info('think_state_cleanup_outcome', { status: 'failed' }); }
     console.info('think_setup_outcome', { status: 'unavailable' });
     return { error: 'think_unavailable' };
   }
@@ -86,7 +92,7 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
     const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
     vault = { error: code === 'config_missing' || code === 'config_invalid' ? code : 'vault_unavailable' };
   }
-  const think = await prepareThink(config, vault, transportFile);
+  const think = await prepareThink(config, vault, transportFile, options.projectRoot);
   let capture: CaptureWriter | undefined;
   let ground: GroundReader | undefined;
   let groundError: 'configuration' | 'io' = 'error' in vault && vault.error === 'vault_unavailable' ? 'io' : 'configuration';

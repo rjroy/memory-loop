@@ -80,7 +80,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     originDraftVersion: number;
     navigationVersion: number;
     shellNavigationGeneration?: number;
-    target?: { conversationId: string; clientCommandId: string; draftVersion: number; ready: boolean };
+    target?: { conversationId: string; clientCommandId: string; draftVersion: number };
     checking: boolean;
   };
   let handoff: PrefillHandoff | undefined;
@@ -659,7 +659,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   }
   function commitHandoff(owner: PrefillHandoff): void {
     const target = owner.target;
-    if (closed || handoff !== owner || !target?.ready) return;
+    if (closed || handoff !== owner || !target) return;
     if (!unchangedHandoff(owner)) { handoffPhase(owner, 'stale'); return; }
     // This is a context commit, not New chat's explicit draft-discard branch.
     const draft = drafts.get(target.conversationId)!;
@@ -677,20 +677,32 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     focusNavigationGeneration = options.navigationGeneration?.();
     if (!closed && state.identity?.conversationId === target.conversationId) update({ messageFocus: { conversationId: target.conversationId, token: target.clientCommandId } });
   }
-  function acceptHandoffReceipt(owner: PrefillHandoff, receipt: CommandReceipt): void {
+  async function acceptHandoffReceipt(owner: PrefillHandoff, receipt: CommandReceipt): Promise<void> {
     if (closed || handoff !== owner || !owner.target) return;
     const target = owner.target;
     if (receipt.kind !== 'create' || receipt.conversationId !== target.conversationId || receipt.clientCommandId !== target.clientCommandId || !uuid.test(receipt.epoch)) {
       handoffPhase(owner, 'unavailable'); return;
     }
     if (receipt.state === 'rejected') { handoffPhase(owner, 'rejected'); return; }
-    if (receipt.state === 'ready') { target.ready = true; commitHandoff(owner); return; }
+    if (receipt.state === 'ready') {
+      // A durable create fact can outlive the daemon's ability to serve its target.
+      // Verify availability without changing the origin; commit rechecks draft/navigation fences.
+      console.info('think_handoff_target_attempt', { source: owner.request.source });
+      try {
+        const snapshot = await client.snapshot(target.conversationId);
+        if (snapshot.conversationId !== target.conversationId || snapshot.epoch !== receipt.epoch || snapshot.creation !== 'ready') throw new ThinkClientError('invalid-response');
+        console.info('think_handoff_target_outcome', { state: 'ready' });
+      } catch {
+        console.info('think_handoff_target_outcome', { state: 'unavailable' });
+        handoffPhase(owner, 'unavailable'); return;
+      }
+      commitHandoff(owner); return;
+    }
     handoffPhase(owner, 'checking');
     handoffTimer = clock.setTimeout(() => { handoffTimer = undefined; void reconcileHandoff(owner); }, 500);
   }
   async function reconcileHandoff(owner: PrefillHandoff): Promise<void> {
     if (closed || handoff !== owner || !owner.target || owner.checking) return;
-    if (owner.target.ready) { commitHandoff(owner); return; }
     if (handoffTimer !== undefined) { clock.clearTimeout(handoffTimer); handoffTimer = undefined; }
     owner.checking = true;
     handoffPhase(owner, 'checking');
@@ -698,7 +710,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     try {
       const receipt = await client.receipt(owner.target.conversationId, owner.target.clientCommandId);
       console.info('think_handoff_check_outcome', { state: receipt.state });
-      acceptHandoffReceipt(owner, receipt);
+      await acceptHandoffReceipt(owner, receipt);
     } catch {
       console.info('think_handoff_check_outcome', { state: 'unavailable' });
       handoffPhase(owner, 'unavailable');
@@ -716,13 +728,13 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
     // Initialize exactly once, before the first create await, under its own key.
     const draft: ThinkDraft = { text: owner.request.text, version: 1 };
     drafts.set(conversationId, draft);
-    owner.target = { conversationId, clientCommandId, draftVersion: draft.version, ready: false };
+    owner.target = { conversationId, clientCommandId, draftVersion: draft.version };
     handoffPhase(owner, 'starting');
     console.info('think_handoff_create_attempt', { source: owner.request.source });
     try {
       const receipt = await client.create({ conversationId, clientCommandId });
       console.info('think_handoff_create_outcome', { state: receipt.state });
-      acceptHandoffReceipt(owner, receipt);
+      await acceptHandoffReceipt(owner, receipt);
     } catch (error) {
       console.info('think_handoff_create_outcome', { state: 'unavailable' });
       handoffPhase(owner, rejectedPost(error) ? 'rejected' : 'unavailable');
@@ -862,7 +874,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       if (owner.target) {
         // Explicit reconfirmation honors later target edits; it never restores prefill.
         owner.target.draftVersion = drafts.get(owner.target.conversationId)?.version ?? owner.target.draftVersion;
-        commitHandoff(owner);
+        void reconcileHandoff(owner);
       } else void prepareHandoff(owner);
     },
     cancelHandoff() {

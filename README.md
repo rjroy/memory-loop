@@ -52,13 +52,14 @@ Vitest retains Vite only as its transitive test engine, with env-file loading of
 
 ### Separate vault and transport configuration
 
-Three ignored files have separate responsibilities:
+Ignored configuration and private state have separate responsibilities:
 
 | File | Purpose |
 | --- | --- |
 | `.memory-loop/config.json` | The single selected vault, read only by the daemon at startup. |
 | `.memory-loop/transport.json` | Daemon origin and web request policy, read by both server tiers. |
 | `.memory-loop/service.token` | Shared server-only bearer credential; never sent to the browser. |
+| `.memory-loop/application.sqlite` | Private Think ownership, original-input and command-admission facts; not configuration or a chat-history mirror. |
 
 Vault configuration is JSON, not environment-based discovery:
 
@@ -123,10 +124,40 @@ It clears only after catch-up and synchronization. Other conversations' warnings
 remain in `otherTranscriptWarnings`. Think shows these meaningful warnings quietly
 beside the composer; healthy writes and brief retries have no routine status line.
 
-The **private original-body capture before native dispatch is different**: failure
-there rejects the Send as a resource failure, because the original bytes could
-not be retained. A later vault write/sync failure or invalid transcript location
-only degrades logging; valid Recall/native chat remain available.
+#### Private Think application state
+
+The existing Bun/Hono daemon uses Bun's built-in SQLite at
+**`<projectRoot>/.memory-loop/application.sqlite`**. The effective root is the
+daemon's `--project-root`, or the source project root when omitted—not the shell's
+working directory or the directory selected by `MEMORY_LOOP_TRANSPORT_FILE`.
+JSON remains configuration. No additional service or startup command is needed;
+Think still attaches to the operator-selected OpenCode service.
+
+For newly created chats, the database commits native/vault ownership and command
+identity, bounded original Send/form-answer BLOBs, digests and dispatch-attempt
+facts before native effects. Observed outcomes are recorded afterward; lost
+acknowledgements remain uncertain and are never automatically replayed. Native
+OpenCode remains authoritative for assistant history and execution. The body
+cache is disposable, not the durable original-input store.
+
+The state directory must be outside the real vault and owner-only `0700`; the
+database and any SQLite sidecars must be owner-only `0600` regular files with one
+hard link and no symlinks.
+Treat their original input as sensitive plaintext. Keep them out of vault sync
+and version control; restrict backups to the same owner and preserve permissions.
+For a consistent file-copy backup, stop the daemon first. No raw database access
+is exposed to the browser.
+
+Unsafe or unavailable private state fails Think mutations closed, before native
+dispatch when admission cannot be persisted. It does not disable otherwise valid
+Ground, Capture or Recall. A storage failure after native acceptance cannot undo
+that work or truthfully report it as rejected. Vault transcript failures remain
+separate, nonblocking logging failures.
+
+This is durable **admission**, not restart chat resume: earlier transcripts/native
+chats are not scanned or adopted, and transcript restart checkpoints and chat
+hydration (`memory-loop-9ya.4` / `9ya.5`) are not implemented yet. Retained facts
+alone do not restore a chat after daemon restart.
 
 #### Initialize transport
 
@@ -300,6 +331,12 @@ drafts are volatile: ordinary app navigation preserves them, but hard reload or
 browser closure does not. Think's own **New chat → Discard & start** behavior is
 unchanged.
 
+A recorded successful creation from before a daemon restart is not enough to
+switch chats. Ground verifies a ready target snapshot in the current serving
+epoch before changing selection or navigating. If unavailable, the current chat
+and both drafts stay in place; **Check chat** checks the same prepared chat
+without creating or sending again.
+
 Inspiration displays a selected quotation with its attribution and source. Prompts
 and Inspiration use narrow Markdown entry formats; see the [resource format
 contract](.lore/work/design/ground-contracts.md#2-small-markdown-formats) for
@@ -312,8 +349,8 @@ visit; leaving and returning starts a new selection.
 
 Recent captures links up to the five most recent recorded entries to their source
 notes in Recall. If source coverage is incomplete, the card says so rather than
-claiming a complete latest five. This phase does not provide a conversation
-registry, resume or delete controls, or a scheduler.
+claiming a complete latest five. Ground does not yet offer a recent-conversation
+list, resume/delete controls or scheduled generation.
 
 ## What Capture does
 
@@ -371,6 +408,14 @@ guarantee; relocation/rename/delete can affect in-flight reads. Browsing is not 
 transactional snapshot.
 
 ## Checks and current acceptance
+
+Ground's Phase 3a private durable-admission slice passed independent validation:
+frontend **111**, backend **602**, browser **60**, native UI **3 passed / 3 skipped**,
+both direct TypeScript checks and an isolated build. Fresh technical verification
+accepted the `GROUND-DURABLE-01` handoff correction. Evidence is recorded in
+`/tmp/opencode/ground-phase3a-final-validation.json`. This is source/fixture
+acceptance, not publication of this slice to the live deployment or completion
+of the Ground plan.
 
 Ground's Phase 2 resource and prefill slice passed independent validation in
 owned fixtures: frontend **108**, backend **581**, browser **59**, native UI
@@ -665,9 +710,11 @@ Only an explicit `POST .../runs/:runId/stop` requests best-effort Stop.
 
 Unpinned superseded previews and native-verified finalized bytes can be reclaimed.
 Canonical restoration uses public `session.message.get`, completed text identity,
-length and SHA-256; mismatches remain content errors. Originals, form replies,
-unfinished previews and pinned readers are retained for this daemon epoch. This
-is not daemon-restart recovery or constant-memory native JSON decoding. There is
+length and SHA-256; mismatches remain content errors. Body-cache copies of
+originals/form replies, unfinished previews and pinned readers remain scoped to
+this daemon epoch. The private database separately retains admitted originals;
+it does not restore body references or chat history after restart. This is not
+daemon-restart recovery or constant-memory native JSON decoding. There is
 no application conversation-turn cap; current Send validation permits up to
 1 MiB UTF-8 per input, and native/provider limits still apply.
 

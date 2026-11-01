@@ -15,6 +15,8 @@ import { constants } from 'node:fs';
 import { transcriptIO, type TranscriptIO } from './think/transcript-file';
 import type { TranscriptRuntime } from './think/transcript';
 import { parseThinkConfig } from './think/config';
+import { ThinkStateError, type StoredCommand, type ThinkStateStore } from './think/state';
+import type { CommandReceipt } from './think/contract';
 
 const epoch = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const vaultDirectory = '/fixture/canonical-vault';
@@ -67,7 +69,7 @@ function unitBodies(): BodyStore {
 }
 
 function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, bodies?: BodyStore, directory = vaultDirectory,
-  leaseOptions?: { clock: { now(): number }; transferIdleMs: number }, transcript?: ThinkServiceOptions['transcript']) {
+  serviceOptions?: Pick<ThinkServiceOptions, 'clock' | 'transferIdleMs' | 'state'>, transcript?: ThinkServiceOptions['transcript']) {
   const calls: Array<{ input: SessionCreateInput; signal: AbortSignal; result: ReturnType<typeof deferred<NativeSession>> }> = [];
   const prompts: Array<{ input: SessionPromptInput; signal: AbortSignal; result: ReturnType<typeof deferred<SessionPromptOutput>> }> = [];
   const cancels: Array<{ input: SessionInboxCancelInput; result: ReturnType<typeof deferred<void>> }> = [];
@@ -156,7 +158,7 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
   const replyPermission = vi.fn(async (_input: PermissionReplyInput, _signal: AbortSignal): Promise<void> => {});
   const native = { createSession, getSession, subscribe, prompt, listInbox, cancelInbox, interruptSession, activeSessions, listMessages, getMessage, getServerInfo, listForms, getForm, replyForm, listPermissionRequests, replyPermission } satisfies NativeSessions & { replyPermission(input: PermissionReplyInput, signal: AbortSignal): Promise<void> };
   const options = { native, context: { directory, agent, model: selectedModel }, epoch,
-    serviceIdentity: { pid: 49123, version: '2.2.2' }, bodies: bodies ?? unitBodies(), ...leaseOptions, ...(transcript ? { transcript } : {}) } satisfies ThinkServiceOptions & { clock?: { now(): number }; transferIdleMs?: number };
+    serviceIdentity: { pid: 49123, version: '2.2.2' }, bodies: bodies ?? unitBodies(), ...serviceOptions, ...(transcript ? { transcript } : {}) } satisfies ThinkServiceOptions;
   const service = createThinkService(options);
   function complete(index: number, changes: Partial<NativeSession> = {}) {
     const call = calls[index];
@@ -862,6 +864,233 @@ describe('daemon-owned Think conversation creation', () => {
     expect(signal?.aborted).toBe(true);
     expect(f.interruptSession).not.toHaveBeenCalled();
     expect(f.createSession).toHaveBeenCalledOnce();
+  });
+});
+
+describe('durable admission storage faults', () => {
+  const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: '  fault fixture 🧠\r\noriginal bytes  ' };
+  const reply = { conversationId: a.conversationId, clientCommandId: '88888888-8888-4888-8888-888888888888',
+    decisionId: 'form_fixture_question', answer: { answer: '  form fixture 🧠\r\noriginal bytes  ', zeta: 'second field' } };
+
+  // Controlled state facade tests the existing production injection boundary.
+  // The separate Bun/SQLite admission suite proves real commit visibility and joins.
+  function stateFixture() {
+    const records = new Map<string, StoredCommand>();
+    const put = (receipt: CommandReceipt, original: Uint8Array | null, digest: string | null, at: number) => {
+      records.set(receipt.clientCommandId, { receipt: structuredClone(receipt), original: original ? new Uint8Array(original) : null,
+        payloadSha256: digest, registeredAt: at, attempted: false });
+    };
+    const required = (id: string) => {
+      const found = records.get(id);
+      if (!found) throw new Error('fixture received a state mutation without a registered command');
+      return found;
+    };
+    const state = {
+      installationId: '99999999-9999-4999-8999-999999999999',
+      command: vi.fn<ThinkStateStore['command']>(id => { const found = records.get(id); return found ? structuredClone(found) : null; }),
+      registerConversation: vi.fn<ThinkStateStore['registerConversation']>((_owner, receipt, at) => put(receipt, null, null, at)),
+      registerCommand: vi.fn<ThinkStateStore['registerCommand']>(put),
+      attempted: vi.fn<ThinkStateStore['attempted']>(id => { required(id).attempted = true; }),
+      outcome: vi.fn<ThinkStateStore['outcome']>(receipt => { required(receipt.clientCommandId).receipt = structuredClone(receipt); }),
+      close: vi.fn<ThinkStateStore['close']>(),
+    } satisfies ThinkStateStore;
+    return { state, records, required };
+  }
+
+  async function ready(state: ThinkStateStore) {
+    const f = setup(model, undefined, vaultDirectory, { state });
+    try {
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      return f;
+    } catch (error) { await f.service.close(); throw error; }
+  }
+
+  function noStop(f: ReturnType<typeof setup>) {
+    expect(f.cancelInbox).not.toHaveBeenCalled();
+    expect(f.interruptSession).not.toHaveBeenCalled();
+  }
+
+  async function refresh(f: ReturnType<typeof setup>) {
+    const reads = f.listMessages.mock.calls.length;
+    f.emit({ type: 'session.execution.started', id: 'evt_fixture_fault_refresh', created: 21,
+      durable: { aggregateID: sessionId(a.conversationId), seq: 1, version: 1 }, data: { sessionID: sessionId(a.conversationId) } });
+    await vi.waitFor(() => expect(f.listMessages.mock.calls.length).toBeGreaterThan(reads));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    await f.service.snapshot(a.conversationId);
+  }
+
+  function admit(f: ReturnType<typeof setup>, loseAcknowledgement = false) {
+    const pending = f.prompts[0];
+    if (!pending?.input.id) throw new Error('fixture expected an identified native prompt');
+    const accepted: SessionPromptOutput = { id: pending.input.id, sessionID: sessionId(a.conversationId), time: { created: 20 },
+      type: 'user', payload: { text: 'fixture native-prepared text' }, delivery: 'queue' };
+    f.inbox.push(accepted);
+    f.messages.push({ id: accepted.id, type: 'user', text: accepted.payload.text, time: { created: 20 }, metadata: pending.input.metadata });
+    f.active[accepted.sessionID] = { type: 'running' };
+    if (loseAcknowledgement) pending.result.reject(new Error('fixture lost native acknowledgement'));
+    else pending.result.resolve(accepted);
+    return pending;
+  }
+
+  it('rejects failed ownership registration before native creation or an accepted receipt exists', async () => {
+    const s = stateFixture();
+    s.state.registerConversation.mockImplementationOnce(() => { throw new ThinkStateError('unavailable'); });
+    const f = setup(model, undefined, vaultDirectory, { state: s.state });
+    try {
+      await expect(f.service.create(a)).rejects.toMatchObject({ code: 'think_unavailable' });
+      expect(s.state.registerConversation).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ conversationId: a.conversationId,
+        nativeSessionId: sessionId(a.conversationId), directory: vaultDirectory }), expect.objectContaining({ ...a, state: 'registered' }), expect.any(Number));
+      expect(s.records.has(a.clientCommandId)).toBe(false);
+      expect(await f.service.command(a.conversationId, a.clientCommandId)).toBeNull();
+      expect(await f.service.conversation(a.conversationId)).toBeNull();
+      await expect(f.service.create(a)).rejects.toMatchObject({ code: 'think_unavailable' });
+      expect(s.state.registerConversation).toHaveBeenCalledOnce();
+      expect(s.state.attempted).not.toHaveBeenCalled();
+      expect(f.createSession).not.toHaveBeenCalled();
+      noStop(f);
+    } finally { await f.service.close(); }
+  });
+
+  it('keeps a failed create-attempt write unconfirmed and never invokes native creation', async () => {
+    const s = stateFixture();
+    s.state.attempted.mockImplementationOnce(() => { throw new ThinkStateError('unavailable'); });
+    const f = setup(model, undefined, vaultDirectory, { state: s.state });
+    try {
+      expect(await f.service.create(a)).toMatchObject({ ...a, kind: 'create', state: 'registered' });
+      await vi.waitFor(async () => expect(await f.service.command(a.conversationId, a.clientCommandId)).toMatchObject({ state: 'upstream-unconfirmed' }));
+      expect(s.state.attempted).toHaveBeenCalledExactlyOnceWith(a.clientCommandId);
+      expect(s.required(a.clientCommandId).attempted).toBe(false);
+      expect(await f.service.create(a)).toMatchObject({ ...a, state: 'upstream-unconfirmed' });
+      expect(await f.service.snapshot(a.conversationId)).toMatchObject({ creation: 'upstream-unconfirmed', sendEligibility: 'unavailable' });
+      await expect(f.service.create(b)).rejects.toMatchObject({ code: 'think_unavailable' });
+      expect(f.createSession).not.toHaveBeenCalled();
+      expect(f.getSession).not.toHaveBeenCalled();
+      noStop(f);
+    } finally { await f.service.close(); }
+  });
+
+  it.each(['send', 'form-reply'] as const)('rejects %s registration failure before acceptance, original capture or native mutation', async kind => {
+    const s = stateFixture();
+    const f = await ready(s.state);
+    const id = kind === 'send' ? send.clientCommandId : reply.clientCommandId;
+    const action = () => kind === 'send' ? f.service.send(send) : f.service.reply(reply);
+    const bytes = Buffer.from(kind === 'send' ? send.text : JSON.stringify(reply.answer), 'utf8');
+    const payload = kind === 'send' ? send.text : JSON.stringify({ conversationId: reply.conversationId, decisionId: reply.decisionId, answer: reply.answer });
+    s.state.registerCommand.mockImplementationOnce(() => { throw new ThinkStateError('unavailable'); });
+    try {
+      await expect(action()).rejects.toMatchObject({ code: 'think_unavailable' });
+      expect(s.state.registerCommand).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind, conversationId: a.conversationId,
+        clientCommandId: id, state: 'registered' }), bytes, createHash('sha256').update(payload).digest('hex'), expect.any(Number));
+      expect(s.records.has(id)).toBe(false);
+      expect(await f.service.command(a.conversationId, id)).toBeNull();
+      expect((await f.service.content.page(a.conversationId)).entries.some(entry =>
+        (entry.kind === 'original' || entry.kind === 'form-reply' || entry.kind === 'original-capture') && entry.clientCommandId === id)).toBe(false);
+      await expect(action()).rejects.toMatchObject({ code: 'think_unavailable' });
+      expect(s.state.registerCommand).toHaveBeenCalledOnce();
+      expect(s.state.attempted.mock.calls.filter(([commandId]) => commandId === id)).toHaveLength(0);
+      expect(f.prompt).not.toHaveBeenCalled();
+      expect(f.replyForm).not.toHaveBeenCalled();
+      noStop(f);
+    } finally { await f.service.close(); }
+  });
+
+  it.each(['send', 'form-reply'] as const)('preserves registered %s input when its dispatch-attempt write fails, without dispatch or replay', async kind => {
+    const s = stateFixture();
+    const f = await ready(s.state);
+    const id = kind === 'send' ? send.clientCommandId : reply.clientCommandId;
+    const action = () => kind === 'send' ? f.service.send(send) : f.service.reply(reply);
+    const bytes = Buffer.from(kind === 'send' ? send.text : JSON.stringify(reply.answer), 'utf8');
+    const attempt = s.state.attempted.getMockImplementation();
+    s.state.attempted.mockImplementation(commandId => {
+      if (commandId === id) throw new ThinkStateError('unavailable');
+      attempt?.(commandId);
+    });
+    try {
+      const registered = await action();
+      expect(registered).toMatchObject({ kind, clientCommandId: id, state: 'registered' });
+      await vi.waitFor(async () => expect(await f.service.command(a.conversationId, id)).toMatchObject({ state: 'upstream-unconfirmed' }));
+      expect(s.state.attempted.mock.calls.filter(([commandId]) => commandId === id)).toEqual([[id]]);
+      expect(s.required(id)).toMatchObject({ original: new Uint8Array(bytes), attempted: false,
+        receipt: { conversationId: a.conversationId, clientCommandId: id, state: 'upstream-unconfirmed' } });
+      expect(await action()).toMatchObject({ ...registered, state: 'upstream-unconfirmed' });
+      if (kind === 'send') {
+        await expect(f.service.send({ ...send, text: 'changed input' })).rejects.toMatchObject({ code: 'command_conflict' });
+        await refresh(f);
+      } else {
+        await expect(f.service.reply({ ...reply, answer: { answer: 'changed input' } })).rejects.toMatchObject({ code: 'command_conflict' });
+        await f.service.snapshot(a.conversationId);
+      }
+      expect(await action()).toMatchObject({ ...registered, state: 'upstream-unconfirmed' });
+      expect(s.state.registerCommand).toHaveBeenCalledOnce();
+      expect(s.state.attempted.mock.calls.filter(([commandId]) => commandId === id)).toHaveLength(1);
+      expect(f.prompt).not.toHaveBeenCalled();
+      expect(f.replyForm).not.toHaveBeenCalled();
+      noStop(f);
+    } finally { await f.service.close(); }
+  });
+
+  it.each(['send', 'form-reply', 'lost-ack'] as const)('does not reject or replay native-accepted %s when recording its observed outcome fails', async kind => {
+    const s = stateFixture();
+    const f = await ready(s.state);
+    const isForm = kind === 'form-reply';
+    const id = isForm ? reply.clientCommandId : send.clientCommandId;
+    const targetState = isForm ? 'replied' : kind === 'lost-ack' ? 'upstream-unconfirmed' : 'admitted';
+    const action = () => isForm ? f.service.reply(reply) : f.service.send(send);
+    const outcome = s.state.outcome.getMockImplementation();
+    s.state.outcome.mockImplementation((receipt, selection) => {
+      if (receipt.clientCommandId === id && receipt.state === targetState) throw new ThinkStateError('unavailable');
+      outcome?.(receipt, selection);
+    });
+    try {
+      const registered = await action();
+      let accepted: ReturnType<typeof admit> | undefined;
+      if (isForm) await vi.waitFor(() => expect(f.replyForm).toHaveBeenCalledOnce());
+      else { await waitForCalls(f.prompts, 1); accepted = admit(f, kind === 'lost-ack'); }
+      await vi.waitFor(async () => expect(await f.service.command(a.conversationId, id)).toMatchObject({ state: targetState }));
+      expect(s.state.outcome.mock.calls.some(([receipt]) => receipt.clientCommandId === id && receipt.state === targetState)).toBe(true);
+      expect(s.required(id)).toMatchObject({ attempted: true, receipt: { state: 'registered', clientCommandId: id },
+        original: new Uint8Array(Buffer.from(isForm ? JSON.stringify(reply.answer) : send.text, 'utf8')) });
+      const observed = await f.service.command(a.conversationId, id);
+      expect(observed).toMatchObject({ ...registered, state: targetState });
+      expect(observed).not.toHaveProperty('failure');
+      expect(await action()).toEqual(observed);
+      if (isForm) {
+        await expect(f.service.reply({ ...reply, answer: { answer: 'changed input' } })).rejects.toMatchObject({ code: 'command_conflict' });
+        await f.service.snapshot(a.conversationId);
+        expect(f.replyForm).toHaveBeenCalledExactlyOnceWith({ sessionID: sessionId(a.conversationId), formID: reply.decisionId, answer: reply.answer }, expect.any(AbortSignal));
+      } else {
+        await expect(f.service.send({ ...send, text: 'changed input' })).rejects.toMatchObject({ code: 'command_conflict' });
+        await refresh(f);
+        expect(f.prompt).toHaveBeenCalledOnce();
+        expect(accepted?.input).toMatchObject({ id: `msg_memoryloop_${send.clientCommandId.replaceAll('-', '')}`, text: send.text,
+          metadata: { memoryLoop: { runId: 'runId' in registered ? registered.runId : undefined, clientCommandId: id, epoch } } });
+        expect(accepted?.signal.aborted).toBe(false);
+      }
+      expect(await action()).toEqual(observed);
+      await expect(f.service.send({ ...send, clientCommandId: '66666666-6666-4666-8666-666666666666' })).rejects.toMatchObject({ code: 'think_unavailable' });
+      expect((await f.service.conversation(a.conversationId))?.sendEligibility).toBe('unavailable');
+      expect(s.state.registerCommand).toHaveBeenCalledOnce();
+      expect(s.state.attempted.mock.calls.filter(([commandId]) => commandId === id)).toEqual([[id]]);
+      noStop(f);
+      if (kind === 'send') {
+        // The local write failure must not prevent a later authoritative native completion.
+        delete f.active[sessionId(a.conversationId)];
+        f.inbox.splice(0);
+        f.messages.push({ id: 'msg_fixture_after_state_fault', type: 'assistant', agent, model, content: [], finish: 'stop',
+          time: { created: 22, completed: 23 } });
+        f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
+        f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_after_state_fault', created: 24,
+          durable: { aggregateID: sessionId(a.conversationId), seq: 2, version: 1 }, data: { sessionID: sessionId(a.conversationId) } });
+        await vi.waitFor(async () => expect(await f.service.command(a.conversationId, id)).toMatchObject({ state: 'completed' }));
+        expect(s.required(id)).toMatchObject({ receipt: { state: 'completed' }, attempted: true,
+          original: new Uint8Array(Buffer.from(send.text, 'utf8')) });
+        expect(await action()).toMatchObject({ ...registered, state: 'completed' });
+        expect(f.prompt).toHaveBeenCalledOnce();
+        expect(accepted?.signal.aborted).toBe(false);
+        noStop(f);
+      }
+    } finally { await f.service.close(); }
   });
 });
 

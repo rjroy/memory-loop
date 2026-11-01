@@ -1,13 +1,15 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { useCallback, useState } from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useCallback, useRef, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GroundView from '../../src/views/GroundView';
 import ThinkView from '../../src/views/ThinkView';
 import NextShell from '../../src/shell/NextShell';
 import { PresentationContext, usePresentation, type NavigationType, type PresentationLocation } from '../../src/shell/presentation';
+import { useThinkPresentation } from '../../src/think/presentation';
 
 const oldId = '11111111-1111-4111-8111-111111111111';
 const epoch = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const restartedEpoch = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const note = (name: string) => ['03_Resources', 'Memory-Loop', `${name}.md`];
 const revision = 'b'.repeat(64);
 const hash = 'c'.repeat(64);
@@ -25,16 +27,26 @@ function deferred<T>() {
 class Watch extends EventTarget { close() {} }
 
 /** Route only the fixture views while retaining the actual persistent NextShell. */
-function TestRouter({ marker = 0, target }: { marker?: number; target?: string }) {
+function TestRouter({ marker = 0, target, fenceControls = false }: { marker?: number; target?: string; fenceControls?: boolean }) {
   const [location, setLocation] = useState<PresentationLocation>(() => ({ key: 'initial', pathname: window.location.pathname, search: window.location.search, hash: '' }));
+  const navigationGeneration = useRef(0);
   const navigate = useCallback((href: string, options?: { replace?: boolean }) => {
+    navigationGeneration.current++;
     if (options?.replace) window.history.replaceState(null, '', href); else window.history.pushState(null, '', href);
     setLocation({ key: crypto.randomUUID(), pathname: window.location.pathname, search: window.location.search, hash: window.location.hash });
   }, []);
   return <PresentationContext.Provider value={{ location, navigationType: 'INITIAL' as NavigationType, isNavigating: false, navigate,
-    linkIntent: () => {}, rememberEntry: () => {}, registerRecallCapture: () => () => {}, registerHeading: () => () => {} }}>
-    <NextShell><FixtureRoutes marker={marker} target={target} /></NextShell>
+    navigationGeneration: () => navigationGeneration.current, linkIntent: () => { navigationGeneration.current++; },
+    rememberEntry: () => {}, registerRecallCapture: () => () => {}, registerHeading: () => () => {} }}>
+    <NextShell>{fenceControls && <HandoffFenceControls />}<FixtureRoutes marker={marker} target={target} /></NextShell>
   </PresentationContext.Provider>;
+}
+function HandoffFenceControls() {
+  const { state, actions } = useThinkPresentation();
+  const { linkIntent } = usePresentation();
+  // A test-owned composer isolates draft changes from navigation; intent need not render a new URL.
+  return <><textarea aria-label="Fixture current draft" value={state.draft.text} onChange={event => actions.editDraft(event.target.value)} />
+    <button type="button" onClick={() => linkIntent('/recall')}>Fixture navigation intent</button></>;
 }
 function FixtureRoutes({ marker, target }: { marker: number; target?: string }) {
   const { location, navigate } = usePresentation();
@@ -46,12 +58,17 @@ function FixtureRoutes({ marker, target }: { marker: number; target?: string }) 
   </>;
 }
 
-function setup(options: { origin?: 'ground' | 'think'; delayedCreate?: boolean; failCreate?: boolean; overrides?: Record<string, () => Response> } = {}) {
+function setup(options: { origin?: 'ground' | 'think'; delayedCreate?: boolean; failCreate?: boolean;
+  historicalReadyAfterRestart?: boolean; delayedTargetSnapshot?: boolean; overrides?: Record<string, () => Response> } = {}) {
   window.sessionStorage.clear();
   window.history.replaceState(null, '', options.origin === 'think' ? `/think?conversation=${oldId}` : '/ground');
   vi.stubGlobal('EventSource', Watch);
   const pending = deferred<Response>();
+  const pendingTargetSnapshot = deferred<Response>();
   const readCounts = new Map<string, number>();
+  let restarted = false;
+  let createdTarget: string | undefined;
+  let heldTargetSnapshot = false;
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
     const method = init?.method ?? 'GET';
@@ -71,19 +88,28 @@ function setup(options: { origin?: 'ground' | 'think'; delayedCreate?: boolean; 
       if (options.delayedCreate) return pending.promise;
       if (options.failCreate) throw new TypeError('fixture uncertain transport');
       const command: { conversationId: string; clientCommandId: string } = JSON.parse(String(init?.body));
+      createdTarget = command.conversationId;
       return json({ ...command, epoch, kind: 'create', state: 'ready' }, 202);
     }
     if (path.startsWith(`${base}/`) && path.endsWith('/decisions')) return json({ decisions: [] });
     const receipt = new RegExp(`^${base}/([^/]+)/commands/([^/]+)$`).exec(path);
-    if (receipt && method === 'GET') return json({ conversationId: receipt[1], clientCommandId: receipt[2], epoch, kind: 'create', state: 'ready' });
+    if (receipt && method === 'GET') {
+      if (options.historicalReadyAfterRestart) restarted = true;
+      return json({ conversationId: receipt[1], clientCommandId: receipt[2], epoch: restarted ? restartedEpoch : epoch, kind: 'create', state: 'ready' });
+    }
     if (path.startsWith(`${base}/`) && method === 'GET') {
+      if (restarted) return json({ error: { code: 'not_found', message: 'Think resource not found' } }, 404);
       const conversationId = path.slice(base.length + 1).split('/')[0];
+      if (options.delayedTargetSnapshot && conversationId === createdTarget && !heldTargetSnapshot) {
+        heldTargetSnapshot = true;
+        return pendingTargetSnapshot.promise;
+      }
       return json({ conversationId, epoch, revision: 1, creation: 'ready', sendEligibility: 'available', entries: [] });
     }
     throw new Error(`Unexpected fixture request: ${method} ${path}`);
   });
   vi.stubGlobal('fetch', fetcher);
-  return { fetcher, readCounts, pending };
+  return { fetcher, readCounts, pending, pendingTargetSnapshot };
 }
 beforeEach(() => window.sessionStorage.clear());
 afterEach(() => window.sessionStorage.clear());
@@ -228,6 +254,102 @@ describe('Ground cards and shell-owned prefill', () => {
     await waitFor(() => expect(window.location.search).toBe(`?conversation=${command.conversationId}`));
     expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue(original);
     expect(fetcher.mock.calls.filter(([input, init]) => String(input) === base && init?.method === 'POST')).toHaveLength(1);
+  });
+
+  it.each(['new origin typing', 'unrendered navigation intent'] as const)(
+    'GROUND-DURABLE-01 fences %s during the target-snapshot await after a ready create', async change => {
+      const { fetcher, pendingTargetSnapshot } = setup({ origin: 'think', delayedTargetSnapshot: true });
+      render(<TestRouter fenceControls />);
+      const editor = await screen.findByRole('textbox', { name: 'Message' });
+      await waitFor(() => expect(window.sessionStorage.getItem('memory-loop.think.current')).toBe(oldId));
+      const initialDraft = 'origin draft before target verification';
+      fireEvent.change(editor, { target: { value: initialDraft } });
+      fireEvent.click(screen.getByRole('button', { name: 'Fixture visit Ground' }));
+      fireEvent.click(await screen.findByRole('button', { name: /Fixture skill description/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start new chat' }));
+      const creates = () => fetcher.mock.calls.filter(([input, init]) => String(input) === base && init?.method === 'POST');
+      await waitFor(() => expect(creates()).toHaveLength(1));
+      const command: { conversationId: string; clientCommandId: string } = JSON.parse(String(creates()[0][1]?.body));
+      // Reaching this GET proves the ready create receipt has already been consumed, not delayed.
+      await waitFor(() => expect(fetcher.mock.calls.filter(([input, init]) =>
+        String(input) === `${base}/${command.conversationId}` && (init?.method ?? 'GET') === 'GET')).toHaveLength(1));
+      expect(window.location.pathname).toBe('/ground');
+      expect(window.sessionStorage.getItem('memory-loop.think.current')).toBe(oldId);
+
+      const currentDraft = screen.getByRole('textbox', { name: 'Fixture current draft' });
+      const expectedDraft = change === 'new origin typing' ? 'newer origin draft 🧠\nkeep after verification' : initialDraft;
+      const focused = change === 'new origin typing' ? currentDraft : screen.getByRole('button', { name: 'Fixture navigation intent' });
+      focused.focus();
+      if (change === 'new origin typing') fireEvent.change(currentDraft, { target: { value: expectedDraft } });
+      else fireEvent.click(focused);
+      // Neither case changes the URL/selection; only its own draft or shell-intent fence changes.
+      expect(window.location.pathname).toBe('/ground');
+      expect(currentDraft).toHaveValue(expectedDraft);
+      expect(focused).toHaveFocus();
+
+      await act(async () => {
+        pendingTargetSnapshot.resolve(json({ conversationId: command.conversationId, epoch, revision: 1,
+          creation: 'ready', sendEligibility: 'available', entries: [] }));
+        await new Promise<void>(resolve => setImmediate(resolve));
+      });
+      expect(window.location.pathname).toBe('/ground');
+      expect(window.sessionStorage.getItem('memory-loop.think.current')).toBe(oldId);
+      expect(currentDraft).toHaveValue(expectedDraft);
+      expect(focused).toHaveFocus();
+      expect(screen.getByText('Chat prepared. Open it without changing your other draft?')).toBeInTheDocument();
+      expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument();
+      expect(creates()).toHaveLength(1);
+      expect(fetcher.mock.calls.some(([input, init]) => init?.method === 'POST' && /\/(?:messages|stop)$/.test(String(input)))).toBe(false);
+    });
+
+  it('GROUND-DURABLE-01 keeps the origin and both drafts when Check chat reads historical ready but the restarted target is unavailable', async () => {
+    const { fetcher } = setup({ origin: 'think', failCreate: true, historicalReadyAfterRestart: true });
+    const view = render(<TestRouter />);
+    const editor = await screen.findByRole('textbox', { name: 'Message' });
+    await waitFor(() => expect(window.sessionStorage.getItem('memory-loop.think.current')).toBe(oldId));
+    const draft = 'origin draft 🧠\nkeep this context';
+    fireEvent.change(editor, { target: { value: draft } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture visit Ground' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Fixture skill description/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start new chat' }));
+    const check = await screen.findByRole('button', { name: 'Check chat' });
+    const creates = () => fetcher.mock.calls.filter(([input, init]) => String(input) === base && init?.method === 'POST');
+    expect(creates()).toHaveLength(1);
+    const command: { conversationId: string; clientCommandId: string } = JSON.parse(String(creates()[0][1]?.body));
+    const receiptPath = `${base}/${command.conversationId}/commands/${command.clientCommandId}`;
+    const receiptReads = () => fetcher.mock.calls.filter(([input, init]) => String(input) === receiptPath && (init?.method ?? 'GET') === 'GET');
+    expect(window.location.pathname).toBe('/ground');
+    expect(window.sessionStorage.getItem('memory-loop.think.current')).toBe(oldId);
+    fireEvent.click(check);
+    await waitFor(() => expect(receiptReads()).toHaveLength(1));
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    // A historical receipt under a fresh epoch is not permission to replace the current selection.
+    expect(window.sessionStorage.getItem('memory-loop.think.current')).toBe(oldId);
+    expect(window.location.pathname).toBe('/ground');
+    expect(screen.getByRole('heading', { name: 'Quick Actions' })).toBeInTheDocument();
+    expect(creates()).toHaveLength(1);
+    expect(fetcher.mock.calls.some(([input, init]) => init?.method === 'POST' && /\/(?:messages|stop)$/.test(String(input)))).toBe(false);
+
+    // The pending handoff remains checkable with its original IDs; a check is not a create retry.
+    fireEvent.click(await screen.findByRole('button', { name: 'Check chat' }));
+    await waitFor(() => expect(receiptReads()).toHaveLength(2));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(window.sessionStorage.getItem('memory-loop.think.current')).toBe(oldId);
+    expect(window.location.pathname).toBe('/ground');
+    expect(creates()).toHaveLength(1);
+
+    // Explicit fixture navigation may inspect keyed local drafts even though daemon snapshots are 404.
+    // Neither inspection authorizes an automatic handoff, resubmission or future restart hydration.
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture visit old Think' }));
+    expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue(draft);
+    view.rerender(<TestRouter target={command.conversationId} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture visit prepared Think' }));
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue(original));
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture visit old Think' }));
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue(draft));
+    expect(creates()).toHaveLength(1);
+    expect(fetcher.mock.calls.some(([input, init]) => init?.method === 'POST' && /\/(?:messages|stop)$/.test(String(input)))).toBe(false);
   });
 
   it('ignores repeated and competing activations while a create is pending', async () => {

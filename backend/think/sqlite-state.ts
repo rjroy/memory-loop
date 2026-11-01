@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { CommandReceipt, CreateReceipt, CreateFailureCode, FormReplyReceipt, SendReceipt, StopReceipt } from './contract';
-import { ThinkStateError, type OwnedConversation, type StoredCommand, type ThinkStateStore } from './state';
+import { ThinkStateError, type OwnedConversation, type StoredCommand, type ThinkStateStore, type TranscriptStateStore } from './state';
 import { ThinkStateFile } from './state-file';
 import type { NativeSession } from './native';
+import { SQLiteTranscriptState, transcriptSchemaV2, validateTranscriptSchema } from './sqlite-transcript-state';
 
 type Parameter = string | number | Uint8Array | null;
 type Row = Record<string, unknown>;
-interface SQLite {
+export interface SQLite {
   exec(sql: string): void;
   get(sql: string, ...parameters: Parameter[]): Row | null;
   run(sql: string, ...parameters: Parameter[]): void;
@@ -128,16 +129,17 @@ function validateV1(db: SQLite): string {
 class SQLiteThinkState implements ThinkStateStore {
   private closed = false;
   readonly installationId: string;
+  readonly transcripts: SQLiteTranscriptState;
 
   constructor(private readonly db: SQLite, private readonly file: ThinkStateFile) {
     file.validate();
     if (db.get('PRAGMA quick_check')?.quick_check !== 'ok') unavailable();
     const version = Number(db.get('PRAGMA user_version')?.user_version);
-    if (version !== 0 && version !== 1) unavailable();
+    if (version !== 0 && version !== 1 && version !== 2) unavailable();
     if (version === 0) {
       const existing = db.get("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
       if (existing?.count !== 0) unavailable();
-    } else validateV1(db);
+    } else { validateV1(db); if (version === 2) validateTranscriptSchema(db); }
     db.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = EXTRA; PRAGMA busy_timeout = 1000;');
     if (db.get('PRAGMA foreign_keys')?.foreign_keys !== 1 || db.get('PRAGMA synchronous')?.synchronous !== 3) unavailable();
     // EXTRA syncs rollback-journal deletion too; no WAL/checkpointer service is needed.
@@ -150,13 +152,20 @@ class SQLiteThinkState implements ThinkStateStore {
       db.run('INSERT INTO application_metadata(singleton, installation_id) VALUES (1, ?)', randomUUID());
       db.exec('PRAGMA user_version = 1');
     });
+    if (version < 2) this.write('migrate', () => {
+      if (Number(db.get('PRAGMA user_version')?.user_version) !== 1) unavailable();
+      db.exec(transcriptSchemaV2);
+      db.exec('PRAGMA user_version = 2');
+    });
     this.installationId = validateV1(db);
+    validateTranscriptSchema(db);
+    this.transcripts = new SQLiteTranscriptState(db, () => this.check(), operation => this.write('transcript', operation), this.installationId);
     file.syncDirectory();
   }
 
   private check(): void { if (this.closed) unavailable(); this.file.validate(); }
 
-  private write<T>(name: 'migrate' | 'create-register' | 'command-register' | 'dispatch-attempt' | 'outcome', operation: () => T): T {
+  private write<T>(name: 'migrate' | 'create-register' | 'command-register' | 'dispatch-attempt' | 'outcome' | 'transcript', operation: () => T): T {
     console.info('think_state_write_attempt', { operation: name });
     let inTransaction = false;
     let committed = false;
@@ -251,7 +260,7 @@ class SQLiteThinkState implements ThinkStateStore {
   }
 }
 
-export async function openThinkState(projectRoot: string, vaultDirectory: string): Promise<ThinkStateStore> {
+export async function openThinkState(projectRoot: string, vaultDirectory: string): Promise<ThinkStateStore & { readonly transcripts: TranscriptStateStore }> {
   console.info('think_state_setup_attempt');
   let file: ThinkStateFile | undefined;
   let db: SQLite | undefined;
@@ -259,7 +268,7 @@ export async function openThinkState(projectRoot: string, vaultDirectory: string
     file = new ThinkStateFile(projectRoot, vaultDirectory);
     db = await connect(file.path);
     const store = new SQLiteThinkState(db, file);
-    console.info('think_state_setup_outcome', { status: 'ready', schema: 1 });
+    console.info('think_state_setup_outcome', { status: 'ready', schema: 2 });
     return store;
   } catch {
     try { db?.close(); } catch { console.info('think_state_cleanup_outcome', { status: 'failed' }); }

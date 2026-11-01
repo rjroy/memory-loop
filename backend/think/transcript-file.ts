@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
 import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import { isAbsolute, normalize } from 'node:path';
+import type { TranscriptDirectoryIdentity, TranscriptFileCheckpoint } from './state';
 
 export type TranscriptFailure = 'io_unavailable' | 'conflict' | 'content_gap' | 'invalid_configuration';
 export class TranscriptError extends Error {
@@ -43,12 +44,13 @@ export function transcriptComponents(value: unknown = 'Conversations/Memory Loop
 const dirFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 const fileFlags = constants.O_RDWR | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 const descriptor = (handle: TranscriptHandle, name: string) => `/proc/self/fd/${handle.fd}/${name}`;
-const sameIdentity = (a: Stats, b: Stats) => a.dev === b.dev && a.ino === b.ino;
+const sameIdentity = (a: Pick<Stats, 'dev' | 'ino'>, b: Pick<Stats, 'dev' | 'ino'>) => a.dev === b.dev && a.ino === b.ino;
 const fingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeMs, s.ctimeMs, s.nlink, s.uid, s.mode]);
 function code(error: unknown): unknown { return typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined; }
 function conflict(): never { throw new TranscriptError('conflict'); }
 function fileStat(stat: Stats): void {
-  if (!stat.isFile() || stat.uid !== process.getuid?.() || stat.nlink !== 1 || (stat.mode & 0o7777) !== 0o600 || !Number.isSafeInteger(stat.size)) conflict();
+  if (!stat.isFile() || stat.uid !== process.getuid?.() || stat.nlink !== 1 || (stat.mode & 0o7777) !== 0o600 ||
+      ![stat.size, stat.dev, stat.ino].every(value => Number.isSafeInteger(value) && value >= 0)) conflict();
 }
 
 /** Held directory descriptors pin the namespace, but do not excuse a moved/replaced path. */
@@ -113,6 +115,13 @@ export class TranscriptNamespace {
     if (this.nodes.length !== this.components.length + 1 || !/^think-[0-9a-f-]{36}\.md$/.test(name)) throw new TranscriptError('invalid_configuration');
     return descriptor(this.nodes[this.nodes.length - 1].handle, name);
   }
+  identities(): TranscriptDirectoryIdentity[] {
+    if (this.nodes.length !== this.components.length + 1) throw new TranscriptError('io_unavailable');
+    return this.nodes.map(({ stat }) => {
+      if (![stat.dev, stat.ino].every(value => Number.isSafeInteger(value) && value >= 0)) conflict();
+      return { dev: stat.dev, ino: stat.ino };
+    });
+  }
   async sync(): Promise<void> {
     await this.validate();
     // Flush both the file name and any newly created directory names before confirming bytes.
@@ -126,20 +135,39 @@ export class TranscriptNamespace {
   }
 }
 
-/** One living writer's ownership/checkpoint, never reconstructed by adopting an existing file. */
+export interface TranscriptFileOptions {
+  /** Only a registry-bound caller supplies this; filenames/frontmatter never establish ownership. */
+  checkpoint?: TranscriptFileCheckpoint;
+  acquired?(checkpoint: TranscriptFileCheckpoint): void;
+}
+
+/** A living writer or a verified registry checkpoint; never filename-based adoption. */
 export class OwnedTranscriptFile {
   private created = false;
-  private identity?: Stats;
+  private identity?: Pick<Stats, 'dev' | 'ino'>;
   private expected?: string;
   private rejected?: string;
   private confirmed = 0;
   private verified = 0;
   private confirmedHash = createHash('sha256');
   private verifiedHash = createHash('sha256');
+  private restoredDigest?: string;
   private pending?: TranscriptBytes;
   private lastConfirmed?: TranscriptBytes;
   private readonly checkpointBytes: TranscriptBytes = { length: 0, async *chunks() {} };
-  constructor(private readonly namespace: TranscriptNamespace, private readonly name: string) {}
+  constructor(private readonly namespace: TranscriptNamespace, private readonly name: string, private readonly options: TranscriptFileOptions = {}) {
+    const checkpoint = options.checkpoint;
+    if (checkpoint) {
+      if (![checkpoint.offset, checkpoint.dev, checkpoint.ino].every(value => Number.isSafeInteger(value) && value >= 0) ||
+          !/^[a-f0-9]{64}$/.test(checkpoint.sha256)) conflict();
+      this.created = true; this.identity = checkpoint; this.expected = checkpoint.fingerprint;
+      this.confirmed = checkpoint.offset; this.restoredDigest = checkpoint.sha256;
+    }
+  }
+  confirmedCheckpoint(): TranscriptFileCheckpoint {
+    if (!this.identity || !this.expected || this.restoredDigest !== undefined) throw new TranscriptError('io_unavailable');
+    return { dev: this.identity.dev, ino: this.identity.ino, fingerprint: this.expected, offset: this.confirmed, sha256: this.confirmedHash.copy().digest('hex') };
+  }
 
   checkpoint(stopping: () => boolean): Promise<void> { return this.append(this.checkpointBytes, stopping); }
 
@@ -172,7 +200,8 @@ export class OwnedTranscriptFile {
         if (stopping()) throw new TranscriptError('io_unavailable');
         hash.update(await this.read(handle, at, Math.min(65536, this.confirmed - at)));
       }
-      if (hash.copy().digest('hex') !== this.confirmedHash.copy().digest('hex')) conflict();
+      if (hash.copy().digest('hex') !== (this.restoredDigest ?? this.confirmedHash.copy().digest('hex'))) conflict();
+      const confirmedHash = hash.copy();
       const tail = before.size - this.confirmed;
       let compared = 0;
       for await (const bytes of source.chunks(0)) {
@@ -185,6 +214,7 @@ export class OwnedTranscriptFile {
         if (compared === tail) break;
       }
       if (compared !== tail || fingerprint(await this.stat(handle)) !== observed) conflict();
+      this.confirmedHash = confirmedHash; this.restoredDigest = undefined;
       this.verified = before.size; this.verifiedHash = hash; this.expected = observed; this.rejected = undefined;
     } catch (error) {
       if (error instanceof TranscriptError && error.reason === 'conflict') {
@@ -216,6 +246,7 @@ export class OwnedTranscriptFile {
         fileStat(initial);
         if (initial.size !== 0) conflict();
         this.identity = initial; this.expected = fingerprint(initial);
+        this.options.acquired?.({ dev: initial.dev, ino: initial.ino, fingerprint: this.expected, offset: 0, sha256: this.confirmedHash.copy().digest('hex') });
       } else {
         if (!this.identity) conflict();
         try {
@@ -234,7 +265,7 @@ export class OwnedTranscriptFile {
         this.pending = undefined;
         return;
       }
-      if (fingerprint(before) !== this.expected || before.size !== this.verified) await this.verifyChanged(handle, before, source, stopping);
+      if (this.restoredDigest !== undefined || fingerprint(before) !== this.expected || before.size !== this.verified) await this.verifyChanged(handle, before, source, stopping);
       for await (const bytes of source.chunks(this.verified - this.confirmed)) {
         if (bytes.length > 65536) throw new TranscriptError('content_gap');
         for (let offset = 0; offset < bytes.length;) {

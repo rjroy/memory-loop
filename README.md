@@ -59,7 +59,7 @@ Ignored configuration and private state have separate responsibilities:
 | `.memory-loop/config.json` | The single selected vault, read only by the daemon at startup. |
 | `.memory-loop/transport.json` | Daemon origin and web request policy, read by both server tiers. |
 | `.memory-loop/service.token` | Shared server-only bearer credential; never sent to the browser. |
-| `.memory-loop/application.sqlite` | Private Think ownership, original-input and command-admission facts; not configuration or a chat-history mirror. |
+| `.memory-loop/application.sqlite` | Private Think ownership, originals, command facts, transcript checkpoints and pending appends; not configuration or a chat-history mirror. |
 
 Vault configuration is JSON, not environment-based discovery:
 
@@ -104,25 +104,40 @@ Omit `transcriptDirectory` to use **`Conversations/Memory Loop`** (including the
 space). An override is vault-relative: slash-separated visible names, with no
 empty/dot-prefixed components, absolute path, backslash or NUL. All runs append
 to `think-<conversation UUID>.md`; an empty New chat creates no transcript file.
-Settings load at daemon startup. Restart does not move files, recover accepted
-work or adopt transcripts from an earlier daemon.
+Settings load at daemon startup; changing them does not move mapped files.
+Registered, verified transcript files can reopen after restart, but this does not
+restore chat history or replay accepted work.
 
 Transcripts contain full original user and AI text in literal fenced blocks,
 plus conservative tool/lifecycle summaries—not reasoning or raw tool payloads.
 They are sensitive vault notes covered by the vault's normal sync/backups;
 secrets deliberately written in user/AI text are not redacted. Newly created
-files are owner-only `0600`. Existing, linked, moved or externally edited targets
-are conflicts: the writer never overwrites, merges or adopts them. It can resume
-only when the original owned namespace/bytes pass its safety checks again.
+files are owner-only `0600`. Only a private-registry mapping with a verified
+checkpoint permits reopening an existing file. Unregistered legacy files and
+registry entries without a checkpoint are not adopted by filename. Linked,
+replaced, moved or externally edited targets are conflicts: their bytes are
+preserved, never overwritten, truncated or merged. Continuation requires the
+original owned namespace, file identity and confirmed bytes to pass verification.
+
+Stable transcript entry identities survive body-cache generations. Before an
+append, the database seals its exact serialized pending bytes; after file and
+directory synchronization, it confirms the offset, digest and entry identity.
+A fresh writer can finish a matching partial pending tail exactly once, or
+confirm an already-written tail without appending it again. This recovery uses
+registered facts, not a scan of arbitrary Markdown or reconstructed native events.
+The transcript remains ordinary Markdown in the same format.
 
 Vault logging never gates chat/tools. It retries automatically, backing off from
 about one second to a maximum one-minute delay while the daemon lives. There is
 no Retry logging route/button. Snapshot/watch health stays quiet for short
-storage failures; `warning` becomes true after one minute from the first failure,
-or immediately for a conflict, content gap or invalid logging configuration.
-It clears only after catch-up and synchronization. Other conversations' warnings
-remain in `otherTranscriptWarnings`. Think shows these meaningful warnings quietly
-beside the composer; healthy writes and brief retries have no routine status line.
+storage failures. For accepted input awaiting logging, `warning` becomes true
+after one minute from the first failure, even if the initial checkpoint load
+failed; unused chats stay quiet. Conflicts, content gaps and invalid logging
+configuration warn immediately. An unresolved source conflict stays unhealthy
+across retries; correcting it permits successful revalidation and catch-up to
+clear the warning. Other conversations' warnings remain in
+`otherTranscriptWarnings`. Think shows these meaningful warnings quietly beside
+the composer; healthy writes and brief retries have no routine status line.
 
 #### Private Think application state
 
@@ -140,11 +155,18 @@ acknowledgements remain uncertain and are never automatically replayed. Native
 OpenCode remains authoritative for assistant history and execution. The body
 cache is disposable, not the durable original-input store.
 
+Schema v2 adds transcript mappings/checkpoints, stable-entry facts and bounded
+chunks of serialized pending append bytes for unconfirmed work. The v1-to-v2
+migration is additive and retains ownership, command and immutable original-input
+facts. Pending bytes are cleared after confirmation; confirmed assistant history
+is not mirrored in the database.
+
 The state directory must be outside the real vault and owner-only `0700`; the
 database and any SQLite sidecars must be owner-only `0600` regular files with one
 hard link and no symlinks.
-Treat their original input as sensitive plaintext. Keep them out of vault sync
-and version control; restrict backups to the same owner and preserve permissions.
+Treat originals, pending transcript text and ownership/checkpoint metadata as
+sensitive private data. Keep them out of vault sync and version control;
+restrict backups to the same owner and preserve permissions.
 For a consistent file-copy backup, stop the daemon first. No raw database access
 is exposed to the browser.
 
@@ -154,10 +176,11 @@ Ground, Capture or Recall. A storage failure after native acceptance cannot undo
 that work or truthfully report it as rejected. Vault transcript failures remain
 separate, nonblocking logging failures.
 
-This is durable **admission**, not restart chat resume: earlier transcripts/native
-chats are not scanned or adopted, and transcript restart checkpoints and chat
-hydration (`memory-loop-9ya.4` / `9ya.5`) are not implemented yet. Retained facts
-alone do not restore a chat after daemon restart.
+This provides durable **admission and verified transcript-writer continuation**,
+not full restart chat resume. Unregistered transcripts/native chats are not
+scanned or adopted. Native-history hydration and restoration of chats in the
+application (`memory-loop-9ya.5`) are not implemented yet; a reopened transcript
+does not by itself make a chat available after daemon restart.
 
 #### Initialize transport
 
@@ -408,6 +431,17 @@ guarantee; relocation/rename/delete can affect in-flight reads. Browsing is not 
 transactional snapshot.
 
 ## Checks and current acceptance
+
+On **2026-10-31**, Ground's Phase 3b registry-bound transcript slice passed
+independent validation: frontend **111**, backend **631**, browser **60**, native
+UI **3 passed / 3 skipped**, both direct TypeScript checks and an isolated Next
+build. Fresh technical review accepted the `GROUNDTRANSCRIPT03/04` corrections;
+the earlier conflict/pending-work warning corrections remain covered. Evidence:
+`/tmp/opencode/ground-phase3b-final-validation.json`. Owned fixtures exercise fresh
+Bun-process recovery, pending-tail completion and conflict preservation. These
+checks do not certify physical-device or assistive-technology behavior, activate
+the slice against personal data, or establish full chat resume or completion of
+the Ground plan.
 
 Ground's Phase 3a private durable-admission slice passed independent validation:
 frontend **111**, backend **602**, browser **60**, native UI **3 passed / 3 skipped**,
@@ -713,9 +747,10 @@ Canonical restoration uses public `session.message.get`, completed text identity
 length and SHA-256; mismatches remain content errors. Body-cache copies of
 originals/form replies, unfinished previews and pinned readers remain scoped to
 this daemon epoch. The private database separately retains admitted originals;
-it does not restore body references or chat history after restart. This is not
-daemon-restart recovery or constant-memory native JSON decoding. There is
-no application conversation-turn cap; current Send validation permits up to
+it does not restore body references or chat history after restart. Verified
+transcript-writer recovery is separate from this still-unimplemented chat
+hydration. Native JSON decoding is not constant-memory. There is no application
+conversation-turn cap; current Send validation permits up to
 1 MiB UTF-8 per input, and native/provider limits still apply.
 
 The controlled two-Chromium transport test uses already-installed

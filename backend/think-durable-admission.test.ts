@@ -50,7 +50,8 @@ function durable(probe: Probe | undefined, at: string): Probe {
   expect(probe.exists, `application.sqlite must contain committed application facts ${at}`).toBe(true);
   expect(probe.error, 'the independent SQLite reader must open successfully').toBeUndefined();
   expect(probe.integrity).toBe('ok');
-  expect(probe.schemaVersion).toBe(1);
+  // v2 adds transcript checkpoints; the exact v1 admission columns and relational checks remain.
+  expect([1, 2]).toContain(probe.schemaVersion);
   expect(probe.fileMode).toBe(0o600);
   expect(probe.directoryMode).toBe(0o700);
   expect(probe.ownerMatches).toBe(true);

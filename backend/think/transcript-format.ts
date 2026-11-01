@@ -16,6 +16,13 @@ export interface TranscriptEntry {
   body?: BodyRef;
   summary?: string;
 }
+/** Immutable source facts, not observation time, transport identity or the chosen framing. */
+export function transcriptEntryIdentity(entry: TranscriptEntry): string {
+  const metadata = Object.fromEntries(Object.entries(entry.metadata).filter(([key]) => !['at', 'time_basis', 'run_id', 'supersedes_entry_id'].includes(key)));
+  const body = entry.body;
+  return digest(JSON.stringify([entry.id, entry.role, metadata, entry.summary ?? null,
+    body ? [body.key.conversationId, body.kind, body.through, body.kind === 'canonical' ? body.sha256 : body.generation] : null]));
+}
 export function entryFor(entry: ProjectionEntry, observedAt: number, partial?: 'monitoring-loss' | 'terminal'): TranscriptEntry | undefined {
   const time = entry.sourceTime;
   if (time !== undefined && (!Number.isFinite(time) || Math.abs(time) > 8640000000000000)) throw new TranscriptError('content_gap');
@@ -42,8 +49,13 @@ export function entryFor(entry: ProjectionEntry, observedAt: number, partial?: '
       if (entry.closure !== 'closed' && !partial) return undefined;
       if (!Number.isSafeInteger(entry.ordinal) || entry.ordinal < 0) throw new TranscriptError('content_gap');
       const semantic = `ai:${id(entry.messageId)}:${entry.ordinal}`;
-      if (entry.body.kind === 'canonical' && !/^[a-f0-9]{64}$/.test(entry.body.sha256)) throw new TranscriptError('content_gap');
-      const version = digest(JSON.stringify([entry.body.generation, entry.body.through, entry.body.kind === 'canonical' ? entry.body.sha256 : partial]));
+      if (entry.closure === 'closed' && entry.body.kind !== 'canonical' ||
+          entry.body.kind === 'canonical' && !/^[a-f0-9]{64}$/.test(entry.body.sha256)) throw new TranscriptError('content_gap');
+      // Public native message ID + text-only ordinal are supplied by the verified projection.
+      // Canonical bytes survive cache/transport replacement; observed previews do not claim that identity.
+      const version = digest(JSON.stringify(entry.closure === 'closed' && entry.body.kind === 'canonical'
+        ? [entry.body.key.conversationId, 'canonical', entry.body.through, entry.body.sha256]
+        : [entry.body.generation, entry.body.through, 'observed-partial', partial]));
       return { id: `${semantic}:${version}`, semantic, role: 'AI', at, body: entry.body,
         metadata: { ...metadata, kind: 'assistant-text', message_id: id(entry.messageId), ordinal: entry.ordinal,
           capture: entry.closure === 'closed' ? 'canonical' : 'observed-partial', completeness: entry.capture, ...(partial ? { boundary: partial } : {}) } };
@@ -105,6 +117,7 @@ export async function prepareTranscriptEntry(entry: TranscriptEntry, content: Th
     let longest = 2;
     let run = 0;
     if (entry.body) {
+      const bodyHash = createHash('sha256');
       if (stopping()) throw new TranscriptError('io_unavailable');
       reader = await content.open(entry.body);
       for (let offset = 0; offset < entry.body.through;) {
@@ -112,9 +125,11 @@ export async function prepareTranscriptEntry(entry: TranscriptEntry, content: Th
         const count = Math.min(65536, entry.body.through - offset);
         const value = await reader.read(offset, count);
         if (value.length !== count) throw new TranscriptError('content_gap');
+        bodyHash.update(value);
         for (const byte of value) { run = byte === 96 ? run + 1 : 0; longest = Math.max(longest, run); }
         offset += count;
       }
+      if (entry.body.kind === 'canonical' && bodyHash.digest('hex') !== entry.body.sha256) throw new TranscriptError('content_gap');
     }
     const metadata = { entry_id: entry.id, ...entry.metadata, ...(entry.body ? { body_utf8_bytes: entry.body.through } : {}) };
     const replacement = 'supersedes_entry_id' in metadata ? ' (replacement)' : '';

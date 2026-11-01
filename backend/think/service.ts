@@ -1253,7 +1253,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         setConversation(conversationId, { ...state, transcript, otherTranscriptWarnings, revision: state.revision + 1 });
       }
     }
-  }, options.transcript);
+  }, { ...options.transcript, ...(options.state?.transcripts ? { state: options.state.transcripts } : {}) });
   return service;
 }
 

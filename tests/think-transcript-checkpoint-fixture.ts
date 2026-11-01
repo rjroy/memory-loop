@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants, lstatSync, readFileSync, writeFileSync } from 'node:fs';
-import { link, mkdir, readFile, rename, symlink, truncate, writeFile } from 'node:fs/promises';
+import { appendFile, link, mkdir, readFile, rename, symlink, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MessageListOutput, OpenCodeEvent, SessionFormGetOutput } from '@opencode/client';
 import { createBodyStore } from '../backend/think/body-store';
@@ -91,7 +91,77 @@ export interface MigrationReport {
   commandState: string; conversationId: string; nativeSessionId: string; legacy: string; transcriptMapped: boolean;
 }
 
-// Planned v2 additions, retaining the v1 ownership/command tables unchanged:
+interface MigrationCommand {
+  command_id: string; conversation_id: string; kind: string; state: string;
+  original_type: string; original_hex: string | null; payload_sha256: string | null;
+  dispatch_attempted: number; run_id: string | null; native_message_id: string | null; decision_id: string | null;
+  registered_at: number; registration_epoch: string; failure_code: string | null;
+}
+export interface V2Facts {
+  installationId: string;
+  owner: { conversation_id: string; native_session_id: string; vault_directory: string; owner_marker_json: string;
+    creation_epoch: string; context_json: string; effective_context_json: string | null; created_at: number; creation_state: string };
+  commands: MigrationCommand[];
+  transcript: { conversation_id: string; note_id_json: string; created_at: number; namespace_json: string;
+    creation_state: string; file_dev: number | null; file_ino: number | null; file_fingerprint: string | null;
+    confirmed_offset: number; confirmed_sha256: string; pending_entry_id: string | null; pending_semantic: string | null;
+    pending_source_identity: string | null; pending_header: number | null; pending_length: number | null;
+    pending_sha256: string | null; pending_state: string | null; staged_length: number; staged_chunks: number };
+  entries: Array<{ conversation_id: string; entry_id: string; semantic: string; source_identity: string; serialized_sha256: string; end_offset: number }>;
+  chunks: Probe['chunks'];
+  fileHex: string;
+}
+interface CommandOrder { commandId: string; conversationId: string; sequence: number }
+export interface OrderMigrationReport {
+  pid: number; versionBefore: number; orderTableBefore: boolean; insertionIds: string[];
+  schemaVersion: number; before: V2Facts; after: V2Facts; registryIds: string[]; order: CommandOrder[];
+}
+export interface OrderReopenReport {
+  pid: number; schemaVersion: number; vacuumIntegrity: string;
+  before: V2Facts; afterVacuum: V2Facts; afterNew: V2Facts;
+  registryBefore: string[]; registryAfterVacuum: string[]; registryAfterNew: string[]; registryAfterReopen: string[];
+  orderBefore: CommandOrder[]; orderAfterVacuum: CommandOrder[]; orderAfterNew: CommandOrder[];
+}
+
+// Fixed historical migration inputs, never imported from production schema/version constants.
+// v2 retained all v1 tables and added only the three transcript tables below.
+const migrationSchemaV1 = `
+  CREATE TABLE application_metadata(singleton INTEGER PRIMARY KEY, installation_id TEXT NOT NULL UNIQUE);
+  CREATE TABLE conversations(conversation_id TEXT PRIMARY KEY NOT NULL, native_session_id TEXT NOT NULL UNIQUE,
+    vault_directory TEXT NOT NULL, owner_marker_json TEXT NOT NULL, creation_epoch TEXT NOT NULL,
+    context_json TEXT NOT NULL, effective_context_json TEXT, created_at INTEGER NOT NULL, creation_state TEXT NOT NULL);
+  CREATE TABLE commands(command_id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL REFERENCES conversations,
+    kind TEXT NOT NULL, state TEXT NOT NULL, original_input BLOB, payload_sha256 TEXT,
+    dispatch_attempted INTEGER NOT NULL DEFAULT 0, run_id TEXT, native_message_id TEXT, decision_id TEXT,
+    registered_at INTEGER NOT NULL, registration_epoch TEXT NOT NULL, failure_code TEXT);
+  CREATE INDEX commands_conversation ON commands(conversation_id, registered_at);
+  PRAGMA user_version = 1;
+`;
+const migrationSchemaV2 = `
+  CREATE TABLE transcripts (
+    conversation_id TEXT PRIMARY KEY NOT NULL REFERENCES conversations(conversation_id),
+    note_id_json TEXT NOT NULL, created_at INTEGER NOT NULL, namespace_json TEXT NOT NULL,
+    creation_state TEXT NOT NULL CHECK(creation_state IN ('intent', 'owned')),
+    file_dev INTEGER, file_ino INTEGER, file_fingerprint TEXT,
+    confirmed_offset INTEGER NOT NULL DEFAULT 0 CHECK(confirmed_offset >= 0), confirmed_sha256 TEXT NOT NULL,
+    pending_entry_id TEXT, pending_semantic TEXT, pending_source_identity TEXT, pending_header INTEGER,
+    pending_length INTEGER, pending_sha256 TEXT, pending_state TEXT CHECK(pending_state IN ('preparing', 'ready')),
+    staged_length INTEGER NOT NULL DEFAULT 0, staged_chunks INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE transcript_entries (
+    conversation_id TEXT NOT NULL REFERENCES transcripts(conversation_id), entry_id TEXT NOT NULL,
+    semantic TEXT NOT NULL, source_identity TEXT NOT NULL, serialized_sha256 TEXT NOT NULL, end_offset INTEGER NOT NULL,
+    PRIMARY KEY(conversation_id, entry_id)
+  );
+  CREATE INDEX transcript_entries_semantic ON transcript_entries(conversation_id, semantic, end_offset);
+  CREATE TABLE transcript_pending_chunks (
+    conversation_id TEXT NOT NULL REFERENCES transcripts(conversation_id), chunk_index INTEGER NOT NULL CHECK(chunk_index >= 0),
+    bytes BLOB NOT NULL CHECK(typeof(bytes) = 'blob' AND length(bytes) BETWEEN 1 AND 65536), PRIMARY KEY(conversation_id, chunk_index)
+  );
+  PRAGMA user_version = 2;
+`;
+
+// Checkpoint tables introduced in v2, retained unchanged by v3 command ordering:
 // transcripts(conversation_id PK REFERENCES conversations, note_id_json, creation_state,
 //   file_dev, file_ino, file_fingerprint, confirmed_offset, confirmed_sha256,
 //   pending_entry_id, pending_length, pending_sha256).
@@ -173,16 +243,7 @@ async function migrateV1(root: string): Promise<MigrationReport> {
   // Fixed, test-owned v1 migration input: not imported from mutable production schema constants.
   const seed = new Database(database);
   try {
-    seed.run(`CREATE TABLE application_metadata(singleton INTEGER PRIMARY KEY, installation_id TEXT NOT NULL UNIQUE);
-      CREATE TABLE conversations(conversation_id TEXT PRIMARY KEY NOT NULL, native_session_id TEXT NOT NULL UNIQUE,
-        vault_directory TEXT NOT NULL, owner_marker_json TEXT NOT NULL, creation_epoch TEXT NOT NULL,
-        context_json TEXT NOT NULL, effective_context_json TEXT, created_at INTEGER NOT NULL, creation_state TEXT NOT NULL);
-      CREATE TABLE commands(command_id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL REFERENCES conversations,
-        kind TEXT NOT NULL, state TEXT NOT NULL, original_input BLOB, payload_sha256 TEXT,
-        dispatch_attempted INTEGER NOT NULL DEFAULT 0, run_id TEXT, native_message_id TEXT, decision_id TEXT,
-        registered_at INTEGER NOT NULL, registration_epoch TEXT NOT NULL, failure_code TEXT);
-      CREATE INDEX commands_conversation ON commands(conversation_id, registered_at);
-      PRAGMA user_version = 1;`);
+    seed.run(migrationSchemaV1);
     seed.query('INSERT INTO application_metadata VALUES (1, ?)').run(installationId);
     seed.query('INSERT INTO conversations VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)').run(conversationId, nativeId, vault,
       JSON.stringify({ owner: 'memory-loop', conversationId, epoch, installationId }), epoch, '{}', now, 'ready');
@@ -203,6 +264,153 @@ async function migrateV1(root: string): Promise<MigrationReport> {
       originalHex: Buffer.from(command.original).toString('hex'), payloadSha256: command.payloadSha256,
       commandState: command.receipt.state, ...owner, legacy: await readFile(legacy, 'utf8'), transcriptMapped: probe(database).checkpoint !== null };
   } finally { after.close(); }
+}
+
+const orderedB = '00000000-0000-4000-8000-000000000001'; // Lexically BEFORE A, registered AFTER it.
+const orderedStop = '88888888-8888-4888-8888-888888888888';
+const orderedRunA = '55555555-5555-4555-8555-555555555555';
+const orderedRunB = '99999999-9999-4999-8999-999999999999';
+const orderedOriginalB = '  migration original B 🧠\r\nnot A  ';
+const newOrderedCommand = '77777777-7777-4777-8777-777777777777';
+const sha = (bytes: string | Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+async function seedV2Order(root: string): Promise<void> {
+  const projectRoot = join(root, 'project');
+  const vault = join(root, 'vault');
+  const directory = join(vault, 'Conversations', 'Memory Loop');
+  await mkdir(join(projectRoot, '.memory-loop'), { recursive: true, mode: 0o700 });
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const database = join(projectRoot, '.memory-loop', 'application.sqlite');
+  await writeFile(database, '', { mode: 0o600 });
+  const prefix = `---\nmemory_loop_transcript: 1\nconversation_id: "${conversationId}"\ncreated_at: "${new Date(now).toISOString()}"\n---\n\n# Think conversation\n\n${originalFraming(orderedRunA)}`;
+  const pending = Buffer.from(`## User — ${new Date(now).toISOString()}\n\n<!-- memory-loop-entry ${JSON.stringify({
+    entry_id: `user:${orderedB}`, at: new Date(now).toISOString(), time_basis: 'source', run_id: orderedRunB,
+    kind: 'user', message_id: `msg_memoryloop_${orderedB.replaceAll('-', '')}`, delivery: 'registered', body_utf8_bytes: Buffer.byteLength(orderedOriginalB),
+  })} -->\n\`\`\`text\n${orderedOriginalB}\n\`\`\`\n<!-- memory-loop-end ${JSON.stringify({ entry_id: `user:${orderedB}` })} -->\n\n`);
+  const target = join(directory, filename);
+  await writeFile(target, prefix, { mode: 0o600 });
+  const stat = lstatSync(target);
+  await appendFile(target, pending.subarray(0, 7));
+  const sourceA = sha(JSON.stringify([`user:${sendCommandId}`, 'User', { kind: 'user', message_id: messageId, delivery: 'registered' },
+    null, [conversationId, 'canonical', Buffer.byteLength(original), sha(original)]]));
+  const sourceB = sha(JSON.stringify([`user:${orderedB}`, 'User', { kind: 'user', message_id: `msg_memoryloop_${orderedB.replaceAll('-', '')}`, delivery: 'registered' },
+    null, [conversationId, 'canonical', Buffer.byteLength(orderedOriginalB), sha(orderedOriginalB)]]));
+  const namespace = [vault, join(vault, 'Conversations'), directory].map(path => {
+    const node = lstatSync(path); return { dev: node.dev, ino: node.ino };
+  });
+  const seed = new Database(database, { readwrite: true, create: false });
+  try {
+    seed.run(migrationSchemaV1);
+    seed.run(migrationSchemaV2);
+    seed.run('PRAGMA foreign_keys = ON');
+    const installationId = '44444444-4444-4444-8444-444444444444';
+    const selection = JSON.stringify({ agent: 'fixture', model: { providerID: 'fixture', id: 'fixture' },
+      permissions: [{ action: '*', resource: '*', effect: 'allow' }] });
+    seed.query('INSERT INTO application_metadata VALUES (1, ?)').run(installationId);
+    seed.query('INSERT INTO conversations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(conversationId, nativeId, vault,
+      JSON.stringify({ owner: 'memory-loop', conversationId, epoch, installationId }), epoch, selection, selection, now - 10, 'ready');
+    const insert = seed.query('INSERT INTO commands VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    insert.run(createCommandId, conversationId, 'create', 'ready', null, null, 1, null, null, null, now - 10, epoch, null);
+    insert.run(sendCommandId, conversationId, 'send', 'cancelled-before-delivery', Buffer.from(original), sha(original), 0,
+      orderedRunA, messageId, null, now, epoch, null);
+    insert.run(orderedStop, conversationId, 'stop', 'cancelled-before-delivery', null, null, 0, orderedRunA, null, null, now, epoch, null);
+    insert.run(orderedB, conversationId, 'send', 'completed', Buffer.from(orderedOriginalB), sha(orderedOriginalB), 1,
+      orderedRunB, `msg_memoryloop_${orderedB.replaceAll('-', '')}`, null, now, epoch, null);
+    insert.run(formCommandId, conversationId, 'form-reply', 'replied', Buffer.from(JSON.stringify(formAnswer)),
+      sha(JSON.stringify({ conversationId, decisionId, answer: formAnswer })), 1, null, null, decisionId, now + 10, epoch, null);
+    // Existing v2 confirmed prefix PLUS a sealed, partially written append. Migration must
+    // preserve every field/chunk, not "repair" pending work or infer anything from the file.
+    seed.query(`INSERT INTO transcripts VALUES (?, ?, ?, ?, 'owned', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'ready', ?, 1)`)
+      .run(conversationId, JSON.stringify(['Conversations', 'Memory Loop', filename]), now, JSON.stringify(namespace),
+        stat.dev, stat.ino, JSON.stringify([stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs, stat.nlink, stat.uid, stat.mode]),
+        Buffer.byteLength(prefix), sha(prefix), `user:${orderedB}`, `user:${orderedB}`, sourceB, pending.length, sha(pending), pending.length);
+    seed.query('INSERT INTO transcript_entries VALUES (?, ?, ?, ?, ?, ?)').run(conversationId, `user:${sendCommandId}`,
+      `user:${sendCommandId}`, sourceA, sha(originalFraming(orderedRunA)), Buffer.byteLength(prefix));
+    seed.query('INSERT INTO transcript_pending_chunks VALUES (?, 0, ?)').run(conversationId, pending);
+  } finally { seed.close(); }
+}
+
+/** Exact known v2 rows/bytes, not reflection over arbitrary tables or production data. */
+function v2Facts(root: string): V2Facts {
+  const db = new Database(join(root, 'project', '.memory-loop', 'application.sqlite'), { readonly: true, create: false });
+  try {
+    const metadata = db.query<{ installationId: string }, []>('SELECT installation_id AS installationId FROM application_metadata WHERE singleton = 1').get();
+    const owner = db.query<V2Facts['owner'], [string]>('SELECT * FROM conversations WHERE conversation_id = ?').get(conversationId);
+    const transcript = db.query<V2Facts['transcript'], [string]>('SELECT * FROM transcripts WHERE conversation_id = ?').get(conversationId);
+    if (!metadata || !owner || !transcript) throw new Error('fixture v2 ownership/checkpoint facts missing');
+    return { installationId: metadata.installationId, owner, transcript,
+      commands: db.query<MigrationCommand, [string]>(`SELECT command_id, conversation_id, kind, state,
+        typeof(original_input) AS original_type,
+        CASE WHEN original_input IS NULL THEN NULL ELSE lower(hex(original_input)) END AS original_hex,
+        payload_sha256, dispatch_attempted, run_id, native_message_id, decision_id, registered_at, registration_epoch, failure_code
+        FROM commands WHERE conversation_id = ? ORDER BY command_id`).all(conversationId),
+      entries: db.query<V2Facts['entries'][number], [string]>('SELECT * FROM transcript_entries WHERE conversation_id = ? ORDER BY entry_id').all(conversationId),
+      chunks: db.query<Probe['chunks'][number], [string]>(`SELECT chunk_index AS "index", lower(hex(bytes)) AS hex, length(bytes) AS size
+        FROM transcript_pending_chunks WHERE conversation_id = ? ORDER BY chunk_index`).all(conversationId),
+      fileHex: readFileSync(join(root, 'vault', 'Conversations', 'Memory Loop', filename)).toString('hex') };
+  } finally { db.close(); }
+}
+function commandOrder(root: string): CommandOrder[] {
+  const db = new Database(join(root, 'project', '.memory-loop', 'application.sqlite'), { readonly: true, create: false });
+  try {
+    return db.query<CommandOrder, [string]>(`SELECT o.command_id AS commandId, o.conversation_id AS conversationId,
+      o.registration_sequence AS sequence FROM command_order o JOIN commands d
+      ON d.command_id = o.command_id AND d.conversation_id = o.conversation_id
+      WHERE o.conversation_id = ? ORDER BY o.registration_sequence`).all(conversationId);
+  } finally { db.close(); }
+}
+function registryIds(state: ThinkStateStore): string[] {
+  if (!state.registry) throw new Error('actual SQLite registry reader missing');
+  return state.registry.commands(conversationId).map(command => command.receipt.clientCommandId);
+}
+
+async function migrateV2Order(root: string): Promise<OrderMigrationReport> {
+  await seedV2Order(root);
+  const before = v2Facts(root);
+  const db = new Database(join(root, 'project', '.memory-loop', 'application.sqlite'), { readonly: true, create: false });
+  let versionBefore: number; let orderTableBefore: boolean; let insertionIds: string[];
+  try {
+    versionBefore = Number(db.query('PRAGMA user_version').values()[0]?.[0]);
+    orderTableBefore = db.query("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'command_order'").get() !== null;
+    insertionIds = db.query<{ id: string }, [string]>('SELECT command_id AS id FROM commands WHERE conversation_id = ? ORDER BY rowid')
+      .all(conversationId).map(row => row.id);
+  } finally { db.close(); }
+  const state = await openThinkState(join(root, 'project'), join(root, 'vault'));
+  let ids: string[];
+  try { ids = registryIds(state); } finally { state.close(); }
+  return { pid: process.pid, versionBefore, orderTableBefore, insertionIds, schemaVersion: probe(join(root, 'project', '.memory-loop', 'application.sqlite')).schemaVersion,
+    before, after: v2Facts(root), registryIds: ids, order: commandOrder(root) };
+}
+
+async function reopenV3Order(root: string): Promise<OrderReopenReport> {
+  const projectRoot = join(root, 'project'); const vault = join(root, 'vault');
+  const before = v2Facts(root);
+  const orderBefore = commandOrder(root);
+  const first = await openThinkState(projectRoot, vault);
+  let registryBefore: string[];
+  try { registryBefore = registryIds(first); } finally { first.close(); }
+  // Only this newly created fixture database is compacted, with every production handle closed.
+  const db = new Database(join(projectRoot, '.memory-loop', 'application.sqlite'), { readwrite: true, create: false });
+  let vacuumIntegrity: string;
+  try { db.run('VACUUM'); vacuumIntegrity = String(db.query('PRAGMA integrity_check').values()[0]?.[0]); }
+  finally { db.close(); }
+  const afterVacuum = v2Facts(root);
+  const orderAfterVacuum = commandOrder(root);
+  const second = await openThinkState(projectRoot, vault);
+  let registryAfterVacuum: string[]; let registryAfterNew: string[];
+  try {
+    registryAfterVacuum = registryIds(second);
+    const text = 'new command after migration 🧠';
+    second.registerCommand({ kind: 'send', conversationId, clientCommandId: newOrderedCommand, runId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      epoch: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', state: 'registered' }, Buffer.from(text), sha(text), now);
+    registryAfterNew = registryIds(second);
+  } finally { second.close(); }
+  const third = await openThinkState(projectRoot, vault);
+  let registryAfterReopen: string[];
+  try { registryAfterReopen = registryIds(third); } finally { third.close(); }
+  return { pid: process.pid, schemaVersion: probe(join(projectRoot, '.memory-loop', 'application.sqlite')).schemaVersion, vacuumIntegrity,
+    before, afterVacuum, afterNew: v2Facts(root), registryBefore, registryAfterVacuum, registryAfterNew, registryAfterReopen,
+    orderBefore, orderAfterVacuum, orderAfterNew: commandOrder(root) };
 }
 
 async function run(root: string, scenario: Scenario, output: string): Promise<Report | InitialLoadReport> {
@@ -573,7 +781,9 @@ const root = process.argv[2];
 const selected = process.argv[3];
 const output = process.argv[4];
 if (!root?.startsWith('/tmp/opencode/think-transcript-checkpoint-') || !output?.startsWith(`${root}/`)) throw new Error('Use a test-owned checkpoint root/report path');
-if (selected?.startsWith('reopen-')) {
+if (selected === 'reopen-v3-order') {
+  await writeFile(output, JSON.stringify(await reopenV3Order(root)));
+} else if (selected?.startsWith('reopen-')) {
   const mode = selected.slice('reopen-'.length);
   const modes: ReopenScenario[] = ['replay', 'recover', 'verify-confirmed', 'legacy', 'prefix-edit', 'wrong-tail',
     'replacement', 'symlink', 'hardlink', 'directory-moved', 'missing-chunk', 'unsealed', 'wrong-hash', 'changed-original', 'changed-original-retry'];
@@ -581,6 +791,8 @@ if (selected?.startsWith('reopen-')) {
   await writeFile(output, JSON.stringify(await reopen(root, mode as ReopenScenario)));
 } else if (selected === 'migrate-v1') {
   await writeFile(output, JSON.stringify(await migrateV1(root)));
+} else if (selected === 'migrate-v2-order') {
+  await writeFile(output, JSON.stringify(await migrateV2Order(root)));
 } else if (selected === 'probe') {
   await writeFile(output, JSON.stringify(probe(join(root, 'project', '.memory-loop', 'application.sqlite'))));
 } else {

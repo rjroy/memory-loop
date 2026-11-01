@@ -24,6 +24,20 @@ export interface StoredCommand {
   original: Uint8Array | null;
   registeredAt: number;
   attempted: boolean;
+  /** Optional for old admission-only adapters; null is never permission to guess an association. */
+  nativeMessageId?: string | null;
+}
+
+export interface RegisteredConversation extends OwnedConversation {
+  createdAt: number;
+  creation: CreateReceipt['state'];
+  selection: Pick<NativeSession, 'agent' | 'model' | 'permissions'> | null;
+}
+export interface CommandPosition { commandId: string }
+export interface ThinkRegistryReader {
+  conversation(conversationId: string): RegisteredConversation | null;
+  /** Bounded keyset page in durable registration order, independent of timestamps and command IDs. */
+  commands(conversationId: string, after?: CommandPosition): StoredCommand[];
 }
 
 export interface TranscriptDirectoryIdentity { dev: number; ino: number }
@@ -53,6 +67,7 @@ export interface StoredTranscriptEntry {
   semantic: string;
   sourceIdentity: string;
 }
+export interface ConfirmedTranscriptEntry extends StoredTranscriptEntry { endOffset: number }
 /** Transcript-only facts. Chunk calls and transactions never perform filesystem/native I/O. */
 export interface TranscriptStateStore {
   load(conversationId: string, vaultDirectory: string): StoredTranscript | null;
@@ -61,6 +76,8 @@ export interface TranscriptStateStore {
   acquire(conversationId: string, identity: TranscriptFileCheckpoint): void;
   entry(conversationId: string, entryId: string): StoredTranscriptEntry | null;
   latest(conversationId: string, semantic: string): StoredTranscriptEntry | null;
+  /** SQLite supplies this bounded read; older writer-only adapters need not enumerate facts. */
+  confirmed?(conversationId: string, afterEntryId?: string): ConfirmedTranscriptEntry[];
   begin(conversationId: string, append: TranscriptAppendIdentity): void;
   chunk(conversationId: string, index: number): Uint8Array | null;
   stage(conversationId: string, index: number, bytes: Uint8Array): void;
@@ -80,6 +97,8 @@ export interface ThinkStateStore {
   readonly installationId: string;
   /** Optional only for pre-existing controlled admission-only test adapters. SQLite always supplies it. */
   readonly transcripts?: TranscriptStateStore;
+  /** SQLite supplies registry reads; admission-only controlled adapters may omit them. */
+  readonly registry?: ThinkRegistryReader;
   command(commandId: string): StoredCommand | null;
   registerConversation(conversation: OwnedConversation, receipt: CreateReceipt, registeredAt: number): void;
   registerCommand(receipt: Exclude<CommandReceipt, CreateReceipt>, original: Uint8Array | null, digest: string | null, registeredAt: number): void;

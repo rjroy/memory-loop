@@ -89,6 +89,7 @@ export interface ThinkFixture {
   credentialFile: string;
   headers: Record<string, string>;
   control: { release(): void; info(): { requests: number; held: number } };
+  restartDaemon(): Promise<{ previousPid: number; pid: number }>;
   close(): Promise<void>;
 }
 
@@ -102,6 +103,7 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
   const held = new Set<() => void>();
   let requests = 0;
   let closing: Promise<void> | undefined;
+  let restarting: Promise<{ previousPid: number; pid: number }> | undefined;
   let interrupted = false;
   const provider = createServer((request, response) => {
     if (request.method !== 'POST' || request.url !== '/v1/chat/completions') { response.writeHead(404).end(); return; }
@@ -135,6 +137,8 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
   });
   const close = () => closing ??= (async () => {
     held.forEach(release => release());
+    // A concurrent intentional restart must settle before taking the final owned-child set.
+    await restarting?.catch(() => {});
     let failed = false;
     for (const child of [...children].reverse()) {
       try { await stop(child); } catch { failed = true; }
@@ -148,7 +152,7 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
   process.on('SIGINT', interruptStartup);
   process.on('SIGTERM', interruptStartup);
   const start = (operation: string, command: string, args: string[], cwd: string, env: Record<string, string>) => {
-    if (interrupted) throw new Error('fixture startup interrupted');
+    if (interrupted || closing) throw new Error('fixture startup interrupted or closed');
     const child = spawn(command, args, { cwd, env: env as NodeJS.ProcessEnv, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     children.push(child);
     if (child.pid !== undefined) receipts.push({ operation, pid: child.pid });
@@ -215,8 +219,13 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
     build.stdout?.resume(); build.stderr?.resume();
     const [buildCode] = await bounded(once(build, 'close'), 120000, 'Next build');
     if (buildCode !== 0) throw new Error('fixture Next build failed');
-    const daemon = start('daemon', '/usr/bin/bun', ['--no-env-file', join(copy, 'backend/runtime.ts'), '--project-root', join(root, 'daemon-app'), '--port', String(daemonPort)], copy, env);
-    daemon.stdout?.resume(); daemon.stderr?.resume();
+    const daemonArgs = ['--no-env-file', join(copy, 'backend/runtime.ts'), '--project-root', join(root, 'daemon-app'), '--port', String(daemonPort)];
+    const startDaemon = () => {
+      const child = start('daemon', '/usr/bin/bun', daemonArgs, copy, env);
+      child.stdout?.resume(); child.stderr?.resume();
+      return child;
+    };
+    let daemon = startDaemon();
     const web = start('web', '/usr/bin/bun', ['--no-env-file', join(copy, 'src/web/start.ts'), 'start', '--port', String(webPort)], copy, env);
     web.stdout?.resume(); web.stderr?.resume();
     const deadline = Date.now() + 30000;
@@ -238,7 +247,37 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
     }
     await writeFile(join(root, 'process-receipts.json'), JSON.stringify(receipts), { mode: 0o600, flag: 'wx' });
     if (interrupted) throw new Error('fixture startup interrupted');
-    return { webUrl, daemonUrl, root, workspace, credentialFile, headers: { authorization: `Bearer ${token}`, host: `127.0.0.1:${daemonPort}` }, control: { release: () => held.forEach(release => release()), info: () => ({ requests, held: held.size }) }, close };
+    const restartDaemon = async () => {
+      if (closing || interrupted) throw new Error('fixture is closed');
+      if (restarting) throw new Error('fixture daemon restart already running');
+      const previous = daemon;
+      const previousPid = previous.pid;
+      if (!previousPid || !children.includes(previous) || !receipts.some(item => item.operation === 'daemon' && item.pid === previousPid) ||
+          previous.exitCode !== null || previous.signalCode !== null) throw new Error('owned fixture daemon unavailable');
+      const work = (async () => {
+        await stop(previous);
+        if (closing || interrupted) throw new Error('fixture is closed');
+        // Same source copy, project root, transport, credential and native registration; no native/web restart.
+        daemon = startDaemon();
+        await writeFile(join(root, 'process-receipts.json'), JSON.stringify(receipts), { mode: 0o600 });
+        const deadline = Date.now() + 30000;
+        for (;;) {
+          if (closing || interrupted) throw new Error('fixture is closed');
+          if (daemon.exitCode !== null || daemon.signalCode !== null || native.exitCode !== null || native.signalCode !== null ||
+              web.exitCode !== null || web.signalCode !== null) throw new Error('fixture child exited during daemon restart');
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) throw new Error('fixture daemon restart timed out');
+          const status = await daemonReadiness(daemonPort, token, Math.min(1000, remaining)).catch(() => undefined);
+          if (status === 200) break;
+          await wait(Math.min(100, Math.max(0, deadline - Date.now())));
+        }
+        if (!daemon.pid) throw new Error('fixture daemon missing process identity');
+        return { previousPid, pid: daemon.pid };
+      })();
+      restarting = work;
+      try { return await work; } finally { restarting = undefined; }
+    };
+    return { webUrl, daemonUrl, root, workspace, credentialFile, headers: { authorization: `Bearer ${token}`, host: `127.0.0.1:${daemonPort}` }, control: { release: () => held.forEach(release => release()), info: () => ({ requests, held: held.size }) }, restartDaemon, close };
   } catch (error) { await close(); throw error; }
   finally { process.removeListener('SIGINT', interruptStartup); process.removeListener('SIGTERM', interruptStartup); }
 }

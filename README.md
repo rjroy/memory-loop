@@ -99,6 +99,9 @@ or replace it or discover a personal default. Version `2.2.2` and `full` are the
 current defaults/only supported choices. Optional `agent`/`model` overrides stay
 daemon-owned; omission uses native defaults. The vault is the native working
 directory, **not a tool sandbox**.
+These settings select new chats. Restoring a registered chat verifies its stored
+creation selections, not today's new-chat defaults, and does not reset native
+permissions or model choices.
 
 Omit `transcriptDirectory` to use **`Conversations/Memory Loop`** (including the
 space). An override is vault-relative: slash-separated visible names, with no
@@ -106,7 +109,8 @@ empty/dot-prefixed components, absolute path, backslash or NUL. All runs append
 to `think-<conversation UUID>.md`; an empty New chat creates no transcript file.
 Settings load at daemon startup; changing them does not move mapped files.
 Registered, verified transcript files can reopen after restart, but this does not
-restore chat history or replay accepted work.
+by itself restore a chat. Registry-owned chat restoration is described below;
+neither restoration nor transcript recovery replays accepted work.
 
 Transcripts contain full original user and AI text in literal fenced blocks,
 plus conservative tool/lifecycle summaries—not reasoning or raw tool payloads.
@@ -155,11 +159,12 @@ acknowledgements remain uncertain and are never automatically replayed. Native
 OpenCode remains authoritative for assistant history and execution. The body
 cache is disposable, not the durable original-input store.
 
-Schema v2 adds transcript mappings/checkpoints, stable-entry facts and bounded
-chunks of serialized pending append bytes for unconfirmed work. The v1-to-v2
-migration is additive and retains ownership, command and immutable original-input
-facts. Pending bytes are cleared after confirmation; confirmed assistant history
-is not mirrored in the database.
+Schema v3 adds an explicit durable command-registration sequence to the transcript
+mappings/checkpoints, stable-entry facts and bounded pending-append chunks
+introduced in v2. The additive v1/v2-to-v3 migrations freeze existing command
+insertion order without changing original bytes or timestamps, ownership or
+transcript checkpoints/pending work. Pending bytes are cleared after confirmation;
+confirmed assistant history is not mirrored in the database.
 
 The state directory must be outside the real vault and owner-only `0700`; the
 database and any SQLite sidecars must be owner-only `0600` regular files with one
@@ -176,11 +181,27 @@ Ground, Capture or Recall. A storage failure after native acceptance cannot undo
 that work or truthfully report it as rejected. Vault transcript failures remain
 separate, nonblocking logging failures.
 
-This provides durable **admission and verified transcript-writer continuation**,
-not full restart chat resume. Unregistered transcripts/native chats are not
-scanned or adopted. Native-history hydration and restoration of chats in the
-application (`memory-loop-9ya.5`) are not implemented yet; a reopened transcript
-does not by itself make a chat available after daemon restart.
+For **new registry-owned conversations**, a fresh reload of the same
+`/think?conversation=<id>` URL can restore the chat after a daemon restart. The
+daemon verifies the stored vault/native ownership and creation selections before
+publishing history. The attached operator-managed native service is separate;
+restarting the app daemon does not restart it. Restored content gets a new serving
+epoch and fresh body references; old references and stale responses remain invalid.
+
+User/form text comes from exact immutable original BLOBs and command/decision
+facts. Delivered user entries associate by persisted native-message IDs, never
+native plugin-prepared text or guessed text/time matches. Canonical assistant text
+comes from verified native history. Busy native work remains busy; an uncertain
+attempt stays reserved without automatic replay.
+Later exact message-ID evidence can confirm admission and permit explicit,
+best-effort Stop without resending. Retained cancelled-before-delivery originals
+keep their ledger-established position relative to delivered turns, including tied
+registration times; verified transcripts continue without duplicate old entries.
+
+Unregistered legacy transcripts/native chats are not scanned or adopted. Durable
+history is not durable browser draft storage: unsent drafts still do not survive
+a hard reload or browser closure. Ground's conversation-list/resume-entry controls
+remain future work.
 
 #### Initialize transport
 
@@ -373,7 +394,9 @@ visit; leaving and returning starts a new selection.
 Recent captures links up to the five most recent recorded entries to their source
 notes in Recall. If source coverage is incomplete, the card says so rather than
 claiming a complete latest five. Ground does not yet offer a recent-conversation
-list, resume/delete controls or scheduled generation.
+list or resume-entry buttons. Selection-protection leases, deletion and scheduled
+generation also remain future work; same-URL chat restoration does not complete
+the Ground plan.
 
 ## What Capture does
 
@@ -432,6 +455,19 @@ transactional snapshot.
 
 ## Checks and current acceptance
 
+On **2026-10-31**, Ground's Phase 3c registered-chat restoration and schema-v3
+slice passed independent validation: frontend **111**, backend **648**, browser
+**60**, native UI **4 passed / 3 skipped**, both direct TypeScript checks and an
+isolated Next production build. Fresh technical verification accepted
+`GROUND-HYDRATE-01` (later exact-ID admission/explicit Stop) and
+`GROUND-HYDRATE-02` (ledger-established original ordering). Evidence:
+`/tmp/opencode/ground-phase3c-v3-final-validation.json`. An owned official OpenCode
+2.2.2/scripted-provider/Chromium fixture verified same-URL chat restoration after
+restarting only the app daemon, without replay or duplicate transcript entries.
+These checks do not cover every native capability, physical-device or
+assistive-technology behavior. They did not publish this slice to the live app or
+activate its private database against personal data; the Ground plan is not complete.
+
 On **2026-10-31**, Ground's Phase 3b registry-bound transcript slice passed
 independent validation: frontend **111**, backend **631**, browser **60**, native
 UI **3 passed / 3 skipped**, both direct TypeScript checks and an isolated Next
@@ -439,9 +475,9 @@ build. Fresh technical review accepted the `GROUNDTRANSCRIPT03/04` corrections;
 the earlier conflict/pending-work warning corrections remain covered. Evidence:
 `/tmp/opencode/ground-phase3b-final-validation.json`. Owned fixtures exercise fresh
 Bun-process recovery, pending-tail completion and conflict preservation. These
-checks do not certify physical-device or assistive-technology behavior, activate
-the slice against personal data, or establish full chat resume or completion of
-the Ground plan.
+checks did not certify physical-device or assistive-technology behavior, activate
+the slice against personal data, or by themselves establish chat restoration or
+completion of the Ground plan.
 
 Ground's Phase 3a private durable-admission slice passed independent validation:
 frontend **111**, backend **602**, browser **60**, native UI **3 passed / 3 skipped**,
@@ -609,12 +645,14 @@ fixture provider, not normal Think conversations.
 - **Stop** is explicit and best effort. Disconnecting, changing app tabs or
   choosing New chat does not stop accepted work; completed effects are not undone.
 - **New chat** starts a different conversation and protects a nonempty draft
-  with an inline discard choice. There is no previous-chat list or Ground resume
-  interface in this layer.
+  with an inline discard choice. There is no previous-chat list or Ground
+  resume-entry button in this layer.
 - Reload/reconnect recovers the **current** chat from its URL (or one per-tab
-  opaque-ID pointer), while the daemon/service live. Drafts survive ordinary
-  app navigation/reconnect, but **not hard reload**. No messages, drafts or outbox
-  are stored in browser storage, and reconnect never auto-sends a draft.
+  opaque-ID pointer). For registered chats, a fresh reload of that same URL can
+  restore history after the app daemon restarts, provided native ownership/history
+  can be verified. Existing epoch fences still reject stale responses. Drafts
+  survive ordinary app navigation/reconnect, but **not hard reload**. No messages,
+  drafts or outbox are stored in browser storage, and reconnect never auto-sends a draft.
 - Vault transcripts contain full messages and safe activity summaries, appended
   at canonical boundaries rather than every token. Logging retries automatically;
   meaningful warnings do not block chat/tools. There is no **Retry logging** button.
@@ -743,15 +781,16 @@ as needed, but do not disconnect the watch, loop resnapshots or resubmit a promp
 Only an explicit `POST .../runs/:runId/stop` requests best-effort Stop.
 
 Unpinned superseded previews and native-verified finalized bytes can be reclaimed.
-Canonical restoration uses public `session.message.get`, completed text identity,
-length and SHA-256; mismatches remain content errors. Body-cache copies of
-originals/form replies, unfinished previews and pinned readers remain scoped to
-this daemon epoch. The private database separately retains admitted originals;
-it does not restore body references or chat history after restart. Verified
-transcript-writer recovery is separate from this still-unimplemented chat
-hydration. Native JSON decoding is not constant-memory. There is no application
-conversation-turn cap; current Send validation permits up to
-1 MiB UTF-8 per input, and native/provider limits still apply.
+Canonical bodies are rebuilt from verified completed native text, message IDs,
+text-part ordinals, length and SHA-256; mismatches remain content errors.
+Body-cache copies of originals/form replies, unfinished previews and pinned
+readers remain scoped to this daemon epoch. After restart, verified registry-owned
+history is rebuilt into fresh body references from private originals and native
+history, not old cache references or an assistant-history database mirror.
+Verified transcript checkpoints prevent duplicate old entries. Native JSON
+decoding is not constant-memory. There is no application conversation-turn cap;
+current Send validation permits up to 1 MiB UTF-8 per input, and native/provider
+limits still apply.
 
 The controlled two-Chromium transport test uses already-installed
 `/usr/bin/chromium`; no browser download is implied. The corrected real

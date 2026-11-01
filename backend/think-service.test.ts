@@ -15,7 +15,7 @@ import { constants } from 'node:fs';
 import { transcriptIO, type TranscriptIO } from './think/transcript-file';
 import type { TranscriptRuntime } from './think/transcript';
 import { parseThinkConfig } from './think/config';
-import { ThinkStateError, type StoredCommand, type ThinkStateStore } from './think/state';
+import { ThinkStateError, type RegisteredConversation, type StoredCommand, type ThinkStateStore } from './think/state';
 import type { CommandReceipt } from './think/contract';
 
 const epoch = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -1944,6 +1944,154 @@ describe('daemon-owned upstream monitor recovery', () => {
       await f.service.close();
     }
   });
+});
+
+describe('registry-owned restart hydration fences', () => {
+  const creationEpoch = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const sendId = '55555555-5555-4555-8555-555555555555';
+  const promptId = `msg_memoryloop_${sendId.replaceAll('-', '')}`;
+  const original = '  restart-owned original 🧠\r\nnot plugin text  ';
+  const assistantId = 'msg_fixture_owned_restart';
+
+  function restoredFixture(currentModel = model) {
+    const owner: RegisteredConversation = { conversationId: a.conversationId, nativeSessionId: sessionId(a.conversationId),
+      directory: vaultDirectory, owner: { owner: 'memory-loop', conversationId: a.conversationId, epoch: creationEpoch,
+        installationId: '99999999-9999-4999-8999-999999999999' }, agent, model, createdAt: 1, creation: 'ready',
+      selection: { agent, model, permissions: permissions.map(rule => ({ ...rule })) } };
+    const facts: StoredCommand[] = [
+      { receipt: { kind: 'create', ...a, epoch: creationEpoch, state: 'ready' }, payloadSha256: null, original: null,
+        registeredAt: 1, attempted: true, nativeMessageId: null },
+      { receipt: { kind: 'send', conversationId: a.conversationId, clientCommandId: sendId, epoch: creationEpoch,
+        runId: '66666666-6666-4666-8666-666666666666', state: 'completed' },
+      payloadSha256: createHash('sha256').update(original).digest('hex'), original: Buffer.from(original),
+      registeredAt: 20, attempted: true, nativeMessageId: promptId },
+    ];
+    let registered = true;
+    const state = {
+      installationId: owner.owner.installationId ?? '',
+      registry: { conversation: vi.fn((id: string) => registered && id === a.conversationId ? structuredClone(owner) : null),
+        commands: vi.fn<NonNullable<ThinkStateStore['registry']>['commands']>((id, after) =>
+          id === a.conversationId && !after ? structuredClone(facts) : []) },
+      command: vi.fn<ThinkStateStore['command']>(id => structuredClone(facts.find(item => item.receipt.clientCommandId === id) ?? null)),
+      registerConversation: vi.fn<ThinkStateStore['registerConversation']>(() => { throw new Error('restart must not create ownership'); }),
+      registerCommand: vi.fn<ThinkStateStore['registerCommand']>(() => { throw new Error('read-only hydration must not admit work'); }),
+      attempted: vi.fn<ThinkStateStore['attempted']>(() => { throw new Error('hydration must not dispatch commands'); }),
+      outcome: vi.fn<ThinkStateStore['outcome']>(), close: vi.fn<ThinkStateStore['close']>(),
+    } satisfies ThinkStateStore;
+    const staged: BodyRef[] = [];
+    const bodies = unitBodies();
+    const f = setup(currentModel, { ...bodies, async replace(...input) { const ref = await bodies.replace(...input); staged.push(ref); return ref; } },
+      vaultDirectory, { state });
+    f.sessions.set(owner.nativeSessionId, { id: owner.nativeSessionId, metadata: { memoryLoop: { ...owner.owner } },
+      location: { directory: vaultDirectory }, agent, model, permissions: permissions.map(rule => ({ ...rule })) });
+    f.messages.push({ id: promptId, type: 'user', text: 'fixture plugin-prepared input', time: { created: 20 } },
+      { id: assistantId, type: 'assistant', agent, model, finish: 'stop', time: { created: 22, completed: 23 },
+        content: [{ type: 'text', text: 'verified restart answer' }] });
+    f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
+    return { f, state, owner, staged, unregister() { registered = false; } };
+  }
+  function noMutation(x: ReturnType<typeof restoredFixture>): void {
+    expect(x.f.createSession).not.toHaveBeenCalled();
+    expect(x.f.prompt).not.toHaveBeenCalled();
+    expect(x.f.cancelInbox).not.toHaveBeenCalled();
+    expect(x.f.interruptSession).not.toHaveBeenCalled();
+    expect(x.f.replyForm).not.toHaveBeenCalled();
+    expect(x.f.replyPermission).not.toHaveBeenCalled();
+    expect(x.state.registerConversation).not.toHaveBeenCalled();
+    expect(x.state.registerCommand).not.toHaveBeenCalled();
+    expect(x.state.attempted).not.toHaveBeenCalled();
+  }
+
+  it('never scans or adopts a lookalike native owner without its application registry record', async () => {
+    const x = restoredFixture();
+    x.unregister();
+    const nativeBefore = structuredClone(x.f.sessions.get(x.owner.nativeSessionId));
+    try {
+      expect(await x.f.service.snapshot(a.conversationId)).toBeNull();
+      expect(await x.f.service.snapshot(a.conversationId)).toBeNull();
+      expect(x.f.getSession).not.toHaveBeenCalled();
+      expect(x.f.listMessages).not.toHaveBeenCalled();
+      expect(x.state.registry.commands).not.toHaveBeenCalled();
+      expect(x.f.sessions.get(x.owner.nativeSessionId)).toEqual(nativeBefore);
+      noMutation(x);
+    } finally { await x.f.service.close(); }
+  });
+
+  it('rejects changed native vault, identity and pinned selection without publishing or changing ownership', async () => {
+    const results: Array<{ binding: string; denied: boolean; staged: number }> = [];
+    for (const binding of ['vault', 'native-id', 'selection'] as const) {
+      const x = restoredFixture();
+      const current = x.f.sessions.get(x.owner.nativeSessionId);
+      if (!current) throw new Error('test-owned session missing');
+      x.f.sessions.set(x.owner.nativeSessionId, { ...current, ...(binding === 'vault' ? { location: { directory: '/fixture/wrong-vault' } }
+        : binding === 'native-id' ? { id: 'ses_fixture_foreign_identity' } : { model: { ...model, id: 'foreign-selection' } }) });
+      const nativeBefore = structuredClone(x.f.sessions.get(x.owner.nativeSessionId));
+      const storedBefore = structuredClone(x.owner);
+      try {
+        const result = await x.f.service.snapshot(a.conversationId).then(() => false,
+          (error: unknown) => error instanceof Error && 'code' in error && error.code === 'think_unavailable');
+        results.push({ binding, denied: result, staged: x.staged.length });
+        expect(x.owner).toEqual(storedBefore);
+        expect(x.f.sessions.get(x.owner.nativeSessionId)).toEqual(nativeBefore);
+        noMutation(x);
+      } finally { await x.f.service.close(); }
+    }
+    expect(results).toEqual(['vault', 'native-id', 'selection'].map(binding => ({ binding, denied: true, staged: 0 })));
+  });
+
+  it('uses the stored creation selection rather than different current new-chat model settings', async () => {
+    const x = restoredFixture({ ...model, id: 'different-new-chat-model' });
+    const nativeBefore = structuredClone(x.f.sessions.get(x.owner.nativeSessionId));
+    try {
+      const snapshot = await x.f.service.snapshot(a.conversationId);
+      expect(snapshot).toMatchObject({ conversationId: a.conversationId, epoch, creation: 'ready', sendEligibility: 'available' });
+      expect(snapshot?.epoch).not.toBe(creationEpoch);
+      expect(snapshot?.entries).toContainEqual(expect.objectContaining({ kind: 'original', messageId: promptId, clientCommandId: sendId }));
+      expect(x.f.sessions.get(x.owner.nativeSessionId)).toEqual(nativeBefore);
+      expect(x.state.outcome).not.toHaveBeenCalled();
+      noMutation(x);
+    } finally { await x.f.service.close(); }
+  });
+
+  it.each(['ready', 'owner-changed', 'process-changed', 'service-close'] as const)(
+    'coalesces held-history requests and fences publication when %s', async change => {
+      const x = restoredFixture();
+      const held = deferred<MessageListOutput>();
+      x.f.listMessages.mockImplementationOnce(() => held.promise); // Deliberately ignores abort, like a late adapter response.
+      let settled = 0;
+      const observe = () => x.f.service.snapshot(a.conversationId).then(value => { settled++; return { value }; },
+        (error: unknown) => { settled++; return { error }; });
+      try {
+        const first = observe();
+        const second = observe();
+        await vi.waitFor(() => expect(x.f.listMessages).toHaveBeenCalledOnce());
+        expect(settled).toBe(0);
+        const staged = x.staged[0];
+        expect(staged, 'the immutable original is privately staged before the held native-history boundary').toBeDefined();
+        if (!staged) throw new Error('missing staged original');
+        await expect(x.f.service.content.open(staged)).rejects.toMatchObject({ code: 'not_found' });
+        if (change === 'owner-changed') {
+          const current = x.f.sessions.get(x.owner.nativeSessionId);
+          if (!current) throw new Error('test-owned session missing');
+          x.f.sessions.set(x.owner.nativeSessionId, { ...current, metadata: { memoryLoop: { ...x.owner.owner, epoch } } });
+        } else if (change === 'process-changed') x.f.setServerInfo({ pid: 49124, version: '2.2.2', urls: [], paths: { tmp: '/fixture/tmp' } });
+        else if (change === 'service-close') await x.f.service.close();
+        held.resolve({ data: [...x.f.messages], cursor: {} });
+        const outcomes = await Promise.all([first, second]);
+        if (change === 'ready') {
+          for (const outcome of outcomes) expect(outcome).toMatchObject({ value: { epoch, creation: 'ready', entries: expect.any(Array) } });
+          const [left, right] = outcomes.map(outcome => 'value' in outcome ? outcome.value : null);
+          expect(left?.entries.filter(entry => 'body' in entry)).toEqual(right?.entries.filter(entry => 'body' in entry));
+          const reader = await x.f.service.content.open(staged);
+          try { expect(Buffer.from(await reader.read(0, staged.through)).toString('utf8')).toBe(original); }
+          finally { await reader.close(); }
+        } else {
+          for (const outcome of outcomes) expect(outcome).toMatchObject({ error: { code: 'think_unavailable' } });
+          await expect(x.f.service.content.open(staged)).rejects.toMatchObject({ code: change === 'service-close' ? 'think_unavailable' : 'not_found' });
+        }
+        noMutation(x);
+      } finally { held.resolve({ data: [], cursor: {} }); await x.f.service.close(); }
+    });
 });
 
 describe('owned ordinary form HTTP boundary', () => {

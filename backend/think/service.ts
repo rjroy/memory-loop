@@ -4,10 +4,11 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { isAbsolute, normalize } from 'node:path';
 import type { NativeSession, NativeSessions } from './native';
 import type { BodyKey, BodyReader, BodyRef, BodyStore, PreviewBodyRef } from './body-store';
-import type { OriginalCaptureState, ProjectionEntry, ProjectionPage, ThinkContentReader, ToolCategory, ToolState } from './projection';
+import type { OriginalCaptureState, ProjectionEntry, ProjectionPage, ThinkContentReader } from './projection';
 import type { ContentChunk, ContentChunkRequest } from './content-transfer';
 import { createTranscriptWriter, type TranscriptOptions } from './transcript';
-import { ThinkStateError, type ThinkOwner, type ThinkStateStore } from './state';
+import { ThinkStateError, type RegisteredConversation, type ThinkOwner, type ThinkStateStore } from './state';
+import { missingConfirmedText, projectNativeMessage, restoreHistory, terminalSend } from './history';
 
 export type ConversationSnapshot = ConversationState & Pick<ProjectionPage, 'entries' | 'contentHealth' | 'nextCursor'>;
 export interface ConversationWatch {
@@ -95,6 +96,11 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   const formLocks = new Set<string>();
   const conversations = new Map<string, ConversationState>();
   const owners = new Map<string, ThinkOwner>();
+  const restoredOwners = new Map<string, RegisteredConversation>();
+  const ownershipInvalid = new Set<string>();
+  const activityUnknown = new Set<string>();
+  const checkpointReadsPending = new Set<string>();
+  const hydrations = new Map<string, Promise<void>>();
   const watchers = new Map<string, Set<(state: ConversationState | null) => void>>();
   function setConversation(id: string, state: ConversationState): void {
     const previous = conversations.get(id);
@@ -132,7 +138,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     }
   }
   const cursorKey = randomBytes(32);
-  const runs = new Map<string, { conversationId: string; sendCommandId: string }>();
+  const runs = new Map<string, { conversationId: string; sendCommandId: string; nativeMessageId?: string }>();
   const activeRuns = new Map<string, string>();
   const activeSessions = new Set<string>();
   const missingCanonical = new Map<string, Set<string>>();
@@ -156,7 +162,8 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   let closing: Promise<void> | undefined;
 
   function sendEligibility(id: string, state: ConversationState): ConversationState['sendEligibility'] {
-    if (closed || persistenceFailed || identityChanged || !available || (monitor && !monitor.healthy) || state.creation !== 'ready') return 'unavailable';
+    if (closed || persistenceFailed || identityChanged || !available || ownershipInvalid.has(id) || activityUnknown.has(id) ||
+        (monitor && !monitor.healthy) || state.creation !== 'ready') return 'unavailable';
     return activeRuns.has(id) || activeSessions.has(id) ? 'busy' : 'available';
   }
   function refreshEligibility(id: string): void {
@@ -203,8 +210,10 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     }
   }
 
-  function markAttempted(commandId: string): boolean {
-    if (persistenceFailed) return false;
+  function markAttempted(commandId: string, kind: 'work' | 'stop' = 'work'): boolean {
+    // Explicit control still needs its own durable attempt, but an earlier outcome-write
+    // failure must not veto that attempt when the store can now commit it.
+    if (persistenceFailed && kind !== 'stop') return false;
     try { options.state?.attempted(commandId); return true; }
     catch { disablePersistence(); return false; }
   }
@@ -285,6 +294,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   }
 
   async function captureText(conversationId: string, messageId: string, ordinal: number, text: string, kind: 'start' | 'delta' | 'end'): Promise<void> {
+    if (ownershipInvalid.has(conversationId)) return;
     const key: BodyKey = { conversationId, owner: { kind: 'assistant-text', messageId, ordinal } };
     const existing = projections.get(conversationId)?.find(entry => entry.kind === 'assistant-text' && entry.messageId === messageId && entry.ordinal === ordinal);
     if (existing?.kind === 'assistant-text' && (existing.closure === 'closed' || existing.capture === 'incomplete') && kind !== 'end') return;
@@ -293,7 +303,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       if (kind === 'end') body = await bodies.replace(key, bodyBytes(text), 'canonical');
       else if (existing?.kind === 'assistant-text' && existing.body.kind === 'preview') body = await bodies.append(existing.body, bodyBytes(text));
       else body = await bodies.replace(key, bodyBytes(text), 'preview');
-      if (closed) return;
+      if (closed || identityChanged || ownershipInvalid.has(conversationId)) return;
       putEntry(conversationId, { kind: 'assistant-text', messageId, ordinal, body, closure: kind === 'end' ? 'closed' : 'open', capture: kind === 'delta' && !existing ? 'incomplete' : 'complete',
         ...(activeRuns.has(conversationId) ? { runId: activeRuns.get(conversationId) } : {}) });
     } catch {
@@ -324,6 +334,9 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       void trackTransfer(maintenance);
     }
     for (const conversationId of conversations.keys()) {
+      // Restored completed chats need no continual history polling without a reader or unresolved work.
+      if (restoredOwners.has(conversationId) && !watchers.has(conversationId) && !activeRuns.has(conversationId) &&
+          !activeSessions.has(conversationId) && !activityUnknown.has(conversationId) && !checkpointReadsPending.has(conversationId) && !missingCanonical.get(conversationId)?.size) continue;
       if (!refreshes.get(conversationId)?.running) requestRefresh(conversationId);
     }
   }, 5000);
@@ -333,9 +346,9 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     if (closed) throw new ThinkServiceError('think_unavailable');
   }
 
-  function requireAvailable(): void {
+  function requireAvailable(kind: 'work' | 'stop' = 'work'): void {
     requireOpen();
-    if (persistenceFailed || identityChanged || !available || (monitor && !monitor.healthy)) throw new ThinkServiceError('think_unavailable');
+    if ((persistenceFailed && kind !== 'stop') || identityChanged || !available || (monitor && !monitor.healthy)) throw new ThinkServiceError('think_unavailable');
   }
 
   function update(receipt: CreateReceipt, state: 'ready' | 'upstream-unconfirmed' | 'rejected', verifiedSelection?: NativeSession): void {
@@ -351,6 +364,8 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   }
 
   function matches(session: NativeSession, id: string, conversationId: string): boolean {
+    const registered = restoredOwners.get(conversationId);
+    if (registered) return matchesRegistered(session, registered);
     const marker = session.metadata?.memoryLoop;
     const owner = owners.get(conversationId);
     return owner !== undefined && session.id === id && session.parentID == null && session.location?.directory === directory &&
@@ -362,6 +377,37 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       (agent === undefined || session.agent === agent) &&
       (model === undefined || (session.model?.providerID === model.providerID && session.model.id === model.id &&
         (model.variant === undefined ? session.model.variant === undefined || session.model.variant === 'default' : session.model.variant === model.variant)));
+  }
+
+  function matchesRegistered(session: NativeSession, registered: RegisteredConversation): boolean {
+    const marker = session.metadata?.memoryLoop;
+    const expected = registered.selection ?? registered;
+    const sameModel = (actual: NativeSession['model'], selected: NativeSession['model']) =>
+      actual?.providerID === selected?.providerID && actual?.id === selected?.id && actual?.variant === selected?.variant;
+    return registered.directory === directory && session.id === registered.nativeSessionId && session.parentID == null &&
+      session.location?.directory === registered.directory && typeof marker === 'object' && marker !== null && !Array.isArray(marker) &&
+      Object.keys(marker).length === Object.keys(registered.owner).length &&
+      Object.entries(registered.owner).every(([key, value]) => marker[key] === value) &&
+      session.permissions?.length === 1 && session.permissions[0].action === '*' && session.permissions[0].resource === '*' && session.permissions[0].effect === 'allow' &&
+      (registered.selection ? session.agent === expected.agent && sameModel(session.model, expected.model)
+        : (expected.agent === undefined || session.agent === expected.agent) && (expected.model === undefined || sameModel(session.model, expected.model)));
+  }
+
+  function invalidateOwnership(conversationId: string): void {
+    ownershipInvalid.add(conversationId);
+    refreshEligibility(conversationId);
+    console.info('think_ownership_outcome', { conversationId, status: 'unavailable' });
+  }
+
+  function nativeBusy(session: Awaited<ReturnType<NativeSessions['getSession']>>): boolean {
+    return session.time.busy !== undefined && (session.time.idle === undefined || session.time.busy > session.time.idle);
+  }
+
+  /** Call only after ownership/process/generation checks. Busy and timestamps are not admission proof. */
+  function observedAdmission(sessionID: string, messageID: string | null | undefined, attempted: boolean,
+    users: ReadonlySet<string>, inbox: Awaited<ReturnType<NativeSessions['listInbox']>> | undefined): boolean {
+    return attempted && !!messageID && (users.has(messageID) ||
+      inbox?.some(item => item.type === 'user' && item.sessionID === sessionID && item.id === messageID) === true);
   }
 
   async function nativeCall<T>(controller: AbortController, operation: 'create' | 'readback' | 'monitor-connect' | 'prompt' | 'inbox-list' | 'inbox-cancel' | 'interrupt' | 'status' | 'active' | 'history' | 'identity' | 'form-list' | 'form-get' | 'form-reply' | 'permission-list' | 'message-get', call: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -410,7 +456,22 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     }
   }
 
+  async function verifyRestoredOwner(conversationId: string, controller: AbortController): Promise<boolean> {
+    const registered = restoredOwners.get(conversationId);
+    if (!registered) return true;
+    try {
+      const current = await nativeCall(controller, 'readback', signal => native.getSession({ sessionID: registered.nativeSessionId }, signal));
+      if (closed || controller.signal.aborted || identityChanged) return false;
+      if (!matchesRegistered(current, registered)) { invalidateOwnership(conversationId); return false; }
+      return !ownershipInvalid.has(conversationId);
+    } catch {
+      activityUnknown.add(conversationId); refreshEligibility(conversationId);
+      return false;
+    }
+  }
+
   async function openPublishedBody(ref: BodyRef): Promise<BodyReader> {
+    if (ownershipInvalid.has(ref.key.conversationId)) throw new ThinkServiceError('content_unavailable');
     const key = refIdentity(ref);
     if (!published.has(key)) throw new ThinkServiceError('not_found');
     try { return await bodies.open(ref); }
@@ -423,12 +484,12 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     if (!work) {
       const controller = new AbortController();
       const promise = (async () => {
-        if (!await verifyIdentity(controller)) throw new ThinkServiceError('content_unavailable');
+        if (!await verifyIdentity(controller) || !await verifyRestoredOwner(ref.key.conversationId, controller)) throw new ThinkServiceError('content_unavailable');
         const message = await nativeCall(controller, 'message-get', signal => native.getMessage({ sessionID: locator.sessionID, messageID: locator.messageID }, signal));
         if (message.id !== locator.messageID || message.type !== 'assistant' || message.time.completed === undefined) throw new ThinkServiceError('content_unavailable');
         const part = message.content.filter(item => item.type === 'text')[locator.ordinal];
         if (!part || part.type !== 'text' || Buffer.byteLength(part.text, 'utf8') !== ref.through || createHash('sha256').update(part.text, 'utf8').digest('hex') !== ref.sha256 ||
-            !await verifyIdentity(controller) || controller.signal.aborted || closed) throw new ThinkServiceError('content_unavailable');
+            !await verifyIdentity(controller) || !await verifyRestoredOwner(ref.key.conversationId, controller) || controller.signal.aborted || closed) throw new ThinkServiceError('content_unavailable');
         const guard = await bodies.restore(ref, bodyBytes(part.text));
         if (closed || controller.signal.aborted) { await guard.close(); throw new ThinkServiceError('content_unavailable'); }
         return guard;
@@ -468,16 +529,20 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     if (!uuid.test(conversationId)) throw new ThinkServiceError('invalid_request');
     const state = conversations.get(conversationId);
     if (!state) throw new ThinkServiceError('not_found');
-    if (state.creation !== 'ready') throw new ThinkServiceError('think_unavailable');
+    if (state.creation !== 'ready' || ownershipInvalid.has(conversationId)) throw new ThinkServiceError('think_unavailable');
     return `ses_memoryloop_${conversationId.replaceAll('-', '')}`;
   }
 
-  async function ownedRead<T>(operation: 'form-list' | 'form-get', call: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  async function ownedRead<T>(conversationId: string, operation: 'form-list' | 'form-get', call: (signal: AbortSignal) => Promise<T>): Promise<T> {
     requireAvailable();
     const controller = new AbortController();
     const task = (async () => {
-      if (!await verifyIdentity(controller)) throw new ThinkServiceError('think_unavailable');
-      try { return await nativeCall(controller, operation, call); }
+      if (!await verifyIdentity(controller) || !await verifyRestoredOwner(conversationId, controller)) throw new ThinkServiceError('think_unavailable');
+      try {
+        const value = await nativeCall(controller, operation, call);
+        if (!await verifyRestoredOwner(conversationId, controller)) throw new ThinkServiceError('think_unavailable');
+        return value;
+      }
       catch { throw new ThinkServiceError('think_unavailable'); }
     })();
     tasks.set(controller, task.then(() => {}, () => {}));
@@ -614,6 +679,111 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     return current;
   }
 
+  /** Request cancellation never owns shared recovery. Close/process/monitor fences do. */
+  async function ensureConversation(conversationId: string): Promise<void> {
+    requireOpen();
+    if (!uuid.test(conversationId)) throw new ThinkServiceError('invalid_request');
+    if (conversations.has(conversationId)) return;
+    const registry = options.state?.registry;
+    if (!registry) return;
+    const pending = hydrations.get(conversationId);
+    if (pending) return pending;
+    // No unbounded recovery fan-out; another read can retry when a slot is free.
+    if (hydrations.size >= 2) throw new ThinkServiceError('think_unavailable');
+    const registered = stateOperation(() => registry.conversation(conversationId));
+    if (!registered) return; // Native metadata alone never authorizes adoption.
+    if (registered.directory !== directory || registered.creation === 'rejected') throw new ThinkServiceError('think_unavailable');
+    const controller = new AbortController();
+    const task = Promise.resolve().then(async () => {
+      console.info('think_hydration_attempt', { conversationId });
+      try {
+        if (!await verifyIdentity(controller)) throw new Error('Native process unavailable');
+        const session = await nativeCall(controller, 'readback', signal => native.getSession({ sessionID: registered.nativeSessionId }, signal));
+        if (!matchesRegistered(session, registered)) throw new Error('Native owner mismatch');
+        const monitored = startMonitor();
+        if (!await nativeCall(controller, 'monitor-connect', () => monitored.connected) || !monitored.healthy) throw new Error('Monitor unavailable');
+        const generation = monitored.generation;
+        const history = await restoreHistory({ conversationId, registry, bodies,
+          readPage: cursor => nativeCall(controller, 'history', signal => native.listMessages(cursor
+            ? { sessionID: registered.nativeSessionId, cursor, limit: 50 } : { sessionID: registered.nativeSessionId, order: 'asc', limit: 50 }, signal)),
+          stopping: () => closed || controller.signal.aborted || identityChanged });
+        const [current, active, inbox, permissions] = await Promise.all([
+          nativeCall(controller, 'status', signal => native.getSession({ sessionID: registered.nativeSessionId }, signal)),
+          nativeCall(controller, 'active', signal => native.activeSessions(signal)),
+          nativeCall(controller, 'inbox-list', signal => native.listInbox({ sessionID: registered.nativeSessionId }, signal)),
+          nativeCall(controller, 'permission-list', signal => native.listPermissionRequests({ location: { directory } }, signal)),
+        ]);
+        if (!matchesRegistered(current, registered) || !await verifyIdentity(controller) || closed || controller.signal.aborted ||
+            monitor !== monitored || !monitored.healthy || monitored.generation !== generation) throw new Error('Hydration authority changed');
+        const unresolved = history.commands.filter(command => command.receipt.kind === 'send' && !terminalSend(command.receipt.state));
+        if (unresolved.length > 1) throw new Error('Multiple unresolved Send reservations');
+        // Transcript read failure is a logging gap, never failure of original admission or native work.
+        try { for (const key of missingConfirmedText(options.state?.transcripts, conversationId, history.entries)) history.missing.add(key); }
+        catch {
+          checkpointReadsPending.add(conversationId);
+          console.info('think_transcript_read_outcome', { conversationId, status: 'unavailable' });
+          // Ordinary storage failure keeps the writer's existing delayed I/O warning policy.
+        }
+        const creates = history.commands.filter(command => command.receipt.kind === 'create');
+        if (creates.length !== 1 || creates[0].receipt.kind !== 'create') throw new Error('Missing registered creation');
+        const creation: CreateReceipt = { conversationId, clientCommandId: creates[0].receipt.clientCommandId, kind: 'create', epoch, state: 'ready' };
+        if (creates[0].receipt.state !== 'ready') persistOutcome(creation, current);
+        for (const command of history.commands) {
+          let receipt = { ...command.receipt, epoch };
+          if (receipt.kind === 'create') receipt = creation;
+          if (receipt.kind === 'send' && !terminalSend(receipt.state) &&
+              observedAdmission(registered.nativeSessionId, command.nativeMessageId, command.attempted, history.users, inbox)) {
+            receipt = { ...receipt, state: 'admitted' };
+            if (command.receipt.state !== 'admitted') persistOutcome(receipt);
+          }
+          commands.set(receipt.clientCommandId, receipt);
+          registeredTimes.set(receipt.clientCommandId, command.registeredAt);
+          if (receipt.kind === 'send') {
+            if (command.payloadSha256) sendDigests.set(receipt.clientCommandId, command.payloadSha256);
+            runs.set(receipt.runId, { conversationId, sendCommandId: receipt.clientCommandId, ...(command.nativeMessageId ? { nativeMessageId: command.nativeMessageId } : {}) });
+            if (!terminalSend(receipt.state)) activeRuns.set(conversationId, receipt.runId);
+            if (command.attempted) dispatchedRuns.add(receipt.runId);
+          } else if (receipt.kind === 'form-reply' && command.payloadSha256) replyPayloads.set(receipt.clientCommandId, command.payloadSha256);
+          if (receipt.kind === 'stop') stoppedRuns.add(receipt.runId);
+          const fact = history.entries.find(entry => entry.kind === 'lifecycle' && entry.clientCommandId === receipt.clientCommandId);
+          if (fact?.kind === 'lifecycle') fact.state = receipt.state;
+        }
+        owners.set(conversationId, registered.owner);
+        restoredOwners.set(conversationId, registered);
+        sessionConversations.set(registered.nativeSessionId, conversationId);
+        if (active[registered.nativeSessionId] || nativeBusy(current) || inbox.some(item => item.sessionID === registered.nativeSessionId)) activeSessions.add(conversationId);
+        missingCanonical.set(conversationId, history.missing);
+        // Publish all manifests/refs together, only after the final native/process checks.
+        for (const entry of history.entries) {
+          if (!('body' in entry)) continue;
+          published.add(refIdentity(entry.body));
+          publishedRefs.set(transferKey(conversationId, entry.body.contentId, entry.body.generation, entry.body.through), entry.body);
+          if (entry.kind === 'assistant-text' && entry.body.kind === 'canonical') {
+            const key = refIdentity(entry.body);
+            locators.set(key, { sessionID: registered.nativeSessionId, messageID: entry.messageId, ordinal: entry.ordinal });
+            reclaimable.set(key, entry.body);
+          }
+        }
+        projections.set(conversationId, history.entries);
+        const otherTranscriptWarnings = transcripts.warningCount();
+        setConversation(conversationId, { conversationId, epoch, creation: 'ready', revision: 1, sendEligibility: 'unavailable',
+          ...(otherTranscriptWarnings ? { otherTranscriptWarnings } : {}) });
+        setPermissionPending(conversationId, permissions.data.some(permission => permission.sessionID === registered.nativeSessionId));
+        transcripts.changed(conversationId);
+        requestRefresh(conversationId);
+        console.info('think_hydration_outcome', { conversationId, status: 'ready' });
+      } catch {
+        controller.abort();
+        console.info('think_hydration_outcome', { conversationId, status: 'unavailable' });
+        throw new ThinkServiceError('think_unavailable');
+      }
+    });
+    hydrations.set(conversationId, task);
+    tasks.set(controller, task.then(() => {}, () => {}));
+    try { await task; }
+    finally { hydrations.delete(conversationId); tasks.delete(controller); }
+  }
+
   function updateSend(receipt: SendReceipt, state: SendReceipt['state']): void {
     if (closed) return;
     const current = commands.get(receipt.clientCommandId);
@@ -656,7 +826,8 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     const current = startMonitor();
     try {
       const connected = await nativeCall(controller, 'monitor-connect', () => current.connected);
-      if (!connected || !current.healthy || !await verifyIdentity(controller) || !current.healthy) throw new Error('Monitor unavailable');
+      if (!connected || !current.healthy || !await verifyIdentity(controller) ||
+          !await verifyRestoredOwner(receipt.conversationId, controller) || !current.healthy) throw new Error('Monitor unavailable');
     } catch {
       if (!current.healthy) current.controller.abort();
       updateSend(receipt, stoppedRuns.has(receipt.runId) ? 'cancelled-before-delivery' : 'monitor-unavailable');
@@ -700,7 +871,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           const run = runId ? runs.get(runId) : undefined;
           if (runId && !run) break;
           const sessionID = `ses_memoryloop_${conversationId.replaceAll('-', '')}`;
-          const promptID = run ? `msg_memoryloop_${run.sendCommandId.replaceAll('-', '')}` : undefined;
+          const promptID = run?.nativeMessageId;
           if (!await verifyIdentity(controller)) break;
           // A failed read cancels its batch, not the owner needed to fence successful observations.
           const batch = new AbortController();
@@ -709,12 +880,14 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (controller.signal.aborted) batch.abort();
           let session: Awaited<ReturnType<NativeSessions['getSession']>> | undefined;
           let active: Awaited<ReturnType<NativeSessions['activeSessions']>> | undefined;
+          let inbox: Awaited<ReturnType<NativeSessions['listInbox']>> | undefined;
           let permissions: Awaited<ReturnType<NativeSessions['listPermissionRequests']>> | undefined;
           const reads = [
             nativeCall(batch, 'status', signal => native.getSession({ sessionID }, signal)).then(value => { session = value; }),
             nativeCall(batch, 'active', signal => native.activeSessions(signal)).then(value => { active = value; }),
             nativeCall(batch, 'permission-list', signal => native.listPermissionRequests({ location: { directory } }, signal)).then(value => { permissions = value; }),
           ];
+          if (restoredOwners.has(conversationId)) reads.push(nativeCall(batch, 'inbox-list', signal => native.listInbox({ sessionID }, signal)).then(value => { inbox = value; }));
           try {
             await Promise.all(reads);
           } catch {
@@ -725,13 +898,18 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           } finally {
             controller.signal.removeEventListener('abort', abortBatch);
           }
-          if (session && !matches(session, sessionID, conversationId)) break;
+          if (session && !matches(session, sessionID, conversationId)) { invalidateOwnership(conversationId); break; }
           if (!await verifyIdentity(controller)) break;
           if (state.generation !== generation) continue;
           if (closed || identityChanged || monitor !== monitored || !monitor?.healthy || monitored.generation !== monitorGeneration || activeRuns.get(conversationId) !== runId) break;
           // Only a successful read can replace its channel's facts; unrelated failures retain them.
           if (active) {
-            if (active[sessionID]) activeSessions.add(conversationId); else activeSessions.delete(conversationId);
+            if (active[sessionID] || restoredOwners.has(conversationId) && ((session && nativeBusy(session)) || (inbox?.length ?? 0) > 0)) activeSessions.add(conversationId);
+            else activeSessions.delete(conversationId);
+            refreshEligibility(conversationId);
+          }
+          if (restoredOwners.has(conversationId)) {
+            if (session && active && inbox) activityUnknown.delete(conversationId); else activityUnknown.add(conversationId);
             refreshEligibility(conversationId);
           }
           if (permissions) setPermissionPending(conversationId, permissions.data.some(permission => permission.sessionID === sessionID || childConversations.get(permission.sessionID) === conversationId));
@@ -739,6 +917,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           let cursor: string | undefined;
           const seen = new Set<string>();
           let userTime: number | undefined;
+          const observedUsers = new Set<string>();
           let assistantTime: { created: number; completed: number; outcome: 'completed' | 'failed' } | undefined;
           const captured: ProjectionEntry[] = [];
           const succeededKeys = new Set<string>();
@@ -747,37 +926,12 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
             const page = await nativeCall(controller, 'history', signal => native.listMessages(cursor
               ? { sessionID, cursor, limit: 50 } : { sessionID, order: 'asc', limit: 50 }, signal));
             for (const message of page.data) {
-              if (message.type === 'assistant') {
-                let ordinal = 0;
-                for (const part of message.content) {
-                  if (part.type === 'text') {
-                    const textOrdinal = ordinal++;
-                    if (message.time.completed === undefined) continue;
-                    const key: BodyKey = { conversationId, owner: { kind: 'assistant-text', messageId: message.id, ordinal: textOrdinal } };
-                    const digest = createHash('sha256').update(part.text, 'utf8').digest('hex');
-                    const existing = projections.get(conversationId)?.find(entry => entry.kind === 'assistant-text' && entry.messageId === message.id && entry.ordinal === textOrdinal);
-                    try {
-                      const body = existing?.kind === 'assistant-text' && existing.body.kind === 'canonical' && existing.body.sha256 === digest && existing.body.through === Buffer.byteLength(part.text)
-                        ? existing.body : await bodies.replace(key, bodyBytes(part.text), 'canonical');
-                      captured.push({ kind: 'assistant-text', messageId: message.id, ordinal: textOrdinal, body, closure: 'closed', capture: 'complete', displayOrder: 0,
-                        sourceTime: message.time.created, ...(existing?.runId ? { runId: existing.runId } : runId && userTime !== undefined ? { runId } : {}) });
-                      succeededKeys.add(textKey(message.id, textOrdinal));
-                    } catch {
-                      failedKeys.add(textKey(message.id, textOrdinal));
-                      if (existing?.kind === 'assistant-text') captured.push({ ...existing, capture: 'incomplete' });
-                      console.info('think_content_outcome', { status: 'unavailable' });
-                    }
-                  } else if (part.type === 'tool') {
-                    const category: ToolCategory = part.name === 'read' ? 'file-read' : ['write', 'edit'].includes(part.name) ? 'file-write'
-                      : part.name === 'bash' ? 'shell' : ['grep', 'glob', 'search'].includes(part.name) ? 'search' : part.name === 'subagent' ? 'subagent' : 'custom';
-                    const toolState: ToolState = part.state.status === 'completed' ? 'completed' : part.state.status === 'error' ? 'failed' : 'started';
-                    captured.push({ kind: 'tool', messageId: message.id, toolCallId: createHash('sha256').update(part.id).digest('hex'), category, state: toolState, sourceTime: part.time.created,
-                      ...(runId && userTime !== undefined ? { runId } : {}),
-                      ...(part.time.completed === undefined ? {} : { durationMs: Math.max(0, part.time.completed - part.time.created) }), displayOrder: 0 });
-                  }
-                }
-              }
+              const projected = await projectNativeMessage(conversationId, message, bodies, projections.get(conversationId) ?? [], runId && userTime !== undefined ? runId : undefined);
+              captured.push(...projected.entries);
+              for (const key of projected.succeeded) succeededKeys.add(key);
+              for (const key of projected.missing) failedKeys.add(key);
               if (message.type === 'user') {
+                observedUsers.add(message.id);
                 userTime = message.id === promptID ? message.time.created : undefined;
                 assistantTime = undefined;
               } else if (message.type === 'synthetic') {
@@ -793,6 +947,10 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
             if (next) seen.add(next);
             cursor = next ?? undefined;
           } while (cursor);
+          if (restoredOwners.has(conversationId)) {
+            const currentOwner = await nativeCall(controller, 'readback', signal => native.getSession({ sessionID }, signal));
+            if (!matches(currentOwner, sessionID, conversationId)) { invalidateOwnership(conversationId); break; }
+          }
           if (!await verifyIdentity(controller)) break;
           if (state.generation !== generation) continue;
           if (closed || identityChanged || monitor !== monitored || !monitor?.healthy || monitored.generation !== monitorGeneration || activeRuns.get(conversationId) !== runId) break;
@@ -801,6 +959,19 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (!missing) { missing = new Set(); missingCanonical.set(conversationId, missing); }
           for (const key of succeededKeys) missing.delete(key);
           for (const key of failedKeys) missing.add(key);
+          if (restoredOwners.has(conversationId)) {
+            const present = new Set(captured.filter(entry => entry.kind === 'assistant-text').map(entry =>
+              entry.kind === 'assistant-text' ? textKey(entry.messageId, entry.ordinal) : ''));
+            for (const entry of projections.get(conversationId) ?? []) {
+              if (entry.kind === 'assistant-text' && entry.closure === 'closed' && !present.has(textKey(entry.messageId, entry.ordinal))) missing.add(textKey(entry.messageId, entry.ordinal));
+            }
+            if (checkpointReadsPending.has(conversationId)) {
+              try {
+                for (const key of missingConfirmedText(options.state?.transcripts, conversationId, captured)) missing.add(key);
+                checkpointReadsPending.delete(conversationId);
+              } catch { /* Keep the unresolved read gap; the next owned reconciliation retries it. */ }
+            }
+          }
           const incomplete = missing.size > 0;
           if (wasIncomplete !== incomplete) {
             const current = conversations.get(conversationId);
@@ -819,19 +990,30 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
             }
           }
           const receipt = run ? commands.get(run.sendCommandId) : undefined;
+          let terminal: 'interrupted' | 'completed' | 'failed' | undefined;
           if (runId && receipt?.kind === 'send' && dispatchedRuns.has(runId) &&
               (receipt.state === 'registered' || receipt.state === 'admitted' || receipt.state === 'upstream-unconfirmed') && matches(session, sessionID, conversationId) &&
+              (!restoredOwners.has(conversationId) || inbox?.every(item => item.id !== promptID)) &&
               active && !active[sessionID] && userTime !== undefined &&
               session.time.busy !== undefined && session.time.idle !== undefined && userTime <= session.time.idle &&
               session.time.idle >= session.time.busy) {
             const assistantCorrelated = assistantTime && assistantTime.created >= userTime && assistantTime.created >= session.time.busy && assistantTime.completed <= session.time.idle;
-            const terminal = session.outcome === 'interrupted' ? 'interrupted'
+            terminal = session.outcome === 'interrupted' ? 'interrupted'
               : session.outcome === 'succeeded' && assistantCorrelated && assistantTime?.outcome === 'completed' ? 'completed'
               : session.outcome === 'failed' && assistantCorrelated && assistantTime?.outcome === 'failed' ? 'failed' : undefined;
             if (terminal) {
               settleSend(receipt, terminal);
               console.info('think_run_reconciled', { outcome: terminal });
             }
+          }
+          if (!terminal && restoredOwners.has(conversationId) && runId && receipt?.kind === 'send' &&
+              receipt.epoch === epoch && receipt.conversationId === conversationId && receipt.runId === runId &&
+              (receipt.state === 'registered' || receipt.state === 'upstream-unconfirmed' || receipt.state === 'monitor-unavailable') &&
+              observedAdmission(sessionID, promptID, dispatchedRuns.has(runId), observedUsers, inbox)) {
+            // The same durable reservation is now verifiably admitted, even while native work
+            // remains queued/running. Preserve it; only terminal evidence may release the run.
+            updateSend(receipt, 'admitted');
+            console.info('think_run_reconciled', { outcome: 'admitted' });
           }
           if (state.generation === generation) break;
         }
@@ -863,11 +1045,12 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     }
     if (send.state !== 'admitted') { updateStop(receipt, 'upstream-unconfirmed'); return; }
     const sessionID = `ses_memoryloop_${receipt.conversationId.replaceAll('-', '')}`;
-    const inboxID = `msg_memoryloop_${sendCommandId.replaceAll('-', '')}`;
+    const inboxID = runs.get(receipt.runId)?.nativeMessageId;
+    if (!inboxID) { updateStop(receipt, 'upstream-unconfirmed'); return; }
     try {
-      if (!await verifyIdentity(controller)) throw new Error('Native identity unavailable');
+      if (!await verifyIdentity(controller) || !await verifyRestoredOwner(receipt.conversationId, controller)) throw new Error('Native identity unavailable');
       const inbox = await nativeCall(controller, 'inbox-list', signal => native.listInbox({ sessionID }, signal));
-      if (!markAttempted(receipt.clientCommandId)) { updateStop(receipt, 'upstream-unconfirmed'); return; }
+      if (!markAttempted(receipt.clientCommandId, 'stop')) { updateStop(receipt, 'upstream-unconfirmed'); return; }
       if (inbox.some(item => item.id === inboxID && item.sessionID === sessionID && item.type === 'user')) {
         await nativeCall(controller, 'inbox-cancel', signal => native.cancelInbox({ sessionID, inboxID }, signal));
       }
@@ -879,42 +1062,50 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     }
   }
 
+  /** Synchronous manifest/state read after recovery: no await can split their revision/cursor. */
+  function projectionPage(conversationId: string, cursor?: string): ProjectionPage {
+    requireOpen();
+    if (ownershipInvalid.has(conversationId)) throw new ThinkServiceError('think_unavailable');
+    const state = conversations.get(conversationId);
+    if (!state) throw new ThinkServiceError('not_found');
+    let start = 0;
+    if (cursor) {
+      const parts = cursor.split('.');
+      if (parts.length !== 2 || parts[0].length > 256 || !/^[a-f0-9]{64}$/.test(parts[1])) throw new ThinkServiceError('invalid_request');
+      const expected = createHmac('sha256', cursorKey).update(parts[0]).digest();
+      if (!timingSafeEqual(expected, Buffer.from(parts[1], 'hex'))) throw new ThinkServiceError('invalid_request');
+      let decoded: unknown;
+      try { decoded = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')); } catch { throw new ThinkServiceError('invalid_request'); }
+      if (!Array.isArray(decoded) || decoded.length !== 3 || decoded[0] !== conversationId || decoded[1] !== state.revision ||
+          !Number.isSafeInteger(decoded[2]) || decoded[2] < 0) throw new ThinkServiceError('invalid_request');
+      start = decoded[2];
+    }
+    const entries = projections.get(conversationId) ?? [];
+    const page: ProjectionEntry[] = [];
+    let index = start;
+    while (index < entries.length && page.length < 50) {
+      const candidate = [...page, entries[index]];
+      if (Buffer.byteLength(JSON.stringify(candidate)) > 48 * 1024) {
+        if (!page.length) throw new ThinkServiceError('think_unavailable');
+        break;
+      }
+      page.push(structuredClone(entries[index])); index++;
+    }
+    let nextCursor: string | undefined;
+    if (index < entries.length) {
+      const encoded = Buffer.from(JSON.stringify([conversationId, state.revision, index])).toString('base64url');
+      nextCursor = `${encoded}.${createHmac('sha256', cursorKey).update(encoded).digest('hex')}`;
+    }
+    return { conversationId, epoch, revision: state.revision, entries: page, contentHealth: (missingCanonical.get(conversationId)?.size ?? 0) > 0 ? 'incomplete' : 'complete', ...(nextCursor ? { nextCursor } : {}) };
+  }
+
   const service: ThinkService = {
     content: {
       async page(conversationId, cursor) {
         requireOpen();
         if (!uuid.test(conversationId)) throw new ThinkServiceError('invalid_request');
-        const state = conversations.get(conversationId);
-        if (!state) throw new ThinkServiceError('not_found');
-        let start = 0;
-        if (cursor) {
-          const parts = cursor.split('.');
-          if (parts.length !== 2 || parts[0].length > 256 || !/^[a-f0-9]{64}$/.test(parts[1])) throw new ThinkServiceError('invalid_request');
-          const expected = createHmac('sha256', cursorKey).update(parts[0]).digest();
-          if (!timingSafeEqual(expected, Buffer.from(parts[1], 'hex'))) throw new ThinkServiceError('invalid_request');
-          let decoded: unknown;
-          try { decoded = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')); } catch { throw new ThinkServiceError('invalid_request'); }
-          if (!Array.isArray(decoded) || decoded.length !== 3 || decoded[0] !== conversationId || decoded[1] !== state.revision ||
-              !Number.isSafeInteger(decoded[2]) || decoded[2] < 0) throw new ThinkServiceError('invalid_request');
-          start = decoded[2];
-        }
-        const entries = projections.get(conversationId) ?? [];
-        const page: ProjectionEntry[] = [];
-        let index = start;
-        while (index < entries.length && page.length < 50) {
-          const candidate = [...page, entries[index]];
-          if (Buffer.byteLength(JSON.stringify(candidate)) > 48 * 1024) {
-            if (!page.length) throw new ThinkServiceError('think_unavailable');
-            break;
-          }
-          page.push(structuredClone(entries[index])); index++;
-        }
-        let nextCursor: string | undefined;
-        if (index < entries.length) {
-          const encoded = Buffer.from(JSON.stringify([conversationId, state.revision, index])).toString('base64url');
-          nextCursor = `${encoded}.${createHmac('sha256', cursorKey).update(encoded).digest('hex')}`;
-        }
-        return { conversationId, epoch, revision: state.revision, entries: page, contentHealth: (missingCanonical.get(conversationId)?.size ?? 0) > 0 ? 'incomplete' : 'complete', ...(nextCursor ? { nextCursor } : {}) };
+        await ensureConversation(conversationId);
+        return projectionPage(conversationId, cursor);
       },
       async open(ref) {
         requireOpen();
@@ -977,6 +1168,13 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         return previous.failure ? { ...previous, failure: { ...previous.failure } } : { ...previous };
       }
       requireAvailable();
+      await ensureConversation(conversationId);
+      const raced = previousCommand(clientCommandId);
+      if (raced) {
+        if (raced.kind !== 'send' || raced.conversationId !== conversationId || sendDigests.get(clientCommandId) !== digest) throw new ThinkServiceError('command_conflict');
+        return raced.failure ? { ...raced, failure: { ...raced.failure } } : { ...raced };
+      }
+      requireAvailable();
       const conversation = conversations.get(conversationId);
       if (!conversation) throw new ThinkServiceError('not_found');
       if (sendEligibility(conversationId, conversation) !== 'available') throw new ThinkServiceError('command_conflict');
@@ -986,7 +1184,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       stateOperation(() => options.state?.registerCommand(receipt, Buffer.from(text, 'utf8'), digest, registeredAt));
       registeredTimes.set(clientCommandId, registeredAt);
       commands.set(clientCommandId, receipt);
-      runs.set(runId, { conversationId, sendCommandId: clientCommandId });
+      runs.set(runId, { conversationId, sendCommandId: clientCommandId, nativeMessageId: `msg_memoryloop_${clientCommandId.replaceAll('-', '')}` });
       activeRuns.set(conversationId, runId);
       lifecycle(receipt);
       originalCapture(receipt, 'pending');
@@ -1009,7 +1207,15 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         if (previous.kind !== 'stop' || previous.conversationId !== conversationId || previous.runId !== runId) throw new ThinkServiceError('command_conflict');
         return { ...previous };
       }
-      requireAvailable();
+      requireAvailable('stop');
+      await ensureConversation(conversationId);
+      const raced = previousCommand(clientCommandId);
+      if (raced) {
+        if (raced.kind !== 'stop' || raced.conversationId !== conversationId || raced.runId !== runId) throw new ThinkServiceError('command_conflict');
+        return { ...raced };
+      }
+      requireAvailable('stop');
+      if (ownershipInvalid.has(conversationId)) throw new ThinkServiceError('think_unavailable');
       const run = runs.get(runId);
       if (!run || run.conversationId !== conversationId) throw new ThinkServiceError('not_found');
       if (activeRuns.get(conversationId) !== runId) throw new ThinkServiceError('command_conflict');
@@ -1028,17 +1234,19 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     },
     async decisions(conversationId) {
       requireAvailable();
+      await ensureConversation(conversationId);
       const sessionID = ownedSession(conversationId);
-      const forms = await ownedRead('form-list', signal => native.listForms({ sessionID }, signal));
+      const forms = await ownedRead(conversationId, 'form-list', signal => native.listForms({ sessionID }, signal));
       const decisions = forms.map(form => projectForm(form, conversationId, sessionID));
       if (Buffer.byteLength(JSON.stringify({ decisions })) > 48 * 1024) throw new ThinkServiceError('decision_unavailable');
       return decisions;
     },
     async decision(conversationId, decisionId) {
       requireAvailable();
+      await ensureConversation(conversationId);
       const sessionID = ownedSession(conversationId);
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(decisionId)) throw new ThinkServiceError('invalid_request');
-      const form = await ownedRead('form-get', signal => native.getForm({ sessionID, formID: decisionId }, signal));
+      const form = await ownedRead(conversationId, 'form-get', signal => native.getForm({ sessionID, formID: decisionId }, signal));
       if (form.id !== decisionId || form.sessionID !== sessionID || form.state.status !== 'pending') return null;
       return projectForm(form, conversationId, sessionID);
     },
@@ -1067,13 +1275,24 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         return { ...await preparing.result };
       }
       requireAvailable();
+      await ensureConversation(conversationId);
+      const raced = previousCommand(clientCommandId);
+      if (raced) {
+        if (raced.kind !== 'form-reply' || replyPayloads.get(clientCommandId) !== digest) throw new ThinkServiceError('command_conflict');
+        return raced.failure ? { ...raced, failure: { ...raced.failure } } : { ...raced };
+      }
+      const racedPreparation = preparingReplies.get(clientCommandId);
+      if (racedPreparation) {
+        if (racedPreparation.payload !== payload) throw new ThinkServiceError('command_conflict');
+        return { ...await racedPreparation.result };
+      }
       const sessionID = ownedSession(conversationId);
       const lock = `${conversationId}:${decisionId}`;
       if (formLocks.has(lock)) throw new ThinkServiceError('command_conflict');
       formLocks.add(lock);
       const result = (async (): Promise<FormReplyReceipt> => {
         try {
-          const form = await ownedRead('form-get', signal => native.getForm({ sessionID, formID: decisionId }, signal));
+          const form = await ownedRead(conversationId, 'form-get', signal => native.getForm({ sessionID, formID: decisionId }, signal));
           if (form.id !== decisionId || form.sessionID !== sessionID || form.state.status !== 'pending') throw new ThinkServiceError('command_conflict');
           projectForm(form, conversationId, sessionID);
           requireAvailable();
@@ -1096,7 +1315,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
                 putEntry(conversationId, { kind: 'form-reply', clientCommandId, decisionId, body, sourceTime: registeredTimes.get(clientCommandId) });
                 originalCapture(receipt, 'captured');
               } catch { originalCapture(receipt, 'failed'); resourceFailed = true; state = 'rejected'; return; }
-              if (!await verifyIdentity(controller)) throw new Error('Identity unavailable');
+              if (!await verifyIdentity(controller) || !await verifyRestoredOwner(conversationId, controller)) throw new Error('Identity unavailable');
               const current = await nativeCall(controller, 'form-get', signal => native.getForm({ sessionID, formID: decisionId }, signal));
               if (current.id !== decisionId || current.sessionID !== sessionID || current.state.status !== 'pending') state = 'stale';
               else {
@@ -1125,15 +1344,19 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     async conversation(conversationId) {
       requireOpen();
       if (typeof conversationId !== 'string' || !uuid.test(conversationId)) throw new ThinkServiceError('invalid_request');
+      await ensureConversation(conversationId);
+      requireOpen();
       const state = conversations.get(conversationId);
       return state ? { ...state } : null;
     },
     async snapshot(conversationId, cursor) {
       requireOpen();
       if (typeof conversationId !== 'string' || !uuid.test(conversationId)) throw new ThinkServiceError('invalid_request');
+      await ensureConversation(conversationId);
+      if (ownershipInvalid.has(conversationId)) throw new ThinkServiceError('think_unavailable');
       const state = conversations.get(conversationId);
       if (!state) return null;
-      const page = await service.content.page(conversationId, cursor);
+      const page = projectionPage(conversationId, cursor);
       return { ...state, entries: page.entries, contentHealth: page.contentHealth, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) };
     },
     contentChunk(input) {
@@ -1142,6 +1365,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         if (!input || !uuid.test(input.conversationId) || !uuid.test(input.contentId) || !uuid.test(input.generation) ||
             !Number.isSafeInteger(input.through) || input.through < 0 || !Number.isSafeInteger(input.offset) || input.offset < 0 || input.offset > input.through ||
             (input.transfer !== undefined && !uuid.test(input.transfer)) || (input.transfer === undefined && input.offset !== 0)) throw new ThinkServiceError('invalid_request');
+        if (ownershipInvalid.has(input.conversationId)) throw new ThinkServiceError('content_unavailable');
         expireTransfers();
         const key = transferKey(input.conversationId, input.contentId, input.generation, input.through);
         let nonce = input.transfer;
@@ -1167,7 +1391,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         try {
           const bytes = await transfer.reader.read(input.offset, Math.min(65536, input.through - input.offset));
           if (bytes.length > Math.min(65536, input.through - input.offset) || (input.offset < input.through && !bytes.length)) throw new Error('invalid body read');
-          if (closed) throw new Error('service closed');
+          if (closed || ownershipInvalid.has(input.conversationId)) throw new Error('service closed or ownership unavailable');
           const nextOffset = input.offset + bytes.length;
           if (input.offset === transfer.next) { transfer.last = input.offset; transfer.next = nextOffset; }
           transfer.expires = clock.now() + transferIdleMs;
@@ -1182,6 +1406,8 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     async watch(conversationId) {
       requireOpen();
       if (typeof conversationId !== 'string' || !uuid.test(conversationId)) throw new ThinkServiceError('invalid_request');
+      await ensureConversation(conversationId);
+      requireOpen();
       if (!conversations.has(conversationId)) return null;
       let pending: ConversationState | undefined;
       let waiter: ((state: ConversationState | null) => void) | undefined;

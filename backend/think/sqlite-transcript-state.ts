@@ -1,4 +1,4 @@
-import { ThinkStateError, type StoredTranscript, type StoredTranscriptEntry, type TranscriptAppendIdentity,
+import { ThinkStateError, type ConfirmedTranscriptEntry, type StoredTranscript, type StoredTranscriptEntry, type TranscriptAppendIdentity,
   type TranscriptDirectoryIdentity, type TranscriptFileCheckpoint, type TranscriptStateStore } from './state';
 import type { SQLite } from './sqlite-state';
 import { createHash } from 'node:crypto';
@@ -136,6 +136,14 @@ export class SQLiteTranscriptState implements TranscriptStateStore {
   }
   latest(conversationId: string, semantic: string): StoredTranscriptEntry | null {
     return this.read(() => { this.owner(conversationId); const row = this.db.get('SELECT * FROM transcript_entries WHERE conversation_id = ? AND semantic = ? ORDER BY end_offset DESC LIMIT 1', conversationId, semantic); return row ? identity(row) : null; });
+  }
+  confirmed(conversationId: string, afterEntryId = ''): ConfirmedTranscriptEntry[] {
+    return this.read(() => {
+      this.owner(conversationId);
+      return this.db.all(`SELECT entry_id, semantic, source_identity, end_offset FROM transcript_entries
+        WHERE conversation_id = ? AND entry_id > ? ORDER BY entry_id LIMIT 50`, conversationId, afterEntryId)
+        .map(row => ({ ...identity(row), endOffset: count(row.end_offset) }));
+    });
   }
   begin(conversationId: string, append: TranscriptAppendIdentity): void {
     this.write(() => {

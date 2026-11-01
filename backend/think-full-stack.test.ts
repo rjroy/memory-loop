@@ -7,6 +7,9 @@ import { Service } from '@opencode/client/service';
 import { expect, it, vi } from 'vitest';
 import { chromium, type Browser, type Page, type Route } from '@playwright/test';
 import { fixtureLargeResponse, launchThinkFixture } from '../tests/think-fixture';
+import type { ConversationSnapshot } from './think/service';
+import type { SendReceipt } from './think/contract';
+import type { BodyRef } from './think/body-store';
 
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
@@ -51,6 +54,183 @@ it('Phase 2 Ground quick action creates an editable unsent native Think draft', 
   } finally {
     try { await browser?.close(); } finally { await fixture.close(); }
     await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+}, 240000);
+
+it('Ground 9ya.5 real browser resumes the same native chat after only the owned daemon restarts', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary });
+  let browser: Browser | undefined;
+  let ownedPids: number[] = [];
+  async function processReceipts() {
+    const parsed: unknown = JSON.parse(await readFile(`${fixture.root}/process-receipts.json`, 'utf8'));
+    if (!Array.isArray(parsed)) throw new Error('fixture process receipts missing');
+    return parsed.map((entry: unknown) => {
+      if (!entry || typeof entry !== 'object' || !('operation' in entry) || typeof entry.operation !== 'string' ||
+          !('pid' in entry) || typeof entry.pid !== 'number' || !Number.isSafeInteger(entry.pid) || entry.pid <= 1 || entry.pid === process.pid) {
+        throw new Error('invalid owned fixture process receipt');
+      }
+      return { operation: entry.operation, pid: entry.pid };
+    });
+  }
+  try {
+    const receiptsBefore = await processReceipts();
+    ownedPids = receiptsBefore.map(entry => entry.pid);
+    const endpoint = await Service.discover({ file: `${fixture.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    const nativeBefore = await native.server.info({ signal: AbortSignal.timeout(5000) });
+    expect(nativeBefore).toMatchObject({ version: '2.2.2', pid: receiptsBefore.find(entry => entry.operation === 'native')?.pid });
+    const sessionIds = async () => {
+      const ids: string[] = [];
+      const seen = new Set<string>();
+      let cursor: string | undefined;
+      for (let page = 0; page < 5; page++) {
+        const result = await native.session.list(cursor ? { cursor, limit: 50 }
+          : { directory: fixture.workspace, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+        if (!result.data.length) return ids.sort();
+        ids.push(...result.data.map(session => session.id));
+        const next = result.cursor.next;
+        if (!next) return ids.sort();
+        if (seen.has(next)) throw new Error('fixture native session cursor repeated');
+        seen.add(next); cursor = next;
+      }
+      throw new Error('fixture native session listing exceeded its test-owned bound');
+    };
+    browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const page = await browser.newPage();
+    const writes: string[] = [];
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (request.method() === 'POST' && url.origin === fixture.webUrl && url.pathname.startsWith('/api/think/')) writes.push(url.pathname);
+    });
+    await page.goto(new URL('/think', fixture.webUrl).href);
+    await page.waitForURL(/\/think\?conversation=[0-9a-f-]{36}$/);
+    const conversationId = new URL(page.url()).searchParams.get('conversation');
+    if (!conversationId) throw new Error('fixture conversation missing');
+    const chatUrl = page.url();
+    const base = `/api/think/conversations/${conversationId}`;
+    const nativeId = `ses_memoryloop_${conversationId.replaceAll('-', '')}`;
+    const editor = page.getByRole('textbox', { name: 'Message' });
+    const send = page.getByRole('button', { name: 'Send', exact: true });
+    const original = '  fixture restart original 🧠\nsecond line  ';
+    await editor.fill(original);
+    await vi.waitFor(async () => expect(await send.isEnabled()).toBe(true), { timeout: 30000 });
+    const acknowledged = page.waitForResponse(response => new URL(response.url()).pathname === `${base}/messages` && response.request().method() === 'POST');
+    await send.click();
+    const response = await acknowledged;
+    expect(response.status()).toBe(202);
+    const accepted = await response.json() as SendReceipt;
+    expect(accepted).toMatchObject({ kind: 'send', conversationId, state: 'registered' });
+    const receipt = () => page.evaluate(async path => {
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(`fixture receipt failed: ${response.status}`);
+      return await response.json() as SendReceipt;
+    }, `${base}/commands/${accepted.clientCommandId}`);
+    const snapshot = () => page.evaluate(async path => {
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(`fixture snapshot failed: ${response.status}`);
+      return await response.json() as ConversationSnapshot;
+    }, base);
+    const readBody = async (ref: BodyRef) => {
+      const result = await page.evaluate(async ({ base, ref }) => {
+        const query = new URLSearchParams({ generation: ref.generation, through: String(ref.through), offset: '0' });
+        const response = await fetch(`${base}/content/${ref.contentId}?${query}`);
+        if (!response.ok) throw new Error(`fixture body failed: ${response.status}`);
+        return await response.json() as { epoch: string; contentId: string; generation: string; through: number; nextOffset: number; bytes: string };
+      }, { base, ref });
+      expect(result).toMatchObject({ epoch: ref.epoch, contentId: ref.contentId, generation: ref.generation,
+        through: ref.through, nextOffset: ref.through });
+      const bytes = Buffer.from(result.bytes, 'base64');
+      expect(bytes.length).toBe(ref.through);
+      expect(ref.kind === 'canonical' ? ref.sha256 : null).toBe(createHash('sha256').update(bytes).digest('hex'));
+      return bytes.toString('utf8');
+    };
+    const bodies = (value: ConversationSnapshot) => {
+      const input = value.entries.find(entry => entry.kind === 'original' && entry.clientCommandId === accepted.clientCommandId);
+      const answers = value.entries.filter(entry => entry.kind === 'assistant-text');
+      expect(answers).toHaveLength(1);
+      const answer = answers[0];
+      if (input?.kind !== 'original' || answer?.kind !== 'assistant-text') throw new Error('fixture history manifests missing');
+      expect(answer).toMatchObject({ closure: 'closed', capture: 'complete', body: { kind: 'canonical' } });
+      return { input: input.body, answer: answer.body };
+    };
+    // Completion is an authoritative receipt, not an empty composer or a temporarily enabled Send button.
+    await vi.waitFor(async () => expect((await receipt()).state).toBe('completed'), { timeout: 30000 });
+    await vi.waitFor(async () => expect((await snapshot()).transcript?.state).toBe('up-to-date'), { timeout: 30000 });
+    const before = await snapshot();
+    const beforeBodies = bodies(before);
+    expect(await readBody(beforeBodies.input)).toBe(original);
+    expect(await readBody(beforeBodies.answer)).toBe('fixture-ok');
+    const transcriptPath = `${fixture.workspace}/Conversations/Memory Loop/think-${conversationId}.md`;
+    const transcriptBefore = await readFile(transcriptPath);
+    const fileBefore = await lstat(transcriptPath);
+    const databasePath = `${fixture.root}/daemon-app/.memory-loop/application.sqlite`;
+    const databaseBefore = await lstat(databasePath);
+    const ownerBefore = await native.session.get({ sessionID: nativeId }, { signal: AbortSignal.timeout(5000) });
+    expect(await sessionIds()).toEqual([nativeId]);
+    const providerBefore = fixture.control.info();
+    expect(providerBefore.requests).toBeGreaterThan(0);
+    expect(providerBefore.held).toBe(0);
+    const writesBefore = [...writes];
+    expect(writesBefore.filter(path => path === '/api/think/conversations')).toHaveLength(1);
+    expect(writesBefore.filter(path => path === `${base}/messages`)).toHaveLength(1);
+
+    const restarted = await fixture.restartDaemon();
+    expect(restarted.previousPid).toBe(receiptsBefore.find(entry => entry.operation === 'daemon')?.pid);
+    expect(restarted.pid).not.toBe(restarted.previousPid);
+    expect((await native.server.info({ signal: AbortSignal.timeout(5000) })).pid).toBe(nativeBefore.pid);
+    const receiptsAfter = await processReceipts();
+    ownedPids = receiptsAfter.map(entry => entry.pid);
+    expect(receiptsAfter.filter(entry => entry.operation === 'daemon').map(entry => entry.pid)).toEqual([restarted.previousPid, restarted.pid]);
+    expect(receiptsAfter.filter(entry => ['native', 'web'].includes(entry.operation))).toEqual(receiptsBefore.filter(entry => ['native', 'web'].includes(entry.operation)));
+    try { process.kill(-restarted.previousPid, 0); throw new Error('old owned daemon process group remains'); }
+    catch (error: unknown) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; }
+    for (let visit = 0; visit < 2; visit++) {
+      // A fresh reload deliberately installs a new client generation; no old-epoch guard is bypassed.
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      expect(page.url()).toBe(chatUrl);
+      const conversation = page.getByRole('region', { name: 'Conversation' });
+      await vi.waitFor(async () => expect(await conversation.getByRole('article', { name: /^You, message / }).filter({ hasText: 'fixture restart original' }).count()).toBe(1), { timeout: 30000 });
+      await vi.waitFor(async () => expect(await conversation.getByRole('article', { name: /^AI, message / }).filter({ hasText: 'fixture-ok' }).count()).toBe(1), { timeout: 30000 });
+      await vi.waitFor(async () => expect((await snapshot()).transcript).toMatchObject({ state: 'up-to-date', warning: false }), { timeout: 30000 });
+      const resumed = await snapshot();
+      expect(resumed).toMatchObject({ conversationId, creation: 'ready', sendEligibility: 'available', contentHealth: 'complete' });
+      expect(resumed.epoch).not.toBe(before.epoch);
+      const refs = bodies(resumed);
+      expect(refs.input.epoch).toBe(resumed.epoch);
+      expect(refs.answer.epoch).toBe(resumed.epoch);
+      expect(refs.answer.kind === 'canonical' ? refs.answer.sha256 : null).toBe(beforeBodies.answer.kind === 'canonical' ? beforeBodies.answer.sha256 : null);
+      expect(await readBody(refs.input)).toBe(original);
+      expect(await readBody(refs.answer)).toBe('fixture-ok');
+      expect(await receipt()).toMatchObject({ ...accepted, epoch: resumed.epoch, state: 'completed' });
+      expect(await readFile(transcriptPath)).toEqual(transcriptBefore);
+    }
+    await editor.fill('unsent after daemon restart');
+    await vi.waitFor(async () => expect(await send.isEnabled()).toBe(true), { timeout: 30000 });
+    expect(await editor.inputValue()).toBe('unsent after daemon restart');
+    expect(writes).toEqual(writesBefore);
+    expect(fixture.control.info()).toEqual(providerBefore);
+    expect((await lstat(transcriptPath)).ino).toBe(fileBefore.ino);
+    expect((await lstat(databasePath)).ino).toBe(databaseBefore.ino);
+    const ownerAfter = await native.session.get({ sessionID: nativeId }, { signal: AbortSignal.timeout(5000) });
+    expect({ id: ownerAfter.id, metadata: ownerAfter.metadata, location: ownerAfter.location, permissions: ownerAfter.permissions, model: ownerAfter.model })
+      .toEqual({ id: ownerBefore.id, metadata: ownerBefore.metadata, location: ownerBefore.location, permissions: ownerBefore.permissions, model: ownerBefore.model });
+    expect(await sessionIds()).toEqual([nativeId]);
+    process.stdout.write(`${JSON.stringify({ event: 'ground_native_restart_resume', nativePid: nativeBefore.pid,
+      previousDaemonPid: restarted.previousPid, daemonPid: restarted.pid, providerRequests: providerBefore.requests,
+      transcriptBytes: transcriptBefore.length, reloads: 2 })}\n`);
+  } finally {
+    try { await browser?.close(); } finally {
+      try { ownedPids = (await processReceipts()).map(entry => entry.pid); } finally { await fixture.close(); }
+    }
+    await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
+    for (const pid of ownedPids) {
+      try { process.kill(-pid, 0); throw new Error('owned fixture process group remains'); }
+      catch (error: unknown) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; }
+    }
+    await expect(fixture.restartDaemon()).rejects.toThrow('closed');
   }
 }, 240000);
 

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Checkpoint, CrashReport, InitialLoadReport, MigrationReport, Observation, Probe, ReopenReport, ReopenScenario, Report, Scenario } from '../tests/think-transcript-checkpoint-fixture';
+import type { Checkpoint, CrashReport, InitialLoadReport, MigrationReport, Observation, OrderMigrationReport, OrderReopenReport, Probe, ReopenReport, ReopenScenario, Report, Scenario } from '../tests/think-transcript-checkpoint-fixture';
 import { entryFor } from './think/transcript-format';
 import type { BodyRef } from './think/body-store';
 import type { ProjectionEntry } from './think/projection';
@@ -21,7 +21,7 @@ let root: string;
 beforeEach(async () => { root = await mkdtemp('/tmp/opencode/think-transcript-checkpoint-'); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
-async function child<T>(scenario: Scenario | 'probe' | 'migrate-v1' | `reopen-${ReopenScenario}`, filename: string): Promise<T> {
+async function child<T>(scenario: Scenario | 'probe' | 'migrate-v1' | 'migrate-v2-order' | 'reopen-v3-order' | `reopen-${ReopenScenario}`, filename: string): Promise<T> {
   const output = join(root, filename);
   const result = spawnSync('/usr/bin/bun', ['--no-env-file', runner, root, scenario, output], {
     cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 256 * 1024,
@@ -55,7 +55,8 @@ function checkpoint(probe: Probe, at: string): Checkpoint {
   expect(probe.checkpoint, `registry-bound transcript checkpoint must be committed ${at}; ${probe.issue ?? ''}`).not.toBeNull();
   if (!probe.checkpoint) throw new Error('missing durable transcript checkpoint');
   expect(probe.issue).toBeUndefined();
-  expect(probe.schemaVersion).toBe(2);
+  // Checkpoint tables were introduced in v2; opening the production store now migrates to v3.
+  expect(probe.schemaVersion).toBe(3);
   expect(probe.writerAvailable).toBe(true);
   expect(probe.checkpoint).toMatchObject({ conversationId, ownerConversationId: conversationId,
     nativeSessionId: nativeId, vaultDirectory: join(root, 'vault') });
@@ -330,13 +331,88 @@ describe('fresh Bun process registered transcript reopening', () => {
 });
 
 describe('production Think SQLite transcript checkpoints', () => {
-  it('migrates test-owned v1 admission facts without replacing original bytes, ownership or installation identity and without adopting transcripts', async () => {
+  it('migrates test-owned v1 admission facts through additive v2 checkpoints and v3 command order without replacing originals or adopting transcripts', async () => {
     const result = await child<MigrationReport>('migrate-v1', 'migration.json');
     const original = `  durable fixture original 🧠\r\n\`\`\`\n<!-- fixture literal -->\n${'x'.repeat(70 * 1024)}\nlast  `;
     expect(result).toMatchObject({ installationId: '44444444-4444-4444-8444-444444444444',
       originalHex: Buffer.from(original).toString('hex'), payloadSha256: sha(original), commandState: 'upstream-unconfirmed',
       conversationId, nativeSessionId: nativeId, legacy: 'pre-checkpoint transcript must not be adopted or changed', transcriptMapped: false });
-    expect(result.schemaVersion, 'transcript state requires an explicit versioned migration, not a replacement private database').toBe(2);
+    expect(result.schemaVersion, 'the additive v1 → v2 → v3 chain must retain the existing private database').toBe(3);
+  });
+
+  it('preserves v2 insertion order for tied-time commands through v3 migration, a fresh Bun process, VACUUM and subsequent admission without changing old facts', async () => {
+    const bId = '00000000-0000-4000-8000-000000000001';
+    const stopId = '88888888-8888-4888-8888-888888888888';
+    const formId = '66666666-6666-4666-8666-666666666666';
+    const newId = '77777777-7777-4777-8777-777777777777';
+    const expectedIds = ['22222222-2222-4222-8222-222222222222', commandId, stopId, bId, formId];
+    const seed = await child<OrderMigrationReport>('migrate-v2-order', 'order-migration.json');
+    expect(seed.versionBefore).toBe(2);
+    expect(seed.orderTableBefore, 'a real historical v2 input must not already contain v3 order metadata').toBe(false);
+    expect(seed.schemaVersion).toBe(3);
+    expect(seed.insertionIds, 'observe old SQLite insertion order before the migration').toEqual(expectedIds);
+    const a = seed.before.commands.find(command => command.command_id === commandId);
+    const b = seed.before.commands.find(command => command.command_id === bId);
+    expect(a).toMatchObject({ state: 'cancelled-before-delivery', dispatch_attempted: 0, original_type: 'blob' });
+    expect(b).toMatchObject({ state: 'completed', dispatch_attempted: 1, original_type: 'blob' });
+    if (!a || !b) throw new Error('fixture must retain both ordered originals');
+    expect(a.registered_at).toBe(b.registered_at);
+    expect(commandId > bId, 'UUID order deliberately contradicts insertion order').toBe(true);
+    expect(a.original_hex).not.toBe(b.original_hex);
+    for (const command of seed.before.commands.filter(command => command.original_type === 'blob')) {
+      if (command.original_hex === null) throw new Error('fixture original BLOB missing');
+      const bytes = Buffer.from(command.original_hex, 'hex');
+      const payload = command.kind === 'form-reply' ? JSON.stringify({ conversationId, decisionId: command.decision_id,
+        answer: JSON.parse(bytes.toString('utf8')) }) : bytes;
+      expect(command.payload_sha256).toBe(sha(payload));
+    }
+    expect(seed.before.owner).toMatchObject({ conversation_id: conversationId, native_session_id: nativeId,
+      vault_directory: join(root, 'vault'), creation_epoch: epoch, creation_state: 'ready' });
+    expect(JSON.parse(seed.before.owner.owner_marker_json)).toEqual({ owner: 'memory-loop', conversationId, epoch,
+      installationId: seed.before.installationId });
+    expect(seed.before.commands.find(command => command.command_id === stopId)).toMatchObject({ state: 'cancelled-before-delivery', dispatch_attempted: 0 });
+    expect(seed.before.commands.find(command => command.command_id === formId)).toMatchObject({ state: 'replied', dispatch_attempted: 1 });
+    const checkpoint = seed.before.transcript;
+    const chunks = Buffer.concat(seed.before.chunks.map(chunk => Buffer.from(chunk.hex, 'hex')));
+    expect(checkpoint).toMatchObject({ creation_state: 'owned', pending_entry_id: `user:${bId}`, pending_state: 'ready',
+      pending_length: chunks.length, pending_sha256: sha(chunks) });
+    expect(seed.before.entries.map(entry => entry.entry_id)).toEqual([`user:${commandId}`]);
+    const file = Buffer.from(seed.before.fileHex, 'hex');
+    expect(checkpoint.confirmed_sha256).toBe(sha(file.subarray(0, checkpoint.confirmed_offset)));
+    expect(file.subarray(checkpoint.confirmed_offset)).toEqual(chunks.subarray(0, 7));
+    expect(seed.after, 'migration must preserve every old command, receipt, BLOB, timestamp, ownership and pending/checkpoint field').toEqual(seed.before);
+    expect(seed.registryIds).toEqual(expectedIds);
+    expect(seed.order.map(row => row.commandId)).toEqual(expectedIds);
+    expect(new Set(seed.order.map(row => row.sequence)).size).toBe(expectedIds.length);
+    for (const [index, row] of seed.order.entries()) {
+      expect(row.conversationId).toBe(conversationId);
+      expect(Number.isSafeInteger(row.sequence)).toBe(true);
+      expect(row.sequence).toBeGreaterThan(index ? seed.order[index - 1].sequence : 0);
+    }
+
+    const reopened = await child<OrderReopenReport>('reopen-v3-order', 'order-reopened.json');
+    expect(reopened.pid).not.toBe(seed.pid);
+    expect(reopened.schemaVersion).toBe(3);
+    expect(reopened.vacuumIntegrity).toBe('ok');
+    expect(reopened.before).toEqual(seed.after);
+    expect(reopened.afterVacuum).toEqual(seed.after);
+    expect(reopened.registryBefore).toEqual(expectedIds);
+    expect(reopened.registryAfterVacuum).toEqual(expectedIds);
+    expect(reopened.orderBefore).toEqual(seed.order);
+    expect(reopened.orderAfterVacuum).toEqual(seed.order);
+    expect(reopened.registryAfterNew).toEqual([...expectedIds, newId]);
+    expect(reopened.registryAfterReopen).toEqual([...expectedIds, newId]);
+    expect(reopened.orderAfterNew.slice(0, expectedIds.length)).toEqual(seed.order);
+    expect(reopened.orderAfterNew.at(-1)).toMatchObject({ commandId: newId, conversationId });
+    expect(reopened.orderAfterNew.at(-1)?.sequence).toBeGreaterThan(Math.max(...seed.order.map(row => row.sequence)));
+    const { commands: afterCommands, ...afterFacts } = reopened.afterNew;
+    const { commands: oldCommands, ...oldFacts } = seed.after;
+    expect(afterFacts, 'new admission cannot consume old pending append/checkpoint work or rewrite its file').toEqual(oldFacts);
+    expect(afterCommands.filter(command => command.command_id !== newId)).toEqual(oldCommands);
+    expect(afterCommands.find(command => command.command_id === newId)).toMatchObject({ kind: 'send', state: 'registered',
+      dispatch_attempted: 0, original_type: 'blob', original_hex: Buffer.from('new command after migration 🧠').toString('hex'),
+      payload_sha256: sha('new command after migration 🧠'), registered_at: a.registered_at,
+      registration_epoch: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' });
   });
 
   it('commits exclusive-creation intent and pending header before the filesystem create, then binds acquired file identity before writing', async () => {

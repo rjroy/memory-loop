@@ -13,29 +13,32 @@ const fingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeM
 interface Candidate { id: string[]; stat: Stats }
 export interface GenerationExcerpt { noteId: string[]; modifiedAt: string; text: string }
 
-/** Metadata traversal and payloads are independently bounded. Never use the unbounded UI tree. */
+/** Traverse the vault asynchronously while bounding retained candidates and payloads. */
 export async function recentGenerationContext(options: {
   directory: string; transcriptDirectory: readonly string[]; limits: GroundGenerationConfig['context'];
   state: Pick<GroundGenerationState, 'isTranscript'>; now: number; signal: AbortSignal;
 }): Promise<GenerationExcerpt[]> {
   const { directory, limits, signal } = options;
+  const started = Date.now();
+  const checkAbort = () => { if (signal.aborted) throw new Error('context stopped'); };
+  checkAbort();
   if (await realpath(directory) !== directory) throw new GroundGenerationError('conflict');
   const root = await open(directory, directories);
   let original: Stats;
   try { original = await root.stat(); } catch (error) { await root.close(); throw error; }
   const check = async () => {
-    if (signal.aborted) throw new Error('context stopped');
+    checkAbort();
     if (!same(original, await lstat(directory)) || !same(original, await root.stat())) throw new GroundGenerationError('conflict');
   };
   const excluded = (id: readonly string[]) => [['03_Resources', 'Memory-Loop'], options.transcriptDirectory].some(prefix => prefix.every((part, index) => id[index] === part));
   const candidates: Candidate[] = [];
   const after = options.now - limits.lookbackDays * 86400000;
-  let visited = 0;
+  let visited = 0; let selected = 0; let status: 'failed' | 'cancelled' | 'ready' = 'failed';
   async function walk(handle: FileHandle, parent: string[]): Promise<void> {
     if (parent.length > 32) throw new GroundGenerationError('configuration');
     const entries = await opendir(path(handle), { bufferSize: 32 });
     for await (const entry of entries) {
-      if (++visited > 10000) throw new GroundGenerationError('configuration');
+      visited++;
       await check();
       if (!isVaultComponent(entry.name)) continue;
       const id = [...parent, entry.name]; if (excluded(id)) continue;
@@ -47,7 +50,8 @@ export async function recentGenerationContext(options: {
         try {
           const stat = await file.stat();
           if (!stat.isFile() || stat.nlink !== 1 || stat.mtimeMs < after || stat.mtimeMs > options.now) continue;
-          if (options.state.isTranscript(directory, id)) continue;
+          checkAbort(); const transcript = options.state.isTranscript(directory, id); checkAbort();
+          if (transcript) continue;
           candidates.push({ id, stat });
           candidates.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs || (a.id.join('/') < b.id.join('/') ? -1 : 1));
           if (candidates.length > limits.maxNotes) candidates.pop();
@@ -56,11 +60,12 @@ export async function recentGenerationContext(options: {
     }
   }
   try {
-    await check(); await walk(root, []);
+    await check(); await walk(root, []); await check();
     const result: GenerationExcerpt[] = []; let remaining = limits.maxTotalBytes;
     for (const candidate of candidates) {
       if (!remaining) break;
-      if (options.state.isTranscript(directory, candidate.id)) continue;
+      checkAbort(); const transcript = options.state.isTranscript(directory, candidate.id); checkAbort();
+      if (transcript) continue;
       const held: Array<{ handle: FileHandle; named: string; stat: Stats }> = [];
       try {
         let parent = root;
@@ -94,6 +99,12 @@ export async function recentGenerationContext(options: {
       } catch { if (signal.aborted) throw new Error('context stopped'); /* Skip a changed/unreadable candidate, never widen the search. */ }
       finally { for (const node of held.reverse()) await node.handle.close(); }
     }
-    await check(); return result;
-  } finally { await root.close(); }
+    await check(); selected = result.length; status = 'ready'; return result;
+  } catch (error) {
+    if (signal.aborted) status = 'cancelled';
+    throw error;
+  } finally {
+    console.info('ground_generation_context_outcome', { status, scanned: visited, selected, durationMs: Math.max(0, Date.now() - started) });
+    await root.close();
+  }
 }

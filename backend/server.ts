@@ -39,6 +39,7 @@ interface PreparedThink {
   conversations?: ConversationService;
   close(): Promise<void>;
   startRecovery(): void;
+  groundDemand?(job: 'questions' | 'quotes'): void;
 }
 const unavailableThink = (error: ThinkUnavailableCode): PreparedThink => ({ think: { error }, async close() {}, startRecovery() {} });
 
@@ -115,7 +116,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     console.info('think_setup_outcome', { status: 'ready' });
     // Jobs borrow Think's private connection; drain them BEFORE Think closes it.
     let closing: Promise<void> | undefined;
-    return { think: service, close() {
+    return { think: service, groundDemand(job) { jobs.find(entry => entry.job === job)?.runner.demand(); }, close() {
       closing ??= (async () => {
         try {
           const results = await Promise.allSettled(jobs.map(({ runner }) => runner.close()));
@@ -187,7 +188,7 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
   }
   try {
     const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault,
-      think: preparedThink.think, conversations: preparedThink.conversations, capture, ground, groundError });
+      think: preparedThink.think, conversations: preparedThink.conversations, capture, ground, groundError, groundDemand: preparedThink.groundDemand });
     return { fetch, close, startRecovery: () => preparedThink.startRecovery() };
   } catch (error) {
     await close();

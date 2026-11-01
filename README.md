@@ -164,7 +164,9 @@ acknowledgements remain uncertain and are never automatically replayed. Native
 OpenCode remains authoritative for assistant history and execution. The body
 cache is disposable, not the durable original-input store.
 
-The current schema is **v9**. V9 extends preflight budgets to both jobs while
+The current schema is **v10**. V10 links new attempts to local freshness periods;
+legacy attempts retain their original identities and pending work is reconciled on
+the next relevant card read. V9 extends preflight budgets to both jobs while
 preserving v8 question identities, budgets, publication bytes/hashes and temp/witness
 ownership; existing question plans need no rewrite. Its additive migrations preserve
 prior originals, ownership, command ordering/timestamps, leases, deletion facts and transcript
@@ -217,21 +219,18 @@ history is not durable browser draft storage: unsent drafts still do not survive
 a hard reload or browser closure. Ground's Recent conversations card provides
 explicit Resume for eligible registered chats; it does not import legacy chats.
 
-#### Scheduled questions and quotes: opt-in daemon configuration
+#### On-demand questions and quotes: daemon configuration
 
-Daily questions (`memory-loop-9ya.7`) and weekly quotes (`memory-loop-9ya.8`) are
-implemented and verified in source/owned fixtures. Merge this **disabled,
-example-only** `ground` object at the authorized handoff; do not
-replace or edit the user's private configuration to try it:
+To enable both jobs, merge this example into the daemon's private configuration:
 
 ```json
 {
   "ground": {
     "generation": {
-      "enabled": false,
+      "enabled": true,
       "timeZone": "server",
-      "questions": { "schedule": "0 6 * * *", "count": 5 },
-      "quotes": { "schedule": "15 6 * * 1", "count": 5 },
+      "questions": { "count": 5 },
+      "quotes": { "count": 5 },
       "context": {
         "lookbackDays": 7,
         "maxNotes": 20,
@@ -243,35 +242,40 @@ replace or edit the user's private configuration to try it:
 }
 ```
 
-These are the current configurable defaults. Omission leaves generation disabled;
-the single `enabled` flag controls both jobs. Quotes use model training knowledge
+The example opts in explicitly: omission or `enabled: false` leaves generation disabled
+to avoid sending vault excerpts to a provider without configuration. The single
+`enabled` flag controls both jobs. The daemon reads `<project-root>/.memory-loop/config.json`;
+`--project-root` selects that root and defaults to the source checkout root. Development
+and production are isolated only when launched with different project roots and vaults.
+`MEMORY_LOOP_TRANSPORT_FILE` selects transport separately and does not select the vault
+configuration; no environment-specific configuration overlay is loaded automatically.
+Restart the daemon after editing its configuration. Quotes use model training knowledge
 plus recent vault context for personally relevant themes, with accurate attribution
 requested from the model, **not independently verified**. Both counts default to
 five and are configurable from 1–50; valid partial and empty batches are accepted.
 External search, source fetching and evidence/API-key workflows are removed from
 the quote scope, not deferred.
-Publication and generation activation are separate decisions. This documentation
-enables nothing and does not establish the current private setting.
-
-At that handoff, `enabled: true` plus daemon restart activates both jobs using the
-existing configured OpenCode service and Think agent/model selection/native
-defaults. There is no extra service, browser trigger or job-control UI. Invalid
+With `enabled: true`, Ground uses the existing configured OpenCode service and Think
+agent/model selection/native defaults. Reading the question or quote card requests
+freshness for that card in the background; the saved card is returned without waiting.
+There is no extra service or job-control UI. Invalid
 generation settings or a failed job do not disable otherwise healthy Ground
 reads, Capture, Recall or Think. Think's full-permissive sessions are unchanged;
 generation uses separate verified deny-all sessions, not resumable Think chats or
 user transcripts. Supplied excerpts reach the configured native service/provider;
 its own history/retention is outside the application's private-state guarantee.
 
-Pinned **Croner 11.0.0** calculates five-field schedules in the configured IANA
-timezone; `server` resolves the daemon's named timezone at startup, not the
-browser's. Defaults are questions daily at **06:00** and quotes on **Monday at
-06:15**. Scheduling begins only after daemon listener ownership. Each job has its
-own timer, pending work and retry budget, so pending/failed quotes do not stall
-questions. Startup, including first enablement, reconciles unfinished work and
-processes only the latest due occurrence per job—no missed-day flood or overlap.
-Pre-admission preflight allows at most three automatic attempts per job occurrence,
-with 30-second then 60-second backoff; its budget survives restart. Unknown native
-admission is reconciled by the same persisted IDs, never automatically resent.
+The configured IANA timezone defines a local calendar day for questions and a
+Monday-starting local week for quotes; `server` resolves the daemon's named timezone
+at startup, not the browser's. Legacy `schedule` fields remain accepted and validated
+for compatibility but no longer control generation. A completed period is remembered
+across restarts; missed periods are not backfilled. A read reconciles unfinished work
+before starting the current period. Jobs are independent and concurrent reads coalesce.
+Pre-admission preflight uses bursts of at most three automatic attempts with 30-second
+then 60-second backoff; another read can retry after a burst is exhausted. Invalid model
+output can be retried on a later read in the same period. Unsafe targets and publication
+conflicts fail closed. Unknown native admission is reconciled by the same persisted IDs,
+never automatically resent.
 Shutdown stops new attempts, not necessarily already-running native/provider work.
 
 Context is bounded recent Markdown, newest modification time first with note-ID

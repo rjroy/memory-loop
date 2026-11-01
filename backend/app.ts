@@ -22,6 +22,7 @@ export interface AppOptions {
   capture?: CaptureWriter;
   ground?: GroundReader;
   groundError?: 'configuration' | 'io';
+  groundDemand?: (job: 'questions' | 'quotes') => void;
   think?: ThinkService | { error: ThinkUnavailableCode };
   /** Registry-only capabilities remain usable without an authorized native attachment. */
   conversations?: ConversationService;
@@ -126,6 +127,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
       let result;
       try { result = options.ground ? kind === 'captures' ? await options.ground.captures() : await options.ground.resource(kind) : { state: 'unavailable' as const, reason: options.groundError ?? 'configuration' }; }
       catch { result = { state: 'unavailable' as const, reason: 'io' as const }; }
+      if (kind === 'prompts' || kind === 'inspiration') options.groundDemand?.(kind === 'prompts' ? 'questions' : 'quotes');
       console.info('ground_read_outcome', { resource: path, state: result.state });
       return Response.json(result, { status: result.state === 'unavailable' ? 503 : 200 });
     });

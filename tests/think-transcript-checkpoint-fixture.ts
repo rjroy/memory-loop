@@ -410,6 +410,7 @@ async function migrateV5Generation(root: string): Promise<V5MigrationReport> {
   const deletedConversation = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
   const deletedCommand = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
   try {
+    db.run('DROP TABLE ground_generation_period_attempts');
     db.run('DROP TABLE ground_generation_publications');
     db.run('DROP TABLE ground_generation_preflight');
     db.run('DROP TABLE ground_generation_attempts');
@@ -457,7 +458,7 @@ async function migrateV6Preflight(root: string): Promise<V6PreflightReport> {
   } finally { seed.close(); }
   // Remove only v7/v8's empty additive tables from this test-owned database.
   const db = new Database(database, { readwrite: true, create: false });
-  try { db.run('DROP TABLE ground_generation_publications'); db.run('DROP TABLE ground_generation_preflight'); db.run('PRAGMA user_version = 6'); }
+  try { db.run('DROP TABLE ground_generation_period_attempts'); db.run('DROP TABLE ground_generation_publications'); db.run('DROP TABLE ground_generation_preflight'); db.run('PRAGMA user_version = 6'); }
   finally { db.close(); }
   const beforeVersion = probe(database).schemaVersion;
   const occurrence = { directory: vault, timeZone: 'UTC', scheduledAt: now };

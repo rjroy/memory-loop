@@ -227,6 +227,7 @@ try {
     store.close();
     const db = new Database(join(project, '.memory-loop', 'application.sqlite'));
     try {
+      db.exec('DROP TABLE ground_generation_period_attempts');
       if (scenario === 'v7-migration') db.exec('DROP TABLE ground_generation_publications');
       else db.query("UPDATE ground_generation_publications SET plan_json = json_remove(plan_json, '$.job') WHERE attempt_id = ?").run(attempt.attemptId);
       db.exec(`CREATE TABLE ground_generation_preflight_old (

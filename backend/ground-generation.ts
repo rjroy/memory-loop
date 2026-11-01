@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { Cron } from 'croner';
 import type { GroundGenerationConfig } from './ground-generation-config';
 import { failedGenerationPreflight, generationOccurrenceId, reserveGenerationPreflight,
   type GroundGenerationState, type GenerationSelection, type GroundGenerationPreflight, type GenerationPreflightFact } from './ground-generation-state';
@@ -9,7 +8,15 @@ import { GroundGenerationError } from './ground-generation-error';
 import type { GroundQuestionPublisher } from './ground-generation-publisher';
 import type { GenerationJob } from './ground-generation-formats';
 
-/** One resident loop per explicit job; timers, pending work and budgets never block the sibling. */
+/** UTC-encoded local calendar date, not a wall-clock instant. Weeks start on Monday. */
+export function generationPeriod(job: GenerationJob, timeZone: string, now: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const number = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find(part => part.type === type)?.value);
+  const date = Date.UTC(number('year'), number('month') - 1, number('day'));
+  return job === 'questions' ? date : date - (new Date(date).getUTCDay() + 6) % 7 * 86400000;
+}
+
+/** One demand-driven runner per job; pending reconciliation never blocks its sibling. */
 export function createGroundGeneration(options: {
   /** Default retains the original standalone question runner API. */
   job?: GenerationJob;
@@ -21,12 +28,14 @@ export function createGroundGeneration(options: {
 }) {
   const job = options.job ?? 'questions'; const settings = options.config[job];
   let started = false; let closed = false;
-  let cron: Cron | undefined; let poll: ReturnType<typeof setTimeout> | undefined;
+  let poll: ReturnType<typeof setTimeout> | undefined;
   let work: Promise<void> | undefined; let controller: AbortController | undefined;
+  let activePeriod: number | undefined; let queuedPeriod: number | undefined;
   const local = new Map<string, GenerationPreflightFact>();
   const preflight: GroundGenerationPreflight = options.preflight ?? {
-    beginPreflight(occurrence, now) {
-      const id = generationOccurrenceId(occurrence); const result = reserveGenerationPreflight(local.get(id) ?? null, now);
+    beginPreflight(occurrence, now, retryExhausted) {
+      const id = generationOccurrenceId(occurrence); const prior = local.get(id) ?? null;
+      const result = reserveGenerationPreflight(retryExhausted && prior?.attempts === 3 && !prior.blocked ? null : prior, now);
       if (result.allowed) local.set(id, result.fact); return result;
     },
     failedPreflight(occurrence, now, retryable) {
@@ -36,10 +45,14 @@ export function createGroundGeneration(options: {
     },
   };
   const check = () => { if (closed || controller?.signal.aborted) throw new Error('generation stopped'); };
-  function run(): Promise<void> {
+  function run(period: number, retryExhausted = false): Promise<void> {
     if (closed) return Promise.resolve();
-    if (work) return work;
+    if (work) {
+      if (retryExhausted && period !== activePeriod) queuedPeriod = period;
+      return work;
+    }
     if (poll) { clearTimeout(poll); poll = undefined; }
+    activePeriod = period;
     const current = new AbortController(); controller = current;
     let observeAgain = false; let retryAt: number | null = null;
     work = (async () => {
@@ -69,17 +82,15 @@ export function createGroundGeneration(options: {
           }
           check(); observeAgain = publication === 'pending';
           console.info('ground_generation_outcome', { job, attemptId: pending.attemptId, status: publication });
-          if (observeAgain) return;
-          // A recovered terminal occurrence releases the reservation; catch up only the latest due one below.
+          if (observeAgain || publication === 'failed') return;
+          // A recovered terminal occurrence releases the reservation for the demanded period below.
         }
       }
       const instant = Date.now();
-      // previousRuns is exclusive and strips milliseconds. Include an exact due boundary
-      // using two library-computed candidates, filtering out a possible next-second future run.
-      const latest = cron?.previousRuns(2, new Date(instant + 1000)).find(date => date.getTime() <= instant);
-      if (!latest) return;
-      const occurrence = { ...(options.job ? { job } : {}), directory: options.directory, timeZone: options.config.timeZone, scheduledAt: latest.getTime() };
-      const reservation = preflight.beginPreflight(occurrence, instant);
+      const scheduledAt = options.state.nextPeriod ? options.state.nextPeriod(job, options.directory, options.config.timeZone, period) : period;
+      if (scheduledAt === null) return;
+      const occurrence = { ...(options.job ? { job } : {}), directory: options.directory, timeZone: options.config.timeZone, scheduledAt, period };
+      const reservation = preflight.beginPreflight(occurrence, instant, retryExhausted);
       if (!reservation.allowed) { retryAt = reservation.fact.retryAt; return; }
       const excerpts = await (async () => {
         try {
@@ -118,9 +129,11 @@ export function createGroundGeneration(options: {
       if (error instanceof GroundGenerationError && error.code !== 'unavailable') observeAgain = false;
       if (!closed) console.info('ground_generation_outcome', { job, status: error instanceof GroundGenerationError ? error.code : 'unavailable_or_uncertain' });
     }).finally(() => {
-      work = undefined; controller = undefined;
+      work = undefined; controller = undefined; activePeriod = undefined;
+      const queued = queuedPeriod; queuedPeriod = undefined;
+      if (!closed && queued !== undefined) { void run(queued, true); return; }
       const next = observeAgain ? 30000 : retryAt === null ? null : Math.max(1, retryAt - Date.now());
-      if (!closed && next !== null) { poll = setTimeout(() => { poll = undefined; void run(); }, next); poll.unref(); }
+      if (!closed && next !== null) { poll = setTimeout(() => { poll = undefined; void run(period); }, next); poll.unref(); }
     });
     return work;
   }
@@ -128,11 +141,10 @@ export function createGroundGeneration(options: {
     start() {
       if (started || closed) return;
       started = true;
-      cron = new Cron(settings.schedule, { timezone: options.config.timeZone, mode: '5-part', protect: true, unref: true }, () => run());
-      void run();
     },
+    demand() { if (started && !closed) void run(generationPeriod(job, options.config.timeZone, Date.now()), true); },
     async close() {
-      closed = true; cron?.stop(); if (poll) clearTimeout(poll); controller?.abort(); await work;
+      closed = true; if (poll) clearTimeout(poll); controller?.abort(); await work;
       // Aborting our reads/transport does not interrupt the native session or its provider.
     },
   };

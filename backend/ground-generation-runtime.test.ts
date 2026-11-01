@@ -15,7 +15,7 @@ const runtime = resolve(import.meta.dirname, 'runtime.ts');
 const clock = resolve(import.meta.dirname, '../tests/ground-generation-clock.ts');
 const serverModule = resolve(import.meta.dirname, 'server.ts');
 const now = Date.parse('2032-04-17T10:23:59.500Z');
-const due = Date.parse('2032-04-17T10:23:00.000Z');
+const due = Date.parse('2032-04-17T00:00:00.000Z');
 const serviceToken = 'a'.repeat(64);
 const password = 'owned-generation-fixture-only';
 const authorization = `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`;
@@ -299,6 +299,122 @@ async function controls(state: Fixture): Promise<void> {
   const tree = await get('/api/vault/tree'); expect(tree.status).toBe(200);
 }
 
+describe('lazy Ground freshness', () => {
+  const settings = { ...generation, timeZone: 'America/Los_Angeles',
+    questions: { schedule: '0 10 * * *', count: 2 }, quotes: { schedule: '0 9 * * 1', count: 1 } };
+  const saturday = Date.parse('2032-04-17T23:30:00.000Z');
+  const sunday = Date.parse('2032-04-18T08:00:00.000Z');
+  const monday = Date.parse('2032-04-19T08:00:00.000Z');
+  const quotePath = (state: Fixture) => join(state.vault, '03_Resources', 'Memory-Loop', 'inspiration.md');
+  const questionCandidate = JSON.stringify([{ text: 'A new owned question?' }]);
+  const quoteCandidate = JSON.stringify([{ text: 'A new owned quote', attribution: 'Owned author' }]);
+  const quoteSends = (state: Fixture) => state.sends.filter(send => probeJob(send, 'quotes'));
+  const probeJob = (send: Fixture['sends'][number], job: string) => send.before.attempts.some(item => item.job === job && item.nativeSessionId === send.sessionId);
+  const open = (state: Fixture) => Promise.all([serviceGet(state, '/api/ground/prompts'), serviceGet(state, '/api/ground/inspiration')]);
+  async function settle(owned: OwnedChild, state: Fixture, id: string, expectedQuestions: number, expectedQuotes: number, newJobs: number) {
+    expect(await until(() => questionSends(state).length === expectedQuestions && quoteSends(state).length === expectedQuotes, 2000)).toBe(true);
+    expect(await until(() => {
+      const admitted = probe(state.database).attempts.filter(item => item.occurrenceState === 'admitted').length;
+      const armed = owned.output.split('ground_fixture_generation_poll_armed').length - 1;
+      return admitted === newJobs && armed >= newJobs;
+    }, 2000), 'each new job must be admitted and have armed its observation timer before advancing the fixture clock').toBe(true);
+    owned.child.stdin.write(`${JSON.stringify({ id, advanceMs: 30000 })}\n`);
+    expect(await until(() => owned.output.includes(`"id":"${id}"`))).toBe(true);
+    expect(await until(() => {
+      const attempts = probe(state.database).attempts;
+      return attempts.filter(item => item.job === 'questions' && item.occurrenceState === 'settled').length === expectedQuestions &&
+        attempts.filter(item => item.job === 'quotes' && item.occurrenceState === 'settled').length === expectedQuotes;
+    }, 2000)).toBe(true);
+  }
+
+  it.each([['prompts', 'questions'], ['inspiration', 'quotes']] as const)(
+    'a read of %s alone requests only %s freshness', async (path, job) => {
+      const state = await fixture(settings); const owned = launch(state, false, saturday); await ready(owned, false, saturday);
+      expect((await serviceGet(state, `/api/ground/${path}`)).status).toBe(200);
+      expect(await until(() => state.sends.length === 1, 2000)).toBe(true);
+      expect(state.sends[0].before.attempts).toEqual(expect.arrayContaining([expect.objectContaining({ job })]));
+      await sleep(100);
+      expect(state.sends).toHaveLength(1);
+      expect(state.unexpected).toEqual([]);
+    }, 20000);
+
+  it('does no generation at startup; concurrent opens return existing cards without waiting and coalesce uncertain submissions', async () => {
+    const state = await fixture(settings);
+    await writeFile(quotePath(state), '## Quote\n> Existing owned quote\n\nAttribution: Owned author\n');
+    const first = launch(state, false, saturday); await ready(first, false, saturday);
+    await sleep(150);
+    expect(state.sends, 'startup alone must not request generation').toEqual([]);
+    const reads = await Promise.all(Array.from({ length: 5 }, () => open(state)));
+    for (const [questions, quotes] of reads) {
+      expect(questions.status).toBe(200);
+      expect(JSON.parse(questions.body)).toMatchObject({ state: 'ready', data: { question: { text: 'An existing owned question?' } } });
+      expect(quotes.status).toBe(200);
+      expect(JSON.parse(quotes.body)).toMatchObject({ state: 'ready', data: { quote: { text: 'Existing owned quote' } } });
+    }
+    expect(await until(() => questionSends(state).length === 1 && quoteSends(state).length === 1, 2000)).toBe(true);
+    await stop(first);
+    const second = launch(state, false, saturday + 60000); await ready(second, false, saturday + 60000);
+    await Promise.all([open(state), open(state)]); await sleep(150);
+    expect(questionSends(state)).toHaveLength(1); expect(quoteSends(state)).toHaveLength(1);
+    expect(state.unexpected).toEqual([]);
+  }, 20000);
+
+  it('persists completed local periods across restarts and refreshes daily questions and Monday weekly quotes', async () => {
+    const state = await fixture(settings); state.candidate = questionCandidate; state.quoteCandidate = quoteCandidate;
+    const first = launch(state, false, saturday); await ready(first, false, saturday); await open(state);
+    await settle(first, state, 'settle-saturday', 1, 1, 2); await stop(first);
+    const same = launch(state, false, saturday + 3600000); await ready(same, false, saturday + 3600000);
+    await open(state); await sleep(150);
+    expect(questionSends(state)).toHaveLength(1); expect(quoteSends(state)).toHaveLength(1); await stop(same);
+    const nextDay = launch(state, false, sunday); await ready(nextDay, false, sunday); await open(state);
+    await settle(nextDay, state, 'settle-sunday', 2, 1, 1); await stop(nextDay);
+    const nextWeek = launch(state, false, monday); await ready(nextWeek, false, monday); await open(state);
+    await settle(nextWeek, state, 'settle-monday', 3, 2, 2);
+    expect(state.unexpected).toEqual([]);
+  }, 25000);
+
+  it('does not generate a new day merely because reconciliation crosses midnight', async () => {
+    const beforeMidnight = Date.parse('2032-04-17T23:59:50.000Z');
+    const state = await fixture({ ...settings, timeZone: 'UTC' });
+    state.candidate = '[]';
+    const owned = launch(state, false, beforeMidnight); await ready(owned, false, beforeMidnight);
+    expect((await serviceGet(state, '/api/ground/prompts')).status).toBe(200);
+    // The real observation timer fires 20 seconds into the next local day.
+    await settle(owned, state, 'reconcile-after-midnight', 1, 0, 1);
+    expect(await until(() => questionSends(state).length > 1, 500),
+      'reconciliation alone must not submit the new day without another card read').toBe(false);
+    expect(questionFacts(probe(state.database))).toHaveLength(1);
+    expect(questionFacts(probe(state.database))[0]).toMatchObject({ occurrenceState: 'settled' });
+
+    expect((await serviceGet(state, '/api/ground/prompts')).status).toBe(200);
+    expect(await until(() => questionSends(state).length === 2, 2000),
+      'a later explicit card read must request the new local day').toBe(true);
+    expect(questionFacts(probe(state.database))).toHaveLength(2);
+    expect(state.unexpected).toEqual([]);
+  }, 20000);
+
+  it('retries a failed completed candidate on a later open in the same local period', async () => {
+    const state = await fixture(settings);
+    state.candidate = JSON.stringify([{ text: 'Invalid owned question?', extra: 'invalid' }]);
+    state.quoteCandidate = quoteCandidate;
+    const owned = launch(state, false, saturday); await ready(owned, false, saturday); await open(state);
+    expect(await until(() => questionSends(state).length === 1, 2000)).toBe(true);
+    owned.child.stdin.write(`${JSON.stringify({ id: 'observe-invalid', advanceMs: 30000 })}\n`);
+    expect(await until(() => owned.output.includes('"id":"observe-invalid"'))).toBe(true);
+    expect(await until(() => questionFacts(probe(state.database)).some(item => item.occurrenceState === 'failed'), 2000)).toBe(true);
+    expect(await readFile(state.prompts, 'utf8')).toBe(promptsBefore);
+    state.candidate = questionCandidate;
+    await open(state);
+    expect(await until(() => questionSends(state).length === 2, 2000), 'recoverable failure must not consume the day').toBe(true);
+    expect(await until(() => questionFacts(probe(state.database)).some(item => item.occurrenceState === 'admitted'), 2000)).toBe(true);
+    owned.child.stdin.write(`${JSON.stringify({ id: 'observe-retry', advanceMs: 30000 })}\n`);
+    expect(await until(() => owned.output.includes('"id":"observe-retry"'))).toBe(true);
+    expect(await until(() => readFileSync(state.prompts, 'utf8').includes('A new owned question?'), 2000)).toBe(true);
+    expect(await until(() => questionFacts(probe(state.database)).some(item => item.occurrenceState === 'settled'), 2000)).toBe(true);
+    expect(state.unexpected).toEqual([]);
+  }, 20000);
+});
+
 beforeEach(async () => { root = await mkdtemp('/tmp/opencode/ground-generation-runtime-'); });
 afterEach(async () => {
   try {
@@ -320,7 +436,7 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     const originals = Array.from({ length: 50 }, (_, index) => `Owned fictional quote ${index + 1}`);
     await writeFile(inspiration, `# Owned inspiration\n\n${originals.map((text, index) => `## Quote\n> ${text}\n\nAttribution: Fixture author${index === 1 ? '\nSource: [Fixture archive](https://example.test/archive)' : ''}\n`).join('\n')}`);
     state.quoteCandidate = JSON.stringify([{ text: originals[49], attribution: 'Fixture author' }, { text: 'A new fictional owned quote', attribution: 'Another fixture author' }]);
-    const first = launch(state); await ready(first);
+    const first = launch(state); await ready(first); await serviceGet(state, '/api/ground/prompts'); await serviceGet(state, '/api/ground/inspiration');
     const quote = await observeQuote(first, state);
     expect(state.sends.some(send => /\bquestions?\b/i.test(send.text))).toBe(true);
     expect(quote.text).toMatch(/attribution/i);
@@ -331,7 +447,7 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
       metadata: { memoryLoop: { owner: 'memory-loop', purpose: 'ground-generation' } } });
     expect(quote.before.issue).toBeUndefined();
     expect(quote.before.attempts).toEqual(expect.arrayContaining([expect.objectContaining({ job: 'quotes',
-      scheduledAt: Date.parse('2032-04-17T09:00:00.000Z'), nativeSessionId: quote.sessionId, nativeMessageId: quote.id,
+      scheduledAt: Date.parse('2032-04-12T00:00:00.000Z'), nativeSessionId: quote.sessionId, nativeMessageId: quote.id,
       inputSha256: createHash('sha256').update(quote.text).digest('hex'), dispatchAttempted: 1 })]));
     expect(await until(() => readFileSync(inspiration, 'utf8').includes('A new fictional owned quote'), 2000)).toBe(true);
     const published = await readFile(inspiration, 'utf8');
@@ -364,7 +480,7 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     const original = '## Quote\n> Owned fictional legacy quote\n\nAttribution: Fixture author\nSource: [Fixture archive](https://example.test/archive)\n';
     await writeFile(inspiration, original); const before = await lstat(inspiration);
     state.quoteCandidate = JSON.stringify([{ text: 'A fictional invalid quote', attribution: '  ' }]);
-    const owned = launch(state); await ready(owned); await observeQuote(owned, state);
+    const owned = launch(state); await ready(owned); await serviceGet(state, '/api/ground/prompts'); await serviceGet(state, '/api/ground/inspiration'); await observeQuote(owned, state);
     expect(await until(() => probe(state.database).attempts.some(item => item.job === 'quotes' && item.occurrenceState === 'failed'), 2000)).toBe(true);
     expect(await readFile(inspiration, 'utf8')).toBe(original);
     expect((await lstat(inspiration)).ino).toBe(before.ino);
@@ -378,7 +494,7 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     const settings = { ...generation, questions: { schedule: '0 10 * * *', count: 2 } };
     const state = await fixture(settings);
     state.candidate = JSON.stringify([{ text: 'Owned paginated question?' }]); state.paginated = true;
-    const owned = launch(state); await ready(owned);
+    const owned = launch(state); await ready(owned); await serviceGet(state, '/api/ground/prompts');
     expect(await until(() => questionSends(state).length === 1, 1500)).toBe(true);
     expect(await until(() => questionFacts(probe(state.database))[0]?.occurrenceState === 'admitted', 1500)).toBe(true);
     owned.child.stdin.write(`${JSON.stringify({ id: 'observe-pages', advanceMs: 30000 })}\n`);
@@ -401,7 +517,7 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     const originals = Array.from({ length: 50 }, (_, index) => `Owned fixture question ${index + 1}?`);
     await writeFile(state.prompts, `# Owned questions\n\n${originals.map(text => `## Question\n${text}\n`).join('\n')}`);
     state.candidate = JSON.stringify([{ text: originals[49] }, { text: 'A new owned fixture question?' }]);
-    const first = launch(state); await ready(first); await observeCompletion(first, state);
+    const first = launch(state); await ready(first); await serviceGet(state, '/api/ground/prompts'); await observeCompletion(first, state);
     expect(await until(() => existsSync(state.prompts) && readFileSync(state.prompts, 'utf8').includes('A new owned fixture question?'), 2000),
       'validated candidate must be published to the actual owned resource').toBe(true);
     const published = await readFile(state.prompts, 'utf8');
@@ -426,7 +542,7 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     const state = await fixture(settings);
     state.candidate = JSON.stringify([{ text: 'Private invalid fixture candidate?', extra: 'fixture-private-field' }]);
     const before = await lstat(state.prompts);
-    const owned = launch(state); await ready(owned); await observeCompletion(owned, state);
+    const owned = launch(state); await ready(owned); await serviceGet(state, '/api/ground/prompts'); await observeCompletion(owned, state);
     expect(await until(() => questionFacts(probe(state.database))[0]?.occurrenceState === 'failed', 2000),
       'invalid completed native output must be recorded as a safe failed outcome').toBe(true);
     expect(await readFile(state.prompts, 'utf8')).toBe(promptsBefore);
@@ -441,7 +557,7 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     const settings = { ...generation, questions: { schedule: '0 10 * * *', count: 2 } };
     const state = await fixture(settings); await rm(state.prompts);
     state.candidate = '[]';
-    const first = launch(state); await ready(first); await observeCompletion(first, state);
+    const first = launch(state); await ready(first); await serviceGet(state, '/api/ground/prompts'); await observeCompletion(first, state);
     expect(await until(() => questionFacts(probe(state.database))[0]?.occurrenceState === 'settled', 2000),
       'valid empty candidate batch must settle without publishing a file').toBe(true);
     expect(existsSync(state.prompts)).toBe(false);
@@ -452,12 +568,12 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     expect(state.unexpected).toEqual([]);
   }, 20000);
 
-  it('GROUND-9YA7-01 abandons an older undispatched attempt and admits only the latest due occurrence after restart', async () => {
+  it('abandons an older undispatched attempt and admits the requested current period after restart', async () => {
     const settings = { ...generation, questions: { schedule: '0 10 * * *', count: 2 } };
     const state = await fixture(settings);
     const prepared = launch(state, true); await ready(prepared, true); await stop(prepared);
     const old = Date.parse('2032-04-16T10:00:00.000Z');
-    const latest = Date.parse('2032-04-17T10:00:00.000Z');
+    const latest = Date.parse('2032-04-17T00:00:00.000Z');
     const occurrence = createHash('sha256').update(JSON.stringify(['questions', 'UTC', old])).digest('hex');
     const attempt = randomUUID(); const suffix = attempt.replaceAll('-', '');
     const db = new DatabaseSync(state.database);
@@ -467,7 +583,7 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
       db.prepare(`INSERT INTO ground_generation_attempts(attempt_id, occurrence_id, native_session_id, native_message_id, input_sha256, question_count, requested_context_json)
         VALUES (?, ?, ?, ?, ?, 2, '{}')`).run(attempt, occurrence, `ses_memoryloop_generation_${suffix}`, `msg_memoryloop_generation_${suffix}`, 'b'.repeat(64));
     } finally { db.close(); }
-    const owned = launch(state); await ready(owned);
+    const owned = launch(state); await ready(owned); await serviceGet(state, '/api/ground/prompts');
     expect(await until(() => probe(state.database).attempts.some(item => item.attemptId === attempt && item.occurrenceState === 'failed'))).toBe(true);
     expect(state.sends.some(send => send.id === `msg_memoryloop_generation_${suffix}`)).toBe(false);
     expect(await until(() => questionSends(state).length === 1, 1500), 'new latest-due question must be admitted without waiting for tomorrow').toBe(true);
@@ -475,25 +591,26 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     const facts = probe(state.database);
     expect(facts.issue).toBeUndefined();
     expect(questionFacts(facts)).toHaveLength(2);
-    expect(questionFacts(facts)[0]).toMatchObject({ scheduledAt: old, occurrenceState: 'failed', dispatchAttempted: 0, attemptId: attempt });
-    expect(questionFacts(facts)[1]).toMatchObject({ scheduledAt: latest, dispatchAttempted: 1 });
+    expect(questionFacts(facts)).toEqual(expect.arrayContaining([expect.objectContaining({ scheduledAt: old, occurrenceState: 'failed', dispatchAttempted: 0, attemptId: attempt }),
+      expect.objectContaining({ scheduledAt: latest, dispatchAttempted: 1 })]));
     expect(questionCreates(state)).toHaveLength(1); expect(questionSends(state)).toHaveLength(1);
     expect(questionSends(state)[0].id).not.toBe(`msg_memoryloop_generation_${suffix}`);
     expect(state.unexpected).toEqual([]);
   }, 20000);
 
-  it('admits only the latest due occurrence without a browser, and never duplicates its uncertain prompt on a timer or fresh daemon', async () => {
+  it('persists admission facts on demand and never duplicates an uncertain prompt on a timer or fresh daemon', async () => {
     expect(parseGroundGenerationConfig({ generation }).state).toBe('ready');
     const state = await fixture(); const first = launch(state); await ready(first);
-    // No application HTTP request has occurred: the real runtime's post-listener hook owns this work.
-    await until(() => questionSends(state).length > 0, 1500);
+    await sleep(100);
     const beforeReads = { creates: questionCreates(state).length, sends: questionSends(state).length };
     await controls(state);
+    await serviceGet(state, '/api/ground/prompts');
+    expect(await until(() => questionSends(state).length === 1, 1500)).toBe(true);
     expect(state.unexpected).toEqual([]);
     expect(probe(state.database, false)).toMatchObject({ exists: true, integrity: 'ok', writerAvailable: true,
       thinkRows: { conversations: 0, commands: 0, transcripts: 0 } });
-    expect(beforeReads.sends, 'enabled resident startup must attempt ONE latest-due question prompt without a browser').toBe(1);
-    expect(beforeReads.creates).toBe(1);
+    expect(beforeReads.sends, 'startup must not submit without demand').toBe(0);
+    expect(beforeReads.creates).toBe(0);
     const created = questionCreates(state)[0]; const sent = questionSends(state)[0];
     expect(created.input).toMatchObject({ id: created.id, location: { directory: state.vault }, model,
       metadata: { memoryLoop: { owner: 'memory-loop', purpose: 'ground-generation', installationId: created.before.installationId } },
@@ -512,7 +629,7 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     expect(first.child.exitCode).toBe(0);
     const retained = probe(state.database); expect(retained.issue).toBeUndefined(); expect(questionFacts(retained)).toHaveLength(1);
     expect(questionFacts(retained)[0].occurrenceState).not.toBe('settled');
-    const second = launch(state, false, now + 1000); await ready(second, false, now + 1000); await tick(second, now + 1000); await controls(state);
+    const second = launch(state, false, now + 1000); await ready(second, false, now + 1000); await serviceGet(state, '/api/ground/prompts'); await tick(second, now + 1000); await controls(state);
     await stop(second);
     expect(second.child.exitCode).toBe(0);
     expect(state.unexpected).toEqual([]); expect(questionCreates(state)).toHaveLength(1); expect(questionSends(state)).toHaveLength(1);

@@ -15,6 +15,7 @@ export interface GenerationAttempt {
 export interface GroundGenerationState {
   /** Omission retains the original question-only API. */
   pending(job?: GenerationJob): GenerationAttempt | null;
+  nextPeriod?(job: GenerationJob, directory: string, timeZone: string, period: number): number | null;
   claim(input: GenerationOccurrence & { count: number; inputSha256: string; selection: GenerationSelection }): GenerationAttempt | null;
   creating(attemptId: string): void;
   verified(attemptId: string, selection: GenerationSelection): void;
@@ -23,10 +24,10 @@ export interface GroundGenerationState {
   abandonUndispatched(attemptId: string): void;
   isTranscript(directory: string, noteId: readonly string[]): boolean;
 }
-export interface GenerationOccurrence { job?: GenerationJob; directory: string; timeZone: string; scheduledAt: number }
+export interface GenerationOccurrence { job?: GenerationJob; directory: string; timeZone: string; scheduledAt: number; period?: number }
 export interface GenerationPreflightFact { attempts: number; retryAt: number | null; blocked: boolean }
 export interface GroundGenerationPreflight {
-  beginPreflight(occurrence: GenerationOccurrence, now: number): { allowed: boolean; fact: GenerationPreflightFact };
+  beginPreflight(occurrence: GenerationOccurrence, now: number, retryExhausted?: boolean): { allowed: boolean; fact: GenerationPreflightFact };
   failedPreflight(occurrence: GenerationOccurrence, now: number, retryable: boolean): number | null;
 }
 export type GroundGenerationStore = GroundGenerationState & GroundGenerationPreflight & { readonly publications: GroundGenerationPublicationState };
@@ -85,6 +86,17 @@ export const generationSchemaV9 = `
   DROP TABLE ground_generation_preflight;
   ALTER TABLE ground_generation_preflight_v9 RENAME TO ground_generation_preflight;
 `;
+export const generationSchemaV10 = `
+  CREATE TABLE ground_generation_period_attempts (
+    occurrence_id TEXT PRIMARY KEY NOT NULL REFERENCES ground_generation_occurrences(occurrence_id),
+    period INTEGER NOT NULL CHECK(period >= 0)
+  );
+  CREATE INDEX ground_generation_period_lookup ON ground_generation_period_attempts(period);
+`;
+export function validateGenerationPeriodSchema(db: SQLite): void {
+  db.get('SELECT occurrence_id, period FROM ground_generation_period_attempts LIMIT 0');
+  if (db.get('PRAGMA foreign_key_check(ground_generation_period_attempts)')) fail();
+}
 export function validateGenerationSchema(db: SQLite): void {
   db.get(`SELECT o.occurrence_id, o.job_key, o.time_zone, o.scheduled_at, o.vault_directory, o.state, o.reason,
     a.attempt_id, a.native_session_id, a.native_message_id, a.input_sha256, a.question_count,
@@ -144,6 +156,22 @@ export class SQLiteGroundGeneration implements GroundGenerationStore {
   pending(job: GenerationJob = 'questions'): GenerationAttempt | null {
     return this.read(() => { const row = this.db.get(`${joined} WHERE o.job_key = ? AND o.state NOT IN ('failed', 'settled') LIMIT 1`, job); return row ? decode(row) : null; });
   }
+  nextPeriod(job: GenerationJob, directory: string, timeZone: string, period: number): number | null {
+    return this.read(() => {
+      integer(period);
+      const rows = this.db.all(`SELECT o.state, o.reason, o.scheduled_at, o.vault_directory, p.failure_code
+        FROM ground_generation_period_attempts g JOIN ground_generation_occurrences o ON o.occurrence_id = g.occurrence_id
+        LEFT JOIN ground_generation_attempts a ON a.occurrence_id = o.occurrence_id
+        LEFT JOIN ground_generation_publications p ON p.attempt_id = a.attempt_id
+        WHERE o.job_key = ? AND o.time_zone = ? AND g.period = ? ORDER BY o.scheduled_at`, job, timeZone, period);
+      if (rows.some(row => row.vault_directory !== directory)) return fail();
+      if (rows.some(row => row.state === 'settled' || row.state !== 'failed' ||
+        row.reason !== 'not_dispatched' && row.failure_code !== 'invalid_output')) return null;
+      let scheduledAt = period;
+      while (this.db.get('SELECT 1 FROM ground_generation_occurrences WHERE job_key = ? AND time_zone = ? AND scheduled_at = ?', job, timeZone, scheduledAt)) scheduledAt++;
+      return scheduledAt;
+    });
+  }
   private preflight(occurrence: GenerationOccurrence): GenerationPreflightFact | null {
     const row = this.db.get('SELECT * FROM ground_generation_preflight WHERE occurrence_id = ?', generationOccurrenceId(occurrence));
     if (!row) return null;
@@ -152,11 +180,12 @@ export class SQLiteGroundGeneration implements GroundGenerationStore {
         row.job_key !== (occurrence.job ?? 'questions') || row.time_zone !== occurrence.timeZone || row.scheduled_at !== occurrence.scheduledAt || row.vault_directory !== occurrence.directory) return fail();
     return { attempts, retryAt, blocked };
   }
-  beginPreflight(occurrence: GenerationOccurrence, now: number): ReturnType<GroundGenerationPreflight['beginPreflight']> {
+  beginPreflight(occurrence: GenerationOccurrence, now: number, retryExhausted = false): ReturnType<GroundGenerationPreflight['beginPreflight']> {
     return this.write(() => {
       integer(now); integer(occurrence.scheduledAt);
       const id = generationOccurrenceId(occurrence);
-      const reservation = reserveGenerationPreflight(this.preflight(occurrence), now);
+      const prior = this.preflight(occurrence);
+      const reservation = reserveGenerationPreflight(retryExhausted && prior?.attempts === 3 && !prior.blocked ? null : prior, now);
       if (reservation.allowed) this.db.run(`INSERT INTO ground_generation_preflight(occurrence_id, job_key, time_zone, scheduled_at, vault_directory, attempts, retry_at, blocked)
         VALUES (?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(occurrence_id) DO UPDATE SET attempts = excluded.attempts, retry_at = excluded.retry_at`,
       id, occurrence.job ?? 'questions', occurrence.timeZone, occurrence.scheduledAt, occurrence.directory, reservation.fact.attempts, reservation.fact.retryAt);
@@ -182,6 +211,7 @@ export class SQLiteGroundGeneration implements GroundGenerationStore {
       const attemptId = randomUUID(); const suffix = attemptId.replaceAll('-', '');
       this.db.run(`INSERT INTO ground_generation_occurrences(occurrence_id, job_key, time_zone, scheduled_at, vault_directory, state)
         VALUES (?, ?, ?, ?, ?, 'preparing')`, occurrenceId, job, input.timeZone, input.scheduledAt, input.directory);
+      if (input.period !== undefined) this.db.run('INSERT INTO ground_generation_period_attempts(occurrence_id, period) VALUES (?, ?)', occurrenceId, integer(input.period));
       this.db.run(`INSERT INTO ground_generation_attempts(attempt_id, occurrence_id, native_session_id, native_message_id, input_sha256, question_count, requested_context_json)
         VALUES (?, ?, ?, ?, ?, ?, ?)`, attemptId, occurrenceId, `ses_memoryloop_generation_${suffix}`, `msg_memoryloop_generation_${suffix}`, input.inputSha256,
       input.count, JSON.stringify(input.selection));

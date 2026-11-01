@@ -5,6 +5,16 @@ import { createInterface } from 'node:readline';
 const initial = Number(process.env.GROUND_FIXTURE_NOW);
 if (!Number.isSafeInteger(initial) || initial <= 0) throw new Error('missing owned fixture clock');
 jest.useFakeTimers({ now: initial });
+// A native prompt receipt precedes the runner arming its observation timer. Expose
+// the latter test-owned clock boundary so advancing time cannot race admission.
+const fakeSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
+  const timer = fakeSetTimeout(...args);
+  if (args[1] === 30000 && new Error().stack?.includes('/backend/ground-generation.ts')) {
+    console.info('ground_fixture_generation_poll_armed');
+  }
+  return timer;
+}) as typeof setTimeout;
 let pulses = 0;
 setTimeout(() => pulses++, 500).unref();
 console.info('ground_fixture_clock', JSON.stringify({ now: Date.now(), pulses }));

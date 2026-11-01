@@ -123,6 +123,15 @@ export interface OrderReopenReport {
   registryBefore: string[]; registryAfterVacuum: string[]; registryAfterNew: string[]; registryAfterReopen: string[];
   orderBefore: CommandOrder[]; orderAfterVacuum: CommandOrder[]; orderAfterNew: CommandOrder[];
 }
+export interface V5MigrationReport {
+  beforeVersion: number; afterVersion: number; before: V2Facts; after: V2Facts;
+  beforeOrder: CommandOrder[]; afterOrder: CommandOrder[];
+  beforeProtection: unknown[]; afterProtection: unknown[]; generationRows: number;
+}
+export interface V6PreflightReport {
+  beforeVersion: number; afterVersion: number; oldBefore: unknown; oldAfter: unknown;
+  reservations: Array<{ allowed: boolean; fact: { attempts: number; retryAt: number | null; blocked: boolean } }>;
+}
 
 // Fixed historical migration inputs, never imported from production schema/version constants.
 // v2 retained all v1 tables and added only the three transcript tables below.
@@ -390,6 +399,85 @@ async function migrateV2Order(root: string): Promise<OrderMigrationReport> {
   } finally { state.close(); }
   return { pid: process.pid, versionBefore, orderTableBefore, insertionIds, schemaVersion: probe(join(root, 'project', '.memory-loop', 'application.sqlite')).schemaVersion,
     before, after: v2Facts(root), registryIds: ids, order: commandOrder(root), metadata };
+}
+
+async function migrateV5Generation(root: string): Promise<V5MigrationReport> {
+  // Build the historical v5 schema by removing the empty v6-v8 tables and v6 index
+  // from the existing owned migration fixture, then seed actual v4/v5 durable facts.
+  await migrateV2Order(root);
+  const database = join(root, 'project', '.memory-loop', 'application.sqlite');
+  const db = new Database(database, { readwrite: true, create: false });
+  const deletedConversation = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const deletedCommand = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  try {
+    db.run('DROP TABLE ground_generation_publications');
+    db.run('DROP TABLE ground_generation_preflight');
+    db.run('DROP TABLE ground_generation_attempts');
+    db.run('DROP TABLE ground_generation_occurrences');
+    db.run('DROP INDEX ground_generation_transcript_path');
+    db.run('PRAGMA user_version = 5');
+    db.query('INSERT INTO view_leases VALUES (?, ?, ?, ?, ?)').run('f'.repeat(64), '44444444-4444-4444-8444-444444444444', conversationId, 7, now + 60000);
+    db.query('INSERT INTO deletions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(deletedCommand, deletedConversation, epoch, now, 3, 'completed', null, 1, 1, 1);
+    db.query('INSERT INTO command_tombstones VALUES (?, ?)').run(deletedCommand, deletedConversation);
+    db.query('INSERT INTO conversation_tombstones VALUES (?)').run(deletedConversation);
+  } finally { db.close(); }
+  const protection = () => {
+    const reader = new Database(database, { readonly: true, create: false });
+    try { return [reader.query('SELECT * FROM view_leases').all(), reader.query('SELECT * FROM deletions').all(),
+      reader.query('SELECT * FROM command_tombstones').all(), reader.query('SELECT * FROM conversation_tombstones').all()]; }
+    finally { reader.close(); }
+  };
+  const beforeVersion = probe(database).schemaVersion;
+  const before = v2Facts(root); const beforeOrder = commandOrder(root); const beforeProtection = protection();
+  const state = await openThinkState(join(root, 'project'), join(root, 'vault'));
+  try { if (state.generation.pending() !== null) throw new Error('new generation state must start empty'); }
+  finally { state.close(); }
+  const reader = new Database(database, { readonly: true, create: false });
+  let generationRows: number;
+  try { generationRows = Number(reader.query('SELECT count(*) FROM ground_generation_occurrences').values()[0]?.[0]); }
+  finally { reader.close(); }
+  return { beforeVersion, afterVersion: probe(database).schemaVersion, before, after: v2Facts(root), beforeOrder, afterOrder: commandOrder(root),
+    beforeProtection, afterProtection: protection(), generationRows };
+}
+
+async function migrateV6Preflight(root: string): Promise<V6PreflightReport> {
+  await migrateV2Order(root);
+  const project = join(root, 'project'); const vault = join(root, 'vault');
+  const database = join(project, '.memory-loop', 'application.sqlite');
+  const seed = await openThinkState(project, vault);
+  let oldBefore: unknown;
+  try {
+    const attempt = seed.generation.claim({ directory: vault, timeZone: 'UTC', scheduledAt: now - 86400000,
+      count: 2, inputSha256: 'a'.repeat(64), selection: { agent: 'fixture-agent' } });
+    if (!attempt) throw new Error('v6 fixture attempt not created');
+    seed.generation.creating(attempt.attemptId);
+    seed.generation.verified(attempt.attemptId, { agent: 'fixture-agent' });
+    seed.generation.attempted(attempt.attemptId);
+    oldBefore = seed.generation.pending();
+  } finally { seed.close(); }
+  // Remove only v7/v8's empty additive tables from this test-owned database.
+  const db = new Database(database, { readwrite: true, create: false });
+  try { db.run('DROP TABLE ground_generation_publications'); db.run('DROP TABLE ground_generation_preflight'); db.run('PRAGMA user_version = 6'); }
+  finally { db.close(); }
+  const beforeVersion = probe(database).schemaVersion;
+  const occurrence = { directory: vault, timeZone: 'UTC', scheduledAt: now };
+  const reservations: V6PreflightReport['reservations'] = [];
+  let oldAfter: unknown;
+  let time = now;
+  for (let index = 0; index < 4; index++) {
+    // Reopen the real SQLite state between attempts, just as a daemon restart does.
+    const state = await openThinkState(project, vault);
+    try {
+      oldAfter = state.generation.pending();
+      const reservation = state.generation.beginPreflight(occurrence, time);
+      reservations.push(reservation);
+      if (reservation.allowed) {
+        const next = state.generation.failedPreflight(occurrence, time, true);
+        time = next ?? time + 86400000;
+      }
+    } finally { state.close(); }
+  }
+  return { beforeVersion, afterVersion: probe(database).schemaVersion, oldBefore, oldAfter, reservations };
 }
 
 async function reopenV3Order(root: string): Promise<OrderReopenReport> {
@@ -805,6 +893,10 @@ if (selected === 'reopen-v3-order') {
   await writeFile(output, JSON.stringify(await migrateV1(root)));
 } else if (selected === 'migrate-v2-order') {
   await writeFile(output, JSON.stringify(await migrateV2Order(root)));
+} else if (selected === 'migrate-v5-generation') {
+  await writeFile(output, JSON.stringify(await migrateV5Generation(root)));
+} else if (selected === 'migrate-v6-preflight') {
+  await writeFile(output, JSON.stringify(await migrateV6Preflight(root)));
 } else if (selected === 'probe') {
   await writeFile(output, JSON.stringify(probe(join(root, 'project', '.memory-loop', 'application.sqlite'))));
 } else {

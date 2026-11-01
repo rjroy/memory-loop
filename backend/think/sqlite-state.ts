@@ -7,6 +7,9 @@ import type { NativeSession } from './native';
 import { SQLiteTranscriptState, transcriptSchemaV2, validateTranscriptSchema } from './sqlite-transcript-state';
 import { SQLiteConversations, conversationSchemaV4, validateConversationSchema } from './sqlite-conversations';
 import { SQLiteDeletions, deletionSchemaV5, validateDeletionSchema } from './sqlite-deletions';
+import { SQLiteGroundGeneration, generationSchemaV6, generationSchemaV7, validateGenerationSchema, validateGenerationPreflightSchema,
+  type GroundGenerationStore } from '../ground-generation-state';
+import { generationSchemaV8, validateGenerationPublicationSchema } from '../ground-generation-publication-state';
 
 type Parameter = string | number | Uint8Array | null;
 type Row = Record<string, unknown>;
@@ -208,6 +211,7 @@ class SQLiteThinkState implements ThinkStateStore {
   readonly conversations: SQLiteConversations;
   readonly deletions: SQLiteDeletions;
   readonly cache: SQLiteDeletions['cache'];
+  readonly generation: GroundGenerationStore;
   readonly registry: ThinkRegistryReader = {
     conversation: id => this.readConversation(id),
     commands: (id, after) => this.readCommands(id, after),
@@ -217,11 +221,11 @@ class SQLiteThinkState implements ThinkStateStore {
     file.validate();
     if (db.get('PRAGMA quick_check')?.quick_check !== 'ok') unavailable();
     const version = Number(db.get('PRAGMA user_version')?.user_version);
-    if (![0, 1, 2, 3, 4, 5].includes(version)) unavailable();
+    if (![0, 1, 2, 3, 4, 5, 6, 7, 8].includes(version)) unavailable();
     if (version === 0) {
       const existing = db.get("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
       if (existing?.count !== 0) unavailable();
-    } else { validateV1(db); if (version >= 2) validateTranscriptSchema(db); if (version >= 3) validateV3(db); if (version >= 4) validateConversationSchema(db); if (version === 5) validateDeletionSchema(db); }
+    } else { validateV1(db); if (version >= 2) validateTranscriptSchema(db); if (version >= 3) validateV3(db); if (version >= 4) validateConversationSchema(db); if (version >= 5) validateDeletionSchema(db); if (version >= 6) validateGenerationSchema(db); if (version >= 7) validateGenerationPreflightSchema(db); if (version >= 8) validateGenerationPublicationSchema(db); }
     db.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = EXTRA; PRAGMA busy_timeout = 1000;');
     if (db.get('PRAGMA foreign_keys')?.foreign_keys !== 1 || db.get('PRAGMA synchronous')?.synchronous !== 3) unavailable();
     // EXTRA syncs rollback-journal deletion too; no WAL/checkpointer service is needed.
@@ -254,23 +258,42 @@ class SQLiteThinkState implements ThinkStateStore {
       db.exec(deletionSchemaV5);
       db.exec('PRAGMA user_version = 5');
     });
+    if (version < 6) this.write('migrate', () => {
+      if (Number(db.get('PRAGMA user_version')?.user_version) !== 5) unavailable();
+      db.exec(generationSchemaV6);
+      db.exec('PRAGMA user_version = 6');
+    });
+    if (version < 7) this.write('migrate', () => {
+      if (Number(db.get('PRAGMA user_version')?.user_version) !== 6) unavailable();
+      db.exec(generationSchemaV7);
+      db.exec('PRAGMA user_version = 7');
+    });
+    if (version < 8) this.write('migrate', () => {
+      if (Number(db.get('PRAGMA user_version')?.user_version) !== 7) unavailable();
+      db.exec(generationSchemaV8);
+      db.exec('PRAGMA user_version = 8');
+    });
     this.installationId = validateV1(db);
     validateTranscriptSchema(db);
     validateV3(db);
     validateConversationSchema(db);
     validateDeletionSchema(db);
+    validateGenerationSchema(db);
+    validateGenerationPreflightSchema(db);
+    validateGenerationPublicationSchema(db);
     this.conversations = new SQLiteConversations(db, () => this.check(), (name, operation) => this.write(name, operation),
       this.installationId, row => decodeConversation(row, this.installationId));
     this.transcripts = new SQLiteTranscriptState(db, () => this.check(), operation => this.write('transcript', operation), this.installationId);
     this.deletions = new SQLiteDeletions(db, () => this.check(), operation => this.write('delete', operation), operation => this.write('cache', operation),
       id => this.readConversation(id), id => this.hasCommand(id), this.installationId);
     this.cache = this.deletions.cache;
+    this.generation = new SQLiteGroundGeneration(db, () => this.check(), action => this.write('generation', action));
     file.syncDirectory();
   }
 
   private check(): void { if (this.closed) unavailable(); this.file.validate(); }
 
-  private write<T>(name: 'migrate' | 'create-register' | 'command-register' | 'dispatch-attempt' | 'outcome' | 'transcript' | 'view-register' | 'selection' | 'activity' | 'delete' | 'cache', operation: () => T): T {
+  private write<T>(name: 'migrate' | 'create-register' | 'command-register' | 'dispatch-attempt' | 'outcome' | 'transcript' | 'view-register' | 'selection' | 'activity' | 'delete' | 'cache' | 'generation', operation: () => T): T {
     console.info('think_state_write_attempt', { operation: name });
     let inTransaction = false;
     let committed = false;
@@ -436,7 +459,7 @@ class SQLiteThinkState implements ThinkStateStore {
   }
 }
 
-export async function openThinkState(projectRoot: string, vaultDirectory: string): Promise<ThinkStateStore & { readonly transcripts: TranscriptStateStore }> {
+export async function openThinkState(projectRoot: string, vaultDirectory: string): Promise<ThinkStateStore & { readonly transcripts: TranscriptStateStore; readonly generation: GroundGenerationStore }> {
   console.info('think_state_setup_attempt');
   let file: ThinkStateFile | undefined;
   let db: SQLite | undefined;
@@ -444,7 +467,7 @@ export async function openThinkState(projectRoot: string, vaultDirectory: string
     file = new ThinkStateFile(projectRoot, vaultDirectory);
     db = await connect(file.path);
     const store = new SQLiteThinkState(db, file);
-    console.info('think_state_setup_outcome', { status: 'ready', schema: 5 });
+    console.info('think_state_setup_outcome', { status: 'ready', schema: 8 });
     return store;
   } catch {
     try { db?.close(); } catch { console.info('think_state_cleanup_outcome', { status: 'failed' }); }

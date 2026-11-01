@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Checkpoint, CrashReport, InitialLoadReport, MigrationReport, Observation, OrderMigrationReport, OrderReopenReport, Probe, ReopenReport, ReopenScenario, Report, Scenario } from '../tests/think-transcript-checkpoint-fixture';
+import type { Checkpoint, CrashReport, InitialLoadReport, MigrationReport, Observation, OrderMigrationReport, OrderReopenReport, Probe, ReopenReport, ReopenScenario, Report, Scenario, V5MigrationReport, V6PreflightReport } from '../tests/think-transcript-checkpoint-fixture';
 import { entryFor } from './think/transcript-format';
 import type { BodyRef } from './think/body-store';
 import type { ProjectionEntry } from './think/projection';
@@ -21,7 +21,7 @@ let root: string;
 beforeEach(async () => { root = await mkdtemp('/tmp/opencode/think-transcript-checkpoint-'); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
-async function child<T>(scenario: Scenario | 'probe' | 'migrate-v1' | 'migrate-v2-order' | 'reopen-v3-order' | `reopen-${ReopenScenario}`, filename: string): Promise<T> {
+async function child<T>(scenario: Scenario | 'probe' | 'migrate-v1' | 'migrate-v2-order' | 'migrate-v5-generation' | 'migrate-v6-preflight' | 'reopen-v3-order' | `reopen-${ReopenScenario}`, filename: string): Promise<T> {
   const output = join(root, filename);
   const result = spawnSync('/usr/bin/bun', ['--no-env-file', runner, root, scenario, output], {
     cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 256 * 1024,
@@ -55,8 +55,8 @@ function checkpoint(probe: Probe, at: string): Checkpoint {
   expect(probe.checkpoint, `registry-bound transcript checkpoint must be committed ${at}; ${probe.issue ?? ''}`).not.toBeNull();
   if (!probe.checkpoint) throw new Error('missing durable transcript checkpoint');
   expect(probe.issue).toBeUndefined();
-  // Checkpoints were introduced in v2 and retained through v5 deletion migration.
-  expect(probe.schemaVersion).toBe(5);
+  // Checkpoints were introduced in v2 and retained through v8 publication migration.
+  expect(probe.schemaVersion).toBe(8);
   expect(probe.writerAvailable).toBe(true);
   expect(probe.checkpoint).toMatchObject({ conversationId, ownerConversationId: conversationId,
     nativeSessionId: nativeId, vaultDirectory: join(root, 'vault') });
@@ -331,16 +331,51 @@ describe('fresh Bun process registered transcript reopening', () => {
 });
 
 describe('production Think SQLite transcript checkpoints', () => {
-  it('migrates test-owned v1 admission facts through v5 without replacing originals or adopting transcripts', async () => {
+  it('preserves v6 attempt facts and exhausts the v7 preflight budget across SQLite reopenings', async () => {
+    const result = await child<V6PreflightReport>('migrate-v6-preflight', 'v6-preflight.json');
+    expect(result.beforeVersion).toBe(6); expect(result.afterVersion).toBe(8);
+    expect(result.oldBefore).toMatchObject({ state: 'uncertain', createAttempted: true, dispatchAttempted: true,
+      inputSha256: 'a'.repeat(64), requested: { agent: 'fixture-agent' }, effective: { agent: 'fixture-agent' } });
+    expect(result.oldAfter).toEqual(result.oldBefore);
+    expect(result.reservations.map(value => value.allowed)).toEqual([true, true, true, false]);
+    expect(result.reservations.map(value => value.fact.attempts)).toEqual([1, 2, 3, 3]);
+    const [first, second, third, exhausted] = result.reservations;
+    expect(first.fact.retryAt).not.toBeNull(); expect(second.fact.retryAt).not.toBeNull();
+    if (first.fact.retryAt === null || second.fact.retryAt === null) throw new Error('missing bounded retry times');
+    expect(second.fact.retryAt - first.fact.retryAt).toBeGreaterThan(first.fact.retryAt - 1_700_000_000_000);
+    expect(third.fact.retryAt).toBeNull(); expect(exhausted.fact).toEqual(third.fact);
+  });
+
+  it('migrates a v5 database through v8 without changing originals, checkpoints, selection or deletion tombstones', async () => {
+    const result = await child<V5MigrationReport>('migrate-v5-generation', 'v5-generation.json');
+    expect(result.beforeVersion).toBe(5);
+    expect(result.afterVersion).toBe(8);
+    expect(result.generationRows).toBe(0);
+    expect(result.before.commands.some(command => command.original_type === 'blob' && command.original_hex !== null)).toBe(true);
+    expect(result.before.transcript).toMatchObject({ creation_state: 'owned', pending_state: 'ready' });
+    expect(result.before.chunks.length).toBeGreaterThan(0);
+    expect(result.after).toEqual(result.before);
+    expect(result.beforeOrder.length).toBeGreaterThan(0);
+    expect(result.afterOrder).toEqual(result.beforeOrder);
+    expect(result.beforeProtection).toEqual([
+      [expect.objectContaining({ conversation_id: conversationId, selection_revision: 7, token_sha256: 'f'.repeat(64) })],
+      [expect.objectContaining({ state: 'completed', native_removed: 1, transcript_removed: 1 })],
+      [expect.objectContaining({ command_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', conversation_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' })],
+      [expect.objectContaining({ conversation_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' })],
+    ]);
+    expect(result.afterProtection).toEqual(result.beforeProtection);
+  });
+
+  it('migrates test-owned v1 admission facts through v8 without replacing originals or adopting transcripts', async () => {
     const result = await child<MigrationReport>('migrate-v1', 'migration.json');
     const original = `  durable fixture original 🧠\r\n\`\`\`\n<!-- fixture literal -->\n${'x'.repeat(70 * 1024)}\nlast  `;
     expect(result).toMatchObject({ installationId: '44444444-4444-4444-8444-444444444444',
       originalHex: Buffer.from(original).toString('hex'), payloadSha256: sha(original), commandState: 'upstream-unconfirmed',
       conversationId, nativeSessionId: nativeId, legacy: 'pre-checkpoint transcript must not be adopted or changed', transcriptMapped: false });
-    expect(result.schemaVersion, 'the additive v1 → v2 → v3 → v4 → v5 chain must retain the existing private database').toBe(5);
+    expect(result.schemaVersion, 'the additive v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 chain must retain the existing private database').toBe(8);
   });
 
-  it('preserves v2 insertion order and all old facts through v3/v4/v5 migration, a fresh Bun process, VACUUM and subsequent admission', async () => {
+  it('preserves v2 insertion order and all old facts through v3/v4/v5/v6/v7/v8 migration, a fresh Bun process, VACUUM and subsequent admission', async () => {
     const bId = '00000000-0000-4000-8000-000000000001';
     const stopId = '88888888-8888-4888-8888-888888888888';
     const formId = '66666666-6666-4666-8666-666666666666';
@@ -349,7 +384,7 @@ describe('production Think SQLite transcript checkpoints', () => {
     const seed = await child<OrderMigrationReport>('migrate-v2-order', 'order-migration.json');
     expect(seed.versionBefore).toBe(2);
     expect(seed.orderTableBefore, 'a real historical v2 input must not already contain v3 order metadata').toBe(false);
-    expect(seed.schemaVersion).toBe(5);
+    expect(seed.schemaVersion).toBe(8);
     expect(seed.insertionIds, 'observe old SQLite insertion order before the migration').toEqual(expectedIds);
     const a = seed.before.commands.find(command => command.command_id === commandId);
     const b = seed.before.commands.find(command => command.command_id === bId);
@@ -395,7 +430,7 @@ describe('production Think SQLite transcript checkpoints', () => {
 
     const reopened = await child<OrderReopenReport>('reopen-v3-order', 'order-reopened.json');
     expect(reopened.pid).not.toBe(seed.pid);
-    expect(reopened.schemaVersion).toBe(5);
+    expect(reopened.schemaVersion).toBe(8);
     expect(reopened.vacuumIntegrity).toBe('ok');
     expect(reopened.before).toEqual(seed.after);
     expect(reopened.afterVacuum).toEqual(seed.after);

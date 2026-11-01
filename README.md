@@ -6,7 +6,8 @@ Markdown without changing it. **Capture is built:** save thoughts to the same
 configured vault. **Think has a working conversation UI in the isolated local
 fixture** below. Ground now presents six independent cards, including recent
 registered conversations with Resume and Delete, and can prepare an unsent Think
-draft.
+draft. Opt-in daemon-resident daily questions now publish to its Prompts resource;
+weekly sourced inspiration is still planned.
 This source/fixture-accepted version is not yet published to the live app, and
 the Ground roadmap is not complete.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
@@ -62,7 +63,7 @@ Ignored configuration and private state have separate responsibilities:
 | `.memory-loop/config.json` | The single selected vault, read only by the daemon at startup. |
 | `.memory-loop/transport.json` | Daemon origin and web request policy, read by both server tiers. |
 | `.memory-loop/service.token` | Shared server-only bearer credential; never sent to the browser. |
-| `.memory-loop/application.sqlite` | Private Think ownership, originals, command/activity facts, selection leases, transcript checkpoints and pending appends; not configuration or a chat-history mirror. |
+| `.memory-loop/application.sqlite` | Private Think ownership, originals, command/activity facts, leases, transcript checkpoints/pending appends, deletion progress and generation/publication facts; not configuration or a chat-history mirror. |
 
 Vault configuration is JSON, not environment-based discovery:
 
@@ -162,9 +163,14 @@ acknowledgements remain uncertain and are never automatically replayed. Native
 OpenCode remains authoritative for assistant history and execution. The body
 cache is disposable, not the durable original-input store.
 
-Schema v4 adds conversation activity, Resume receipts and per-view selection leases.
-Schema v3 added an explicit durable command-registration sequence to the transcript
-mappings/checkpoints, stable-entry facts and bounded pending-append chunks
+The current schema is **v8**. Its additive migrations preserve prior originals,
+ownership, command ordering/timestamps, leases, deletion facts and transcript
+checkpoints/pending work. V6 adds generation occurrences/attempt identities, v7
+adds persistent preflight budgets and v8 seals validated publication plans,
+baseline/output hashes and temporary-file ownership. V5 introduced paired-deletion
+and private-cache ownership facts; v4 added conversation activity, Resume receipts
+and per-view selection leases. V3 added an explicit durable command-registration
+sequence to the transcript mappings/checkpoints, stable-entry facts and bounded pending-append chunks
 introduced in v2. The additive v1/v2-to-v3 migrations freeze existing command
 insertion order without changing original bytes or timestamps, ownership or
 transcript checkpoints/pending work. Pending bytes are cleared after confirmation;
@@ -173,7 +179,8 @@ confirmed assistant history is not mirrored in the database.
 The state directory must be outside the real vault and owner-only `0700`; the
 database and any SQLite sidecars must be owner-only `0600` regular files with one
 hard link and no symlinks.
-Treat originals, pending transcript text and ownership/checkpoint metadata as
+Treat originals, pending transcript text, validated generation candidates/proposed
+resource output and ownership/checkpoint metadata as
 sensitive private data. Keep them out of vault sync and version control;
 restrict backups to the same owner and preserve permissions.
 For a consistent file-copy backup, stop the daemon first. No raw database access
@@ -206,6 +213,85 @@ Unregistered legacy transcripts/native chats are not scanned or adopted. Durable
 history is not durable browser draft storage: unsent drafts still do not survive
 a hard reload or browser closure. Ground's Recent conversations card provides
 explicit Resume for eligible registered chats; it does not import legacy chats.
+
+#### Scheduled questions: opt-in daemon configuration
+
+Daily questions are implemented in `memory-loop-9ya.7`. Merge this **disabled,
+example-only** `ground` object into the existing vault/Think configuration; do not
+replace or edit the user's private configuration to try it:
+
+```json
+{
+  "ground": {
+    "generation": {
+      "enabled": false,
+      "timeZone": "server",
+      "questions": { "schedule": "0 6 * * *", "count": 5 },
+      "quotes": { "schedule": "15 6 * * 1", "count": 5 },
+      "context": {
+        "lookbackDays": 7,
+        "maxNotes": 20,
+        "maxNoteBytes": 8192,
+        "maxTotalBytes": 65536
+      }
+    }
+  }
+}
+```
+
+These are the current configurable defaults. Omission leaves generation disabled.
+The `quotes` settings are validated/reserved configuration, **not a running quote
+job**; weekly sourced inspiration and its evidence adapter are `memory-loop-9ya.8`.
+Real-vault/model activation and the normal-checkout handoff remain separately
+authorized work in `memory-loop-9ya.9`; this documentation enables nothing.
+
+At that handoff, `enabled: true` plus daemon restart activates questions using the
+existing configured OpenCode service and Think agent/model selection/native
+defaults. There is no extra service, browser trigger or job-control UI. Invalid
+generation settings or a failed job do not disable otherwise healthy Ground
+reads, Capture, Recall or Think. Think's full-permissive sessions are unchanged;
+generation uses separate verified deny-all sessions, not resumable Think chats or
+user transcripts. Supplied excerpts reach the configured native service/provider;
+its own history/retention is outside the application's private-state guarantee.
+
+Pinned **Croner 11.0.0** calculates five-field schedules in the configured IANA
+timezone; `server` resolves the daemon's named timezone at startup, not the
+browser's. Questions default to daily 06:00. Scheduling begins only after daemon
+listener ownership. Startup, including first enablement, processes only the latest
+due occurrence after reconciling unfinished work—no missed-day flood or overlap.
+Pre-admission preflight allows at most three automatic attempts per occurrence,
+with 30-second then 60-second backoff; its budget survives restart. Unknown native
+admission is reconciled by the same persisted IDs, never automatically resent.
+Shutdown stops new attempts, not necessarily already-running native/provider work.
+
+Context is bounded recent Markdown, newest modification time first with note-ID
+ties. Hidden paths, the resource subtree, configured transcripts and historical
+registry-mapped transcripts are excluded before the note cap. Reads do not follow
+symlinks; changed/invalid reads are skipped or fail safely, never widen the search.
+The application retains input digests and job/publication facts, not excerpt-history
+tables or raw native/tool dumps.
+
+Only a completed, verified response containing a strict JSON array of `{ "text": "…" }`
+candidates is accepted; extra fields, surrounding prose, over-count or
+oversized/invalid questions reject the whole batch. Valid partial and empty batches
+are allowed. The daemon parses the actual configured Prompts resource (default
+`03_Resources/Memory-Loop/prompts.md`), deduplicates comparison keys without changing
+retained author case, appends new questions at the bottom and retains the latest
+50 in canonical `## Question` paragraph format. Empty/duplicate-only batches do not
+rewrite or create a file. Malformed/unsafe files or an oversized final resource
+remain unchanged. Existing Ground-visit selection stability is unchanged.
+
+Publication seals exact candidates/output and baseline/output hashes in SQLite
+before file effects. Verified temporary-file ownership, file/directory sync,
+atomic replacement and exclusive no-replace creation protect the configured
+resource. Manual changes become conflicts; after publication but before database
+confirmation, matching output bytes can confirm success without appending or
+prompting again. A crash before the temporary creation witness exists can leave an
+ambiguous artifact: it fails closed, without blind adoption or directory sweeping.
+This is trusted-local-namespace recovery, **not** filesystem/distributed
+compare-and-swap or universal crash recovery. See the [restricted-generation
+compatibility evidence](.lore/work/research/opencode-2.2.2-restricted-generation.md)
+for the tested native boundary and its limits.
 
 #### Initialize transport
 
@@ -444,9 +530,11 @@ command; it does not advance or retry deletion. There is no Undo, Retry Delete,
 automatic status polling, repeated destructive POST or destructive retry on
 restart. Do not restart expecting an incomplete deletion to finish automatically.
 
-Daily question/weekly inspiration jobs and the final configuration/deployment
-handoff remain unimplemented. This verified version is not yet published to the
-live app; publication still needs separate authorization.
+Opt-in daily questions are implemented as described in the operator guide.
+Weekly sourced inspiration (`memory-loop-9ya.8`) and the final configuration/
+deployment handoff (`memory-loop-9ya.9`) remain unimplemented. This verified
+version is not yet published to the live app; deployment still needs separate
+authorization.
 
 ## What Capture does
 
@@ -505,20 +593,25 @@ transactional snapshot.
 
 ## Checks and current acceptance
 
-Ground's recent-conversation/Resume, selection-lease and paired-deletion slices
-(`memory-loop-3ry`, `memory-loop-9ya.6`) are independently accepted. Current evidence
-covers frontend **142**, backend **707**, browser **60**, native UI **6 passed /
-3 skipped**, both direct TypeScript checks and an isolated Next production build.
-Fresh technical and visual reviews accepted the compact inline Delete flow;
-the earlier Resume/startup safeguards remain covered. Evidence:
-`/tmp/opencode/ground-9ya6-final-validation.json` and
+On **2026-11-01**, Ground's scheduler/daily-question slice (`memory-loop-9ya.7`)
+passed independent final validation: frontend **142**, backend **738**, browser
+**60**, native integration **7 passed / 3 skipped**, both direct TypeScript checks
+and an isolated Next production build. Fresh technical verification accepted the
+scheduler, publication/cleanup and native variant/pagination corrections. Evidence:
+`/tmp/opencode/ground-9ya7-final-validation.log` and
+`/tmp/opencode/ground-9ya7-final-validation.json`.
+The earlier list/Resume/selection (`memory-loop-3ry`) and paired deletion
+(`memory-loop-9ya.6`) remain accepted; the unchanged Delete UI's visual evidence is
 `/tmp/opencode/ground-9ya6-ui-visual-review/report.md`.
 Owned OpenCode 2.2.2/scripted-provider/Chromium fixtures cover paired deletion,
 Ground Resume and same-URL reload after restarting only the app daemon, without
-native-work replay or duplicate transcript entries. These checks do not certify
-physical-device or assistive-technology behavior. They did not publish this
-version to the live app or activate it against personal data; daily/weekly jobs
-and the final handoff remain unimplemented, and the Ground plan is not complete.
+native-work replay or duplicate transcript entries. The browserless native
+question case additionally reaches actual Code Mode denial, resource publication
+and daemon-only restart without a second user prompt or Think transcript records.
+These checks do not certify physical-device, assistive-technology, direct-MCP deny
+or arbitrary-hook isolation. They did not deploy this version or enable generation
+against personal data. Weekly quotes and the final handoff remain; the Ground plan
+is not complete. No tests, builds or services were run for this documentation update.
 
 On **2026-10-31**, Ground's Phase 3b registry-bound transcript slice passed
 independent validation: frontend **111**, backend **631**, browser **60**, native

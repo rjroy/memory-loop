@@ -13,9 +13,13 @@ import { createNativeClient, nativeSessions } from './think/native';
 import { createThinkService, type ThinkService, type ThinkUnavailableCode } from './think/service';
 import { createBodyStore, type BodyStore } from './think/body-store';
 import { openCaptureWriter, type CaptureWriter } from './capture';
-import { openGround, type GroundReader } from './ground';
+import { groundResourcePaths, openGround, type GroundReader } from './ground';
+import { parseGroundGenerationConfig, type GroundGenerationSettings } from './ground-generation-config';
+import { createGroundGeneration } from './ground-generation';
+import { groundGenerationNative } from './ground-generation-native';
+import { createQuestionPublisher } from './ground-generation-publisher';
+import { transcriptComponents } from './think/transcript-file';
 import { openThinkState } from './think/sqlite-state';
-import type { ThinkStateStore } from './think/state';
 import { createConversationService, type ConversationService } from './think/conversations';
 
 export interface ServerOptions {
@@ -38,7 +42,7 @@ interface PreparedThink {
 }
 const unavailableThink = (error: ThinkUnavailableCode): PreparedThink => ({ think: { error }, async close() {}, startRecovery() {} });
 
-async function prepareThink(config: VaultConfig | undefined, vault: VaultState, transportFile: string, projectRoot: string): Promise<PreparedThink> {
+async function prepareThink(config: VaultConfig | undefined, vault: VaultState, transportFile: string, projectRoot: string, generation: GroundGenerationSettings): Promise<PreparedThink> {
   // Read-only/unconfigured applications must not acquire a private application database.
   if (config?.think === undefined) return unavailableThink('think_config_missing');
   const think = parseThinkConfig(config.think);
@@ -46,7 +50,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
   if ('error' in vault) return unavailableThink('think_unavailable');
   console.info('think_setup_attempt');
   let directory: string;
-  let state: ThinkStateStore;
+  let state: Awaited<ReturnType<typeof openThinkState>>;
   try {
     directory = await realpath(config.vaultDirectory);
     // Registry ownership and metadata outlive the optional native attachment descriptor.
@@ -90,9 +94,30 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     bodies = await createBodyStore({ directory: join(dirname(transportFile), `think-bodies-${epoch}`), epoch, vaultDirectory: directory });
     const service = createThinkService({ native: nativeSessions(client), bodies, state, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch,
       serviceIdentity: { pid: registration.pid, version: '2.2.2' }, validateCreation, transcript: { directory: think.transcriptDirectory } });
+    let jobs: ReturnType<typeof createGroundGeneration> | undefined;
+    if (generation.state === 'ready') {
+      try {
+        const noteId = groundResourcePaths(config.ground).prompts;
+        if (!noteId) throw new Error('invalid question resource');
+        jobs = createGroundGeneration({ config: generation.config, directory, transcriptDirectory: transcriptComponents(think.transcriptDirectory), state: state.generation,
+          preflight: state.generation,
+          publisher: createQuestionPublisher({ directory, noteId, state: state.generation.publications }),
+          selection: { ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) },
+          native: groundGenerationNative({ client, directory, installationId: state.installationId,
+            identity: { pid: registration.pid, version: '2.2.2' }, validateSelection: validateCreation }) });
+        console.info('ground_generation_setup_outcome', { state: 'prepared' });
+      } catch { console.info('ground_generation_setup_outcome', { state: 'unavailable' }); }
+    }
     console.info('think_setup_outcome', { status: 'ready' });
-    // Ownership transfers only after construction succeeds; Think closes its store.
-    return { think: service, close: () => service.close(), startRecovery: () => service.startRecovery() };
+    // Jobs borrow Think's private connection; drain them BEFORE Think closes it.
+    let closing: Promise<void> | undefined;
+    return { think: service, close() {
+      closing ??= (async () => { try { await jobs?.close(); } finally { await service.close(); } })();
+      return closing;
+    }, startRecovery() {
+      service.startRecovery();
+      try { jobs?.start(); } catch { console.info('ground_generation_setup_outcome', { state: 'unavailable' }); }
+    } };
   } catch {
     if (bodies) {
       try { await bodies.close(); }
@@ -101,6 +126,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     // No native adapter/body store is fabricated for this path. List, leases and
     // controlled unavailable Resume receipts use exactly the normal registry capability.
     const conversations = createConversationService({ state, directory, epoch });
+    if (generation.state === 'ready') console.info('ground_generation_setup_outcome', { state: 'unavailable' });
     let closing: Promise<void> | undefined;
     console.info('think_setup_outcome', { status: 'registry-only' });
     return { think: { error: 'think_unavailable' }, conversations, startRecovery: () => conversations.startRecovery(), close() {
@@ -124,7 +150,12 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
     const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
     vault = { error: code === 'config_missing' || code === 'config_invalid' ? code : 'vault_unavailable' };
   }
-  const preparedThink = await prepareThink(config, vault, transportFile, options.projectRoot);
+  if (config) console.info('ground_generation_config_attempt');
+  const generation = parseGroundGenerationConfig(config?.ground);
+  if (config) {
+    console.info('ground_generation_config_outcome', { state: generation.state });
+  }
+  const preparedThink = await prepareThink(config, vault, transportFile, options.projectRoot, generation);
   let capture: CaptureWriter | undefined;
   let ground: GroundReader | undefined;
   let groundError: 'configuration' | 'io' = 'error' in vault && vault.error === 'vault_unavailable' ? 'io' : 'configuration';

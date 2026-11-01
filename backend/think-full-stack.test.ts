@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
-import { request as httpRequest } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { relative } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { OpenCode } from '@opencode/client';
 import { Service } from '@opencode/client/service';
 import { expect, it, vi } from 'vitest';
@@ -13,6 +14,83 @@ import type { BodyRef } from './think/body-store';
 
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+it('Ground 9ya.7 real native scheduled questions deny Code Mode and publish without a browser', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  let requests = 0;
+  const gateway = createServer((request, response) => {
+    if (request.url !== '/probe' || request.method !== 'GET') { response.writeHead(404).end(); return; }
+    requests++; response.end('owned-gateway-token');
+  });
+  await new Promise<void>((resolve, reject) => gateway.listen(0, '127.0.0.1', resolve).once('error', reject));
+  const address = gateway.address(); if (!address || typeof address === 'string') throw new Error('owned gateway missing');
+  let fixture: Awaited<ReturnType<typeof launchThinkFixture>> | undefined;
+  try {
+    fixture = await launchThinkFixture({ binary, generationProbe: { gatewayUrl: `http://127.0.0.1:${address.port}/probe` } });
+    const owned = fixture;
+    const endpoint = await Service.discover({ file: `${owned.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    const resource = `${owned.workspace}/03_Resources/Memory-Loop/prompts.md`;
+    try { await vi.waitFor(async () => expect(await readFile(resource, 'utf8')).toContain('Which owned fixture idea is worth exploring?'), { timeout: 60000, interval: 100 }); }
+    catch (error) {
+      const diagnostic = await native.session.list({ directory: owned.workspace, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+      const histories = await Promise.all(diagnostic.data.map(session => native.message.list({ sessionID: session.id, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) })));
+      console.error('owned generation fixture diagnostic', JSON.stringify({ control: owned.control.generation(), sessions: diagnostic.data, histories, gatewayRequests: requests }));
+      throw error;
+    }
+    const sessions = await native.session.list({ directory: owned.workspace, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    const generated = sessions.data.filter(session => {
+      const marker = session.metadata?.memoryLoop;
+      return marker !== null && typeof marker === 'object' && !Array.isArray(marker) && marker.purpose === 'ground-generation';
+    });
+    expect(generated).toHaveLength(1);
+    const session = await native.session.get({ sessionID: generated[0].id }, { signal: AbortSignal.timeout(5000) });
+    expect(session.permissions).toEqual([{ action: '*', resource: '*', effect: 'deny' }]);
+    const history = await native.message.list({ sessionID: session.id, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    const toolEvents = history.data.flatMap(message => message.type === 'assistant' ? message.content.filter(part => part.type === 'tool' && part.name === 'execute') : []);
+    expect(toolEvents).toHaveLength(1);
+    expect(toolEvents[0]).toMatchObject({ type: 'tool', name: 'execute', state: { status: 'error' } });
+    expect(JSON.stringify(toolEvents)).toContain('No tool named');
+    expect(await native.permission.list({ sessionID: session.id }, { signal: AbortSignal.timeout(5000) })).toEqual([]);
+    expect(requests).toBe(0);
+    const generation = owned.control.generation();
+    expect(generation.forced).toBe(1); expect(generation.toolResults).toBe(1);
+    expect(generation.advertised.every(names => !names.includes('execute'))).toBe(true);
+    const api = (path: string) => new Promise<{ status: number | undefined; body: string }>((resolveRequest, reject) => {
+      const req = httpRequest(new URL(path, owned.daemonUrl), { headers: owned.headers, signal: AbortSignal.timeout(5000) }, response => {
+        let body = ''; response.setEncoding('utf8'); response.on('data', chunk => { body += chunk; });
+        response.on('end', () => resolveRequest({ status: response.statusCode, body })); response.on('error', reject);
+      }); req.on('error', reject); req.end();
+    });
+    const prompts = await api('/api/ground/prompts');
+    expect(prompts.status).toBe(200);
+    expect(JSON.parse(prompts.body)).toMatchObject({ state: 'ready', data: { question: { text: 'Which owned fixture idea is worth exploring?' } } });
+    const recent = await api('/api/ground/recent-conversations');
+    expect(recent.status).toBe(200); expect(JSON.parse(recent.body)).toEqual({ state: 'ready', items: [] });
+    const assertNoThinkRecords = async () => {
+      expect(await readdir(`${owned.workspace}/Conversations/Memory Loop`)).toEqual([]);
+      const db = new DatabaseSync(`${owned.root}/daemon-app/.memory-loop/application.sqlite`, { readOnly: true });
+      try {
+        expect(db.prepare('SELECT count(*) AS count FROM conversations').get()?.count).toBe(0);
+        expect(db.prepare('SELECT count(*) AS count FROM transcripts').get()?.count).toBe(0);
+        expect(db.prepare('SELECT count(*) AS count FROM commands').get()?.count).toBe(0);
+      } finally { db.close(); }
+    };
+    await assertNoThinkRecords();
+    await owned.restartDaemon();
+    expect((await api('/api/ground/prompts')).status).toBe(200);
+    expect(owned.control.generation().forced).toBe(1);
+    const restored = await native.message.list({ sessionID: session.id, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    expect(restored.data.filter(message => message.type === 'user')).toHaveLength(1);
+    expect(requests).toBe(0);
+    await assertNoThinkRecords();
+  } finally {
+    try { await fixture?.close(); } finally { gateway.closeAllConnections(); await new Promise<void>((resolve, reject) => gateway.close(error => error ? reject(error) : resolve())); }
+    if (fixture) await expect(lstat(fixture.root)).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+}, 120000);
 
 it('Phase 2 Ground quick action creates an editable unsent native Think draft', async () => {
   const binary = process.env.OPENCODE_TEST_BINARY;

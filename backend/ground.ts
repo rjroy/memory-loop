@@ -18,7 +18,7 @@ const defaults: Record<GroundResource, string> = {
 };
 const kinds = Object.keys(defaults) as GroundResource[];
 
-function resourcePaths(config: unknown): Record<GroundResource, string[] | undefined> {
+export function groundResourcePaths(config: unknown): Record<GroundResource, string[] | undefined> {
   const invalid = Object.fromEntries(kinds.map(kind => [kind, undefined])) as Record<GroundResource, undefined>;
   if (config !== undefined && (!record(config) || Object.keys(config).some(key => key !== 'resources' && key !== 'generation'))) return invalid;
   const raw = record(config) ? config.resources : undefined;
@@ -67,7 +67,7 @@ export async function openGround(root: string, config?: unknown, draw: (max: num
     const viaProc = await stat(rootPath(pinned));
     if (!actual.isDirectory() || actual.dev !== viaProc.dev || actual.ino !== viaProc.ino) throw new Error('descriptor unavailable');
   } catch (error) { await pinned.close(); throw error; }
-  const paths = resourcePaths(config);
+  const paths = groundResourcePaths(config);
   return {
     async resource(kind) {
       const noteId = paths[kind];

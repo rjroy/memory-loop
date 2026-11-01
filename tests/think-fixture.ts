@@ -88,12 +88,16 @@ export interface ThinkFixture {
   workspace: string;
   credentialFile: string;
   headers: Record<string, string>;
-  control: { release(): void; info(): { requests: number; held: number } };
+  control: { release(): void; info(): { requests: number; held: number }; generation(): { forced: number; toolResults: number; advertised: string[][] } };
   restartDaemon(): Promise<{ previousPid: number; pid: number }>;
   close(): Promise<void>;
 }
 
-export async function launchThinkFixture(options: { binary: string }): Promise<ThinkFixture> {
+export async function launchThinkFixture(options: { binary: string; generationProbe?: { gatewayUrl: string } }): Promise<ThinkFixture> {
+  if (options.generationProbe) {
+    const target = new URL(options.generationProbe.gatewayUrl);
+    if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || !target.port || target.pathname !== '/probe' || target.search || target.hash || target.username || target.password || forbidden.has(Number(target.port))) throw new Error('invalid owned gateway fixture');
+  }
   await preflightExecutable(options.binary);
   if (await inspect('/etc/opencode') !== 'missing') throw new Error('system OpenCode configuration is not definitely absent');
   if (await realpath('/tmp/opencode') !== '/tmp/opencode' || await inspect('/tmp/opencode') !== 'directory') throw new Error('invalid fixture anchor');
@@ -102,6 +106,7 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
   const receipts: Array<{ operation: string; pid: number }> = [];
   const held = new Set<() => void>();
   let requests = 0;
+  let generationForced = 0; let generationToolResults = 0; const generationAdvertised: string[][] = [];
   let closing: Promise<void> | undefined;
   let restarting: Promise<{ previousPid: number; pid: number }> | undefined;
   let interrupted = false;
@@ -111,12 +116,14 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
     request.setEncoding('utf8');
     request.on('data', chunk => { body += chunk; if (body.length > 4_000_000) request.destroy(); });
     request.on('end', () => {
-      let parsed: { model?: string; messages?: Array<{ role?: string; content?: unknown }> };
+      let parsed: { model?: string; messages?: Array<{ role?: string; content?: unknown }>; tools?: Array<{ function?: { name?: string } }> };
       try { parsed = JSON.parse(body); } catch { response.writeHead(400).end(); return; }
       if (parsed.model !== 'fixture-model' || !Array.isArray(parsed.messages)) { response.writeHead(400).end(); return; }
       requests++;
       const user = parsed.messages.filter(message => message.role === 'user').map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content)).join(' ');
       const toolResult = parsed.messages.some(message => message.role === 'tool');
+      const generatedQuestion = !!options.generationProbe && user.includes('Generate up to') && user.includes('thoughtful questions');
+      const titleRequest = parsed.messages.some(message => message.role === 'system' && typeof message.content === 'string' && message.content.startsWith('You name conversations'));
       const finish = (delta: object, reason: string) => {
         if (response.destroyed || response.writableEnded) return;
         const frame = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
@@ -128,7 +135,14 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
       };
       const send = () => {
         held.delete(send);
-        if (user.includes('fixture-read') && !toolResult) finish({ tool_calls: [{ index: 0, id: 'fixture-read', type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: join(root, 'owned-external/sentinel.env') }) } }] }, 'tool_calls');
+        if (generatedQuestion && !titleRequest && options.generationProbe) {
+          generationAdvertised.push((parsed.tools ?? []).flatMap(tool => typeof tool.function?.name === 'string' ? [tool.function.name] : []));
+          if (!toolResult) {
+            generationForced++;
+            finish({ tool_calls: [{ index: 0, id: 'fixture-generation-execute', type: 'function', function: { name: 'execute', arguments: JSON.stringify({ code: `const response = await fetch(${JSON.stringify(options.generationProbe.gatewayUrl)}); return await response.text();` }) } }] }, 'tool_calls');
+          } else { generationToolResults++; finish({ content: JSON.stringify([{ text: 'Which owned fixture idea is worth exploring?' }]) }, 'stop'); }
+        }
+        else if (user.includes('fixture-read') && !toolResult) finish({ tool_calls: [{ index: 0, id: 'fixture-read', type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: join(root, 'owned-external/sentinel.env') }) } }] }, 'tool_calls');
         else finish({ content: toolResult ? 'fixture-read-complete' : user.includes('fixture-large') ? fixtureLargeResponse : 'fixture-ok' }, 'stop');
       };
       if (user.includes('fixture-hold') || user.includes('fixture-stop')) { held.add(send); response.once('close', () => held.delete(send)); }
@@ -208,7 +222,8 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
     await writeFile(credentialFile, token, { mode: 0o600, flag: 'wx' });
     const transportFile = join(metadata, 'transport.json');
     await writeFile(transportFile, JSON.stringify({ daemonOrigin: daemonUrl, web: { mode: 'loopback', origin: webUrl } }), { mode: 0o600, flag: 'wx' });
-    await writeFile(join(metadata, 'config.json'), JSON.stringify({ vaultDirectory: workspace, think: { service: { registrationFile: descriptor, requiredVersion: '2.2.2' }, location: { kind: 'vault' }, permissionMode: 'full', model: { providerID: 'fixture-provider', id: 'fixture-model' } } }), { mode: 0o600, flag: 'wx' });
+    await writeFile(join(metadata, 'config.json'), JSON.stringify({ vaultDirectory: workspace, think: { service: { registrationFile: descriptor, requiredVersion: '2.2.2' }, location: { kind: 'vault' }, permissionMode: 'full', model: { providerID: 'fixture-provider', id: 'fixture-model' } },
+      ...(options.generationProbe ? { ground: { generation: { enabled: true, timeZone: 'UTC', questions: { schedule: '0 6 * * *', count: 2 } } } } : {}) }), { mode: 0o600, flag: 'wx' });
     const copy = join(root, 'project');
     await mkdir(copy, { mode: 0o700 });
     for (const name of ['src', 'backend', 'public', 'package.json', 'tsconfig.json', 'next.config.ts', 'bunfig.toml']) await cp(join(project, name), join(copy, name), { recursive: true });
@@ -277,7 +292,7 @@ export async function launchThinkFixture(options: { binary: string }): Promise<T
       restarting = work;
       try { return await work; } finally { restarting = undefined; }
     };
-    return { webUrl, daemonUrl, root, workspace, credentialFile, headers: { authorization: `Bearer ${token}`, host: `127.0.0.1:${daemonPort}` }, control: { release: () => held.forEach(release => release()), info: () => ({ requests, held: held.size }) }, restartDaemon, close };
+    return { webUrl, daemonUrl, root, workspace, credentialFile, headers: { authorization: `Bearer ${token}`, host: `127.0.0.1:${daemonPort}` }, control: { release: () => held.forEach(release => release()), info: () => ({ requests, held: held.size }), generation: () => ({ forced: generationForced, toolResults: generationToolResults, advertised: generationAdvertised.map(names => [...names]) }) }, restartDaemon, close };
   } catch (error) { await close(); throw error; }
   finally { process.removeListener('SIGINT', interruptStartup); process.removeListener('SIGTERM', interruptStartup); }
 }

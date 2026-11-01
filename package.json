@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@opencode/client": "2.2.2",
+    "croner": "11.0.0",
     "hono": "4.13.14",
     "next": "16.4.3",
     "react": "19.3.1",

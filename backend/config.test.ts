@@ -77,3 +77,13 @@ it('loads a configured absolute vault directory from app metadata', async () => 
 
   await expect(loadConfig(root)).resolves.toEqual({ vaultDirectory: vault });
 });
+
+it('retains test-owned custom generation settings without replacing them with defaults', async () => {
+  const root = await createRoot();
+  const vault = join(root, 'vault');
+  await mkdir(vault);
+  const generation = { enabled: true, timeZone: 'Europe/Paris', questions: { schedule: '17 9 * * 2', count: 3 },
+    quotes: { schedule: '21 8 * * 3', count: 2 }, context: { lookbackDays: 4, maxNotes: 11, maxNoteBytes: 1024, maxTotalBytes: 4096 } };
+  await writeConfig(root, JSON.stringify({ vaultDirectory: vault, ground: { generation } }));
+  expect(await loadConfig(root)).toMatchObject({ vaultDirectory: vault, ground: { generation } });
+});

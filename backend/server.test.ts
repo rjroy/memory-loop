@@ -123,6 +123,54 @@ async function start() {
   };
 }
 
+it.each([
+  ['invalid cron', { questions: { schedule: 'not a cron', count: 3 } }],
+  ['invalid time zone', { timeZone: 'Fixture/Not_A_Zone' }],
+  ['output count above bound', { questions: { schedule: '17 9 * * 2', count: 51 } }],
+  ['per-note limit above total', { context: { lookbackDays: 4, maxNotes: 11, maxNoteBytes: 4096, maxTotalBytes: 1024 } }],
+])('reports %s generation configuration without disabling other capabilities', async (_name, invalid) => {
+  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const nativeCalls: string[] = [];
+  nativeFixture = createServer((req, res) => {
+    nativeCalls.push(`${req.method} ${req.url}`);
+    if (req.method === 'GET' && req.url === '/api/info') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ version: '2.2.2', pid: process.pid, urls: [], paths: { tmp: fixture } }));
+    } else res.writeHead(404).end('{}');
+  });
+  await new Promise<void>((resolve, reject) => nativeFixture?.listen(0, '127.0.0.1', resolve).once('error', reject));
+  const address = nativeFixture.address();
+  if (!address || typeof address === 'string') throw new Error('fixture listener unavailable');
+  const registrationFile = join(fixture, 'service.json');
+  await writeFile(registrationFile, JSON.stringify({ url: `http://127.0.0.1:${address.port}`, pid: process.pid, version: '2.2.2', password: 'fixture-only-password' }), { mode: 0o600 });
+  await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault,
+    think: { service: { registrationFile, requiredVersion: '2.2.2' }, location: { kind: 'vault' }, permissionMode: 'full' },
+    ground: { generation: { enabled: true, ...invalid } } }));
+  const request = await start();
+  expect((await request('/api/vault/tree')).status).toBe(200);
+  expect((await request('/api/ground/goals')).status).toBe(200);
+  const captured = await request('/api/capture', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Owned fixture thought' }) });
+  expect(captured.status).toBe(200);
+  expect(nativeCalls.filter(call => call.startsWith('POST '))).toEqual([]);
+  const logs = [...info.mock.calls, ...warn.mock.calls, ...error.mock.calls].map(args => JSON.stringify(args));
+  expect(logs.some(line => /generation/i.test(line) && /invalid/i.test(line))).toBe(true);
+  expect(logs.join('\n')).not.toContain(fixture);
+});
+
+it.each([undefined, { enabled: false }] as const)('keeps existing services usable when generation is unconfigured or disabled', async generation => {
+  await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault,
+    ...(generation ? { ground: { generation } } : {}) }));
+  const request = await start();
+  expect((await request('/api/vault/tree')).status).toBe(200);
+  expect((await request('/api/ground/goals')).status).toBe(200);
+  expect((await request('/api/capture', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Owned fixture thought' }) })).status).toBe(200);
+  const response = await request('/api/think/conversations', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ conversationId: '11111111-1111-4111-8111-111111111111', clientCommandId: '22222222-2222-4222-8222-222222222222' }) });
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({ error: { code: 'think_config_missing' } });
+});
+
 it('loads fixture config once and serves the real tree and selected note through the API', async () => {
   const request = await start();
   const tree = await request('/api/vault/tree');

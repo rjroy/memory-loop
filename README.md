@@ -8,16 +8,15 @@ fixture** below. Ground now presents six independent cards, including recent
 registered conversations with Resume and Delete, and can prepare an unsent Think
 draft. Opt-in daemon-resident daily questions and weekly model-attributed quotes
 publish to its Prompts and Inspiration resources.
-The latest deployment-neutral source changes have not been applied to running
-services; the Ground roadmap is not complete.
+After source updates, rebuild and restart the configured tiers before testing the
+updated version. The Ground roadmap is not complete.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
 curious Think and reflective Recall. The previous top-navigation implementation
 earned visual **SHIP**, technical **Accept** and independent checks.
 The native Next App Router migration (`memory-loop-1l0.2`) is accepted. Next
 presents the UI and proxies Recall's read-only API and Capture's write route to
 the authenticated Bun/Hono daemon. Capture has been verified with a disposable
-vault; a running deployment needs the updated build and restarted tiers before it
-serves this version. Think command/stream/content foundations are
+vault. Think command/stream/content foundations are
 available in the isolated fixture below, with conversation controls, reconnect,
 vault transcripts and automatic logging recovery. Phase 4 is independently
 accepted; Phase 5 is independently verified and accepted for fixture use.
@@ -29,8 +28,7 @@ draft; independent verification confirmed it is disabled when empty and enabled
 after entering an unsent draft. This does not measure token-by-token streaming or
 exact native terminal latency. The address is ephemeral. Network deployment is
 user-managed and is not a prerequisite.
-The daemon reads the JSON-configured vault when started. Earlier deployment
-checks do not establish that the latest source is running.
+The daemon reads the JSON-configured vault when started.
 
 ## Operator guide
 
@@ -252,9 +250,8 @@ requested from the model, **not independently verified**. Both counts default to
 five and are configurable from 1–50; valid partial and empty batches are accepted.
 External search, source fetching and evidence/API-key workflows are removed from
 the quote scope, not deferred.
-The `memory-loop-9ya.9` validation/operator handoff is prepared; applying the
-latest source and activating generation require separate authorization. This
-documentation enables nothing and does not establish the current private setting.
+Publication and generation activation are separate decisions. This documentation
+enables nothing and does not establish the current private setting.
 
 At that handoff, `enabled: true` plus daemon restart activates both jobs using the
 existing configured OpenCode service and Think agent/model selection/native
@@ -370,8 +367,7 @@ select the web listener. The daemon's listener must match its private
 
 #### Safe publication handoff
 
-The current source cleanup has not been applied to running services. Before any
-in-place publication, wait for and save active Think work and obtain permission
+Before any in-place publication, wait for and save active Think work and obtain permission
 for interruption. Identify the intended daemon root, selector and owned processes;
 do not silently substitute or migrate private configuration or state. Stop the
 app daemon and **every** web process serving the shared `.next`, confirm they have
@@ -550,9 +546,8 @@ automatic status polling, repeated destructive POST or destructive retry on
 restart. Do not restart expecting an incomplete deletion to finish automatically.
 
 Opt-in daily questions and weekly model-attributed inspiration are implemented
-and verified as described in the operator guide. Validation/operator handoff
-evidence (`memory-loop-9ya.9`) is prepared. The latest source cleanup is not yet
-published; separate authorization is needed for further interruption or job activation.
+and verified as described in the operator guide. Separate authorization is needed
+for further interruption or job activation.
 
 ## What Capture does
 
@@ -657,9 +652,8 @@ Ground's Phase 3a private durable-admission slice passed independent validation:
 frontend **111**, backend **602**, browser **60**, native UI **3 passed / 3 skipped**,
 both direct TypeScript checks and an isolated build. Fresh technical verification
 accepted the `GROUND-DURABLE-01` handoff correction. Evidence is recorded in
-`/tmp/opencode/ground-phase3a-final-validation.json`. This is source/fixture
-acceptance, not publication of this slice to the live deployment or completion
-of the Ground plan.
+`/tmp/opencode/ground-phase3a-final-validation.json`. Those source/fixture
+checks alone did not establish publication or completion of the Ground plan.
 
 Ground's Phase 2 resource and prefill slice passed independent validation in
 owned fixtures: frontend **108**, backend **581**, browser **59**, native UI

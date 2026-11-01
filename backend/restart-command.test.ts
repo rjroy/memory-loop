@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 
 const source = resolve(import.meta.dirname, '..');
 const bun = '/usr/bin/bun';
+const fixturePath = '/usr/bin:/bin';
 const roots: string[] = [];
 const children: ChildProcess[] = [];
 
@@ -52,7 +53,7 @@ async function fixture() {
     const script = join(root, kind === 'web' ? 'src/web/start.ts' : 'backend/runtime.ts');
     const args = ['--no-env-file', script, name, String(listener)];
     const transportFile = join(root, '.memory-loop', `${pair}.json`);
-    const child = spawn(bun, args, { cwd: root, env: { NODE_ENV: 'test', PATH: process.env.PATH, HOME: root, MEMORY_LOOP_TRANSPORT_FILE: transportFile }, stdio: 'ignore' });
+    const child = spawn(bun, args, { cwd: root, env: { NODE_ENV: 'test', PATH: fixturePath, HOME: root, MEMORY_LOOP_TRANSPORT_FILE: transportFile }, stdio: 'ignore' });
     children.push(child);
     if (!child.pid) throw new Error('fixture process did not start');
     await waitForFile(events, value => value.includes(`start ${name} ${child.pid}`));
@@ -61,7 +62,7 @@ async function fixture() {
   const metadata = join(root, '.memory-loop/restart.json');
   await writeFile(metadata, JSON.stringify({ version: 1, services }));
   const invoke = (extra: Record<string, string> = {}) => spawnSync(bun, ['--no-env-file', 'run', '--cwd', root, 'restart'], {
-    cwd: root, env: { NODE_ENV: 'test', PATH: process.env.PATH, HOME: root, ...extra }, encoding: 'utf8', timeout: 20000,
+    cwd: root, env: { NODE_ENV: 'test', PATH: fixturePath, HOME: root, ...extra }, encoding: 'utf8', timeout: 20000,
   });
   return { root, events, services, metadata, invoke };
 }
@@ -114,7 +115,7 @@ it('stops both managed webs before building and restarts the same managed settin
 
 it('refuses an unrelated PID before stopping any managed service or building', async () => {
   const f = await fixture();
-  const sentinel = spawn(bun, ['--no-env-file', '-e', 'setInterval(() => {}, 1000)'], { cwd: f.root, env: { NODE_ENV: 'test', PATH: process.env.PATH, HOME: f.root }, stdio: 'ignore' });
+  const sentinel = spawn(bun, ['--no-env-file', '-e', 'setInterval(() => {}, 1000)'], { cwd: f.root, env: { NODE_ENV: 'test', PATH: fixturePath, HOME: f.root }, stdio: 'ignore' });
   children.push(sentinel);
   if (!sentinel.pid) throw new Error('sentinel missing');
   const sentinelPid = sentinel.pid;
@@ -124,7 +125,7 @@ it('refuses an unrelated PID before stopping any managed service or building', a
   await writeFile(f.metadata, JSON.stringify(state));
   const result = f.invoke();
   expect(result.status).not.toBe(0);
-  expect(result.stdout + result.stderr).toMatch(/pid|ownership|managed/i);
+  expect(result.stdout + result.stderr).toContain('Managed PID ownership check failed: web-one');
   const text = await readFile(f.events, 'utf8');
   expect(text).not.toMatch(/^(?:stop |build$)/m);
   expect(() => process.kill(sentinelPid, 0)).not.toThrow();

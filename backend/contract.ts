@@ -20,6 +20,24 @@ export interface VaultTreeResponse {
 export interface VaultNoteResponse {
   name: string;
   markdown: string;
+  revision: string;
+  editable: boolean;
+}
+
+export interface VaultSaveRequest { id: VaultId; markdown: string; expectedRevision: string }
+export interface VaultSaveResponse { revision: string }
+export const vaultSaveTextLimit = 2 * 1024 * 1024;
+// JSON escaping may expand each UTF-8 byte to six ASCII bytes.
+export const vaultSaveBodyLimit = vaultSaveTextLimit * 6 + 65536;
+
+export function parseVaultSaveRequest(value: unknown): VaultSaveRequest | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 3 ||
+      !('id' in value) || !isVaultId(value.id) || !('markdown' in value) || typeof value.markdown !== 'string' ||
+      !('expectedRevision' in value) || typeof value.expectedRevision !== 'string' ||
+      value.expectedRevision.length === 0 || value.expectedRevision.length > 128) return;
+  const bytes = new TextEncoder().encode(value.markdown);
+  if (bytes.byteLength > vaultSaveTextLimit || new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes) !== value.markdown) return;
+  return { id: value.id, markdown: value.markdown, expectedRevision: value.expectedRevision };
 }
 
 export const vaultErrors = {
@@ -28,6 +46,10 @@ export const vaultErrors = {
   vault_unavailable: { status: 503, message: 'Vault directory is unavailable' },
   note_unavailable: { status: 404, message: 'Note is unavailable' },
   invalid_request: { status: 400, message: 'Invalid note identifier' },
+  note_conflict: { status: 409, message: 'Note has changed' },
+  note_not_editable: { status: 422, message: 'Note cannot be edited' },
+  note_save_unavailable: { status: 503, message: 'Note could not be saved' },
+  note_save_uncertain: { status: 503, message: 'Note save outcome is uncertain' },
 } as const;
 
 export type VaultErrorCode = keyof typeof vaultErrors;

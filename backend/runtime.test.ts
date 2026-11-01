@@ -169,7 +169,7 @@ it('starts the daemon package script with forwarded fixture paths and port', asy
   expect(tree.status).toBe(200);
   expect(JSON.parse(tree.body)).toMatchObject({ entries: [{ name: 'folder', children: [{ name: 'note.md' }] }] });
   const note = await serviceRequest(port, `/api/vault/note?${new URLSearchParams({ id: JSON.stringify(['folder', 'note.md']) })}`, { authorization: `Bearer ${token}` });
-  expect(JSON.parse(note.body)).toEqual({ name: 'note.md', markdown: '# fixture\n' });
+  expect(JSON.parse(note.body)).toEqual({ name: 'note.md', markdown: '# fixture\n', revision: expect.stringMatching(/^[a-f0-9]{64}$/), editable: true });
   expect((await serviceRequest(port, '/recall', { authorization: `Bearer ${token}` })).status).toBe(404);
 
   // Bun may wrap the runtime; signal only the process group created for this test.
@@ -197,7 +197,7 @@ it.each(['SIGTERM', 'SIGINT'] as const)('serves fixture API, rejects untrusted h
   expect(tree.status).toBe(200);
   expect(JSON.parse(tree.body)).toMatchObject({ entries: [{ name: 'folder', children: [{ name: 'note.md' }] }] });
   const note = await serviceRequest(port, `/api/vault/note?${new URLSearchParams({ id: JSON.stringify(['folder', 'note.md']) })}`, { authorization: `Bearer ${token}` });
-  expect(JSON.parse(note.body)).toEqual({ name: 'note.md', markdown: '# fixture\n' });
+  expect(JSON.parse(note.body)).toEqual({ name: 'note.md', markdown: '# fixture\n', revision: expect.stringMatching(/^[a-f0-9]{64}$/), editable: true });
   expect((await serviceRequest(port, '/recall', { authorization: `Bearer ${token}` })).status).toBe(404);
   expect((await requestWithHost(port, 'evil.example')).status).toBe(403);
   expect((await serviceRequest(port, '/api/vault/tree', { origin: 'http://evil.example', authorization: `Bearer ${token}` })).status).toBe(403);

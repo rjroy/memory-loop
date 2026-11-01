@@ -218,7 +218,7 @@ async function waitForCalls(calls: unknown[], count: number) {
 async function authenticatedSnapshot(f: ReturnType<typeof setup>) {
   const token = 'a'.repeat(64);
   const app = createApp({ authority: '127.0.0.1:3000', serviceToken: token, think: f.service,
-    vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+    vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '', revision: 'fixture-revision', editable: true }), save: async () => ({ revision: 'fixture-revision' }), close: async () => {} } } });
   const response = await app(new Request(`http://127.0.0.1:3000/api/think/conversations/${a.conversationId}`, { headers: { host: '127.0.0.1:3000', authorization: `Bearer ${token}` } }));
   expect(response.status).toBe(200);
   return await response.json() as Record<string, unknown>;
@@ -238,7 +238,7 @@ describe('Phase 3 authenticated snapshot and watch', () => {
     await waitForCalls(f.prompts, 1);
     await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'original', clientCommandId: send.clientCommandId })));
     const appOptions = { authority, serviceToken: token, think: f.service,
-      vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } },
+      vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '', revision: 'fixture-revision', editable: true }), save: async () => ({ revision: 'fixture-revision' }), close: async () => {} } },
       ...(watchPolicy ? { watchPolicy } : {}) } satisfies AppOptions & { watchPolicy?: { leaseMs: number; heartbeatMs: number } };
     const app = createApp(appOptions);
     const base = `/api/think/conversations/${a.conversationId}`;
@@ -477,7 +477,7 @@ describe('Phase 3 authenticated content transfer', () => {
       const original = page.entries.find(entry => entry.kind === 'original' && entry.clientCommandId === send.clientCommandId);
       if (!original || original.kind !== 'original') throw new Error('fixture original missing');
       const app = createApp({ authority, serviceToken: token, think: f.service,
-        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '', revision: 'fixture-revision', editable: true }), save: async () => ({ revision: 'fixture-revision' }), close: async () => {} } } });
       const base = `/api/think/conversations/${a.conversationId}`;
       const request = (path: string, init: RequestInit = {}) => {
         const headers = new Headers(init.headers);
@@ -1345,7 +1345,7 @@ describe('real private-store normalized projection', () => {
       await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
       await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
       const app = createApp({ authority: '127.0.0.1:3000', serviceToken: 'a'.repeat(64), think: f.service,
-        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '', revision: 'fixture-revision', editable: true }), save: async () => ({ revision: 'fixture-revision' }), close: async () => {} } } });
       const caller = new AbortController();
       const response = await app(new Request(`http://127.0.0.1:3000/api/think/conversations/${a.conversationId}/messages`, {
         method: 'POST', signal: caller.signal, headers: { host: '127.0.0.1:3000', authorization: `Bearer ${'a'.repeat(64)}`, 'content-type': 'application/json' }, body: JSON.stringify({ clientCommandId: send.clientCommandId, text: send.text }),
@@ -1472,7 +1472,7 @@ describe('real private-store normalized projection', () => {
       expect(await readFile(path)).toEqual(changed);
       const nativeCalls = f.prompt.mock.calls.length;
       const app = createApp({ authority: '127.0.0.1:3000', serviceToken: 'a'.repeat(64), think: f.service,
-        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '', revision: 'fixture-revision', editable: true }), save: async () => ({ revision: 'fixture-revision' }), close: async () => {} } } });
       const response = await app(new Request(`http://127.0.0.1:3000/api/think/conversations/${a.conversationId}/transcript/retry`, {
         method: 'POST', headers: { host: '127.0.0.1:3000', authorization: `Bearer ${'a'.repeat(64)}` },
       }));
@@ -1504,7 +1504,7 @@ describe('real private-store normalized projection', () => {
     const f = setup(model, bodies, vault, undefined, { directory: config?.transcriptDirectory });
     try {
       const app = createApp({ authority: '127.0.0.1:3000', serviceToken: 'a'.repeat(64), think: f.service,
-        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: 'recall fixture' }), close: async () => {} } } });
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: 'recall fixture', revision: 'fixture-revision', editable: true }), save: async () => ({ revision: 'fixture-revision' }), close: async () => {} } } });
       const response = await app(new Request('http://127.0.0.1:3000/api/vault/tree', { headers: { host: '127.0.0.1:3000', authorization: `Bearer ${'a'.repeat(64)}` } }));
       expect(response.status).toBe(200);
       await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
@@ -1529,7 +1529,7 @@ describe('real private-store normalized projection', () => {
       await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
       const token = 'a'.repeat(64);
       const app = createApp({ authority: '127.0.0.1:3000', serviceToken: token, think: f.service,
-        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '', revision: 'fixture-revision', editable: true }), save: async () => ({ revision: 'fixture-revision' }), close: async () => {} } } });
       const abort = new AbortController();
       const response = await app(new Request(`http://127.0.0.1:3000/api/think/conversations/${a.conversationId}/messages`, {
         method: 'POST', signal: abort.signal, headers: { host: '127.0.0.1:3000', authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -1738,7 +1738,7 @@ describe('daemon-owned native prompt dispatch', () => {
       const token = 'a'.repeat(64);
       const authority = '127.0.0.1:3000';
       const app = createApp({ authority, serviceToken: token, think: f.service,
-        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+        vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '', revision: 'fixture-revision', editable: true }), save: async () => ({ revision: 'fixture-revision' }), close: async () => {} } } });
       const caller = new AbortController();
       const response = await app(new Request(`http://${authority}/api/think/conversations/${a.conversationId}/messages`, {
         method: 'POST', signal: caller.signal,
@@ -2146,7 +2146,7 @@ describe('owned ordinary form HTTP boundary', () => {
     f.complete(0);
     await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
     const app = createApp({ authority, serviceToken: token, think: f.service,
-      vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '' }), close: async () => {} } } });
+      vault: { reader: { tree: async () => ({ entries: [] }), note: async () => ({ name: 'fixture', markdown: '', revision: 'fixture-revision', editable: true }), save: async () => ({ revision: 'fixture-revision' }), close: async () => {} } } });
     const request = (path: string, init: RequestInit = {}) => app(new Request(`http://${authority}${path}`, {
       ...init, headers: { host: authority, authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
     }));

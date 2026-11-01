@@ -1,4 +1,4 @@
-import { isVaultComponent, isVaultErrorCode, isVaultId, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultTreeResponse } from '../../backend/contract';
+import { isVaultComponent, isVaultErrorCode, isVaultId, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultTreeResponse, type VaultSaveRequest, type VaultSaveResponse } from '../../backend/contract';
 
 export type RecallFailure = VaultErrorCode | 'transport';
 
@@ -80,7 +80,31 @@ export function readNote(key: string, signal: AbortSignal): Promise<VaultNoteRes
   if (!isVaultId(id)) return Promise.reject(new RecallReadError('invalid_request'));
   return request(`/api/vault/note?${new URLSearchParams({ id: key })}`, 'note', signal,
     (value): value is VaultNoteResponse => record(value) && isVaultComponent(value.name) &&
-      value.name === id.at(-1) && typeof value.markdown === 'string');
+      value.name === id.at(-1) && typeof value.markdown === 'string' &&
+      typeof value.revision === 'string' && value.revision.length > 0 && value.revision.length <= 128 && typeof value.editable === 'boolean');
+}
+
+/** A lost/malformed acknowledgement is uncertain, never evidence of no write. */
+export async function saveNote(body: VaultSaveRequest): Promise<VaultSaveResponse> {
+  const requestId = ++readSequence;
+  let outcome: RecallFailure | 'saved' = 'note_save_uncertain';
+  console.info('vault_save_attempt', { requestId });
+  try {
+    const response = await fetch('/api/vault/note', { method: 'POST', cache: 'no-store',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') throw new RecallReadError('note_save_uncertain');
+    const value: unknown = await response.json();
+    if (!response.ok) {
+      if (record(value) && record(value.error) && isVaultErrorCode(value.error.code)) throw new RecallReadError(value.error.code);
+      throw new RecallReadError('note_save_uncertain');
+    }
+    if (!record(value) || typeof value.revision !== 'string' || !value.revision.length || value.revision.length > 128) throw new RecallReadError('note_save_uncertain');
+    outcome = 'saved';
+    return { revision: value.revision };
+  } catch (error: unknown) {
+    if (error instanceof RecallReadError) { outcome = error.code; throw error; }
+    throw new RecallReadError('note_save_uncertain');
+  } finally { console.info('vault_save_outcome', { requestId, status: outcome }); }
 }
 
 export function findNote(entries: VaultEntry[], id: VaultId): VaultEntry | undefined {
@@ -100,5 +124,9 @@ export const failureCopy: Record<RecallFailure, { heading: string; body: string;
   vault_unavailable: { heading: 'Vault unavailable', body: "Memory Loop can't read the configured vault. Check that it exists and is readable, then try again.", action: 'Try again' },
   note_unavailable: { heading: 'Note unavailable', body: "This note may have moved, been removed, or can't be read. Choose another file or try again.", action: 'Retry note' },
   invalid_request: { heading: 'Note address is invalid', body: 'Choose a Markdown note from Files.', action: '' },
+  note_conflict: { heading: 'Note changed', body: 'The note changed since it was read.', action: 'Retry note' },
+  note_not_editable: { heading: 'Note cannot be edited', body: 'This note can still be viewed.', action: 'Retry note' },
+  note_save_unavailable: { heading: 'Save unavailable', body: 'The note could not be saved.', action: 'Retry note' },
+  note_save_uncertain: { heading: 'Save outcome uncertain', body: 'Check the note before trying again.', action: 'Retry note' },
   transport: { heading: 'Vault service unavailable', body: "Recall couldn't reach the vault service. Check the local service and try again.", action: 'Try again' },
 };

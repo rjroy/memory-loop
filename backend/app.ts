@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { isVaultErrorCode, vaultErrors, type VaultErrorCode } from './contract';
+import { isVaultErrorCode, parseVaultSaveRequest, vaultErrors, vaultSaveBodyLimit, type VaultErrorCode } from './contract';
 import type { ThinkService, ThinkUnavailableCode } from './think/service';
 import { ThinkServiceError } from './think/errors';
 import { thinkErrors, type ThinkErrorCode } from './think/contract';
@@ -93,14 +93,14 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         const match = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') ?? '');
         if (!match || !timingSafeEqual(expected, Buffer.from(match[1], 'hex'))) {
           context.res = Response.json({ error: { code: 'unauthorized', message: 'Service authentication required' } }, { status: 401 });
-        } else if (context.req.method !== 'GET' && !(context.req.method === 'POST' && (path === '/api/capture' || path === thinkBase ||
+        } else if (context.req.method !== 'GET' && !(context.req.method === 'POST' && (path === '/api/vault/note' || path === '/api/capture' || path === thinkBase ||
           path === '/api/think/views' || path === '/api/think/selection' ||
           /^\/api\/think\/conversations\/[^/]+\/(?:resume|delete|messages|runs\/[^/]+\/stop|decisions\/[^/]+\/reply)$/.test(path)))) {
           context.res = Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 });
         } else await next();
       }
     } catch {
-      context.res = operation === 'think' ? thinkError('think_unavailable') : publicError('vault_unavailable');
+      context.res = operation === 'think' ? thinkError('think_unavailable') : publicError(path === '/api/vault/note' && context.req.method === 'POST' ? 'note_save_uncertain' : 'vault_unavailable');
     }
     context.header('Cache-Control', 'no-store');
     context.header('X-Content-Type-Options', 'nosniff');
@@ -192,6 +192,17 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     } catch { return publicError('invalid_request'); }
     if ('error' in options.vault) return publicError(options.vault.error);
     try { return context.json(await options.vault.reader.note(id)); } catch (error: unknown) { return serviceError(error); }
+  });
+  app.post('/api/vault/note', async context => {
+    if (new URL(context.req.url).search) return publicError('invalid_request');
+    const input = parseVaultSaveRequest(await jsonInput(context.req.raw, vaultSaveBodyLimit));
+    if (!input) return publicError('invalid_request');
+    if ('error' in options.vault) return publicError(options.vault.error);
+    try { return context.json(await options.vault.reader.save(input.id, input.markdown, input.expectedRevision)); }
+    catch (error: unknown) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+      return publicError(isVaultErrorCode(code) ? code : 'note_save_uncertain');
+    }
   });
   app.post(thinkBase, async context => {
     const value = await jsonInput(context.req.raw, 4096);

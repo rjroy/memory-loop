@@ -18,7 +18,8 @@ const base = '/api/think/conversations';
 function setup(unavailable = false) {
   const vault: VaultReader = {
     tree: vi.fn(async () => ({ entries: [] })),
-    note: vi.fn(async () => ({ name: 'note.md', markdown: 'fixture' })),
+    note: vi.fn(async () => ({ name: 'note.md', markdown: 'fixture', revision: 'fixture', editable: true })),
+    save: vi.fn(),
     close: vi.fn(async () => {}),
   };
   const think = thinkHttpService();

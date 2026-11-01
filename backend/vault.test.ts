@@ -46,7 +46,7 @@ it('lists sorted Markdown and folders, excluding dot entries, other files and sy
 it('returns the exact Markdown and display name of a nested note', async () => {
   await mkdir(join(root, 'folder'));
   await writeFile(join(root, 'folder', 'note.md'), '# A note\n\nText.\n');
-  expect(await reader.note(['folder', 'note.md'])).toEqual({ name: 'note.md', markdown: '# A note\n\nText.\n' });
+  expect(await reader.note(['folder', 'note.md'])).toMatchObject({ name: 'note.md', markdown: '# A note\n\nText.\n' });
 });
 
 it('returns an empty tree for an empty vault', async () => {
@@ -58,7 +58,7 @@ it('continues using the pinned root if its configured pathname is replaced', asy
   await rename(root, join(fixture, 'original-root'));
   await mkdir(root);
   await writeFile(join(root, 'note.md'), 'replacement');
-  expect(await reader.note(['note.md'])).toEqual({ name: 'note.md', markdown: 'original' });
+  expect(await reader.note(['note.md'])).toMatchObject({ name: 'note.md', markdown: 'original' });
 });
 
 it('accepts a decoded JSON array of nested components', () => {

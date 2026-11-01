@@ -294,7 +294,7 @@ describe('production Next HTTP boundary', () => {
           return;
         }
         res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'fixture=private' });
-        res.end(JSON.stringify(req.url?.startsWith('/api/vault/note') ? { name: 'fixture.md', markdown: '# fixture' } : { entries: [] }));
+        res.end(JSON.stringify(req.url?.startsWith('/api/vault/note') ? { name: 'fixture.md', markdown: '# fixture', revision: 'fixture-revision', editable: true } : { entries: [] }));
       });
     });
     const upstreamPort = await listen(upstream);
@@ -817,7 +817,7 @@ describe('production Next HTTP boundary', () => {
     const id = ['folder', 'a % &.md'];
     const response = await request(`/api/vault/note?${new URLSearchParams({ id: JSON.stringify(id) })}`);
     expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({ name: 'fixture.md', markdown: '# fixture' });
+    expect(JSON.parse(response.body)).toEqual({ name: 'fixture.md', markdown: '# fixture', revision: 'fixture-revision', editable: true });
     expect(calls).toHaveLength(1);
     expect(new URL(calls[0].url ?? '', 'http://127.0.0.1').searchParams.getAll('id')).toEqual([JSON.stringify(id)]);
   });

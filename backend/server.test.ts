@@ -181,7 +181,7 @@ it('loads fixture config once and serves the real tree and selected note through
   ] }] });
   const note = await request(`/api/vault/note?${new URLSearchParams({ id: JSON.stringify(['folder', 'note.md']) })}`);
   expect(note.status).toBe(200);
-  expect(await note.json()).toEqual({ name: 'note.md', markdown: '# Fixture note\n' });
+  expect(await note.json()).toEqual({ name: 'note.md', markdown: '# Fixture note\n', revision: expect.stringMatching(/^[a-f0-9]{64}$/), editable: true });
   await writeFile(join(projectRoot, '.memory-loop', 'config.json'), '{');
   expect((await request('/api/vault/tree')).status).toBe(200);
 });

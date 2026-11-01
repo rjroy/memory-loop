@@ -1,9 +1,11 @@
 import { createContext, useContext, useRef } from 'react';
 import type { ReactNode } from 'react';
 import type { VaultId } from '../../backend/contract';
+import { createRecallEditor } from './editor';
 
 export function createRecallSession() {
   return {
+    editor: createRecallEditor(),
     lastId: null as VaultId | null,
     expanded: new Set<string>(),
     desktopVisible: true,

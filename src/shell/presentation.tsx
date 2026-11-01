@@ -35,6 +35,9 @@ export interface Presentation {
   navigate(href: string, options?: PresentationNavigationOptions): void;
   /** Registers a Next Link intent; Next itself performs the navigation. */
   linkIntent(href: string, replace?: boolean): void;
+  /** A single active volatile editor may hold a departure before URL mutation. */
+  registerNavigationGuard?(guard: (resume: () => void) => boolean): () => void;
+  guardNavigation?(href: string, resume: () => void): boolean;
 }
 
 export const PresentationContext = createContext<Presentation | null>(null);

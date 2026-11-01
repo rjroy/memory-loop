@@ -1,5 +1,6 @@
 import 'server-only';
 import { request } from 'node:http';
+import { vaultSaveBodyLimit } from '../../backend/contract';
 
 /** Node fetch adds Sec-Fetch-Mode even with fresh headers. The service protocol
  * deliberately forbids browser metadata, so use the standard Node HTTP client. */
@@ -7,10 +8,14 @@ export async function daemonFetch(input: RequestInfo | URL, init?: RequestInit):
   if (!(input instanceof URL)) throw new Error('Invalid service target');
   if (input.protocol !== 'http:' || input.hostname !== '127.0.0.1' || input.username || input.password ||
       !['/api/vault/tree', '/api/vault/note'].includes(input.pathname) || input.hash) throw new Error('Invalid service target');
+  const method = init?.method ?? 'GET';
+  const saving = method === 'POST' && input.pathname === '/api/vault/note' && !input.search;
+  if (method !== 'GET' && !saving) throw new Error('Invalid service method');
+  if (saving && (typeof init?.body !== 'string' || Buffer.byteLength(init.body) > vaultSaveBodyLimit)) throw new Error('Invalid service body');
   const supplied = new Headers(init?.headers);
-  const headers = { Accept: supplied.get('accept') ?? 'application/json', Authorization: supplied.get('authorization') ?? '' };
+  const headers = { Accept: supplied.get('accept') ?? 'application/json', Authorization: supplied.get('authorization') ?? '', ...(saving ? { 'Content-Type': 'application/json' } : {}) };
   return new Promise<Response>((resolve, reject) => {
-    const upstream = request(input, { method: 'GET', headers, signal: init?.signal ?? undefined }, response => {
+    const upstream = request(input, { method, headers, signal: init?.signal ?? undefined }, response => {
       const chunks: Buffer[] = [];
       response.on('data', (chunk: Buffer) => chunks.push(chunk));
       response.on('error', reject);
@@ -26,6 +31,6 @@ export async function daemonFetch(input: RequestInfo | URL, init?: RequestInit):
       });
     });
     upstream.on('error', reject);
-    upstream.end();
+    upstream.end(saving && typeof init?.body === 'string' ? init.body : undefined);
   });
 }

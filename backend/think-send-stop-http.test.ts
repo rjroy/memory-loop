@@ -15,7 +15,8 @@ const base = `/api/think/conversations/${conversationId}`;
 function setup() {
   const vault: VaultReader = {
     tree: vi.fn(async () => ({ entries: [] })),
-    note: vi.fn(async () => ({ name: 'fixture.md', markdown: 'fixture' })),
+    note: vi.fn(async () => ({ name: 'fixture.md', markdown: 'fixture', revision: 'fixture', editable: true })),
+    save: vi.fn(),
     close: vi.fn(async () => {}),
   };
   const sendReceipt: SendReceipt = { kind: 'send', conversationId, clientCommandId, runId, epoch, state: 'registered' };

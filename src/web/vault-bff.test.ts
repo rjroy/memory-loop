@@ -6,7 +6,7 @@ import { handleVaultRequest } from './vault-bff';
 const token = 'a'.repeat(64);
 const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3001' }, serviceToken: token };
 const tree: VaultTreeResponse = { entries: [{ kind: 'directory', name: 'folder', id: ['folder'], children: [{ kind: 'note', name: 'a.md', id: ['folder', 'a.md'] }] }] };
-const note: VaultNoteResponse = { name: 'a.md', markdown: '# fixture' };
+const note: VaultNoteResponse = { name: 'a.md', markdown: '# fixture', revision: 'revision-1', editable: true };
 const json = (body: unknown, status = 200, headers: HeadersInit = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 function setup(upstream: () => Promise<Response> = async () => json(tree), selected = transport) {
   const fetcher = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => upstream());
@@ -55,6 +55,49 @@ describe('server-only vault BFF boundary', () => {
     const target = new URL(String(fetcher.mock.calls[0][0]));
     expect(target.origin + target.pathname).toBe('http://127.0.0.1:3001/api/vault/note');
     expect([...target.searchParams]).toEqual([['id', JSON.stringify(id)]]);
+  });
+  it('forwards an explicitly saved note with only fixed authenticated headers', async () => {
+    const payload = { id: ['folder', 'a.md'], markdown: 'edited', expectedRevision: 'revision-1' };
+    const { request, fetcher } = setup(async () => json({ revision: 'revision-2', private: 'discard' }));
+    const response = await request('/api/vault/note', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3000', cookie: 'private=1' }, body: JSON.stringify(payload) });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(await safe(response))).toEqual({ revision: 'revision-2' });
+    const [target, init] = fetcher.mock.calls[0];
+    expect(String(target)).toBe('http://127.0.0.1:3001/api/vault/note');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual(payload);
+    expect([...new Headers(init?.headers)].sort()).toEqual([['accept', 'application/json'], ['authorization', `Bearer ${token}`], ['content-type', 'application/json']]);
+  });
+  it.each([
+    ['cross-origin', { origin: 'https://evil.example', 'content-type': 'application/json' }, JSON.stringify({ id: ['a.md'], markdown: 'x', expectedRevision: 'r' }), 403],
+    ['wrong type', { 'content-type': 'text/plain' }, JSON.stringify({ id: ['a.md'], markdown: 'x', expectedRevision: 'r' }), 400],
+    ['oversize UTF-8', { 'content-type': 'application/json' }, JSON.stringify({ id: ['a.md'], markdown: 'é'.repeat(1024 * 1024 + 1), expectedRevision: 'r' }), 400],
+    ['path escape', { 'content-type': 'application/json' }, JSON.stringify({ id: ['..', 'a.md'], markdown: 'x', expectedRevision: 'r' }), 400],
+  ])('rejects save %s before upstream', async (_label, headers, body, status) => {
+    const { request, fetcher } = setup();
+    const response = await request('/api/vault/note', { method: 'POST', headers, body });
+    expect(response.status).toBe(status);
+    await safe(response);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('sanitizes a known save conflict and never exposes upstream details', async () => {
+    const { request, log } = setup(async () => json({ error: { code: 'note_conflict', message: 'private upstream detail' } }, 409));
+    const response = await request('/api/vault/note', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: ['a.md'], markdown: 'private note', expectedRevision: 'r' }) });
+    expect(response.status).toBe(409);
+    const body = await safe(response);
+    expect(JSON.parse(body)).toMatchObject({ error: { code: 'note_conflict' } });
+    expect(body + JSON.stringify(log.mock.calls)).not.toMatch(/private upstream detail|private note/);
+  });
+  it.each([
+    ['lost response', async () => { throw new Error('private transport detail'); }],
+    ['invalid success', async () => json({ private: 'private upstream detail' })],
+  ])('reports an uncertain save after dispatch on %s', async (_label, upstream) => {
+    const { request, log } = setup(upstream);
+    const response = await request('/api/vault/note', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: ['a.md'], markdown: 'private note', expectedRevision: 'r' }) });
+    expect(response.status).toBe(503);
+    const body = await safe(response);
+    expect(JSON.parse(body)).toMatchObject({ error: { code: 'note_save_uncertain' } });
+    expect(body + JSON.stringify(log.mock.calls)).not.toMatch(/private transport detail|private upstream detail|private note/);
   });
   it.each(['/api/vault/note', '/api/vault/note?id=%ZZ', '/api/vault/note?id=%5B%22..%22%5D', '/api/vault/note?id=%5B%22a.md%22%5D&id=%5B%22b.md%22%5D'])('rejects invalid identifiers before upstream: %s', async path => {
     const { request, fetcher } = setup();

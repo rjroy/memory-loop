@@ -68,7 +68,7 @@ test('MS4-R1: reopened Files reveals the focused current row below its sticky he
     return { kind: 'note', name, id: [name] };
   });
   await page.route('**/api/vault/tree', route => route.fulfill({ json: { entries } }));
-  await page.route('**/api/vault/note?*', route => route.fulfill({ json: { name: 'fixture-030.md', markdown: '# Fixture note' } }));
+  await page.route('**/api/vault/note?*', route => route.fulfill({ json: { name: 'fixture-030.md', markdown: '# Fixture note', revision: 'fixture-revision', editable: true } }));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${recallOrigin}/recall`);
   const files = page.getByRole('navigation', { name: 'Vault files' });
@@ -113,7 +113,7 @@ test('MS4-R2: widening a focused mobile expand control transfers focus to the vi
 test('MS4-R3: re-entry preserves the reading anchor after sidebar collapse changes layout', async ({ page, recallOrigin }) => {
   const markdown = ['# Anchor fixture', ...Array.from({ length: 60 }, (_, index) =>
     `Paragraph ${index}: ${'fixture prose '.repeat(12)}`)].join('\n\n');
-  await page.route('**/api/vault/note?*', route => route.fulfill({ json: { name: 'danger.md', markdown } }));
+  await page.route('**/api/vault/note?*', route => route.fulfill({ json: { name: 'danger.md', markdown, revision: 'fixture-revision', editable: true } }));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(noteUrl(recallOrigin, ['danger.md']));
   const article = page.getByRole('article');
@@ -341,7 +341,7 @@ test('a late A response cannot replace the selected B document or move focus', a
     if (id === JSON.stringify(['alpha.md'])) {
       startedA();
       await held;
-      try { await route.fulfill({ json: { name: 'alpha.md', markdown: 'Late alpha body' } }); }
+      try { await route.fulfill({ json: { name: 'alpha.md', markdown: 'Late alpha body', revision: 'fixture-revision', editable: true } }); }
       catch { /* A superseded request may be cancelled. */ }
       finally { finishedA(); }
     } else await route.continue();

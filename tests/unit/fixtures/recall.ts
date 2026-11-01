@@ -92,7 +92,7 @@ export function installVaultApi(options: {
       if (!Array.isArray(id) || !id.length || !id.every(part => typeof part === 'string')) {
         throw new Error('Expected JSON component-array ID');
       }
-      return options.note?.(id) ?? jsonResponse({ name: id.at(-1), markdown: `Fixture body for ${id.at(-1)}.` });
+      return options.note?.(id) ?? jsonResponse({ name: id.at(-1), markdown: `Fixture body for ${id.at(-1)}.`, revision: 'fixture-revision', editable: true });
     }
     throw new Error('Unexpected endpoint in unit test');
   });

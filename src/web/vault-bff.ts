@@ -1,5 +1,5 @@
 import type { LoadedTransport } from '../../backend/transport';
-import { isVaultErrorCode, isVaultId, vaultErrors, type VaultEntry, type VaultId, type VaultErrorCode } from '../../backend/contract';
+import { isVaultErrorCode, isVaultId, parseVaultSaveRequest, vaultErrors, vaultSaveBodyLimit, type VaultEntry, type VaultId, type VaultErrorCode } from '../../backend/contract';
 import { allowsWebRequest } from './request-policy';
 
 export interface BffDependencies {
@@ -33,8 +33,33 @@ function entry(value: unknown): VaultEntry {
 function project(value: unknown, operation: 'tree' | 'note') {
   if (!record(value)) throw new Error('invalid');
   if (operation === 'tree' && Array.isArray(value.entries)) return { entries: value.entries.map(entry) };
-  if (operation === 'note' && typeof value.name === 'string' && typeof value.markdown === 'string') return { name: value.name, markdown: value.markdown };
+  if (operation === 'note' && typeof value.name === 'string' && typeof value.markdown === 'string' && typeof value.revision === 'string' && value.revision.length > 0 && typeof value.editable === 'boolean') return { name: value.name, markdown: value.markdown, revision: value.revision, editable: value.editable };
   throw new Error('invalid');
+}
+
+async function saveBody(request: Request): Promise<string> {
+  if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers.get('content-type') ?? '') || !request.body) throw new Error('invalid');
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const read = async () => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > vaultSaveBodyLimit) { void reader.cancel().catch(() => {}); throw new Error('invalid'); }
+        chunks.push(value);
+      }
+      const input = parseVaultSaveRequest(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))) as unknown);
+      if (!input) throw new Error('invalid');
+      return JSON.stringify(input);
+    };
+    return await Promise.race([read(), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => { void reader.cancel().catch(() => {}); reject(new Error('timeout')); }, 5000);
+    })]);
+  } finally { if (timer) clearTimeout(timer); reader.releaseLock(); }
 }
 function validDaemonOrigin(origin: string): boolean {
   try {
@@ -57,13 +82,20 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
   const requestId = crypto.randomUUID();
   log('vault_bff_attempt', { requestId, operation });
   let response: Response;
+  let dispatched = false;
+  const saving = operation === 'note' && request.method === 'POST';
   try {
     if (!allowsWebRequest(request)) response = failure('forbidden');
     else if (operation === 'other') response = failure('not_found');
-    else if (request.method !== 'GET') response = failure('method_not_allowed');
+    else if (request.method !== 'GET' && !saving) response = failure('method_not_allowed');
     else {
       let id: VaultId | undefined;
-      if (operation === 'note') {
+      let body: string | undefined;
+      if (saving) {
+        try { if (url.search) throw new Error('invalid'); body = await saveBody(request); }
+        catch { response = failure('invalid_request'); log('vault_bff_outcome', { requestId, operation, status: response.status }); return response; }
+      }
+      if (operation === 'note' && !saving) {
         try {
           decodeURIComponent(url.search.replace(/\+/g, ' '));
           const values = url.searchParams.getAll('id');
@@ -71,7 +103,7 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
           if (isVaultId(parsed)) id = parsed;
         } catch { /* A malformed identifier is a client error. */ }
       }
-      if (operation === 'note' && !id) response = failure('invalid_request');
+      if (operation === 'note' && !saving && !id) response = failure('invalid_request');
       else if (!validDaemonOrigin(transport.config.daemonOrigin) || !/^[a-f0-9]{64}$/.test(transport.serviceToken)) response = failure('service_unavailable');
       else {
         const target = new URL(`/api/vault/${operation}`, transport.config.daemonOrigin);
@@ -83,18 +115,25 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
             timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, 5000);
           });
           const upstream = async () => {
-            const result = await dependencies.fetch(target, { headers: { Accept: 'application/json', Authorization: `Bearer ${transport.serviceToken}` }, cache: 'no-store', redirect: 'error', signal: controller.signal });
+            dispatched = saving;
+            const result = await dependencies.fetch(target, { ...(saving ? { method: 'POST', body } : {}), headers: { Accept: 'application/json', Authorization: `Bearer ${transport.serviceToken}`, ...(saving ? { 'Content-Type': 'application/json' } : {}) }, cache: 'no-store', redirect: 'error', signal: controller.signal });
             if (!/^application\/json(?:\s*;|\s*$)/i.test(result.headers.get('content-type') ?? '')) throw new Error('invalid');
             const value: unknown = await result.json();
-            if (result.status === 200) return Response.json(project(value, operation), { headers });
+            if (result.status === 200) {
+              if (saving) {
+                if (!record(value) || typeof value.revision !== 'string' || !value.revision || value.revision.length > 128) throw new Error('invalid');
+                return Response.json({ revision: value.revision }, { headers });
+              }
+              return Response.json(project(value, operation), { headers });
+            }
             const code = domainError(value, result.status);
-            return code ? failure(code) : failure('service_unavailable');
+            return code ? failure(code) : failure(saving ? 'note_save_uncertain' : 'service_unavailable');
           };
           response = await Promise.race([upstream(), timeout]);
         } finally { if (timer !== undefined) clearTimeout(timer); }
       }
     }
-  } catch { response = failure('service_unavailable'); }
+  } catch { response = failure(dispatched ? 'note_save_uncertain' : 'service_unavailable'); }
   log('vault_bff_outcome', { requestId, operation, status: response.status });
   return response;
 }

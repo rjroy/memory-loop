@@ -118,7 +118,7 @@ describe('Recall: native file selection and reading', () => {
   it('clears the previous body, round-trips component IDs, focuses identity once and renders Markdown/GFM', async () => {
     const note = deferred<Response>();
     api = installVaultApi({ note: id => JSON.stringify(id) === JSON.stringify(alphaId)
-      ? note.promise : jsonResponse({ name: 'Root.md', markdown: 'Previous fixture body.' }) });
+      ? note.promise : jsonResponse({ name: 'Root.md', markdown: 'Previous fixture body.', revision: 'fixture-revision', editable: true }) });
     const user = userEvent.setup();
     mount();
     const files = await expandShelf(user);
@@ -138,7 +138,7 @@ describe('Recall: native file selection and reading', () => {
     const identityFocus = document.activeElement;
 
     await act(async () => { note.resolve(jsonResponse({ name: 'Alpha #1.md', markdown:
-      '# Markdown test heading\n\nA **strong fixture** paragraph.\n\n| Key | Value |\n| --- | --- |\n| Test | Owned |\n\n- [x] Read-only task\n\n###### Deep source heading' })); });
+      '# Markdown test heading\n\nA **strong fixture** paragraph.\n\n| Key | Value |\n| --- | --- |\n| Test | Owned |\n\n- [x] Read-only task\n\n###### Deep source heading', revision: 'fixture-revision', editable: true })); });
     const article = await screen.findByRole('article', { name: 'Alpha #1.md' });
     expect(within(article).getByRole('heading', { level: 2, name: 'Markdown test heading' })).toBeInTheDocument();
     expect(within(article).getByRole('heading', { level: 6, name: 'Deep source heading' })).toBeInTheDocument();
@@ -204,7 +204,7 @@ describe('Recall: native file selection and reading', () => {
     await user.click(within(screen.getByRole('navigation', { name: 'Vault files' })).getByRole('link', { name: 'Alpha #1.md' }));
     expect(screen.queryByRole('navigation', { name: 'Vault files' })).not.toBeInTheDocument();
     expect(screen.getByText('Opening note…')).toBeInTheDocument();
-    await act(async () => { note.resolve(jsonResponse({ name: 'Alpha #1.md', markdown: 'Phone fixture body.' })); });
+    await act(async () => { note.resolve(jsonResponse({ name: 'Alpha #1.md', markdown: 'Phone fixture body.', revision: 'fixture-revision', editable: true })); });
     await screen.findByRole('article', { name: 'Alpha #1.md' });
     await user.click(screen.getByRole('button', { name: 'Expand files sidebar' }));
     expect(screen.queryByRole('article')).not.toBeInTheDocument();
@@ -279,7 +279,7 @@ describe('Recall: truthful failures and short-query recovery', () => {
   it('keeps empty folders, unavailable notes and successful empty documents distinct; retry preserves the ID', async () => {
     let attempts = 0;
     api = installVaultApi({ note: () => ++attempts === 1 ? errorResponse('note_unavailable', 404)
-      : jsonResponse({ name: 'Alpha #1.md', markdown: '' }) });
+      : jsonResponse({ name: 'Alpha #1.md', markdown: '', revision: 'fixture-revision', editable: true }) });
     const user = userEvent.setup();
     mount();
     const files = await expandShelf(user);
@@ -350,10 +350,10 @@ describe('Recall: truthful failures and short-query recovery', () => {
       expect(within(screen.getByRole('navigation', { name: 'Vault files' })).getByRole('link', { name: 'Beta.md' })).not.toHaveFocus();
     });
     const focus = document.activeElement;
-    await act(async () => { b.resolve(jsonResponse({ name: 'Beta.md', markdown: 'Current B fixture.' })); });
+    await act(async () => { b.resolve(jsonResponse({ name: 'Beta.md', markdown: 'Current B fixture.', revision: 'fixture-revision', editable: true })); });
     await screen.findByText('Current B fixture.');
     await act(async () => { a.resolve(late === 'success'
-      ? jsonResponse({ name: 'Alpha #1.md', markdown: 'Stale A fixture.' }) : errorResponse('note_unavailable', 404)); });
+      ? jsonResponse({ name: 'Alpha #1.md', markdown: 'Stale A fixture.', revision: 'fixture-revision', editable: true }) : errorResponse('note_unavailable', 404)); });
     expect(screen.getByRole('article', { name: 'Beta.md' })).toHaveTextContent('Current B fixture.');
     expect(screen.queryByText('Stale A fixture.')).not.toBeInTheDocument();
     expect(screen.queryByText('Note unavailable')).not.toBeInTheDocument();
@@ -376,7 +376,7 @@ describe('Recall: renderer and route boundaries', () => {
       '[secure web](https://example.invalid/reference)', '[plain web](http://example.invalid/reference)', '',
       '- [x] Immutable fixture task',
     ].join('\n');
-    api = installVaultApi({ note: () => jsonResponse({ name: 'Alpha #1.md', markdown }) });
+    api = installVaultApi({ note: () => jsonResponse({ name: 'Alpha #1.md', markdown, revision: 'fixture-revision', editable: true }) });
     const writes = vi.spyOn(Storage.prototype, 'setItem');
     mount(noteLocation(alphaId));
     const article = await screen.findByRole('article', { name: 'Alpha #1.md' });

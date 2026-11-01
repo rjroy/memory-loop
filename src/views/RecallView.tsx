@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { usePresentation } from '../shell/presentation';
 import type { Presentation } from '../shell/presentation';
 import type { VaultId } from '../../backend/contract';
@@ -25,6 +25,36 @@ function Failure({ code, retry }: { code: RecallFailure; retry: () => void }) {
   return <Message {...failureCopy[code]} onAction={retry} />;
 }
 
+function revealEditorWhenClipped(field: HTMLTextAreaElement) {
+  const viewport = window.visualViewport;
+  let top = viewport?.offsetTop ?? 0;
+  let bottom = top + (viewport?.height ?? window.innerHeight);
+  let left = viewport?.offsetLeft ?? 0;
+  let right = left + (viewport?.width ?? window.innerWidth);
+  // The reader scrolls locally; enlarged layouts also scroll the document.
+  // Visible-overflow layout boxes must not be mistaken for clipping panes.
+  for (let ancestor = field.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    if (ancestor === document.scrollingElement) continue;
+    const style = getComputedStyle(ancestor);
+    const bounds = ancestor.getBoundingClientRect();
+    if (/^(auto|scroll|hidden|clip)$/.test(style.overflowY)) {
+      top = Math.max(top, bounds.top + ancestor.clientTop);
+      bottom = Math.min(bottom, bounds.top + ancestor.clientTop + ancestor.clientHeight);
+    }
+    if (/^(auto|scroll|hidden|clip)$/.test(style.overflowX)) {
+      left = Math.max(left, bounds.left + ancestor.clientLeft);
+      right = Math.min(right, bounds.left + ancestor.clientLeft + ancestor.clientWidth);
+    }
+  }
+  const bounds = field.getBoundingClientRect();
+  // An oversized editor already spanning the visible area needs no movement.
+  const vertical = (bounds.top >= top && bounds.bottom <= bottom) || (bounds.top <= top && bounds.bottom >= bottom);
+  const horizontal = (bounds.left >= left && bounds.right <= right) || (bounds.left <= left && bounds.right >= right);
+  if (bottom <= top || right <= left || !vertical || !horizontal) {
+    field.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  }
+}
+
 export default function RecallView() {
   const presentation = usePresentation();
   // Next may retain the outgoing page during a transition. Its note controller
@@ -33,8 +63,10 @@ export default function RecallView() {
   return presentation.location.pathname === '/recall' ? <RecallContent {...presentation} /> : null;
 }
 
-function RecallContent({ location, navigate, navigationType, isNavigating, recallSnapshot, rememberEntry, registerRecallCapture }: Presentation) {
+function RecallContent({ location, navigate, navigationType, isNavigating, recallSnapshot, rememberEntry, registerRecallCapture, registerNavigationGuard }: Presentation) {
   const session = useRecallSession();
+  const editor = session.editor;
+  const editing = useSyncExternalStore(editor.subscribe, editor.getSnapshot, editor.getSnapshot);
   const desktop = useDesktop();
   const selection = useMemo(() => selectionFromSearch(location.search), [location.search]);
   const key = selection.id ? idKey(selection.id) : null;
@@ -43,7 +75,10 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   const [treeRevision, setTreeRevision] = useState(0);
   const [noteRevision, setNoteRevision] = useState(0);
   const tree = useVaultRead('tree', treeRevision, readTree);
-  const note = useVaultRead(key, noteRevision, readNote);
+  const read = useVaultRead(key, noteRevision, readNote);
+  const note = editing.confirmed?.key === key ? { status: 'ready' as const, data: editing.confirmed.note } : read;
+  const draft = editing.draft && idKey(editing.draft.id) === key ? editing.draft : null;
+  const dirty = Boolean(draft && draft.markdown !== draft.base.markdown);
   // A route POP can remount this controller rather than transition an existing
   // one. Seed it from that entry just as the transition effect would below.
   const initialPop = useRef(navigationType === 'POP' ? recallSnapshot : undefined).current;
@@ -58,9 +93,15 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   const readerRef = useRef<HTMLElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const identityRef = useRef<HTMLParagraphElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editRef = useRef<HTMLButtonElement>(null);
+  const keepRef = useRef<HTMLButtonElement>(null);
+  const actionRef = useRef<HTMLDivElement>(null);
+  const focusOwned = useRef(false);
+  const wasEditing = useRef(Boolean(draft));
   const collapseRef = useRef<HTMLButtonElement>(null);
   const expandRef = useRef<HTMLButtonElement>(null);
-  const pendingFocus = useRef<'files' | 'identity' | 'toggle' | null>(
+  const pendingFocus = useRef<'files' | 'identity' | 'toggle' | 'editor' | 'edit' | null>(
     navigationType === 'POP' && selection.id && !initialHashPresentation ? 'identity' : null,
   );
   const attachExpand = useCallback((element: HTMLButtonElement | null) => {
@@ -89,6 +130,62 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   const showFiles = canBrowse && (desktop ? desktopVisible : narrowOpen);
   const showReader = canBrowse && (desktop || !narrowOpen);
 
+  useLayoutEffect(() => registerNavigationGuard?.(resume => {
+    const leave = () => { editor.leave(); resume(); };
+    if (!editor.request(leave)) return false;
+    editor.leave();
+    return true;
+  }), [editor, registerNavigationGuard]);
+
+  useEffect(() => {
+    const unload = (event: BeforeUnloadEvent) => {
+      const current = editor.getSnapshot();
+      if (!editor.dirty() && !current.saving && !current.reloading) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const focus = () => { focusOwned.current = document.activeElement === textareaRef.current || Boolean(actionRef.current?.contains(document.activeElement)); };
+    window.addEventListener('beforeunload', unload);
+    document.addEventListener('focusin', focus);
+    return () => { window.removeEventListener('beforeunload', unload); document.removeEventListener('focusin', focus); };
+  }, [editor]);
+
+  useLayoutEffect(() => {
+    if (editing.pending) keepRef.current?.focus();
+  }, [editing.pending]);
+
+  useLayoutEffect(() => {
+    if (wasEditing.current && !draft) {
+      pendingScroll.current = editor.position.readingScroll;
+      if (focusOwned.current) pendingFocus.current = 'edit';
+    }
+    wasEditing.current = Boolean(draft);
+  }, [draft, editor]);
+
+  const restoreEditor = () => {
+    const field = textareaRef.current;
+    if (!field) return;
+    const { start, end, direction, scroll } = editor.position;
+    field.focus({ preventScroll: true });
+    field.setSelectionRange(start, end, direction);
+    field.scrollTop = scroll;
+    revealEditorWhenClipped(field);
+    field.scrollTop = scroll;
+  };
+
+  useLayoutEffect(() => {
+    const field = textareaRef.current;
+    if (!draft || !showReader || !field) return;
+    field.setSelectionRange(editor.position.start, editor.position.end, editor.position.direction);
+    field.scrollTop = editor.position.scroll;
+  }, [Boolean(draft), showReader, editor]);
+
+  const keepEditing = () => {
+    pendingFocus.current = 'editor';
+    setNarrowOpen(false);
+    editor.keep();
+  };
+
   useLayoutEffect(() => {
     if (initialPop) session.treeScroll = { ...initialPop.treeScroll };
   }, [initialPop, session]);
@@ -96,11 +193,11 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   // The coordinator reads this synchronously at native entry creation or before
   // selection changes panes. All per-entry snapshots live in that one map.
   useLayoutEffect(() => registerRecallCapture(entryKey, () => ({
-    readerScroll: pendingScroll.current ?? (showReader && readerRef.current ? readerRef.current.scrollTop : session.readerScroll),
+    readerScroll: draft ? editor.position.readingScroll : pendingScroll.current ?? (showReader && readerRef.current ? readerRef.current.scrollTop : session.readerScroll),
     treeScroll: showFiles && tree.status === 'ready' && filesRef.current
       ? { top: filesRef.current.scrollTop, left: filesRef.current.scrollLeft } : { ...session.treeScroll },
     narrowOpen, desktopVisible,
-  })), [entryKey, registerRecallCapture, showReader, showFiles, tree.status, narrowOpen, desktopVisible, session]);
+  })), [entryKey, registerRecallCapture, showReader, showFiles, tree.status, narrowOpen, desktopVisible, session, Boolean(draft), editor]);
 
   const revealAncestors = (id: VaultId | null) => {
     if (!id) return;
@@ -186,6 +283,15 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   }, [showFiles, tree.status, key, expanded]);
 
   useLayoutEffect(() => {
+    if (!showReader || pendingScroll.current === null || !readerRef.current) return;
+    // Restore the pane before focus reveal, so it cannot undo that reveal.
+    if (pendingScroll.current > 0 && note.status !== 'ready') return;
+    readerRef.current.scrollTop = pendingScroll.current;
+    session.readerScroll = readerRef.current.scrollTop;
+    pendingScroll.current = null;
+  }, [showReader, note.status, entryKey, session, Boolean(draft)]);
+
+  useLayoutEffect(() => {
     // A selection can close Files while Next still displays the outgoing note.
     // Keep its focus intent until the selected entry is actually committed.
     if (isNavigating) return;
@@ -193,22 +299,13 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
     if (!target) return;
     const element = target === 'files'
       ? filesRef.current?.querySelector<HTMLElement>('a[aria-current="page"]') ?? filesHeading.current
-      : target === 'identity' ? identityRef.current : showFiles ? collapseRef.current : expandRef.current;
-    if (element && (target !== 'files' || showFiles) && (target !== 'identity' || showReader)) {
-      element.focus({ preventScroll: true });
+      : target === 'identity' ? identityRef.current : target === 'editor' ? textareaRef.current : target === 'edit' ? editRef.current : showFiles ? collapseRef.current : expandRef.current;
+    if (element && (target !== 'files' || showFiles) && (!['identity', 'editor', 'edit'].includes(target) || showReader)) {
+      if (target === 'editor') restoreEditor(); else element.focus({ preventScroll: true });
       if (target === 'files') element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       pendingFocus.current = null;
     }
-  }, [entryKey, isNavigating, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded]);
-
-  useLayoutEffect(() => {
-    if (!showReader || pendingScroll.current === null || !readerRef.current) return;
-    // Keep the intent through the bare route, loading and recoverable read failures.
-    if (pendingScroll.current > 0 && note.status !== 'ready') return;
-    readerRef.current.scrollTop = pendingScroll.current;
-    session.readerScroll = readerRef.current.scrollTop;
-    pendingScroll.current = null;
-  }, [showReader, note.status, entryKey, session]);
+  }, [entryKey, isNavigating, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded, editing]);
 
   useLayoutEffect(() => {
     document.title = filename ? `${filename} · Recall · Memory Loop`
@@ -216,6 +313,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   }, [filename, selection.invalid, note.status]);
 
   const rememberReader = () => {
+    if (draft) return;
     if (isNavigating || !showReader || !readerRef.current || pendingScroll.current !== null) return;
     session.readerScroll = readerRef.current.scrollTop;
     rememberEntry();
@@ -241,6 +339,14 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
   };
 
   const selectNote = (id: VaultId) => {
+    if (idKey(id) === key && draft) {
+      pendingFocus.current = 'editor';
+      setNarrowOpen(false);
+      if (showReader) { restoreEditor(); pendingFocus.current = null; }
+      return;
+    }
+    const commit = () => {
+    editor.leave();
     rememberEntry();
     rememberReader();
     pendingFocus.current = 'identity';
@@ -254,9 +360,12 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
       navigate(noteLocation(id));
     }
     console.info('recall_selection_changed', { trigger: 'file-link' });
+    };
+    if (editor.request(commit)) commit();
   };
 
   const retryAll = () => {
+    editor.clearConfirmed();
     if (tree.status !== 'loading') setTreeRevision(value => value + 1);
     if (selection.id && note.status !== 'loading') setNoteRevision(value => value + 1);
   };
@@ -273,6 +382,11 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
       : note.status === 'error' ? failureCopy[note.error].heading : tree.status === 'loading' ? 'Loading files…' : '';
 
   return <div className="recall" onKeyDown={event => {
+    if (draft && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      if (!event.nativeEvent.isComposing && !event.repeat) void editor.save();
+    }
+    if (editing.pending && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); keepEditing(); return; }
     if (showFiles && event.key === 'Escape' && filesRef.current?.contains(event.target as Node)) {
       event.preventDefault(); closeFiles();
     }
@@ -283,9 +397,29 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
         <p className="note-identity" ref={identityRef} tabIndex={-1} id="note-identity">{filename ?? 'Requested note'}</p>
         {filename && <p className="note-path">{selection.id.join(' / ')}</p>}
       </div>}
-      <p className="read-only-label">Read-only</p>
+      <div className="recall-edit-actions" ref={actionRef} aria-busy={editing.saving || editing.reloading}>
+        {draft ? <>
+          <button className="recall-button" type="button" disabled={editing.saving || editing.reloading} onClick={() => {
+            const cancel = () => { pendingFocus.current = 'edit'; editor.finish(); };
+            if (editor.request(cancel)) cancel();
+          }}>Cancel</button>
+          <button className="recall-button recall-save" type="button" disabled={!dirty || editing.saving || editing.reloading || Boolean(editing.pending) || editing.fenced}
+            aria-describedby={editing.issue ? 'recall-edit-error' : undefined} onClick={() => void editor.save()}>{editing.saving ? 'Saving…' : 'Save'}</button>
+        </> : note.status === 'ready' && note.data.editable ? <button className="recall-button" type="button" ref={editRef} onClick={() => {
+          if (!selection.id) return;
+          editor.position.readingScroll = readerRef.current?.scrollTop ?? session.readerScroll;
+          pendingFocus.current = 'editor';
+          setNarrowOpen(false);
+          editor.start(selection.id, note.data);
+        }}>Edit</button> : note.status === 'ready' ? <p className="read-only-label">Read-only</p> : null}
+      </div>
     </header>
-    <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{announcement ? `Recall: ${announcement}` : ''}</div>
+    {editing.pending && <section className="recall-discard" aria-labelledby="recall-discard-title" aria-describedby="recall-discard-copy">
+      <div><h2 id="recall-discard-title">Discard unsaved changes?</h2><p id="recall-discard-copy">Your changes to “{filename}” haven't been saved.</p></div>
+      <div className="recall-confirm-actions"><button className="recall-button" type="button" ref={keepRef} onClick={keepEditing}>Keep editing</button>
+        <button className="recall-button recall-discard-action" type="button" onClick={() => editor.discard()}>Discard changes</button></div>
+    </section>}
+    <div className={editing.notice.includes('Please wait') ? 'recall-notice' : 'visually-hidden'} role="status" aria-live="polite" aria-atomic="true">{editing.notice || (announcement ? `Recall: ${announcement}` : '')}</div>
     {blocked ? <div className="recall-blocking"><Failure code={blocked} retry={retryAll} /></div>
       : empty ? <div className="recall-blocking"><Message heading="No Markdown notes to show"
         body="Recall lists Markdown files and folders only. Other files and hidden entries aren't shown." /></div>
@@ -301,7 +435,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
               <h2 ref={filesHeading} tabIndex={-1}>Files</h2>
               <FilesToggle expanded active={showFiles} ref={collapseRef} onToggle={closeFiles} />
             </header>
-            {desktop && selection.id && <button className="pane-jump" type="button" onClick={() => articleRef.current?.focus({ preventScroll: true })}>Skip to note</button>}
+            {desktop && selection.id && <button className="pane-jump" type="button" onClick={() => draft ? restoreEditor() : articleRef.current?.focus({ preventScroll: true })}>Skip to note</button>}
             {tree.status === 'loading' ? <p className="files-status">Loading files…</p>
               : tree.status === 'error' ? <Message heading="Couldn't load files" body="The file list couldn't be retrieved. Try again."
                 action="Retry files" onAction={() => setTreeRevision(value => value + 1)} />
@@ -312,21 +446,40 @@ function RecallContent({ location, navigate, navigationType, isNavigating, recal
                   <p className="files-footnote">Markdown files only.</p>
                 </>}
           </nav>
-          <section className="recall-reader" ref={readerRef} hidden={!showReader} aria-label="Note reader" onScroll={rememberReader}>
+          <section className={`recall-reader${draft ? ' recall-reader--editing' : ''}`} ref={readerRef} hidden={!showReader} aria-label="Note reader" onScroll={rememberReader}>
             {showReader && !showFiles && <div className="reader-controls">
               <FilesToggle expanded={false} ref={attachExpand} onToggle={openFiles} />
             </div>}
-            {showReader && <div className="reader-measure">
+            {showReader && <div className={`reader-measure${draft ? ' reader-measure--editing' : ''}`}>
               {selection.invalid ? <Failure code="invalid_request" retry={() => {}} />
                 : selection.id ? <>
                   <button className="pane-jump" type="button" onClick={openFiles}>Return to files</button>
-                  <article ref={articleRef} tabIndex={-1} aria-labelledby="note-identity" aria-busy={note.status === 'loading'}>
+                  {draft ? <div className="recall-editor">
+                    {editing.issue && <div className="recall-edit-error" id="recall-edit-error" role="alert">
+                      <h2>{editing.issue === 'note_conflict' ? 'This note has changed since you opened it.' : editing.issue === 'reload' ? "Couldn't reload this note." : ['transport', 'note_save_uncertain'].includes(editing.issue) ? 'Save not confirmed.' : "Couldn't save this note."}</h2>
+                      <p>{editing.issue === 'note_conflict' ? 'Your draft is still here. Copy any changes you want to keep, then reload the saved note.'
+                        : editing.issue === 'note_unavailable' || editing.issue === 'note_not_editable' ? 'This note may have moved or is no longer writable. Your draft is still here.'
+                          : editing.issue === 'reload' ? 'Your draft is still here. Try reloading again.'
+                            : ['transport', 'note_save_uncertain'].includes(editing.issue) ? 'Your draft is still here. Check the connection and try saving again.' : 'Your draft is still here. Try saving again.'}</p>
+                      {(editing.fenced || editing.issue === 'reload') && <button className="recall-button" type="button" disabled={editing.reloading} onClick={() => {
+                        const reload = () => { void editor.reload(); };
+                        if (editor.request(reload)) reload();
+                      }}>{editing.reloading ? 'Reloading…' : 'Reload saved note'}</button>}
+                    </div>}
+                    <div className="recall-editor-label"><label id="recall-markdown-label" htmlFor="recall-markdown">Markdown</label>{dirty && <span>Unsaved changes</span>}</div>
+                    <textarea id="recall-markdown" ref={textareaRef} value={draft.markdown} spellCheck={false} aria-labelledby="recall-markdown-label note-identity"
+                      aria-describedby={editing.issue ? 'recall-edit-error' : undefined} readOnly={editing.reloading}
+                      onChange={event => editor.change(event.target.value)} onSelect={event => {
+                        const field = event.currentTarget;
+                        Object.assign(editor.position, { start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection });
+                      }} onScroll={event => { editor.position.scroll = event.currentTarget.scrollTop; }} />
+                  </div> : <article ref={articleRef} tabIndex={-1} aria-labelledby="note-identity" aria-busy={note.status === 'loading'}>
                     {note.status === 'loading' ? <p className="note-status">Opening note…</p>
-                      : note.status === 'error' ? <Failure code={note.error} retry={() => setNoteRevision(value => value + 1)} />
+                      : note.status === 'error' ? <Failure code={note.error} retry={() => { editor.clearConfirmed(); setNoteRevision(value => value + 1); }} />
                         : note.status === 'ready' && (note.data.markdown.length
                           ? <MarkdownDocument markdown={note.data.markdown} /> : <p className="note-status">This note is empty.</p>)}
-                  </article>
-                </> : <Message heading="Choose a Markdown note" body="Open a folder or choose a file in Files. Notes open read-only." />}
+                  </article>}
+                </> : <Message heading="Choose a Markdown note" body="Open a folder or choose a file in Files." />}
             </div>}
           </section>
         </div>}

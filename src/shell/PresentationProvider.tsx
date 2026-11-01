@@ -7,11 +7,12 @@ import { destinations } from '../navigation';
 import { PresentationContext, sameQuery } from './presentation';
 import type { NavigationType, PresentationLocation, PresentationNavigationOptions, RecallPosition } from './presentation';
 
-// Only the observational part of the standard Navigation API is used. Next owns
-// pushes/replacements; the browser owns traversal. No history state is touched.
+// Next owns pushes/replacements; native traversal can be cancelled before entry
+// change while an editor holds a draft. No history state or entries are rewritten.
 interface BrowserEntry { readonly key: string; readonly url: string | null }
 interface EntryChange extends Event { readonly from: BrowserEntry; readonly navigationType: 'push' | 'replace' | 'traverse' | 'reload' | null }
-interface BrowserNavigation extends EventTarget { readonly currentEntry: BrowserEntry | null }
+interface BrowserNavigation extends EventTarget { readonly currentEntry: BrowserEntry | null; traverseTo(key: string): { finished: Promise<unknown> } }
+interface NavigationAttempt extends Event { destination: BrowserEntry; navigationType: string; hashChange: boolean; canIntercept: boolean }
 type WindowPosition = { x: number; y: number; element: HTMLElement | null; elementId: string | null };
 type Snapshot = { location: PresentationLocation; window?: WindowPosition; recall?: RecallPosition; prepared: boolean };
 type View = { location: PresentationLocation; navigationType: NavigationType; recallSnapshot?: RecallPosition };
@@ -50,6 +51,8 @@ export default function PresentationProvider({ children }: { children: ReactNode
   const generation = useRef(0);
   const navigationGeneration = useCallback(() => generation.current, []);
   const liveRecall = useRef<{ key: string; capture: () => RecallPosition } | null>(null);
+  const departureGuard = useRef<((resume: () => void) => boolean) | null>(null);
+  const approvedTraversal = useRef<string | null>(null);
   const mounted = useRef(false);
   const notified = useRef(false);
   const applying = useRef(false);
@@ -111,6 +114,17 @@ export default function PresentationProvider({ children }: { children: ReactNode
     return () => { if (heading.current === registration) heading.current = null; };
   }, [focusHeading]);
 
+  const registerNavigationGuard = useCallback((guard: (resume: () => void) => boolean) => {
+    departureGuard.current = guard;
+    return () => { if (departureGuard.current === guard) departureGuard.current = null; };
+  }, []);
+  const guardNavigation = useCallback((href: string, resume: () => void) => {
+    const target = new URL(href, window.location.href);
+    const current = new URL(window.location.href);
+    if (target.origin === current.origin && target.pathname === current.pathname && sameQuery(target.search, current.search)) return true;
+    return departureGuard.current?.(resume) ?? true;
+  }, []);
+
   const linkIntent = useCallback((href: string, replace = false, focus?: 'preserve') => {
     const url = new URL(href, window.location.href);
     if (url.origin !== window.location.origin) throw new Error('App navigation must be same-origin');
@@ -118,11 +132,14 @@ export default function PresentationProvider({ children }: { children: ReactNode
     intent.current = { url: relative(url), navigationType: replace ? 'REPLACE' : 'PUSH', generation: ++generation.current, focus };
     notify();
   }, [notify, rememberEntry]);
-  const navigate = useCallback((href: string, options?: PresentationNavigationOptions) => {
+  const commitNavigation = useCallback((href: string, options?: PresentationNavigationOptions) => {
     linkIntent(href, options?.replace, options?.focus);
     if (options?.replace) router.replace(href, { scroll: false });
     else router.push(href, { scroll: false });
   }, [linkIntent, router]);
+  const navigate = useCallback((href: string, options?: PresentationNavigationOptions) => {
+    if (guardNavigation(href, () => commitNavigation(href, options))) commitNavigation(href, options);
+  }, [guardNavigation, commitNavigation]);
 
   useLayoutEffect(() => {
     mounted.current = true;
@@ -135,6 +152,17 @@ export default function PresentationProvider({ children }: { children: ReactNode
     const initialView = asView(initial, 'INITIAL');
     visit.current = { view: initialView, url: relative(new URL(window.location.href)), generation: generation.current, repair: null, published: false, entryEffect: 'INITIAL' };
     setCommitted(initialView);
+
+    const navigating = (raw: Event) => {
+      const event = raw as NavigationAttempt;
+      if (event.navigationType !== 'traverse' || !event.destination.url || !event.cancelable) return;
+      if (approvedTraversal.current === event.destination.key) { approvedTraversal.current = null; return; }
+      const allowed = guardNavigation(event.destination.url, () => {
+        approvedTraversal.current = event.destination.key;
+        source.traverseTo(event.destination.key).finished.catch(() => { approvedTraversal.current = null; });
+      });
+      if (!allowed) event.preventDefault();
+    };
 
     const entryChanged = (event: Event) => {
       const change = event as EntryChange;
@@ -197,17 +225,19 @@ export default function PresentationProvider({ children }: { children: ReactNode
       else if (visit.current?.view.navigationType === 'HASH') capture(key, false);
     };
     source.addEventListener('currententrychange', entryChanged);
+    source.addEventListener('navigate', navigating);
     document.addEventListener('click', rememberEntry, true);
     document.addEventListener('focusin', rememberFocusOrScroll);
     window.addEventListener('scroll', rememberFocusOrScroll, { passive: true });
     return () => {
       mounted.current = false;
       source.removeEventListener('currententrychange', entryChanged);
+      source.removeEventListener('navigate', navigating);
       document.removeEventListener('click', rememberEntry, true);
       document.removeEventListener('focusin', rememberFocusOrScroll);
       window.removeEventListener('scroll', rememberFocusOrScroll);
     };
-  }, [capture, notify, rememberEntry]);
+  }, [capture, notify, rememberEntry, guardNavigation]);
 
   const active = visit.current;
   const matches = (location: PresentationLocation) => location.pathname === pathname && sameQuery(location.search, search);
@@ -269,7 +299,7 @@ export default function PresentationProvider({ children }: { children: ReactNode
   }, [pathname, search, preparing, completedRepair, revision, notify, router, startTransition, focusHeading]);
 
   if (unsupported) return <main id="main-content"><h1>Browser update required</h1><p>Memory Loop requires an updated browser with the Navigation API.</p></main>;
-  return <PresentationContext.Provider value={{ ...display, isNavigating: Boolean(intent.current || (active && !active.published)), navigationGeneration, rememberEntry, registerRecallCapture, registerHeading, navigate, linkIntent }}>
+  return <PresentationContext.Provider value={{ ...display, isNavigating: Boolean(intent.current || (active && !active.published)), navigationGeneration, rememberEntry, registerRecallCapture, registerHeading, navigate, linkIntent, registerNavigationGuard, guardNavigation }}>
     {children}
   </PresentationContext.Provider>;
 }

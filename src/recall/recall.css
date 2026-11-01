@@ -16,6 +16,7 @@
 }
 
 .recall {
+  container: recall-view / inline-size;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -39,7 +40,8 @@
 
 .recall-toolbar h1 { display: flex; align-items: center; min-height: 44px; }
 .recall-note-location { min-width: 0; }
-.read-only-label { grid-column: 3; margin: 0; font-size: .875rem; }
+.read-only-label { margin: 0; font-size: .875rem; }
+.recall-edit-actions { grid-column: 3; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; min-width: 0; }
 
 .recall-button {
   display: inline-flex;
@@ -57,7 +59,31 @@
 
 .recall-button:hover { color: var(--text-strong); background: var(--surface-raised); }
 .recall-button:active { color: var(--text-strong); background: var(--surface-selected); }
-.recall-button:disabled { cursor: wait; text-decoration: none; }
+.recall-button:disabled { cursor: default; text-decoration: none; color: var(--muted); background: var(--surface); }
+.recall-save { background: var(--lantern); border-color: var(--lantern); color: var(--night); font-weight: 600 !important; }
+.recall-save:not(:disabled):hover { background: var(--lantern-bright); border-color: var(--lantern-bright); color: var(--night); }
+.recall-save:not(:disabled):active { background: var(--lantern); color: var(--night); }
+.recall-save:disabled { border-color: var(--control-boundary); }
+.recall-discard-action { color: var(--danger); border-color: var(--danger); }
+.recall-discard-action:hover { color: var(--danger); }
+.recall-discard { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 2rem; border-bottom: 1px solid var(--control-boundary); }
+.recall-discard h2, .recall-edit-error h2 { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.recall-discard p, .recall-edit-error p { margin: .25rem 0 0; overflow-wrap: anywhere; }
+.recall-discard > div { min-width: 0; }
+.recall-confirm-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.recall-notice { padding: .75rem 2rem; border-bottom: 1px solid var(--rule); }
+.recall-reader--editing { display: flex; flex-direction: column; padding-bottom: 1.75rem; }
+.recall-reader--editing > .reader-controls { flex-shrink: 0; }
+.recall-reader .reader-measure--editing { width: 100%; max-width: 60rem; flex: 1; display: flex; flex-direction: column; }
+.app-shell--recall .workspace:has(.recall-editor) { overflow: visible; }
+.recall:has(.recall-editor) .recall-panes { min-height: 20rem; }
+.recall-editor { display: flex; flex-direction: column; flex: 1; gap: .75rem; min-height: 0; }
+.recall-editor-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; font-size: .875rem; line-height: 1.5; }
+.recall-editor-label label { font-weight: 600; }
+.recall-editor-label span { color: var(--muted); }
+.recall-editor textarea { display: block; width: 100%; flex: 1; min-height: calc(6 * 1.6em + 2rem); resize: vertical; padding: 1rem; border: 1px solid var(--control-boundary); border-radius: 4px; color: var(--ink); caret-color: var(--ink); background: var(--surface-document); font: 400 1.0625rem/1.6 'Source Sans 3', system-ui, sans-serif; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--control-boundary) var(--surface-document); }
+.recall-edit-error { font-size: 1rem; line-height: 1.5; }
+.recall-edit-error .recall-button { margin-top: .75rem; }
 
 .files-header {
   position: sticky;
@@ -270,11 +296,17 @@
 @media (width < 56rem) {
   .recall-toolbar { padding: 8px max(20px, env(safe-area-inset-right, 0px)) 8px max(20px, env(safe-area-inset-left, 0px)); }
   .recall-note-location { grid-column: 1 / -1; grid-row: 2; }
-  .read-only-label { grid-row: 1; }
+  .recall-edit-actions { grid-row: 1; }
+  .recall-discard, .recall-notice { padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
   .recall-files { --files-top-inset: 1.25rem; padding: var(--files-top-inset) max(1rem, env(safe-area-inset-right, 0px)) 2rem max(1rem, env(safe-area-inset-left, 0px)); border: 0; }
   .recall-reader { padding: 1.5rem max(1.25rem, env(safe-area-inset-right, 0px)) 3rem max(1.25rem, env(safe-area-inset-left, 0px)); }
   .recall-blocking { padding: 1.5rem 1.25rem; }
   .recall-panes--split { grid-template-columns: minmax(0, 1fr); }
+}
+
+@container recall-view (width < 23em) {
+  .recall-toolbar:has(.recall-edit-actions > :nth-child(2)) { grid-template-columns: minmax(0, 1fr); }
+  .recall-toolbar:has(.recall-edit-actions > :nth-child(2)) .recall-edit-actions { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; }
 }
 
 @media (height < 30rem) {

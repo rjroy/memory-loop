@@ -2,7 +2,8 @@ import { constants, type Stats } from 'node:fs';
 import { link, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { isVaultComponent } from './contract';
 import { GroundGenerationError } from './ground-generation-error';
-import { mergeQuestions, questionCandidates, questionDigest, questionResourceLimit } from './ground-generation-questions';
+import { questionDigest, questionResourceLimit } from './ground-generation-questions';
+import { generationCandidates, mergeGenerationCandidates, type GenerationJob } from './ground-generation-formats';
 import { publicationTempName, type GroundGenerationPublicationState, type PublicationBaseline, type PublicationIdentity,
   type QuestionPublication, type QuestionPublicationPlan } from './ground-generation-publication-state';
 import type { GenerationAttempt } from './ground-generation-state';
@@ -135,11 +136,19 @@ export interface GroundQuestionPublisher {
   cleanup(signal: AbortSignal): Promise<void>;
 }
 
-/** Immutable plans authorize only this configured resource. Hash/recheck + rename is NOT cross-process CAS. */
-export function createQuestionPublisher(options: { directory: string; noteId: string[]; state: GroundGenerationPublicationState; io?: QuestionPublicationIO }): GroundQuestionPublisher {
+interface PublisherOptions { directory: string; noteId: string[]; state: GroundGenerationPublicationState; io?: QuestionPublicationIO }
+export function createQuestionPublisher(options: PublisherOptions): GroundQuestionPublisher {
+  return createGenerationPublisher({ ...options, job: 'questions' });
+}
+export function createQuotePublisher(options: PublisherOptions): GroundQuestionPublisher {
+  return createGenerationPublisher({ ...options, job: 'quotes' });
+}
+
+/** Immutable plans authorize only this configured job/resource. Filesystem ownership is shared, not reimplemented. */
+function createGenerationPublisher(options: PublisherOptions & { job: GenerationJob }): GroundQuestionPublisher {
   const io = options.io ?? questionPublicationIO; const state = options.state;
   const check = (signal: AbortSignal) => { if (signal.aborted) throw new Error('publication stopped'); };
-  const log = (attemptId: string, status: string, operation: string) => console.info('ground_generation_publication', { attemptId, operation, status });
+  const log = (attemptId: string, status: string, operation: string) => console.info('ground_generation_publication', { job: options.job, attemptId, operation, status });
   async function withNamespace<T>(plan: Pick<QuestionPublicationPlan, 'noteId' | 'directories'>, signal: AbortSignal, create: boolean, action: (ns: QuestionNamespace) => Promise<T>): Promise<T> {
     const ns = new QuestionNamespace(options.directory, plan.noteId, io, signal);
     try { await ns.prepare(plan.directories, create); return await action(ns); } finally { await ns.close(); }
@@ -252,6 +261,8 @@ export function createQuestionPublisher(options: { directory: string; noteId: st
     } finally { await handle?.close(); }
   }
   async function apply(plan: QuestionPublication, signal: AbortSignal): Promise<QuestionPublicationResult> {
+    // A publisher from the other job cannot change even the owner's receipt/state.
+    check(signal); if ((plan.job ?? 'questions') !== options.job) conflict();
     log(plan.attemptId, 'attempt', 'publish');
     try {
       check(signal); if (plan.noteId.join('/') !== options.noteId.join('/')) conflict();
@@ -296,21 +307,21 @@ export function createQuestionPublisher(options: { directory: string; noteId: st
   return {
     async resume(attempt, signal) { const plan = state.get(attempt.attemptId); return plan ? apply(plan, signal) : null; },
     async complete(attempt, candidate, signal) {
-      let candidates: Array<{ text: string }>;
+      let candidatesJson: string;
       try {
         if (!candidate || questionDigest(candidate.text) !== candidate.sha256) throw new Error('invalid candidate');
-        candidates = questionCandidates(candidate.text, attempt.count);
+        candidatesJson = generationCandidates(options.job, candidate.text, attempt.count);
       } catch { state.fail(attempt.attemptId, 'invalid_output'); log(attempt.attemptId, 'invalid_output', 'validate'); return 'failed'; }
       const prior = state.get(attempt.attemptId); if (prior) return apply(prior, signal);
       const ns = new QuestionNamespace(options.directory, options.noteId, io, signal);
       let plan: QuestionPublication;
       try {
         await ns.prepare(); const baseline = await ns.read(); check(signal);
-        let merged: ReturnType<typeof mergeQuestions>;
-        try { merged = mergeQuestions(baseline.source, candidates); } catch { throw new GroundGenerationError('configuration'); }
-        plan = state.stage(attempt.attemptId, { noteId: [...options.noteId], directories: ns.identities(), baseline: baseline.baseline,
-          candidatesJson: JSON.stringify(candidates), sourceMessageId: candidate.messageId, sourceSha256: candidate.sha256,
-          ...merged, outputSha256: merged.output === null ? null : questionDigest(merged.output), tempName: publicationTempName(attempt.attemptId) });
+        let merged: ReturnType<typeof mergeGenerationCandidates>;
+        try { merged = mergeGenerationCandidates(options.job, baseline.source, candidatesJson); } catch { throw new GroundGenerationError('configuration'); }
+        plan = state.stage(attempt.attemptId, { job: options.job, noteId: [...options.noteId], directories: ns.identities(), baseline: baseline.baseline,
+          candidatesJson, sourceMessageId: candidate.messageId, sourceSha256: candidate.sha256,
+          ...merged, outputSha256: merged.output === null ? null : questionDigest(merged.output), tempName: publicationTempName(attempt.attemptId, options.job) });
       } catch (error) {
         if (!signal.aborted && error instanceof GroundGenerationError) { state.fail(attempt.attemptId, error.code === 'conflict' ? 'conflict' : 'unsafe_target'); return 'failed'; }
         log(attempt.attemptId, 'pending', 'stage'); return 'pending';
@@ -318,9 +329,12 @@ export function createQuestionPublisher(options: { directory: string; noteId: st
       return apply(plan, signal);
     },
     async cleanup(signal) {
-      for (const plan of state.cleanup()) {
+      for (const plan of state.cleanup(options.job)) {
         check(signal);
-        try { await withNamespace(plan, signal, false, async ns => { if (!ns.complete) conflict(); await cleanupTemp(ns, plan); }); log(plan.attemptId, 'ready', 'cleanup'); }
+        try {
+          if ((plan.job ?? 'questions') !== options.job || plan.noteId.join('/') !== options.noteId.join('/')) conflict();
+          await withNamespace(plan, signal, false, async ns => { if (!ns.complete) conflict(); await cleanupTemp(ns, plan); }); log(plan.attemptId, 'ready', 'cleanup');
+        }
         catch { log(plan.attemptId, 'pending', 'cleanup'); }
       }
     },

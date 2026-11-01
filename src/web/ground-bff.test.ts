@@ -17,6 +17,28 @@ function fixture(upstream: () => Response) {
 }
 
 describe('Ground BFF public response boundary', () => {
+  it('projects source-free inspiration and strips private upstream fields', async () => {
+    const quote = { id: 'c'.repeat(64), text: 'Fictional fixture quote', attribution: 'Fixture author' };
+    const input = { state: 'ready', noteId: ['03_Resources', 'Memory-Loop', 'inspiration.md'], revision,
+      data: { quote: { ...quote, privateField: 'fixture-private-quote' }, privateField: 'fixture-private-data' }, privateField: 'fixture-private-root' };
+    const { get, fetcher } = fixture(() => response(input));
+    const result = await get('inspiration');
+    expect(result.status).toBe(200);
+    const body: unknown = await result.json();
+    expect(body).toEqual({ state: 'ready', noteId: input.noteId, revision, data: { quote } });
+    expect(JSON.stringify(body)).not.toContain('fixture-private');
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a safe legacy inspiration source link while stripping its private fields', async () => {
+    const quote = { id: 'c'.repeat(64), text: 'Fictional fixture quote', attribution: 'Fixture author', source: { title: 'Fixture publication', url: 'https://example.test/source' } };
+    const input = { state: 'ready', noteId: ['03_Resources', 'Memory-Loop', 'inspiration.md'], revision,
+      data: { quote: { ...quote, source: { ...quote.source, privateField: 'fixture-private-source' } } } };
+    const { get } = fixture(() => response(input));
+    const result = await get('inspiration');
+    expect(result.status).toBe(200);
+    expect(await result.json()).toEqual({ state: 'ready', noteId: input.noteId, revision, data: { quote } });
+  });
   it('preserves nonblank Goals Markdown containing a control character', async () => {
     const markdown = '# Fixture goal\n\n```text\nfixture\u0001inside\n```\n';
     const input = goals(markdown);

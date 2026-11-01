@@ -42,10 +42,13 @@ interface Fixture {
   creates: Array<{ id: string; input: unknown; before: Probe }>;
   sends: Array<{ sessionId: string; id: string; text: string; before: Probe }>;
   unexpected: string[]; children: OwnedChild[];
-  candidate?: string; historyReads: number; paginated?: boolean; historyQueries: string[];
+  candidate?: string; quoteCandidate?: string; historyReads: number; paginated?: boolean; historyQueries: Array<{ sessionId: string; query: string }>;
 }
 let root: string;
 const fixtures: Fixture[] = [];
+const questionFacts = (probe: Probe) => probe.attempts.filter(item => item.job === 'questions');
+const questionSends = (state: Fixture) => state.sends.filter(send => questionFacts(send.before).some(item => item.nativeSessionId === send.sessionId));
+const questionCreates = (state: Fixture) => state.creates.filter(create => questionFacts(create.before).some(item => item.nativeSessionId === create.id));
 
 // Narrow physical-state projection for the GREEN job store: no future module import,
 // schema-version constant, flattened JSON search, or missing-table failure before native behavior.
@@ -54,6 +57,7 @@ function probe(path: string, attempts = true): Probe {
   if (!result.exists) return result;
   const db = new DatabaseSync(path);
   try {
+    db.exec('PRAGMA busy_timeout = 1000');
     result.integrity = String(db.prepare('PRAGMA quick_check').get()?.quick_check);
     const installation = db.prepare('SELECT installation_id FROM application_metadata WHERE singleton = 1').get()?.installation_id;
     if (typeof installation !== 'string') throw new Error('missing installation identity');
@@ -126,6 +130,7 @@ async function fixture(settings: unknown = generation, occupied?: number): Promi
   fixtures.push(state);
   const catalog: ModelInfo = { ...model, modelID: model.id, name: 'Owned fixture model', type: 'chat', enabled: true,
     status: 'active', capabilities: { tools: true, input: ['text'], output: ['text'] }, variants: [], time: { released: 0 }, cost: [], limit: { context: 8192, output: 512 } };
+  const candidateFor = (text: string) => /\bquotes?\b/i.test(text) ? state.quoteCandidate : state.candidate;
   state.native.on('request', async (request, response) => {
     try {
       if (request.headers.authorization !== authorization) throw new Error('wrong native fixture authorization');
@@ -152,7 +157,7 @@ async function fixture(settings: unknown = generation, occupied?: number): Promi
           time: { created: now, updated: now } };
         state.sessions.set(session.id, session); reply({ data: session }); return;
       }
-      if (request.method === 'GET' && path === '/api/session/active') { reply({ data: state.candidate === undefined ? Object.fromEntries(state.sends.map(send => [send.sessionId, { type: 'running' }])) : {} }); return; }
+      if (request.method === 'GET' && path === '/api/session/active') { reply({ data: Object.fromEntries(state.sends.filter(send => candidateFor(send.text) === undefined).map(send => [send.sessionId, { type: 'running' }])) }); return; }
       if (request.method === 'GET' && path === '/api/permission/request') { reply({ location: { directory: vault }, data: [] }); return; }
       const match = /^\/api\/session\/([^/]+)(.*)$/.exec(path); const session = match ? state.sessions.get(match[1]) : undefined;
       if (request.method === 'GET' && match && !session && !match[2]) { response.writeHead(404).end('{}'); return; }
@@ -161,12 +166,13 @@ async function fixture(settings: unknown = generation, occupied?: number): Promi
         if (request.method === 'GET' && !suffix) { reply({ data: session }); return; }
         if (request.method === 'GET' && suffix === '/message') {
           state.historyReads++;
-          state.historyQueries.push(url.search);
+          state.historyQueries.push({ sessionId: session.id, query: url.search });
           const sent = state.sends.find(item => item.sessionId === session.id);
-          const data = state.candidate === undefined || !sent ? [] : [
+          const candidate = sent ? candidateFor(sent.text) : undefined;
+          const data = candidate === undefined || !sent ? [] : [
             { id: sent.id, type: 'user', text: sent.text, time: { created: now } },
             { id: 'msg_owned_generation_answer', type: 'assistant', agent: 'fixture-agent', ...(session.model ? { model: session.model } : {}), finish: 'stop',
-              time: { created: now + 1, completed: now + 2 }, content: [{ type: 'text', text: state.candidate }] },
+              time: { created: now + 1, completed: now + 2 }, content: [{ type: 'text', text: candidate }] },
           ];
           if (state.paginated && data.length) {
             const cursor = url.searchParams.get('cursor');
@@ -181,7 +187,7 @@ async function fixture(settings: unknown = generation, occupied?: number): Promi
           const input = await json(request);
           if (!record(input) || typeof input.id !== 'string' || typeof input.text !== 'string') throw new Error('malformed native prompt');
           state.sends.push({ sessionId: session.id, id: input.id, text: input.text, before: probe(state.database) });
-          if (state.candidate !== undefined) {
+          if (candidateFor(input.text) !== undefined) {
             session.time = { ...session.time, busy: now, idle: now + 2, updated: now + 2 };
             reply({ data: { id: input.id, sessionID: session.id, type: 'user', time: { created: now }, payload: { text: input.text }, delivery: 'queue' } });
             return;
@@ -241,18 +247,41 @@ async function tick(owned: OwnedChild, instant = now): Promise<void> {
   await sleep(100);
 }
 async function observeCompletion(owned: OwnedChild, state: Fixture): Promise<void> {
-  expect(await until(() => state.sends.length === 1, 1500), 'owned native prompt must be admitted before candidate observation').toBe(true);
-  expect(await until(() => probe(state.database).attempts[0]?.occurrenceState === 'admitted', 1500)).toBe(true);
+  expect(await until(() => questionSends(state).length === 1, 1500), 'owned native question prompt must be admitted before candidate observation').toBe(true);
+  expect(await until(() => questionFacts(probe(state.database))[0]?.occurrenceState === 'admitted', 1500)).toBe(true);
   const address = state.native.address();
   if (!address || typeof address === 'string') throw new Error('fixture native listener unavailable');
   const client = createNativeClient({ baseUrl: `http://127.0.0.1:${address.port}`, headers: { authorization } });
-  const history = await client.message.list({ sessionID: state.sends[0].sessionId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(3000) });
-  expect(history.data).toMatchObject([{ id: state.sends[0].id, type: 'user' },
+  const sent = questionSends(state)[0];
+  const history = await client.message.list({ sessionID: sent.sessionId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(3000) });
+  expect(history.data).toMatchObject([{ id: sent.id, type: 'user' },
     { type: 'assistant', finish: 'stop', content: [{ type: 'text', text: state.candidate }] }]);
-  const before = state.historyReads;
+  const before = state.historyQueries.filter(item => item.sessionId === sent.sessionId).length;
   owned.child.stdin.write(`${JSON.stringify({ id: 'observe-candidate', advanceMs: 30000 })}\n`);
   expect(await until(() => owned.output.includes('"id":"observe-candidate"'))).toBe(true);
-  expect(await until(() => state.historyReads > before, 1500), 'real daemon must read the owned completed native history').toBe(true);
+  expect(await until(() => state.historyQueries.filter(item => item.sessionId === sent.sessionId).length > before, 1500), 'real daemon must read the owned completed question history').toBe(true);
+}
+async function serviceGet(state: Fixture, path: string): Promise<{ status: number | undefined; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ hostname: '127.0.0.1', port: state.port, path,
+      headers: { host: `127.0.0.1:${state.port}`, authorization: `Bearer ${serviceToken}` } }, response => {
+      let body = ''; response.setEncoding('utf8'); response.on('data', (chunk: string) => { body += chunk; });
+      response.on('end', () => resolve({ status: response.statusCode, body })); response.on('error', reject);
+    });
+    req.setTimeout(3000, () => req.destroy(new Error('owned service read timeout'))); req.on('error', reject); req.end();
+  });
+}
+async function observeQuote(owned: OwnedChild, state: Fixture) {
+  expect(await until(() => state.sends.some(send => /\bquotes?\b/i.test(send.text)), 2000),
+    'weekly quote occurrence must dispatch its own prompt even while questions remain pending').toBe(true);
+  const quote = state.sends.find(send => /\bquotes?\b/i.test(send.text));
+  if (!quote) throw new Error('owned quote prompt missing');
+  expect(await until(() => probe(state.database).attempts.some(item => item.job === 'quotes' && item.occurrenceState === 'admitted'), 1500)).toBe(true);
+  const reads = state.historyQueries.filter(item => item.sessionId === quote.sessionId).length;
+  owned.child.stdin.write(`${JSON.stringify({ id: 'observe-quotes', advanceMs: 30000 })}\n`);
+  expect(await until(() => owned.output.includes('"id":"observe-quotes"'))).toBe(true);
+  expect(await until(() => state.historyQueries.filter(item => item.sessionId === quote.sessionId).length > reads, 1500)).toBe(true);
+  return quote;
 }
 async function controls(state: Fixture): Promise<void> {
   // The daemon is service-only: Node fetch adds browser Fetch-Metadata that it correctly rejects.
@@ -284,24 +313,86 @@ afterEach(async () => {
 });
 
 describe('Ground 9ya.7 autonomous daemon question admission', () => {
+  it('Ground weekly quote generation publishes a partial attributed batch independently of pending questions and preserves legacy sources', async () => {
+    const settings = { ...generation, questions: { schedule: '0 10 * * *', count: 2 }, quotes: { schedule: '0 9 * * 6', count: 3 } };
+    const state = await fixture(settings);
+    const inspiration = join(state.vault, '03_Resources', 'Memory-Loop', 'inspiration.md');
+    const originals = Array.from({ length: 50 }, (_, index) => `Owned fictional quote ${index + 1}`);
+    await writeFile(inspiration, `# Owned inspiration\n\n${originals.map((text, index) => `## Quote\n> ${text}\n\nAttribution: Fixture author${index === 1 ? '\nSource: [Fixture archive](https://example.test/archive)' : ''}\n`).join('\n')}`);
+    state.quoteCandidate = JSON.stringify([{ text: originals[49], attribution: 'Fixture author' }, { text: 'A new fictional owned quote', attribution: 'Another fixture author' }]);
+    const first = launch(state); await ready(first);
+    const quote = await observeQuote(first, state);
+    expect(state.sends.some(send => /\bquestions?\b/i.test(send.text))).toBe(true);
+    expect(quote.text).toMatch(/attribution/i);
+    expect(quote.text).toContain('A bounded fixture thought for question generation.');
+    expect(quote.text).not.toMatch(/externally verified|verified source required/i);
+    const created = state.creates.find(item => item.id === quote.sessionId);
+    expect(created?.input).toMatchObject({ permissions: [{ action: '*', resource: '*', effect: 'deny' }],
+      metadata: { memoryLoop: { owner: 'memory-loop', purpose: 'ground-generation' } } });
+    expect(quote.before.issue).toBeUndefined();
+    expect(quote.before.attempts).toEqual(expect.arrayContaining([expect.objectContaining({ job: 'quotes',
+      scheduledAt: Date.parse('2032-04-17T09:00:00.000Z'), nativeSessionId: quote.sessionId, nativeMessageId: quote.id,
+      inputSha256: createHash('sha256').update(quote.text).digest('hex'), dispatchAttempted: 1 })]));
+    expect(await until(() => readFileSync(inspiration, 'utf8').includes('A new fictional owned quote'), 2000)).toBe(true);
+    const published = await readFile(inspiration, 'utf8');
+    const parsed = parseGroundCollection('inspiration', published);
+    expect(parsed.state).toBe('ready');
+    if (parsed.state !== 'ready') throw new Error('invalid published owned quote collection');
+    expect(parsed.items.map(item => item.text)).toEqual([...originals.slice(1), 'A new fictional owned quote']);
+    expect(parsed.items[0]).toMatchObject({ source: { title: 'Fixture archive', url: 'https://example.test/archive' } });
+    expect(parsed.items.at(-1)).toMatchObject({ attribution: 'Another fixture author' });
+    expect(parsed.items.at(-1)).not.toHaveProperty('source');
+    expect(await until(() => probe(state.database).attempts.some(item => item.job === 'quotes' && item.occurrenceState === 'settled'), 2000)).toBe(true);
+    const beforeRead = state.sends.length;
+    const selected = await serviceGet(state, '/api/ground/inspiration');
+    expect(selected.status).toBe(200);
+    const body: unknown = JSON.parse(selected.body);
+    expect(body).toMatchObject({ state: 'ready', data: { quote: { id: expect.any(String), text: expect.any(String), attribution: expect.any(String) } } });
+    expect(state.sends).toHaveLength(beforeRead);
+    await stop(first);
+    const second = launch(state, false, now + 30000); await ready(second, false, now + 30000); await controls(state); await stop(second);
+    expect(await readFile(inspiration, 'utf8')).toBe(published);
+    expect(state.sends.filter(send => /\bquotes?\b/i.test(send.text))).toHaveLength(1);
+    expect(state.creates.filter(item => item.id === quote.sessionId)).toHaveLength(1);
+    expect(state.unexpected).toEqual([]);
+  }, 20000);
+
+  it('Ground weekly quote generation rejects a blank attribution without rewriting the source file', async () => {
+    const settings = { ...generation, questions: { schedule: '0 10 * * *', count: 2 }, quotes: { schedule: '0 9 * * 6', count: 2 } };
+    const state = await fixture(settings);
+    const inspiration = join(state.vault, '03_Resources', 'Memory-Loop', 'inspiration.md');
+    const original = '## Quote\n> Owned fictional legacy quote\n\nAttribution: Fixture author\nSource: [Fixture archive](https://example.test/archive)\n';
+    await writeFile(inspiration, original); const before = await lstat(inspiration);
+    state.quoteCandidate = JSON.stringify([{ text: 'A fictional invalid quote', attribution: '  ' }]);
+    const owned = launch(state); await ready(owned); await observeQuote(owned, state);
+    expect(await until(() => probe(state.database).attempts.some(item => item.job === 'quotes' && item.occurrenceState === 'failed'), 2000)).toBe(true);
+    expect(await readFile(inspiration, 'utf8')).toBe(original);
+    expect((await lstat(inspiration)).ino).toBe(before.ino);
+    expect(probe(state.database).attempts.find(item => item.job === 'quotes')?.occurrenceState).not.toBe('settled');
+    expect(state.sends.some(send => /\bquestions?\b/i.test(send.text))).toBe(true);
+    expect(owned.output + owned.errors).not.toContain('A fictional invalid quote');
+    expect(state.unexpected).toEqual([]);
+  }, 20000);
+
   it('Ground candidate pagination uses cursor-only continuation and publishes the completed answer', async () => {
     const settings = { ...generation, questions: { schedule: '0 10 * * *', count: 2 } };
     const state = await fixture(settings);
     state.candidate = JSON.stringify([{ text: 'Owned paginated question?' }]); state.paginated = true;
     const owned = launch(state); await ready(owned);
-    expect(await until(() => state.sends.length === 1, 1500)).toBe(true);
-    expect(await until(() => probe(state.database).attempts[0]?.occurrenceState === 'admitted', 1500)).toBe(true);
+    expect(await until(() => questionSends(state).length === 1, 1500)).toBe(true);
+    expect(await until(() => questionFacts(probe(state.database))[0]?.occurrenceState === 'admitted', 1500)).toBe(true);
     owned.child.stdin.write(`${JSON.stringify({ id: 'observe-pages', advanceMs: 30000 })}\n`);
     expect(await until(() => owned.output.includes('"id":"observe-pages"'))).toBe(true);
-    expect(await until(() => state.historyQueries.some(query => new URLSearchParams(query).has('cursor')), 1500), 'daemon must request the next native history page').toBe(true);
-    const continuation = state.historyQueries.find(query => new URLSearchParams(query).has('cursor'));
+    const sessionId = questionSends(state)[0].sessionId;
+    expect(await until(() => state.historyQueries.some(item => item.sessionId === sessionId && new URLSearchParams(item.query).has('cursor')), 1500), 'daemon must request the next native history page').toBe(true);
+    const continuation = state.historyQueries.find(item => item.sessionId === sessionId && new URLSearchParams(item.query).has('cursor'));
     if (!continuation) throw new Error('fixture continuation missing');
-    const query = new URLSearchParams(continuation);
+    const query = new URLSearchParams(continuation.query);
     expect(query.get('cursor')).toBe('owned-page-two');
     expect(query.has('order'), 'native 2.2.2 rejects order alongside a cursor').toBe(false);
     expect(await until(() => readFileSync(state.prompts, 'utf8').includes('Owned paginated question?'), 2000)).toBe(true);
-    expect(await until(() => probe(state.database).attempts[0]?.occurrenceState === 'settled', 2000)).toBe(true);
-    expect(state.creates).toHaveLength(1); expect(state.sends).toHaveLength(1); expect(state.unexpected).toEqual([]);
+    expect(await until(() => questionFacts(probe(state.database))[0]?.occurrenceState === 'settled', 2000)).toBe(true);
+    expect(questionCreates(state)).toHaveLength(1); expect(questionSends(state)).toHaveLength(1); expect(state.unexpected).toEqual([]);
   }, 20000);
 
   it('Ground candidate publication appends unique validated questions, retains the newest 50, and settles across restart', async () => {
@@ -318,15 +409,15 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     expect(parsed.state).toBe('ready');
     if (parsed.state !== 'ready') throw new Error('published prompts are not valid Ground questions');
     expect(parsed.items.map(item => item.text)).toEqual([...originals.slice(1), 'A new owned fixture question?']);
-    expect(await until(() => probe(state.database).attempts[0]?.occurrenceState === 'settled', 2000)).toBe(true);
+    expect(await until(() => questionFacts(probe(state.database))[0]?.occurrenceState === 'settled', 2000)).toBe(true);
     await stop(first);
     const second = launch(state, false, now + 30000); await ready(second, false, now + 30000);
     await controls(state);
     await stop(second);
     expect(await readFile(state.prompts, 'utf8')).toBe(published);
-    expect(state.creates).toHaveLength(1); expect(state.sends).toHaveLength(1);
-    expect(probe(state.database).attempts).toHaveLength(1);
-    expect(probe(state.database).attempts[0]).toMatchObject({ occurrenceState: 'settled' });
+    expect(questionCreates(state)).toHaveLength(1); expect(questionSends(state)).toHaveLength(1);
+    expect(questionFacts(probe(state.database))).toHaveLength(1);
+    expect(questionFacts(probe(state.database))[0]).toMatchObject({ occurrenceState: 'settled' });
     expect(state.unexpected).toEqual([]);
   }, 20000);
 
@@ -336,12 +427,12 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     state.candidate = JSON.stringify([{ text: 'Private invalid fixture candidate?', extra: 'fixture-private-field' }]);
     const before = await lstat(state.prompts);
     const owned = launch(state); await ready(owned); await observeCompletion(owned, state);
-    expect(await until(() => probe(state.database).attempts[0]?.occurrenceState === 'failed', 2000),
+    expect(await until(() => questionFacts(probe(state.database))[0]?.occurrenceState === 'failed', 2000),
       'invalid completed native output must be recorded as a safe failed outcome').toBe(true);
     expect(await readFile(state.prompts, 'utf8')).toBe(promptsBefore);
     expect((await lstat(state.prompts)).ino).toBe(before.ino);
-    expect(probe(state.database).attempts[0]?.occurrenceState).not.toBe('settled');
-    expect(state.creates).toHaveLength(1); expect(state.sends).toHaveLength(1);
+    expect(questionFacts(probe(state.database))[0]?.occurrenceState).not.toBe('settled');
+    expect(questionCreates(state)).toHaveLength(1); expect(questionSends(state)).toHaveLength(1);
     expect(owned.output + owned.errors).not.toMatch(/Private invalid fixture candidate|fixture-private-field/);
     expect(state.unexpected).toEqual([]);
   }, 20000);
@@ -351,13 +442,13 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     const state = await fixture(settings); await rm(state.prompts);
     state.candidate = '[]';
     const first = launch(state); await ready(first); await observeCompletion(first, state);
-    expect(await until(() => probe(state.database).attempts[0]?.occurrenceState === 'settled', 2000),
+    expect(await until(() => questionFacts(probe(state.database))[0]?.occurrenceState === 'settled', 2000),
       'valid empty candidate batch must settle without publishing a file').toBe(true);
     expect(existsSync(state.prompts)).toBe(false);
     await stop(first);
     const second = launch(state, false, now + 30000); await ready(second, false, now + 30000); await stop(second);
     expect(existsSync(state.prompts)).toBe(false);
-    expect(state.creates).toHaveLength(1); expect(state.sends).toHaveLength(1);
+    expect(questionCreates(state)).toHaveLength(1); expect(questionSends(state)).toHaveLength(1);
     expect(state.unexpected).toEqual([]);
   }, 20000);
 
@@ -379,15 +470,15 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     const owned = launch(state); await ready(owned);
     expect(await until(() => probe(state.database).attempts.some(item => item.attemptId === attempt && item.occurrenceState === 'failed'))).toBe(true);
     expect(state.sends.some(send => send.id === `msg_memoryloop_generation_${suffix}`)).toBe(false);
-    expect(await until(() => state.sends.length === 1, 1500), 'new latest-due question must be admitted without waiting for tomorrow').toBe(true);
+    expect(await until(() => questionSends(state).length === 1, 1500), 'new latest-due question must be admitted without waiting for tomorrow').toBe(true);
     await stop(owned);
     const facts = probe(state.database);
     expect(facts.issue).toBeUndefined();
-    expect(facts.attempts).toHaveLength(2);
-    expect(facts.attempts[0]).toMatchObject({ scheduledAt: old, occurrenceState: 'failed', dispatchAttempted: 0, attemptId: attempt });
-    expect(facts.attempts[1]).toMatchObject({ scheduledAt: latest, dispatchAttempted: 1 });
-    expect(state.creates).toHaveLength(1); expect(state.sends).toHaveLength(1);
-    expect(state.sends[0].id).not.toBe(`msg_memoryloop_generation_${suffix}`);
+    expect(questionFacts(facts)).toHaveLength(2);
+    expect(questionFacts(facts)[0]).toMatchObject({ scheduledAt: old, occurrenceState: 'failed', dispatchAttempted: 0, attemptId: attempt });
+    expect(questionFacts(facts)[1]).toMatchObject({ scheduledAt: latest, dispatchAttempted: 1 });
+    expect(questionCreates(state)).toHaveLength(1); expect(questionSends(state)).toHaveLength(1);
+    expect(questionSends(state)[0].id).not.toBe(`msg_memoryloop_generation_${suffix}`);
     expect(state.unexpected).toEqual([]);
   }, 20000);
 
@@ -395,37 +486,37 @@ describe('Ground 9ya.7 autonomous daemon question admission', () => {
     expect(parseGroundGenerationConfig({ generation }).state).toBe('ready');
     const state = await fixture(); const first = launch(state); await ready(first);
     // No application HTTP request has occurred: the real runtime's post-listener hook owns this work.
-    await until(() => state.sends.length > 0, 1500);
-    const beforeReads = { creates: state.creates.length, sends: state.sends.length };
+    await until(() => questionSends(state).length > 0, 1500);
+    const beforeReads = { creates: questionCreates(state).length, sends: questionSends(state).length };
     await controls(state);
     expect(state.unexpected).toEqual([]);
     expect(probe(state.database, false)).toMatchObject({ exists: true, integrity: 'ok', writerAvailable: true,
       thinkRows: { conversations: 0, commands: 0, transcripts: 0 } });
     expect(beforeReads.sends, 'enabled resident startup must attempt ONE latest-due question prompt without a browser').toBe(1);
     expect(beforeReads.creates).toBe(1);
-    const created = state.creates[0]; const sent = state.sends[0];
+    const created = questionCreates(state)[0]; const sent = questionSends(state)[0];
     expect(created.input).toMatchObject({ id: created.id, location: { directory: state.vault }, model,
       metadata: { memoryLoop: { owner: 'memory-loop', purpose: 'ground-generation', installationId: created.before.installationId } },
       permissions: [{ action: '*', resource: '*', effect: 'deny' }] });
     for (const observed of [created.before, sent.before]) {
-      expect(observed.issue).toBeUndefined(); expect(observed.writerAvailable).toBe(true); expect(observed.attempts).toHaveLength(1);
-      expect(observed.attempts[0]).toMatchObject({ job: 'questions', timeZone: 'UTC', scheduledAt: due, nativeSessionId: created.id,
+      expect(observed.issue).toBeUndefined(); expect(observed.writerAvailable).toBe(true); expect(questionFacts(observed)).toHaveLength(1);
+      expect(questionFacts(observed)[0]).toMatchObject({ job: 'questions', timeZone: 'UTC', scheduledAt: due, nativeSessionId: created.id,
         nativeMessageId: sent.id, inputSha256: createHash('sha256').update(sent.text, 'utf8').digest('hex'),
         attemptId: expect.stringMatching(/\S/), occurrenceId: expect.stringMatching(/\S/) });
     }
     expect(sent.sessionId).toBe(created.id);
-    expect(sent.before.attempts[0].dispatchAttempted, 'attempt fact must commit BEFORE crossing the native prompt boundary').toBe(1);
+    expect(questionFacts(sent.before)[0].dispatchAttempted, 'attempt fact must commit BEFORE crossing the native prompt boundary').toBe(1);
     await tick(first);
-    expect(state.creates).toHaveLength(1); expect(state.sends).toHaveLength(1);
+    expect(questionCreates(state)).toHaveLength(1); expect(questionSends(state)).toHaveLength(1);
     await stop(first);
     expect(first.child.exitCode).toBe(0);
-    const retained = probe(state.database); expect(retained.issue).toBeUndefined(); expect(retained.attempts).toHaveLength(1);
-    expect(retained.attempts[0].occurrenceState).not.toBe('settled');
+    const retained = probe(state.database); expect(retained.issue).toBeUndefined(); expect(questionFacts(retained)).toHaveLength(1);
+    expect(questionFacts(retained)[0].occurrenceState).not.toBe('settled');
     const second = launch(state, false, now + 1000); await ready(second, false, now + 1000); await tick(second, now + 1000); await controls(state);
     await stop(second);
     expect(second.child.exitCode).toBe(0);
-    expect(state.unexpected).toEqual([]); expect(state.creates).toHaveLength(1); expect(state.sends).toHaveLength(1);
-    const restored = probe(state.database); expect(restored.issue).toBeUndefined(); expect(restored.attempts).toEqual(retained.attempts);
+    expect(state.unexpected).toEqual([]); expect(questionCreates(state)).toHaveLength(1); expect(questionSends(state)).toHaveLength(1);
+    const restored = probe(state.database); expect(restored.issue).toBeUndefined(); expect(questionFacts(restored)).toEqual(questionFacts(retained));
     expect(await readFile(state.prompts, 'utf8')).toBe(promptsBefore);
   }, 20000);
 

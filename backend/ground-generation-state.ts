@@ -3,6 +3,7 @@ import type { SessionCreateInput } from '@opencode/client';
 import type { SQLite } from './think/sqlite-state';
 import { ThinkStateError } from './think/state';
 import { SQLiteGenerationPublications, type GroundGenerationPublicationState } from './ground-generation-publication-state';
+import type { GenerationJob } from './ground-generation-formats';
 
 export interface GenerationSelection { agent?: string; model?: NonNullable<SessionCreateInput['model']> }
 export interface GenerationAttempt {
@@ -12,8 +13,9 @@ export interface GenerationAttempt {
   createAttempted: boolean; dispatchAttempted: boolean; requested: GenerationSelection; effective: GenerationSelection | null;
 }
 export interface GroundGenerationState {
-  pending(): GenerationAttempt | null;
-  claim(input: { directory: string; timeZone: string; scheduledAt: number; count: number; inputSha256: string; selection: GenerationSelection }): GenerationAttempt | null;
+  /** Omission retains the original question-only API. */
+  pending(job?: GenerationJob): GenerationAttempt | null;
+  claim(input: GenerationOccurrence & { count: number; inputSha256: string; selection: GenerationSelection }): GenerationAttempt | null;
   creating(attemptId: string): void;
   verified(attemptId: string, selection: GenerationSelection): void;
   attempted(attemptId: string): void;
@@ -21,15 +23,15 @@ export interface GroundGenerationState {
   abandonUndispatched(attemptId: string): void;
   isTranscript(directory: string, noteId: readonly string[]): boolean;
 }
-export interface GenerationOccurrence { directory: string; timeZone: string; scheduledAt: number }
+export interface GenerationOccurrence { job?: GenerationJob; directory: string; timeZone: string; scheduledAt: number }
 export interface GenerationPreflightFact { attempts: number; retryAt: number | null; blocked: boolean }
 export interface GroundGenerationPreflight {
   beginPreflight(occurrence: GenerationOccurrence, now: number): { allowed: boolean; fact: GenerationPreflightFact };
   failedPreflight(occurrence: GenerationOccurrence, now: number, retryable: boolean): number | null;
 }
 export type GroundGenerationStore = GroundGenerationState & GroundGenerationPreflight & { readonly publications: GroundGenerationPublicationState };
-export const generationOccurrenceId = (occurrence: Pick<GenerationOccurrence, 'timeZone' | 'scheduledAt'>) =>
-  createHash('sha256').update(JSON.stringify(['questions', occurrence.timeZone, occurrence.scheduledAt])).digest('hex');
+export const generationOccurrenceId = (occurrence: Pick<GenerationOccurrence, 'job' | 'timeZone' | 'scheduledAt'>) =>
+  createHash('sha256').update(JSON.stringify([occurrence.job ?? 'questions', occurrence.timeZone, occurrence.scheduledAt])).digest('hex');
 
 /** Reserve before read-only preflight too, so a crash/restart cannot reset the budget. */
 export function reserveGenerationPreflight(prior: GenerationPreflightFact | null, now: number): { allowed: boolean; fact: GenerationPreflightFact } {
@@ -71,6 +73,18 @@ export const generationSchemaV7 = `
     blocked INTEGER NOT NULL CHECK(blocked IN (0, 1)), UNIQUE(job_key, time_zone, scheduled_at)
   );
 `;
+/** Widen only the concrete preflight job constraint; retain every existing budget fact. */
+export const generationSchemaV9 = `
+  CREATE TABLE ground_generation_preflight_v9 (
+    occurrence_id TEXT PRIMARY KEY NOT NULL, job_key TEXT NOT NULL CHECK(job_key IN ('questions', 'quotes')),
+    time_zone TEXT NOT NULL, scheduled_at INTEGER NOT NULL, vault_directory TEXT NOT NULL,
+    attempts INTEGER NOT NULL CHECK(attempts BETWEEN 1 AND 3), retry_at INTEGER,
+    blocked INTEGER NOT NULL CHECK(blocked IN (0, 1)), UNIQUE(job_key, time_zone, scheduled_at)
+  );
+  INSERT INTO ground_generation_preflight_v9 SELECT * FROM ground_generation_preflight;
+  DROP TABLE ground_generation_preflight;
+  ALTER TABLE ground_generation_preflight_v9 RENAME TO ground_generation_preflight;
+`;
 export function validateGenerationSchema(db: SQLite): void {
   db.get(`SELECT o.occurrence_id, o.job_key, o.time_zone, o.scheduled_at, o.vault_directory, o.state, o.reason,
     a.attempt_id, a.native_session_id, a.native_message_id, a.input_sha256, a.question_count,
@@ -110,8 +124,8 @@ function decode(row: Record<string, unknown>): GenerationAttempt {
   const timeZone = text(row, 'time_zone'); const scheduledAt = integer(row.scheduled_at); const suffix = attemptId.replaceAll('-', '');
   const createAttempted = bit(row.create_attempted); const dispatchAttempted = bit(row.dispatch_attempted);
   const effective = row.effective_context_json === null ? null : selection(text(row, 'effective_context_json'));
-  if (row.job_key !== 'questions' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(attemptId) ||
-      occurrenceId !== generationOccurrenceId({ timeZone, scheduledAt }) ||
+  if (row.job_key !== 'questions' && row.job_key !== 'quotes' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(attemptId) ||
+      occurrenceId !== generationOccurrenceId({ job: row.job_key, timeZone, scheduledAt }) ||
       row.native_session_id !== `ses_memoryloop_generation_${suffix}` || row.native_message_id !== `msg_memoryloop_generation_${suffix}` ||
       dispatchAttempted && (!createAttempted || !effective) || state === 'admitted' && !dispatchAttempted) return fail();
   return { occurrenceId, attemptId, directory: text(row, 'vault_directory'), timeZone, scheduledAt, count, state,
@@ -127,15 +141,15 @@ export class SQLiteGroundGeneration implements GroundGenerationStore {
   private read<T>(action: () => T): T {
     try { this.check(); return action(); } catch (error) { if (error instanceof ThinkStateError) throw error; return fail(); }
   }
-  pending(): GenerationAttempt | null {
-    return this.read(() => { const row = this.db.get(`${joined} WHERE o.job_key = 'questions' AND o.state NOT IN ('failed', 'settled') LIMIT 1`); return row ? decode(row) : null; });
+  pending(job: GenerationJob = 'questions'): GenerationAttempt | null {
+    return this.read(() => { const row = this.db.get(`${joined} WHERE o.job_key = ? AND o.state NOT IN ('failed', 'settled') LIMIT 1`, job); return row ? decode(row) : null; });
   }
   private preflight(occurrence: GenerationOccurrence): GenerationPreflightFact | null {
     const row = this.db.get('SELECT * FROM ground_generation_preflight WHERE occurrence_id = ?', generationOccurrenceId(occurrence));
     if (!row) return null;
     const attempts = integer(row.attempts); const retryAt = row.retry_at === null ? null : integer(row.retry_at); const blocked = bit(row.blocked);
     if (attempts < 1 || attempts > 3 || attempts === 3 && retryAt !== null || attempts < 3 && !blocked && retryAt === null ||
-        row.job_key !== 'questions' || row.time_zone !== occurrence.timeZone || row.scheduled_at !== occurrence.scheduledAt || row.vault_directory !== occurrence.directory) return fail();
+        row.job_key !== (occurrence.job ?? 'questions') || row.time_zone !== occurrence.timeZone || row.scheduled_at !== occurrence.scheduledAt || row.vault_directory !== occurrence.directory) return fail();
     return { attempts, retryAt, blocked };
   }
   beginPreflight(occurrence: GenerationOccurrence, now: number): ReturnType<GroundGenerationPreflight['beginPreflight']> {
@@ -144,8 +158,8 @@ export class SQLiteGroundGeneration implements GroundGenerationStore {
       const id = generationOccurrenceId(occurrence);
       const reservation = reserveGenerationPreflight(this.preflight(occurrence), now);
       if (reservation.allowed) this.db.run(`INSERT INTO ground_generation_preflight(occurrence_id, job_key, time_zone, scheduled_at, vault_directory, attempts, retry_at, blocked)
-        VALUES (?, 'questions', ?, ?, ?, ?, ?, 0) ON CONFLICT(occurrence_id) DO UPDATE SET attempts = excluded.attempts, retry_at = excluded.retry_at`,
-      id, occurrence.timeZone, occurrence.scheduledAt, occurrence.directory, reservation.fact.attempts, reservation.fact.retryAt);
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(occurrence_id) DO UPDATE SET attempts = excluded.attempts, retry_at = excluded.retry_at`,
+      id, occurrence.job ?? 'questions', occurrence.timeZone, occurrence.scheduledAt, occurrence.directory, reservation.fact.attempts, reservation.fact.retryAt);
       return reservation;
     });
   }
@@ -160,13 +174,14 @@ export class SQLiteGroundGeneration implements GroundGenerationStore {
   }
   claim(input: Parameters<GroundGenerationState['claim']>[0]): GenerationAttempt | null {
     return this.write(() => {
-      if (this.pending()) return null;
+      const job = input.job ?? 'questions';
+      if (this.pending(job)) return null;
       integer(input.scheduledAt); if (input.count < 1 || input.count > 50 || !Number.isSafeInteger(input.count) || !/^[a-f0-9]{64}$/.test(input.inputSha256)) return fail();
       const occurrenceId = generationOccurrenceId(input);
       if (this.db.get('SELECT 1 FROM ground_generation_occurrences WHERE occurrence_id = ?', occurrenceId)) return null;
       const attemptId = randomUUID(); const suffix = attemptId.replaceAll('-', '');
       this.db.run(`INSERT INTO ground_generation_occurrences(occurrence_id, job_key, time_zone, scheduled_at, vault_directory, state)
-        VALUES (?, 'questions', ?, ?, ?, 'preparing')`, occurrenceId, input.timeZone, input.scheduledAt, input.directory);
+        VALUES (?, ?, ?, ?, ?, 'preparing')`, occurrenceId, job, input.timeZone, input.scheduledAt, input.directory);
       this.db.run(`INSERT INTO ground_generation_attempts(attempt_id, occurrence_id, native_session_id, native_message_id, input_sha256, question_count, requested_context_json)
         VALUES (?, ?, ?, ?, ?, ?, ?)`, attemptId, occurrenceId, `ses_memoryloop_generation_${suffix}`, `msg_memoryloop_generation_${suffix}`, input.inputSha256,
       input.count, JSON.stringify(input.selection));

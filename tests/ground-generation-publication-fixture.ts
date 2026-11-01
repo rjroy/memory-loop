@@ -3,13 +3,13 @@ import { constants, writeFileSync } from 'node:fs';
 import { access, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Database } from 'bun:sqlite';
-import { createQuestionPublisher, questionPublicationIO } from '../backend/ground-generation-publisher';
+import { createQuestionPublisher, createQuotePublisher, questionPublicationIO } from '../backend/ground-generation-publisher';
 import type { GroundGenerationPublicationState } from '../backend/ground-generation-publication-state';
 import { mergeQuestions, questionCandidates, questionDigest } from '../backend/ground-generation-questions';
 import { openThinkState } from '../backend/think/sqlite-state';
 
 const root = process.argv[2]; const scenario = process.argv[3];
-if (!root || !['manual', 'absence', 'lost-confirmation', 'v7-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate'].includes(scenario)) throw new Error('invalid owned publication fixture');
+if (!root || !['manual', 'absence', 'lost-confirmation', 'v7-migration', 'v8-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate'].includes(scenario)) throw new Error('invalid owned publication fixture');
 const project = join(root, 'project'); const vault = join(root, 'vault');
 const noteId = ['03_Resources', 'Memory-Loop', 'prompts.md']; const file = join(vault, ...noteId);
 await mkdir(join(project, '.memory-loop'), { recursive: true, mode: 0o700 });
@@ -217,14 +217,45 @@ try {
     const occurrence = { directory: vault, timeZone: 'UTC', scheduledAt: 2000 };
     const reserved = store.generation.beginPreflight(occurrence, 100000);
     assert.equal(reserved.allowed, true);
+    if (scenario === 'v8-migration') {
+      await writeFile(file, initial);
+      const state = wrap(store.generation.publications, { publishing() { throw new Error('owned pre-publication interruption'); } });
+      assert.equal(await createQuestionPublisher({ directory: vault, noteId, state }).complete(attempt, candidate, signal), 'pending');
+    }
+    const oldPlan = store.generation.publications.get(attempt.attemptId);
+    if (oldPlan && scenario === 'v8-migration') delete oldPlan.job;
     store.close();
     const db = new Database(join(project, '.memory-loop', 'application.sqlite'));
-    try { db.exec('DROP TABLE ground_generation_publications; PRAGMA user_version = 7;'); }
+    try {
+      if (scenario === 'v7-migration') db.exec('DROP TABLE ground_generation_publications');
+      else db.query("UPDATE ground_generation_publications SET plan_json = json_remove(plan_json, '$.job') WHERE attempt_id = ?").run(attempt.attemptId);
+      db.exec(`CREATE TABLE ground_generation_preflight_old (
+        occurrence_id TEXT PRIMARY KEY NOT NULL, job_key TEXT NOT NULL CHECK(job_key = 'questions'),
+        time_zone TEXT NOT NULL, scheduled_at INTEGER NOT NULL, vault_directory TEXT NOT NULL,
+        attempts INTEGER NOT NULL CHECK(attempts BETWEEN 1 AND 3), retry_at INTEGER,
+        blocked INTEGER NOT NULL CHECK(blocked IN (0, 1)), UNIQUE(job_key, time_zone, scheduled_at));
+        INSERT INTO ground_generation_preflight_old SELECT * FROM ground_generation_preflight;
+        DROP TABLE ground_generation_preflight;
+        ALTER TABLE ground_generation_preflight_old RENAME TO ground_generation_preflight;`);
+      db.exec(`PRAGMA user_version = ${scenario === 'v7-migration' ? 7 : 8}`);
+    }
     finally { db.close(); }
     store = await openThinkState(project, vault);
     assert.deepEqual(store.generation.pending(), oldAttempt);
     const retained = store.generation.beginPreflight(occurrence, 100001);
     assert.equal(retained.allowed, false); assert.deepEqual(retained.fact, reserved.fact);
+    if (scenario === 'v8-migration') {
+      assert.deepEqual(store.generation.publications.get(attempt.attemptId), oldPlan);
+      const quoteOccurrence = { ...occurrence, job: 'quotes' as const };
+      assert.equal(store.generation.beginPreflight(quoteOccurrence, 100001).allowed, true);
+      const quoteAttempt = store.generation.claim({ ...quoteOccurrence, count: 2, inputSha256: questionDigest('quote input'), selection: {} });
+      assert(quoteAttempt); store.generation.creating(quoteAttempt.attemptId); store.generation.verified(quoteAttempt.attemptId, {});
+      store.generation.attempted(quoteAttempt.attemptId); store.generation.admitted(quoteAttempt.attemptId);
+      const quoteText = JSON.stringify([{ text: 'Fictional fixture quote', attribution: 'Fixture author' }]);
+      const publisher = createQuotePublisher({ directory: vault, noteId: ['03_Resources', 'Memory-Loop', 'inspiration.md'], state: store.generation.publications });
+      assert.equal(await publisher.complete(quoteAttempt, { messageId: 'msg_owned_quote', text: quoteText, sha256: questionDigest(quoteText) }, signal), 'settled');
+      assert.deepEqual(store.generation.publications.get(attempt.attemptId), oldPlan);
+    }
   }
   console.log(JSON.stringify({ scenario, passed: true }));
 } finally { store.close(); }

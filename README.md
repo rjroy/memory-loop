@@ -6,8 +6,8 @@ Markdown without changing it. **Capture is built:** save thoughts to the same
 configured vault. **Think has a working conversation UI in the isolated local
 fixture** below. Ground now presents six independent cards, including recent
 registered conversations with Resume and Delete, and can prepare an unsent Think
-draft. Opt-in daemon-resident daily questions now publish to its Prompts resource;
-weekly sourced inspiration is still planned.
+draft. Opt-in daemon-resident daily questions and weekly model-attributed quotes
+publish to its Prompts and Inspiration resources.
 This source/fixture-accepted version is not yet published to the live app, and
 the Ground roadmap is not complete.
 The user-approved character board is now applied: inspiring Ground, quiet Capture,
@@ -163,8 +163,10 @@ acknowledgements remain uncertain and are never automatically replayed. Native
 OpenCode remains authoritative for assistant history and execution. The body
 cache is disposable, not the durable original-input store.
 
-The current schema is **v8**. Its additive migrations preserve prior originals,
-ownership, command ordering/timestamps, leases, deletion facts and transcript
+The current schema is **v9**. V9 extends preflight budgets to both jobs while
+preserving v8 question identities, budgets, publication bytes/hashes and temp/witness
+ownership; existing question plans need no rewrite. Its additive migrations preserve
+prior originals, ownership, command ordering/timestamps, leases, deletion facts and transcript
 checkpoints/pending work. V6 adds generation occurrences/attempt identities, v7
 adds persistent preflight budgets and v8 seals validated publication plans,
 baseline/output hashes and temporary-file ownership. V5 introduced paired-deletion
@@ -214,10 +216,11 @@ history is not durable browser draft storage: unsent drafts still do not survive
 a hard reload or browser closure. Ground's Recent conversations card provides
 explicit Resume for eligible registered chats; it does not import legacy chats.
 
-#### Scheduled questions: opt-in daemon configuration
+#### Scheduled questions and quotes: opt-in daemon configuration
 
-Daily questions are implemented in `memory-loop-9ya.7`. Merge this **disabled,
-example-only** `ground` object into the existing vault/Think configuration; do not
+Daily questions (`memory-loop-9ya.7`) and weekly quotes (`memory-loop-9ya.8`) are
+implemented and verified in source/owned fixtures. Merge this **disabled,
+example-only** `ground` object at the authorized handoff; do not
 replace or edit the user's private configuration to try it:
 
 ```json
@@ -239,13 +242,17 @@ replace or edit the user's private configuration to try it:
 }
 ```
 
-These are the current configurable defaults. Omission leaves generation disabled.
-The `quotes` settings are validated/reserved configuration, **not a running quote
-job**; weekly sourced inspiration and its evidence adapter are `memory-loop-9ya.8`.
+These are the current configurable defaults. Omission leaves generation disabled;
+the single `enabled` flag controls both jobs. Quotes use model training knowledge
+plus recent vault context for personally relevant themes, with accurate attribution
+requested from the model, **not independently verified**. Both counts default to
+five and are configurable from 1–50; valid partial and empty batches are accepted.
+External search, source fetching and evidence/API-key workflows are removed from
+the quote scope, not deferred.
 Real-vault/model activation and the normal-checkout handoff remain separately
 authorized work in `memory-loop-9ya.9`; this documentation enables nothing.
 
-At that handoff, `enabled: true` plus daemon restart activates questions using the
+At that handoff, `enabled: true` plus daemon restart activates both jobs using the
 existing configured OpenCode service and Think agent/model selection/native
 defaults. There is no extra service, browser trigger or job-control UI. Invalid
 generation settings or a failed job do not disable otherwise healthy Ground
@@ -256,10 +263,12 @@ its own history/retention is outside the application's private-state guarantee.
 
 Pinned **Croner 11.0.0** calculates five-field schedules in the configured IANA
 timezone; `server` resolves the daemon's named timezone at startup, not the
-browser's. Questions default to daily 06:00. Scheduling begins only after daemon
-listener ownership. Startup, including first enablement, processes only the latest
-due occurrence after reconciling unfinished work—no missed-day flood or overlap.
-Pre-admission preflight allows at most three automatic attempts per occurrence,
+browser's. Defaults are questions daily at **06:00** and quotes on **Monday at
+06:15**. Scheduling begins only after daemon listener ownership. Each job has its
+own timer, pending work and retry budget, so pending/failed quotes do not stall
+questions. Startup, including first enablement, reconciles unfinished work and
+processes only the latest due occurrence per job—no missed-day flood or overlap.
+Pre-admission preflight allows at most three automatic attempts per job occurrence,
 with 30-second then 60-second backoff; its budget survives restart. Unknown native
 admission is reconciled by the same persisted IDs, never automatically resent.
 Shutdown stops new attempts, not necessarily already-running native/provider work.
@@ -271,15 +280,20 @@ symlinks; changed/invalid reads are skipped or fail safely, never widen the sear
 The application retains input digests and job/publication facts, not excerpt-history
 tables or raw native/tool dumps.
 
-Only a completed, verified response containing a strict JSON array of `{ "text": "…" }`
-candidates is accepted; extra fields, surrounding prose, over-count or
-oversized/invalid questions reject the whole batch. Valid partial and empty batches
-are allowed. The daemon parses the actual configured Prompts resource (default
-`03_Resources/Memory-Loop/prompts.md`), deduplicates comparison keys without changing
-retained author case, appends new questions at the bottom and retains the latest
-50 in canonical `## Question` paragraph format. Empty/duplicate-only batches do not
-rewrite or create a file. Malformed/unsafe files or an oversized final resource
-remain unchanged. Existing Ground-visit selection stability is unchanged.
+Only a completed response from the verified owned native session is accepted:
+strict JSON arrays of `{ "text": "…" }` questions or
+`{ "text": "…", "attribution": "…" }` quotes. Extra fields, surrounding prose,
+over-count or invalid/oversized fields reject the whole batch. Validation is
+structural, not a factual-attribution check. The daemon parses the actual configured
+resource, appends unique entries at the bottom and retains the latest 50. Questions
+use `## Question` paragraphs; quotes use `## Quote`, blockquote text and a nonempty
+`Attribution:` line in `03_Resources/Memory-Loop/inspiration.md` by default.
+Quote deduplication compares normalized text plus attribution, without changing
+retained author text/case or legacy `Source:` metadata. New quotes omit `Source:`
+rather than inventing it. Empty/duplicate-only batches do not rewrite or create a
+file; malformed/unsafe files or an oversized final resource remain unchanged.
+Selection separately uses existing file-order weights 1…N, with no model call;
+Ground-visit selection stability is unchanged.
 
 Publication seals exact candidates/output and baseline/output hashes in SQLite
 before file effects. Verified temporary-file ownership, file/directory sync,
@@ -471,15 +485,18 @@ epoch before changing selection or navigating. If unavailable, the current chat
 and both drafts stay in place; **Check chat** checks the same prepared chat
 without creating or sending again.
 
-Inspiration displays a selected quotation with its attribution and source. Prompts
-and Inspiration use narrow Markdown entry formats; see the [resource format
-contract](.lore/work/design/ground-contracts.md#2-small-markdown-formats) for
+Inspiration displays a selected quotation with its attribution and optional source.
+Source-less entries work through the parser, API/BFF and card; existing Source
+metadata/citations remain supported and are preserved on retained entries.
+Prompts and Inspiration use narrow Markdown
+entry formats; see the [resource format contract](.lore/work/design/ground-contracts.md#2-small-markdown-formats) for
 their syntax and limits. Goals accepts ordinary nonblank CommonMark/GFM with
 Recall's safe rendering: no live raw HTML or fetched images, and task boxes are
 read-only. Missing files are not created or overwritten by Ground reads. Empty,
 missing, malformed and unavailable resources are reported per card, so one does
-not hide the others. A quote or prompt selection stays stable during a Ground
-visit; leaving and returning starts a new selection.
+not hide the others. Selection uses file-order weights 1, 2, …, N without calling
+a model. A quote or prompt selection stays stable during a Ground visit; leaving
+and returning starts a new selection.
 
 Recent captures links up to the five most recent recorded entries to their source
 notes in Recall. If source coverage is incomplete, the card says so rather than
@@ -530,11 +547,10 @@ command; it does not advance or retry deletion. There is no Undo, Retry Delete,
 automatic status polling, repeated destructive POST or destructive retry on
 restart. Do not restart expecting an incomplete deletion to finish automatically.
 
-Opt-in daily questions are implemented as described in the operator guide.
-Weekly sourced inspiration (`memory-loop-9ya.8`) and the final configuration/
-deployment handoff (`memory-loop-9ya.9`) remain unimplemented. This verified
-version is not yet published to the live app; deployment still needs separate
-authorization.
+Opt-in daily questions and weekly model-attributed inspiration are implemented
+and verified as described in the operator guide. The final configuration/deployment
+handoff (`memory-loop-9ya.9`) remains pending. This version is not yet published
+to the live app and background jobs have not been activated against personal data.
 
 ## What Capture does
 
@@ -593,25 +609,30 @@ transactional snapshot.
 
 ## Checks and current acceptance
 
-On **2026-11-01**, Ground's scheduler/daily-question slice (`memory-loop-9ya.7`)
-passed independent final validation: frontend **142**, backend **738**, browser
-**60**, native integration **7 passed / 3 skipped**, both direct TypeScript checks
-and an isolated Next production build. Fresh technical verification accepted the
-scheduler, publication/cleanup and native variant/pagination corrections. Evidence:
-`/tmp/opencode/ground-9ya7-final-validation.log` and
-`/tmp/opencode/ground-9ya7-final-validation.json`.
+On **2026-11-01**, Ground's reduced weekly-quote slice (`memory-loop-9ya.8`)
+passed independent final validation: frontend **144**, backend **745 across 34
+files**, Playwright **60**, native integration **7 passed / 3 intentionally
+unselected skips**, both direct TypeScript checks and an isolated **Next 16.4.3**
+production build. Terminal cross-boundary review accepted the tested source with
+no findings and no subsequent code changes. Evidence:
+`/tmp/opencode/ground-9ya8-final-validation.log` and
+`/tmp/opencode/ground-9ya8-final-validation.json`.
 The earlier list/Resume/selection (`memory-loop-3ry`) and paired deletion
 (`memory-loop-9ya.6`) remain accepted; the unchanged Delete UI's visual evidence is
 `/tmp/opencode/ground-9ya6-ui-visual-review/report.md`.
 Owned OpenCode 2.2.2/scripted-provider/Chromium fixtures cover paired deletion,
 Ground Resume and same-URL reload after restarting only the app daemon, without
-native-work replay or duplicate transcript entries. The browserless native
-question case additionally reaches actual Code Mode denial, resource publication
-and daemon-only restart without a second user prompt or Think transcript records.
+native-work replay or duplicate transcript entries. One browserless native case
+publishes both question and quote files, verifies deny-all permissions for both
+sessions and forces Code Mode denial on the question job. Both stay out of Recent
+conversations and Think transcript/command records. Daemon-only restart preserves
+both canonical files and their inodes, with one original prompt per job and no
+extra native sessions/prompts. Its fictional scripted quote does not test factual
+attribution accuracy.
 These checks do not certify physical-device, assistive-technology, direct-MCP deny
 or arbitrary-hook isolation. They did not deploy this version or enable generation
-against personal data. Weekly quotes and the final handoff remain; the Ground plan
-is not complete. No tests, builds or services were run for this documentation update.
+against personal data. The final handoff (`memory-loop-9ya.9`) remains; the Ground
+plan is not complete. No tests, builds or services were run for this documentation update.
 
 On **2026-10-31**, Ground's Phase 3b registry-bound transcript slice passed
 independent validation: frontend **111**, backend **631**, browser **60**, native

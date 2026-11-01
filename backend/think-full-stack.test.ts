@@ -15,7 +15,7 @@ import type { BodyRef } from './think/body-store';
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
-it('Ground 9ya.7 real native scheduled questions deny Code Mode and publish without a browser', async () => {
+it('Ground real native scheduled questions and quotes publish without a browser and deny Code Mode', async () => {
   const binary = process.env.OPENCODE_TEST_BINARY;
   if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
   let requests = 0;
@@ -33,7 +33,11 @@ it('Ground 9ya.7 real native scheduled questions deny Code Mode and publish with
     if (!endpoint) throw new Error('owned native registration unavailable');
     const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
     const resource = `${owned.workspace}/03_Resources/Memory-Loop/prompts.md`;
-    try { await vi.waitFor(async () => expect(await readFile(resource, 'utf8')).toContain('Which owned fixture idea is worth exploring?'), { timeout: 60000, interval: 100 }); }
+    const inspiration = `${owned.workspace}/03_Resources/Memory-Loop/inspiration.md`;
+    try { await vi.waitFor(async () => {
+      expect(await readFile(resource, 'utf8')).toContain('Which owned fixture idea is worth exploring?');
+      expect(await readFile(inspiration, 'utf8')).toContain('Fictional fixture words illuminate a path.');
+    }, { timeout: 60000, interval: 100 }); }
     catch (error) {
       const diagnostic = await native.session.list({ directory: owned.workspace, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
       const histories = await Promise.all(diagnostic.data.map(session => native.message.list({ sessionID: session.id, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) })));
@@ -45,15 +49,37 @@ it('Ground 9ya.7 real native scheduled questions deny Code Mode and publish with
       const marker = session.metadata?.memoryLoop;
       return marker !== null && typeof marker === 'object' && !Array.isArray(marker) && marker.purpose === 'ground-generation';
     });
-    expect(generated).toHaveLength(1);
-    const session = await native.session.get({ sessionID: generated[0].id }, { signal: AbortSignal.timeout(5000) });
-    expect(session.permissions).toEqual([{ action: '*', resource: '*', effect: 'deny' }]);
-    const history = await native.message.list({ sessionID: session.id, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    expect(generated).toHaveLength(2);
+    const readJobs = () => {
+      const db = new DatabaseSync(`${owned.root}/daemon-app/.memory-loop/application.sqlite`, { readOnly: true });
+      try {
+        db.exec('PRAGMA busy_timeout = 1000');
+        return db.prepare(`SELECT o.job_key, o.state, a.native_session_id, a.native_message_id FROM ground_generation_occurrences o
+          JOIN ground_generation_attempts a ON a.occurrence_id = o.occurrence_id ORDER BY o.job_key`).all().map(row => {
+          if (typeof row.job_key !== 'string' || typeof row.state !== 'string' || typeof row.native_session_id !== 'string' || typeof row.native_message_id !== 'string') throw new Error('invalid owned generation facts');
+          return { job: row.job_key, state: row.state, sessionId: row.native_session_id, messageId: row.native_message_id };
+        });
+      } finally { db.close(); }
+    };
+    await vi.waitFor(() => expect(readJobs().map(job => [job.job, job.state])).toEqual([['questions', 'settled'], ['quotes', 'settled']]), { timeout: 10000 });
+    const jobs = readJobs();
+    expect(jobs.map(job => job.job)).toEqual(['questions', 'quotes']);
+    expect(jobs.every(job => job.state === 'settled')).toBe(true);
+    expect(generated.map(session => session.id).sort()).toEqual(jobs.map(job => job.sessionId).sort());
+    for (const job of jobs) {
+      const session = await native.session.get({ sessionID: job.sessionId }, { signal: AbortSignal.timeout(5000) });
+      expect(session.permissions).toEqual([{ action: '*', resource: '*', effect: 'deny' }]);
+      expect(await native.permission.list({ sessionID: session.id }, { signal: AbortSignal.timeout(5000) })).toEqual([]);
+      const messages = await native.message.list({ sessionID: session.id, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+      expect(messages.data.filter(message => message.type === 'user').map(message => message.id)).toEqual([job.messageId]);
+    }
+    const questionJob = jobs.find(job => job.job === 'questions');
+    if (!questionJob) throw new Error('owned question job missing');
+    const history = await native.message.list({ sessionID: questionJob.sessionId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
     const toolEvents = history.data.flatMap(message => message.type === 'assistant' ? message.content.filter(part => part.type === 'tool' && part.name === 'execute') : []);
     expect(toolEvents).toHaveLength(1);
     expect(toolEvents[0]).toMatchObject({ type: 'tool', name: 'execute', state: { status: 'error' } });
     expect(JSON.stringify(toolEvents)).toContain('No tool named');
-    expect(await native.permission.list({ sessionID: session.id }, { signal: AbortSignal.timeout(5000) })).toEqual([]);
     expect(requests).toBe(0);
     const generation = owned.control.generation();
     expect(generation.forced).toBe(1); expect(generation.toolResults).toBe(1);
@@ -67,6 +93,14 @@ it('Ground 9ya.7 real native scheduled questions deny Code Mode and publish with
     const prompts = await api('/api/ground/prompts');
     expect(prompts.status).toBe(200);
     expect(JSON.parse(prompts.body)).toMatchObject({ state: 'ready', data: { question: { text: 'Which owned fixture idea is worth exploring?' } } });
+    const inspirationBody = await readFile(inspiration, 'utf8');
+    expect(inspirationBody).toContain('## Quote\n> Fictional fixture words illuminate a path.');
+    expect(inspirationBody).toContain('Attribution: Fixture author');
+    expect(inspirationBody).not.toContain('Source:');
+    const selected = await api('/api/ground/inspiration');
+    expect(selected.status).toBe(200);
+    expect(JSON.parse(selected.body)).toMatchObject({ state: 'ready', data: { quote: { text: 'Fictional fixture words illuminate a path.', attribution: 'Fixture author' } } });
+    expect(JSON.parse(selected.body).data.quote).not.toHaveProperty('source');
     const recent = await api('/api/ground/recent-conversations');
     expect(recent.status).toBe(200); expect(JSON.parse(recent.body)).toEqual({ state: 'ready', items: [] });
     const assertNoThinkRecords = async () => {
@@ -79,11 +113,21 @@ it('Ground 9ya.7 real native scheduled questions deny Code Mode and publish with
       } finally { db.close(); }
     };
     await assertNoThinkRecords();
+    const questionBefore = await readFile(resource); const quoteBefore = await readFile(inspiration);
+    const questionFile = await lstat(resource); const quoteFile = await lstat(inspiration);
     await owned.restartDaemon();
     expect((await api('/api/ground/prompts')).status).toBe(200);
+    expect((await api('/api/ground/inspiration')).status).toBe(200);
+    expect(await readFile(resource)).toEqual(questionBefore); expect(await readFile(inspiration)).toEqual(quoteBefore);
+    expect((await lstat(resource)).ino).toBe(questionFile.ino); expect((await lstat(inspiration)).ino).toBe(quoteFile.ino);
     expect(owned.control.generation().forced).toBe(1);
-    const restored = await native.message.list({ sessionID: session.id, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
-    expect(restored.data.filter(message => message.type === 'user')).toHaveLength(1);
+    expect(readJobs()).toEqual(jobs);
+    const afterSessions = await native.session.list({ directory: owned.workspace, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+    expect(afterSessions.data.map(session => session.id).sort()).toEqual(generated.map(session => session.id).sort());
+    for (const job of jobs) {
+      const restored = await native.message.list({ sessionID: job.sessionId, order: 'asc', limit: 50 }, { signal: AbortSignal.timeout(5000) });
+      expect(restored.data.filter(message => message.type === 'user').map(message => message.id)).toEqual([job.messageId]);
+    }
     expect(requests).toBe(0);
     await assertNoThinkRecords();
   } finally {

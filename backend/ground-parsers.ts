@@ -48,22 +48,22 @@ export function parseGroundCollection(kind: 'quickActions' | 'inspiration' | 'pr
       const attribution = attributionLine.slice(13);
       if (!validText(attribution, 256)) return fail(i - 1);
       blanks();
-      const sourceLine = lines[i++] ?? '';
-      if (!sourceLine.startsWith('Source: ')) return fail(i - 1);
-      const sourceText = sourceLine.slice(8);
-      const link = /^\[([^\]\n]+)\]\(([^)\s]+)\)$/.exec(sourceText);
       let citation: GroundQuote['source'];
-      if (link) {
-        try {
-          const url = new URL(link[2]);
-          if (!validText(link[1], 512) || Buffer.byteLength(link[2]) > 2048 || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || /[\x00-\x20\x7f]/.test(link[2])) return fail(i - 1);
-          citation = { title: link[1], url: link[2] };
-        } catch { return fail(i - 1); }
-      } else {
-        if (!validText(sourceText, 512) || sourceText.startsWith('[')) return fail(i - 1);
-        citation = { title: sourceText };
+      if (lines[i]?.startsWith('Source: ')) {
+        const sourceText = lines[i++].slice(8);
+        const link = /^\[([^\]\n]+)\]\(([^)\s]+)\)$/.exec(sourceText);
+        if (link) {
+          try {
+            const url = new URL(link[2]);
+            if (!validText(link[1], 512) || Buffer.byteLength(link[2]) > 2048 || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || /[\x00-\x20\x7f]/.test(link[2])) return fail(i - 1);
+            citation = { title: link[1], url: link[2] };
+          } catch { return fail(i - 1); }
+        } else {
+          if (!validText(sourceText, 512) || sourceText.startsWith('[')) return fail(i - 1);
+          citation = { title: sourceText };
+        }
       }
-      const canonical = { text, attribution, source: citation };
+      const canonical = { text, attribution, ...(citation === undefined ? {} : { source: citation }) };
       item = { id: hash(canonical), ...canonical };
     } else {
       const skill = kind === 'quickActions' ? /^## (@[A-Za-z0-9][A-Za-z0-9_-]{0,63})$/.exec(heading)?.[1] : undefined;

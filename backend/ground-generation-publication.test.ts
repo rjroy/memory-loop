@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { expect, it } from 'vitest';
 
 const runner = resolve(import.meta.dirname, '../tests/ground-generation-publication-fixture.ts');
-it.each(['manual', 'absence', 'lost-confirmation', 'v7-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate'] as const)(
+it.each(['manual', 'absence', 'lost-confirmation', 'v7-migration', 'v8-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate'] as const)(
   'preserves owned publication boundaries: %s', async scenario => {
     const root = await mkdtemp('/tmp/opencode/ground-publication-test-');
     try {

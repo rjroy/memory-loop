@@ -9,7 +9,8 @@ related: [.lore/work/research/opencode-2.2.2-validation.md, .lore/work/design/gr
 
 # OpenCode 2.2.2 restricted-generation compatibility
 
-Completed source/owned-fixture evidence for `memory-loop-9ya.7`, separate from the
+Completed source/owned-fixture evidence for `memory-loop-9ya.7` and the reduced
+two-job extension `memory-loop-9ya.8`, separate from the
 [earlier full-allow Think characterization](opencode-2.2.2-validation.md). Reuse
 these public API facts and retained tests; do not repeat broad SDK discovery,
 install another OpenCode or change an operator service to rediscover them. This
@@ -91,44 +92,57 @@ configured direct-MCP server or arbitrary privileged hooks/plugins. Ordinary
 permission denial is not a native-process sandbox or universal gateway/policy
 certification, and the earlier full-allow MCP proof is not deny-all proof.
 
-## Lasting whole-job proof and reuse
+## Lasting two-job proof and reuse
 
 The retained
 [real-native case](../../../backend/think-full-stack.test.ts),
-`Ground 9ya.7 real native scheduled questions deny Code Mode and publish without a browser`,
+`Ground real native scheduled questions and quotes publish without a browser and deny Code Mode`,
 uses [launchThinkFixture](../../../tests/think-fixture.ts): an isolated source
 copy/Next build, real Bun daemon, explicit native 2.2.2 binary, owned vault and
 local scripted model HTTP provider. It leaves the requested variant omitted.
 It asserts:
 
-- One owned generation session and exact deny-all readback; forced `execute`
-  returns a tool error, no permission asks or owned gateway request, and the
-  advertised model tools do not include `execute`.
-- The daemon, without a browser trigger, writes the actual canonical question
-  resource and exposes it through the real Ground API.
-- After restarting only the owned daemon, the resource remains readable, the
-  existing native session has one user prompt and no forced generation repeats.
+- Two owned generation sessions, one per persisted question/quote job, with exact
+  deny-all readback and no permission asks. Forced `execute` on the question job
+  returns a tool error with no owned gateway request; advertised model tools do
+  not include `execute`.
+- The daemon, without a browser trigger, writes both actual canonical resources
+  and exposes them through the real Ground API. The quote has attribution but no
+  invented Source field; its API projection omits `source`.
+- After restarting only the owned daemon, both files retain identical bytes and
+  inodes, both jobs remain settled, and the same native sessions each have exactly
+  their original user prompt IDs. No extra sessions/prompts or forced generation
+  repeats occur.
 - Recent conversations stays empty; private Think conversation/command/transcript
   rows and actual transcript files stay absent. Think may independently prepare
   its empty transcript directory; directory existence is not a transcript.
+
+Quotes use model training knowledge plus bounded recent vault context, with
+model-supplied attribution. The fictional scripted quote tests integration and
+structure, not factual attribution accuracy. External research/source fetching,
+verification, allowlists and provider/key workflows were removed from the scope,
+not deferred. These existing native permission/sandbox limits are descriptions,
+not new capability gates or source-policy choices.
 
 Publication fault/ownership regressions remain in
 [ground-generation-publication.test.ts](../../../backend/ground-generation-publication.test.ts)
 and [its Bun/SQLite helper](../../../tests/ground-generation-publication-fixture.ts).
 They protect output-hash confirmation, no-replace/manual-conflict behavior,
 unbound-temp substitution rejection, durable witness-to-inode transfer before
-terminal cleanup and case-folded duplicate no-ops. A pre-witness create crash is
-still ambiguous and fails closed; this is not universal crash recovery or
+terminal cleanup, case-folded duplicate no-ops and v8-to-v9 preservation of old
+question plans/facts. A pre-witness create crash is still ambiguous and fails
+closed; this is not universal crash recovery or
 filesystem/distributed compare-and-swap.
 
-The **2026-11-01** independent final run records frontend **142**, backend **738**,
-browser **60**, native integration **7 passed / 3 skipped**, both TypeScript
-programs and an isolated Next build passing. Validation used `f293a57` plus the
-accepted working changes. Evidence:
-`/tmp/opencode/ground-9ya7-final-validation.log` and
-`/tmp/opencode/ground-9ya7-final-validation.json`. This is source/fixture
-acceptance, not live deployment or personal-data activation. Weekly quote research
-and the final handoff remain `memory-loop-9ya.8` and `memory-loop-9ya.9`.
+The **2026-11-01** independent final run records frontend **144**, backend **745
+across 34 files**, Playwright **60**, native integration **7 passed / 3 intentional
+unselected skips**, both TypeScript programs and an isolated **Next 16.4.3** build
+passing. Validation used `f70f41a` plus the accepted working changes; terminal
+cross-boundary review accepted with no findings and no later code changes. Evidence:
+`/tmp/opencode/ground-9ya8-final-validation.log` and
+`/tmp/opencode/ground-9ya8-final-validation.json`. This is source/fixture acceptance,
+not live deployment or personal-data activation. The final configuration/activation
+handoff remains `memory-loop-9ya.9`.
 
 For a relevant version/platform/configuration change, rerun the affected retained
 test with an explicitly selected verified native executable and owned isolation,

@@ -17,7 +17,7 @@ import { groundResourcePaths, openGround, type GroundReader } from './ground';
 import { parseGroundGenerationConfig, type GroundGenerationSettings } from './ground-generation-config';
 import { createGroundGeneration } from './ground-generation';
 import { groundGenerationNative } from './ground-generation-native';
-import { createQuestionPublisher } from './ground-generation-publisher';
+import { createQuestionPublisher, createQuotePublisher } from './ground-generation-publisher';
 import { transcriptComponents } from './think/transcript-file';
 import { openThinkState } from './think/sqlite-state';
 import { createConversationService, type ConversationService } from './think/conversations';
@@ -94,29 +94,40 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     bodies = await createBodyStore({ directory: join(dirname(transportFile), `think-bodies-${epoch}`), epoch, vaultDirectory: directory });
     const service = createThinkService({ native: nativeSessions(client), bodies, state, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch,
       serviceIdentity: { pid: registration.pid, version: '2.2.2' }, validateCreation, transcript: { directory: think.transcriptDirectory } });
-    let jobs: ReturnType<typeof createGroundGeneration> | undefined;
+    const jobs: Array<{ job: 'questions' | 'quotes'; runner: ReturnType<typeof createGroundGeneration> }> = [];
     if (generation.state === 'ready') {
-      try {
-        const noteId = groundResourcePaths(config.ground).prompts;
-        if (!noteId) throw new Error('invalid question resource');
-        jobs = createGroundGeneration({ config: generation.config, directory, transcriptDirectory: transcriptComponents(think.transcriptDirectory), state: state.generation,
-          preflight: state.generation,
-          publisher: createQuestionPublisher({ directory, noteId, state: state.generation.publications }),
-          selection: { ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) },
-          native: groundGenerationNative({ client, directory, installationId: state.installationId,
-            identity: { pid: registration.pid, version: '2.2.2' }, validateSelection: validateCreation }) });
-        console.info('ground_generation_setup_outcome', { state: 'prepared' });
-      } catch { console.info('ground_generation_setup_outcome', { state: 'unavailable' }); }
+      for (const [job, resource] of [['questions', 'prompts'], ['quotes', 'inspiration']] as const) {
+        try {
+          const noteId = groundResourcePaths(config.ground)[resource];
+          if (!noteId) throw new Error('invalid generation resource');
+          const publisher = job === 'questions' ? createQuestionPublisher : createQuotePublisher;
+          const runner = createGroundGeneration({ job, config: generation.config, directory, transcriptDirectory: transcriptComponents(think.transcriptDirectory), state: state.generation,
+            preflight: state.generation,
+            publisher: publisher({ directory, noteId, state: state.generation.publications }),
+            selection: { ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) },
+            native: groundGenerationNative({ client, directory, installationId: state.installationId,
+              identity: { pid: registration.pid, version: '2.2.2' }, validateSelection: validateCreation }) });
+          jobs.push({ job, runner });
+          console.info('ground_generation_setup_outcome', { job, state: 'prepared' });
+        } catch { console.info('ground_generation_setup_outcome', { job, state: 'unavailable' }); }
+      }
     }
     console.info('think_setup_outcome', { status: 'ready' });
     // Jobs borrow Think's private connection; drain them BEFORE Think closes it.
     let closing: Promise<void> | undefined;
     return { think: service, close() {
-      closing ??= (async () => { try { await jobs?.close(); } finally { await service.close(); } })();
+      closing ??= (async () => {
+        try {
+          const results = await Promise.allSettled(jobs.map(({ runner }) => runner.close()));
+          if (results.some(result => result.status === 'rejected')) throw new Error('generation close unavailable');
+        } finally { await service.close(); }
+      })();
       return closing;
     }, startRecovery() {
       service.startRecovery();
-      try { jobs?.start(); } catch { console.info('ground_generation_setup_outcome', { state: 'unavailable' }); }
+      for (const { job, runner } of jobs) {
+        try { runner.start(); } catch { console.info('ground_generation_setup_outcome', { job, state: 'unavailable' }); }
+      }
     } };
   } catch {
     if (bodies) {

@@ -7,7 +7,7 @@ import type { NativeSession } from './native';
 import { SQLiteTranscriptState, transcriptSchemaV2, validateTranscriptSchema } from './sqlite-transcript-state';
 import { SQLiteConversations, conversationSchemaV4, validateConversationSchema } from './sqlite-conversations';
 import { SQLiteDeletions, deletionSchemaV5, validateDeletionSchema } from './sqlite-deletions';
-import { SQLiteGroundGeneration, generationSchemaV6, generationSchemaV7, validateGenerationSchema, validateGenerationPreflightSchema,
+import { SQLiteGroundGeneration, generationSchemaV6, generationSchemaV7, generationSchemaV9, validateGenerationSchema, validateGenerationPreflightSchema,
   type GroundGenerationStore } from '../ground-generation-state';
 import { generationSchemaV8, validateGenerationPublicationSchema } from '../ground-generation-publication-state';
 
@@ -221,7 +221,7 @@ class SQLiteThinkState implements ThinkStateStore {
     file.validate();
     if (db.get('PRAGMA quick_check')?.quick_check !== 'ok') unavailable();
     const version = Number(db.get('PRAGMA user_version')?.user_version);
-    if (![0, 1, 2, 3, 4, 5, 6, 7, 8].includes(version)) unavailable();
+    if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(version)) unavailable();
     if (version === 0) {
       const existing = db.get("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
       if (existing?.count !== 0) unavailable();
@@ -272,6 +272,11 @@ class SQLiteThinkState implements ThinkStateStore {
       if (Number(db.get('PRAGMA user_version')?.user_version) !== 7) unavailable();
       db.exec(generationSchemaV8);
       db.exec('PRAGMA user_version = 8');
+    });
+    if (version < 9) this.write('migrate', () => {
+      if (Number(db.get('PRAGMA user_version')?.user_version) !== 8) unavailable();
+      db.exec(generationSchemaV9);
+      db.exec('PRAGMA user_version = 9');
     });
     this.installationId = validateV1(db);
     validateTranscriptSchema(db);
@@ -467,7 +472,7 @@ export async function openThinkState(projectRoot: string, vaultDirectory: string
     file = new ThinkStateFile(projectRoot, vaultDirectory);
     db = await connect(file.path);
     const store = new SQLiteThinkState(db, file);
-    console.info('think_state_setup_outcome', { status: 'ready', schema: 8 });
+    console.info('think_state_setup_outcome', { status: 'ready', schema: 9 });
     return store;
   } catch {
     try { db?.close(); } catch { console.info('think_state_cleanup_outcome', { status: 'failed' }); }

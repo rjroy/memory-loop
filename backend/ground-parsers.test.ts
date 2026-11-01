@@ -33,6 +33,22 @@ describe('weighted Ground selection', () => {
 });
 
 describe('Ground collection formats', () => {
+  it('accepts attributed quotes without a Source line, including adjacent source-free entries', () => {
+    const source = '## Quote\n> Fictional first fixture quote\n\nAttribution: Fixture author\n\n## Quote\n> Fictional second fixture quote\nAttribution: Another fixture author\n';
+    const parsed = parseGroundCollection('inspiration', source);
+    expect(parsed.state).toBe('ready');
+    if (parsed.state !== 'ready') throw new Error('Source-free fixture quotes should be valid');
+    expect(parsed.items).toHaveLength(2);
+    expect(parsed.items[0]).toMatchObject({ text: 'Fictional first fixture quote', attribution: 'Fixture author', id: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(parsed.items[0]).not.toHaveProperty('source');
+    expect(parsed.items[1]).toMatchObject({ text: 'Fictional second fixture quote', attribution: 'Another fixture author' });
+  });
+
+  it('requires nonblank attribution even when Source is omitted', () => {
+    for (const source of ['## Quote\n> Fixture quote\n', '## Quote\n> Fixture quote\nAttribution:   \n']) {
+      expect(parseGroundCollection('inspiration', source)).toMatchObject({ state: 'malformed', issue: { code: 'invalid_format' } });
+    }
+  });
   it('normalizes BOM and CRLF, joins paragraphs, and preserves quote line breaks', () => {
     expect(parseGroundCollection('quickActions', '\uFEFF# Fixture\r\n\r\n## @a\r\nfirst\r\nsecond\r\n')).toEqual({ state: 'ready', items: [{ id: '@a', skill: '@a', description: 'first second' }] });
     expect(parseGroundCollection('inspiration', '\uFEFF# Fixture\r\n\r\n## Quote\r\n> first\r\n>\r\n> second\r\nAttribution: Fixture author\r\nSource: Fixture publication\r\n')).toMatchObject({ state: 'ready', items: [{ text: 'first\n\nsecond', attribution: 'Fixture author', source: { title: 'Fixture publication' } }] });

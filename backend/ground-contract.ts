@@ -6,7 +6,7 @@ export type ResourceRead<T> =
   | { state: 'malformed'; noteId: string[]; issue: { code: GroundIssueCode; line?: number } }
   | { state: 'unavailable'; reason: 'configuration' | 'io'; noteId?: string[] };
 export interface QuickAction { id: string; skill: string; description: string }
-export interface GroundQuote { id: string; text: string; attribution: string; source: { title: string; url?: string } }
+export interface GroundQuote { id: string; text: string; attribution: string; source?: { title: string; url?: string } }
 export interface GroundQuestion { id: string; text: string }
 export interface QuickActionsData { actions: QuickAction[] }
 export interface InspirationData { quote: GroundQuote }

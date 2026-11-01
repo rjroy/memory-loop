@@ -23,15 +23,19 @@ function question(value: unknown): GroundQuestion {
   return { id: value.id, text: value.text };
 }
 function quote(value: unknown): GroundQuote {
-  if (!object(value) || !hash(value.id) || !text(value.text, 4096) || !text(value.attribution, 256) || !object(value.source) || !text(value.source.title, 512)) throw new Error('invalid quote');
-  const source: GroundQuote['source'] = { title: value.source.title };
-  if (value.source.url !== undefined) {
-    if (typeof value.source.url !== 'string' || new TextEncoder().encode(value.source.url).length > 2048 || /[\x00-\x20\x7f]/.test(value.source.url)) throw new Error('invalid source');
-    const url = new URL(value.source.url);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid source');
-    source.url = value.source.url;
+  if (!object(value) || !hash(value.id) || !text(value.text, 4096) || !text(value.attribution, 256)) throw new Error('invalid quote');
+  let source: GroundQuote['source'];
+  if (value.source !== undefined) {
+    if (!object(value.source) || !text(value.source.title, 512)) throw new Error('invalid source');
+    source = { title: value.source.title };
+    if (value.source.url !== undefined) {
+      if (typeof value.source.url !== 'string' || new TextEncoder().encode(value.source.url).length > 2048 || /[\x00-\x20\x7f]/.test(value.source.url)) throw new Error('invalid source');
+      const url = new URL(value.source.url);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid source');
+      source.url = value.source.url;
+    }
   }
-  return { id: value.id, text: value.text, attribution: value.attribution, source };
+  return { id: value.id, text: value.text, attribution: value.attribution, ...(source === undefined ? {} : { source }) };
 }
 function capture(value: unknown): CaptureItem {
   if (!object(value) || !hash(value.id) || typeof value.localDateTime !== 'string' || !/^\d{4}-\d\d-\d\dT(?:[01]\d|2[0-3]):[0-5]\d$/.test(value.localDateTime) || !date(value.localDateTime.slice(0, 10)) || value.timeBasis !== 'recorded-local' ||

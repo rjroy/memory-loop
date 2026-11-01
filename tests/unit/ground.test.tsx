@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useCallback, useRef, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GroundView from '../../src/views/GroundView';
@@ -128,6 +128,27 @@ beforeEach(() => window.sessionStorage.clear());
 afterEach(() => window.sessionStorage.clear());
 
 describe('Ground cards and shell-owned prefill', () => {
+  it('renders a source-free Inspiration quote and attribution without a broken or empty link', async () => {
+    const { fetcher } = setup({ overrides: { '/api/ground/inspiration': () => json({ state: 'ready', noteId: note('inspiration'), revision,
+      data: { quote: { id: hash, text: 'Fictional source-free quote', attribution: 'Fixture author' } } }) } });
+    render(<TestRouter />);
+    const region = await screen.findByRole('region', { name: 'Inspiration' });
+    expect(await within(region).findByText('Fictional source-free quote')).toBeInTheDocument();
+    expect(within(region).getByText('Fixture author')).toBeInTheDocument();
+    expect(within(region).queryByRole('link')).not.toBeInTheDocument();
+    expect(fetcher.mock.calls.filter(([input]) => String(input) === '/api/ground/inspiration')).toHaveLength(1);
+  });
+
+  it('preserves a safe legacy Inspiration source link', async () => {
+    setup({ overrides: { '/api/ground/inspiration': () => json({ state: 'ready', noteId: note('inspiration'), revision,
+      data: { quote: { id: hash, text: 'Fictional legacy quote', attribution: 'Fixture author', source: { title: 'Fixture publication', url: 'https://example.test/source' } } } }) } });
+    render(<TestRouter />);
+    const region = await screen.findByRole('region', { name: 'Inspiration' });
+    const link = await within(region).findByRole('link', { name: /Fixture publication/ });
+    expect(link).toHaveAttribute('href', 'https://example.test/source');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
   it('renders six independent cards, safe Goals and Recall source links without invented conversations', async () => {
     const { fetcher } = setup();
     render(<TestRouter />);

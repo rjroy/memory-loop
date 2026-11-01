@@ -56,11 +56,20 @@ Display a random quote from a vault resource file. Attribute every quote.
 
 Select using increasing weights in file order: the first entry has weight 1,
 the second 2, and so on. This favors entries at the bottom. For three entries,
-the total weight is 6 and the final entry has a 50% chance of selection.
+the total weight is 6 and the final entry has a 50% chance of selection. Selection
+uses the existing file list independently of generation, with no model call.
 
 Cap the collection at 50 entries. A scheduled agent populates it weekly by
-considering recent vault edits and choosing famous quotes to inspire the user.
-The agent's output is persisted in the resource file, not held only in the UI.
+considering recent vault edits and choosing personally relevant quotes from the
+model's training knowledge. Request accurate model-supplied attribution; it is
+not independently verified. The configurable default is up to five quotes per
+run, with valid partial batches allowed. Append new unique entries at the bottom
+and retain the latest 50. The output is persisted in the resource file, not held
+only in the UI.
+
+Keep the existing quote headings, blockquotes and attribution line. Making legacy
+source metadata optional while preserving existing entries is implementation
+work, not a completed reader/rendering capability.
 
 ### Prompts
 
@@ -108,10 +117,15 @@ This card is a file display, not a new goals-management or editing system.
 ## Foundation boundaries
 
 Daily and weekly generation may run automatically while the daemon is available,
-using the configured AI and bounded excerpts of recent vault edits. Web research
-to verify quote attribution is authorized. Generated writes are restricted to the
-designated question and quote resources. This does not authorize unrelated vault
-rewrites or autonomous changes to user-authored material.
+using the configured AI and bounded excerpts of recent vault edits. The user's
+2026-11-01 scope reduction removes external web search, source fetching and
+verification, source allowlists/providers/API keys, SSRF/evidence parsing and
+reputation policies; these are not deferred requirements. There is no source-policy
+gate or separate verification model. Reuse the existing restricted generation,
+durable scheduler and publication foundations without changing Think permissions.
+Generated writes are restricted to the designated question and quote resources.
+This does not authorize unrelated vault rewrites or autonomous changes to
+user-authored material.
 
 The implementation should provide three coherent foundations:
 

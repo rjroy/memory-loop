@@ -122,7 +122,8 @@ export async function launchThinkFixture(options: { binary: string; generationPr
       requests++;
       const user = parsed.messages.filter(message => message.role === 'user').map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content)).join(' ');
       const toolResult = parsed.messages.some(message => message.role === 'tool');
-      const generatedQuestion = !!options.generationProbe && user.includes('Generate up to') && user.includes('thoughtful questions');
+      const generatedQuote = !!options.generationProbe && /\bquotes?\b/i.test(user) && /attribution/i.test(user);
+      const generatedQuestion = !!options.generationProbe && !generatedQuote && /\bquestions?\b/i.test(user) && /JSON array/i.test(user);
       const titleRequest = parsed.messages.some(message => message.role === 'system' && typeof message.content === 'string' && message.content.startsWith('You name conversations'));
       const finish = (delta: object, reason: string) => {
         if (response.destroyed || response.writableEnded) return;
@@ -135,7 +136,10 @@ export async function launchThinkFixture(options: { binary: string; generationPr
       };
       const send = () => {
         held.delete(send);
-        if (generatedQuestion && !titleRequest && options.generationProbe) {
+        if (generatedQuote && !titleRequest) {
+          finish({ content: JSON.stringify([{ text: 'Fictional fixture words illuminate a path.', attribution: 'Fixture author' }]) }, 'stop');
+        }
+        else if (generatedQuestion && !titleRequest && options.generationProbe) {
           generationAdvertised.push((parsed.tools ?? []).flatMap(tool => typeof tool.function?.name === 'string' ? [tool.function.name] : []));
           if (!toolResult) {
             generationForced++;

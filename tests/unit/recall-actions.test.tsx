@@ -79,7 +79,7 @@ describe('Recall: file and folder actions', () => {
     };
     const user = userEvent.setup();
     mount('/recall');
-    expect(await screen.findByText('No Markdown notes to show', { exact: true })).toBeVisible();
+    expect(await screen.findByText('No files to show', { exact: true })).toBeVisible();
     await menu(user, 'Vault actions', /New file/);
     expect(mutations).toHaveLength(0);
     const dialog = screen.getByRole('dialog');
@@ -227,7 +227,7 @@ describe('Recall: file and folder actions', () => {
     expect(mutations).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: 'Discard changes' }));
     await waitFor(() => expect(window.location.search).toBe(''));
-    expect(await screen.findByText('Choose a Markdown note')).toBeInTheDocument();
+    expect(await screen.findByText('Choose a file')).toBeInTheDocument();
     expect(mutations).toHaveLength(1);
     expect(mutations[0].body).toEqual({ action: 'delete', kind: 'note', id: alphaId, expectedVersion: `version:${JSON.stringify(alphaId)}` });
   });

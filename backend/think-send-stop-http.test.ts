@@ -17,6 +17,7 @@ function setup() {
     tree: vi.fn(async () => ({ rootIdentity: 'root', entries: [] })),
     note: vi.fn(async () => ({ name: 'fixture.md', markdown: 'fixture', revision: 'fixture', editable: true })),
     save: vi.fn(),
+    file: vi.fn(), content: vi.fn(),
     action: vi.fn(),
     close: vi.fn(async () => {}),
   };

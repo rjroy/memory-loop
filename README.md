@@ -2,7 +2,7 @@
 
 A personal workspace with four stable destinations: Ground, Capture,
 Think, and Recall. **Recall is built:** browse one configured vault, read and
-edit Markdown, and manage notes and folders. **Capture is built:** save thoughts to the same
+edit Markdown, view supported files, and manage notes, files and folders. **Capture is built:** save thoughts to the same
 configured vault. **Think has a working conversation UI in the isolated local
 fixture** below. Ground now presents six independent cards, including recent
 registered conversations with Resume and Delete, and can prepare an unsent Think
@@ -34,7 +34,8 @@ The daemon reads the JSON-configured vault when started.
 
 ### Install and build
 
-Use Bun 1.4.3 and Node 26.13.0 (Next requires Node >=20.9). Bun manages packages
+Use Bun 1.4.3 and Node 26.13.0. The pinned `file-type` 22.3.0 dependency requires
+Node >=22 when run under Node (Next itself requires Node >=20.9). Bun manages packages
 and runs the daemon. Next build, development and production run under **Node**,
 not Bun's experimental Next adapter or a custom HTTP server.
 
@@ -425,13 +426,16 @@ missing/invalid vault config remains a distinct read error after daemon startup.
 ### Browser and private deployment boundary
 
 The browser uses same-origin Next APIs. Recall uses `GET /api/vault/tree`,
-`GET` and `POST /api/vault/note`, and `POST /api/vault/actions`; Capture uses `POST /api/capture`; Ground uses six fixed
+`GET` and `POST /api/vault/note`, `GET /api/vault/file`, `GET|HEAD /api/vault/content`,
+and `POST /api/vault/actions`; Capture uses `POST /api/capture`; Ground uses six fixed
 read routes under `/api/ground`; the internal Think layer
 adds fixed command, snapshot, watch, content and decision routes under the same web request policy, not a
 generic OpenCode proxy. The BFF creates fresh service headers
 for the authenticated daemon. Browser credentials, cookies and forwarding headers
 are not forwarded. The daemon rejects browser Origin/Fetch Metadata and has no
-frontend assets, SPA fallback or generic filesystem route. APIs are uncached;
+frontend assets, SPA fallback or generic filesystem route. File content streams through
+the fixed Next boundary rather than being buffered or subject to its short JSON timeout.
+APIs are uncached;
 errors and application logs omit credentials, note identifiers and note text.
 
 Use a **current, updated browser with the Navigation API**. Presentation snapshots
@@ -607,14 +611,22 @@ tracked as `memory-loop-22s`.
   source H6 stays H6. Skipped source levels are not repaired.
 
 Recall can save edits to existing Markdown notes, create blank Markdown notes and
-folders, move notes or whole folders without renaming them, and delete notes or
+folders, move notes, generic files or whole folders without renaming them, and delete files or
 empty folders. Moves do not overwrite destinations; folder deletion is not
 recursive, including when hidden or non-Markdown contents are present. Conflicts
 require a fresh read before another action. An uncertain outcome is not
 automatically retried as a destructive request.
 
-Recall has no search, media viewer or AI action. Dot entries, symlinks and
-non-`.md` files are omitted from the tree. Empty trees,
+The Files tree also shows visible non-Markdown regular files. Valid UTF-8 text up
+to 2 MiB is shown completely and read-only; detected images and videos use the
+browser's native viewer or player. A format or codec may not work in a particular
+browser; Recall offers the original download rather than silently converting it.
+Unknown or active content such as HTML and SVG is served as an attachment, not
+executed inline. Oversized or unsupported files can also be downloaded as originals.
+No upload or Markdown image/embed rendering is available in this layer.
+
+Recall has no search or AI action. Dot entries, symlinks and nonregular files are
+omitted from the tree. Empty trees,
 empty notes, config failures, unavailable notes/vaults and transport failures
 are distinct states. See the [approved Recall design](.lore/work/design/recall-read-only.md)
 and [daemon contract](backend/CONTRACT.md).

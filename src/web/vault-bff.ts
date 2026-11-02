@@ -26,9 +26,160 @@ function record(value: unknown): value is Record<string, unknown> {
 function entry(value: unknown): VaultEntry {
   if (!record(value) || typeof value.name !== 'string' || !isVaultId(value.id) || typeof value.identity !== 'string' || !value.identity || typeof value.version !== 'string' || !value.version) throw new Error('invalid');
   const id = [...value.id];
-  if (value.kind === 'note') return { kind: 'note', name: value.name, id, identity: value.identity, version: value.version };
+  if (value.kind === 'note' || value.kind === 'file') return { kind: value.kind, name: value.name, id, identity: value.identity, version: value.version };
   if (value.kind === 'directory' && Array.isArray(value.children)) return { kind: 'directory', name: value.name, id, identity: value.identity, version: value.version, children: value.children.map(entry) };
   throw new Error('invalid');
+}
+
+/** Shared deadline for establishment and successive periods without upstream bytes. */
+function contentDeadline(controller: AbortController) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let expire: (error: Error) => void = () => {};
+  const elapsed = new Promise<never>((_resolve, reject) => { expire = reject; });
+  // The stream may be idle before its consumer requests the next chunk.
+  void elapsed.catch(() => {});
+  return {
+    arm(ms: number) {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(() => { controller.abort(); expire(new Error('Content transfer timeout')); }, ms);
+    },
+    wait<T>(promise: Promise<T>): Promise<T> { return Promise.race([promise, elapsed]); },
+    close() { if (timer !== undefined) clearTimeout(timer); timer = undefined; },
+  };
+}
+
+async function fileRequest(request: Request, dependencies: BffDependencies, operation: 'file' | 'content'): Promise<Response> {
+  const { transport, log } = dependencies;
+  const requestId = crypto.randomUUID();
+  log('vault_bff_attempt', { requestId, operation });
+  let response: Response;
+  try {
+    const url = new URL(request.url);
+    const content = operation === 'content';
+    if (!allowsWebRequest(request)) response = failure('forbidden');
+    else if (request.method !== 'GET' && !(content && request.method === 'HEAD')) response = failure('method_not_allowed');
+    else {
+      let id: VaultId | undefined;
+      let valid = true;
+      try {
+        decodeURIComponent(url.search.replace(/\+/g, ' '));
+        const values = url.searchParams.getAll('id');
+        const parsed: unknown = values.length === 1 ? JSON.parse(values[0]) : undefined;
+        if (isVaultId(parsed)) id = parsed;
+        const downloads = url.searchParams.getAll('download');
+        valid = ![...url.searchParams.keys()].some(key => key !== 'id' && (!content || key !== 'download')) && downloads.length <= 1 && (downloads.length === 0 || downloads[0] === '1');
+      } catch { valid = false; }
+      const range = content && request.method === 'GET' ? request.headers.get('range') : null;
+      if (range !== null && (!/^bytes=(?:\d+-\d*|-\d+)$/.test(range) || range.length > 256)) valid = false;
+      if (!valid || !id) response = failure('invalid_request');
+      else if (!validDaemonOrigin(transport.config.daemonOrigin) || !/^[a-f0-9]{64}$/.test(transport.serviceToken)) response = failure('service_unavailable');
+      else {
+        const target = new URL(`/api/vault/${operation}`, transport.config.daemonOrigin);
+        target.searchParams.set('id', JSON.stringify(id));
+        if (url.searchParams.has('download')) target.searchParams.set('download', '1');
+        const controller = new AbortController();
+        const deadline = content ? contentDeadline(controller) : undefined;
+        const abort = () => { deadline?.close(); controller.abort(); };
+        request.signal.addEventListener('abort', abort, { once: true });
+        if (request.signal.aborted) { request.signal.removeEventListener('abort', abort); throw new Error('Request aborted'); }
+        let streaming = false;
+        let upstream: Response | undefined;
+        let upstreamDone = false;
+        let streamReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+        let accepting = true;
+        const timer = content ? undefined : setTimeout(() => controller.abort(), 5000);
+        deadline?.arm(15_000);
+        try {
+          const fetch = dependencies.fetch(target, {
+            method: request.method, headers: { accept: content ? '*/*' : 'application/json', authorization: `Bearer ${transport.serviceToken}`, ...(range ? { range } : {}) },
+            redirect: 'error', cache: 'no-store', signal: controller.signal,
+          });
+          void fetch.then(late => {
+            if (!accepting && late.body && !late.body.locked) void late.body.cancel().catch(() => {});
+          }, () => {});
+          upstream = await (deadline ? deadline.wait(fetch) : fetch);
+          upstreamDone = upstream.body === null;
+          deadline?.arm(60_000);
+          if (content && (upstream.status === 200 || request.method === 'GET' && (upstream.status === 206 || upstream.status === 416))) {
+            const forwarded = new Headers(headers);
+            for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'content-disposition']) {
+              const value = upstream.headers.get(name);
+              if (value !== null) forwarded.set(name, value);
+            }
+            forwarded.set('content-security-policy', 'sandbox');
+            if (request.method === 'HEAD' || !upstream.body) {
+              response = new Response(null, { status: upstream.status, headers: forwarded });
+            } else {
+              const reader = upstream.body.getReader();
+              streamReader = reader;
+              const cleanup = () => { deadline?.close(); request.signal.removeEventListener('abort', abort); };
+              const stream = new ReadableStream<Uint8Array>({
+                async pull(output) {
+                  try {
+                    const next = reader.read();
+                    const result = await (deadline ? deadline.wait(next) : next);
+                    if (result.done) { cleanup(); reader.releaseLock(); output.close(); }
+                    else { if (result.value.byteLength) deadline?.arm(60_000); output.enqueue(result.value); }
+                  } catch (error) { cleanup(); void reader.cancel(error).catch(() => {}).finally(() => reader.releaseLock()); output.error(error); }
+                },
+                async cancel(reason) {
+                  cleanup();
+                  const cancelled = reader.cancel(reason);
+                  controller.abort();
+                  try { await cancelled; } finally { reader.releaseLock(); }
+                },
+              }, { highWaterMark: 0 });
+              response = new Response(stream, { status: upstream.status, headers: forwarded });
+              streaming = true;
+            }
+          } else if (content && request.method === 'HEAD') {
+            const status = upstream.status === 404 ? 404 : upstream.status === 400 ? 400 : 503;
+            response = new Response(null, { status, headers });
+          } else {
+            if (!/^application\/json(?:\s*;|\s*$)/i.test(upstream.headers.get('content-type') ?? '')) throw new Error('invalid');
+            if (!upstream.body) throw new Error('invalid');
+            const reader = upstream.body.getReader();
+            const chunks: Uint8Array[] = [];
+            let total = 0;
+            try {
+              for (;;) {
+                const read = reader.read();
+                const item = await (deadline ? deadline.wait(read) : read);
+                if (item.done) { upstreamDone = true; break; }
+                if (item.value.byteLength) deadline?.arm(60_000);
+                total += item.value.byteLength;
+                if (total > 2 * 1024 * 1024 * 6 + 65536) throw new Error('invalid');
+                chunks.push(item.value);
+              }
+            } catch (error) { void reader.cancel(error).catch(() => {}); throw error; }
+            finally { reader.releaseLock(); }
+            const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
+            if (upstream.status !== 200) response = failure(domainError(value, upstream.status) ?? 'service_unavailable');
+            else if (!content && record(value) && typeof value.name === 'string') {
+              if (value.kind === 'text' && typeof value.text === 'string' && Buffer.byteLength(value.text, 'utf8') <= 2 * 1024 * 1024) response = Response.json({ name: value.name, kind: value.kind, text: value.text }, { headers });
+              else if ((value.kind === 'image' || value.kind === 'video') && typeof value.contentType === 'string') response = Response.json({ name: value.name, kind: value.kind, contentType: value.contentType }, { headers });
+              else if (value.kind === 'unsupported') response = Response.json({ name: value.name, kind: value.kind }, { headers });
+              else throw new Error('invalid');
+            } else throw new Error('invalid');
+          }
+        } finally {
+          accepting = false;
+          if (!streaming) {
+            if (!upstreamDone) {
+              if (streamReader) void streamReader.cancel().catch(() => {}).finally(() => streamReader?.releaseLock());
+              if (upstream?.body && !upstream.body.locked) void upstream.body.cancel().catch(() => {});
+              controller.abort();
+            }
+            deadline?.close();
+            request.signal.removeEventListener('abort', abort);
+          }
+          if (timer !== undefined) clearTimeout(timer);
+        }
+      }
+    }
+  } catch { response = failure('service_unavailable'); }
+  log('vault_bff_outcome', { requestId, operation, status: response.status });
+  return response;
 }
 function project(value: unknown, operation: 'tree' | 'note') {
   if (!record(value)) throw new Error('invalid');
@@ -79,6 +230,8 @@ function domainError(value: unknown, status: number): VaultErrorCode | undefined
 export async function handleVaultRequest(request: Request, dependencies: BffDependencies): Promise<Response> {
   const { transport, log } = dependencies;
   const url = new URL(request.url);
+  if (url.pathname === '/api/vault/file') return fileRequest(request, dependencies, 'file');
+  if (url.pathname === '/api/vault/content') return fileRequest(request, dependencies, 'content');
   const operation = url.pathname === '/api/vault/tree' ? 'tree' : url.pathname === '/api/vault/note' ? 'note' : url.pathname === '/api/vault/actions' ? 'actions' : 'other';
   const requestId = crypto.randomUUID();
   log('vault_bff_attempt', { requestId, operation });

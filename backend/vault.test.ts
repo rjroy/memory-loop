@@ -23,7 +23,7 @@ afterEach(async () => {
   }
 });
 
-it('lists sorted Markdown and folders, excluding dot entries, other files and symlinks', async () => {
+it('lists sorted files and folders, excluding dot entries and symlinks', async () => {
   await mkdir(join(root, 'alpha'));
   await mkdir(join(root, '.hidden'));
   await writeFile(join(root, 'alpha', 'second.md'), 'second');
@@ -39,6 +39,7 @@ it('lists sorted Markdown and folders, excluding dot entries, other files and sy
       { kind: 'note', name: 'first.md', id: ['alpha', 'first.md'], identity: expect.any(String), version: expect.any(String) },
       { kind: 'note', name: 'second.md', id: ['alpha', 'second.md'], identity: expect.any(String), version: expect.any(String) },
     ] },
+    { kind: 'file', name: 'skip.txt', id: ['skip.txt'], identity: expect.any(String), version: expect.any(String) },
     { kind: 'note', name: 'zeta.md', id: ['zeta.md'], identity: expect.any(String), version: expect.any(String) },
   ] });
 });

@@ -97,7 +97,7 @@ describe('Recall: native file selection and reading', () => {
     await act(async () => { tree.resolve(jsonResponse(vaultTree)); });
     const files = await screen.findByRole('navigation', { name: 'Vault files' });
     expect(document.activeElement).toBe(initialFocus);
-    expect(screen.getByText('Choose a Markdown note')).toBeInTheDocument();
+    expect(screen.getByText('Choose a file')).toBeInTheDocument();
     expect(within(files).getByRole('link', { name: 'Root.md' })).toBeInTheDocument();
     expect(within(files).queryByRole('link', { name: 'Alpha #1.md' })).not.toBeInTheDocument();
 
@@ -129,7 +129,7 @@ describe('Recall: native file selection and reading', () => {
 
     expect(selectedId()).toEqual(alphaId);
     expect(requestedNotes()).toEqual([rootId, alphaId]);
-    expect(screen.getByText('Opening note…')).toBeInTheDocument();
+    expect(screen.getByText('Opening file…')).toBeInTheDocument();
     expect(screen.queryByText('Previous fixture body.')).not.toBeInTheDocument();
     await waitFor(() => {
       expect(alpha).not.toHaveFocus();
@@ -170,7 +170,7 @@ describe('Recall: native file selection and reading', () => {
     await user.click(screen.getByRole('button', { name: 'Expand files sidebar' }));
     const restored = await screen.findByRole('navigation', { name: 'Vault files' });
     expect(within(restored).getByRole('link', { name: 'Alpha #1.md' })).toHaveFocus();
-    const skip = screen.getByText('Skip to note', { exact: true });
+    const skip = screen.getByText('Skip to file', { exact: true });
     expect(['A', 'BUTTON']).toContain(skip.tagName);
     await user.click(skip);
     expect(screen.getByRole('article', { name: 'Alpha #1.md' })).toHaveFocus();
@@ -198,12 +198,12 @@ describe('Recall: native file selection and reading', () => {
     await user.click(screen.getByRole('button', { name: 'Collapse files sidebar' }));
     expect(screen.queryByRole('navigation', { name: 'Vault files' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Expand files sidebar' })).toHaveFocus();
-    expect(screen.getByText('Choose a Markdown note')).toBeInTheDocument();
+    expect(screen.getByText('Choose a file')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Expand files sidebar' }));
     expect(screen.getByRole('heading', { name: 'Files' })).toHaveFocus();
     await user.click(within(screen.getByRole('navigation', { name: 'Vault files' })).getByRole('link', { name: 'Alpha #1.md' }));
     expect(screen.queryByRole('navigation', { name: 'Vault files' })).not.toBeInTheDocument();
-    expect(screen.getByText('Opening note…')).toBeInTheDocument();
+    expect(screen.getByText('Opening file…')).toBeInTheDocument();
     await act(async () => { note.resolve(jsonResponse({ name: 'Alpha #1.md', markdown: 'Phone fixture body.', revision: 'fixture-revision', editable: true })); });
     await screen.findByRole('article', { name: 'Alpha #1.md' });
     await user.click(screen.getByRole('button', { name: 'Expand files sidebar' }));
@@ -261,16 +261,16 @@ describe('Recall: truthful failures and short-query recovery', () => {
     const push = vi.spyOn(window.history, 'pushState');
     await screen.findByText('Vault not configured');
     expectAppNavigation();
-    expect(screen.queryByText('No Markdown notes to show')).not.toBeInTheDocument();
+    expect(screen.queryByText('No files to show')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Check again' }));
     await screen.findByText('Vault configuration is invalid');
     await user.click(screen.getByRole('button', { name: 'Check again' }));
     await screen.findByText('Vault unavailable');
-    expect(screen.queryByText('No Markdown notes to show')).not.toBeInTheDocument();
+    expect(screen.queryByText('No files to show')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Try again' }));
-    await screen.findByText('No Markdown notes to show');
-    expect(screen.getByText('Choose a Markdown note')).toBeInTheDocument();
+    await screen.findByText('No files to show');
+    expect(screen.getByText('Choose a file')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Vault files' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Vault actions' }));
     expect(screen.getByRole('menuitem', { name: /New file/ })).toBeEnabled();
@@ -296,7 +296,7 @@ describe('Recall: truthful failures and short-query recovery', () => {
     await user.click(screen.getByRole('button', { name: 'Retry note' }));
     await screen.findByText('This note is empty.');
     expect(screen.getByRole('article', { name: 'Alpha #1.md' })).toBeInTheDocument();
-    expect(screen.queryByText('No Markdown notes to show')).not.toBeInTheDocument();
+    expect(screen.queryByText('No files to show')).not.toBeInTheDocument();
     expect(requestedNotes()).toEqual([alphaId, alphaId]);
     expect(push).not.toHaveBeenCalled();
     expectAppNavigation();
@@ -308,7 +308,7 @@ describe('Recall: truthful failures and short-query recovery', () => {
   ])('handles $name without endlessly retrying a bad note address', async ({ path, expectedRequests }) => {
     api = installVaultApi({ note: () => errorResponse('invalid_request', 400) });
     mount(path);
-    await screen.findByText('Note address is invalid');
+    await screen.findByText('File address is invalid');
     expect(requestedNotes()).toEqual(expectedRequests);
     expect(screen.queryByRole('button', { name: /retry note/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/Fixture body for/)).not.toBeInTheDocument();
@@ -327,14 +327,14 @@ describe('Recall: truthful failures and short-query recovery', () => {
     mount();
     await screen.findByText('Vault service unavailable');
     expect(screen.queryByText(/Vault access isn't enabled/)).not.toBeInTheDocument();
-    expect(screen.queryByText('No Markdown notes to show')).not.toBeInTheDocument();
+    expect(screen.queryByText('No files to show')).not.toBeInTheDocument();
     expect(screen.queryByText('Static fixture fallback')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => { expect(attempts).toBe(2); expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled(); });
     expect(screen.getByText('Vault service unavailable')).toBeInTheDocument();
     expect(screen.queryByText('Controlled transport diagnostic')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Try again' }));
-    await screen.findByText('No Markdown notes to show');
+    await screen.findByText('No files to show');
   });
 
   it.each(['success', 'error'] as const)('ignores a late A %s after B succeeds, even if the transport ignores abort', async (late) => {

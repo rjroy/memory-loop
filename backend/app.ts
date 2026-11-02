@@ -82,7 +82,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.use('*', async (context, next) => {
     const requestId = randomUUID();
     const path = context.req.path;
-    const operation = path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/vault/actions' ? 'actions' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
+    const operation = path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/vault/file' ? 'file' : path === '/api/vault/content' ? 'content' : path === '/api/vault/actions' ? 'actions' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
     console.info('vault_api_attempt', { requestId, operation });
     try {
       const headers = context.req.raw.headers;
@@ -93,7 +93,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         const match = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') ?? '');
         if (!match || !timingSafeEqual(expected, Buffer.from(match[1], 'hex'))) {
           context.res = Response.json({ error: { code: 'unauthorized', message: 'Service authentication required' } }, { status: 401 });
-        } else if (context.req.method !== 'GET' && !(context.req.method === 'POST' && (path === '/api/vault/note' || path === '/api/vault/actions' || path === '/api/capture' || path === thinkBase ||
+        } else if (context.req.method !== 'GET' && !(context.req.raw.method === 'HEAD' && path === '/api/vault/content') && !(context.req.method === 'POST' && (path === '/api/vault/note' || path === '/api/vault/actions' || path === '/api/capture' || path === thinkBase ||
           path === '/api/think/views' || path === '/api/think/selection' ||
           /^\/api\/think\/conversations\/[^/]+\/(?:resume|delete|messages|runs\/[^/]+\/stop|decisions\/[^/]+\/reply)$/.test(path)))) {
           context.res = Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 });
@@ -181,6 +181,26 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     if ('error' in options.vault) return publicError(options.vault.error);
     try { return context.json(await options.vault.reader.tree()); } catch (error: unknown) { return serviceError(error); }
   });
+  for (const operation of ['file', 'content'] as const) {
+    app.get(`/api/vault/${operation}`, async context => {
+      let id: ReturnType<typeof parseVaultId>;
+      let download = false;
+      try {
+        const url = new URL(context.req.url);
+        decodeURIComponent(url.search.replace(/\+/g, ' '));
+        const values = url.searchParams.getAll('id');
+        const downloads = url.searchParams.getAll('download');
+        if (values.length !== 1 || [...url.searchParams.keys()].some(key => key !== 'id' && (operation !== 'content' || key !== 'download')) || downloads.length > 1 || (downloads.length && downloads[0] !== '1')) return publicError('invalid_request');
+        download = downloads.length === 1;
+        id = parseVaultId(values[0]);
+      } catch { return publicError('invalid_request'); }
+      if ('error' in options.vault) return publicError(options.vault.error);
+      try {
+        if (operation === 'file') return context.json(await options.vault.reader.file(id));
+        return await options.vault.reader.content(id, context.req.raw.method, context.req.raw.headers.get('range'), download, context.req.raw.signal);
+      } catch (error: unknown) { return serviceError(error); }
+    });
+  }
   app.get('/api/vault/note', async context => {
     let id: ReturnType<typeof parseVaultId>;
     try {

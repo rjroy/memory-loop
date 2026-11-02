@@ -5,10 +5,14 @@ import type { FileHandle } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { isVaultComponent, isVaultId, parseVaultSaveRequest, parseVaultAction, vaultSaveTextLimit, type VaultEntry, type VaultId, type VaultNoteResponse, type VaultSaveResponse, type VaultTreeResponse, type VaultAction, type VaultActionResponse, type VaultErrorCode } from './contract';
 import { renameNoReplace as nativeRenameNoReplace } from './vault-rename';
+import { contentResponse, describeFile } from './vault-media';
+import type { VaultFileResponse } from './contract';
 
 export interface VaultReader {
   tree(): Promise<VaultTreeResponse>;
   note(id: VaultId): Promise<VaultNoteResponse>;
+  file(id: VaultId): Promise<VaultFileResponse>;
+  content(id: VaultId, method: string, range: string | null, download: boolean, signal: AbortSignal): Promise<Response>;
   save(id: VaultId, markdown: string, expectedRevision: string): Promise<VaultSaveResponse>;
   action(input: VaultAction): Promise<VaultActionResponse>;
   close(): Promise<void>;
@@ -77,7 +81,7 @@ async function listDirectory(directory: FileHandle, parent: VaultId, identity: (
       } finally {
         await child.close();
       }
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+    } else if (entry.isFile()) {
       let child: FileHandle;
       try {
         child = await open(descriptorPath(directory, entry.name), fileFlags);
@@ -87,7 +91,7 @@ async function listDirectory(directory: FileHandle, parent: VaultId, identity: (
       }
       try {
         const stats = await child.stat();
-        if (stats.isFile()) result.push({ kind: 'note', name: entry.name, id, identity: identity(stats), version: version(stats) });
+        if (stats.isFile()) result.push({ kind: entry.name.endsWith('.md') ? 'note' : 'file', name: entry.name, id, identity: identity(stats), version: version(stats) });
       } finally {
         await child.close();
       }
@@ -100,6 +104,7 @@ export interface VaultOptions {
   flushFile?: (file: FileHandle) => Promise<void>;
   flushDirectory?: (directory: FileHandle) => Promise<void>;
   renameNoReplace?: (sourceParentFd: number, sourceName: string, destinationParentFd: number, destinationName: string) => Promise<void>;
+  afterContentSniff?: () => Promise<void>;
 }
 
 function editableBytes(bytes: Buffer): boolean {
@@ -203,7 +208,7 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       const current = await directory(id);
       if (identity(await current.stat()) !== identity(await handle.stat())) fail('entry_conflict');
     };
-    const revalidateSource = async (parent: FileHandle, name: string, expected: Stats, kind: 'note' | 'directory') => {
+    const revalidateSource = async (parent: FileHandle, name: string, expected: Stats, kind: 'note' | 'file' | 'directory') => {
       const check = await open(descriptorPath(parent, name), kind === 'directory' ? directoryFlags : fileFlags);
       opened.push(check);
       if (version(await check.stat()) !== version(expected)) fail('entry_conflict');
@@ -234,6 +239,7 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       const parent = await directory(input.id.slice(0, -1));
       const name = input.id[input.id.length - 1];
       if (input.kind === 'note' && !name.endsWith('.md')) fail('entry_unavailable');
+      if (input.kind === 'file' && name.endsWith('.md')) fail('entry_unavailable');
       const source = await open(descriptorPath(parent, name), input.kind === 'directory' ? directoryFlags : fileFlags);
       opened.push(source);
       const sourceStats = await source.stat();
@@ -274,6 +280,25 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       for (const handle of opened.reverse()) await handle.close().catch(() => {});
     }
   }
+  async function openRegular(rawId: VaultId) {
+    const id = validateId(rawId);
+    const opened: FileHandle[] = [];
+    try {
+      let parent = pinnedRoot;
+      for (const component of id.slice(0, -1)) {
+        parent = await open(descriptorPath(parent, component), directoryFlags);
+        opened.push(parent);
+      }
+      const name = id[id.length - 1];
+      const file = await open(descriptorPath(parent, name), fileFlags);
+      try {
+        const stats = await file.stat();
+        if (!stats.isFile() || !Number.isSafeInteger(stats.size)) throw new Error('Not a regular file');
+        return { file, name, size: stats.size };
+      } catch (error) { await file.close(); throw error; }
+    } catch { throw new VaultError('entry_unavailable', 'Entry is unavailable'); }
+    finally { for (const handle of opened.reverse()) await handle.close().catch(() => {}); }
+  }
   return {
     async tree() {
       try {
@@ -306,6 +331,17 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       } finally {
         for (const handle of opened.reverse()) await handle.close();
       }
+    },
+    async file(rawId) {
+      const opened = await openRegular(rawId);
+      try { return await describeFile(opened.file, opened.name, opened.size); }
+      catch { throw new VaultError('entry_unavailable', 'Entry is unavailable'); }
+      finally { await opened.file.close(); }
+    },
+    async content(rawId, method, range, download, signal) {
+      const opened = await openRegular(rawId);
+      try { return await contentResponse(opened.file, opened.name, opened.size, method, range, download, signal, options.afterContentSniff); }
+      catch { throw new VaultError('entry_unavailable', 'Entry is unavailable'); }
     },
     async save(rawId, markdown, expectedRevision) {
       const input = parseVaultSaveRequest({ id: rawId, markdown, expectedRevision });

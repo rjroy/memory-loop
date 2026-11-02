@@ -21,12 +21,14 @@ function Entry({ entry, ...props }: FilesProps & { entry: VaultEntry }) {
   const listRef = useRef<HTMLUListElement>(null);
   const key = idKey(entry.id);
   const { handlers } = useFileActions(entry);
-  if (entry.kind === 'note') {
-    return <li><div className="file-entry-row" data-entry-id={key} {...handlers}><a className="file-row file-link" href={noteLocation(entry.id)}
+  if (entry.kind !== 'directory') {
+    return <li><div className="file-entry-row" data-entry-id={key} {...handlers}><a className={`file-row file-link${entry.kind === 'file' ? ' file-link--file' : ''}`} href={noteLocation(entry.id)}
       aria-current={props.selected === key ? 'page' : undefined}
       onFocus={event => event.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })}
       onClick={event => { if (plainActivation(event)) { event.preventDefault(); props.select(entry.id); } }}>
-      <span>{entry.name}</span>
+      {entry.kind === 'file' && <svg className="file-kind-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3.5 1.5h5l4 4v9h-9z M8.5 1.5v4h4" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
+      </svg>}<span>{entry.name}</span>
     </a><FileActionTrigger target={entry} /></div></li>;
   }
   const open = props.expanded.has(key);

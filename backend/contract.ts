@@ -11,7 +11,12 @@ export type VaultId = readonly string[];
 
 export type VaultEntry =
   | { kind: 'directory'; name: string; id: VaultId; identity: string; version: string; children: VaultEntry[] }
-  | { kind: 'note'; name: string; id: VaultId; identity: string; version: string };
+  | { kind: 'note' | 'file'; name: string; id: VaultId; identity: string; version: string };
+
+export type VaultFileResponse =
+  | { name: string; kind: 'text'; text: string }
+  | { name: string; kind: 'image' | 'video'; contentType: string }
+  | { name: string; kind: 'unsupported' };
 
 export interface VaultTreeResponse {
   rootIdentity: string;
@@ -21,8 +26,8 @@ export interface VaultTreeResponse {
 export type VaultAction =
   | { action: 'create-note'; parentId: VaultId; expectedParentIdentity: string; name: string }
   | { action: 'create-directory'; parentId: VaultId; expectedParentIdentity: string; name: string }
-  | { action: 'move'; kind: 'note' | 'directory'; id: VaultId; expectedVersion: string; destinationParentId: VaultId; expectedDestinationIdentity: string }
-  | { action: 'delete'; kind: 'note' | 'directory'; id: VaultId; expectedVersion: string };
+  | { action: 'move'; kind: 'note' | 'file' | 'directory'; id: VaultId; expectedVersion: string; destinationParentId: VaultId; expectedDestinationIdentity: string }
+  | { action: 'delete'; kind: 'note' | 'file' | 'directory'; id: VaultId; expectedVersion: string };
 export type VaultActionResponse = { id: VaultId; revision?: string };
 export const vaultActionBodyLimit = 65536;
 const opaque = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 128;
@@ -31,7 +36,7 @@ export function parseVaultAction(value: unknown): VaultAction | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const v = value as Record<string, unknown>;
   if ((v.action === 'create-note' || v.action === 'create-directory') && Object.keys(v).length === 4 && parentId(v.parentId) && opaque(v.expectedParentIdentity) && isVaultComponent(v.name) && new TextEncoder().encode(v.name).length <= 255 && (v.action !== 'create-note' || v.name.endsWith('.md'))) return { action: v.action, parentId: v.parentId, expectedParentIdentity: v.expectedParentIdentity, name: v.name };
-  if ((v.action === 'move' || v.action === 'delete') && (v.kind === 'note' || v.kind === 'directory') && isVaultId(v.id) && v.id.length <= 64 && opaque(v.expectedVersion)) {
+  if ((v.action === 'move' || v.action === 'delete') && (v.kind === 'note' || v.kind === 'file' || v.kind === 'directory') && isVaultId(v.id) && v.id.length <= 64 && opaque(v.expectedVersion)) {
     if (v.action === 'delete' && Object.keys(v).length === 4) return { action: v.action, kind: v.kind, id: v.id, expectedVersion: v.expectedVersion };
     if (v.action === 'move' && Object.keys(v).length === 6 && parentId(v.destinationParentId) && opaque(v.expectedDestinationIdentity)) return { action: v.action, kind: v.kind, id: v.id, expectedVersion: v.expectedVersion, destinationParentId: v.destinationParentId, expectedDestinationIdentity: v.expectedDestinationIdentity };
   }

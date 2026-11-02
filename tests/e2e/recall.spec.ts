@@ -118,7 +118,7 @@ test('MS4-R3: re-entry preserves the reading anchor after sidebar collapse chang
   await page.goto(noteUrl(recallOrigin, ['danger.md']));
   const article = page.getByRole('article');
   await expect(article).toContainText('Paragraph 59');
-  const reader = page.getByRole('region', { name: 'Note reader' });
+  const reader = page.getByRole('region', { name: 'File reader' });
   await reader.evaluate(element => new Promise<void>(resolve => {
     element.addEventListener('scroll', () => resolve(), { once: true });
     element.scrollTop = 1000;
@@ -147,7 +147,7 @@ test('MS4-R3: re-entry preserves the reading anchor after sidebar collapse chang
 });
 
 for (const scenario of [
-  { width: 1440, height: 900, collapsed: false, helper: 'Skip to note', before: 'Collapse files sidebar' },
+  { width: 1440, height: 900, collapsed: false, helper: 'Skip to file', before: 'Collapse files sidebar' },
   { width: 1440, height: 900, collapsed: true, helper: 'Return to files', before: 'Expand files sidebar' },
   { width: 390, height: 844, collapsed: true, helper: 'Return to files', before: 'Expand files sidebar' },
 ] as const) {
@@ -171,16 +171,16 @@ for (const scenario of [
   });
 }
 
-test('53H-R1: Skip to note moves keyboard traversal past Files into the reader', async ({ page, recallOrigin }) => {
+test('53H-R1: Skip to file moves keyboard traversal past Files into the reader', async ({ page, recallOrigin }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(noteUrl(recallOrigin, ['danger.md']));
   const files = page.getByRole('navigation', { name: 'Vault files' });
-  const reader = page.getByRole('region', { name: 'Note reader' });
+  const reader = page.getByRole('region', { name: 'File reader' });
   await expect(files).toBeVisible();
   await expect(reader.getByRole('article')).toContainText('Source heading');
   const link = reader.getByRole('link', { name: 'web (opens in a new tab)', exact: true });
   await expect(link).toBeVisible();
-  const skip = files.getByRole('button', { name: 'Skip to note' });
+  const skip = files.getByRole('button', { name: 'Skip to file' });
   await skip.focus();
   await expect(skip).toBeFocused();
   await page.keyboard.press('Enter');
@@ -243,7 +243,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await expect(expand).toHaveAttribute('aria-controls', regionId ?? '');
     await expect(expand.locator('svg')).toHaveAttribute('aria-hidden', 'true');
     const expandBox = await expand.boundingBox();
-    const readerBox = await page.getByRole('region', { name: 'Note reader' }).boundingBox();
+    const readerBox = await page.getByRole('region', { name: 'File reader' }).boundingBox();
     expect(expandBox).not.toBeNull();
     expect(readerBox).not.toBeNull();
     if (expandBox && readerBox) {
@@ -403,7 +403,7 @@ for (const [code, heading] of [
 test('distinguishes empty tree, empty note, and transport failure', async ({ page, recallOrigin }) => {
   await page.route('**/api/vault/tree', route => route.fulfill({ json: { rootIdentity: 'fixture-root-identity', entries: [] } }));
   await page.goto(`${recallOrigin}/recall`);
-  await expect(page.getByText('No Markdown notes to show', { exact: true })).toBeVisible();
+  await expect(page.getByText('No files to show', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Vault actions' }).click();
   await expect(page.getByRole('menuitem', { name: 'New file…' })).toBeEnabled();
   await page.unroute('**/api/vault/tree');
@@ -419,7 +419,7 @@ test('direct unavailable and malformed note URLs do not show another note', asyn
   await expect(page.getByText('Note unavailable', { exact: true })).toBeVisible();
   await expect(page.getByRole('main')).not.toContainText('Alpha fixture body.');
   await page.goto(`${recallOrigin}/recall?file=${encodeURIComponent('["..","secret.md"]')}`);
-  await expect(page.getByText('Note address is invalid', { exact: true })).toBeVisible();
+  await expect(page.getByText('File address is invalid', { exact: true })).toBeVisible();
   await expect(page.getByRole('main')).not.toContainText('Alpha fixture body.');
 });
 
@@ -427,7 +427,7 @@ test('RECALL-UI-001: returning to Recall restores the selected reader scroll aft
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(noteUrl(recallOrigin, ['danger.md']));
   await expect(page.getByRole('article')).toContainText('Paragraph 59');
-  const reader = page.getByRole('region', { name: 'Note reader' });
+  const reader = page.getByRole('region', { name: 'File reader' });
   await reader.evaluate(element => new Promise<void>(resolve => {
     element.addEventListener('scroll', () => resolve(), { once: true });
     element.scrollTop = 1000;

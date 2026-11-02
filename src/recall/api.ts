@@ -1,4 +1,4 @@
-import { isVaultComponent, isVaultErrorCode, isVaultId, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultTreeResponse, type VaultSaveRequest, type VaultSaveResponse, type VaultAction as VaultActionRequest, type VaultActionResponse } from '../../backend/contract';
+import { isVaultComponent, isVaultErrorCode, isVaultId, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultFileResponse, type VaultTreeResponse, type VaultSaveRequest, type VaultSaveResponse, type VaultAction as VaultActionRequest, type VaultActionResponse } from '../../backend/contract';
 
 export type RecallFailure = VaultErrorCode | 'transport';
 
@@ -20,13 +20,20 @@ export function noteLocation(id: VaultId): string {
   return `/recall?${new URLSearchParams({ file: idKey(id) })}`;
 }
 
+/** Content always crosses the same-origin vault boundary, never a source-supplied URL. */
+export function fileContentLocation(id: VaultId, download = false): string {
+  const params = new URLSearchParams({ id: idKey(id) });
+  if (download) params.set('download', '1');
+  return `/api/vault/content?${params}`;
+}
+
 export function selectionFromSearch(search: string): { id: VaultId | null; invalid: boolean } {
   const values = new URLSearchParams(search).getAll('file');
   if (values.length === 0) return { id: null, invalid: false };
   if (values.length !== 1) return { id: null, invalid: true };
   try {
     const id: unknown = JSON.parse(values[0]);
-    if (isVaultId(id) && id.at(-1)!.endsWith('.md')) return { id, invalid: false };
+    if (isVaultId(id)) return { id, invalid: false };
   } catch { /* Malformed client addresses never become filesystem requests. */ }
   return { id: null, invalid: true };
 }
@@ -37,6 +44,7 @@ function isTree(value: unknown): value is VaultTreeResponse {
       !opaque(entry.identity) || !opaque(entry.version) ||
       idKey(entry.id) !== idKey([...parent, entry.name])) return false;
     if (entry.kind === 'note') return entry.name.endsWith('.md');
+    if (entry.kind === 'file') return true;
     return entry.kind === 'directory' && entriesValid(entry.children, entry.id);
   });
   return record(value) && opaque(value.rootIdentity) && entriesValid(value.entries, []);
@@ -46,7 +54,7 @@ function opaque(value: unknown): value is string { return typeof value === 'stri
 
 let readSequence = 0;
 
-async function request<T>(url: string, operation: 'tree' | 'note', signal: AbortSignal, validate: (value: unknown) => value is T): Promise<T> {
+async function request<T>(url: string, operation: 'tree' | 'note' | 'file', signal: AbortSignal, validate: (value: unknown) => value is T): Promise<T> {
   const requestId = ++readSequence;
   console.info('vault_read_attempt', { operation, requestId });
   let outcome: RecallFailure | 'loaded' | 'abandoned' = 'transport';
@@ -85,6 +93,20 @@ export function readNote(key: string, signal: AbortSignal): Promise<VaultNoteRes
     (value): value is VaultNoteResponse => record(value) && isVaultComponent(value.name) &&
       value.name === id.at(-1) && typeof value.markdown === 'string' &&
       typeof value.revision === 'string' && value.revision.length > 0 && value.revision.length <= 128 && typeof value.editable === 'boolean');
+}
+
+export function readFile(key: string, signal: AbortSignal): Promise<VaultFileResponse> {
+  const id: unknown = JSON.parse(key);
+  if (!isVaultId(id)) return Promise.reject(new RecallReadError('invalid_request'));
+  return request(`/api/vault/file?${new URLSearchParams({ id: key })}`, 'file', signal,
+    (value): value is VaultFileResponse => {
+      if (!record(value) || !isVaultComponent(value.name) || value.name !== id.at(-1)) return false;
+      if (value.kind === 'text') return typeof value.text === 'string';
+      if (value.kind === 'unsupported') return true;
+      // Classification belongs to the daemon. Validate its descriptor, not a filename extension.
+      return (value.kind === 'image' || value.kind === 'video') && typeof value.contentType === 'string' &&
+        new RegExp(`^${value.kind}/[a-z0-9.+-]+$`, 'i').test(value.contentType);
+    });
 }
 
 /** A lost/malformed acknowledgement is uncertain, never evidence of no write. */
@@ -161,7 +183,7 @@ export const failureCopy: Record<RecallFailure, { heading: string; body: string;
   config_invalid: { heading: 'Vault configuration is invalid', body: 'Check the JSON configuration and vault directory, then restart Memory Loop.', action: 'Check again' },
   vault_unavailable: { heading: 'Vault unavailable', body: "Memory Loop can't read the configured vault. Check that it exists and is readable, then try again.", action: 'Try again' },
   note_unavailable: { heading: 'Note unavailable', body: "This note may have moved, been removed, or can't be read. Choose another file or try again.", action: 'Retry note' },
-  invalid_request: { heading: 'Note address is invalid', body: 'Choose a Markdown note from Files.', action: '' },
+  invalid_request: { heading: 'File address is invalid', body: 'Choose a file from Files.', action: '' },
   note_conflict: { heading: 'Note changed', body: 'The note changed since it was read.', action: 'Retry note' },
   note_not_editable: { heading: 'Note cannot be edited', body: 'This note can still be viewed.', action: 'Retry note' },
   note_save_unavailable: { heading: 'Save unavailable', body: 'The note could not be saved.', action: 'Retry note' },

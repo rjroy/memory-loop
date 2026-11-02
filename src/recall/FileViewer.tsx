@@ -12,7 +12,7 @@ export function fileKindLabel(file: VaultFileResponse): string {
 }
 
 /** Shared passive presentation. The caller owns identity, download, loading and read errors. */
-export default function FileViewer({ file, id }: { file: VaultFileResponse; id: VaultId }) {
+export default function FileViewer({ file, id, label = file.name, embedded = false }: { file: VaultFileResponse; id: VaultId; label?: string; embedded?: boolean }) {
   const [failed, setFailed] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
@@ -20,22 +20,26 @@ export default function FileViewer({ file, id }: { file: VaultFileResponse; id: 
     return () => { if (video && !video.paused) video.pause(); };
   }, [file, failed]);
 
-  if (file.kind === 'text') return file.text.length
+  if (file.kind === 'text' && !embedded) return file.text.length
     ? <pre className="recall-raw-text">{file.text}</pre>
     : <p className="note-status">This file is empty.</p>;
 
-  if (file.kind === 'unsupported' || failed) return <div className="recall-viewer-fallback" role="status">
-    <p>{file.kind === 'image' ? "This image can't be displayed in this browser."
+  // Embedded phrasing must remain valid inside Markdown paragraphs/headings.
+  const Wrapper = embedded ? 'span' : 'div';
+  const Paragraph = embedded ? 'span' : 'p';
+  if (file.kind === 'unsupported' || file.kind === 'text' || failed) return <Wrapper className="recall-viewer-fallback" role={embedded ? undefined : 'status'}>
+    <Paragraph>{file.kind === 'image' ? "This image can't be displayed in this browser."
       : file.kind === 'video' ? "This video can't be played in this browser."
-        : 'No preview is available for this file.'}</p>
-    <p>{file.kind === 'video' && 'Its format or codec may not be supported. '}Download the original to open it in another app.</p>
-  </div>;
+        : 'No preview is available for this file.'}</Paragraph>
+    <Paragraph>{file.kind === 'video' && 'Its format or codec may not be supported. '}Download the original to open it in another app.</Paragraph>
+    {embedded && <a className="recall-embed-download" href={fileContentLocation(id, true)} download={file.name}>Download original<span className="visually-hidden">: {label}</span></a>}
+  </Wrapper>;
 
   const source = fileContentLocation(id);
-  return <div className="recall-media-stage">
+  return <Wrapper className={`recall-media-stage${embedded ? ' recall-media-stage--embedded' : ''}`}>
     {file.kind === 'image'
-      ? <img className="recall-media" src={source} alt={file.name} onError={() => setFailed(true)} />
+      ? <img className="recall-media" src={source} alt={label} onError={() => setFailed(true)} />
       : <video className="recall-media" ref={videoRef} src={source} controls preload="metadata" playsInline
-        aria-label={file.name} onError={() => setFailed(true)} />}
-  </div>;
+        aria-label={label} onError={() => setFailed(true)} />}
+  </Wrapper>;
 }

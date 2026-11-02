@@ -11,6 +11,7 @@ import { useDesktop } from '../recall/useDesktop';
 import { useVaultRead } from '../recall/useVaultRead';
 import MarkdownDocument from '../recall/MarkdownDocument';
 import FileViewer, { fileKindLabel } from '../recall/FileViewer';
+import { createMediaIndex } from '../recall/mediaReferences';
 import VaultFiles from '../recall/VaultFiles';
 import FilesToggle from '../recall/FilesToggle';
 import FileActions, { FileActionRecovery, FileActionTrigger, FileBackground } from '../recall/FileActions';
@@ -88,6 +89,10 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   const treeRead = useVaultRead('tree', treeRevision, readTree);
   const [actionTree, setActionTree] = useState<VaultTreeResponse | null>(null);
   const tree = actionTree ? { status: 'ready' as const, data: actionTree } : treeRead;
+  const mediaEntries = tree.status === 'ready' ? tree.data.entries : null;
+  const mediaIndex = useMemo(() => mediaEntries ? createMediaIndex(mediaEntries) : null, [mediaEntries]);
+  const media = useMemo(() => selection.id ? { noteId: selection.id, index: mediaIndex, unavailable: tree.status === 'error' } : undefined,
+    [selection.id, mediaIndex, tree.status]);
   const [fileBusy, setFileBusy] = useState(false);
   const fileBusyRef = useRef(false);
   const fileMounted = useRef(false);
@@ -618,7 +623,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
                       : content.status === 'error' ? markdown ? <Failure code={content.error} retry={() => { editor.clearConfirmed(); setNoteRevision(value => value + 1); }} />
                         : <FileFailure code={content.error} retry={() => setNoteRevision(value => value + 1)} />
                         : markdown && note.status === 'ready' ? (note.data.markdown.length
-                          ? <MarkdownDocument markdown={note.data.markdown} /> : <p className="note-status">This note is empty.</p>)
+                          ? <MarkdownDocument key={key} markdown={note.data.markdown} media={media} /> : <p className="note-status">This note is empty.</p>)
                           : file.status === 'ready' && <FileViewer key={`${key}:${noteRevision}`} file={file.data} id={selection.id} />}
                   </article>}
                 </> : <Message heading="Choose a file" body="Open a folder or choose a file in Files." />}

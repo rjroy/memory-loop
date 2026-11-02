@@ -385,9 +385,9 @@ describe('Recall: renderer and route boundaries', () => {
     expect(within(article).getByRole('heading', { level: 2, name: 'Safe fixture heading' })).toBeInTheDocument();
     expect(article).toHaveTextContent('title: Not the filename');
     expect(article).toHaveTextContent('<script>window.__recallFixtureExecuted = true</script>');
-    expect(article).toHaveTextContent('Image not shown: fixture alt');
+    expect(await within(article).findByText("Remote media isn't loaded.")).toBeInTheDocument();
     expect(article).toHaveTextContent('[[Wiki fixture]]');
-    expect(article).toHaveTextContent('![[embed.png]]');
+    expect(await within(article).findByText('Media not found: “embed.png”.')).toBeInTheDocument();
     expect(article.querySelector('script, img, iframe, object, embed, video, audio, [src], [srcset], [onerror], [onclick]')).toBeNull();
     expect(Reflect.get(window, '__recallFixtureExecuted')).toBeUndefined();
     for (const label of ['unsafe', 'protocol relative', 'relative note', 'heading reference']) {

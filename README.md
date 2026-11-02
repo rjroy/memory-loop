@@ -605,7 +605,7 @@ tracked as `memory-loop-22s`.
   in-session reading/list positions are presentation memory, not cached notes or
   authoritative daemon state.
 - CommonMark/GFM is rendered with escaped raw HTML, named disabled task boxes,
-  and no image/embed requests. HTTP(S) links open in a new tab; note, heading,
+  and local media embeds in Recall only. HTTP(S) links open in a new tab; note, heading,
   wiki and unsafe links remain text. Frontmatter is ordinary Markdown, not
   interpreted metadata. Source H1–H5 shift down one level beneath Recall H1;
   source H6 stays H6. Skipped source levels are not repaired.
@@ -623,7 +623,14 @@ browser's native viewer or player. A format or codec may not work in a particula
 browser; Recall offers the original download rather than silently converting it.
 Unknown or active content such as HTML and SVG is served as an attachment, not
 executed inline. Oversized or unsupported files can also be downloaded as originals.
-No upload or Markdown image/embed rendering is available in this layer.
+Markdown images such as `![Description](../Media/photo.jpg)` resolve relative to
+the note; leading `/` starts at the vault root. Obsidian media embeds such as
+`![[photo.jpg]]` require a unique filename across the visible tree. Obsidian paths
+containing `/` are vault-root-relative unless they explicitly start with `./` or
+`../`. Missing, ambiguous and unsupported references show a compact explanation;
+remote media is not fetched. Code, escaped syntax and unsupported sizing syntax
+remain literal. Think and Ground retain their existing Markdown media suppression.
+Uploads are the next layer and are not available yet.
 
 Recall has no search or AI action. Dot entries, symlinks and nonregular files are
 omitted from the tree. Empty trees,

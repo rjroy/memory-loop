@@ -1,8 +1,12 @@
 import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import type { ElementContent } from 'hast';
 import remarkGfm from 'remark-gfm';
+import MediaEmbed from './MediaEmbed';
+import remarkRecallMedia from './remarkRecallMedia';
+import type { RecallMediaContext } from './mediaReferences';
 
 const TaskName = createContext('Read-only task');
 
@@ -21,6 +25,16 @@ function webLink(value: string): boolean {
   try { return ['https:', 'http:'].includes(new URL(value).protocol); } catch { return false; }
 }
 
+function containsMedia(node: ElementContent): boolean {
+  return node.type === 'element' && (node.tagName === 'img' || node.children.some(containsMedia));
+}
+
+function MarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
+  return href && webLink(href)
+    ? <a href={href} target="_blank" rel="noopener noreferrer">{children}<span className="visually-hidden"> (opens in a new tab)</span></a>
+    : <span>{children}</span>;
+}
+
 const components: Components = {
   h1: ({ children }) => <h2 className="markdown-h1">{children}</h2>,
   h2: ({ children }) => <h3 className="markdown-h2">{children}</h3>,
@@ -28,9 +42,7 @@ const components: Components = {
   h4: ({ children }) => <h5>{children}</h5>,
   h5: ({ children }) => <h6>{children}</h6>,
   h6: ({ children }) => <h6>{children}</h6>,
-  a: ({ href, children }) => href && webLink(href)
-    ? <a href={href} target="_blank" rel="noopener noreferrer">{children}<span className="visually-hidden"> (opens in a new tab)</span></a>
-    : <span>{children}</span>,
+  a: MarkdownLink,
   img: ({ alt }) => <span>{alt ? `Image not shown: ${alt}` : 'Image not shown.'}</span>,
   li: ({ children, className, node }) => {
     const name = node?.children.filter(child => child.type !== 'element' || !['ul', 'ol'].includes(child.tagName))
@@ -50,8 +62,26 @@ const cardComponents: Components = {
   h4: ({ children }) => <h6>{children}</h6>,
 };
 
-export default function MarkdownDocument({ markdown, headingStart = 2 }: { markdown: string; headingStart?: 2 | 3 }) {
+export default function MarkdownDocument({ markdown, headingStart = 2, media }: { markdown: string; headingStart?: 2 | 3; media?: RecallMediaContext }) {
+  const renderers = useMemo<Components>(() => {
+    const base = headingStart === 3 ? cardComponents : components;
+    if (!media) return base;
+    return { ...base,
+      img: ({ node, alt }) => <MediaEmbed
+        reference={String(node?.properties['data-media-reference'] ?? '')}
+        syntax={node?.properties['data-media-syntax'] === 'obsidian' ? 'obsidian' : 'markdown'} label={alt} context={media} />,
+      a: props => {
+        // Native playback/download controls cannot be nested inside an anchor.
+        // Retain an authored external target as a separate ordinary link.
+        if (props.node?.children.some(containsMedia)) return <span className="recall-media-link">{props.children}
+          {props.href && webLink(props.href) && <a href={props.href} target="_blank" rel="noopener noreferrer">Open linked page<span className="visually-hidden"> (opens in a new tab)</span></a>}
+        </span>;
+        return <MarkdownLink href={props.href}>{props.children}</MarkdownLink>;
+      },
+    };
+  }, [headingStart, media]);
   // No raw-HTML plugin: react-markdown escapes raw source instead of creating live DOM.
-  // URL transforms never fetch data; components above render images and unsupported links as text.
-  return <div className="markdown-document"><Markdown remarkPlugins={[remarkGfm]} components={headingStart === 3 ? cardComponents : components}>{markdown}</Markdown></div>;
+  // Keep the default safe URL transform. Only the Recall image renderer resolves
+  // an inert authored destination through the loaded tree and same-origin API.
+  return <div className="markdown-document"><Markdown remarkPlugins={media ? [remarkGfm, remarkRecallMedia] : [remarkGfm]} components={renderers}>{markdown}</Markdown></div>;
 }

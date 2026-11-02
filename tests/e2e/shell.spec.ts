@@ -36,13 +36,13 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
   });
 }
 
-test('declares a neutral favicon instead of requesting a missing icon', async ({ page }) => {
+test('declares the Memory Loop favicon instead of requesting a missing icon', async ({ page }) => {
   const faviconRequests: string[] = [];
   page.on('request', request => {
     if (new URL(request.url()).pathname === '/favicon.ico') faviconRequests.push(request.url());
   });
   await page.goto('/ground');
-  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', 'data:,');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/brand/memory-loop/favicon-32.png');
   expect(faviconRequests).toEqual([]);
 });
 

@@ -293,7 +293,7 @@ function Conversation({ presentation }: ThinkPresenterProps) {
       }}>
       <div className="think-conversation-measure" ref={content}>
         {!hasContent && state.creation === 'ready' && <div className="think-empty-invitation">
-          <h2>What else could this become?</h2><img src="/brand/the-guide/approved-a5.svg" width="64" height="64" alt="" />
+          <h2>What else could this become?</h2><img src="/brand/memory-loop/returning-thread-128.png" width="64" height="64" alt="" />
         </div>}
         {messages.map((message, index) => <article key={messageKey(message)} className={`think-message think-message--${message.role}`}
           data-think-anchor={`message:${message.messageId}`} aria-label={`${message.role === 'user' ? 'You' : 'AI'}, message ${index + 1}`}>

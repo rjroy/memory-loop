@@ -15,7 +15,7 @@ Scope extension, `memory-loop-n72` (2026-11-01): the user authorized simple plai
 
 THESIS: Files beside the page: select a known vault file and read an ordinary document, not a dashboard or disabled editor. The signature is immediate file identity with no stale body, while phone Files gives way to the requested page.
 
-OWN-WORLD: User-approved board application (`memory-loop-44w`), refined by the approved kqk dark-first palette: Night navigation, darker Files beside a lighter dark reader and one visible split rule. Weathered Ivory prose, Parchment literal identity/editorial headings, Source Sans body/controls. A.5/IM Fell identity frames the app, outside note content; no narrative image behind text. Horizon selected-file underline with dark selected fill; bright Horizon links/focus and dark hover. No new renderer, features, art generation or theme switch.
+OWN-WORLD: User-approved board application (`memory-loop-44w`), refined by the approved kqk dark-first palette: Night navigation, darker Files beside a lighter dark reader and one visible split rule. Weathered Ivory prose, Parchment literal identity/editorial headings, Source Sans body/controls. The approved Returning Thread raster (`public/brand/memory-loop/returning-thread-128.png`) and IM Fell identity frame the app, outside note content; no narrative image behind text. Horizon selected-file underline with dark selected fill; bright Horizon links/focus and dark hover. No new renderer, features or theme switch.
 
 STORY: Find a folder, recognize the literal filename/path, open it, and read. Recovery explains what failed without exposing host paths or pretending the vault is empty.
 

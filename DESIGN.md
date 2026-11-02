@@ -1,6 +1,6 @@
 ---
 name: Memory Loop
-description: Four-mode personal-brand workspace with compact top navigation, six independent Ground cards, reflective Recall and a space-first Think conversation surface.
+description: Four-mode Memory Loop workspace with compact top navigation, six independent Ground cards, reflective Recall and a space-first Think conversation surface.
 colors:
   night: "#031315"
   parchment: "#fef6e1"
@@ -313,9 +313,9 @@ components:
 
 **Creative North Star: "One familiar place, four different ways to arrive"**
 
-The user approved the [four-mode character board](.lore/work/design/memory-loop-character/index.html) at `acfac1f` and explicitly authorized its application in `memory-loop-44w`, then clarified that its compact horizontal top navigation—not the old app rail/bottom bar—is part of that approved direction. Shared A.5 identity and IM Fell English SC connect four emotional jobs: inspiring Ground, quiet blank-slate Capture, curious Think, and reflective Recall. Older assistant-authored restraint and retained navigation adaptations are superseded, not immutable brand rules.
+The user approved the [four-mode character board](.lore/work/design/memory-loop-character/index.html) at `acfac1f` and explicitly authorized its application in `memory-loop-44w`, then clarified that its compact horizontal top navigation—not the old app rail/bottom bar—is part of that approved direction. Shared Memory Loop artwork and IM Fell English SC connect four emotional jobs: inspiring Ground, quiet blank-slate Capture, curious Think, and reflective Recall. Older assistant-authored restraint and retained navigation adaptations are superseded, not immutable brand rules.
 
-Ground gives the full, unaltered A.1 narrative artwork enough room beside its invitation. The user-approved dark-first refinement (`memory-loop-kqk`) makes Parchment an accent, not a working background: Capture has an open dark editor, Ground's quotation has a warm dark inset, and Recall pairs darker Files with a lighter dark editorial reader. Think retains its cool Night/Horizon mixture; its questioning invitation and compact A.5 give way completely to a real conversation. Artwork frames identity, never reading text. The same fonts, layouts and behavior remain, without a theme switch, new imagery or invented runtime content.
+Ground gives the approved rounded Memory Loop artwork enough room beside its invitation. The user-approved dark-first refinement (`memory-loop-kqk`) makes Parchment an accent, not a working background: Capture has an open dark editor, Ground's quotation has a warm dark inset, and Recall pairs darker Files with a lighter dark editorial reader. Think retains its cool Night/Horizon mixture; its questioning invitation and compact artwork give way completely to a real conversation. Artwork frames identity, never reading text. The same fonts, layouts and behavior remain, without a theme switch or invented runtime content.
 
 **Key Characteristics:**
 - Stable navigation and replaceable content.
@@ -330,7 +330,7 @@ Extracted from `src/styles.css`, `src/ground/ground.css`, `src/recall/recall.css
 
 ## Colors
 
-The user approved dark working surfaces throughout after reviewing the current personal-brand guide. Night anchors the frame; restrained app-specific dark mixtures distinguish work areas. Weathered Ivory carries everyday text, while Parchment is reserved for identity, headings and emphasis. The four core identity colors and approved artwork remain unchanged. The guide's functional extension supplies bright Horizon, bright Lantern and bright Ember; these are not new identity colors.
+The user approved dark working surfaces throughout after reviewing the current personal-brand guide. Night anchors the frame; restrained app-specific dark mixtures distinguish work areas. Weathered Ivory carries everyday text, while Parchment is reserved for identity, headings and emphasis. The existing interface colors remain unchanged; approved artwork has since been replaced by Returning Thread. The guide's functional extension supplies bright Horizon, bright Lantern and bright Ember; these are not new identity colors.
 
 ### Primary
 - **Lantern:** Ground invitation, Capture action, browser text selection and focus-only pane-jump surfaces. Capture hover uses the guide's bright Lantern; Night text remains. Not a connection-status signal.
@@ -355,7 +355,7 @@ Core contrast remains Parchment/Night 17.59:1; Lantern/Night 10.47:1; Horizon/Ni
 
 Source Sans 3 regular/semibold remains the interface and reading-prose family. IM Fell English SC regular carries the Memory Loop wordmark and Ground/Think invitations. Libre Baskerville regular carries literal note identity and editorial Markdown headings. Each face is local and ships with its OFL; the two new fonts are preloaded. Native monospace remains code-only. Font synthesis stays disabled.
 
-Route/Files/status headings retain their Source Sans hierarchy. Shared identity is 28px IM Fell with one 40px A.5, at every viewport. Navigation remains 16px Source Sans rather than shrinking on phones; text scales naturally at 200%. Ground's invitation uses `clamp(2rem, 3.9vw, 3.5rem)`. Think's empty invitation is 54px desktop / 42px narrow, without space reserved after messages arrive. Recall retains 28/22/18/17px Markdown steps in Libre Baskerville 400 with 1.4 line height; Think uses 24/20/18px headings, 17px/1.65 prose and 14px semibold You/AI labels. These Think sizes are intentional surface rules, not changes to Recall's ramp. Code sizes stay relative/explicit as recorded above.
+Route/Files/status headings retain their Source Sans hierarchy. Shared identity is 28px IM Fell with one 40px Memory Loop image, at every viewport. Navigation remains 16px Source Sans rather than shrinking on phones; text scales naturally at 200%. Ground's invitation uses `clamp(2rem, 3.9vw, 3.5rem)`. Think's empty invitation is 54px desktop / 42px narrow, without space reserved after messages arrive. Recall retains 28/22/18/17px Markdown steps in Libre Baskerville 400 with 1.4 line height; Think uses 24/20/18px headings, 17px/1.65 prose and 14px semibold You/AI labels. These Think sizes are intentional surface rules, not changes to Recall's ramp. Code sizes stay relative/explicit as recorded above.
 
 Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.7 line height; filename/path stay compact in the dark section titlebar. Markdown paragraphs have 1.4em separation, headings 1.8em before / .65em after, and the first content block has no added top margin. These are measures, not a requirement to pad short copy.
 
@@ -366,7 +366,7 @@ Shell purpose prose is bounded at 70ch. Recall prose is bounded at 68ch, with 1.
 
 ## Layout
 
-One full-width header precedes the workspace: A.5/IM Fell identity at the start, horizontal Ground/Capture/Think/Recall links at the end when space permits. Flex wrapping moves the link group onto a second top row on phones or enlarged text; links may reflow naturally without clipping or reducing type. Header has 12px vertical padding, safe-area-aware gutters and 8px/24px group gaps. There is no permanent global app sidebar, fixed bottom navigation or reserved bottom-bar clearance. Ground centers a maximum 76rem workspace, with invitation and uncropped art above its cards. Capture and Think give their available workspaces to writing and conversation respectively.
+One full-width header precedes the workspace: Memory Loop artwork/IM Fell identity at the start, horizontal Ground/Capture/Think/Recall links at the end when space permits. Flex wrapping moves the link group onto a second top row on phones or enlarged text; links may reflow naturally without clipping or reducing type. Header has 12px vertical padding, safe-area-aware gutters and 8px/24px group gaps. There is no permanent global app sidebar, fixed bottom navigation or reserved bottom-bar clearance. Ground centers a maximum 76rem workspace, with invitation and uncropped art above its cards. Capture and Think give their available workspaces to writing and conversation respectively.
 
 Ground's card grid uses document scrolling: one column by default, two from a 44rem container and three from 66rem. Quick Actions spans the grid; Goals spans both columns in the two-column layout. In the three-column layout, Recent captures occupies one column and Recent conversations spans two. Capture has a compact top action and full-width textarea filling the remaining workspace, with 32px desktop and safe-area-aware 20px narrow side gutters. Short or enlarged layouts permit page scrolling and retain a six-line editor floor. Its textarea owns writing overflow; errors can reflow beside or below the stable action without covering the editor.
 
@@ -391,7 +391,7 @@ Surfaces are flat, but not emotionally uniform: deep Night, warm quotation and c
 
 ## Shapes
 
-Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground cards use a top rule except for the warm dark Inspiration field; actions have modest 4px corners. Capture uses a visible editor boundary and 4px action/editor corners. Think uses 6px corners for the editor/user field and 4px for actions; AI prose is unboxed, not another bubble or status card. Approved A.5/A.1 preserve their original rounded compositions and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
+Navigation and Recall buttons keep modest corners; compact navigation/file rows remain square. Ground cards use a top rule except for the warm dark Inspiration field; actions have modest 4px corners. Capture uses a visible editor boundary and 4px action/editor corners. Think uses 6px corners for the editor/user field and 4px for actions; AI prose is unboxed, not another bubble or status card. Approved Returning Thread derivatives preserve their rounded composition and proportions without CSS crops/recoloring. Folder chevrons remain functional notation, not new illustration.
 
 All top app links use the same 2px Horizon selected underline, semibold text and programmatic current state across sizes. Current-file underline remains Horizon. None is a general callout stripe.
 

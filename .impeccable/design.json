@@ -88,7 +88,7 @@
       },
       "app-name": {
         "displayName": "Desktop app name",
-        "purpose": "28px IM Fell English SC wordmark and 40px approved A.5 in one shared top header."
+        "purpose": "28px IM Fell English SC wordmark and 40px approved Memory Loop artwork in one shared top header."
       },
       "compact-app-name": {
         "displayName": "Compact app name",
@@ -146,7 +146,7 @@
       "kind": "nav",
       "refersTo": "navigation-header",
       "description": "Actual shared compact identity and horizontal native app links, above the workspace at every size. Header groups wrap on narrow/enlarged layouts; there is no permanent app rail or bottom bar. Application supplies routing/current-query guard; this excerpt is static.",
-      "html": "<header class=\"ds-top-header\"><div class=\"ds-brand-identity\"><img src=\"/brand/the-guide/approved-a5.svg\" width=\"40\" height=\"40\" alt=\"\"><span>Memory Loop</span></div><nav class=\"ds-primary-navigation\" aria-label=\"Primary\"><a class=\"ds-navigation-link\" href=\"/ground\" aria-current=\"page\">Ground</a><a class=\"ds-navigation-link\" href=\"/capture\">Capture</a><a class=\"ds-navigation-link\" href=\"/think\">Think</a><a class=\"ds-navigation-link\" href=\"/recall\">Recall</a></nav></header>",
+      "html": "<header class=\"ds-top-header\"><div class=\"ds-brand-identity\"><img src=\"/brand/memory-loop/returning-thread-128.png\" width=\"40\" height=\"40\" alt=\"\"><span>Memory Loop</span></div><nav class=\"ds-primary-navigation\" aria-label=\"Primary\"><a class=\"ds-navigation-link\" href=\"/ground\" aria-current=\"page\">Ground</a><a class=\"ds-navigation-link\" href=\"/capture\">Capture</a><a class=\"ds-navigation-link\" href=\"/think\">Think</a><a class=\"ds-navigation-link\" href=\"/recall\">Recall</a></nav></header>",
       "css": ".ds-top-header{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-top-header *{box-sizing:border-box}.ds-top-header {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px 24px;\n  padding: max(12px, env(safe-area-inset-top, 0px)) clamp(20px, 4.4vw, 64px) 12px;\n  color: var(--parchment);\n  background: var(--night);\n  border-bottom: 1px solid var(--rule);\n}\n.ds-brand-identity {\n  display: flex;\n  min-width: 0;\n  align-items: center;\n  gap: 12px;\n}\n.ds-brand-identity img { width: 40px; height: 40px; flex-shrink: 0; }\n.ds-brand-identity span {\n  min-width: 0;\n  font: 400 1.75rem/1.1 'IM Fell English SC', Georgia, serif;\n  letter-spacing: -.02em;\n}\n.ds-primary-navigation {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 4px 8px;\n}\n.ds-navigation-link {\n  position: relative;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 44px;\n  padding: 8px 10px;\n  border-radius: 4px;\n  text-decoration: none;\n  overflow-wrap: anywhere;\n}\n.ds-navigation-link[aria-current='page'] { font-weight: 600; }\n.ds-navigation-link[aria-current='page']::before {\n  position: absolute;\n  inset: auto 10px 4px;\n  height: 2px;\n  background: var(--horizon);\n  content: '';\n}\n.ds-navigation-link:hover,\n.ds-navigation-link:active { text-decoration: underline; }\n.ds-navigation-link:focus-visible {\n  outline-color: var(--horizon);\n  outline-offset: -6px;\n}@media(width < 56rem){.ds-top-header{padding-inline:20px}.ds-primary-navigation{gap:4px}}"
     },
     {
@@ -233,22 +233,22 @@
       "name": "Shared approved identity",
       "kind": "custom",
       "refersTo": "navigation-header",
-      "description": "One unmodified 40px A.5 signature with 28px IM Fell wordmark in the shared top header, across sizes; no duplicate Recall identity. Text enlarges/wraps naturally. Exact provenance: .lore/work/design/character-integration.md.",
-      "html": "<div class=\"ds-identity\"><img src=\"/brand/the-guide/approved-a5.svg\" width=\"40\" height=\"40\" alt=\"\"><span>Memory Loop</span></div>",
+      "description": "One approved 40px Memory Loop artwork with 28px IM Fell wordmark in the shared top header, across sizes; no duplicate Recall identity. Text enlarges/wraps naturally. Exact provenance: assets/brand/memory-loop/README.md.",
+      "html": "<div class=\"ds-identity\"><img src=\"/brand/memory-loop/returning-thread-128.png\" width=\"40\" height=\"40\" alt=\"\"><span>Memory Loop</span></div>",
       "css": ".ds-identity{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-identity {\n  display: flex;\n  min-width: 0;\n  align-items: center;\n  gap: 12px;\n}\n.ds-identity img { width: 40px; height: 40px; flex-shrink: 0; }\n.ds-identity span {\n  min-width: 0;\n  font: 400 1.75rem/1.1 'IM Fell English SC', Georgia, serif;\n  letter-spacing: -.02em;\n}"
     },
     {
       "name": "Ground narrative artwork",
       "kind": "custom",
       "refersTo": "view-heading",
-      "description": "Approved full A.1, uncropped and unaltered, alongside the Ground invitation above five resource-backed cards. This is brand artwork, not user content.",
-      "html": "<figure class=\"ds-art-context\"><img src=\"/brand/the-guide/approved-a1.webp\" width=\"1254\" height=\"1254\" alt=\"A guide offers a lantern between a warm mountain path and a cool, far-off city.\"></figure>",
+      "description": "Approved rounded Memory Loop artwork, uncropped, alongside the Ground invitation above five resource-backed cards. This is brand artwork, not user content.",
+      "html": "<figure class=\"ds-art-context\"><img src=\"/brand/memory-loop/returning-thread-512.png\" width=\"1254\" height=\"1254\" alt=\"An amber and blue ribbon loops over an open notebook.\"></figure>",
       "css": ".ds-art-context{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--surface:var(--night);--ink:var(--parchment);--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--ink);background:var(--surface);font:400 1rem/1.5 'Source Sans 3',system-ui,sans-serif;box-sizing:border-box;}.ds-art-context{margin:0;padding:1rem;max-width:32rem}.ds-art-context img{display:block;width:100%;height:auto}"
     }
   ],
   "narrative": {
     "northStar": "One familiar place, four different ways to arrive",
-    "overview": "Four-mode workspace with the approved A.5/IM Fell identity and compact top navigation. Ground now presents five independent resource-backed cards beneath its invitation and uncropped A.1; Quick Actions and Prompts prepare unsent Think drafts. Capture is a real editor, Think a space-first conversation, and Recall a safe read-only Markdown reader. Source data is not included in these schematic components. Phase 2 Ground fixture verification and review are recorded in README.md; this is not activation of a live build or completion of the Ground roadmap. Physical-device and assistive-technology coverage remains unclaimed.",
+    "overview": "Four-mode workspace with the approved Memory Loop artwork/IM Fell identity and compact top navigation. Ground now presents five independent resource-backed cards beneath its invitation and uncropped Memory Loop artwork; Quick Actions and Prompts prepare unsent Think drafts. Capture is a real editor, Think a space-first conversation, and Recall a safe read-only Markdown reader. Source data is not included in these schematic components. Phase 2 Ground fixture verification and review are recorded in README.md; this is not activation of a live build or completion of the Ground roadmap. Physical-device and assistive-technology coverage remains unclaimed.",
     "keyCharacteristics": [
       "Compact shared top identity and horizontal real links; full-width workspace, no global app rail or bottom bar.",
       "Shared identity, four distinct emotional jobs.",

@@ -7,7 +7,7 @@ import NextShell from '../shell/NextShell';
 import '../styles.css';
 import '../recall/recall.css';
 
-export const metadata: Metadata = { title: 'Memory Loop', icons: { icon: 'data:,' }, referrer: 'no-referrer' };
+export const metadata: Metadata = { title: 'Memory Loop', icons: { icon: '/brand/memory-loop/favicon-32.png' }, referrer: 'no-referrer' };
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover' };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {

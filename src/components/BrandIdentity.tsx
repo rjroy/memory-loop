@@ -1,7 +1,7 @@
-/** Approved A.5 signature. The adjacent wordmark supplies its accessible name. */
+/** The adjacent wordmark supplies the artwork's accessible name. */
 export default function BrandIdentity() {
   return <div className="brand-identity">
-    <img src="/brand/the-guide/approved-a5.svg" width="48" height="48" alt="" />
+    <img src="/brand/memory-loop/returning-thread-128.png" width="48" height="48" alt="" />
     <span>Memory Loop</span>
   </div>;
 }

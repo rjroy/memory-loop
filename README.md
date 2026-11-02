@@ -867,10 +867,11 @@ crushing or covering the Files controls.
 
 The actual system is recorded in [DESIGN.md](DESIGN.md) and
 `.impeccable/design.json`; the [phase-1 shell plan](.lore/work/plans/phase-1-shell.md)
-is historical shell evidence. Runtime artwork/font rights, exact pinned hashes
-and local paths are recorded in [integration provenance](.lore/work/design/character-integration.md).
+is historical shell evidence. Current artwork and derivative hashes are recorded in
+[Memory Loop artwork provenance](assets/brand/memory-loop/README.md); historical
+artwork and font rights are recorded in [integration provenance](.lore/work/design/character-integration.md).
 The historical [guidance snapshot](.lore/work/design/personal-brand-snapshot.md)
-is unchanged. No new generated art, dependencies or theme switch were added. Manual
+is unchanged. No dependencies or theme switch were added. Manual
 assistive-technology use and physical-device safe areas have not been verified.
 ## Local Think UI and transport fixture
 

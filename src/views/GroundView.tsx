@@ -16,8 +16,8 @@ export default function GroundView() {
       <div className="visually-hidden"><RouteHeading route="/ground">Ground</RouteHeading></div>
       <div className="ground-arrival">
         <p className="brand-invitation">Pick up a thread.</p>
-        <img className="ground-art" src="/brand/the-guide/approved-a1.webp" width="1254" height="1254"
-          alt="A guide offers a lantern between a warm mountain path and a cool, far-off city." />
+        <img className="ground-art" src="/brand/memory-loop/returning-thread-512.png" width="512" height="512"
+          alt="An amber and blue ribbon loops over an open notebook." />
       </div>
       <div className="ground-grid">
         <CardBoundary name="Quick Actions"><QuickActionsCard /></CardBoundary>

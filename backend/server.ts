@@ -21,6 +21,7 @@ import { createQuestionPublisher, createQuotePublisher } from './ground-generati
 import { transcriptComponents } from './think/transcript-file';
 import { openThinkState } from './think/sqlite-state';
 import { createConversationService, type ConversationService } from './think/conversations';
+import { nativeVersionStatus } from './think/native-version';
 
 export interface ServerOptions {
   /** Directory containing .memory-loop/config.json, independent of the web build. */
@@ -47,7 +48,10 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
   // Read-only/unconfigured applications must not acquire a private application database.
   if (config?.think === undefined) return unavailableThink('think_config_missing');
   const think = parseThinkConfig(config.think);
-  if (!think) return unavailableThink('think_config_invalid');
+  if (!think) {
+    console.info('think_config_outcome', { status: 'invalid', field: 'configuration (including requiredVersion)' });
+    return unavailableThink('think_config_invalid');
+  }
   if ('error' in vault) return unavailableThink('think_unavailable');
   console.info('think_setup_attempt');
   let directory: string;
@@ -71,11 +75,15 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     const url = new URL(registration.url);
     if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
         url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('nonlocal registration');
-    if ('password' in registration && typeof registration.password !== 'string' ||
-        'version' in registration && registration.version !== '2.2.2') throw new Error('invalid registration');
+    if ('password' in registration && typeof registration.password !== 'string') throw new Error('invalid registration');
+    const versionStatus = nativeVersionStatus('version' in registration ? registration.version : undefined, think.requiredVersion);
+    if (versionStatus !== 'compatible') {
+      console.info('think_native_version_outcome', { source: 'registration', status: versionStatus, requiredVersion: think.requiredVersion });
+      throw new Error('Native registration version incompatible');
+    }
     // The public registered Endpoint is connection configuration, NOT proof that native is
     // currently available. Keep the healthy private registry/list/leases usable offline;
-    // every owned native operation still checks the real server PID/version before publishing.
+    // every owned native operation still checks the real server PID before publishing.
     const endpoint = { url: registration.url, ...('password' in registration && typeof registration.password === 'string' && registration.password.length > 0
       ? { auth: { type: 'basic' as const, username: 'opencode', password: registration.password } } : {}) };
     const client = createNativeClient({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
@@ -94,7 +102,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     };
     bodies = await createBodyStore({ directory: join(dirname(transportFile), `think-bodies-${epoch}`), epoch, vaultDirectory: directory });
     const service = createThinkService({ native: nativeSessions(client), bodies, state, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch,
-      serviceIdentity: { pid: registration.pid, version: '2.2.2' }, validateCreation, transcript: { directory: think.transcriptDirectory } });
+      serviceIdentity: { pid: registration.pid }, minimumVersion: think.requiredVersion, validateCreation, transcript: { directory: think.transcriptDirectory } });
     const jobs: Array<{ job: 'questions' | 'quotes'; runner: ReturnType<typeof createGroundGeneration> }> = [];
     if (generation.state === 'ready') {
       for (const [job, resource] of [['questions', 'prompts'], ['quotes', 'inspiration']] as const) {
@@ -107,7 +115,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
             publisher: publisher({ directory, noteId, state: state.generation.publications }),
             selection: { ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) },
             native: groundGenerationNative({ client, directory, installationId: state.installationId,
-              identity: { pid: registration.pid, version: '2.2.2' }, validateSelection: validateCreation }) });
+              identity: { pid: registration.pid }, minimumVersion: think.requiredVersion, validateSelection: validateCreation }) });
           jobs.push({ job, runner });
           console.info('ground_generation_setup_outcome', { job, state: 'prepared' });
         } catch { console.info('ground_generation_setup_outcome', { job, state: 'unavailable' }); }

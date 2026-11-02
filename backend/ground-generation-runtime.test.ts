@@ -111,7 +111,7 @@ async function stop(owned: OwnedChild): Promise<void> {
   }
 }
 
-async function fixture(settings: unknown = generation, occupied?: number): Promise<Fixture> {
+async function fixture(settings: unknown = generation, occupied?: number, versions: { registered?: string; reported?: string; minimum?: string } = {}): Promise<Fixture> {
   const base = await mkdtemp(join(root, 'case-'));
   const project = join(base, 'project'); const vault = join(base, 'vault'); const metadata = join(project, '.memory-loop');
   await mkdir(metadata, { recursive: true, mode: 0o700 });
@@ -136,7 +136,7 @@ async function fixture(settings: unknown = generation, occupied?: number): Promi
       if (request.headers.authorization !== authorization) throw new Error('wrong native fixture authorization');
       const url = new URL(request.url ?? '/', 'http://fixture'); const path = url.pathname;
       const reply = (value: unknown) => { response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(value)); };
-      if (request.method === 'GET' && path === '/api/info') { reply({ version: '2.2.2', pid: process.pid, urls: [], paths: { tmp: base } }); return; }
+      if (request.method === 'GET' && path === '/api/info') { reply({ version: versions.reported ?? '2.2.2', pid: process.pid, urls: [], paths: { tmp: base } }); return; }
       if (request.method === 'GET' && path === '/api/model') { reply({ location: { directory: vault }, data: [catalog] }); return; }
       if (request.method === 'GET' && path === '/api/model/default') { reply({ location: { directory: vault }, data: catalog }); return; }
       if (request.method === 'GET' && path === '/api/event') {
@@ -205,12 +205,12 @@ async function fixture(settings: unknown = generation, occupied?: number): Promi
   });
   const nativePort = await listen(state.native);
   const client = createNativeClient({ baseUrl: `http://127.0.0.1:${nativePort}`, headers: { authorization } });
-  expect(await client.server.info({ signal: AbortSignal.timeout(3000) })).toMatchObject({ pid: process.pid, version: '2.2.2' });
+  expect(await client.server.info({ signal: AbortSignal.timeout(3000) })).toMatchObject({ pid: process.pid, version: versions.reported ?? '2.2.2' });
   expect(await client.model.list({ location: { directory: vault }, types: ['chat'] }, { signal: AbortSignal.timeout(3000) }))
     .toMatchObject({ location: { directory: vault }, data: [catalog] });
   const registrationFile = join(base, 'native-registration.json');
-  await writeFile(registrationFile, JSON.stringify({ url: `http://127.0.0.1:${nativePort}`, password, pid: process.pid, version: '2.2.2' }), { mode: 0o600 });
-  await writeFile(join(metadata, 'config.json'), JSON.stringify({ vaultDirectory: vault, think: { service: { registrationFile, requiredVersion: '2.2.2' },
+  await writeFile(registrationFile, JSON.stringify({ url: `http://127.0.0.1:${nativePort}`, password, pid: process.pid, version: versions.registered ?? '2.2.2' }), { mode: 0o600 });
+  await writeFile(join(metadata, 'config.json'), JSON.stringify({ vaultDirectory: vault, think: { service: { registrationFile, requiredVersion: versions.minimum ?? '2.2.2' },
     location: { kind: 'vault' }, permissionMode: 'full', model }, ground: { generation: settings } }));
   await writeFile(join(metadata, 'transport.json'), JSON.stringify({ daemonOrigin: `http://127.0.0.1:${unused}`, web: { mode: 'loopback', origin: 'http://127.0.0.1:3000' } }), { mode: 0o600 });
   await writeFile(join(metadata, 'service.token'), serviceToken, { mode: 0o600 });
@@ -335,6 +335,27 @@ describe('lazy Ground freshness', () => {
       expect(state.sends[0].before.attempts).toEqual(expect.arrayContaining([expect.objectContaining({ job })]));
       await sleep(100);
       expect(state.sends).toHaveLength(1);
+      expect(state.unexpected).toEqual([]);
+    }, 20000);
+
+  it.each([
+    ['2.2.5', '2.2.2'], ['9.0.0', '2.2.2'], ['2.2.5', '2.2.5'], ['9.0.0', '2.2.5'],
+  ] as const)('allows Ground generation with native %s at minimum %s', async (version, minimum) => {
+    const state = await fixture(settings, undefined, { registered: version, reported: version, minimum });
+    const owned = launch(state, false, saturday); await ready(owned, false, saturday);
+    expect((await serviceGet(state, '/api/ground/prompts')).status).toBe(200);
+    expect(await until(() => questionSends(state).length === 1, 2000)).toBe(true);
+    expect(state.unexpected).toEqual([]);
+  }, 20000);
+
+  it.each([['2.2.1', '2.2.2'], ['2.2.2', '2.2.5'], ['2.2.2-rc.1', '2.2.2']] as const)(
+    'does not dispatch Ground generation when live native %s is below minimum %s', async (reported, minimum) => {
+      const state = await fixture(settings, undefined, { registered: minimum, reported, minimum });
+      const owned = launch(state, false, saturday); await ready(owned, false, saturday);
+      expect((await serviceGet(state, '/api/ground/prompts')).status).toBe(200);
+      expect(await until(() => owned.output.includes('ground_generation_native_outcome'), 2000)).toBe(true);
+      await sleep(100);
+      expect(state.creates).toEqual([]); expect(state.sends).toEqual([]);
       expect(state.unexpected).toEqual([]);
     }, 20000);
 

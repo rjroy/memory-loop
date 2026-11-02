@@ -96,7 +96,7 @@ function unitBodies(): BodyStore {
 }
 
 function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, bodies?: BodyStore, directory = vaultDirectory,
-  serviceOptions?: Pick<ThinkServiceOptions, 'clock' | 'transferIdleMs' | 'state'>, transcript?: ThinkServiceOptions['transcript']) {
+  serviceOptions?: Pick<ThinkServiceOptions, 'clock' | 'transferIdleMs' | 'state'>, transcript?: ThinkServiceOptions['transcript'], version = '2.2.2') {
   const calls: Array<{ input: SessionCreateInput; signal: AbortSignal; result: ReturnType<typeof deferred<NativeSession>> }> = [];
   const prompts: Array<{ input: SessionPromptInput; signal: AbortSignal; result: ReturnType<typeof deferred<SessionPromptOutput>> }> = [];
   const cancels: Array<{ input: SessionInboxCancelInput; result: ReturnType<typeof deferred<void>> }> = [];
@@ -110,7 +110,7 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
   let time: SessionInfo['time'] = { created: 1, updated: 1 };
   const events: OpenCodeEvent[] = [];
   let streamEnd: 'eof' | 'error' | undefined;
-  let serverInfo: ServerInfo = { pid: 49123, version: '2.2.2', urls: [], paths: { tmp: '/fixture/tmp' } };
+  let serverInfo: ServerInfo = { pid: 49123, version, urls: [], paths: { tmp: '/fixture/tmp' } };
   let wake: (() => void) | undefined;
   const order: string[] = [];
   const sessions = new Map<string, NativeSession>();
@@ -187,7 +187,7 @@ function setup(selectedModel: ThinkServiceOptions['context']['model'] = model, b
   const removeSession = vi.fn<NativeSessions['removeSession']>(async () => { throw new Error('unexpected fixture removal'); });
   const native = { createSession, getSession, listSessions, removeSession, subscribe, prompt, listInbox, cancelInbox, interruptSession, activeSessions, listMessages, getMessage, getServerInfo, listForms, getForm, replyForm, listPermissionRequests, replyPermission } satisfies NativeSessions & { replyPermission(input: PermissionReplyInput, signal: AbortSignal): Promise<void> };
   const options = { native, context: { directory, agent, model: selectedModel }, epoch,
-    serviceIdentity: { pid: 49123, version: '2.2.2' }, bodies: bodies ?? unitBodies(), ...serviceOptions, ...(transcript ? { transcript } : {}) } satisfies ThinkServiceOptions;
+    serviceIdentity: { pid: 49123, version }, bodies: bodies ?? unitBodies(), ...serviceOptions, ...(transcript ? { transcript } : {}) } satisfies ThinkServiceOptions;
   const service = createThinkService(options);
   function complete(index: number, changes: Partial<NativeSession> = {}) {
     const call = calls[index];
@@ -1932,8 +1932,22 @@ describe('daemon-owned upstream monitor recovery', () => {
     } finally { await f.service.close(); }
   }, 12000);
 
-  it('does not adopt a replacement native service after its reported process identity changes', async () => {
+  // requiredVersion now specifies a minimum rather than an exact version or inert metadata.
+  it.each(['2.2.5', '9.0.0'])('accepts configured minimum requiredVersion %s', version => {
+    expect(parseThinkConfig({ service: { registrationFile: '/fixture/registration.json', requiredVersion: version }, location: { kind: 'vault' } })).toBeDefined();
+  });
+
+  it.each(['2.2.1', '2.2.2-rc.1', 'not-a-version'])('refuses Think creation when the live native reports %s below or outside the default minimum', async version => {
     const f = setup();
+    try {
+      f.setServerInfo({ pid: 49123, version, urls: [], paths: { tmp: '/fixture/tmp' } });
+      await expect(f.service.create(a)).rejects.toMatchObject({ code: 'think_unavailable' });
+      expect(f.createSession).not.toHaveBeenCalled();
+    } finally { await f.service.close(); }
+  });
+
+  it.each(['2.2.2', '2.2.5'])('does not adopt a replacement native %s service after its reported process identity changes', async version => {
+    const f = setup(undefined, undefined, undefined, undefined, undefined, version);
     try {
       await f.service.create(a);
       await waitForCalls(f.calls, 1);
@@ -1942,7 +1956,7 @@ describe('daemon-owned upstream monitor recovery', () => {
       const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: 'fixture' };
       const receipt = await f.service.send(send);
       await waitForCalls(f.prompts, 1);
-      f.setServerInfo({ pid: 49124, version: '2.2.2', urls: [], paths: { tmp: '/fixture/tmp' } });
+      f.setServerInfo({ pid: 49124, version, urls: [], paths: { tmp: '/fixture/tmp' } });
       f.endStream('eof');
       await vi.waitFor(() => expect(f.getServerInfo).toHaveBeenCalled(), { timeout: 8000 });
       await vi.waitFor(async () => await expect(f.service.create(b)).rejects.toMatchObject({ code: 'think_unavailable' }), { timeout: 8000 });

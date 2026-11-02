@@ -43,7 +43,10 @@ afterEach(async () => {
   }
 });
 
-it('discovers the explicit fixture service and creates an owned native session through the daemon', async () => {
+it.each([
+  ['2.2.2', undefined], ['2.2.5', undefined], ['9.0.0', undefined],
+  ['2.2.5', '2.2.5'], ['9.0.0', '2.2.5'], ['2.2.2+fixture', '2.2.2'],
+] as const)('initializes native version %s with configured minimum %s', async (version, minimum) => {
   const fixturePassword = 'fixture-only-password';
   const auth = `Basic ${Buffer.from(`opencode:${fixturePassword}`).toString('base64')}`;
   const nativeCalls: string[] = [];
@@ -53,7 +56,7 @@ it('discovers the explicit fixture service and creates an owned native session t
     if (req.headers.authorization !== auth) { res.writeHead(401).end('{}'); return; }
     res.setHeader('content-type', 'application/json');
     if (req.method === 'GET' && req.url === '/api/info') {
-      res.end(JSON.stringify({ version: '2.2.2', pid: process.pid, urls: [], paths: { tmp: fixture } }));
+      res.end(JSON.stringify({ version, pid: process.pid, urls: [], paths: { tmp: fixture } }));
       return;
     }
     if (req.method === 'POST' && req.url === '/api/session') {
@@ -79,10 +82,10 @@ it('discovers the explicit fixture service and creates an owned native session t
   if (!address || typeof address === 'string') throw new Error('fixture listener unavailable');
   const url = `http://127.0.0.1:${address.port}`;
   const registrationFile = join(fixture, 'service.json');
-  await writeFile(registrationFile, JSON.stringify({ url, pid: process.pid, version: '2.2.2', password: fixturePassword }), { mode: 0o600 });
-  expect(await Service.discover({ file: registrationFile, version: '2.2.2' })).toBeDefined();
+  await writeFile(registrationFile, JSON.stringify({ url, pid: process.pid, version, password: fixturePassword }), { mode: 0o600 });
+  expect(await Service.discover({ file: registrationFile, version })).toBeDefined();
   await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault,
-    think: { service: { registrationFile, requiredVersion: '2.2.2' }, location: { kind: 'vault' }, permissionMode: 'full' } }));
+    think: { service: { registrationFile, ...(minimum ? { requiredVersion: minimum } : {}) }, location: { kind: 'vault' }, permissionMode: 'full' } }));
   const request = await start();
   const conversationId = '11111111-1111-4111-8111-111111111111';
   const clientCommandId = '22222222-2222-4222-8222-222222222222';
@@ -96,6 +99,74 @@ it('discovers the explicit fixture service and creates an owned native session t
   await vi.waitFor(async () => expect(await (await request(`/api/think/conversations/${conversationId}`)).json()).toMatchObject({ creation: 'ready' }));
   expect(nativeCalls).toContain(`GET /api/session/ses_memoryloop_${conversationId.replaceAll('-', '')}`);
   expect((await request('/api/vault/tree')).status).toBe(200);
+});
+
+it.each([
+  ['2.2.1', undefined], ['2.2.2-rc.1', undefined], ['2.2.2', '2.2.5'], ['not-a-version', undefined],
+] as const)('refuses native version %s below minimum %s without creating a session', async (version, minimum) => {
+  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const fixturePassword = 'fixture-only-password';
+  const auth = `Basic ${Buffer.from(`opencode:${fixturePassword}`).toString('base64')}`;
+  const nativeCalls: string[] = [];
+  const created: SessionInfo[] = [];
+  nativeFixture = createServer(async (req, res) => {
+    nativeCalls.push(`${req.method} ${req.url}`);
+    if (req.headers.authorization !== auth) { res.writeHead(401).end('{}'); return; }
+    res.setHeader('content-type', 'application/json');
+    if (req.method === 'GET' && req.url === '/api/info') {
+      res.end(JSON.stringify({ version, pid: process.pid, urls: [], paths: { tmp: fixture } })); return;
+    }
+    if (req.method === 'POST' && req.url === '/api/session') {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      const input: SessionCreateInput = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (!input.id || !input.location || !input.permissions || !input.metadata) { res.writeHead(400).end('{}'); return; }
+      const session: SessionInfo = { id: input.id, projectID: 'fixture-project', location: input.location,
+        metadata: input.metadata, permissions: input.permissions.map(rule => ({ ...rule })), cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, time: { created: 1, updated: 1 } };
+      created.push(session); res.end(JSON.stringify({ data: session })); return;
+    }
+    if (req.method === 'GET' && created[0] && req.url === `/api/session/${created[0].id}`) {
+      res.end(JSON.stringify({ data: created[0] })); return;
+    }
+    res.writeHead(404).end('{}');
+  });
+  await new Promise<void>((resolve, reject) => nativeFixture?.listen(0, '127.0.0.1', resolve).once('error', reject));
+  const address = nativeFixture.address();
+  if (!address || typeof address === 'string') throw new Error('fixture listener unavailable');
+  const url = `http://127.0.0.1:${address.port}`;
+  const health = await fetch(`${url}/api/info`, { headers: { authorization: auth } });
+  expect(health.status).toBe(200);
+  expect(await health.json()).toMatchObject({ version, pid: process.pid });
+  nativeCalls.length = 0;
+  const registrationFile = join(fixture, 'service.json');
+  await writeFile(registrationFile, JSON.stringify({ url, pid: process.pid, version, password: fixturePassword }), { mode: 0o600 });
+  await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault,
+    think: { service: { registrationFile, ...(minimum ? { requiredVersion: minimum } : {}) }, location: { kind: 'vault' }, permissionMode: 'full' } }));
+  const request = await start();
+  const response = await request('/api/think/conversations', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ conversationId: '11111111-1111-4111-8111-111111111111', clientCommandId: '22222222-2222-4222-8222-222222222222' }) });
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({ error: { code: 'think_unavailable' } });
+  expect(info).toHaveBeenCalledWith('think_native_version_outcome', { source: 'registration',
+    status: version === 'not-a-version' ? 'invalid' : 'below_minimum', requiredVersion: minimum ?? '2.2.2' });
+  expect(nativeCalls).not.toContain('POST /api/session');
+  expect(created).toEqual([]);
+});
+
+it.each(['not-a-version', '2.2', '2.2.2-01'])('reports an actionable error for invalid configured minimum %s', async minimum => {
+  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const request = await (async () => {
+    await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault,
+      think: { service: { registrationFile: join(fixture, 'service.json'), requiredVersion: minimum }, location: { kind: 'vault' } } }));
+    return start();
+  })();
+  const response = await request('/api/think/conversations', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ conversationId: '11111111-1111-4111-8111-111111111111', clientCommandId: '22222222-2222-4222-8222-222222222222' }) });
+  expect(response.status).toBe(503);
+  const body = await response.json();
+  expect(body).toMatchObject({ error: { code: 'think_config_invalid' } });
+  expect(`${JSON.stringify(body)} ${JSON.stringify(info.mock.calls)}`).toMatch(/(?:requiredVersion|minimum.version)/i);
 });
 
 it.each([

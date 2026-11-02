@@ -3,6 +3,7 @@ import { ClientError, isConflictError, isServiceUnavailableError } from '@openco
 import type { GenerationAttempt, GenerationSelection } from './ground-generation-state';
 import { GroundGenerationError } from './ground-generation-error';
 import { questionDigest, questionResponseLimit } from './ground-generation-questions';
+import { defaultNativeMinimum, nativeVersionStatus, validNativeVersion } from './think/native-version';
 
 export interface GenerationCandidate { messageId: string; sha256: string; text: string }
 
@@ -18,10 +19,14 @@ const sameModel = (a: SessionInfo['model'], b: SessionInfo['model']) => a?.provi
 /** Separate from Think's permissive creator. Session rules are verified, not reset on reads.
  * The owned runtime proof establishes built-in read denial, not a sandbox for privileged hooks. */
 export function groundGenerationNative(options: {
-  client: OpenCodeClient; directory: string; installationId: string; identity: { pid: number; version: string };
+  /** Version is legacy metadata, not an identity or compatibility gate. */
+  client: OpenCodeClient; directory: string; installationId: string; identity: { pid: number; version?: string };
+  minimumVersion?: string;
   validateSelection(signal: AbortSignal): Promise<void>;
 }): GroundGenerationNative {
   const { client } = options;
+  const minimumVersion = options.minimumVersion ?? defaultNativeMinimum;
+  if (!validNativeVersion(minimumVersion)) throw new GroundGenerationError('configuration');
   async function call<T>(operation: string, signal: AbortSignal, action: (signal: AbortSignal) => Promise<T>): Promise<T> {
     console.info('ground_generation_native_attempt', { operation });
     try {
@@ -38,7 +43,12 @@ export function groundGenerationNative(options: {
   }
   async function identity(signal: AbortSignal): Promise<void> {
     const info = await call('identity', signal, signal => client.server.info({ signal }));
-    if (info.pid !== options.identity.pid || info.version !== options.identity.version) throw new GroundGenerationError('conflict');
+    if (info.pid !== options.identity.pid) throw new GroundGenerationError('conflict');
+    const versionStatus = nativeVersionStatus(info.version, minimumVersion);
+    if (versionStatus !== 'compatible') {
+      console.info('ground_generation_native_version_outcome', { status: versionStatus, requiredVersion: minimumVersion });
+      throw new GroundGenerationError('configuration');
+    }
   }
   function owner(attempt: GenerationAttempt) {
     return { owner: 'memory-loop', purpose: 'ground-generation', installationId: options.installationId, attemptId: attempt.attemptId };

@@ -110,8 +110,7 @@ native-service selection are separate user configuration, not required for it:
   "vaultDirectory": "/absolute/fixture-vault",
   "think": {
     "service": {
-      "registrationFile": "/absolute/fixture/service-discovery.json",
-      "requiredVersion": "2.2.2"
+      "registrationFile": "/absolute/fixture/service-discovery.json"
     },
     "location": { "kind": "vault" },
     "permissionMode": "full",
@@ -121,8 +120,11 @@ native-service selection are separate user configuration, not required for it:
 ```
 
 The selected OpenCode service must already exist; the application does not start
-or replace it or discover a personal default. Version `2.2.2` and `full` are the
-current defaults/only supported choices. Optional `agent`/`model` overrides stay
+or replace it or discover a personal default. OpenCode versions are not locked:
+`requiredVersion` specifies a minimum supported version, defaulting to `2.2.2`,
+not an exact match or an upper bound. Newer versions are accepted; authentication
+and registered process-identity checks remain enforced. `full` is the current
+permission mode. Optional `agent`/`model` overrides stay
 daemon-owned; omission uses native defaults. The vault is the native working
 directory, **not a tool sandbox**.
 These settings select new chats. Restoring a registered chat verifies its stored

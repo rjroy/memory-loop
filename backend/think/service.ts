@@ -12,6 +12,7 @@ import { canonicalActivities, missingConfirmedText, projectNativeMessage, restor
 import { createConversationService, type ConversationAvailability } from './conversations';
 import { ThinkServiceError } from './errors';
 import { createDeletionService } from './deletion';
+import { defaultNativeMinimum, nativeVersionStatus, validNativeVersion } from './native-version';
 export { ThinkServiceError, type ThinkServiceErrorCode } from './errors';
 
 export type ConversationSnapshot = ConversationState & Pick<ProjectionPage, 'entries' | 'contentHealth' | 'nextCursor'>;
@@ -54,7 +55,9 @@ export interface ThinkServiceOptions {
     model?: NonNullable<SessionCreateInput['model']>;
   };
   epoch: string;
-  serviceIdentity: { pid: number; version: string };
+  /** Version is legacy metadata, not an identity or compatibility gate. */
+  serviceIdentity: { pid: number; version?: string };
+  minimumVersion?: string;
   clock?: { now(): number };
   transferIdleMs?: number;
   transcript?: TranscriptOptions;
@@ -90,10 +93,11 @@ function nextOrAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal): Promis
 export function createThinkService(options: ThinkServiceOptions): ThinkService {
   const { epoch, native, bodies } = options;
   const identity = { ...options.serviceIdentity };
+  const minimumVersion = options.minimumVersion ?? defaultNativeMinimum;
   const { directory, agent } = options.context;
   const model = options.context.model ? { ...options.context.model } : undefined;
   if (!bodies || typeof bodies.replace !== 'function' || typeof bodies.append !== 'function' || typeof bodies.open !== 'function' || typeof bodies.close !== 'function' ||
-      !uuid.test(epoch) || !Number.isSafeInteger(identity.pid) || identity.pid < 1 || identity.version !== '2.2.2' || !isAbsolute(directory) || normalize(directory) !== directory || directory.includes('\0')) throw new ThinkServiceError('invalid_request');
+      !uuid.test(epoch) || !Number.isSafeInteger(identity.pid) || identity.pid < 1 || !validNativeVersion(minimumVersion) || !isAbsolute(directory) || normalize(directory) !== directory || directory.includes('\0')) throw new ThinkServiceError('invalid_request');
   const commands = new Map<string, CommandReceipt>();
   const registeredTimes = new Map<string, number>();
   const replyPayloads = new Map<string, string>();
@@ -533,12 +537,19 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   async function verifyIdentity(controller: AbortController): Promise<boolean> {
     try {
       const info = await nativeCall(controller, 'identity', signal => native.getServerInfo(signal));
-      if (info.pid !== identity.pid || info.version !== identity.version) {
+      if (info.pid !== identity.pid) {
         identityChanged = true;
         available = false;
         refreshAllEligibility();
         monitor?.controller.abort();
         console.info('think_identity_outcome', { status: 'changed' });
+        return false;
+      }
+      const versionStatus = nativeVersionStatus(info.version, minimumVersion);
+      if (versionStatus !== 'compatible') {
+        available = false;
+        refreshAllEligibility();
+        console.info('think_native_version_outcome', { source: 'live', status: versionStatus, requiredVersion: minimumVersion });
         return false;
       }
       if (!identityChanged && !closed) { available = true; refreshAllEligibility(); }

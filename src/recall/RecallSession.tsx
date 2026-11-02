@@ -4,12 +4,14 @@ import type { VaultId, VaultSearchContextRequest } from '../../backend/contract'
 import { createRecallEditor } from './editor';
 import { createAttachmentUploads } from './attachments';
 import { createRecallSearch } from './searchState';
+import { createDirectoryCache } from './useDirectoryTree';
 
 export function createRecallSession() {
   return {
     editor: createRecallEditor(),
     uploads: createAttachmentUploads(),
     search: createRecallSearch(),
+    directories: createDirectoryCache(),
     normalReaderPositions: new Map<string, number>(),
     lastExcerpt: null as VaultSearchContextRequest | null,
     lastId: null as VaultId | null,

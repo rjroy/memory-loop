@@ -193,6 +193,33 @@ describe('Recall: file and folder actions', () => {
     expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument();
     expect(window.location.search).toBe(new URL(noteLocation(alphaId), window.location.origin).search);
     expect(await screen.findByRole('link', { name: 'Beta.md' })).toHaveAttribute('href', noteLocation(['Destination', 'Beta.md']));
+    expect(screen.queryByRole('link', { name: 'Beta.md' })?.getAttribute('href')).not.toBe(noteLocation(['Test shelf & café', 'Beta.md']));
+  });
+
+  it('invalidates both already-loaded parents after moving a file', async () => {
+    tree.entries.push({ kind: 'directory', name: 'Destination', id: ['Destination'], children: [] });
+    respond = () => {
+      tree = { entries: [
+        { kind: 'directory', name: 'Test shelf & café', id: ['Test shelf & café'], children: [
+          { kind: 'note', name: 'Alpha #1.md', id: alphaId },
+        ] },
+        { kind: 'directory', name: 'Destination', id: ['Destination'], children: [
+          { kind: 'note', name: 'Beta.md', id: ['Destination', 'Beta.md'] },
+        ] },
+      ] };
+      return jsonResponse({ id: ['Destination', 'Beta.md'] });
+    };
+    const user = userEvent.setup();
+    mount();
+    await screen.findByRole('link', { name: 'Beta.md' });
+    await user.click(screen.getByRole('button', { name: 'Destination' }));
+    await screen.findByText('No items to show.');
+    await menu(user, 'Actions for Beta.md', /Move/);
+    const dialog = screen.getByRole('dialog');
+    await user.click(await within(dialog).findByRole('radio', { name: 'Destination' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Move file' }));
+    await waitFor(() => expect(screen.getAllByRole('link', { name: 'Beta.md' })).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Beta.md' })).toHaveAttribute('href', noteLocation(['Destination', 'Beta.md'])));
   });
 
   it('holds creation that selects a new file until the dirty draft is discarded', async () => {
@@ -228,6 +255,8 @@ describe('Recall: file and folder actions', () => {
     await user.click(screen.getByRole('button', { name: 'Discard changes' }));
     await waitFor(() => expect(window.location.search).toBe(''));
     expect(await screen.findByText('Choose a file')).toBeInTheDocument();
+    expect(await screen.findByText('No items to show.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Alpha #1.md' })).not.toBeInTheDocument());
     expect(mutations).toHaveLength(1);
     expect(mutations[0].body).toEqual({ action: 'delete', kind: 'note', id: alphaId, expectedVersion: `version:${JSON.stringify(alphaId)}` });
   });

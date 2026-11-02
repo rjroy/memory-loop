@@ -37,7 +37,7 @@ beforeEach(() => {
         : { name, kind: 'image', contentType: 'image/png' });
   };
   const api = installVaultApi({
-    tree: () => { treeReads++; return jsonResponse(tree); },
+    tree: () => jsonResponse(tree),
     note: id => jsonResponse({ name: id.at(-1), markdown: id.at(-1) === 'Next.md' ? '# Next document' : markdown, revision, editable: true }),
   });
   const reads = api.getMockImplementation();
@@ -45,6 +45,7 @@ beforeEach(() => {
   api.mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
     const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    if (url.origin === window.location.origin && url.pathname === '/api/vault/tree' && method === 'GET') treeReads++;
     if (url.origin === window.location.origin && url.pathname === '/api/vault/file' && method === 'GET') {
       const id: unknown = JSON.parse(url.searchParams.get('id') ?? 'null');
       if (!Array.isArray(id) || !id.length || !id.every(part => typeof part === 'string')) throw new Error('Invalid fixture ID');

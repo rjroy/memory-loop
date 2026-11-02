@@ -1,4 +1,4 @@
-import { createContext, useContext, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, useContext, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { VaultAction as VaultActionRequest, VaultActionResponse, VaultEntry, VaultId, VaultTreeResponse } from '../../backend/contract';
@@ -96,6 +96,7 @@ function FolderChoices({ entries, source, destination, choose, busy }: {
 interface Props {
   children: ReactNode;
   tree: VaultTreeResponse | null;
+  loadFullTree: () => Promise<VaultTreeResponse>;
   guard: (request: VaultActionRequest, run: () => void) => void;
   onSuccess: (request: VaultActionRequest, result: VaultActionResponse, isCurrent: () => boolean) => Promise<boolean>;
   isCurrent: () => boolean;
@@ -107,9 +108,10 @@ interface Props {
   onUpload?: (trigger: HTMLElement) => void;
 }
 
-export default function FileActions({ children, tree, guard, onSuccess, isCurrent, refresh, onBusy, fenced, setFenced, unavailable, onUpload }: Props) {
+export default function FileActions({ children, tree, loadFullTree, guard, onSuccess, isCurrent, refresh, onBusy, fenced, setFenced, unavailable, onUpload }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [form, setForm] = useState<Form | null>(null);
+  const [moveTree, setMoveTree] = useState<VaultTreeResponse | null>(null);
   const [name, setName] = useState('');
   const [destination, setDestination] = useState<{ id: VaultId; identity: string } | null>(null);
   const [issue, setIssue] = useState('');
@@ -141,6 +143,7 @@ export default function FileActions({ children, tree, guard, onSuccess, isCurren
   };
   const dismissForm = () => {
     if (lock.current) return;
+    operation.current++;
     const trigger = form?.trigger;
     dialog.current?.close?.(); setForm(null); setIssue(''); setRefreshOnly(false);
     if (trigger?.isConnected) { trigger.focus({ preventScroll: true }); trigger.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); }
@@ -264,7 +267,14 @@ export default function FileActions({ children, tree, guard, onSuccess, isCurren
   const folder = creation ? form?.action === 'create-directory' : form?.target?.kind === 'directory';
   const label = form?.action === 'delete' ? (folder ? 'Delete empty folder' : 'Delete file')
     : form?.action === 'move' ? (folder ? 'Move folder' : 'Move file') : folder ? 'Create folder' : 'Create file';
-  return <Actions.Provider value={{ menu, menuId, disabled: busy || fenced || unavailable || !tree, fenced, busy, formOpen: Boolean(form), recoveryIssue: issue, reconcile, open }}>
+  const callbacks = useRef({ reconcile, open });
+  callbacks.current = { reconcile, open };
+  const disabled = busy || fenced || unavailable || !tree;
+  const formOpen = Boolean(form);
+  const context = useMemo<Context>(() => ({ menu, menuId, disabled, fenced, busy, formOpen, recoveryIssue: issue,
+    reconcile: () => callbacks.current.reconcile(), open: (target, trigger, point) => callbacks.current.open(target, trigger, point),
+  }), [menu, menuId, disabled, fenced, busy, formOpen, issue]);
+  return <Actions.Provider value={context}>
     {children}
     {menu && createPortal(<div ref={menuRef} id={menuId} className="recall-action-menu" role="menu" aria-label={menu.target ? `Actions for ${menu.target.name}` : 'Vault actions'}
       style={{ left: menu.x, top: menu.y }} onKeyDown={event => {
@@ -279,6 +289,11 @@ export default function FileActions({ children, tree, guard, onSuccess, isCurren
         className={item.action === 'delete' ? 'file-menu-delete' : ''} onClick={() => {
           if (item.action === 'upload') { dismissMenu(false); onUpload?.(menu.trigger); return; }
           setForm({ action: item.action, target: menu.target, trigger: menu.trigger }); setName(''); setDestination(null); setIssue(''); setRefreshOnly(false); dismissMenu(false);
+          if (item.action === 'move') {
+            setMoveTree(null);
+            const sequence = operation.current;
+            void loadFullTree().then(value => { if (owner.current && operation.current === sequence && isCurrent()) setMoveTree(value); }, () => { if (owner.current && operation.current === sequence && isCurrent()) setIssue("Couldn't load folders. Close and try again."); });
+          }
         }}>{item.label(menu.target)}</button>)}
     </div>, document.body)}
     {form && <dialog ref={dialog} tabIndex={-1} className="recall-action-dialog" aria-labelledby={titleId} aria-describedby={issue ? issueId : undefined}
@@ -294,10 +309,10 @@ export default function FileActions({ children, tree, guard, onSuccess, isCurren
           {!folder && <p id={`${titleId}-help`} className="action-help">.md is added if omitted.</p>}</div>
           : form.action === 'move' && form.target ? <>
             {folder && <p>Moves this folder and everything inside it.</p>}
-            <fieldset className="destination-picker" disabled={busy || refreshOnly}><legend>Destination folder</legend>
+            <fieldset className="destination-picker" disabled={busy || refreshOnly || !moveTree}><legend>Destination folder</legend>
               <label className="destination-choice"><input type="radio" name="destination" disabled={form.target.id.length === 1}
                 checked={destination?.id.length === 0} onChange={() => setDestination({ id: [], identity: tree!.rootIdentity })} /><span>Vault root{form.target.id.length === 1 && <small>Already in this folder.</small>}</span></label>
-              <FolderChoices entries={tree?.entries ?? []} source={form.target} destination={destination?.id ?? null}
+              <FolderChoices entries={moveTree?.entries ?? []} source={form.target} destination={destination?.id ?? null}
                 choose={(id, identity) => setDestination({ id, identity })} busy={busy || refreshOnly} />
             </fieldset>
             {destination && <p className="action-help">Destination: {destination.id.join(' / ') || 'Vault root'}</p>}

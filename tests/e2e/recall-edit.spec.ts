@@ -1,13 +1,20 @@
 import { expect, test } from './recall-fixture';
+import { fixtureDirectory, fixtureDirectoryId } from '../fixtures/directory';
 
 const id = ['draft-fixture.md'];
 const revision = 'a'.repeat(64);
 
 async function installEditingFixture(page: import('@playwright/test').Page) {
-  await page.route('**/api/vault/tree', route => route.fulfill({ json: {
+  const tree = {
     rootIdentity: 'fixture-root-identity',
-    entries: [{ kind: 'note', name: id[0], id, identity: 'fixture-note-identity', version: 'fixture-note-version' }],
-  } }));
+    entries: [{ kind: 'note' as const, name: id[0], id, identity: 'fixture-note-identity', version: 'fixture-note-version' }],
+  };
+  await page.route('**/api/vault/tree', route => route.fulfill({ json: tree }));
+  await page.route('**/api/vault/directory?*', route => {
+    const requested = fixtureDirectoryId(new URL(route.request().url()));
+    const listing = requested && fixtureDirectory(tree, requested);
+    return listing ? route.fulfill({ json: listing }) : route.fulfill({ status: requested ? 404 : 400, json: { error: { code: requested ? 'entry_unavailable' : 'invalid_request', message: 'Fixture directory unavailable' } } });
+  });
   await page.route('**/api/vault/note?*', route => route.fulfill({ json: {
     name: id[0], markdown: '# Original fixture\n', revision, editable: true,
   } }));

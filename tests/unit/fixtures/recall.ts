@@ -1,5 +1,7 @@
 import { expect, vi } from 'vitest';
 import type { VaultErrorCode, VaultId } from '../../../backend/contract';
+import type { VaultTreeResponse } from '../../../backend/contract';
+import { fixtureDirectory, fixtureDirectoryId } from '../../fixtures/directory';
 
 // All names/content here belong to the tests. Never read application config or disk.
 export const alphaId = ['Test shelf & café', 'Alpha #1.md'] as const;
@@ -103,6 +105,17 @@ export function installVaultApi(options: {
     if (url.pathname === '/api/vault/tree' && !url.search) {
       return options.tree?.() ?? jsonResponse(vaultTree);
     }
+    if (url.pathname === '/api/vault/directory') {
+      const id = fixtureDirectoryId(url);
+      if (!id) return errorResponse('invalid_request', 400);
+      const response = await (options.tree?.() ?? jsonResponse(vaultTree));
+      if (!response.ok || !/^application\/json(?:\s*;|\s*$)/i.test(response.headers.get('content-type') ?? '')) return response;
+      let value: unknown;
+      try { value = await response.clone().json(); } catch { return response; }
+      if (typeof value !== 'object' || value === null || !('rootIdentity' in value) || typeof value.rootIdentity !== 'string' || !('entries' in value) || !Array.isArray(value.entries)) return response;
+      const result = fixtureDirectory(value as VaultTreeResponse, id);
+      return result ? jsonResponse(result) : errorResponse('entry_unavailable', 404);
+    }
     if (url.pathname === '/api/vault/note' && url.searchParams.getAll('id').length === 1) {
       const id: unknown = JSON.parse(url.searchParams.get('id')!);
       if (!Array.isArray(id) || !id.length || !id.every(part => typeof part === 'string')) {
@@ -135,11 +148,11 @@ export function expectOnlyVaultReads(fetchMock: ReturnType<typeof installVaultAp
       continue;
     }
     expect((init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()).toBe('GET');
-    expect(['/api/vault/tree', '/api/vault/note']).toContain(url.pathname);
-    expect([...url.searchParams.keys()]).toEqual(url.pathname.endsWith('/note') ? ['id'] : []);
-    if (url.pathname.endsWith('/note')) {
+    expect(['/api/vault/tree', '/api/vault/directory', '/api/vault/note']).toContain(url.pathname);
+    expect([...url.searchParams.keys()]).toEqual(url.pathname.endsWith('/tree') ? [] : ['id']);
+    if (url.pathname.endsWith('/note') || url.pathname.endsWith('/directory')) {
       const id: unknown = JSON.parse(url.searchParams.get('id')!);
-      expect(Array.isArray(id) && id.length > 0 && id.every(part => typeof part === 'string')).toBe(true);
+      expect(Array.isArray(id) && (url.pathname.endsWith('/directory') || id.length > 0) && id.every(part => typeof part === 'string')).toBe(true);
     }
   }
 }

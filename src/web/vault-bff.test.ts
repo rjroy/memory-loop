@@ -32,6 +32,39 @@ async function safe(response: Response) {
 }
 
 describe('server-only vault BFF boundary', () => {
+  it('proxies a shallow directory read using only the fixed authenticated daemon target', async () => {
+    const id = ['folder & café'];
+    const listing = { rootIdentity: 'root', directoryIdentity: 'folder-id', id, entries: [
+      { kind: 'directory', name: 'nested', id: [...id, 'nested'], identity: 'nested-id', version: 'nested-version' },
+      { kind: 'note', name: 'a.md', id: [...id, 'a.md'], identity: 'note-id', version: 'note-version' },
+    ] };
+    const { request, fetcher } = setup(async () => json({ ...listing, private: 'discard' }));
+    const response = await request(`/api/vault/directory?${new URLSearchParams({ id: JSON.stringify(id) })}`, {
+      headers: { authorization: 'Bearer browser-secret', cookie: 'session=private' },
+    });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(await safe(response))).toEqual(listing);
+    const [target, init] = fetcher.mock.calls[0];
+    const url = new URL(String(target));
+    expect(url.origin + url.pathname).toBe('http://127.0.0.1:3001/api/vault/directory');
+    expect([...url.searchParams]).toEqual([['id', JSON.stringify(id)]]);
+    expect([...new Headers(init?.headers)].sort()).toEqual([['accept', 'application/json'], ['authorization', `Bearer ${token}`]]);
+    expect(init?.cache).toBe('no-store');
+    expect(init?.redirect).toBe('error');
+  });
+
+  it.each(['?id=%5B%22..%22%5D', '?id=%5B%5D&id=%5B%5D', '?id=%5B%5D&extra=1', '?id=%ZZ'])('rejects invalid directory query %s before upstream', async query => {
+    const { request, fetcher } = setup();
+    expect((await request(`/api/vault/directory${query}`)).status).toBe(400);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('rejects a directory response for a different requested parent', async () => {
+    const { request } = setup(async () => json({ rootIdentity: 'root', directoryIdentity: 'other-id', id: ['other'], entries: [] }));
+    const response = await request('/api/vault/directory?id=%5B%22folder%22%5D');
+    expect(response.status).toBe(503);
+    await safe(response);
+  });
   it('projects a valid tree and makes a fresh fixed authenticated request', async () => {
     const { request, fetcher } = setup();
     const response = await request('/api/vault/tree', { headers: { authorization: 'Bearer browser-secret', cookie: 'session=private', 'x-forwarded-host': 'evil.test', 'tailscale-user-login': 'attacker', origin: 'http://127.0.0.1:3000', 'sec-fetch-site': 'same-origin' } });

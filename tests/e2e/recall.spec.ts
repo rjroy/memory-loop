@@ -67,7 +67,7 @@ test('MS4-R1: reopened Files reveals the focused current row below its sticky he
     const name = `fixture-${String(index).padStart(3, '0')}.md`;
     return { kind: 'note', name, id: [name], identity: `fixture-identity-${index}`, version: `fixture-version-${index}` };
   });
-  await page.route('**/api/vault/tree', route => route.fulfill({ json: { rootIdentity: 'fixture-root-identity', entries } }));
+  await page.route('**/api/vault/directory?*', route => route.fulfill({ json: { rootIdentity: 'fixture-root-identity', directoryIdentity: 'fixture-root-identity', id: [], entries } }));
   await page.route('**/api/vault/note?*', route => route.fulfill({ json: { name: 'fixture-030.md', markdown: '# Fixture note', revision: 'fixture-revision', editable: true } }));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${recallOrigin}/recall`);
@@ -398,7 +398,7 @@ for (const [code, heading] of [
   ['vault_unavailable', 'Vault unavailable'],
 ] as const) {
   test(`shows ${code} as an honest structured error`, async ({ page, recallOrigin }) => {
-    await page.route('**/api/vault/tree', route => route.fulfill({ status: 503, json: { error: { code, message: 'fixture internal detail' } } }));
+    await page.route('**/api/vault/directory?*', route => route.fulfill({ status: 503, json: { error: { code, message: 'fixture internal detail' } } }));
     await page.goto(`${recallOrigin}/recall`);
     await expect(page.getByText(heading, { exact: true })).toBeVisible();
     await expect(page.getByText('fixture internal detail')).toHaveCount(0);
@@ -407,15 +407,15 @@ for (const [code, heading] of [
 }
 
 test('distinguishes empty tree, empty note, and transport failure', async ({ page, recallOrigin }) => {
-  await page.route('**/api/vault/tree', route => route.fulfill({ json: { rootIdentity: 'fixture-root-identity', entries: [] } }));
+  await page.route('**/api/vault/directory?*', route => route.fulfill({ json: { rootIdentity: 'fixture-root-identity', directoryIdentity: 'fixture-root-identity', id: [], entries: [] } }));
   await page.goto(`${recallOrigin}/recall`);
   await expect(page.getByText('No files to show', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Vault actions' }).click();
   await expect(page.getByRole('menuitem', { name: 'New file…' })).toBeEnabled();
-  await page.unroute('**/api/vault/tree');
+  await page.unroute('**/api/vault/directory?*');
   await page.goto(noteUrl(recallOrigin, ['empty.md']));
   await expect(page.getByText('This note is empty.')).toBeVisible();
-  await page.route('**/api/vault/tree', route => route.abort('failed'));
+  await page.route('**/api/vault/directory?*', route => route.abort('failed'));
   await page.goto(`${recallOrigin}/recall`);
   await expect(page.getByRole('heading', { name: 'Vault service unavailable', exact: true })).toBeVisible();
 });
@@ -458,10 +458,10 @@ test('RECALL-UI-002: Files restores its scroll only after delayed hierarchy cont
   let startTree: () => void = () => {};
   const loading = new Promise<void>(resolve => { startTree = resolve; });
   const held = new Promise<void>(resolve => { releaseTree = resolve; });
-  await page.route('**/api/vault/tree', async route => {
+  await page.route('**/api/vault/directory?*', async route => {
     calls++;
     if (calls > 1) { startTree(); await held; }
-    await route.fulfill({ json: { rootIdentity: 'fixture-root-identity', entries } }).catch(() => {});
+    await route.fulfill({ json: { rootIdentity: 'fixture-root-identity', directoryIdentity: 'fixture-root-identity', id: [], entries } }).catch(() => {});
   });
   try {
     await page.goto(`${recallOrigin}/recall`);

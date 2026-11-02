@@ -1,4 +1,4 @@
-import { isUploadName, isVaultComponent, isVaultErrorCode, isVaultId, type VaultUploadLimit, type VaultUploadResponse, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultFileResponse, type VaultTreeResponse, type VaultSaveRequest, type VaultSaveResponse, type VaultAction as VaultActionRequest, type VaultActionResponse } from '../../backend/contract';
+import { isUploadName, isVaultComponent, isVaultDirectoryId, isVaultErrorCode, isVaultId, type VaultUploadLimit, type VaultUploadResponse, type VaultEntry, type VaultDirectoryResponse, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultFileResponse, type VaultTreeResponse, type VaultSaveRequest, type VaultSaveResponse, type VaultAction as VaultActionRequest, type VaultActionResponse } from '../../backend/contract';
 
 export type RecallFailure = VaultErrorCode | 'transport';
 
@@ -54,7 +54,7 @@ function opaque(value: unknown): value is string { return typeof value === 'stri
 
 let readSequence = 0;
 
-async function request<T>(url: string, operation: 'tree' | 'note' | 'file' | 'attachments', signal: AbortSignal, validate: (value: unknown) => value is T): Promise<T> {
+async function request<T>(url: string, operation: 'tree' | 'directory' | 'note' | 'file' | 'attachments', signal: AbortSignal, validate: (value: unknown) => value is T): Promise<T> {
   const requestId = ++readSequence;
   console.info('vault_read_attempt', { operation, requestId });
   let outcome: RecallFailure | 'loaded' | 'abandoned' = 'transport';
@@ -84,6 +84,15 @@ async function request<T>(url: string, operation: 'tree' | 'note' | 'file' | 'at
 
 export function readTree(_key: string, signal: AbortSignal): Promise<VaultTreeResponse> {
   return request('/api/vault/tree', 'tree', signal, isTree);
+}
+
+export function readDirectory(id: VaultId, signal: AbortSignal): Promise<VaultDirectoryResponse> {
+  if (!isVaultDirectoryId(id)) return Promise.reject(new RecallReadError('invalid_request'));
+  return request(`/api/vault/directory?${new URLSearchParams({ id: idKey(id) })}`, 'directory', signal,
+    (value): value is VaultDirectoryResponse => record(value) && opaque(value.rootIdentity) && opaque(value.directoryIdentity) &&
+      isVaultDirectoryId(value.id) && idKey(value.id) === idKey(id) && Array.isArray(value.entries) && value.entries.every(entry =>
+        record(entry) && isVaultComponent(entry.name) && isVaultId(entry.id) && idKey(entry.id) === idKey([...id, entry.name]) &&
+        opaque(entry.identity) && opaque(entry.version) && (entry.kind === 'directory' || entry.kind === 'file' || entry.kind === 'note' && entry.name.endsWith('.md'))));
 }
 
 export function readNote(key: string, signal: AbortSignal): Promise<VaultNoteResponse> {

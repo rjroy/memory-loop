@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { defaultUploadMaxBytes, isUploadName, isVaultErrorCode, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultErrorCode } from './contract';
+import { defaultUploadMaxBytes, isUploadName, isVaultDirectoryId, isVaultErrorCode, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultErrorCode, type VaultId } from './contract';
 import type { ThinkService, ThinkUnavailableCode } from './think/service';
 import { ThinkServiceError } from './think/errors';
 import { thinkErrors, type ThinkErrorCode } from './think/contract';
@@ -84,7 +84,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.use('*', async (context, next) => {
     const requestId = randomUUID();
     const path = context.req.path;
-    const operation = path === '/api/vault/search' || path === '/api/vault/search/context' ? 'search' : path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/vault/file' ? 'file' : path === '/api/vault/content' ? 'content' : path === '/api/vault/attachments' ? 'attachments' : path === '/api/vault/actions' ? 'actions' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
+    const operation = path === '/api/vault/search' || path === '/api/vault/search/context' ? 'search' : path === '/api/vault/tree' ? 'tree' : path === '/api/vault/directory' ? 'directory' : path === '/api/vault/note' ? 'note' : path === '/api/vault/file' ? 'file' : path === '/api/vault/content' ? 'content' : path === '/api/vault/attachments' ? 'attachments' : path === '/api/vault/actions' ? 'actions' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
     console.info('vault_api_attempt', { requestId, operation });
     try {
       const headers = context.req.raw.headers;
@@ -182,6 +182,20 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.get('/api/vault/tree', async context => {
     if ('error' in options.vault) return publicError(options.vault.error);
     try { return context.json(await options.vault.reader.tree()); } catch (error: unknown) { return serviceError(error); }
+  });
+  app.get('/api/vault/directory', async context => {
+    let id: VaultId;
+    try {
+      const url = new URL(context.req.url);
+      decodeURIComponent(url.search.replace(/\+/g, ' '));
+      const values = url.searchParams.getAll('id');
+      if (values.length !== 1 || [...url.searchParams.keys()].some(key => key !== 'id')) return publicError('invalid_request');
+      const parsed: unknown = JSON.parse(values[0]);
+      if (!isVaultDirectoryId(parsed)) return publicError('invalid_request');
+      id = parsed;
+    } catch { return publicError('invalid_request'); }
+    if ('error' in options.vault) return publicError(options.vault.error);
+    try { return context.json(await options.vault.reader.directory(id)); } catch (error: unknown) { return serviceError(error); }
   });
   for (const path of ['/api/vault/search', '/api/vault/search/context']) {
     app.get(path, () => Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 }));

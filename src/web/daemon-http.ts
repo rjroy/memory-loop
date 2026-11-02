@@ -8,7 +8,7 @@ import { vaultActionBodyLimit, vaultSaveBodyLimit, vaultSearchBodyLimit } from '
 export async function daemonFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (!(input instanceof URL)) throw new Error('Invalid service target');
   if (input.protocol !== 'http:' || input.hostname !== '127.0.0.1' || input.username || input.password ||
-      !['/api/vault/tree', '/api/vault/note', '/api/vault/actions', '/api/vault/file', '/api/vault/attachments', '/api/vault/search', '/api/vault/search/context'].includes(input.pathname) || input.hash) throw new Error('Invalid service target');
+      !['/api/vault/tree', '/api/vault/directory', '/api/vault/note', '/api/vault/actions', '/api/vault/file', '/api/vault/attachments', '/api/vault/search', '/api/vault/search/context'].includes(input.pathname) || input.hash) throw new Error('Invalid service target');
   const method = init?.method ?? 'GET';
   const searching = input.pathname === '/api/vault/search' || input.pathname === '/api/vault/search/context';
   const saving = method === 'POST' && (input.pathname === '/api/vault/note' || input.pathname === '/api/vault/actions' || searching) && !input.search;

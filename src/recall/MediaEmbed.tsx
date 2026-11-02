@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { idKey, readFile } from './api';
 import FileViewer from './FileViewer';
 import { resolveMediaReference, type MediaSyntax, type RecallMediaContext } from './mediaReferences';
@@ -7,6 +7,7 @@ import { useVaultRead } from './useVaultRead';
 export default function MediaEmbed({ reference, label, syntax, context }: {
   reference: string; label?: string; syntax: MediaSyntax; context: RecallMediaContext;
 }) {
+  useEffect(() => { if (!context.index && !context.unavailable) context.load?.(); }, [context.index, context.unavailable, context.load]);
   const resolution = useMemo(() => context.index ? resolveMediaReference(context.index, context.noteId, reference, syntax) : null,
     [context.index, context.noteId, reference, syntax]);
   const entry = resolution?.status === 'file' ? resolution.entry : null;

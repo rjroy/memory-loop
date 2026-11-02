@@ -31,6 +31,22 @@ export interface VaultTreeResponse {
   entries: VaultEntry[];
 }
 
+/** A directory listing never implies that a child directory is empty. */
+export type VaultDirectoryEntry =
+  | { kind: 'directory'; name: string; id: VaultId; identity: string; version: string }
+  | Exclude<VaultEntry, { kind: 'directory' }>;
+
+export interface VaultDirectoryResponse {
+  rootIdentity: string;
+  directoryIdentity: string;
+  id: VaultId;
+  entries: VaultDirectoryEntry[];
+}
+
+export function isVaultDirectoryId(value: unknown): value is VaultId {
+  return Array.isArray(value) && value.length <= 64 && value.every(isVaultComponent);
+}
+
 export type VaultAction =
   | { action: 'create-note'; parentId: VaultId; expectedParentIdentity: string; name: string }
   | { action: 'create-directory'; parentId: VaultId; expectedParentIdentity: string; name: string }

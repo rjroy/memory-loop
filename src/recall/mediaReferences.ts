@@ -10,6 +10,7 @@ export interface RecallMediaContext {
   noteId: VaultId;
   index: MediaIndex | null;
   unavailable: boolean;
+  load?: () => void;
 }
 export type MediaSyntax = 'markdown' | 'obsidian';
 export type MediaReference =

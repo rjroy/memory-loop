@@ -1,6 +1,7 @@
 import type { BrowserContext, Page } from '@playwright/test';
-import type { VaultSearchContextRequest, VaultSearchContextResponse, VaultSearchRequest, VaultSearchResponse } from '../../backend/contract';
+import type { VaultSearchContextRequest, VaultSearchContextResponse, VaultSearchRequest, VaultSearchResponse, VaultTreeResponse } from '../../backend/contract';
 import { expect, test } from './recall-fixture';
+import { fixtureDirectory, fixtureDirectoryId } from '../fixtures/directory';
 
 const alpha = ['alpha-fixture.md'];
 const beta = ['folder', 'beta-fixture.md'];
@@ -13,6 +14,12 @@ const content: VaultSearchResponse = { mode: 'content', counts: { matches: 1, fi
     snippets: [{ text: 'Saved beta evidence', start: 0, end: 19, positions: [6, 7] }] }] };
 const excerpt: VaultSearchContextResponse = { id: beta, name: beta[1], version, targetLine: 4, startLine: 1, truncated: false,
   lines: [1, 2, 3, 4, 5, 6, 7].map(number => ({ number, text: number === 4 ? 'Saved beta evidence' : `Source neighbor ${number}`, positions: number === 4 ? [6, 7] : [] })) };
+const tree: VaultTreeResponse = { rootIdentity: 'fixture-root', entries: [
+  { kind: 'note', name: alpha[0], id: alpha, identity: 'alpha-identity', version: 'alpha-version' },
+  { kind: 'directory', name: 'folder', id: ['folder'], identity: 'folder-identity', version: 'folder-version', children: [
+    { kind: 'note', name: beta[1], id: beta, identity: 'beta-identity', version: 'beta-version' },
+  ] },
+] };
 
 async function installFixture(browser: BrowserContext) {
   const requests: VaultSearchContextRequest[] = [];
@@ -20,12 +27,12 @@ async function installFixture(browser: BrowserContext) {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === '/api/vault/tree' && request.method() === 'GET') {
-      await route.fulfill({ json: { rootIdentity: 'fixture-root', entries: [
-        { kind: 'note', name: alpha[0], id: alpha, identity: 'alpha-identity', version: 'alpha-version' },
-        { kind: 'directory', name: 'folder', id: ['folder'], identity: 'folder-identity', version: 'folder-version', children: [
-          { kind: 'note', name: beta[1], id: beta, identity: 'beta-identity', version: 'beta-version' },
-        ] },
-      ] } });
+      await route.fulfill({ json: tree });
+    } else if (url.pathname === '/api/vault/directory' && request.method() === 'GET') {
+      const id = fixtureDirectoryId(url);
+      const listing = id && fixtureDirectory(tree, id);
+      if (!listing) await route.fulfill({ status: id ? 404 : 400, json: { error: { code: id ? 'entry_unavailable' : 'invalid_request', message: 'Fixture directory unavailable' } } });
+      else await route.fulfill({ json: listing });
     } else if (url.pathname === '/api/vault/note' && request.method() === 'GET') {
       const id: string[] = JSON.parse(url.searchParams.get('id') ?? '[]');
       await route.fulfill({ json: { name: id.at(-1), markdown: '# Fixture reader\n\nSaved formatted body.', revision: 'a'.repeat(64), editable: true } });

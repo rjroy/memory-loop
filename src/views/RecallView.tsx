@@ -10,6 +10,7 @@ import type { RecallFailure } from '../recall/api';
 import { useRecallSession } from '../recall/RecallSession';
 import { useDesktop } from '../recall/useDesktop';
 import { useVaultRead } from '../recall/useVaultRead';
+import { useDirectoryTree } from '../recall/useDirectoryTree';
 import MarkdownDocument from '../recall/MarkdownDocument';
 import FileViewer, { fileKindLabel } from '../recall/FileViewer';
 import SearchFiles from '../recall/SearchFiles';
@@ -94,15 +95,43 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   const markdown = Boolean(selection.id?.at(-1)?.endsWith('.md'));
   // Identity comes from the public browser entry, never Next router internals.
   const entryKey = location.key;
-  const [treeRevision, setTreeRevision] = useState(0);
   const [noteRevision, setNoteRevision] = useState(0);
-  const treeRead = useVaultRead('tree', treeRevision, readTree);
-  const [actionTree, setActionTree] = useState<VaultTreeResponse | null>(null);
-  const tree = actionTree ? { status: 'ready' as const, data: actionTree } : treeRead;
-  const mediaEntries = tree.status === 'ready' ? tree.data.entries : null;
-  const mediaIndex = useMemo(() => mediaEntries ? createMediaIndex(mediaEntries) : null, [mediaEntries]);
-  const media = useMemo(() => selection.id ? { noteId: selection.id, index: mediaIndex, unavailable: tree.status === 'error' } : undefined,
-    [selection.id, mediaIndex, tree.status]);
+  const [expanded, setExpanded] = useState(() => new Set(session.expanded));
+  const [fullTree, setFullTree] = useState<VaultTreeResponse | null>(null);
+  const [fullError, setFullError] = useState(false);
+  const fullPending = useRef<Promise<VaultTreeResponse> | null>(null);
+  const fullGeneration = useRef(0);
+  const resetFull = useCallback(() => { fullGeneration.current++; fullPending.current = null; session.directories.full = null; setFullTree(null); setFullError(false); }, [session]);
+  const { tree, refresh: refreshDirectoryTree, failed: failedDirectories, retry: retryDirectory } = useDirectoryTree(session.directories, expanded, () => {
+    resetFull(); editor.clearConfirmed(); session.search.invalidate();
+    session.lastId = null; session.lastExcerpt = null; session.normalReaderPositions.clear(); session.expanded.clear();
+    const selected = selection.id;
+    setExpanded(new Set(selected ? selected.slice(0, -1).map((_, index) => idKey(selected.slice(0, index + 1))) : []));
+    setNoteRevision(value => value + 1);
+  });
+  const loadedDirectories = useMemo(() => new Set(session.directories.listings.keys()), [session, tree]);
+  const loadFullTree = useCallback(async () => {
+    if (session.directories.full) { setFullTree(session.directories.full); return session.directories.full; }
+    if (fullPending.current) return fullPending.current;
+    const epoch = fullGeneration.current;
+    const work = readTree('tree', new AbortController().signal).then(value => {
+      if (epoch !== fullGeneration.current || value.rootIdentity !== session.directories.rootIdentity) throw new Error('Vault changed');
+      session.directories.full = value; setFullTree(value); setFullError(false); return value;
+    }).catch(error => { if (epoch === fullGeneration.current) setFullError(true); throw error; })
+      .finally(() => { if (fullPending.current === work) fullPending.current = null; });
+    fullPending.current = work;
+    return work;
+  }, [session]);
+  useEffect(() => () => { fullGeneration.current++; fullPending.current = null; }, []);
+  useEffect(() => {
+    const focus = () => resetFull();
+    window.addEventListener('focus', focus);
+    return () => window.removeEventListener('focus', focus);
+  }, [resetFull]);
+  const requestMedia = useCallback(() => { void loadFullTree().catch(() => {}); }, [loadFullTree]);
+  const mediaIndex = useMemo(() => fullTree ? createMediaIndex(fullTree.entries) : null, [fullTree]);
+  const media = useMemo(() => selection.id ? { noteId: selection.id, index: mediaIndex, unavailable: tree.status === 'error' || fullError, load: tree.status === 'ready' ? requestMedia : undefined } : undefined,
+    [selection.id, mediaIndex, tree.status, fullError, requestMedia]);
   const [fileBusy, setFileBusy] = useState(false);
   const [uploadTrigger, setUploadTrigger] = useState<HTMLElement | null>(null);
   const fileBusyRef = useRef(false);
@@ -150,7 +179,6 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   // one. Seed it from that entry just as the transition effect would below.
   const initialPop = useRef(navigationType === 'POP' ? recallSnapshot : undefined).current;
   const initialHashPresentation = location.nativeHash ? initialPop : undefined;
-  const [expanded, setExpanded] = useState(() => new Set(session.expanded));
   const [desktopVisible, setDesktopVisible] = useState(initialHashPresentation?.desktopVisible ?? session.desktopVisible);
   const [narrowOpen, setNarrowOpen] = useState(() => navigationType === 'POP'
     ? initialHashPresentation?.narrowOpen ?? false
@@ -185,6 +213,9 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
     };
   }, []);
   const revealSelection = useRef(!initialPop && !searchActive);
+  // An asynchronous listing may finish after the user has moved elsewhere.
+  const revealOwner = useRef<Element | null>(null);
+  const delayedFilesFocus = useRef(false);
   const pendingScroll = useRef<number | null>(recallSnapshot?.readerScroll ?? session.readerScroll);
   const previousEntry = useRef({ key: entryKey, pathname: location.pathname, search: location.search, hash: location.hash });
   const previousDesktop = useRef(desktop);
@@ -214,9 +245,12 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
 
   const wasSaving = useRef(editing.saving);
   useEffect(() => {
-    if (wasSaving.current && !editing.saving && !editing.issue) session.search.invalidate();
+    if (wasSaving.current && !editing.saving && !editing.issue) {
+      session.search.invalidate(); resetFull();
+      void refreshDirectoryTree().catch(() => {});
+    }
     wasSaving.current = editing.saving;
-  }, [editing.saving, editing.issue, session]);
+  }, [editing.saving, editing.issue, session, resetFull, refreshDirectoryTree]);
 
   useEffect(() => {
     const unload = (event: BeforeUnloadEvent) => {
@@ -311,6 +345,12 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
     if (navigationType === 'INITIAL') return;
     if (previous.key === entryKey && previous.pathname === location.pathname && previous.search === location.search && previous.hash === location.hash) return;
     if (hashOnly) {
+      if (delayedFilesFocus.current) {
+        if (pendingFocus.current === 'files') pendingFocus.current = null;
+        delayedFilesFocus.current = false;
+      }
+      revealOwner.current = null;
+      revealSelection.current = false;
       // A new native fragment inherits the visible note. A traversal restores
       // that exact browser entry, not a different entry with the same URL.
       if (navigationType === 'POP' && recallSnapshot) {
@@ -322,6 +362,8 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
       }
       return;
     }
+    revealOwner.current = null;
+    delayedFilesFocus.current = false;
     revealSelection.current = !searchActive;
     const restoration = restoreOnEntry.current;
     // Returning through bare /recall replaces its URL; that is not a new-note reset.
@@ -359,14 +401,27 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   }, [entryKey, showFiles, tree.status, session, searchActive, searching.status]);
 
   useLayoutEffect(() => {
-    if (!showFiles || searchActive || !revealSelection.current || tree.status !== 'ready') return;
+    if (!showFiles || searchActive || !revealSelection.current || tree.status !== 'ready' || !ownsFileView()) return;
     if (!selection.id) { revealSelection.current = false; return; }
     const current = filesRef.current?.querySelector<HTMLElement>('a[aria-current="page"]');
     if (current && !current.closest('[hidden]')) {
       current.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       revealSelection.current = false;
-    }
-  }, [showFiles, tree.status, key, expanded, searchActive]);
+      if (!delayedFilesFocus.current) revealOwner.current = null;
+    } else if (!revealOwner.current) revealOwner.current = document.activeElement;
+  }, [showFiles, tree, key, expanded, searchActive, ownsFileView]);
+
+  useLayoutEffect(() => {
+    const supersede = (event: FocusEvent) => {
+      if (!revealOwner.current || event.target === revealOwner.current) return;
+      revealOwner.current = null;
+      revealSelection.current = false;
+      if (delayedFilesFocus.current && pendingFocus.current === 'files') pendingFocus.current = null;
+      delayedFilesFocus.current = false;
+    };
+    document.addEventListener('focusin', supersede);
+    return () => document.removeEventListener('focusin', supersede);
+  }, []);
 
   useLayoutEffect(() => {
     if (!showReader || pendingScroll.current === null || !readerRef.current) return;
@@ -388,9 +443,24 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   useLayoutEffect(() => {
     // A selection can close Files while Next still displays the outgoing note.
     // Keep its focus intent until the selected entry is actually committed.
-    if (isNavigating || fileBusy) return;
+    if (isNavigating || fileBusy || !ownsFileView()) return;
     const target = pendingFocus.current;
     if (!target) return;
+    const selectedRow = filesRef.current?.querySelector<HTMLElement>('a[aria-current="page"]');
+    const waitingForSelection = target === 'files' && !searchActive && !actionFocus.current && selection.id && !selectedRow &&
+      (tree.status === 'loading' || selection.id.slice(0, -1).some((_, index) => {
+        const ancestor = idKey(selection.id?.slice(0, index + 1) ?? []);
+        return !loadedDirectories.has(ancestor) && !failedDirectories.has(ancestor);
+      }));
+    if (waitingForSelection && showFiles) {
+      const heading = filesHeading.current;
+      if (heading && !delayedFilesFocus.current) {
+        delayedFilesFocus.current = true;
+        revealOwner.current = heading;
+        heading.focus({ preventScroll: true });
+      }
+      return;
+    }
     const element = target === 'files'
        ? (searchActive ? Array.from(filesRef.current?.querySelectorAll<HTMLAnchorElement>('.search-result') ?? []).find(row => row.getAttribute('href') === session.search.lastHref) : null)
          ?? (actionFocus.current ? Array.from(filesRef.current?.querySelectorAll<HTMLElement>('[data-entry-id]') ?? []).find(row => row.dataset.entryId === actionFocus.current)?.querySelector<HTMLElement>('.file-row') : null)
@@ -401,8 +471,10 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
       if (target === 'files') element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       pendingFocus.current = null;
       actionFocus.current = null;
+      delayedFilesFocus.current = false;
+      revealOwner.current = null;
     }
-  }, [entryKey, isNavigating, fileBusy, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded, editing, searchActive, session]);
+  }, [entryKey, isNavigating, fileBusy, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded, editing, searchActive, session, tree, loadedDirectories, failedDirectories, ownsFileView, key]);
 
   useLayoutEffect(() => {
     document.title = filename ? `${filename} · Recall · Memory Loop`
@@ -420,6 +492,8 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   const openFiles = () => {
     rememberReader();
     if (!searchActive) revealAncestors(selection.id);
+    revealOwner.current = null;
+    delayedFilesFocus.current = false;
     revealSelection.current = !searchActive;
     pendingFocus.current = 'files';
     if (desktop) setDesktopVisible(true); else { session.narrowClosed = false; setNarrowOpen(true); }
@@ -427,6 +501,9 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   };
 
   const closeFiles = () => {
+    revealOwner.current = null;
+    delayedFilesFocus.current = false;
+    revealSelection.current = false;
     pendingFocus.current = 'toggle';
     // Desktop keeps the live reader. Let native anchoring account for its changed
     // layout, and keep recording the resulting real scroll position. Only the
@@ -513,9 +590,9 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   };
 
   const retryAll = () => {
-    setActionTree(null);
+    resetFull();
     editor.clearConfirmed();
-    if (tree.status !== 'loading') setTreeRevision(value => value + 1);
+    if (tree.status !== 'loading') void refreshDirectoryTree().catch(() => {});
     if (selection.id && content.status !== 'loading') setNoteRevision(value => value + 1);
   };
 
@@ -533,9 +610,9 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   const refreshFiles = async () => {
     if (!ownsFileView()) return;
     session.search.invalidate();
-    const next = await readTree('tree', new AbortController().signal);
-    if (!ownsFileView()) return;
-    setActionTree(next);
+    resetFull();
+    for (const key of session.directories.listings.keys()) if (key !== '[]') session.directories.listings.delete(key);
+    await refreshDirectoryTree();
   };
 
   const reconcileFiles = async () => {
@@ -622,7 +699,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
     return true;
   };
 
-  return <FileActions tree={tree.status === 'ready' ? tree.data : null} guard={guardFileAction} onSuccess={fileActionSucceeded}
+  return <FileActions tree={tree.status === 'ready' ? tree.data : null} loadFullTree={loadFullTree} guard={guardFileAction} onSuccess={fileActionSucceeded}
     isCurrent={ownsFileView} onUpload={setUploadTrigger}
     refresh={reconcileFiles} onBusy={busy => { fileBusyRef.current = busy; setFileBusy(busy); }} fenced={fileFenced}
     setFenced={fenced => { session.fileActionFenced = fenced; session.fileActionAffectedId = fenced ? uncertainAffectedId.current : null; setFileFenced(fenced); }} unavailable={Boolean(editing.pending) || isNavigating || Boolean(uploadTrigger)}>
@@ -697,9 +774,10 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
             <SearchFiles search={session.search} selected={key} selectFile={selectNote} selectContent={selectContent} dirty={dirty} />
             {!searchActive && <FileBackground>{tree.status === 'loading' ? <p className="files-status">Loading files…</p>
               : tree.status === 'error' ? <Message heading="Couldn't load files" body="The file list couldn't be retrieved. Try again."
-                action="Retry files" onAction={() => { setActionTree(null); setTreeRevision(value => value + 1); }} />
+                action="Retry files" onAction={() => { void refreshDirectoryTree().catch(() => {}); }} />
                 : tree.status === 'ready' && <>
                   {tree.data.entries.length ? <VaultFiles entries={tree.data.entries} selected={key} expanded={expanded}
+                    loaded={loadedDirectories} failed={failedDirectories} retry={retryDirectory}
                     toggle={toggleFolder}
                     select={selectNote} /> : <p className="files-status">No files to show</p>}
                 </>}</FileBackground>}

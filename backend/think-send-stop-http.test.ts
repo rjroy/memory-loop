@@ -15,6 +15,7 @@ const base = `/api/think/conversations/${conversationId}`;
 function setup() {
   const vault: VaultReader = {
     tree: vi.fn(async () => ({ rootIdentity: 'root', entries: [] })),
+    directory: vi.fn(async () => { throw new Error('unused directory'); }),
     note: vi.fn(async () => ({ name: 'fixture.md', markdown: 'fixture', revision: 'fixture', editable: true })),
     save: vi.fn(),
     search: vi.fn(), searchContext: vi.fn(),

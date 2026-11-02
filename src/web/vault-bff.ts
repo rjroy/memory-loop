@@ -1,5 +1,5 @@
 import type { LoadedTransport } from '../../backend/transport';
-import { hardUploadMaxBytes, isUploadName, isVaultErrorCode, isVaultId, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultEntry, type VaultId, type VaultErrorCode } from '../../backend/contract';
+import { hardUploadMaxBytes, isUploadName, isVaultComponent, isVaultDirectoryId, isVaultErrorCode, isVaultId, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultEntry, type VaultDirectoryEntry, type VaultDirectoryResponse, type VaultId, type VaultErrorCode } from '../../backend/contract';
 import { allowsWebRequest } from './request-policy';
 import { handleSearchRequest } from './vault-search-bff';
 
@@ -30,6 +30,18 @@ function entry(value: unknown): VaultEntry {
   if (value.kind === 'note' || value.kind === 'file') return { kind: value.kind, name: value.name, id, identity: value.identity, version: value.version };
   if (value.kind === 'directory' && Array.isArray(value.children)) return { kind: 'directory', name: value.name, id, identity: value.identity, version: value.version, children: value.children.map(entry) };
   throw new Error('invalid');
+}
+function directoryProjection(value: unknown, id: VaultId): VaultDirectoryResponse {
+  const opaque = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 512;
+  if (!record(value) || !opaque(value.rootIdentity) || !opaque(value.directoryIdentity) || !isVaultDirectoryId(value.id) || JSON.stringify(value.id) !== JSON.stringify(id) || !Array.isArray(value.entries)) throw new Error('invalid');
+  const entries: VaultDirectoryEntry[] = value.entries.map((item: unknown) => {
+    if (!record(item) || !isVaultComponent(item.name) || !isVaultId(item.id) || JSON.stringify(item.id) !== JSON.stringify([...id, item.name]) || !opaque(item.identity) || !opaque(item.version) || !['directory', 'file', 'note'].includes(String(item.kind)) || item.kind === 'note' && !item.name.endsWith('.md')) throw new Error('invalid');
+    const metadata = { name: item.name, id: item.id, identity: item.identity, version: item.version };
+    if (item.kind === 'directory') return { kind: 'directory', ...metadata };
+    if (item.kind === 'file' || item.kind === 'note') return { kind: item.kind, ...metadata };
+    throw new Error('invalid');
+  });
+  return { rootIdentity: value.rootIdentity, directoryIdentity: value.directoryIdentity, id: value.id, entries };
 }
 
 /** Shared deadline for establishment and successive periods without upstream bytes. */
@@ -338,7 +350,7 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
   if (url.pathname === '/api/vault/attachments') return attachmentRequest(request, dependencies);
   if (url.pathname === '/api/vault/file') return fileRequest(request, dependencies, 'file');
   if (url.pathname === '/api/vault/content') return fileRequest(request, dependencies, 'content');
-  const operation = url.pathname === '/api/vault/tree' ? 'tree' : url.pathname === '/api/vault/note' ? 'note' : url.pathname === '/api/vault/actions' ? 'actions' : 'other';
+  const operation = url.pathname === '/api/vault/tree' ? 'tree' : url.pathname === '/api/vault/directory' ? 'directory' : url.pathname === '/api/vault/note' ? 'note' : url.pathname === '/api/vault/actions' ? 'actions' : 'other';
   const requestId = crypto.randomUUID();
   log('vault_bff_attempt', { requestId, operation });
   let response: Response;
@@ -365,7 +377,15 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
           if (isVaultId(parsed)) id = parsed;
         } catch { /* A malformed identifier is a client error. */ }
       }
-      if (operation === 'note' && !saving && !id) response = failure('invalid_request');
+      if (operation === 'directory') {
+        try {
+          decodeURIComponent(url.search.replace(/\+/g, ' '));
+          const values = url.searchParams.getAll('id');
+          const parsed: unknown = values.length === 1 && [...url.searchParams.keys()].every(key => key === 'id') ? JSON.parse(values[0]) : undefined;
+          if (isVaultDirectoryId(parsed)) id = parsed;
+        } catch { /* Invalid client query. */ }
+      }
+      if ((operation === 'note' && !saving || operation === 'directory') && !id) response = failure('invalid_request');
       else if (!validDaemonOrigin(transport.config.daemonOrigin) || !/^[a-f0-9]{64}$/.test(transport.serviceToken)) response = failure('service_unavailable');
       else {
         const target = new URL(`/api/vault/${operation}`, transport.config.daemonOrigin);
@@ -398,6 +418,10 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
                   return Response.json({ id: value.id, revision: value.revision }, { headers });
                 }
                 return Response.json({ id: value.id }, { headers });
+              }
+              if (operation === 'directory') {
+                if (!id) throw new Error('invalid');
+                return Response.json(directoryProjection(value, id), { headers });
               }
               return Response.json(project(value, operation === 'tree' ? 'tree' : 'note'), { headers });
             }

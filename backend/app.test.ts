@@ -10,6 +10,7 @@ const token = 'a'.repeat(64);
 function setup(vault?: VaultState) {
   const reader: VaultReader = {
     tree: vi.fn(async () => ({ rootIdentity: 'root', entries: [{ kind: 'note' as const, name: 'note.md', id: ['note.md'], identity: 'note-id', version: 'note-version' }] })),
+    directory: vi.fn(async () => { throw new Error('unused directory'); }),
     note: vi.fn(async () => ({ name: 'note.md', markdown: '# Test note\n', revision: 'fixture', editable: true })),
     save: vi.fn(),
     search: vi.fn(), searchContext: vi.fn(),
@@ -100,6 +101,7 @@ describe('vault HTTP API', () => {
   it('maps unavailable note errors without exposing internal error text', async () => {
     const reader: VaultReader = {
       tree: vi.fn(),
+      directory: vi.fn(async () => { throw new Error('unused directory'); }),
       note: vi.fn(async () => { throw Object.assign(new Error(secret), { code: 'note_unavailable' }); }),
       save: vi.fn(),
       search: vi.fn(), searchContext: vi.fn(),
@@ -114,6 +116,7 @@ describe('vault HTTP API', () => {
   it('does not disclose unexpected service errors', async () => {
     const reader: VaultReader = {
       tree: vi.fn(async () => { throw new Error(secret); }),
+      directory: vi.fn(async () => { throw new Error('unused directory'); }),
       note: vi.fn(),
       save: vi.fn(),
       search: vi.fn(), searchContext: vi.fn(),
@@ -147,7 +150,7 @@ describe('vault HTTP API', () => {
   });
 
   it('rejects a missing Host header', async () => {
-    const reader: VaultReader = { tree: vi.fn(), note: vi.fn(), file: vi.fn(), content: vi.fn(), upload: vi.fn(), save: vi.fn(), action: vi.fn(), search: vi.fn(), searchContext: vi.fn(), close: vi.fn() };
+    const reader: VaultReader = { tree: vi.fn(), directory: vi.fn(async () => { throw new Error('unused directory'); }), note: vi.fn(), file: vi.fn(), content: vi.fn(), upload: vi.fn(), save: vi.fn(), action: vi.fn(), search: vi.fn(), searchContext: vi.fn(), close: vi.fn() };
     const options = { authority, vault: { reader }, serviceToken: token };
     const app = createApp(options);
     const response = await app(new Request(`http://${authority}/api/vault/tree`, { headers: { authorization: `Bearer ${token}` } }));

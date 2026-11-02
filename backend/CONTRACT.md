@@ -8,6 +8,8 @@ On failure return `{ "error": { "code": "...", "message": "..." } }`, with no ho
 
 The nested tree includes directories, Markdown notes and other visible regular files; generic files use `kind: 'file'` with the same opaque identity and version fields as notes. It excludes dot entries, symlinks and nonregular files, and sorts deterministically. Listing does not classify file contents. Unreadable directories must surface an error rather than claim a complete tree. Paths and note content must not enter logs.
 
+`GET /api/vault/directory?id=...` lists only the requested directory, with `[]` selecting the root. It returns `{ rootIdentity, directoryIdentity, id, entries }`; directory entries have identity and version but no `children` field, so an unloaded directory is not represented as empty. The same filtering, sorting and descriptor-relative no-follow rules apply as for the tree. The two identities are scoped to the opened reader and change on daemon restart; `rootIdentity` matches the recursive tree's root identity. Reads are uncached and observe later external changes. This private daemon endpoint is not yet exposed by the browser boundary.
+
 ## File previews and original content
 
 `GET /api/vault/file` returns exactly one flat shape: `{ name, kind: 'text', text }`, `{ name, kind: 'image' | 'video', contentType }`, or `{ name, kind: 'unsupported' }`. A text preview is read-only, complete valid UTF-8 of at most 2 MiB; it is never silently truncated. Larger, invalid or binary files may be unsupported for preview, but their originals remain downloadable. Markdown reading and saving keep the existing note contract.

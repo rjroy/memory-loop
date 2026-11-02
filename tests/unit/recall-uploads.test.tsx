@@ -125,6 +125,24 @@ function confirmed(name: string, size: number) {
 }
 
 describe('Recall: attachment uploads', () => {
+  it('refreshes an already loaded attachment folder after upload', async () => {
+    attachmentNames.push('existing.txt');
+    const user = userEvent.setup();
+    mount('/recall');
+    await user.click(await screen.findByRole('button', { name: '06_Attachments' }));
+    expect(await screen.findByRole('link', { name: 'existing.txt' })).toBeInTheDocument();
+    const dialog = await openUpload(user);
+    const file = new File(['new fixture bytes'], 'new.txt');
+    await choose(user, dialog, [file]);
+    await user.click(within(dialog).getByRole('button', { name: 'Upload 1 file' }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    await act(async () => requests[0].finish(200, confirmed('new.txt', file.size)));
+    await within(dialog).findByText('Uploaded');
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(await screen.findByRole('link', { name: 'existing.txt' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'new.txt' })).toHaveAttribute('href', noteLocation(['06_Attachments', 'new.txt']));
+  });
+
   it('offers a native multi-file picker in an empty vault and removes queued files without uploading', async () => {
     empty = true;
     const user = userEvent.setup();
@@ -202,6 +220,11 @@ describe('Recall: attachment uploads', () => {
     expect(await within(dialog).findByText('Saved as photo (2).jpg')).toBeInTheDocument();
     expect(within(dialog).getByText('photo.jpg')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: '06_Attachments' })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    const attachments = screen.getByRole('button', { name: '06_Attachments' });
+    if (attachments.getAttribute('aria-expanded') === 'false') await user.click(attachments);
+    expect(await screen.findByRole('link', { name: 'photo (2).jpg' })).toHaveAttribute('href', noteLocation(['06_Attachments', 'photo (2).jpg']));
+    expect(await screen.findByRole('link', { name: 'other.txt' })).toHaveAttribute('href', noteLocation(['06_Attachments', 'other.txt']));
     expect(requests).toHaveLength(2);
   });
 

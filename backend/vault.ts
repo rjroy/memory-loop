@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { open, readdir, rename, stat, unlink, mkdir, rmdir } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
-import { isVaultComponent, isVaultId, isUploadName, parseVaultSaveRequest, parseVaultAction, vaultSaveTextLimit, type VaultEntry, type VaultId, type VaultNoteResponse, type VaultSaveResponse, type VaultTreeResponse, type VaultAction, type VaultActionResponse, type VaultErrorCode, type VaultUploadResponse } from './contract';
+import { isVaultComponent, isVaultId, isVaultDirectoryId, isUploadName, parseVaultSaveRequest, parseVaultAction, vaultSaveTextLimit, type VaultEntry, type VaultDirectoryEntry, type VaultDirectoryResponse, type VaultId, type VaultNoteResponse, type VaultSaveResponse, type VaultTreeResponse, type VaultAction, type VaultActionResponse, type VaultErrorCode, type VaultUploadResponse } from './contract';
 import { renameNoReplace as nativeRenameNoReplace } from './vault-rename';
 import { contentResponse, describeFile } from './vault-media';
 import type { VaultFileResponse } from './contract';
@@ -12,6 +12,7 @@ import { createVaultSearch, type VaultSearchHooks } from './vault-search';
 
 export interface VaultReader {
   tree(): Promise<VaultTreeResponse>;
+  directory(id: VaultId): Promise<VaultDirectoryResponse>;
   note(id: VaultId): Promise<VaultNoteResponse>;
   file(id: VaultId): Promise<VaultFileResponse>;
   content(id: VaultId, method: string, range: string | null, download: boolean, signal: AbortSignal): Promise<Response>;
@@ -65,10 +66,13 @@ function isVanishedOrLink(error: unknown): boolean {
     (error.code === 'ENOENT' || error.code === 'ENOTDIR' || error.code === 'ELOOP');
 }
 
-async function listDirectory(directory: FileHandle, parent: VaultId, identity: (stats: Stats) => string, version: (stats: Stats) => string): Promise<VaultEntry[]> {
+async function listDirectory(directory: FileHandle, parent: VaultId, identity: (stats: Stats) => string, version: (stats: Stats) => string): Promise<VaultEntry[]>;
+async function listDirectory(directory: FileHandle, parent: VaultId, identity: (stats: Stats) => string, version: (stats: Stats) => string, shallow: true, onListed?: (id: VaultId) => void): Promise<VaultDirectoryEntry[]>;
+async function listDirectory(directory: FileHandle, parent: VaultId, identity: (stats: Stats) => string, version: (stats: Stats) => string, shallow = false, onListed?: (id: VaultId) => void): Promise<VaultDirectoryEntry[]> {
   const entries = await readdir(descriptorPath(directory), { withFileTypes: true });
+  onListed?.(parent);
   entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-  const result: VaultEntry[] = [];
+  const result: (VaultEntry | VaultDirectoryEntry)[] = [];
   for (const entry of entries) {
     if (!isVaultComponent(entry.name)) continue;
     const id = [...parent, entry.name];
@@ -82,7 +86,8 @@ async function listDirectory(directory: FileHandle, parent: VaultId, identity: (
       }
       try {
         const stats = await child.stat();
-        result.push({ kind: 'directory', name: entry.name, id, identity: identity(stats), version: version(stats), children: await listDirectory(child, id, identity, version) });
+        const item = { kind: 'directory' as const, name: entry.name, id, identity: identity(stats), version: version(stats) };
+        result.push(shallow ? item : { ...item, children: await listDirectory(child, id, identity, version) });
       } finally {
         await child.close();
       }
@@ -106,6 +111,7 @@ async function listDirectory(directory: FileHandle, parent: VaultId, identity: (
 }
 
 export interface VaultOptions extends VaultSearchHooks {
+  onDirectoryListed?: (id: VaultId) => void;
   flushFile?: (file: FileHandle) => Promise<void>;
   flushDirectory?: (directory: FileHandle) => Promise<void>;
   renameNoReplace?: (sourceParentFd: number, sourceName: string, destinationParentFd: number, destinationName: string) => Promise<void>;
@@ -409,6 +415,25 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
         return { rootIdentity: identity(await pinnedRoot.stat()), entries: await listDirectory(pinnedRoot, [], identity, version) };
       } catch {
         throw new VaultError('vault_unavailable', 'Vault directory is unavailable');
+      }
+    },
+    async directory(id) {
+      if (!isVaultDirectoryId(id)) throw invalidId();
+      const opened: FileHandle[] = [];
+      try {
+        let directory = pinnedRoot;
+        for (const component of id) {
+          directory = await open(descriptorPath(directory, component), directoryFlags);
+          opened.push(directory);
+        }
+        const rootIdentity = identity(await pinnedRoot.stat());
+        const directoryIdentity = directory === pinnedRoot ? rootIdentity : identity(await directory.stat());
+        const entries = await listDirectory(directory, id, identity, version, true, options.onDirectoryListed);
+        return { rootIdentity, directoryIdentity, id, entries };
+      } catch {
+        throw new VaultError('entry_unavailable', 'Directory is unavailable');
+      } finally {
+        for (const handle of opened.reverse()) await handle.close();
       }
     },
     async note(rawId) {

@@ -484,11 +484,18 @@ async function run(root: string, mode: Mode): Promise<Report> {
         const command = { clientCommandId: id(7, 7), viewToken: token };
         deletion.requested = await request(`${path}/delete`, command);
         if (deletion.requested.status === 202) {
+          let settled = false;
           for (let attempt = 0; attempt < 200; attempt++) {
             deletion.receipt = await request(`${path}/commands/${command.clientCommandId}`);
-            if (record(deletion.receipt.body) && deletion.receipt.body.state === 'pending') break;
+            const body = deletion.receipt.body;
+            if (deletion.receipt.status === 200 && record(body) && body.state === 'pending' &&
+                (mode === 'delete-transcript-conflict' ? body.reason === 'conflict' : body.reason === 'io_unavailable' || body.reason === 'status_unknown')) {
+              settled = true;
+              break;
+            }
             await new Promise<void>(resolve => setTimeout(resolve, 10));
           }
+          if (!settled) throw new Error(`deletion did not reach the expected pending outcome for ${mode}: ${JSON.stringify(deletion.receipt)}`);
           const afterReceipt = removals.length;
           deletion.retry = await request(`${path}/delete`, command);
           const afterRetry = removals.length;

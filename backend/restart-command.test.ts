@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -111,6 +111,25 @@ it('stops both managed webs before building and restarts the same managed settin
     expect(next.pid).not.toBe(old.pid);
     expect(next.startTime).toBe(await birth(next.pid));
   }
+});
+
+it('starts recorded services after their processes have exited, as after a reboot', async () => {
+  const f = await fixture();
+  for (const child of children) child.kill('SIGTERM');
+  await waitForFile(f.events, value => (value.match(/^stop /gm) ?? []).length === 4);
+  const result = f.invoke();
+  expect(result.status, result.stderr).toBe(0);
+  const text = await waitForFile(f.events, value => (value.match(/^start /gm) ?? []).length === 8);
+  expect(text).toMatch(/^build$/m);
+});
+
+it('accepts the recorded service executable when restart uses a different Bun binary', async () => {
+  const f = await fixture();
+  const bin = join(f.root, 'bin');
+  await mkdir(bin);
+  await copyFile(bun, join(bin, 'bun'));
+  const result = f.invoke({ PATH: `${bin}:${fixturePath}` });
+  expect(result.status, result.stderr).toBe(0);
 });
 
 it('refuses an unrelated PID before stopping any managed service or building', async () => {

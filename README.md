@@ -390,8 +390,10 @@ For an already managed deployment, `bun run restart` stops its recorded web
 processes, builds once, then restarts its recorded daemons and webs. Recorded working
 directories, executables, arguments, transport selectors and process identities are
 kept in the ignored `.memory-loop/restart.json`. Other environment variables come
-from the shell running the command; they are not restored from a snapshot. The command
-refuses stale or unrelated PIDs rather than stopping a process by port. It does not
+from the shell running the command; they are not restored from a snapshot. Missing
+recorded processes, such as after a reboot, are started again; an occupied port or
+a live PID that does not match the recorded identity is refused rather than stopped.
+The restart command may run under a different Bun executable from the recorded services. It does not
 change generation settings or restart the native service. If a stop, build or
 startup fails, it exits with an error; inspect the managed services and metadata
 before attempting recovery. Use this command only when interruption is acceptable.

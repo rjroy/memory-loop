@@ -37,13 +37,20 @@ async function proc(pid: number) {
     selector: environ.split('\0').find(item => item.startsWith('MEMORY_LOOP_TRANSPORT_FILE='))?.slice('MEMORY_LOOP_TRANSPORT_FILE='.length) };
 }
 
-async function verify(service: Service): Promise<void> {
+async function verify(service: Service): Promise<boolean> {
+  try {
+    const stat = await readFile(`/proc/${service.pid}/stat`, 'utf8');
+    if (stat.slice(stat.lastIndexOf(') ') + 2).startsWith('Z ')) return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
   try {
     const actual = await proc(service.pid);
     const executable = await realpath(service.executable);
-    const bun = await realpath(process.execPath);
-    if (executable !== bun || actual.executable !== bun || actual.state === 'Z' || actual.startTime !== service.startTime || actual.cwd !== service.cwd ||
+    if (actual.executable !== executable || actual.state === 'Z' || actual.startTime !== service.startTime || actual.cwd !== service.cwd ||
         actual.selector !== service.transportFile || JSON.stringify(actual.args.slice(1)) !== JSON.stringify(service.args)) throw new Error('mismatch');
+    return true;
   } catch { throw new Error(`Managed PID ownership check failed: ${service.name}`); }
 }
 
@@ -72,7 +79,7 @@ async function stopped(service: Service): Promise<boolean> {
   catch { return true; }
 }
 async function stop(service: Service) {
-  await verify(service);
+  if (!await verify(service)) return;
   console.info(`Stopping ${service.name}`);
   process.kill(service.pid, 'SIGTERM');
   const deadline = Date.now() + 10_000;

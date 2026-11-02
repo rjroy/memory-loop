@@ -1,0 +1,10 @@
+import { captureRoute } from '../../../web/capture-route';
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const GET = captureRoute;
+export const POST = captureRoute;
+export const HEAD = captureRoute;
+export const OPTIONS = captureRoute;
+export const PUT = captureRoute;
+export const PATCH = captureRoute;
+export const DELETE = captureRoute;

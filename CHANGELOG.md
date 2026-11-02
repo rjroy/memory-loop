@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-11-02
+
+Memory Loop starts over with a complete rewrite. This is a new foundation, not a
+feature-for-feature replacement for 2.x. The release focuses on a personal,
+mobile-friendly workspace for capturing thoughts, working with vault files, and
+discussing ideas with AI. Some previous features have deliberately not been
+carried forward; their omission is not a commitment to restore them later.
+
+### Added
+
+**OpenCode Integration**
+- Think connects to an existing local OpenCode service, sharing its configuration rather than maintaining a separate Claude-specific agent setup.
+- Daemon-owned chat operations continue through browser disconnects, with reconnect support for monitoring progress.
+- Markdown conversations, tool activity, Send/Stop controls, and an available composer while responses are processing.
+- Readable conversation transcripts saved in the vault, with conversation resume and deletion from Ground.
+- Full-permission mode and no application-imposed turn limit.
+- Minimum-version compatibility checks accept newer OpenCode releases without an exact-version lock.
+
+**Independent Ground Cards**
+- Quick Actions loaded from vault Markdown prepare a fresh chat without sending before the user can add context.
+- Separate cards for inspiration, suggested questions, recent captures, recent conversations, and current goals.
+- Recency-weighted selection from stored quotes and questions, with quote attribution.
+- Optional AI generation of daily questions and weekly quotes, triggered when their cards are read and tracked with persistent generation state.
+- Dashboard resource files live under `03_Resources/Memory-Loop/`.
+
+**Recall File Access**
+- Markdown reading and straightforward text editing with unsaved-change protection.
+- Creation of blank Markdown notes and folders, moves without overwriting existing destinations, and deletion of files or empty folders.
+- Image and video viewing, raw UTF-8 text viewing, Markdown and Obsidian media embeds, and original-file downloads for unsupported content.
+- Uploads to `06_Attachments/`, preserving both files when names collide.
+- Filename/path and line-local fuzzy content search, highlighted results, and version-checked source excerpts.
+- Lazy directory loading and a vault-scoped session cache, with background revalidation and refresh after file operations.
+
+### Changed
+
+- Rebuilt the four-tab interface around Ground, Capture, Think, and Recall, with dark, personal-brand styling and responsive navigation.
+- Separated business logic into a Bun/Hono daemon. Next.js serves the React interface and proxies browser API requests to the daemon over authenticated loopback transport.
+- Simplified Capture to timestamped Markdown entries: `- [HH:MM] <text>` in `00_Inbox/YYYY-MM-DD.md`. Enter captures on desktop; Shift+Enter inserts a newline. Mobile Enter inserts a newline.
+- Replaced legacy vault discovery and environment-based setup with one configured vault in `.memory-loop/config.json`.
+- Kept deployment separate from application behavior: listener ports and external HTTPS routing are deployment decisions, not browser configuration.
+- Added a rebuilding restart command for checkout testing and a production user-service setup guide. Production lifecycle belongs to user services, not the testing restart script.
+
+### Fixed
+
+- Transcript health no longer reports newly eligible assistant content as synchronized before it has been written and confirmed.
+- Graceful shutdown drains already-observed queued transcript work before closing its data sources, preserving the durable recovery boundary.
+
+### Removed
+
+The following legacy features are not included in the rewritten application:
+
+- Pair Writing, AI revision actions, and Vim editing mode.
+- Spaced-repetition flashcards and automatic card discovery.
+- Automatic memory extraction and its settings interface.
+- Meeting-specific capture, the task-list interface, and archive workflows.
+- The multi-vault picker, vault creation interface, and in-app configuration editor.
+- Dedicated file/folder rename actions and seasonal theming.
+
+### Upgrade Notes
+
+- This is a breaking replacement for the previous application. Review configuration, startup commands, and service units before deployment; do not assume legacy application state or settings are compatible.
+- Vault content remains ordinary Markdown and attachments. Preserve existing notes and private application data when deploying the rewrite.
+- Production requires the daemon and web server, private transport setup, and an existing OpenCode service for Think. See [production user-service setup](docs/production-user-services.md).
+
 ## [2.0.1] - 2026-02-06
 
 ### Fixed

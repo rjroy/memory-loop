@@ -1,0 +1,184 @@
+---
+title: Hono daemon and native Next web boundary
+date: 2026-10-29
+status: draft
+tags: [architecture, nextjs, hono, bun, security, tailscale, migration]
+modules: [backend, app-router, recall, transport]
+related: [.lore/work/intents/project-restart.md, .lore/work/intents/recall.md, .lore/work/design/recall-read-only.md, .lore/work/design/character-integration.md]
+---
+
+# Hono daemon and native Next web boundary
+
+**2026-11-01 deployment clarification:** The earlier web-mode, configured-origin,
+proxy identity and fixed-listener requirements below are historical and are
+superseded by the [restart intent](../intents/project-restart.md#deployment-clarification--2026-11-01).
+Current browser access is deployment-neutral; request-local authority checks do
+not authenticate users. The private daemon origin, bearer and browser-header
+guards remain. See the [operator guide](../../../README.md#browser-and-private-deployment-boundary)
+for the current boundary.
+
+## Scope and authority
+
+The user selected **native Next App Router → Bun/Hono daemon → vault**, including private Tailscale phone access. This design supplies implementation contracts for `memory-loop-1l0`; durable sequencing/status remains in Beads: **1l0.1 Hono → 1l0.2 Next → 1l0.3 private cutover**. Parent and fresh design review accepted the architecture and HN-001 amendment at the design level; runtime evidence remains separate.
+
+Baseline inspected: branch `feat/hono-next-migration`, `e7d2a68`; only the mixed `.beads/interactions.jsonl` audit was dirty on entry. No source, dependencies or service configuration were changed; personal configuration and notes were not read. Earlier Vite/no-Hono and unapproved-activation statements describe their historical slices; current authorization supersedes them. Do not rewrite root architecture history as planning work.
+
+Preserve the accepted compact top identity/navigation and four moods, existing artwork/font URLs and provenance, read-only Markdown behavior, and all UI-001/002/003, MS4-R1/R2/R3/V1 and 44W-T1 protections. No redesign, chat, Capture implementation, search, media, jobs, persistence layer, or new external service. The daemon remains the future business/operation owner; Next is presentation plus a narrow BFF, not a second business service.
+
+## Runtime and ownership decisions
+
+```text
+phone/desktop → private HTTPS :9443 (Tailscale Serve)
+              → Next, 127.0.0.1:3000 (Node production server)
+              → GET-only authenticated HTTP, 127.0.0.1:3001 (Bun/Hono)
+              → existing JSON-selected vault, existing safe reader
+```
+
+Ports are proposed defaults, not permission to evict listeners: recheck before every startup; fixtures allocate their own ports. Only Next is exposed by the app's Serve mapping. Never bind either tier to LAN/all interfaces, expose the daemon, create a Funnel, or alter unrelated mappings/services.
+
+Use Bun for pinned dependency installation, scripts and the daemon. `bun run server` performs transport-only preflight and runs **Node's standard `next start --hostname 127.0.0.1 --port 3000`**; `bun run dev` uses standard Node `next dev`, also loopback-only. A small preflight/launcher may manage configuration/signals but must not implement an HTTP server. Next build also runs under Node. No custom Next server, Bun adapter, static export, Hono inside Next, or `@hono/vercel` is needed.
+
+Registry rechecked during planning: Next **16.4.3**, Node engine **>=20.9.0**, React/React DOM peers allowing the installed **19.3.1**; Hono **4.13.14**. Local commands returned Bun **1.4.3**, Node **26.13.0**. These are evidence, not installed migration dependencies: recheck exact published packages, peers, compiler compatibility and supported APIs before pinning; retain exact versions and `bun.lock`. Node satisfies the engine range; actual build/start/tests must prove compatibility. Bun's Next guide is an option, not a reason to assume its production adapter works here.
+
+Keep `backend/config.ts`, `backend/vault.ts` and the domain contract authoritative. Hono replaces `backend/app.ts`'s manual route dispatch and HTTP middleware; `backend/server.ts` prepares/owns the reader, and `backend/runtime.ts` alone owns `Bun.serve`, loopback binding and signals. HTTP handler creation remains listener-free and accepts injected services for tests. Runtime-neutral transport parsing can be shared with Node; Next must never import daemon startup or vault/config-reading modules.
+
+## Configuration and credential lifecycle
+
+Keep ignored `.memory-loop/config.json` and its `{ "vaultDirectory": "..." }` schema/location/restart semantics unchanged. Transport is separate metadata, never an environment-variable replacement for vault configuration.
+
+Add ignored `.memory-loop/transport.json` and sibling `.memory-loop/service.token`. The token is 32 cryptographically random bytes encoded as 64 hex characters. Transport holds no token value; its minimal shape is:
+
+```json
+{
+  "daemonOrigin": "http://127.0.0.1:3001",
+  "web": { "mode": "loopback", "origin": "http://127.0.0.1:3000" }
+}
+```
+
+The `web` discriminated alternative is `{ "mode": "tailscale", "origin": "https://<self-DNS>:9443", "allowedLogin": "<exact personal login>" }`. No wildcard origins/users or simultaneous unauthenticated local bypass in tailscale mode. Validate complete canonical origins, schemes and ports; daemon origin must be numeric `127.0.0.1`, HTTP, and contain no credentials/path/query/fragment. `--port` must agree with transport rather than silently splitting tiers. A server-only `MEMORY_LOOP_TRANSPORT_FILE` absolute path selects fixture/operator transport; default is the project metadata file. Resolve its credential sibling explicitly, not relative to the shell's working directory.
+
+Introduce `bun --no-env-file run setup:transport --project-root <absolute-app-root>` in 1l0.1: create missing transport/token safely with restrictive permissions, refuse replacement of existing credentials/configuration, and never open or rewrite vault config. Directory mode is 0700; transport/token files are regular, non-symlink, current-user-owned and 0600. Validate existing permissions and fail clearly rather than printing secrets or silently rotating them. Phase-three mode changes back up and atomically update transport only. Restart both tiers after credential/config changes; no rotation UI or secret distribution service. A small `check:daemon` CLI reads credentials internally and reports authenticated API status, so the operator need not expand tokens into curl/process arguments.
+
+Daemon validates transport/token **before opening any vault**; missing/invalid service credentials are fatal startup errors. Missing/invalid vault config retains its existing distinct API 503 state. Web preflight validates transport/token only; request-time server-only initialization revalidates and fails closed. Builds and page rendering never read transport credentials or the vault; transport is loaded at runtime, not embedded by `next.config` or imported as JSON. Use a `server-only` web wrapper and type-only domain imports across client boundaries.
+
+Keep secrets out of CLI arguments, URLs, browser headers, `NEXT_PUBLIC_*`, Next `env` mappings, logs, HTML/RSC and browser bundles. The documented outer Bun `--no-env-file` stops **Bun**, not Next's own dotenv loading: explicitly pin bind/port in CLI arguments, do not reuse legacy env values as transport/vault configuration, and never promote them to client config. A non-secret transport-file selector is the only new runtime environment input.
+
+## Request authentication and proxy contract
+
+**Browser → Next:** apply the same pure request policy to both explicit vault Route Handlers, before any daemon request. Compare the actual HTTP `Host` against the configured web authority, not a URL reconstructed from forwarded headers. If `Origin` exists it must equal the configured web origin; reject `null`. Accept Fetch Metadata only when absent, `same-origin`, or `none`; reject `same-site`/`cross-site` and unknown values. No CORS grants. Do not infer trust from browser-provided `X-Forwarded-*` or Tailscale headers outside the selected mode.
+
+In **loopback mode**, accept only the exact configured numeric-loopback authority/origin, for local development and isolated fixtures. This mode trusts local OS processes; it is never exposed through Serve with real notes. In **tailscale mode**, require exact `Tailscale-User-Login === allowedLogin` in addition to the public Host/origin policy; missing, duplicate/ambiguous, unknown or tagged-device identity is denied. Reject `Tailscale-Funnel-Request`. Ignore display-name/profile headers for authorization.
+
+Serve removes incoming identity values and supplies the peer's identity. Its documented localhost trust boundary excludes remote bypass, **not hostile local processes**, which can forge headers; the local OS/account remains trusted. The token also cannot protect against theft by that same account. Do not claim local-process isolation or that tailnet membership alone authorizes notes. No ACL rewrite is needed because app authorization restricts the principal even under a default allow-all ACL.
+
+In 1l0.3 inspect filtered `tailscale status --json`, installed version and Serve status to derive the current human self login and DNS name, without copying unrelated identities/configuration into evidence. Store that exact personal principal in ignored transport. A fixture-only request through actual Serve must establish Host preservation, HTTPS/origin behavior and identity replacement before any real notes. Current upstream TCP reverse-proxy source preserves incoming Host and overwrites forwarded Host; verify the installed path rather than trusting upstream main. Log only match/presence/rejection booleans, never raw headers. Missing human identity or incompatible actual proxy semantics is a real blocker, not permission to widen access.
+
+**Next → daemon:** expose only `GET /api/vault/tree` and `GET /api/vault/note` as native Node Route Handlers. Construct the upstream URL from configured loopback origin plus a fixed route, never a browser-supplied target/path. Preserve the JSON-component ID contract and reject malformed encoding/duplicate `id` before normal query encoding once. Use fresh literal headers (`Accept`, service `Authorization`); HTTP Host comes from the fixed daemon URL. Do not forward browser Authorization, cookies, Origin, Fetch Metadata, identity headers, forwarding headers, or protocol metadata.
+
+Use `cache: 'no-store'`, redirect rejection and a bounded timeout; an abandoned short read may abort, but add no job semantics or retries that resurrect stale UI. Project validated success JSON and known canonical domain errors; never pass arbitrary upstream bodies, exception text, cookies, `Location`, authentication challenges or headers through. Unknown failures, timeouts, invalid JSON and upstream credential rejection become sanitized service-unavailable responses; request-policy denial is 403. The existing client treats unknown boundary errors as transport failure, not empty vault. Both success/error API responses use `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`; web responses use no-referrer policy.
+
+**Daemon:** use Hono routes and middleware, including maintained bearer-auth support with constant-time token verification and canonical JSON auth failures. Missing/invalid credentials reject before any reader call (401; malformed auth is normalized rather than disclosing parser details). Require the exact daemon Host and reject browser Origin/Fetch Metadata entirely; the trusted BFF sends none. GET only: 405 for other methods, 404 for unknown paths, no CORS or generic file/proxy endpoint. Explicit Next HEAD/OPTIONS rejection prevents framework auto-GET/OPTIONS behavior from becoming another read path. Public domain statuses/error codes and no-follow/procfs containment stay unchanged.
+
+Record attempts/outcomes at bootstrap, startup/shutdown, web policy/BFF and daemon service boundaries using generated request IDs, operation, status and safe reason codes. Never log URLs/query IDs, names/paths, login values, tokens, note bodies or raw exceptions. Do not enable access logs that capture note query strings. Readiness uses actual API statuses; it must not mistake a served shell for an authenticated working vault connection.
+
+## Native routing, SSR and presentation parity
+
+Use `src/app/layout.tsx`, four real `src/app/{ground,capture,think,recall}/page.tsx`, root `page.tsx` redirecting with replacement semantics, and `not-found.tsx`. Shared client shell/session providers live beneath the persistent root layout, not a remounting template. Views remain independently replaceable. No Vite SPA under a Next catch-all, React Router, parallel routing system, or custom router/history interception.
+
+Use public `next/link`, `useRouter`, `usePathname` and `useSearchParams`. Keep native anchor destinations/modified clicks; file selection and primary-link activation add presentation intent only on ordinary activation. Bare Recall's primary href stays `/recall`; already-current ordinary activation preserves its query. Explicit app-tab return can restore the in-memory last note with **replace**, while direct entry and POP to bare Recall remain unselected. Root entry must not add a history hop; Back can leave the app.
+
+Replace React Router `location.key`/navigation type with a small **presentation-only** provider using the public Navigation API's `navigation.currentEntry.key` as stable session entry identity and an in-memory snapshot map. Observe `currententrychange` for native creation and traversal; save the actual outgoing entry snapshot immediately before selection mutates pane, focus or scroll state. Never inspect Next-private keys, patch global history methods, infer entry identity from URL alone, or own history traversal. Next remains the sole route/history owner. Current, updated browsers with the Navigation API are the supported floor; verify the actual phone browser before private cutover rather than silently falling back to URL identity.
+
+**HN-001 — native hash reconciliation (Navigation API amendment; runtime verification remains a 1l0.2 gate).** Native Skip/hash navigation can create `history.state === null`. [Next 16.4.3's popstate handler](https://github.com/vercel/next.js/blob/v16.4.3/packages/next/src/client/components/app-router.tsx) ignores null state but reloads for unrecognized non-null state. Keep native anchors/behavior; use this bounded public-API lifecycle for entries known to this session, including a later POP to an unprepared one. Unknown and modified native navigations retain their browser behavior:
+
+1. Record outgoing snapshots under their actual Navigation API entry keys before app selection changes presentation. A newly created native fragment entry inherits its originating snapshot under its own distinct key; capture Skip focus only after the browser's native focus movement. On traversal, retain the outgoing snapshot and target the incoming key; never record still-rendered B's DOM/scroll as incoming A merely because the browser URL changed.
+2. For the current unprepared visit only, capture the exact URL, entry key and generation, then call **`router.replace(capturedURL, { scroll: false })`** to prepare the existing entry. Use React's public [`useTransition`](https://react.dev/reference/react/useTransition) with a request marker, not an awaited `replace` result. Never push, reload, synthesize Next state, or prepare an entry that is no longer current.
+3. Apply the original visit's presentation intent only after that request has actually settled and the generation, `navigation.currentEntry.key`, exact browser URL including hash, and committed `usePathname`/`useSearchParams` agree. Hook equality before replacement or an arbitrary frame is not completion evidence. No private Next state is read or written.
+4. Browser traversal is never blocked. A newer intent or traversal invalidates the abandoned repair but retains that entry's snapshot for a later visit. Stale completions cannot change snapshots, focus or scroll, or reissue obsolete URLs. If an ordinary app intent genuinely must wait for preparation, retain only the latest deferred intent; no queue is required when stable identity removes that need. Verify both superseded issued repairs and Back-before-commit followed by Forward with real browser navigation. If the public lifecycle cannot provide these guarantees, stop and amend the design rather than use a private-key fallback.
+
+Disable Next's automatic top scrolling on app-controlled transitions (`scroll: false`/Link equivalent), leaving this provider as the explicit presentation coordinator. Preserve hard-load no-autofocus, route-entry H1 focus/title, sensible POP origin/fallback focus, and saved window positions without unconditional POP top resets; leave unknown browser entries alone. Recall owns note title/identity focus and actual reader/tree positions, not shell query-change refocusing. HN-001 reconciliation must not undo native Skip focus, close Files, reset panes, or replace a POP's saved restoration intent with ordinary-replace behavior; unchanged hash-only note selection must not refetch/reset the note. Preserve sticky-header row clearance, breakpoint focus transfer, natural reading anchors after sidebar changes, delayed-data restoration and stale-response protection. Store presentation only in memory, never note bodies or secrets in History/storage.
+
+Client Components are still server-rendered: move `window`/DOM/matchMedia construction behind effects or guarded subscriptions, and give `useSyncExternalStore` a stable server snapshot matching initial hydration. Wrap query-hook consumers in a deliberate Suspense boundary with a stable shell fallback; use the documented page `searchParams` alternative where simpler. No speculative experimental APIs or broad SSR disabling. Tree/note fetches remain client-initiated after hydration through the BFF, never build-time or Server Component vault reads. Preserve the honest loading/error/empty states and renderer safety.
+
+Keep `public/` art/fonts/licenses unchanged and at their current URLs; no network font loader or image optimizer rewrite. Port CSS/imports without changing the accepted top-nav geometry, four surfaces, safe areas or the 56rem Files behavior. Open matched screenshots and exercise keyboard/pointer behavior; build success alone does not establish parity.
+
+## Bead write contracts and acceptance evidence
+
+These are scope/evidence contracts, not a second task tracker. Freeze writers before independent testing/review; package/lock/config files have one owner at a time. Technical implementation belongs to the bounded fixer; designer reviews visual parity only. Test author writes tests separately; independent tester runs read-only; fresh Oracle `bun-typescript-reviewer` follows each accepted checkpoint.
+
+| Bead | Exclusive implementation scope | Required usable result and checkpoint evidence |
+| --- | --- | --- |
+| **memory-loop-1l0.1** | Hono/API preparation/runtime, runtime-neutral transport/bootstrap, backend tests/contract docs, Hono dependency/lock and daemon instructions. Existing reader/config behavior stays intact. | Real Bun listener → authenticated fixture reads, denied unauthenticated reads, config states, occupied-port safety and graceful cleanup. No frontend credential workaround. Existing static preview stays available; this bead's user-testable interface is the authenticated daemon HTTP API, not a falsely connected old UI. |
+| **memory-loop-1l0.2** | Native Next pages/layout/client adapters, two BFF handlers/server-only policy, SSR repairs, package/TS/Next/Vitest/Playwright integration and runbook. | Standard production Node Next + Bun/Hono on independent fixture config, complete browser flow, routing parity, secret isolation and visual acceptance. Remove Vite/React Router/bootstrap, obsolete static daemon serving/flags and their tests **when their replacement passes**, before this checkpoint; no permanent dual path. |
+| **memory-loop-1l0.3** | Ignored transport provisioning, principal/header probes, only app Serve mapping, authorized real-config activation, operator docs/evidence and final integration repairs. | Fixture security tests/review before real notes, private HTTPS end-to-end, unchanged unrelated services, rollback and truthful device-verification limits. Preserve the user's existing JSON vault selection. |
+
+Static daemon fallback may remain unchanged during 1l0.1 only, clearly transitional; remove its dist dependency and `--dist`/`--dev-origin` interfaces in 1l0.2. Do not replace them with a temporary credential-injecting Vite proxy. Vitest may retain its transitive Vite engine; that is not retention of a Vite application. Port harnesses before removing obsolete serving tests: preserve their escape/no-generic-filesystem and unauthorized-no-upstream-read protections at the new boundaries.
+
+For every bead: independent verification + fresh technical review must accept the frozen change before closing it and making its authorized local checkpoint commit, with bead ID and only relevant files/Beads updates. Then, and only then, claim the dependent child. Leave unrelated mixed audit edits unstaged; never sweep them into a commit or rewrite them. Stop on blocked validation/commit. No implementation or commits are authorized by this planning invocation; no push/remote sync is authorized.
+
+## Verification contract
+
+Inspect/reuse existing coverage before authoring replacements. Baseline evidence in README/character integration is historical, not a fresh run: 25 frontend units, 87 prior backend tests, 26 Recall browser and 20 shell/browser checks. Record actual new outcomes without preserving counts as requirements. Unit inputs/configuration are test-owned and injected; actual filesystem/process/network checks are isolated integration tests, not mutable-user-data unit tests. Do not mock Next module imports to claim router integration: test pure policy/presentation logic and router-neutral UI with controlled inputs, and prove real routing in production Playwright.
+
+| Boundary | Minimum meaningful evidence before acceptance |
+| --- | --- |
+| **1l0.1 new security** | Independent behavior-specific RED for missing/wrong/malformed token, bad Host/browser headers, invalid/unsafe transport and permissions, and no reader call on denial; compile/missing-import failures are not RED. GREEN with Hono listener, canonical errors, query/path traps, unchanged config/reader fixtures, nonregular/symlink/outside sentinels, startup failure cleanup, SIGINT/SIGTERM, released port/descriptors and no secret logs. |
+| **1l0.2 BFF** | RED then GREEN for exact Host/Origin/Fetch Metadata, both mode policies, missing/wrong/ambiguous principal, Funnel marker, rejected method/unknown path, no upstream call on denial, header injection/SSRF/redirect rejection, timeout/bad JSON/error sanitization/no-store. Test raw Host using `node:http` so the test does not silently normalize the attack. Test own credentials absent from browser requests/responses and sanitized failures. |
+| **Router/SSR port** | Run existing characterization before replacing its harness, then port meaningful assertions unchanged; no manufactured RED is required for behavior already present. Expand gaps: duplicate same-URL entries, replace vs push, POP/hash/query and browser leave. **HN-001 production acceptance:** select A → native Skip creates A# → select B → Back: browser URL, actual Next query-hook selection and rendered article must all resolve to A# / A; Forward restores B. Assert native Skip focus/Files/pane intent and each public Navigation API entry's POP restoration survive without cross-entry overwrite, full-document reload or extra history hop. Cover preparation while hooks already match, immediate Back before repair and later Forward, superseded repairs, rapid Back/Forward and newly created identical-URL entries; observe real public hooks through test-owned instrumentation, not a mocked router/private state. New reconciliation helpers get focused RED/GREEN. Production build with absent vault/transport and no daemon must succeed; hard GET/direct refresh/hydration must produce no browser-API, Suspense or console failures. |
+| **Browser experience** | Port `tests/e2e/{shell,accessibility,recall}.spec.ts` and fixture ownership to production Next + Bun, not dev/Vite or mocked-only BFF. Preserve JSON IDs, hostile Markdown/no media fetch, delayed A/B races, honest failure/empty states, selection/re-entry/reader/tree/window scroll, focus, modified clicks and all named regressions. Open four-route before/after captures at 1440×900 and 390×844 plus 320×568 and 844×390/200% text; test initial raw-pointer targets, keyboard, axe, reflow and no storage writes. |
+| **Secrets/lifecycle** | Start the actual package scripts from unrelated cwd with fixture paths, verify Node runs Next and Bun runs daemon, correct loopback listeners and strict-port failure, signal/process-group cleanup and restart. Fixture-token sentinel absent from `.next/static`, HTML/RSC, browser network/storage and captured logs; build must not need credentials. Fixture roots/processes are owned and cleaned even on failure; existing 4173/4317 services are not test fixtures. |
+| **1l0.3 real proxy** | Actual Serve HTTPS → production Next → authenticated Hono → controlled fixture note, 200/403/error statuses and no content/header leakage; prove spoofed identity is stripped and unauthorized principal policy denies. Recheck all unrelated mappings and private-only exposure. Only after security review switch the daemon to the existing approved vault config and verify actual tree/note API status/shape without printing names or text. |
+
+Target operator/check commands (introduced by the relevant bead, not available yet):
+
+```sh
+bun --no-env-file install --frozen-lockfile
+bun --no-env-file run setup:transport --project-root <absolute-app-root>
+bun --no-env-file run typecheck
+bun --no-env-file run test
+bun --no-env-file run test:backend
+bun --no-env-file run build
+# Separate terminals; defaults use existing project metadata, tests select scratch transport/config.
+bun --no-env-file run daemon
+bun --no-env-file run server
+# In 1l0.1, use the same scratch app root as its already-running fixture daemon:
+bun --no-env-file run check:daemon --project-root <absolute-fixture-app-root>
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun --no-env-file run test:e2e
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun --no-env-file x playwright test --config playwright.recall.config.ts
+```
+
+The daemon requires no frontend build after static serving is removed. Document fixture-safe examples using an explicit scratch `--project-root` and `MEMORY_LOOP_TRANSPORT_FILE`; bare daemon startup reads the real selected vault and is not a testing command. Keep package script names stable; port the two Playwright configs and backend config to the new production boundary, separate frontend Vitest from removed Vite app config, and document actual lint/typecheck/build coverage. Use an existing compatible browser, no unapproved downloads. Record concise command results and opened evidence with the bead.
+
+## Private cutover and rollback
+
+**Current deployment:** fixture and proxy-header security review accepted; the
+approved real vault is active through private `https://gsai.raptor-piranha.ts.net:9443/`
+→ loopback Next 3000 → authenticated loopback Hono 3001. Initial HTTPS tree and
+selected-note status/schema checks passed without logging content. Independent
+real-deployment verification passed and final review accepted it without findings.
+A separate unauthorized tailnet principal and a physical phone remain untested.
+
+From the project root, build with `bun --no-env-file run build` when needed;
+start `bun --no-env-file run daemon` and `bun --no-env-file run server` in
+separate terminals. Ctrl-C stops each; rerun both commands to restart. There is no
+OS autostart. Transport and the sibling credential use ignored owner-only project
+metadata; the daemon alone reads the existing ignored vault selection. A current
+browser with the Navigation API is required. Keep the static 4173 preview for
+rollback, using `tailscale serve --bg --https=9443 http://127.0.0.1:4173` to
+change only the app mapping if needed.
+
+Before dependency removal, preserve the served static artifact and verify the existing owned 4173 preview remains runnable; Next builds into `.next`, not that `dist`. Keep its process/artifact and current **9443 → 4173** path working until cutover. Do not stop an unidentified process. Snapshot/filter current Serve configuration immediately before mutation; compare immediately after. The board **9444 → 48763**, unrelated **443**, unrelated Funnel **10000**, other Memory Loop service, and fixture **4317** are out of scope. Never run `tailscale serve reset` or restore a whole stale config over unrelated changes.
+
+In 1l0.3 start the production pair with fixture vault, transport in tailscale mode and the exact derived principal. Repoint **only 9443** to Next using the installed CLI's reviewed per-port operation (target form: `tailscale serve --bg --https=9443 http://127.0.0.1:3000`); verify its semantics/version first. Exercise header replacement, HTTPS and full fixture Recall through that same mapping. On any failure restore only **9443 → 4173**, verify it and unrelated mappings, and stop only newly owned processes. Do not expose an unreviewed fallback daemon or relax authentication to make the probe pass.
+
+After fixture/security acceptance, the user's existing authorization already permits starting the daemon against the unchanged JSON-selected real vault and wiring the phone endpoint; do not invent a second approval gate. Stop the owned fixture daemon, restart with the approved config, verify selected requests without content logs, and deliver the private URL plus `bun run server`/`bun run daemon`, shutdown and restart instructions. Vault contents and config must not be copied, modified or committed. If real activation fails, restore the static mapping and report the safe error; do not roll back to an unauthenticated real-vault service.
+
+Automated mobile viewports plus a real Tailnet request establish the wired deployment, **not physical-phone, screen-reader or physical safe-area verification**. State those limits and invite the user to try the working phone URL; do not invent a phone pass. Existing `memory-loop-0x2` tracks separate AT/device coverage and `memory-loop-j21` future media/link decisions; neither expands this migration. Bead closure records actual evidence/limitations. Keep a verified static rollback path until the parent releases it; retained rollback artifacts/processes are not a permanent source architecture.
+
+## Sources and remaining gates
+
+Inspected local sources: `AGENTS.md`, README/PRODUCT, restart/Recall intents, accepted character/Recall designs, prior local Recall plan, `backend/{app,server,runtime,config,vault,contract}.ts`, their tests, `src/{App,shell,recall,views/RecallView}`, and both browser harnesses. `.lore/reference/` and `.lore/learned/` are absent; relevant work/local history exists and was read. No `.lore/lore-agents.md` registry was found in the supplied recon; use the explicitly assigned bounded roles. The prep-plan/verification-planning loaders were denied; the installed Lore frontmatter schema was read directly. No separate local plan is needed, so no local-storage helper was run.
+
+Official sources rechecked: [Next deployment](https://nextjs.org/docs/app/getting-started/deploying), [routing/history](https://nextjs.org/docs/app/getting-started/linking-and-navigating), [useRouter](https://nextjs.org/docs/app/api-reference/functions/use-router), [query hooks/SSR](https://nextjs.org/docs/app/api-reference/functions/use-search-params), [Route Handlers](https://nextjs.org/docs/app/api-reference/file-conventions/route), [Bun Next guide](https://bun.sh/guides/ecosystem/nextjs), [Hono/Bun](https://hono.dev/docs/getting-started/bun), [Hono auth](https://hono.dev/docs/middleware/builtin/bearer-auth), [Serve identity/trust](https://tailscale.com/kb/1312/serve), [Serve CLI](https://tailscale.com/kb/1242/tailscale-serve), [ACL policy](https://tailscale.com/kb/1337/acl-syntax), [upstream Serve header implementation](https://github.com/tailscale/tailscale/blob/main/ipn/ipnlocal/serve.go), and published [Next](https://registry.npmjs.org/next/latest)/[Hono](https://registry.npmjs.org/hono/latest) metadata. Upstream main and registry snapshots do not prove installed runtime behavior.
+
+No new product decision is needed now. Design review accepted the architecture and HN-001 amendment. Fixture verification and fresh security review accepted the private boundary; real-vault deployment is active, independently verified, and accepted in final review. Report exact failures if blocked; do not use sudo or edit `~/Applications/`.

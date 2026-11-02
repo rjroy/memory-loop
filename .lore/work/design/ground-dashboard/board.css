@@ -1,0 +1,105 @@
+@font-face{font-family:'IM Fell English SC';src:url('../../../../public/fonts/im-fell-english-sc/IMFellEnglishSC-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Libre Baskerville';src:url('../../../../public/fonts/libre-baskerville/LibreBaskerville-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Source Sans 3';src:url('../../../../public/fonts/source-sans-3/SourceSans3-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Source Sans 3';src:url('../../../../public/fonts/source-sans-3/SourceSans3-SemiBold.ttf') format('truetype');font-weight:600;font-style:normal;font-display:swap}
+:root{--night:#031315;--parchment:#fef6e1;--lantern:#efb83f;--horizon:#5e8bd6;--muted:#d5d3c5;--rule:color-mix(in srgb,var(--parchment) 27%,var(--night));--focus:var(--horizon);color:var(--parchment);background:var(--night);font-family:'Source Sans 3',system-ui,sans-serif;font-synthesis:none;color-scheme:dark;scrollbar-color:var(--muted) var(--night)}
+*{box-sizing:border-box}
+body{margin:0;font-size:1rem;line-height:1.5}
+img{display:block;max-width:100%;height:auto}
+button,select,input{font:inherit}
+button,a,select{touch-action:manipulation}
+button{cursor:pointer}
+button[aria-disabled=true]{cursor:default}
+a{color:inherit;text-decoration-thickness:1px;text-underline-offset:.2em}
+button{color:inherit}
+::selection{background:var(--lantern);color:var(--night)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.review-notice{padding:.75rem clamp(20px,4.4vw,64px);border-bottom:1px solid var(--rule);font-size:.875rem;color:var(--muted)}
+.review-notice p{margin:0}
+.review-options{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .875rem;margin:.25rem 0}
+.review-options a,.review-options select,.text-option{min-height:44px;display:inline-flex;align-items:center}
+.review-options select{max-width:100%;background:var(--night);color:var(--parchment);border:1px solid var(--muted);border-radius:4px;padding:.375rem .5rem}
+.text-option{gap:.5rem}
+#review-feedback{min-height:1.5em}
+.skip-link{position:absolute;top:-8rem;left:1rem;z-index:5;min-height:44px;padding:.5rem 1rem;background:var(--lantern);color:var(--night)}
+.skip-link:focus{top:1rem}
+.app-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 24px;padding:max(12px,env(safe-area-inset-top,0px)) clamp(20px,4.4vw,64px) 12px;border-bottom:1px solid var(--rule)}
+.brand-identity{display:flex;min-width:0;align-items:center;gap:12px}
+.brand-identity img{width:40px;height:40px;flex-shrink:0}
+.brand-identity span{min-width:0;font:400 1.75rem/1.1 'IM Fell English SC',Georgia,serif;letter-spacing:-.02em}
+.primary-navigation{display:flex;flex-wrap:wrap;gap:4px 8px}
+.navigation-link{position:relative;display:flex;align-items:center;justify-content:center;min-height:44px;padding:8px 10px;border-radius:4px;text-decoration:none;overflow-wrap:anywhere}
+.navigation-link[aria-current=page]{font-weight:600}
+.navigation-link[aria-current=page]::before{position:absolute;inset:auto 10px 4px;height:2px;background:var(--horizon);content:''}
+.navigation-link:focus-visible{outline-offset:-6px}
+.navigation-link:hover{text-decoration:underline}
+.workspace{padding:1.5rem max(20px,env(safe-area-inset-right,0px)) 3rem max(20px,env(safe-area-inset-left,0px));padding-inline:max(clamp(20px,4.4vw,64px),env(safe-area-inset-left,0px)) max(clamp(20px,4.4vw,64px),env(safe-area-inset-right,0px));overflow-wrap:anywhere}
+.workspace:focus-visible{outline-offset:-10px}
+.ground{max-width:76rem;margin:0 auto;container:ground / inline-size}
+.ground-arrival{display:grid;grid-template-columns:minmax(0,1fr) min(26%,192px);align-items:center;gap:1.5rem;margin-bottom:1.75rem}
+.brand-invitation{margin:0;color:var(--lantern);font:400 clamp(2rem,3.9vw,3.5rem)/1.05 'IM Fell English SC',Georgia,serif;letter-spacing:-.025em;text-wrap:balance}
+.ground-art{width:100%;aspect-ratio:1;object-fit:contain}
+.ground-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:1.75rem 1.5rem;align-items:start}
+.card{min-width:0;border-top:1px solid var(--rule);padding-top:1rem}
+h2{margin:0 0 1rem;font-size:1.125rem;font-weight:600;line-height:1.4;text-wrap:balance}
+.card-body>p{margin:0 0 .75rem}
+.quick-actions{grid-column:1/-1;container:actions / inline-size}
+.action-strip{display:flex;flex-wrap:wrap;gap:.75rem}
+.skill-action{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-height:44px;max-width:100%;padding:.625rem 1rem;border:1px solid var(--muted);border-radius:4px;text-align:left;background:transparent;font-weight:600;overflow-wrap:anywhere}
+.skill-ref{font-size:.875rem;line-height:1.5;font-weight:400;color:var(--muted)}
+.skill-action:hover{background:var(--parchment);color:var(--night)}
+.skill-action:hover .skill-ref{color:var(--night)}
+.inspiration{background:var(--parchment);color:var(--night);padding:1.25rem;border:0;--focus:var(--night);color-scheme:light}
+.quotation{margin:0}
+blockquote{margin:0;font:400 1.25rem/1.6 'Libre Baskerville',Georgia,serif}
+blockquote p{margin:0}
+.quotation figcaption{margin-top:1rem}
+.quote-source{display:block;font-size:.875rem;line-height:1.5;margin-top:.25rem;color:#344548}
+.question-action{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;min-height:44px;width:100%;padding:0 .25rem .5rem 0;border:0;text-align:left;background:transparent;font-size:1.375rem;line-height:1.35;overflow-wrap:anywhere}
+.question-action svg{flex-shrink:0;margin-top:.3rem}
+.question-action:hover span{text-decoration:underline;text-underline-offset:.2em}
+.markdown-document h3{font:400 1.375rem/1.4 'Libre Baskerville',Georgia,serif;margin:0 0 .75rem}
+.markdown-document ul{margin:0;padding-left:1.25rem}
+.markdown-document li+li{margin-top:.625rem}
+.capture-list,.conversation-list{list-style:none;padding:0;margin:0}
+.capture-list li+li,.conversation-list li+li{border-top:1px solid var(--rule)}
+.capture-link{display:block;min-height:44px;padding:1rem 0;text-decoration:none}
+.capture-list li:first-child .capture-link{padding-top:0}
+.capture-excerpt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;font-size:1rem;line-height:1.5}
+.capture-link:hover .capture-excerpt{text-decoration:underline;text-underline-offset:.2em}
+.capture-time,.capture-path{display:block;font-size:.875rem;line-height:1.5;color:var(--muted)}
+.capture-time{margin-top:.375rem}
+.conversations{container:chats / inline-size}
+.conversation-row{display:grid;grid-template-columns:minmax(0,1fr);gap:.5rem 1rem;align-items:center;padding:.875rem 0}
+.conversation-row:first-child{padding-top:0}
+.conversation-title{font-weight:600;margin:0;line-height:1.4}
+.conversation-time,.protection{display:block;color:var(--muted);font-size:.875rem;line-height:1.5}
+.row-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .75rem}
+.resume-link,.delete-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:.5rem .625rem;border-radius:4px}
+.resume-link{font-weight:600}
+.delete-button{background:transparent;border:0;text-decoration:underline;text-underline-offset:.2em}
+.delete-button:hover:not([aria-disabled=true]),.quiet-button:hover{background:var(--parchment);color:var(--night)}
+.delete-button[aria-disabled=true]{text-decoration:none;color:var(--muted)}
+.protection{margin-top:.125rem}
+.quiet-button{background:transparent;border:1px solid currentColor;border-radius:4px;min-height:44px;min-width:44px;padding:.5rem .875rem;font-weight:600;max-width:100%;overflow-wrap:anywhere}
+.local-state p{margin:0 0 .75rem}
+.resource-path{display:block;color:inherit;font-size:.875rem;margin-bottom:.75rem;overflow-wrap:anywhere}
+.inspiration .quiet-button:hover{background:var(--night);color:var(--parchment)}
+.refresh-warning{margin:.75rem 0 0;font-size:.875rem}
+.handoff-confirmation{margin-top:1rem;border-top:1px solid var(--rule);padding-top:1rem}
+.handoff-confirmation p{margin:0 0 .75rem}
+.confirmation-actions,.dialog-actions{display:flex;flex-wrap:wrap;gap:.75rem}
+dialog{max-width:min(32rem,calc(100% - 40px));max-height:calc(100dvh - 40px);overflow:auto;overflow-wrap:anywhere;padding:min(1.5rem,24px);border:1px solid var(--night);border-radius:6px;background:var(--parchment);color:var(--night);--focus:var(--night);color-scheme:light}
+dialog::backdrop{background:rgb(3 19 21 / 75%)}
+dialog h2{font-size:1.375rem}
+dialog p{margin:0 0 1.5rem}
+dialog .quiet-button{padding-inline:min(.875rem,14px)}
+dialog .quiet-button:hover{background:var(--night);color:var(--parchment)}
+@container ground (min-width:44rem){.ground-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.goals{grid-column:1/-1}}
+@container ground (min-width:66rem){.ground-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.goals{grid-column:auto}.conversations{grid-column:span 2}}
+@container actions (max-width:26rem){.skill-action{width:100%}}
+@container chats (min-width:27rem){.conversation-row{grid-template-columns:minmax(0,1fr) auto}}
+@container ground (max-width:14rem){.ground-arrival{grid-template-columns:minmax(0,1fr);gap:.75rem}.ground-art{width:26%;justify-self:end}}
+@media(max-width:35rem){.workspace{padding-top:1.25rem}.ground-arrival{gap:1rem}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}

@@ -6,31 +6,65 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: test
     runs-on: ubuntu-latest
+    # Root in this disposable glibc container lets the existing tests use their
+    # hard-coded /usr/bin/bun without modifying the hosted runner.
+    container: ubuntu:24.04
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+      TMPDIR: /tmp/opencode/ci-tmp
     steps:
+      - name: Install container prerequisites
+        run: |
+          mkdir -p "$TMPDIR"
+          apt-get update
+          apt-get install -y ca-certificates curl git libatomic1 unzip
+
       - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26.13.0'
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.4"
+          bun-version: '1.4.3'
 
-      - run: bun install
+      - name: Make Bun available to isolated test processes
+        run: |
+          install -m 755 "$(command -v bun)" /usr/bin/bun
+          /usr/bin/bun --version
 
-      - run: bun run typecheck
+      - name: Install locked dependencies
+        run: bun --no-env-file install --frozen-lockfile
 
-      - run: bun run lint
+      - name: Typecheck application and tests
+        run: bun --no-env-file run typecheck
 
-      - name: Run tests with coverage
-        run: bun run test:coverage
+      - name: Frontend tests
+        run: bun --no-env-file run test
 
-      - run: bun run build
+      - name: Backend and transport tests
+        run: bun --no-env-file run test:backend
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: rjroy/memory-loop
-          files: ./nextjs/coverage/lcov.info
-          fail_ci_if_error: true
+      - name: Production build
+        run: bun --no-env-file run build
+
+      - name: Install Playwright Chromium
+        run: bun --no-env-file x playwright install --with-deps chromium
+
+      - name: Browser tests with owned fixture
+        env:
+          MEMORY_LOOP_E2E_PROJECT_ROOT: ${{ github.workspace }}
+        run: bun --no-env-file run test:e2e

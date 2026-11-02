@@ -1,0 +1,10 @@
+import { groundRoute } from '../../../../web/ground-route';
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const GET = groundRoute;
+export const HEAD = groundRoute;
+export const OPTIONS = groundRoute;
+export const POST = groundRoute;
+export const PUT = groundRoute;
+export const PATCH = groundRoute;
+export const DELETE = groundRoute;

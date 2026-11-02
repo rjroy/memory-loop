@@ -1,0 +1,194 @@
+.think-view.think-view--conversation {
+  position: relative;
+  --surface: var(--surface-think);
+  --think-user: var(--surface-think-user);
+  display: grid;
+  grid-template-rows: minmax(8rem, 1fr) auto;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+/* Only the real conversation opts into viewport layout. The unavailable
+   default Think entry and the other three modes retain their existing layout. */
+.app-shell:has(.think-view--conversation) {
+  height: 100svh;
+  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.workspace:has(.think-view--conversation) { display: flex; min-height: 0; padding: 0; container: think-workspace / size; }
+.think-view--conversation :is(button, textarea, input, select) { font: inherit; }
+.think-view--conversation :is(button, summary), .think-new-chat { cursor: pointer; }
+.think-view--conversation button:disabled, .think-new-chat:disabled { cursor: not-allowed; }
+.think-view--conversation :is(p, ol, ul) { margin-top: 0; }
+
+.think-conversation {
+  /* Keep absolutely positioned accessible labels inside this scroll owner;
+     their static positions must not extend the document below the workspace. */
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  padding: 24px 32px 16px;
+  overflow: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--horizon) var(--surface);
+  scrollbar-width: thin;
+}
+.think-conversation:focus-visible { outline-offset: -4px; }
+.think-conversation-measure, .think-compose-measure { width: 100%; max-width: 52rem; margin-inline: auto; }
+.think-conversation-measure { font-size: 1.0625rem; line-height: 1.65; }
+.think-message { min-width: 0; max-width: 68ch; margin-bottom: 24px; overflow-wrap: anywhere; }
+.think-message--user { margin-left: auto; padding: 14px 18px; background: var(--think-user); border-radius: 6px; }
+.think-message--assistant { padding-inline: 4px; }
+.think-role { margin: 0 0 .375rem; color: var(--text-strong); font-size: .875rem; line-height: 1.5; font-weight: 600; }
+.think-part + .think-part { margin-top: 1em; }
+.think-part-status, .think-field-description, .think-option-description { color: var(--muted); font-size: .875rem; line-height: 1.5; }
+.think-part-status { margin: .5rem 0; }
+.think-part-status p { margin: 0; }
+.think-stream-mark { display: inline-block; width: .375rem; height: .8em; margin-left: .125rem; background: var(--horizon); }
+.think-message .markdown-document p { margin-bottom: 1em; }
+.think-message .markdown-document > :last-child { margin-bottom: 0; }
+.think-message .markdown-document .markdown-h1 { font-size: 1.5rem; }
+.think-message .markdown-document .markdown-h2 { font-size: 1.25rem; }
+.think-message .markdown-document :is(.markdown-h3, h5, h6) { font-size: 1.125rem; }
+.think-message .markdown-document pre { background: var(--night); }
+.think-message .markdown-document input[type='checkbox'] { accent-color: var(--horizon); }
+.think-message .markdown-table-scroll { width: 100%; }
+.think-message .markdown-table-scroll table { width: 100%; border-collapse: collapse; text-align: left; }
+.think-message .markdown-table-scroll :is(th, td) { min-width: 8rem; padding: .5rem .75rem; border-bottom: 1px solid var(--rule); }
+
+.think-activity { margin-top: .75rem; font-size: .875rem; line-height: 1.5; }
+.think-activity summary { position: relative; width: fit-content; min-height: 44px; padding-block: .625rem; color: var(--muted); }
+.think-activity ol { max-width: 30rem; padding: .25rem 1rem .25rem 1.25rem; list-style: none; }
+.think-activity li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .25rem 1rem; padding-block: .375rem; }
+.think-duration { color: var(--muted); font-variant-numeric: tabular-nums; }
+.think-background { margin-bottom: 24px; }
+.think-empty-invitation { display: flex; flex-wrap: wrap; align-items: center; gap: 3rem; margin: 3rem 0; }
+.think-empty-invitation h2 { flex: 0 1 auto; min-width: 0; max-width: min(13ch, 100%); overflow-wrap: anywhere; font: 400 3.375rem/1.05 'IM Fell English SC', Georgia, serif; letter-spacing: -.025em; }
+.think-empty-invitation img { width: 64px; height: 64px; flex: none; }
+
+.think-compose-area { position: relative; min-width: 0; padding: 8px 32px max(16px, env(safe-area-inset-bottom, 0px)); background: var(--surface); }
+.think-compose-measure { position: relative; }
+.think-compose-row { display: flex; align-items: flex-end; gap: .5rem; }
+.think-compose-row textarea {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 2.875rem;
+  min-height: 2.875rem;
+  max-height: min(12rem, 30dvh);
+  padding: .625rem .75rem;
+  resize: none;
+  overflow-y: auto;
+  border: 1px solid var(--control-boundary);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--surface-frame);
+  caret-color: var(--text-strong);
+  line-height: 1.5;
+  scrollbar-color: var(--horizon) var(--night);
+  scrollbar-width: thin;
+}
+.think-compose-row textarea::placeholder { color: var(--muted); opacity: 1; }
+.think-compose-row textarea:placeholder-shown, .think-compose-row textarea::placeholder { white-space: nowrap; text-overflow: ellipsis; }
+.think-action-column { display: flex; flex: none; flex-direction: column; gap: .375rem; }
+.think-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-width: 44px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: .5rem .75rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font: 600 1rem/1.5 'Source Sans 3', system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+.think-view--conversation .think-button { font-weight: 600; line-height: 1.5; }
+.think-primary { width: 5rem; color: var(--night); background: var(--horizon); border-color: var(--horizon); }
+.think-primary:focus-visible { outline-color: var(--parchment); }
+.think-primary:hover:enabled { background: var(--horizon-bright); border-color: var(--horizon-bright); }
+.think-primary:disabled { color: var(--muted); background: transparent; border-color: var(--rule); }
+.think-secondary { color: var(--ink); background: transparent; border-color: var(--control-boundary); }
+.think-secondary:hover:enabled { color: var(--text-strong); background: var(--surface-raised); }
+.think-button:active:enabled { color: var(--text-strong); background: var(--surface-selected); }
+.think-primary:active:enabled { color: var(--night); background: var(--horizon); }
+/* Float above the entire composer (including notices), never in its layout or
+   the scrolling transcript. Appearing must not resize either reading/writing area. */
+.think-latest { position: absolute; z-index: 1; inset-inline-end: 0; bottom: calc(100% + 1rem); width: 5rem; padding-inline: .25rem; color: var(--ink); background: var(--surface-frame); border-color: var(--control-boundary); font-size: .875rem; font-weight: 400; }
+.think-view--conversation .think-latest { font-size: .875rem; font-weight: 400; }
+.think-text-button { padding-inline: .25rem; color: var(--link); background: transparent; text-decoration: underline; text-underline-offset: .2em; }
+.think-latest:hover, .think-text-button:hover { text-decoration: underline; text-decoration-thickness: 2px; }
+.think-exception, .think-draft-confirm { margin: 0 0 .5rem; color: var(--muted); font-size: .875rem; line-height: 1.5; }
+.think-exception:empty { margin: 0; }
+.think-exception > p, .think-draft-confirm > p { margin: 0; }
+.think-inline-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem .75rem; }
+.think-draft-confirm .think-inline-actions { margin-top: .375rem; }
+.think-skip-message { z-index: 4; }
+
+.think-question { max-width: 68ch; margin-bottom: 24px; padding-inline: 4px; }
+.think-question h2 { margin-bottom: .75rem; font-weight: 600; }
+.think-question-fields, .think-question-group { min-width: 0; padding: 0; margin: 0; border: 0; }
+.think-question-group { margin-bottom: 1rem; }
+.think-field { display: flex; flex-direction: column; gap: .375rem; margin-bottom: 1rem; font-size: 1rem; }
+.think-question :is(input:not([type='radio'], [type='checkbox']), textarea, select) {
+  width: 100%; min-width: 0; max-width: 100%; min-height: 44px; padding: .5rem .75rem;
+  color: var(--ink); background: var(--surface-frame); border: 1px solid var(--control-boundary); border-radius: 4px;
+  caret-color: var(--text-strong);
+}
+.think-question textarea { resize: vertical; }
+.think-question .think-field-description { margin: 0; }
+.think-choice { display: flex; align-items: center; gap: .75rem; min-height: 44px; padding-block: .375rem; font-size: 1rem; }
+.think-choice input { flex: none; width: 20px; height: 20px; accent-color: var(--horizon); }
+.think-option-description { display: block; }
+
+/* Placement is activated by shell integration later, using this one element. */
+.app-header:has(.think-new-chat) { position: relative; container: think-banner / inline-size; }
+.app-header:has(.think-new-chat) .brand-identity { order: 1; }
+.app-header:has(.think-new-chat) .primary-navigation { order: 3; }
+.think-new-chat { order: 2; flex: none; color: var(--ink); background: var(--surface-think); border-color: var(--control-boundary); }
+.think-new-chat svg { display: none; flex: none; }
+.think-new-chat:hover:enabled { color: var(--text-strong); background: var(--surface-raised); }
+@container think-banner (min-width: 76em) {
+  .think-new-chat { position: absolute; z-index: 2; top: calc(100% + 16px); left: 32px; }
+}
+@container think-banner (max-width: 21em) {
+  .think-new-chat-label { display: none; }
+  .think-new-chat svg { display: block; }
+}
+@container think-workspace (height < 20rem) {
+  .think-view.think-view--conversation { display: block; align-self: flex-start; }
+  .think-conversation { overflow: visible; }
+}
+@media (width < 56rem) {
+  .app-header:has(.think-new-chat) { gap: 8px 12px; }
+  .app-header:has(.think-new-chat) .primary-navigation { flex-basis: 100%; }
+  .think-conversation { padding: 16px max(20px, env(safe-area-inset-right, 0px)) 12px max(20px, env(safe-area-inset-left, 0px)); }
+  .think-compose-area { padding: 8px max(20px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px)); }
+  .think-message--user { padding: 12px 16px; }
+  .think-message--assistant, .think-question { padding-inline: 0; }
+  .think-empty-invitation { gap: 1rem; margin-block: 2rem; }
+  .think-empty-invitation h2 { font-size: 2.625rem; }
+  .think-empty-invitation img { width: 56px; height: 56px; }
+}
+@media (height < 32rem) {
+  .app-shell:has(.think-view--conversation) { height: auto; grid-template-rows: auto 1fr; }
+  .workspace:has(.think-view--conversation) { container-type: normal; }
+  .think-view.think-view--conversation { display: block; }
+  .think-conversation { overflow: visible; }
+  .think-compose-row textarea { max-height: 12rem; }
+  .think-empty-invitation { margin-block: 1rem; }
+}
+@media (forced-colors: active) {
+  .think-button, .think-message--user { border: 1px solid CanvasText; }
+  .think-stream-mark { background: Highlight; }
+}

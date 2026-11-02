@@ -1,0 +1,209 @@
+import type { LoadedTransport } from '../../backend/transport';
+import { allowsWebRequest } from './request-policy';
+import { projectConversation } from './think-projection';
+import { parseContentRequest } from '../../backend/think/content-transfer';
+import { thinkErrors } from '../../backend/think/contract';
+import { classifyThinkJsonRoute } from './think-json-route';
+import { projectView, validConversationId, validViewToken } from './ground-conversations-projection';
+
+type Method = 'GET' | 'POST';
+export interface ThinkBffDependencies {
+  transport: LoadedTransport;
+  fetch: (target: URL, options: { method: Method; token: string; body?: Uint8Array; signal: AbortSignal; viewToken?: string }) => Promise<Response>;
+  log: (event: string, details: Record<string, unknown>) => void;
+}
+
+const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const base = '/api/think/conversations';
+const decisionId = '[A-Za-z0-9_-]{1,128}';
+const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
+const errors = {
+  ...thinkErrors,
+  forbidden: { status: 403, message: 'Request is not permitted' },
+  method_not_allowed: { status: 405, message: 'Method is not allowed' },
+  service_unavailable: { status: 503, message: 'Think service unavailable' },
+} as const;
+function failure(code: keyof typeof errors): Response {
+  const { status, message } = errors[code];
+  return Response.json({ error: { code, message } }, { status, headers });
+}
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+async function boundedBytes(body: ReadableStream<Uint8Array>, limit: number): Promise<Uint8Array> {
+  const reader = body.getReader();
+  let bytes = new Uint8Array(Math.min(4096, limit));
+  let size = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => { void reader.cancel().catch(() => {}); reject(new Error('body timeout')); }, 5000); });
+  try {
+    const read = async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const next = size + value.length;
+        if (next > limit) { void reader.cancel().catch(() => {}); throw new Error('body too large'); }
+        if (next > bytes.length) {
+          const expanded = new Uint8Array(Math.min(limit, Math.max(next, bytes.length * 2)));
+          expanded.set(bytes); bytes = expanded;
+        }
+        bytes.set(value, size); size = next;
+      }
+      return bytes.slice(0, size);
+    };
+    return await Promise.race([read(), timeout]);
+  } finally { if (timer) clearTimeout(timer); reader.releaseLock(); }
+}
+async function bodyBytes(request: Request, limit = 6 * 1024 * 1024 + 4096): Promise<Uint8Array> {
+  if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers.get('content-type') ?? '') || !request.body) throw new Error('invalid body');
+  return boundedBytes(request.body, limit);
+}
+
+function project(value: unknown, method: Method, path: string, query: URLSearchParams): object {
+  const segments = path.slice(base.length).split('/').filter(Boolean);
+  if (method === 'GET' && segments[1] === 'content') {
+    const input = parseContentRequest(segments[0], segments[2], query);
+    if (!input || !record(value) || value.conversationId !== input.conversationId || value.contentId !== input.contentId || value.generation !== input.generation || value.through !== input.through || value.offset !== input.offset ||
+        typeof value.epoch !== 'string' || !new RegExp(`^${uuid}$`).test(value.epoch) || typeof value.transfer !== 'string' || !new RegExp(`^${uuid}$`).test(value.transfer) ||
+        (input.transfer !== undefined && value.transfer !== input.transfer) || typeof value.bytes !== 'string' || value.bytes.length > 87384 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.bytes)) throw new Error('invalid content chunk');
+    const bytes = Buffer.from(value.bytes, 'base64');
+    if (bytes.toString('base64') !== value.bytes || bytes.length > 65536 || value.nextOffset !== input.offset + bytes.length || input.offset + bytes.length > input.through || (input.offset < input.through && bytes.length === 0)) throw new Error('invalid content bounds');
+    return { conversationId: input.conversationId, epoch: value.epoch, contentId: input.contentId, generation: input.generation, through: input.through, offset: input.offset, bytes: value.bytes, nextOffset: value.nextOffset, transfer: value.transfer };
+  }
+  if (segments[1] === 'decisions' && method === 'GET') {
+    const decision = (input: unknown): Record<string, unknown> => {
+      if (!record(input) || input.conversationId !== segments[0] || typeof input.decisionId !== 'string' ||
+          !new RegExp(`^${decisionId}$`).test(input.decisionId) || (segments[2] && input.decisionId !== segments[2]) ||
+          input.kind !== 'form' || typeof input.title !== 'string' || !Array.isArray(input.fields)) throw new Error('invalid decision');
+      const fields = input.fields.map(field => {
+        if (!record(field) || typeof field.key !== 'string' || typeof field.type !== 'string' || !['string', 'number', 'integer', 'boolean', 'multiselect'].includes(field.type)) throw new Error('invalid field');
+        const keys = ['key', 'type', 'title', 'description', 'required', 'hidden', 'minimum', 'maximum', 'default', 'format', 'minLength', 'maxLength', 'pattern', 'placeholder', 'custom', 'minItems', 'maxItems'];
+        const result = Object.fromEntries(Object.entries(field).filter(([key, value]) => keys.includes(key) && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || Array.isArray(value) && value.every(item => typeof item === 'string'))));
+        if (Array.isArray(field.options)) result.options = field.options.map(option => {
+          if (!record(option) || typeof option.value !== 'string' || typeof option.label !== 'string') throw new Error('invalid option');
+          return { value: option.value, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) };
+        });
+        if (Array.isArray(field.when)) result.when = field.when.map(rule => {
+          if (!record(rule) || typeof rule.key !== 'string' || !['eq', 'neq'].includes(String(rule.op)) || !['string', 'number', 'boolean'].includes(typeof rule.value)) throw new Error('invalid condition');
+          return { key: rule.key, op: rule.op, value: rule.value };
+        });
+        return result;
+      });
+      return { conversationId: input.conversationId, decisionId: input.decisionId, kind: 'form', title: input.title, fields };
+    };
+    if (!segments[2]) {
+      if (!record(value) || !Array.isArray(value.decisions)) throw new Error('invalid decisions');
+      return { decisions: value.decisions.map(decision) };
+    }
+    return decision(value);
+  }
+  if (!record(value) || typeof value.conversationId !== 'string' || !new RegExp(`^${uuid}$`).test(value.conversationId) ||
+      typeof value.epoch !== 'string' || !new RegExp(`^${uuid}$`).test(value.epoch)) throw new Error('invalid response');
+  if (segments.length && value.conversationId !== segments[0]) throw new Error('conversation mismatch');
+  if (method === 'GET' && typeof value.revision === 'number' && Number.isSafeInteger(value.revision) && value.revision >= 0 &&
+      typeof value.creation === 'string' && ['registered', 'ready', 'upstream-unconfirmed', 'rejected'].includes(value.creation)) {
+    return projectConversation(value, String(value.conversationId), Array.isArray(value.entries));
+  }
+  if (value.kind === 'delete') {
+    if (typeof value.clientCommandId !== 'string' || !validConversationId(value.clientCommandId) ||
+        !(method === 'POST' && segments[1] === 'delete' || method === 'GET' && segments[1] === 'commands' && value.clientCommandId === segments[2]) ||
+        !['accepted', 'pending', 'completed'].includes(String(value.state)) ||
+        value.reason !== undefined && value.reason !== 'io_unavailable' && value.reason !== 'conflict' && value.reason !== 'status_unknown') throw new Error('invalid delete receipt');
+    return { kind: 'delete', conversationId: value.conversationId, clientCommandId: value.clientCommandId, epoch: value.epoch, state: value.state,
+      ...(value.reason === undefined ? {} : { reason: value.reason }) };
+  }
+  if (typeof value.clientCommandId !== 'string' || !new RegExp(`^${uuid}$`).test(value.clientCommandId) ||
+      !['create', 'send', 'stop', 'form-reply', 'resume'].includes(String(value.kind)) || typeof value.state !== 'string') throw new Error('invalid receipt');
+  if ((segments[1] === 'commands' && value.clientCommandId !== segments[2]) ||
+      (method === 'POST' && value.kind !== (segments.length === 0 ? 'create' : segments[1] === 'messages' ? 'send' : segments[1] === 'decisions' ? 'form-reply' : segments[1] === 'resume' ? 'resume' : 'stop')) ||
+      (segments[1] === 'decisions' && value.decisionId !== segments[2]) ||
+      (segments[1] === 'runs' && value.runId !== segments[2])) throw new Error('receipt mismatch');
+  const validStates = value.kind === 'create' || value.kind === 'resume' ? ['registered', 'ready', 'upstream-unconfirmed', 'rejected'] : value.kind === 'send'
+    ? ['registered', 'admitted', 'upstream-unconfirmed', 'monitor-unavailable', 'cancelled-before-delivery', 'completed', 'failed', 'interrupted', 'rejected']
+    : value.kind === 'form-reply' ? ['registered', 'replied', 'upstream-unconfirmed', 'stale', 'rejected'] : ['registered', 'requested', 'upstream-unconfirmed', 'cancelled-before-delivery'];
+  if (!validStates.includes(value.state)) throw new Error('invalid receipt state');
+  if ((value.kind === 'send' || value.kind === 'stop') && (typeof value.runId !== 'string' || !new RegExp(`^${uuid}$`).test(value.runId))) throw new Error('invalid run');
+  if (value.kind === 'form-reply' && (typeof value.decisionId !== 'string' || !new RegExp(`^${decisionId}$`).test(value.decisionId))) throw new Error('invalid decision');
+  const failureCodes = value.kind === 'create' ? ['upstream_rejected', 'ownership_mismatch', 'configuration_invalid', 'service_unavailable']
+    : value.kind === 'resume' ? ['ownership_mismatch', 'service_unavailable'] : ['execution_failed', 'resource_failure'];
+  let failureValue: { code: string } | undefined;
+  if (value.failure !== undefined) {
+    if (!record(value.failure) || typeof value.failure.code !== 'string' || !failureCodes.includes(value.failure.code)) throw new Error('invalid failure');
+    failureValue = { code: value.failure.code };
+  }
+  if (value.kind === 'resume' && (value.state === 'rejected') !== (failureValue !== undefined)) throw new Error('invalid resume failure');
+  return { kind: value.kind, conversationId: value.conversationId, clientCommandId: value.clientCommandId, epoch: value.epoch, state: value.state,
+    ...(value.kind === 'send' || value.kind === 'stop' ? { runId: value.runId } : {}), ...(value.kind === 'form-reply' ? { decisionId: value.decisionId } : {}), ...(failureValue ? { failure: failureValue } : {}) };
+}
+
+function validNewCommand(bytes: Uint8Array, operation: 'views' | 'selection' | 'resume' | 'delete'): boolean {
+  if (bytes.length > 4096) return false;
+  let value: unknown;
+  try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { return false; }
+  if (!record(value)) return false;
+  if (operation === 'views') return Object.keys(value).length === 0;
+  if (operation === 'resume') return Object.keys(value).length === 1 && validConversationId(value.clientCommandId);
+  if (operation === 'delete') return Object.keys(value).length === 2 && validConversationId(value.clientCommandId) && validViewToken(value.viewToken);
+  return Object.keys(value).length === 3 && validViewToken(value.viewToken) && typeof value.expectedRevision === 'number' &&
+    Number.isSafeInteger(value.expectedRevision) && value.expectedRevision >= 0 && (value.conversationId === null || validConversationId(value.conversationId));
+}
+
+export async function handleThinkRequest(request: Request, dependencies: ThinkBffDependencies): Promise<Response> {
+  const requestId = crypto.randomUUID();
+  dependencies.log('think_bff_attempt', { requestId });
+  let response: Response;
+  try {
+    const url = new URL(request.url);
+    const route = classifyThinkJsonRoute(url, request.method);
+    const content = request.method === 'GET' && route?.operation === 'content';
+    if (!allowsWebRequest(request)) response = failure('forbidden');
+    else if (!route) response = failure('not_found');
+    else if (request.method !== route.method) response = failure('method_not_allowed');
+    else if (route.operation === 'selection' && request.method === 'GET' && !validViewToken(request.headers.get('x-memory-loop-view'))) response = failure('lease_unavailable');
+    else {
+      let body: Uint8Array | undefined;
+      try { if (route.method === 'POST') body = await bodyBytes(request, route.operation === 'views' || route.operation === 'selection' || route.operation === 'resume' || route.operation === 'delete' ? 4096 : undefined); }
+      catch { response = failure('invalid_request'); dependencies.log('think_bff_outcome', { requestId, status: response.status }); return response; }
+      if (body && (route.operation === 'views' || route.operation === 'selection' || route.operation === 'resume' || route.operation === 'delete') && !validNewCommand(body, route.operation)) {
+        response = failure('invalid_request'); dependencies.log('think_bff_outcome', { requestId, status: response.status }); return response;
+      }
+      const origin = new URL(dependencies.transport.config.daemonOrigin);
+      if (origin.origin !== dependencies.transport.config.daemonOrigin || origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || origin.username || origin.password || !/^[a-f0-9]{64}$/.test(dependencies.transport.serviceToken)) throw new Error('invalid transport');
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const upstream = async () => {
+          const viewToken = route.operation === 'selection' && route.method === 'GET' ? request.headers.get('x-memory-loop-view') : null;
+          const result = await dependencies.fetch(new URL(`${url.pathname}${url.search}`, origin), { method: route.method, token: dependencies.transport.serviceToken, body, signal: controller.signal, ...(viewToken === null ? {} : { viewToken }) });
+          if (!/^application\/json(?:\s*;|\s*$)/i.test(result.headers.get('content-type') ?? '')) throw new Error('invalid content type');
+          if (!result.body) throw new Error('missing response');
+          const data: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await boundedBytes(result.body, content ? 131072 : 65536)));
+          const success = route.operation === 'views' ? 201 : route.operation === 'selection' ? 200 : route.method === 'POST' ? 202 : 200;
+          if (result.status === success) {
+            const projected = route.operation === 'views' ? projectView(data, true) : route.operation === 'selection' ? projectView(data, false) : project(data, route.method, url.pathname, url.searchParams);
+            if (body && (route.operation === 'resume' || route.operation === 'delete' || route.operation === 'selection')) {
+              const command: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body));
+              if (!record(command) || !record(projected) || ((route.operation === 'resume' || route.operation === 'delete') && projected.clientCommandId !== command.clientCommandId) ||
+                  (route.operation === 'selection' && (projected.conversationId !== command.conversationId || typeof command.expectedRevision !== 'number' ||
+                    (projected.selectionRevision !== command.expectedRevision && projected.selectionRevision !== command.expectedRevision + 1)))) throw new Error('command response mismatch');
+            }
+            return Response.json(projected, { status: result.status, headers });
+          }
+          if (record(data) && record(data.error) && typeof data.error.code === 'string' && Object.hasOwn(errors, data.error.code)) {
+            const code = data.error.code as keyof typeof errors;
+            if (code === 'delete_blocked') {
+              const reason = data.error.reason;
+              if (route.operation !== 'delete' || result.status !== 409 || reason !== 'current' && reason !== 'selected_elsewhere' && reason !== 'running' && reason !== 'status_unknown' && reason !== 'deleting') return failure('service_unavailable');
+              return Response.json({ error: { code, message: errors.delete_blocked.message, reason } }, { status: 409, headers });
+            }
+            if (errors[code].status === result.status) return failure(code);
+          }
+          return failure('service_unavailable');
+        };
+        response = await Promise.race([upstream(), new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, 5000); })]);
+      } finally { if (timer) clearTimeout(timer); }
+    }
+  } catch { response = failure('service_unavailable'); }
+  dependencies.log('think_bff_outcome', { requestId, status: response.status });
+  return response;
+}

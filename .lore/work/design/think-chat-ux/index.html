@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Design preview only. Fictional Think conversations and sample controls, not a working chat client.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="board.css">
+  <script src="preview.js" defer></script>
+  <title>Think — design preview, not the live application</title>
+</head>
+<body>
+  <a class="skip-link" href="#message">Skip to sample message</a>
+  <div class="review-page">
+    <aside class="review-bar" aria-label="Design review controls, not product navigation">
+      <p><strong>Design preview</strong><span>Fictional content · sample actions only</span></p>
+      <label>View <select id="review-state">
+        <option value="new">New chat</option>
+        <option value="working">Conversation</option>
+        <option value="reading">Reading older</option>
+        <option value="disconnected">Disconnected</option>
+        <option value="question">Agent question</option>
+      </select></label>
+    </aside>
+    <div class="mock-app">
+      <header class="app-header">
+        <div class="brand-identity"><img src="../memory-loop-character/assets/approved-a5.svg" width="40" height="40" alt=""><span>Memory Loop</span></div>
+        <nav class="primary-navigation" aria-label="Illustrated app navigation, not active">
+          <span>Ground</span><span>Capture</span><span class="current" aria-current="page">Think</span><span>Recall</span>
+        </nav>
+        <button type="button" class="button new-chat" id="new-chat" aria-label="New chat" title="New chat · sample action" data-sample><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg><span class="new-chat-label">New chat</span></button>
+      </header>
+      <main class="chat-layout" id="sample">
+        <h1 class="visually-hidden" tabindex="-1">Think</h1>
+        <section class="conversation" aria-label="Sample conversation" tabindex="0">
+          <div class="conversation-measure" id="conversation-content"></div>
+        </section>
+        <div class="compose-area">
+          <div class="compose-measure">
+            <p class="exception-note" id="exception-note" hidden></p>
+            <div class="compose-row">
+              <label class="visually-hidden" for="message">Message</label>
+              <textarea id="message" rows="1" placeholder="Follow the thought…" spellcheck="false"></textarea>
+              <div class="action-column">
+                <button type="button" class="button latest-response" id="latest-response" aria-label="Latest response" hidden data-sample><span>Latest</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v13m-5-5 5 5 5-5"/></svg></button>
+                <button type="button" class="button primary" id="send-stop" data-sample>Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="sample-feedback visually-hidden" role="status" id="sample-feedback"></div>
+
+  <template id="state-new">
+    <div class="empty-invitation"><h2>What else could this become?</h2><img src="../memory-loop-character/assets/approved-a5.svg" width="64" height="64" alt=""></div>
+  </template>
+
+  <template id="state-working">
+    <article class="message user" aria-labelledby="working-you"><h2 id="working-you" class="role-label">You</h2><p>I want to make more room for writing, but I keep waiting for a clear afternoon.</p></article>
+    <article class="message assistant" aria-labelledby="working-ai"><h2 id="working-ai" class="role-label">AI</h2>
+      <div class="prose"><p>What if a beginning didn’t need a clear afternoon?</p><p>I’m looking for a smaller rhythm you could return to, rather than a perfect stretch of time.</p></div>
+      <details class="activity"><summary>File read · working</summary><ol aria-label="AI activity"><li><span>File search</span><strong>Completed</strong></li><li><span>File read</span><strong>Working</strong></li></ol></details>
+    </article>
+  </template>
+
+  <template id="state-disconnected">
+    <article class="message user" aria-labelledby="disconnected-you"><h2 id="disconnected-you" class="role-label">You</h2><p>Could we turn this into a small writing routine?</p></article>
+    <article class="message assistant" aria-labelledby="disconnected-ai"><h2 id="disconnected-ai" class="role-label">AI</h2><div class="prose"><p>Start by giving the routine a small enough shape to fit an ordinary day. One possibility is to</p></div></article>
+  </template>
+
+  <template id="state-answer">
+    <article class="message user" aria-labelledby="logging-you"><h2 id="logging-you" class="role-label">You</h2><p>What might a ten-minute beginning look like?</p></article>
+    <article class="message assistant" aria-labelledby="logging-ai"><h2 id="logging-ai" class="role-label">AI</h2>
+      <div class="prose"><h3>Give the thought somewhere to land.</h3><ol><li>Write the question you keep circling.</li><li>Stay with one small part of it.</li><li>Leave a sentence for tomorrow.</li></ol>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Sample writing routine table"><table><thead><tr><th>Moment</th><th>Small action</th></tr></thead><tbody><tr><td>Begin</td><td>Write one question</td></tr><tr><td>Return</td><td>Follow one thread</td></tr></tbody></table></div>
+        <pre tabindex="0" aria-label="Sample plain text code block"><code>One question.
+One small beginning.
+Something to return to tomorrow.</code></pre>
+      </div>
+    </article>
+  </template>
+
+  <template id="state-question">
+    <article class="message user" aria-labelledby="question-you"><h2 id="question-you" class="role-label">You</h2><p>Help me choose a rhythm I can keep.</p></article>
+    <article class="message assistant" aria-labelledby="question-ai"><h2 id="question-ai" class="role-label">AI</h2><p>Which direction would you like to explore?</p>
+      <section class="agent-question" aria-label="AI question"><fieldset><legend>Choose a starting point</legend><label><input type="radio" name="sample-direction" value="daily"> A smaller daily habit</label><label><input type="radio" name="sample-direction" value="weekly"> A weekly writing block</label></fieldset><button type="button" class="button secondary" data-sample>Send answer</button></section>
+    </article>
+  </template>
+</body>
+</html>

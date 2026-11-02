@@ -1,0 +1,386 @@
+@font-face {
+  font-family: 'IM Fell English SC';
+  src: url('/fonts/im-fell-english-sc/IMFellEnglishSC-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Libre Baskerville';
+  src: url('/fonts/libre-baskerville/LibreBaskerville-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('/fonts/source-sans-3/SourceSans3-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('/fonts/source-sans-3/SourceSans3-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  font-family: 'Source Sans 3', system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--surface-frame);
+  font-synthesis: none;
+  --night: #031315;
+  --parchment: #fef6e1;
+  --lantern: #efb83f;
+  --horizon: #5e8bd6;
+  --ivory: #d5d3c5;
+  --horizon-bright: #8eaef2;
+  --lantern-bright: #ffd477;
+  --ember-bright: #f18a83;
+  /* App-specific dark mixtures; the four identity colors and artwork stay intact. */
+  --surface-frame: var(--night);
+  --surface-navigation: #0b1c20;
+  --surface-work: #142629;
+  --surface-document: #1a2e30;
+  --surface-raised: #243b3e;
+  --surface-warm: #292f29;
+  --surface-selected: #213c50;
+  --surface-think: color-mix(in srgb, var(--horizon) 10%, var(--night));
+  --surface-think-user: color-mix(in srgb, var(--horizon) 20%, var(--night));
+  --text: var(--ivory);
+  --text-strong: var(--parchment);
+  --text-muted: #a8b4ae;
+  --rule: #344b4e;
+  --control-boundary: #718788;
+  --link: var(--horizon-bright);
+  --focus: var(--horizon-bright);
+  --danger: var(--ember-bright);
+  --surface: var(--surface-frame);
+  --ink: var(--text);
+  --muted: var(--text-muted);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+img { display: block; max-width: 100%; height: auto; }
+
+::selection { color: var(--night); background: var(--lantern); }
+
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: .2em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  min-height: 100svh;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding: max(12px, env(safe-area-inset-top, 0px)) clamp(20px, 4.4vw, 64px) 12px;
+  color: var(--ink);
+  background: var(--surface-frame);
+  border-bottom: 1px solid var(--rule);
+}
+
+.brand-identity {
+  color: var(--text-strong);
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-identity img { width: 40px; height: 40px; flex-shrink: 0; }
+.brand-identity span {
+  min-width: 0;
+  font: 400 1.75rem/1.1 'IM Fell English SC', Georgia, serif;
+  letter-spacing: -.02em;
+}
+
+.primary-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.navigation-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.navigation-link[aria-current='page'] { color: var(--text-strong); font-weight: 600; }
+
+.navigation-link[aria-current='page']::before {
+  position: absolute;
+  inset: auto 10px 4px;
+  height: 2px;
+  background: var(--horizon);
+  content: '';
+}
+
+.navigation-link:hover,
+.navigation-link:active { text-decoration: underline; }
+
+.navigation-link:focus-visible {
+  outline-color: var(--focus);
+  outline-offset: -6px;
+}
+
+.scope-label {
+  margin: 1.5rem 0 0;
+  font-size: .875rem;
+}
+
+.workspace {
+  width: 100%;
+  min-width: 0;
+  padding: 3.5rem clamp(2rem, 4.4vw, 4.5rem);
+  color: var(--ink);
+  background: var(--surface);
+  overflow-wrap: break-word;
+}
+
+.workspace:focus-visible { outline-offset: -10px; }
+
+h1 {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+h1, h2 { color: var(--text-strong); }
+h1, h2, .brand-invitation { text-wrap: balance; }
+
+h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.view-purpose {
+  max-width: 70ch;
+  margin: .75rem 0 0;
+  color: var(--muted);
+}
+
+.placeholder-notice {
+  max-width: 42rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+}
+
+.placeholder-notice p { margin: .5rem 0 0; }
+
+.brand-invitation {
+  margin: 0;
+  font: 400 clamp(3rem, 5.3vw, 4.8rem)/1.05 'IM Fell English SC', Georgia, serif;
+  letter-spacing: -.025em;
+}
+
+.app-shell--capture {
+  height: 100svh;
+  height: 100dvh;
+  min-height: 0;
+  grid-template-rows: auto minmax(min-content, 1fr);
+  background: var(--surface-work);
+}
+.app-shell--capture .workspace {
+  --surface: var(--surface-work);
+  display: flex;
+  padding: 12px max(32px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(32px, env(safe-area-inset-left, 0px));
+}
+.capture-view {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(calc(6 * 1.7rem + 26px), 1fr);
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+.capture-accessible, .capture-heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.app-shell--capture .workspace:has(.capture-heading h1:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: -4px;
+}
+.capture-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 8.5rem);
+  gap: 4px 16px;
+  align-items: start;
+  container: capture-actions / inline-size;
+}
+.capture-button {
+  grid-column: 2;
+  grid-row: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 44px;
+  padding: .5rem .75rem;
+  border: 1px solid var(--lantern);
+  border-radius: 4px;
+  color: var(--night);
+  background: var(--lantern);
+  font: 600 1rem/1.5 'Source Sans 3', system-ui, sans-serif;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.capture-button:hover:not([aria-disabled='true']) { background: var(--lantern-bright); border-color: var(--lantern-bright); }
+.capture-button:active:not([aria-disabled='true']) { background: var(--lantern); border-color: var(--lantern); }
+.capture-button[aria-disabled='true'] { color: var(--muted); background: transparent; border-color: var(--control-boundary); cursor: not-allowed; }
+.capture-feedback {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: .875rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.capture-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: calc(6lh + 26px);
+  padding: 12px;
+  margin: 0;
+  resize: none;
+  overflow: auto;
+  border: 1px solid var(--control-boundary);
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--surface-document);
+  caret-color: var(--text-strong);
+  font: 400 1.0625rem/1.6 'Source Sans 3', system-ui, sans-serif;
+  scrollbar-color: var(--control-boundary) var(--surface-document);
+  scrollbar-width: thin;
+}
+@container capture-actions (width < 42em) {
+  .capture-feedback--exception { grid-column: 1 / -1; grid-row: 2; }
+}
+@container capture-actions (width < 17em) {
+  .capture-feedback { grid-column: 1 / -1; grid-row: 2; }
+}
+
+.app-shell--think { background: var(--surface-think); }
+.app-shell--think .workspace {
+  --surface: var(--surface-think);
+}
+.think-view { max-width: 64rem; margin-inline: auto; }
+.think-invitation { display: flex; align-items: center; gap: 3rem; margin-top: 4.5rem; }
+.think-invitation .brand-invitation { max-width: 13ch; font-size: clamp(3rem, 4.8vw, 4.25rem); }
+.think-invitation img { width: 96px; height: 96px; flex-shrink: 0; }
+.think-view .placeholder-notice {
+  margin-top: 3rem;
+  padding: 1.75rem 2rem;
+  border: 0;
+  border-radius: 6px;
+  color: var(--night);
+  background: var(--horizon);
+}
+
+.content-link {
+  color: var(--link);
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 1rem;
+  font-weight: 600;
+  text-decoration-line: underline;
+}
+
+.content-link:hover { text-decoration-thickness: 2px; }
+.content-link:active { text-underline-offset: .1em; }
+.recovery-link { margin-top: 1.5rem; }
+
+.skip-link {
+  position: fixed;
+  z-index: 3;
+  top: 1rem;
+  left: 1rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: .5rem 1rem;
+  color: var(--night);
+  background: var(--lantern);
+  font-weight: 600;
+  transform: translateY(calc(-100% - 2rem));
+}
+
+.skip-link:focus {
+  outline: 2px solid var(--parchment);
+  outline-offset: 3px;
+  transform: none;
+}
+
+@media (width < 56rem) {
+  .app-header { padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
+  .primary-navigation { gap: 4px; }
+
+  .workspace { padding: 2rem 1.25rem; }
+
+  .app-shell--capture .workspace { padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
+  .think-invitation { gap: 1.5rem; margin-top: 3rem; }
+  .think-invitation .brand-invitation { font-size: clamp(2.5rem, 7.5vw, 3.5rem); }
+  .think-invitation img { width: 56px; height: 56px; }
+  .think-view .placeholder-notice { margin-top: 2.5rem; padding: 1.5rem; }
+}
+
+@media (forced-colors: active) {
+  .navigation-link[aria-current='page']::before { background: CanvasText; }
+}

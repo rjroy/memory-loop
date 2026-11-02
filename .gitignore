@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 dist/
 .next/
+/next-env.d.ts
 *.tsbuildinfo
 
 # Environment files
@@ -21,6 +22,9 @@ backend/__fixtures__/**/.memory-loop/cache.db-*
 
 # Test artifacts
 coverage/
+test-results/
+playwright-report/
+.impeccable/review/
 
 # Test fixture directories - keep configs, gitignore generated files
 !backend/__fixtures__/test-vault-widgets/
@@ -49,3 +53,8 @@ backend/logs/
 .beads-credential-key
 .beads/proxieddb/
 /.lore/local/
+
+# BEGIN oh-my-opencode-slim worktrees
+.slim/worktrees/
+.slim/worktrees.json
+# END oh-my-opencode-slim worktrees

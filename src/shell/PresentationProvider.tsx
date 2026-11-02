@@ -50,6 +50,20 @@ export default function PresentationProvider({ children }: { children: ReactNode
   const intent = useRef<Intent | null>(null);
   const generation = useRef(0);
   const navigationGeneration = useCallback(() => generation.current, []);
+  const claimNativeRecallSelection = useCallback((from: PresentationLocation): (() => boolean) | null => {
+    const item = visit.current;
+    const displayed = rendered.current.location;
+    // A current URL alone cannot authorize superseding an unrendered departure.
+    // Only the coordinator's inherited HASH visit belongs to this mounted view.
+    if (!mounted.current || intent.current || from.pathname !== '/recall' ||
+      displayed.key !== from.key || !sameContent(displayed, from) || displayed.hash !== from.hash ||
+      !item || item.view.navigationType !== 'HASH' || item.inheritFrom !== from.key ||
+      !sameContent(item.view.location, from) || item.generation !== generation.current ||
+      navigation.current?.currentEntry?.key !== item.view.location.key || relative(new URL(window.location.href)) !== item.url) return null;
+    const ownedGeneration = generation.current;
+    return () => mounted.current && !intent.current && visit.current === item && generation.current === ownedGeneration &&
+      navigation.current?.currentEntry?.key === item.view.location.key && relative(new URL(window.location.href)) === item.url;
+  }, []);
   const liveRecall = useRef<{ key: string; capture: () => RecallPosition } | null>(null);
   const departureGuard = useRef<((resume: () => void) => boolean) | null>(null);
   const approvedTraversal = useRef<string | null>(null);
@@ -299,7 +313,7 @@ export default function PresentationProvider({ children }: { children: ReactNode
   }, [pathname, search, preparing, completedRepair, revision, notify, router, startTransition, focusHeading]);
 
   if (unsupported) return <main id="main-content"><h1>Browser update required</h1><p>Memory Loop requires an updated browser with the Navigation API.</p></main>;
-  return <PresentationContext.Provider value={{ ...display, isNavigating: Boolean(intent.current || (active && !active.published)), navigationGeneration, rememberEntry, registerRecallCapture, registerHeading, navigate, linkIntent, registerNavigationGuard, guardNavigation }}>
+  return <PresentationContext.Provider value={{ ...display, isNavigating: Boolean(intent.current || (active && !active.published)), navigationGeneration, claimNativeRecallSelection, rememberEntry, registerRecallCapture, registerHeading, navigate, linkIntent, registerNavigationGuard, guardNavigation }}>
     {children}
   </PresentationContext.Provider>;
 }

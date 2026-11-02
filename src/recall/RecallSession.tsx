@@ -1,13 +1,17 @@
 import { createContext, useContext, useRef } from 'react';
 import type { ReactNode } from 'react';
-import type { VaultId } from '../../backend/contract';
+import type { VaultId, VaultSearchContextRequest } from '../../backend/contract';
 import { createRecallEditor } from './editor';
 import { createAttachmentUploads } from './attachments';
+import { createRecallSearch } from './searchState';
 
 export function createRecallSession() {
   return {
     editor: createRecallEditor(),
     uploads: createAttachmentUploads(),
+    search: createRecallSearch(),
+    normalReaderPositions: new Map<string, number>(),
+    lastExcerpt: null as VaultSearchContextRequest | null,
     lastId: null as VaultId | null,
     expanded: new Set<string>(),
     desktopVisible: true,

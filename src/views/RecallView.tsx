@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { usePresentation } from '../shell/presentation';
 import type { Presentation } from '../shell/presentation';
-import type { VaultAction as VaultActionRequest, VaultActionResponse, VaultId, VaultTreeResponse } from '../../backend/contract';
+import { normalizeSearchQuery } from '../../backend/contract';
+import type { VaultAction as VaultActionRequest, VaultActionResponse, VaultId, VaultTreeResponse, VaultSearchContextRequest } from '../../backend/contract';
 import { containsId, failureCopy, fileContentLocation, findEntry, idKey, noteLocation, readFile, readNote, readTree, selectionFromSearch } from '../recall/api';
 import type { RecallFailure } from '../recall/api';
 import { useRecallSession } from '../recall/RecallSession';
@@ -11,6 +12,9 @@ import { useDesktop } from '../recall/useDesktop';
 import { useVaultRead } from '../recall/useVaultRead';
 import MarkdownDocument from '../recall/MarkdownDocument';
 import FileViewer, { fileKindLabel } from '../recall/FileViewer';
+import SearchFiles from '../recall/SearchFiles';
+import SearchExcerpt from '../recall/SearchExcerpt';
+import { contentLocation, parseContentLocation } from '../recall/searchApi';
 import AttachmentsUpload from '../recall/AttachmentsUpload';
 import { createMediaIndex } from '../recall/mediaReferences';
 import VaultFiles from '../recall/VaultFiles';
@@ -35,7 +39,7 @@ function FileFailure({ code, retry }: { code: RecallFailure; retry: () => void }
     action="Retry file" onAction={retry} />;
 }
 
-function revealEditorWhenClipped(field: HTMLTextAreaElement) {
+function revealEditorWhenClipped(field: HTMLElement) {
   const viewport = window.visualViewport;
   let top = viewport?.offsetTop ?? 0;
   let bottom = top + (viewport?.height ?? window.innerHeight);
@@ -73,10 +77,15 @@ export default function RecallView() {
   return presentation.location.pathname === '/recall' ? <RecallContent {...presentation} /> : null;
 }
 
-function RecallContent({ location, navigate, navigationType, isNavigating, navigationGeneration, recallSnapshot, rememberEntry, registerRecallCapture, registerNavigationGuard }: Presentation) {
+function RecallContent({ location, navigate, navigationType, isNavigating, navigationGeneration, claimNativeRecallSelection, recallSnapshot, rememberEntry, registerRecallCapture, registerNavigationGuard }: Presentation) {
   const session = useRecallSession();
   const editor = session.editor;
   const editing = useSyncExternalStore(editor.subscribe, editor.getSnapshot, editor.getSnapshot);
+  const searching = useSyncExternalStore(session.search.subscribe, session.search.getSnapshot, session.search.getSnapshot);
+  const searchActive = Boolean(normalizeSearchQuery(searching.query));
+  const excerpt = useMemo(() => parseContentLocation(location.search), [location.search]);
+  const excerptRequest = excerpt.request;
+  const [excerptRevision, setExcerptRevision] = useState(0);
   const desktop = useDesktop();
   const selection = useMemo(() => selectionFromSearch(location.search), [location.search]);
   const key = selection.id ? idKey(selection.id) : null;
@@ -102,21 +111,37 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   const fileView = useRef({ location, isNavigating, generation: renderedGeneration });
   useLayoutEffect(() => { fileView.current = { location, isNavigating, generation: renderedGeneration }; });
   useLayoutEffect(() => { fileMounted.current = true; return () => { fileMounted.current = false; }; }, []);
-  const ownsFileView = () => {
+  const ownsFileView = useCallback(() => {
     const current = fileView.current;
     return fileMounted.current && !current.isNavigating && current.location.key === location.key &&
       current.location.pathname === location.pathname && current.location.search === location.search && current.location.hash === location.hash &&
       current.generation === renderedGeneration && (navigationGeneration === undefined || navigationGeneration() === renderedGeneration);
+  }, [location.key, location.pathname, location.search, location.hash, renderedGeneration, navigationGeneration]);
+  const admitSelection = () => {
+    if (!fileMounted.current || fileBusyRef.current) return null;
+    const owns = ownsFileView() ? ownsFileView : claimNativeRecallSelection?.(location);
+    // Capture once at the fresh event boundary. Guard callbacks keep this owner,
+    // never a newly admitted generation or an unconditional updated view ref.
+    return owns ? () => fileMounted.current && owns() : null;
   };
+  useEffect(() => isNavigating ? undefined : session.search.activate(ownsFileView), [session, isNavigating, ownsFileView]);
   const affectedAction = useRef(false);
   const uncertainAffectedId = useRef<VaultId | null>(null);
   const actionNavigation = useRef(false);
   const [fileFenced, setFileFenced] = useState(session.fileActionFenced);
   const actionPresentation = useRef<{ key: string; scroll: number; narrowOpen: boolean } | null>(null);
   const actionFocus = useRef<string | null>(null);
-  const read = useVaultRead(markdown ? key : null, noteRevision, readNote);
+  // A read begun before an acknowledged save cannot replace that saved snapshot.
+  // A later successful read may refresh it; a failed navigation/read retains it.
+  const readForView = useCallback(async (readKey: string, signal: AbortSignal) => {
+    const acknowledged = editor.getSnapshot().confirmed;
+    return { note: await readNote(readKey, signal), acknowledged };
+  }, [editor]);
+  const rawRead = useVaultRead(markdown ? key : null, noteRevision, readForView);
+  const read = rawRead.status === 'ready' ? { status: 'ready' as const, data: rawRead.data.note } : rawRead;
   const file = useVaultRead(markdown ? null : key, noteRevision, readFile);
-  const note = editing.confirmed?.key === key ? { status: 'ready' as const, data: editing.confirmed.note } : read;
+  const refreshed = rawRead.status === 'ready' && rawRead.data.acknowledged === editing.confirmed;
+  const note = editing.confirmed?.key === key && !refreshed ? { status: 'ready' as const, data: editing.confirmed.note } : read;
   const content = markdown ? note : file;
   const draft = editing.draft && idKey(editing.draft.id) === key ? editing.draft : null;
   const selectedFenced = fileFenced && session.fileActionAffectedId !== null && idKey(session.fileActionAffectedId) === key;
@@ -135,6 +160,9 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   const readerRef = useRef<HTMLElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const identityRef = useRef<HTMLParagraphElement>(null);
+  const excerptHeading = useRef<HTMLHeadingElement>(null);
+  const excerptFocus = useRef(Boolean(excerptRequest) && navigationType === 'INITIAL');
+  const excerptArrivalHandled = useCallback(() => { excerptFocus.current = false; }, []);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editRef = useRef<HTMLButtonElement>(null);
   const keepRef = useRef<HTMLButtonElement>(null);
@@ -143,7 +171,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   const wasEditing = useRef(Boolean(draft));
   const collapseRef = useRef<HTMLButtonElement>(null);
   const expandRef = useRef<HTMLButtonElement>(null);
-  const pendingFocus = useRef<'files' | 'identity' | 'toggle' | 'editor' | 'edit' | null>(
+  const pendingFocus = useRef<'files' | 'identity' | 'toggle' | 'editor' | 'edit' | 'article' | null>(
     navigationType === 'POP' && selection.id && !initialHashPresentation ? 'identity' : null,
   );
   const attachExpand = useCallback((element: HTMLButtonElement | null) => {
@@ -156,16 +184,16 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
       expandRef.current = null;
     };
   }, []);
-  const revealSelection = useRef(!initialPop);
+  const revealSelection = useRef(!initialPop && !searchActive);
   const pendingScroll = useRef<number | null>(recallSnapshot?.readerScroll ?? session.readerScroll);
   const previousEntry = useRef({ key: entryKey, pathname: location.pathname, search: location.search, hash: location.hash });
   const previousDesktop = useRef(desktop);
   const restoreOnEntry = useRef(navigationType === 'PUSH' && !selection.id && !selection.invalid && session.lastId
-    ? { id: session.lastId, scroll: session.readerScroll, replacing: false } : null);
+    ? { id: session.lastId, scroll: session.readerScroll, excerpt: session.lastExcerpt, replacing: false } : null);
   const knownEntry = key && selection.id && tree.status === 'ready' ? findEntry(tree.data.entries, selection.id) : undefined;
-  const filename = (knownEntry?.kind !== 'directory' ? knownEntry?.name : undefined) ?? (content.status === 'ready' ? content.data.name : undefined);
+  const filename = (knownEntry?.kind !== 'directory' ? knownEntry?.name : undefined) ?? (content.status === 'ready' ? content.data.name : undefined) ?? excerptRequest?.id.at(-1);
   const configFailure = content.status === 'error' && ['config_missing', 'config_invalid'].includes(content.error) ? content.error : null;
-  const blocked: RecallFailure | null = configFailure ?? (tree.status === 'error' && content.status !== 'ready' &&
+  const blocked: RecallFailure | null = configFailure ?? (!excerptRequest && tree.status === 'error' && content.status !== 'ready' &&
     (!selection.id || content.status === 'error') ? tree.error : null);
   const empty = !selection.id && !selection.invalid && tree.status === 'ready' && tree.data.entries.length === 0;
   const canBrowse = !blocked;
@@ -178,11 +206,17 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
     if (session.uploads.getSnapshot().busy) { session.uploads.wait(); return false; }
     session.uploads.dismiss();
     setUploadTrigger(null);
-    const leave = () => { editor.leave(); resume(); };
+    const leave = () => { editor.finish(); resume(); };
     if (!editor.request(leave)) return false;
-    editor.leave();
+    editor.finish();
     return true;
   }), [editor, session, registerNavigationGuard]);
+
+  const wasSaving = useRef(editing.saving);
+  useEffect(() => {
+    if (wasSaving.current && !editing.saving && !editing.issue) session.search.invalidate();
+    wasSaving.current = editing.saving;
+  }, [editing.saving, editing.issue, session]);
 
   useEffect(() => {
     const unload = (event: BeforeUnloadEvent) => {
@@ -241,10 +275,10 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   // selection changes panes. All per-entry snapshots live in that one map.
   useLayoutEffect(() => registerRecallCapture(entryKey, () => ({
     readerScroll: draft ? editor.position.readingScroll : pendingScroll.current ?? (showReader && readerRef.current ? readerRef.current.scrollTop : session.readerScroll),
-    treeScroll: showFiles && tree.status === 'ready' && filesRef.current
+    treeScroll: showFiles && !searchActive && tree.status === 'ready' && filesRef.current
       ? { top: filesRef.current.scrollTop, left: filesRef.current.scrollLeft } : { ...session.treeScroll },
     narrowOpen, desktopVisible,
-  })), [entryKey, registerRecallCapture, showReader, showFiles, tree.status, narrowOpen, desktopVisible, session, Boolean(draft), editor]);
+   })), [entryKey, registerRecallCapture, showReader, showFiles, tree.status, narrowOpen, desktopVisible, session, Boolean(draft), editor, searchActive]);
 
   const revealAncestors = (id: VaultId | null) => {
     if (!id) return;
@@ -257,17 +291,18 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
 
   useEffect(() => { session.expanded = new Set(expanded); }, [expanded, session]);
   useEffect(() => { session.desktopVisible = desktopVisible; }, [desktopVisible, session]);
-  useEffect(() => { revealAncestors(selection.id); }, [key]);
+  useEffect(() => { if (!searchActive) revealAncestors(selection.id); }, [key]);
 
   useLayoutEffect(() => {
     if (restoreOnEntry.current && !restoreOnEntry.current.replacing) {
       const restoration = restoreOnEntry.current;
       restoration.replacing = true;
-      navigate(noteLocation(restoration.id), { replace: true });
+      navigate(restoration.excerpt ? contentLocation(restoration.excerpt) : noteLocation(restoration.id), { replace: true });
       return;
     }
     session.lastId = selection.id;
-  }, [key, selection.invalid, navigate, session]);
+    session.lastExcerpt = excerptRequest;
+  }, [key, selection.invalid, navigate, session, excerptRequest]);
 
   useLayoutEffect(() => {
     const previous = previousEntry.current;
@@ -287,7 +322,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
       }
       return;
     }
-    revealSelection.current = true;
+    revealSelection.current = !searchActive;
     const restoration = restoreOnEntry.current;
     // Returning through bare /recall replaces its URL; that is not a new-note reset.
     const moved = actionPresentation.current?.key === (key ?? '') ? actionPresentation.current : null;
@@ -317,28 +352,38 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   useLayoutEffect(() => {
     // A loading placeholder cannot accommodate the saved hierarchy position.
     if (!showFiles || tree.status !== 'ready' || !filesRef.current) return;
-    filesRef.current.scrollTop = session.treeScroll.top;
-    filesRef.current.scrollLeft = session.treeScroll.left;
-  }, [entryKey, showFiles, tree.status, session]);
+    if (searchActive && searching.status !== 'ready') return;
+    const position = searchActive ? session.search.resultScroll : session.treeScroll;
+    filesRef.current.scrollTop = position.top;
+    filesRef.current.scrollLeft = position.left;
+  }, [entryKey, showFiles, tree.status, session, searchActive, searching.status]);
 
   useLayoutEffect(() => {
-    if (!showFiles || !revealSelection.current || tree.status !== 'ready') return;
+    if (!showFiles || searchActive || !revealSelection.current || tree.status !== 'ready') return;
     if (!selection.id) { revealSelection.current = false; return; }
     const current = filesRef.current?.querySelector<HTMLElement>('a[aria-current="page"]');
     if (current && !current.closest('[hidden]')) {
       current.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       revealSelection.current = false;
     }
-  }, [showFiles, tree.status, key, expanded]);
+  }, [showFiles, tree.status, key, expanded, searchActive]);
 
   useLayoutEffect(() => {
     if (!showReader || pendingScroll.current === null || !readerRef.current) return;
+    if (excerptRequest && !draft) return; // wait for verified excerpt height, not the ordinary note read
     // Restore the pane before focus reveal, so it cannot undo that reveal.
     if (pendingScroll.current > 0 && content.status !== 'ready') return;
     readerRef.current.scrollTop = pendingScroll.current;
     session.readerScroll = readerRef.current.scrollTop;
     pendingScroll.current = null;
-  }, [showReader, content.status, entryKey, session, Boolean(draft)]);
+  }, [showReader, content.status, entryKey, session, Boolean(draft), excerptRequest]);
+
+  const restoreExcerptPosition = useCallback(() => {
+    if (!showReader || !readerRef.current || pendingScroll.current === null) return;
+    readerRef.current.scrollTop = pendingScroll.current;
+    session.readerScroll = readerRef.current.scrollTop;
+    pendingScroll.current = null;
+  }, [showReader, session]);
 
   useLayoutEffect(() => {
     // A selection can close Files while Next still displays the outgoing note.
@@ -347,16 +392,17 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
     const target = pendingFocus.current;
     if (!target) return;
     const element = target === 'files'
-      ? (actionFocus.current ? Array.from(filesRef.current?.querySelectorAll<HTMLElement>('[data-entry-id]') ?? []).find(row => row.dataset.entryId === actionFocus.current)?.querySelector<HTMLElement>('.file-row') : null)
+       ? (searchActive ? Array.from(filesRef.current?.querySelectorAll<HTMLAnchorElement>('.search-result') ?? []).find(row => row.getAttribute('href') === session.search.lastHref) : null)
+         ?? (actionFocus.current ? Array.from(filesRef.current?.querySelectorAll<HTMLElement>('[data-entry-id]') ?? []).find(row => row.dataset.entryId === actionFocus.current)?.querySelector<HTMLElement>('.file-row') : null)
         ?? filesRef.current?.querySelector<HTMLElement>('a[aria-current="page"]') ?? filesHeading.current
-      : target === 'identity' ? identityRef.current : target === 'editor' ? textareaRef.current : target === 'edit' ? editRef.current : showFiles ? collapseRef.current : expandRef.current;
-    if (element && (target !== 'files' || showFiles) && (!['identity', 'editor', 'edit'].includes(target) || showReader)) {
-      if (target === 'editor') restoreEditor(); else element.focus({ preventScroll: true });
+      : target === 'identity' ? identityRef.current : target === 'editor' ? textareaRef.current : target === 'edit' ? editRef.current : target === 'article' ? articleRef.current : showFiles ? collapseRef.current : expandRef.current;
+    if (element && (target !== 'files' || showFiles) && (!['identity', 'editor', 'edit', 'article'].includes(target) || showReader)) {
+      if (target === 'editor') restoreEditor(); else { element.focus({ preventScroll: true }); if (target === 'identity') revealEditorWhenClipped(element); }
       if (target === 'files') element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       pendingFocus.current = null;
       actionFocus.current = null;
     }
-  }, [entryKey, isNavigating, fileBusy, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded, editing]);
+  }, [entryKey, isNavigating, fileBusy, showFiles, showReader, desktopVisible, narrowOpen, noteRevision, expanded, editing, searchActive, session]);
 
   useLayoutEffect(() => {
     document.title = filename ? `${filename} · Recall · Memory Loop`
@@ -367,13 +413,14 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
     if (draft) return;
     if (isNavigating || !showReader || !readerRef.current || pendingScroll.current !== null) return;
     session.readerScroll = readerRef.current.scrollTop;
+    if (!excerptRequest && key) session.normalReaderPositions.set(key, session.readerScroll);
     rememberEntry();
   };
 
   const openFiles = () => {
     rememberReader();
-    revealAncestors(selection.id);
-    revealSelection.current = true;
+    if (!searchActive) revealAncestors(selection.id);
+    revealSelection.current = !searchActive;
     pendingFocus.current = 'files';
     if (desktop) setDesktopVisible(true); else { session.narrowClosed = false; setNarrowOpen(true); }
     console.info('recall_files_visibility_changed', { visible: true, trigger: 'user' });
@@ -390,7 +437,8 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   };
 
   const selectNote = (id: VaultId) => {
-    if (fileBusyRef.current) return;
+    const owns = admitSelection();
+    if (!owns) return;
     if (idKey(id) === key && draft) {
       pendingFocus.current = 'editor';
       setNarrowOpen(false);
@@ -398,22 +446,70 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
       return;
     }
     const commit = () => {
-    editor.leave();
+    if (!owns()) return;
     rememberEntry();
     rememberReader();
+    editor.finish();
     pendingFocus.current = 'identity';
     setNarrowOpen(false);
-    if (idKey(id) === key) {
+    if (idKey(id) === key && !excerptRequest) {
       pendingScroll.current = session.readerScroll;
       if (content.status !== 'loading') setNoteRevision(value => value + 1);
       else if (showReader) { identityRef.current?.focus({ preventScroll: true }); pendingFocus.current = null; }
     } else {
       pendingScroll.current = 0;
-      navigate(noteLocation(id));
+      actionNavigation.current = true;
+      try { navigate(noteLocation(id)); } finally { actionNavigation.current = false; }
     }
     console.info('recall_selection_changed', { trigger: 'file-link' });
     };
     if (editor.request(commit)) commit();
+  };
+
+  const selectContent = (request: VaultSearchContextRequest) => {
+    const owns = admitSelection();
+    if (!owns) return;
+    const commit = () => {
+      if (!owns()) return;
+      rememberEntry(); rememberReader();
+      editor.finish();
+      excerptFocus.current = true;
+      pendingFocus.current = 'identity';
+      setNarrowOpen(false);
+      pendingScroll.current = 0;
+      if (excerptRequest && idKey(excerptRequest.id) === idKey(request.id) && excerptRequest.line === request.line &&
+        excerptRequest.version === request.version && excerptRequest.query === request.query) {
+        // Next does not create a new entry for this identical address. Refresh
+        // the verified context locally instead of leaving an unsettled intent.
+        setExcerptRevision(value => value + 1);
+        console.info('recall_selection_changed', { trigger: 'current-content-hit' });
+        return;
+      }
+      actionNavigation.current = true;
+      try { navigate(contentLocation(request)); } finally { actionNavigation.current = false; }
+      console.info('recall_selection_changed', { trigger: 'content-hit' });
+    };
+    if (editor.request(commit)) commit();
+  };
+
+  const openNormal = () => {
+    if (!selection.id || !ownsFileView()) return;
+    const normalScroll = session.normalReaderPositions.get(idKey(selection.id)) ?? 0;
+    actionPresentation.current = { key: idKey(selection.id), scroll: normalScroll, narrowOpen: false };
+    pendingFocus.current = 'article';
+    setNoteRevision(value => value + 1);
+    actionNavigation.current = true;
+    try { navigate(noteLocation(selection.id), { replace: true, focus: 'preserve' }); } finally { actionNavigation.current = false; }
+  };
+
+  const searchAgain = () => {
+    if (!excerptRequest || !ownsFileView()) return;
+    session.search.setMode('content');
+    session.search.setQuery(excerptRequest.query);
+    session.search.invalidate();
+    revealSelection.current = false;
+    pendingFocus.current = 'files';
+    if (desktop) setDesktopVisible(true); else { session.narrowClosed = false; setNarrowOpen(true); }
   };
 
   const retryAll = () => {
@@ -436,6 +532,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
 
   const refreshFiles = async () => {
     if (!ownsFileView()) return;
+    session.search.invalidate();
     const next = await readTree('tree', new AbortController().signal);
     if (!ownsFileView()) return;
     setActionTree(next);
@@ -499,7 +596,8 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
       revealAncestors(result.id);
       if (selection.id && containsId(request.id, selection.id)) {
         const nextId = remap(selection.id);
-        const scroll = draft ? editor.position.readingScroll : readerRef.current?.scrollTop ?? session.readerScroll;
+        const scroll = draft ? editor.position.readingScroll : excerptRequest ? session.normalReaderPositions.get(key ?? '') ?? 0 : readerRef.current?.scrollTop ?? session.readerScroll;
+        session.normalReaderPositions.set(idKey(nextId), scroll);
         actionPresentation.current = { key: idKey(nextId), scroll, narrowOpen };
         editor.leave(); session.lastId = nextId; session.readerScroll = scroll;
         revealAncestors(nextId);
@@ -535,7 +633,10 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
     }
     if (editing.pending && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); keepEditing(); return; }
     if (showFiles && event.key === 'Escape' && filesRef.current?.contains(event.target as Node)) {
-      event.preventDefault(); closeFiles();
+      if (event.nativeEvent.isComposing) return;
+      event.preventDefault();
+      if (searching.query) { event.stopPropagation(); session.search.setQuery(''); }
+      else closeFiles();
     }
   }}>
     <header className="recall-toolbar">
@@ -556,7 +657,11 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
         </> : note.status === 'ready' && note.data.editable ? <button className="recall-button" type="button" ref={editRef}
           disabled={selectedFenced || (fileBusy && affectedAction.current)} aria-describedby={selectedFenced ? 'recall-file-action-fence' : undefined} onClick={() => {
           if (!selection.id) return;
-          editor.position.readingScroll = readerRef.current?.scrollTop ?? session.readerScroll;
+          editor.position.readingScroll = excerptRequest ? session.normalReaderPositions.get(key ?? '') ?? 0 : readerRef.current?.scrollTop ?? session.readerScroll;
+          if (excerptRequest) {
+            actionNavigation.current = true;
+            try { navigate(noteLocation(selection.id), { replace: true, focus: 'preserve' }); } finally { actionNavigation.current = false; }
+          }
           pendingFocus.current = 'editor';
           setNarrowOpen(false);
           editor.start(selection.id, note.data);
@@ -578,7 +683,9 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
           <nav className="recall-files" id="recall-files" aria-label="Vault files" ref={filesRef} hidden={!showFiles}
             aria-busy={tree.status === 'loading'} onScroll={() => {
               if (showFiles && tree.status === 'ready' && filesRef.current) {
-                session.treeScroll = { top: filesRef.current.scrollTop, left: filesRef.current.scrollLeft };
+                const position = { top: filesRef.current.scrollTop, left: filesRef.current.scrollLeft };
+                if (searchActive) { if (searching.status === 'ready') session.search.resultScroll = position; }
+                else session.treeScroll = position;
                 rememberEntry();
               }
             }}>
@@ -587,21 +694,22 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
               <div className="files-header-actions"><FileActionTrigger target={null} /><FilesToggle expanded active={showFiles} ref={collapseRef} onToggle={closeFiles} /></div>
             </header>
             {desktop && selection.id && <button className="pane-jump" type="button" onClick={() => draft ? restoreEditor() : articleRef.current?.focus({ preventScroll: true })}>Skip to file</button>}
-            <FileBackground>{tree.status === 'loading' ? <p className="files-status">Loading files…</p>
+            <SearchFiles search={session.search} selected={key} selectFile={selectNote} selectContent={selectContent} dirty={dirty} />
+            {!searchActive && <FileBackground>{tree.status === 'loading' ? <p className="files-status">Loading files…</p>
               : tree.status === 'error' ? <Message heading="Couldn't load files" body="The file list couldn't be retrieved. Try again."
                 action="Retry files" onAction={() => { setActionTree(null); setTreeRevision(value => value + 1); }} />
                 : tree.status === 'ready' && <>
                   {tree.data.entries.length ? <VaultFiles entries={tree.data.entries} selected={key} expanded={expanded}
                     toggle={toggleFolder}
                     select={selectNote} /> : <p className="files-status">No files to show</p>}
-                </>}</FileBackground>
+                </>}</FileBackground>}
           </nav>
-          <section className={`recall-reader${draft ? ' recall-reader--editing' : !markdown && selection.id ? ' recall-reader--file' : ''}`} ref={readerRef} hidden={!showReader} aria-label="File reader" onScroll={rememberReader}>
+          <section className={`recall-reader${draft ? ' recall-reader--editing' : (excerptRequest || !markdown) && selection.id ? ' recall-reader--file' : ''}`} ref={readerRef} hidden={!showReader} aria-label="File reader" onScroll={rememberReader}>
             {showReader && !showFiles && <div className="reader-controls">
               <FilesToggle expanded={false} ref={attachExpand} onToggle={openFiles} />
             </div>}
-            {showReader && <div className={`reader-measure${draft ? ' reader-measure--editing' : !markdown && selection.id ? ' reader-measure--file' : ''}`}>
-              {selection.invalid ? <Failure code="invalid_request" retry={() => {}} />
+            {showReader && <div className={`reader-measure${draft ? ' reader-measure--editing' : (excerptRequest || !markdown) && selection.id ? ' reader-measure--file' : ''}`}>
+              {selection.invalid || excerpt.invalid ? <Failure code="invalid_request" retry={() => {}} />
                 : selection.id ? <>
                   <button className="pane-jump" type="button" onClick={openFiles}>Return to files</button>
                   {draft ? <div className="recall-editor">
@@ -624,7 +732,10 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
                         Object.assign(editor.position, { start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection });
                       }} onScroll={event => { editor.position.scroll = event.currentTarget.scrollTop; }} />
                   </div> : <article ref={articleRef} tabIndex={-1} aria-labelledby="note-identity" aria-busy={content.status === 'loading'}>
-                    {content.status === 'loading' ? <p className="note-status">Opening file…</p>
+                    {excerptRequest ? <SearchExcerpt key={excerptRevision} request={excerptRequest} active={!isNavigating} markdown={markdown} onNormal={openNormal}
+                      headingRef={excerptHeading} focusOnArrival={showReader && navigationType !== 'POP' && excerptFocus.current}
+                      onArrivalHandled={excerptArrivalHandled} onLoaded={restoreExcerptPosition} onSearchAgain={searchAgain} isCurrent={ownsFileView} />
+                      : content.status === 'loading' ? <p className="note-status">Opening file…</p>
                       : content.status === 'error' ? markdown ? <Failure code={content.error} retry={() => { editor.clearConfirmed(); setNoteRevision(value => value + 1); }} />
                         : <FileFailure code={content.error} retry={() => setNoteRevision(value => value + 1)} />
                         : markdown && note.status === 'ready' ? (note.data.markdown.length

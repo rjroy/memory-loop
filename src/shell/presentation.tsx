@@ -27,6 +27,9 @@ export interface Presentation {
   isNavigating: boolean;
   /** Read immediately before an async context commit, including unrendered intents. */
   navigationGeneration?(): number;
+  /** Fresh mounted user selection only: capture ownership of an inherited native
+   * Recall fragment before React catches up. Never reacquire in held/async work. */
+  claimNativeRecallSelection?(from: PresentationLocation): (() => boolean) | null;
   recallSnapshot?: RecallPosition;
   /** Capture the visible entry before an action changes its presentation. */
   rememberEntry(): void;

@@ -671,7 +671,25 @@ existing unsaved-draft guard. Originals are preserved without app-side HEIC
 conversion or transcoding. Browser and device format support can still vary;
 physical iPhone picker and codec behavior has not been verified by automated tests.
 
-Recall has no search or AI action. Dot entries, symlinks and nonregular files are
+Use the search field inside Files for **Filename** or **Content** search. Filename
+mode matches names and vault-relative paths; Content matches saved UTF-8 source
+one physical line at a time. Characters may have gaps but must remain in order:
+`sdk` matches both `software development kit` and `I should know better`, never a
+sequence split across lines. Matching ignores case and query whitespace. Search
+does not use an AI provider or search unsaved editor drafts.
+
+Content results open a read-only, version-checked source excerpt around the exact
+line. **Read formatted** or **Open full file** returns to the ordinary reader;
+editing remains explicit and existing draft guards still apply. Clear search
+restores the file tree. Search state is held in the current app session, not a
+persistent content index or browser-storage copy of the vault.
+
+Results retain the best 50 files or 100 matching lines and distinguish result
+limits from incomplete scanning. Overlong source lines, unreadable/changed files,
+invalid UTF-8 and the 30-second scan deadline can make coverage incomplete;
+the UI reports that rather than implying an exhaustive no-match result.
+
+Recall has no AI action. Dot entries, symlinks and nonregular files are
 omitted from the tree. Empty trees,
 empty notes, config failures, unavailable notes/vaults and transport failures
 are distinct states. See the [approved Recall design](.lore/work/design/recall-read-only.md)

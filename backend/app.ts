@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { isVaultErrorCode, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultErrorCode } from './contract';
+import { defaultUploadMaxBytes, isUploadName, isVaultErrorCode, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultErrorCode } from './contract';
 import type { ThinkService, ThinkUnavailableCode } from './think/service';
 import { ThinkServiceError } from './think/errors';
 import { thinkErrors, type ThinkErrorCode } from './think/contract';
@@ -19,6 +19,7 @@ export interface AppOptions {
   authority: string;
   serviceToken?: string;
   vault: VaultState;
+  uploadMaxBytes?: number;
   capture?: CaptureWriter;
   ground?: GroundReader;
   groundError?: 'configuration' | 'io';
@@ -82,7 +83,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.use('*', async (context, next) => {
     const requestId = randomUUID();
     const path = context.req.path;
-    const operation = path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/vault/file' ? 'file' : path === '/api/vault/content' ? 'content' : path === '/api/vault/actions' ? 'actions' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
+    const operation = path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/vault/file' ? 'file' : path === '/api/vault/content' ? 'content' : path === '/api/vault/attachments' ? 'attachments' : path === '/api/vault/actions' ? 'actions' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
     console.info('vault_api_attempt', { requestId, operation });
     try {
       const headers = context.req.raw.headers;
@@ -93,7 +94,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         const match = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') ?? '');
         if (!match || !timingSafeEqual(expected, Buffer.from(match[1], 'hex'))) {
           context.res = Response.json({ error: { code: 'unauthorized', message: 'Service authentication required' } }, { status: 401 });
-        } else if (context.req.method !== 'GET' && !(context.req.raw.method === 'HEAD' && path === '/api/vault/content') && !(context.req.method === 'POST' && (path === '/api/vault/note' || path === '/api/vault/actions' || path === '/api/capture' || path === thinkBase ||
+        } else if (context.req.method !== 'GET' && !(context.req.raw.method === 'HEAD' && path === '/api/vault/content') && !(context.req.method === 'POST' && (path === '/api/vault/note' || path === '/api/vault/actions' || path === '/api/vault/attachments' || path === '/api/capture' || path === thinkBase ||
           path === '/api/think/views' || path === '/api/think/selection' ||
           /^\/api\/think\/conversations\/[^/]+\/(?:resume|delete|messages|runs\/[^/]+\/stop|decisions\/[^/]+\/reply)$/.test(path)))) {
           context.res = Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 });
@@ -180,6 +181,29 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.get('/api/vault/tree', async context => {
     if ('error' in options.vault) return publicError(options.vault.error);
     try { return context.json(await options.vault.reader.tree()); } catch (error: unknown) { return serviceError(error); }
+  });
+  app.get('/api/vault/attachments', context => {
+    if (new URL(context.req.url).search) return publicError('invalid_request');
+    if ('error' in options.vault) return publicError(options.vault.error);
+    return context.json({ maxFileBytes: options.uploadMaxBytes ?? defaultUploadMaxBytes });
+  });
+  app.post('/api/vault/attachments', async context => {
+    let name: string;
+    try {
+      const url = new URL(context.req.url);
+      decodeURIComponent(url.search.replace(/\+/g, ' '));
+      const names = url.searchParams.getAll('name');
+      if (names.length !== 1 || [...url.searchParams.keys()].some(key => key !== 'name') || !isUploadName(names[0])) return publicError('invalid_request');
+      name = names[0];
+    } catch { return publicError('invalid_request'); }
+    const request = context.req.raw;
+    const limit = options.uploadMaxBytes ?? defaultUploadMaxBytes;
+    const length = request.headers.get('content-length');
+    if (request.headers.get('content-type')?.toLowerCase() !== 'application/octet-stream' || !request.body || (length !== null && /^0+$/.test(length))) return publicError('invalid_request');
+    if (length !== null && (!/^\d+$/.test(length) || BigInt(length) > BigInt(limit))) return publicError(/^\d+$/.test(length) ? 'upload_too_large' : 'invalid_request');
+    if ('error' in options.vault) return publicError(options.vault.error);
+    try { return context.json(await options.vault.reader.upload(name, request.body, limit, request.signal)); }
+    catch (error) { return serviceError(error); }
   });
   for (const operation of ['file', 'content'] as const) {
     app.get(`/api/vault/${operation}`, async context => {

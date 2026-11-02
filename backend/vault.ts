@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { open, readdir, rename, stat, unlink, mkdir, rmdir } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
-import { isVaultComponent, isVaultId, parseVaultSaveRequest, parseVaultAction, vaultSaveTextLimit, type VaultEntry, type VaultId, type VaultNoteResponse, type VaultSaveResponse, type VaultTreeResponse, type VaultAction, type VaultActionResponse, type VaultErrorCode } from './contract';
+import { isVaultComponent, isVaultId, isUploadName, parseVaultSaveRequest, parseVaultAction, vaultSaveTextLimit, type VaultEntry, type VaultId, type VaultNoteResponse, type VaultSaveResponse, type VaultTreeResponse, type VaultAction, type VaultActionResponse, type VaultErrorCode, type VaultUploadResponse } from './contract';
 import { renameNoReplace as nativeRenameNoReplace } from './vault-rename';
 import { contentResponse, describeFile } from './vault-media';
 import type { VaultFileResponse } from './contract';
@@ -15,6 +15,7 @@ export interface VaultReader {
   content(id: VaultId, method: string, range: string | null, download: boolean, signal: AbortSignal): Promise<Response>;
   save(id: VaultId, markdown: string, expectedRevision: string): Promise<VaultSaveResponse>;
   action(input: VaultAction): Promise<VaultActionResponse>;
+  upload(name: string, body: ReadableStream<Uint8Array>, limit: number, signal: AbortSignal): Promise<VaultUploadResponse>;
   close(): Promise<void>;
 }
 
@@ -140,6 +141,97 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
   const revisionOf = (stats: Stats, bytes: Buffer) => createHash('sha256').update(secret).update(`revision:${stats.dev}:${stats.ino}:${stats.birthtimeMs}:`).update(bytes).digest('hex');
   let queue: Promise<void> = Promise.resolve();
   let closed = false;
+  const uploads = new Set<Promise<VaultUploadResponse>>();
+
+  async function uploadFile(name: string, body: ReadableStream<Uint8Array>, limit: number, signal: AbortSignal): Promise<VaultUploadResponse> {
+    if (!isUploadName(name)) throw invalidId();
+    let directory: FileHandle | undefined;
+    let file: FileHandle | undefined;
+    let temp: string | undefined;
+    let published = false;
+    let complete = false;
+    let timedOut = false;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const reader = body.getReader();
+    const abort = () => { if (!complete) void reader.cancel().catch(() => {}); };
+    const armIdle = () => {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { timedOut = true; abort(); }, 60_000);
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    try {
+      if (signal.aborted) throw new Error('aborted');
+      try { await mkdir(descriptorPath(pinnedRoot, '06_Attachments'), { mode: 0o700 }); await flushDirectory(pinnedRoot); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      directory = await open(descriptorPath(pinnedRoot, '06_Attachments'), directoryFlags);
+      temp = `.memory-loop-upload-${randomUUID()}.tmp`;
+      file = await open(descriptorPath(directory, temp), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      let size = 0;
+      armIdle();
+      for (;;) {
+        const part = await reader.read();
+        if (signal.aborted || timedOut) throw new Error('aborted');
+        if (part.done) break;
+        if (part.value.byteLength) armIdle();
+        size += part.value.byteLength;
+        if (size > limit) throw new VaultError('upload_too_large', 'Upload exceeds the file size limit');
+        for (let start = 0; start < part.value.byteLength; start += 64 * 1024) {
+          const chunk = part.value.subarray(start, start + 64 * 1024);
+          let offset = 0;
+          while (offset < chunk.length) {
+            const result = await file.write(chunk, offset, chunk.length - offset);
+            if (!result.bytesWritten) throw new Error('write failed');
+            offset += result.bytesWritten;
+          }
+        }
+      }
+      if (size === 0) throw invalidId();
+      complete = true;
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      signal.removeEventListener('abort', abort);
+      await flushFile(file);
+      const dir = directory;
+      const tempName = temp;
+      const operation = queue.then(async () => {
+        const check = await open(descriptorPath(pinnedRoot, '06_Attachments'), directoryFlags);
+        try { if (identity(await check.stat()) !== identity(await dir.stat())) throw new Error('Attachment directory changed'); }
+        finally { await check.close(); }
+        const dot = name.lastIndexOf('.');
+        const base = dot > 0 ? name.slice(0, dot) : name;
+        const ext = dot > 0 ? name.slice(dot) : '';
+        for (let index = 1; index < 100000; index++) {
+          const candidate = index === 1 ? name : `${base} (${index})${ext}`;
+          if (!isUploadName(candidate)) throw new Error('Collision name too long');
+          try { await renameNoReplace(dir.fd, tempName, dir.fd, candidate); }
+          catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'EEXIST') continue;
+            if (!['ENOSYS', 'ENOTSUP', 'EXDEV', 'EINVAL', 'EACCES', 'ENOENT'].includes(code ?? '')) published = true;
+            throw error;
+          }
+          published = true;
+          temp = undefined;
+          await flushDirectory(dir);
+          return { id: ['06_Attachments', candidate], name: candidate, size };
+        }
+        throw new Error('Collision limit');
+      });
+      queue = operation.then(() => {}, () => {});
+      return await operation;
+    } catch (error) {
+      if (published) throw new VaultError('upload_uncertain', 'Upload outcome is uncertain');
+      if (error instanceof VaultError) throw error;
+      throw new VaultError('upload_unavailable', 'Upload is unavailable');
+    } finally {
+      signal.removeEventListener('abort', abort);
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      if (!complete) void reader.cancel().catch(() => {});
+      reader.releaseLock();
+      if (temp && directory) await unlink(descriptorPath(directory, temp)).catch(() => {});
+      await file?.close().catch(() => {});
+      await directory?.close().catch(() => {});
+    }
+  }
 
   async function save(id: VaultId, markdown: string, expectedRevision: string): Promise<VaultSaveResponse> {
     const opened: FileHandle[] = [];
@@ -360,6 +452,12 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       queue = operation.then(() => {}, () => {});
       return operation;
     },
-    async close() { closed = true; await queue; await pinnedRoot.close(); },
+    async upload(name, body, limit, signal) {
+      if (closed) throw new VaultError('upload_unavailable', 'Upload is unavailable');
+      const operation = uploadFile(name, body, limit, signal);
+      uploads.add(operation);
+      try { return await operation; } finally { uploads.delete(operation); }
+    },
+    async close() { closed = true; await Promise.allSettled(uploads); await queue; await pinnedRoot.close(); },
   };
 }

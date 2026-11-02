@@ -2,7 +2,7 @@ import 'server-only';
 import { isAbsolute } from 'node:path';
 import { loadTransport } from '../../backend/transport';
 import { handleVaultRequest } from './vault-bff';
-import { daemonContentFetch, daemonFetch } from './daemon-http';
+import { daemonContentFetch, daemonFetch, daemonUploadFetch } from './daemon-http';
 
 /** Runtime-only binding. Neither imports nor page rendering open private metadata. */
 export async function vaultRoute(request: Request): Promise<Response> {
@@ -10,7 +10,7 @@ export async function vaultRoute(request: Request): Promise<Response> {
     const file = process.env.MEMORY_LOOP_TRANSPORT_FILE;
     if (!file || !isAbsolute(file)) throw new Error('Transport selector is unavailable');
     const transport = await loadTransport(file);
-    return await handleVaultRequest(request, { transport, fetch: new URL(request.url).pathname === '/api/vault/content' ? daemonContentFetch : daemonFetch, log: (event, details) => console.info(event, details) });
+    return await handleVaultRequest(request, { transport, fetch: (target, init) => new URL(String(target)).pathname === '/api/vault/content' ? daemonContentFetch(target, init) : new URL(String(target)).pathname === '/api/vault/attachments' && init?.method === 'POST' ? daemonUploadFetch(target, init) : daemonFetch(target, init), log: (event, details) => console.info(event, details) });
   } catch {
     console.info('vault_bff_configuration_outcome', { status: 'unavailable' });
     return Response.json({ error: { code: 'service_unavailable', message: 'Vault service unavailable' } }, {

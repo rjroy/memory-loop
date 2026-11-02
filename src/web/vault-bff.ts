@@ -1,5 +1,5 @@
 import type { LoadedTransport } from '../../backend/transport';
-import { isVaultErrorCode, isVaultId, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultEntry, type VaultId, type VaultErrorCode } from '../../backend/contract';
+import { hardUploadMaxBytes, isUploadName, isVaultErrorCode, isVaultId, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultEntry, type VaultId, type VaultErrorCode } from '../../backend/contract';
 import { allowsWebRequest } from './request-policy';
 
 export interface BffDependencies {
@@ -46,6 +46,109 @@ function contentDeadline(controller: AbortController) {
     wait<T>(promise: Promise<T>): Promise<T> { return Promise.race([promise, elapsed]); },
     close() { if (timer !== undefined) clearTimeout(timer); timer = undefined; },
   };
+}
+
+async function attachmentRequest(request: Request, dependencies: BffDependencies): Promise<Response> {
+  const { transport, log } = dependencies;
+  const requestId = crypto.randomUUID();
+  const operation = 'attachments';
+  log('vault_bff_attempt', { requestId, operation });
+  let result: Response;
+  let complete = false;
+  let tooLarge = false;
+  let empty = false;
+  let dispatched = false;
+  const controller = new AbortController();
+  const deadline = contentDeadline(controller);
+  const abort = () => controller.abort();
+  request.signal.addEventListener('abort', abort, { once: true });
+  let source: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let accepting = true;
+  const fetchOwned = (target: URL, init: RequestInit) => {
+    const pending = dependencies.fetch(target, init);
+    void pending.then(response => { if (!accepting && response.body && !response.body.locked) void response.body.cancel().catch(() => {}); }, () => {});
+    return pending;
+  };
+  try {
+    if (request.signal.aborted) throw new Error('Request aborted');
+    const url = new URL(request.url);
+    if (!allowsWebRequest(request)) result = failure('forbidden');
+    else if (request.method !== 'GET' && request.method !== 'POST') result = failure('method_not_allowed');
+    else {
+      let name: string | undefined;
+      let valid = true;
+      try {
+        decodeURIComponent(url.search.replace(/\+/g, ' '));
+        const names = url.searchParams.getAll('name');
+        if (request.method === 'GET') valid = !url.search;
+        else {
+          valid = names.length === 1 && [...url.searchParams.keys()].every(key => key === 'name') && isUploadName(names[0]);
+          if (valid) name = names[0];
+        }
+      } catch { valid = false; }
+      const length = request.headers.get('content-length');
+      if (request.method === 'POST' && (request.headers.get('content-type')?.toLowerCase() !== 'application/octet-stream' || !request.body || (length !== null && /^0+$/.test(length)))) valid = false;
+      if (length !== null && !/^\d+$/.test(length)) valid = false;
+      if (!valid) result = failure('invalid_request');
+      else if (!validDaemonOrigin(transport.config.daemonOrigin) || !/^[a-f0-9]{64}$/.test(transport.serviceToken)) result = failure('service_unavailable');
+      else {
+        const target = new URL('/api/vault/attachments', transport.config.daemonOrigin);
+        deadline.arm(15_000);
+        const initial = await deadline.wait(fetchOwned(target, { method: 'GET', headers: { accept: 'application/json', authorization: `Bearer ${transport.serviceToken}` }, cache: 'no-store', redirect: 'error', signal: controller.signal }));
+        const value: unknown = await deadline.wait(initial.json());
+        if (initial.status !== 200) result = failure(domainError(value, initial.status) ?? 'upload_unavailable');
+        else if (!record(value) || typeof value.maxFileBytes !== 'number' || !Number.isSafeInteger(value.maxFileBytes) || value.maxFileBytes < 1 || value.maxFileBytes > hardUploadMaxBytes) result = failure('upload_unavailable');
+        else if (request.method === 'GET') result = Response.json({ maxFileBytes: value.maxFileBytes }, { headers });
+        else if (length !== null && BigInt(length) > BigInt(value.maxFileBytes)) result = failure('upload_too_large');
+        else {
+          if (!request.body || !name) throw new Error('Invalid upload');
+          const limit = value.maxFileBytes;
+          source = request.body.getReader();
+          const reader = source;
+          let size = 0;
+          deadline.arm(60_000);
+          const body = new ReadableStream<Uint8Array>({
+            async pull(output) {
+              try {
+                const item = await deadline.wait(reader.read());
+                if (item.done) {
+                  if (size === 0) { empty = true; controller.abort(); output.error(new Error('Empty upload')); return; }
+                  complete = true; output.close(); return;
+                }
+                size += item.value.byteLength;
+                if (size > limit) { tooLarge = true; controller.abort(); void reader.cancel().catch(() => {}); output.error(new Error('Upload too large')); return; }
+                if (item.value.byteLength) deadline.arm(60_000);
+                output.enqueue(item.value);
+              } catch (error) { output.error(error); }
+            },
+            cancel(reason) { return reader.cancel(reason); },
+          }, { highWaterMark: 0 });
+          target.searchParams.set('name', name);
+          dispatched = true;
+          const init: RequestInit & { duplex: 'half' } = { method: 'POST', body, duplex: 'half', headers: { accept: 'application/json', authorization: `Bearer ${transport.serviceToken}`, 'content-type': 'application/octet-stream' }, cache: 'no-store', redirect: 'error', signal: controller.signal };
+          const upstream = await deadline.wait(fetchOwned(target, init));
+          deadline.arm(60_000);
+          const response: unknown = await deadline.wait(upstream.json());
+          if (empty) result = failure('invalid_request');
+          else if (tooLarge) result = failure('upload_too_large');
+          else if (upstream.status !== 200) result = failure(domainError(response, upstream.status) ?? (complete ? 'upload_uncertain' : 'upload_unavailable'));
+          else if (!complete || !record(response) || !isVaultId(response.id) || response.id.length !== 2 || response.id[0] !== '06_Attachments' || typeof response.name !== 'string' || response.id[1] !== response.name || !isUploadName(response.name) || typeof response.size !== 'number' || response.size !== size) result = failure(complete ? 'upload_uncertain' : 'upload_unavailable');
+          else result = Response.json({ id: response.id, name: response.name, size: response.size }, { headers });
+        }
+      }
+    }
+  } catch { controller.abort(); result = failure(empty ? 'invalid_request' : tooLarge ? 'upload_too_large' : dispatched && complete ? 'upload_uncertain' : 'upload_unavailable'); }
+  finally {
+    accepting = false;
+    deadline.close();
+    request.signal.removeEventListener('abort', abort);
+    if (source) {
+      if (!complete) { controller.abort(); void source.cancel().catch(() => {}); }
+      source.releaseLock();
+    }
+  }
+  log('vault_bff_outcome', { requestId, operation, status: result.status });
+  return result;
 }
 
 async function fileRequest(request: Request, dependencies: BffDependencies, operation: 'file' | 'content'): Promise<Response> {
@@ -230,6 +333,7 @@ function domainError(value: unknown, status: number): VaultErrorCode | undefined
 export async function handleVaultRequest(request: Request, dependencies: BffDependencies): Promise<Response> {
   const { transport, log } = dependencies;
   const url = new URL(request.url);
+  if (url.pathname === '/api/vault/attachments') return attachmentRequest(request, dependencies);
   if (url.pathname === '/api/vault/file') return fileRequest(request, dependencies, 'file');
   if (url.pathname === '/api/vault/content') return fileRequest(request, dependencies, 'content');
   const operation = url.pathname === '/api/vault/tree' ? 'tree' : url.pathname === '/api/vault/note' ? 'note' : url.pathname === '/api/vault/actions' ? 'actions' : 'other';

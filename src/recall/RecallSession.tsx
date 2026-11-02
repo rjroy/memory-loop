@@ -2,10 +2,12 @@ import { createContext, useContext, useRef } from 'react';
 import type { ReactNode } from 'react';
 import type { VaultId } from '../../backend/contract';
 import { createRecallEditor } from './editor';
+import { createAttachmentUploads } from './attachments';
 
 export function createRecallSession() {
   return {
     editor: createRecallEditor(),
+    uploads: createAttachmentUploads(),
     lastId: null as VaultId | null,
     expanded: new Set<string>(),
     desktopVisible: true,

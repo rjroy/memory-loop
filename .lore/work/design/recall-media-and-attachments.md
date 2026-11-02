@@ -48,6 +48,11 @@ Internal note links, wiki-note navigation, heading fragments and embedded notes 
 
 ## Upload direction
 
+Subsequent explicit user decisions: **zero-byte uploads must be rejected**, and
+**slow uploads should time out**. These are intended product constraints, not
+defects to remove. Retain the existing Next startup and timeout behavior; do not
+introduce a custom server to extend upload duration.
+
 Upload destinations are ordinary files in `06_Attachments/`, usable by Obsidian and filesystem tools. The daemon owns validation, filesystem writes and destination rules; the frontend presents selection, progress and outcomes through the existing Next-to-daemon boundary.
 
 Preserve original files. Do not silently overwrite an existing attachment or perform lossy format conversion. Collision handling, upload size limits, batch behavior and progress/failure/retry semantics need concrete decisions before implementation. In particular, retries must not accidentally create duplicates or replace content after an uncertain response.

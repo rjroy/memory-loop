@@ -1,5 +1,6 @@
 import 'server-only';
 import { request } from 'node:http';
+import { once } from 'node:events';
 import { vaultActionBodyLimit, vaultSaveBodyLimit } from '../../backend/contract';
 
 /** Node fetch adds Sec-Fetch-Mode even with fresh headers. The service protocol
@@ -7,7 +8,7 @@ import { vaultActionBodyLimit, vaultSaveBodyLimit } from '../../backend/contract
 export async function daemonFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (!(input instanceof URL)) throw new Error('Invalid service target');
   if (input.protocol !== 'http:' || input.hostname !== '127.0.0.1' || input.username || input.password ||
-      !['/api/vault/tree', '/api/vault/note', '/api/vault/actions', '/api/vault/file'].includes(input.pathname) || input.hash) throw new Error('Invalid service target');
+      !['/api/vault/tree', '/api/vault/note', '/api/vault/actions', '/api/vault/file', '/api/vault/attachments'].includes(input.pathname) || input.hash) throw new Error('Invalid service target');
   const method = init?.method ?? 'GET';
   const saving = method === 'POST' && (input.pathname === '/api/vault/note' || input.pathname === '/api/vault/actions') && !input.search;
   if (method !== 'GET' && !saving || method === 'GET' && input.pathname === '/api/vault/actions') throw new Error('Invalid service method');
@@ -32,6 +33,44 @@ export async function daemonFetch(input: RequestInfo | URL, init?: RequestInit):
     });
     upstream.on('error', reject);
     upstream.end(saving && typeof init?.body === 'string' ? init.body : undefined);
+  });
+}
+
+export async function daemonUploadFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (!(input instanceof URL) || input.protocol !== 'http:' || input.hostname !== '127.0.0.1' || input.username || input.password || input.pathname !== '/api/vault/attachments' || input.hash || init?.method !== 'POST' || !(init.body instanceof ReadableStream)) throw new Error('Invalid service upload');
+  const supplied = new Headers(init.headers);
+  const reader = init.body.getReader();
+  return new Promise<Response>((resolve, reject) => {
+    const upstream = request(input, { method: 'POST', headers: { accept: 'application/json', authorization: supplied.get('authorization') ?? '', 'content-type': 'application/octet-stream' }, signal: init.signal ?? undefined }, response => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      response.on('data', (chunk: Buffer) => {
+        total += chunk.length;
+        if (total > 65536) { response.destroy(); return; }
+        chunks.push(chunk);
+      });
+      response.on('error', reject);
+      response.on('aborted', () => reject(new Error('Service response abandoned')));
+      response.on('end', () => {
+        try {
+          const status = response.statusCode ?? 503;
+          if (status >= 300 && status < 400) throw new Error('Service redirect rejected');
+          resolve(new Response(Uint8Array.from(Buffer.concat(chunks)), { status, headers: { 'content-type': response.headers['content-type'] ?? '' } }));
+        } catch (error) { reject(error); }
+      });
+    });
+    upstream.on('error', error => { void reader.cancel(error).catch(() => {}); reject(error); });
+    void (async () => {
+      try {
+        for (;;) {
+          const item = await reader.read();
+          if (item.done) break;
+          if (!upstream.write(item.value)) await once(upstream, 'drain');
+        }
+        upstream.end();
+      } catch (error) { upstream.destroy(); reject(error); }
+      finally { reader.releaseLock(); }
+    })();
   });
 }
 

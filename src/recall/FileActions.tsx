@@ -23,9 +23,10 @@ interface Context {
 const Actions = createContext<Context | null>(null);
 
 // Both entry points use these definitions; future commands add a definition here.
-const definitions: { action: Action; label: (target: Target) => string; applies: (target: Target) => boolean }[] = [
+const definitions: { action: Action | 'upload'; label: (target: Target) => string; applies: (target: Target) => boolean }[] = [
   { action: 'create-note', label: () => 'New file…', applies: target => !target || target.kind === 'directory' },
   { action: 'create-directory', label: () => 'New folder…', applies: target => !target || target.kind === 'directory' },
+  { action: 'upload', label: () => 'Upload files…', applies: target => !target },
   { action: 'move', label: () => 'Move…', applies: target => Boolean(target) },
   { action: 'delete', label: target => target?.kind === 'directory' ? 'Delete empty folder…' : 'Delete file…', applies: target => Boolean(target) },
 ];
@@ -103,9 +104,10 @@ interface Props {
   fenced: boolean;
   setFenced: (fenced: boolean) => void;
   unavailable: boolean;
+  onUpload?: (trigger: HTMLElement) => void;
 }
 
-export default function FileActions({ children, tree, guard, onSuccess, isCurrent, refresh, onBusy, fenced, setFenced, unavailable }: Props) {
+export default function FileActions({ children, tree, guard, onSuccess, isCurrent, refresh, onBusy, fenced, setFenced, unavailable, onUpload }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   const [name, setName] = useState('');
@@ -273,8 +275,9 @@ export default function FileActions({ children, tree, guard, onSuccess, isCurren
         } else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismissMenu(); }
         else if (event.key === 'Tab') dismissMenu();
       }}>
-      {definitions.filter(item => item.applies(menu.target)).map(item => <button key={item.action} role="menuitem" type="button"
+      {definitions.filter(item => item.applies(menu.target) && (item.action !== 'upload' || onUpload)).map(item => <button key={item.action} role="menuitem" type="button"
         className={item.action === 'delete' ? 'file-menu-delete' : ''} onClick={() => {
+          if (item.action === 'upload') { dismissMenu(false); onUpload?.(menu.trigger); return; }
           setForm({ action: item.action, target: menu.target, trigger: menu.trigger }); setName(''); setDestination(null); setIssue(''); setRefreshOnly(false); dismissMenu(false);
         }}>{item.label(menu.target)}</button>)}
     </div>, document.body)}

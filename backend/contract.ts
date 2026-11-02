@@ -1,9 +1,17 @@
 /** One vault, configured by .memory-loop/config.json at daemon startup. */
 export interface VaultConfig {
   vaultDirectory: string;
+  recall?: { uploads?: { maxFileBytes?: number; [key: string]: unknown }; [key: string]: unknown };
   /** Validated independently so invalid Think settings do not disable Recall. */
   think?: unknown;
   ground?: unknown;
+}
+export const defaultUploadMaxBytes = 100 * 1024 * 1024;
+export const hardUploadMaxBytes = 1024 * 1024 * 1024;
+export interface VaultUploadLimit { maxFileBytes: number }
+export interface VaultUploadResponse { id: VaultId; name: string; size: number }
+export function isUploadName(value: unknown): value is string {
+  return typeof value === 'string' && isVaultComponent(value) && !/[\x00-\x1f\x7f]/.test(value) && new TextEncoder().encode(value).length <= 255 && new TextDecoder('utf-8', { fatal: true }).decode(new TextEncoder().encode(value)) === value;
 }
 
 /** Identifiers are vault-relative sequences of individual filename components. */
@@ -83,6 +91,9 @@ export const vaultErrors = {
   move_unsupported: { status: 503, message: 'Move is unsupported' },
   file_action_unavailable: { status: 503, message: 'File action is unavailable' },
   file_action_uncertain: { status: 503, message: 'File action outcome is uncertain' },
+  upload_too_large: { status: 413, message: 'Upload exceeds the file size limit' },
+  upload_unavailable: { status: 503, message: 'Upload is unavailable' },
+  upload_uncertain: { status: 503, message: 'Upload outcome is uncertain' },
 } as const;
 
 export type VaultErrorCode = keyof typeof vaultErrors;

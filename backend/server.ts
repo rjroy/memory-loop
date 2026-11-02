@@ -187,7 +187,7 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
     return closing;
   }
   try {
-    const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault,
+    const fetch = createApp({ authority: options.authority, serviceToken: transport.serviceToken, vault, uploadMaxBytes: config?.recall?.uploads?.maxFileBytes,
       think: preparedThink.think, conversations: preparedThink.conversations, capture, ground, groundError, groundDemand: preparedThink.groundDemand });
     return { fetch, close, startRecovery: () => preparedThink.startRecovery() };
   } catch (error) {

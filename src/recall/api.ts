@@ -1,4 +1,4 @@
-import { isVaultComponent, isVaultErrorCode, isVaultId, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultFileResponse, type VaultTreeResponse, type VaultSaveRequest, type VaultSaveResponse, type VaultAction as VaultActionRequest, type VaultActionResponse } from '../../backend/contract';
+import { isUploadName, isVaultComponent, isVaultErrorCode, isVaultId, type VaultUploadLimit, type VaultUploadResponse, type VaultEntry, type VaultErrorCode, type VaultId, type VaultNoteResponse, type VaultFileResponse, type VaultTreeResponse, type VaultSaveRequest, type VaultSaveResponse, type VaultAction as VaultActionRequest, type VaultActionResponse } from '../../backend/contract';
 
 export type RecallFailure = VaultErrorCode | 'transport';
 
@@ -54,7 +54,7 @@ function opaque(value: unknown): value is string { return typeof value === 'stri
 
 let readSequence = 0;
 
-async function request<T>(url: string, operation: 'tree' | 'note' | 'file', signal: AbortSignal, validate: (value: unknown) => value is T): Promise<T> {
+async function request<T>(url: string, operation: 'tree' | 'note' | 'file' | 'attachments', signal: AbortSignal, validate: (value: unknown) => value is T): Promise<T> {
   const requestId = ++readSequence;
   console.info('vault_read_attempt', { operation, requestId });
   let outcome: RecallFailure | 'loaded' | 'abandoned' = 'transport';
@@ -107,6 +107,81 @@ export function readFile(key: string, signal: AbortSignal): Promise<VaultFileRes
       return (value.kind === 'image' || value.kind === 'video') && typeof value.contentType === 'string' &&
         new RegExp(`^${value.kind}/[a-z0-9.+-]+$`, 'i').test(value.contentType);
     });
+}
+
+// Local wire validation for the reviewed upload boundary; the daemon owns limits,
+// names and publication. No browser MIME/type or size policy replaces that truth.
+export type AttachmentLimits = VaultUploadLimit;
+export type AttachmentResult = VaultUploadResponse;
+export interface AttachmentProgress { loaded: number; total: number | null; finishing: boolean }
+export type AttachmentFailure = 'upload_too_large' | 'invalid_request' | 'upload_unavailable' | 'upload_uncertain';
+export class AttachmentUploadError extends Error {
+  constructor(readonly code: AttachmentFailure) { super('Attachment upload failed'); }
+}
+
+export function readAttachmentLimits(signal: AbortSignal): Promise<AttachmentLimits> {
+  return request('/api/vault/attachments', 'attachments', signal,
+    (value): value is AttachmentLimits => record(value) && typeof value.maxFileBytes === 'number' && Number.isSafeInteger(value.maxFileBytes) && value.maxFileBytes > 0);
+}
+
+/** Send the original File once. Progress is transfer, not durable acknowledgement. */
+export function uploadAttachment(file: File, signal: AbortSignal, progress: (value: AttachmentProgress) => void): Promise<AttachmentResult> {
+  if (file.size === 0) {
+    console.info('vault_upload_rejected', { reason: 'empty', trigger: 'client-validation' });
+    return Promise.reject(new AttachmentUploadError('invalid_request'));
+  }
+  const requestId = ++readSequence;
+  console.info('vault_upload_attempt', { requestId });
+  return new Promise((resolve, reject) => {
+    let xhr: XMLHttpRequest;
+    try { xhr = new XMLHttpRequest(); } catch {
+      console.info('vault_upload_outcome', { requestId, status: 'upload_uncertain' });
+      reject(new AttachmentUploadError('upload_uncertain')); return;
+    }
+    let settled = false;
+    let transferred: AttachmentProgress = { loaded: 0, total: null, finishing: false };
+    const finish = (result: AttachmentResult | AttachmentFailure) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', abort);
+      xhr.onload = xhr.onerror = xhr.onabort = xhr.ontimeout = null;
+      xhr.upload.onprogress = xhr.upload.onload = null;
+      console.info('vault_upload_outcome', { requestId, status: typeof result === 'string' ? result : 'uploaded' });
+      if (typeof result === 'string') reject(new AttachmentUploadError(result)); else resolve(result);
+    };
+    const abort = () => { xhr.abort(); finish('upload_uncertain'); };
+    xhr.onload = () => {
+      try {
+        if (xhr.getResponseHeader('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') { finish('upload_uncertain'); return; }
+        const value: unknown = JSON.parse(xhr.responseText);
+        if (xhr.status === 200 && record(value) && isUploadName(value.name) && isVaultId(value.id) &&
+          value.id.length === 2 && value.id[0] === '06_Attachments' && value.id[1] === value.name &&
+          typeof value.size === 'number' && Number.isSafeInteger(value.size) && value.size === file.size) {
+          finish({ id: value.id, name: value.name, size: value.size }); return;
+        }
+        const code = record(value) && record(value.error) ? value.error.code : null;
+        if ((xhr.status === 413 && code === 'upload_too_large') || (xhr.status === 400 && code === 'invalid_request') ||
+          (xhr.status === 503 && code === 'upload_unavailable')) finish(code);
+        else finish('upload_uncertain');
+      } catch { finish('upload_uncertain'); }
+    };
+    xhr.onerror = xhr.onabort = xhr.ontimeout = () => finish('upload_uncertain');
+    xhr.upload.onprogress = event => {
+      if (settled || signal.aborted) return;
+      const total = event.lengthComputable && Number.isFinite(event.total) && event.total > 0 ? event.total : null;
+      transferred = { loaded: Math.max(0, event.loaded), total, finishing: total !== null && event.loaded >= total };
+      progress(transferred);
+    };
+    xhr.upload.onload = () => { if (!settled && !signal.aborted) progress({ ...transferred, finishing: true }); };
+    signal.addEventListener('abort', abort, { once: true });
+    try {
+      if (signal.aborted) { finish('upload_uncertain'); return; }
+      xhr.open('POST', `/api/vault/attachments?${new URLSearchParams({ name: file.name })}`);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.send(file);
+    } catch { finish('upload_uncertain'); }
+  });
 }
 
 /** A lost/malformed acknowledgement is uncertain, never evidence of no write. */
@@ -178,6 +253,12 @@ export function findNote(entries: VaultEntry[], id: VaultId): VaultEntry | undef
   }
 }
 
+const attachmentFailureCopy = {
+  upload_too_large: { heading: 'File too large', body: 'Choose a file within the current upload limit.', action: '' },
+  upload_unavailable: { heading: 'Upload unavailable', body: "The file couldn't be saved. Your selected file is still here.", action: '' },
+  upload_uncertain: { heading: 'Upload not confirmed', body: 'Check files before uploading again.', action: '' },
+};
+
 export const failureCopy: Record<RecallFailure, { heading: string; body: string; action: string }> = {
   config_missing: { heading: 'Vault not configured', body: 'Set the vault directory in the JSON config, then restart Memory Loop.', action: 'Check again' },
   config_invalid: { heading: 'Vault configuration is invalid', body: 'Check the JSON configuration and vault directory, then restart Memory Loop.', action: 'Check again' },
@@ -197,4 +278,5 @@ export const failureCopy: Record<RecallFailure, { heading: string; body: string;
   file_action_unavailable: { heading: 'Action unavailable', body: "The action couldn't be completed. Refresh files before trying again.", action: 'Refresh files' },
   file_action_uncertain: { heading: 'Action not confirmed', body: 'Refresh files to check what happened before trying again.', action: 'Refresh files' },
   transport: { heading: 'Vault service unavailable', body: "Recall couldn't reach the vault service. Check the local service and try again.", action: 'Try again' },
+  ...attachmentFailureCopy,
 };

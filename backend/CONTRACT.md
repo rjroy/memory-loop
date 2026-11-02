@@ -18,6 +18,16 @@ Only content-detected passive raster images and video are eligible for inline de
 
 The fixed same-origin Next routes enforce the existing browser request policy and use the server-only bearer credential for the private daemon; they do not forward browser credentials or Origin. Content is streamed rather than buffered through the short JSON-request timeout. Content detection uses the pinned `file-type` dependency, currently 22.3.0, which requires Node 22 or later when run under Node.
 
+## Attachment uploads
+
+Uploads are available by default without an enable flag. `GET /api/vault/attachments` returns `{ "maxFileBytes": number }` without creating a directory or writing a file. `POST /api/vault/attachments?name=...` accepts one nonempty raw `application/octet-stream` body and a once-query-encoded basename; it returns `{ "id": ["06_Attachments", name], "name": name, "size": number }` only after confirmed publication. Empty files, duplicate or extra query parameters and unsafe basenames are invalid. The API sends the selected original bytes without app-side HEIC conversion or transcoding; native picker integration does not guarantee device or browser codec support.
+
+The default limit is 100 MiB per file. The optional JSON setting `recall.uploads.maxFileBytes` must be an integer from 1 through 1073741824 (1 GiB). The daemon reads it at startup; configuration changes require a daemon restart. Next obtains the daemon limit before forwarding an upload, and both boundaries count actual bytes rather than trusting `Content-Length`. The fixed server-only transport streams the request with backpressure and does not forward browser credentials or Origin. Its limit-fetch deadline is 15 seconds; the upload uses a 60-second idle deadline reset by byte progress. The daemon also bounds upload-body idle time. Next retains Node's five-minute absolute request-receive timeout, so progressing uploads can still time out.
+
+The destination is exactly `06_Attachments/` under the pinned vault root; it is created when missing and checked without following symlinks. A complete upload is written to a private hidden temporary file, flushed and published through the vault mutation queue with no-replace semantics. Collisions preserve both files using `name (2).ext`, `name (3).ext`, and so on. Interrupted partial uploads are cleaned up. After publication may have happened, an acknowledgement loss or post-publication flush failure is uncertain: reconcile with a fresh vault read and do not automatically retry.
+
+Upload errors include `invalid_request` (400), `upload_too_large` (413), `upload_unavailable` (503), and `upload_uncertain` (503), in addition to the existing configuration and request-policy errors. The limits and upload routes are backend capabilities; the native picker UI is being integrated separately.
+
 ## Saves and file actions
 
 The tree supplies an opaque root identity and an identity and version for each entry. Note reads supply a revision bound to the physical file and its bytes. These tokens are scoped to the opened vault reader and are invalidated by daemon restart. After a conflict or restart, refresh the relevant tree or note and reconcile the user's work before attempting another change.

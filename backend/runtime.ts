@@ -3,6 +3,7 @@ import { isAbsolute } from 'node:path';
 import { prepareServer } from './server';
 import { defaultProjectRoot, transportFileFor } from './runtime-options';
 import { loadTransport } from './transport';
+import { hardUploadMaxBytes } from './contract';
 
 interface RuntimeOptions {
   projectRoot: string;
@@ -41,8 +42,9 @@ async function main(): Promise<void> {
   let server: ReturnType<typeof serve>;
   try {
     server = serve({
-      hostname: '127.0.0.1', port, development: false,
+      hostname: '127.0.0.1', port, development: false, maxRequestBodySize: hardUploadMaxBytes,
       async fetch(request, listener) {
+        if (request.method === 'POST' && new URL(request.url).pathname === '/api/vault/attachments') listener.timeout(request, 0);
         const response = await prepared.fetch(request);
         // Accepted watches have their own lease and write deadlines. Bun's default
         // idle timeout is shorter than the watch heartbeat; leave it unchanged for

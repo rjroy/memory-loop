@@ -79,6 +79,26 @@ stay outside the vault; a transcript's small frontmatter is intentional note con
 Missing/invalid vault configuration and an unavailable vault produce distinct API
 errors, not an empty tree. There is no config editor or vault picker in the UI.
 
+#### Recall upload limit
+
+The upload API is available by default, without an enable flag. It accepts one
+nonempty file per request, up to **100 MiB** by default; empty files are rejected.
+To choose a different per-file
+limit, add the optional `recall.uploads.maxFileBytes` integer to the existing
+vault configuration; the valid range is 1 byte through **1 GiB** (1073741824
+bytes). For example, the following placeholder sets a 50 MiB limit:
+
+```json
+{
+  "vaultDirectory": "/absolute/path/to/your/vault",
+  "recall": { "uploads": { "maxFileBytes": 52428800 } }
+}
+```
+
+The daemon reads this setting at startup; changing it requires a daemon restart
+to take effect. Do not replace an existing configuration with the example or
+restart a running instance without authorization.
+
 #### Think transcripts: fixture/staged configuration
 
 The daemon also accepts the following Think configuration. Paths are examples;
@@ -427,7 +447,7 @@ missing/invalid vault config remains a distinct read error after daemon startup.
 
 The browser uses same-origin Next APIs. Recall uses `GET /api/vault/tree`,
 `GET` and `POST /api/vault/note`, `GET /api/vault/file`, `GET|HEAD /api/vault/content`,
-and `POST /api/vault/actions`; Capture uses `POST /api/capture`; Ground uses six fixed
+`GET` and `POST /api/vault/attachments`, and `POST /api/vault/actions`; Capture uses `POST /api/capture`; Ground uses six fixed
 read routes under `/api/ground`; the internal Think layer
 adds fixed command, snapshot, watch, content and decision routes under the same web request policy, not a
 generic OpenCode proxy. The BFF creates fresh service headers
@@ -435,6 +455,11 @@ for the authenticated daemon. Browser credentials, cookies and forwarding header
 are not forwarded. The daemon rejects browser Origin/Fetch Metadata and has no
 frontend assets, SPA fallback or generic filesystem route. File content streams through
 the fixed Next boundary rather than being buffered or subject to its short JSON timeout.
+For uploads, Next fetches the limit before streaming: that limit request has a
+15-second deadline, and the upload has a 60-second idle deadline reset by byte
+progress. The Next server also retains Node's five-minute absolute request-receive
+timeout, so even progressing uploads can time out. Both Next and the daemon count
+actual bytes independently.
 APIs are uncached;
 errors and application logs omit credentials, note identifiers and note text.
 
@@ -630,7 +655,21 @@ containing `/` are vault-root-relative unless they explicitly start with `./` or
 `../`. Missing, ambiguous and unsupported references show a compact explanation;
 remote media is not fetched. Code, escaped syntax and unsupported sizing syntax
 remain literal. Think and Ground retain their existing Markdown media suppression.
-Uploads are the next layer and are not available yet.
+
+The attachment API accepts original file bytes one file at a time and places
+them under `06_Attachments/`, creating that directory when needed. It keeps both
+files on a name collision, adding suffixes such as `photo (2).jpg`. An interrupted
+partial upload is cleaned up; a lost acknowledgement or a failure after
+publication can instead leave an **uncertain** outcome. Reconcile with the vault
+before trying again; the API does not automatically retry.
+
+Choose **Upload files…** from the Files header menu to queue files with the native
+file/photo picker, then start the batch explicitly. Uploads run sequentially and
+show saving until the server confirms them. Empty selections are rejected; an
+uploaded file is opened only when you choose its **Open file** action, through the
+existing unsaved-draft guard. Originals are preserved without app-side HEIC
+conversion or transcoding. Browser and device format support can still vary;
+physical iPhone picker and codec behavior has not been verified by automated tests.
 
 Recall has no search or AI action. Dot entries, symlinks and nonregular files are
 omitted from the tree. Empty trees,

@@ -12,7 +12,7 @@ function setup(vault?: VaultState) {
     tree: vi.fn(async () => ({ rootIdentity: 'root', entries: [{ kind: 'note' as const, name: 'note.md', id: ['note.md'], identity: 'note-id', version: 'note-version' }] })),
     note: vi.fn(async () => ({ name: 'note.md', markdown: '# Test note\n', revision: 'fixture', editable: true })),
     save: vi.fn(),
-    file: vi.fn(), content: vi.fn(),
+    file: vi.fn(), content: vi.fn(), upload: vi.fn(),
     action: vi.fn(),
     close: vi.fn(async () => {}),
   };
@@ -101,7 +101,7 @@ describe('vault HTTP API', () => {
       tree: vi.fn(),
       note: vi.fn(async () => { throw Object.assign(new Error(secret), { code: 'note_unavailable' }); }),
       save: vi.fn(),
-      file: vi.fn(), content: vi.fn(),
+      file: vi.fn(), content: vi.fn(), upload: vi.fn(),
       action: vi.fn(),
       close: vi.fn(),
     };
@@ -114,7 +114,7 @@ describe('vault HTTP API', () => {
       tree: vi.fn(async () => { throw new Error(secret); }),
       note: vi.fn(),
       save: vi.fn(),
-      file: vi.fn(), content: vi.fn(),
+      file: vi.fn(), content: vi.fn(), upload: vi.fn(),
       action: vi.fn(),
       close: vi.fn(),
     };
@@ -144,7 +144,7 @@ describe('vault HTTP API', () => {
   });
 
   it('rejects a missing Host header', async () => {
-    const reader: VaultReader = { tree: vi.fn(), note: vi.fn(), file: vi.fn(), content: vi.fn(), save: vi.fn(), action: vi.fn(), close: vi.fn() };
+    const reader: VaultReader = { tree: vi.fn(), note: vi.fn(), file: vi.fn(), content: vi.fn(), upload: vi.fn(), save: vi.fn(), action: vi.fn(), close: vi.fn() };
     const options = { authority, vault: { reader }, serviceToken: token };
     const app = createApp(options);
     const response = await app(new Request(`http://${authority}/api/vault/tree`, { headers: { authorization: `Bearer ${token}` } }));

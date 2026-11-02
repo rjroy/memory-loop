@@ -11,6 +11,7 @@ import { useDesktop } from '../recall/useDesktop';
 import { useVaultRead } from '../recall/useVaultRead';
 import MarkdownDocument from '../recall/MarkdownDocument';
 import FileViewer, { fileKindLabel } from '../recall/FileViewer';
+import AttachmentsUpload from '../recall/AttachmentsUpload';
 import { createMediaIndex } from '../recall/mediaReferences';
 import VaultFiles from '../recall/VaultFiles';
 import FilesToggle from '../recall/FilesToggle';
@@ -94,6 +95,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   const media = useMemo(() => selection.id ? { noteId: selection.id, index: mediaIndex, unavailable: tree.status === 'error' } : undefined,
     [selection.id, mediaIndex, tree.status]);
   const [fileBusy, setFileBusy] = useState(false);
+  const [uploadTrigger, setUploadTrigger] = useState<HTMLElement | null>(null);
   const fileBusyRef = useRef(false);
   const fileMounted = useRef(false);
   const renderedGeneration = navigationGeneration?.();
@@ -173,16 +175,19 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   useLayoutEffect(() => registerNavigationGuard?.(resume => {
     if (actionNavigation.current) return true;
     if (fileBusyRef.current) return false;
+    if (session.uploads.getSnapshot().busy) { session.uploads.wait(); return false; }
+    session.uploads.dismiss();
+    setUploadTrigger(null);
     const leave = () => { editor.leave(); resume(); };
     if (!editor.request(leave)) return false;
     editor.leave();
     return true;
-  }), [editor, registerNavigationGuard]);
+  }), [editor, session, registerNavigationGuard]);
 
   useEffect(() => {
     const unload = (event: BeforeUnloadEvent) => {
       const current = editor.getSnapshot();
-      if (!editor.dirty() && !current.saving && !current.reloading && !fileBusyRef.current) return;
+      if (!editor.dirty() && !current.saving && !current.reloading && !fileBusyRef.current && !session.uploads.hasPending() && !session.uploads.getSnapshot().busy) return;
       event.preventDefault();
       event.returnValue = '';
     };
@@ -190,7 +195,7 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
     window.addEventListener('beforeunload', unload);
     document.addEventListener('focusin', focus);
     return () => { window.removeEventListener('beforeunload', unload); document.removeEventListener('focusin', focus); };
-  }, [editor]);
+  }, [editor, session]);
 
   useLayoutEffect(() => {
     if (editing.pending) keepRef.current?.focus();
@@ -520,9 +525,9 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   };
 
   return <FileActions tree={tree.status === 'ready' ? tree.data : null} guard={guardFileAction} onSuccess={fileActionSucceeded}
-    isCurrent={ownsFileView}
+    isCurrent={ownsFileView} onUpload={setUploadTrigger}
     refresh={reconcileFiles} onBusy={busy => { fileBusyRef.current = busy; setFileBusy(busy); }} fenced={fileFenced}
-    setFenced={fenced => { session.fileActionFenced = fenced; session.fileActionAffectedId = fenced ? uncertainAffectedId.current : null; setFileFenced(fenced); }} unavailable={Boolean(editing.pending) || isNavigating}>
+    setFenced={fenced => { session.fileActionFenced = fenced; session.fileActionAffectedId = fenced ? uncertainAffectedId.current : null; setFileFenced(fenced); }} unavailable={Boolean(editing.pending) || isNavigating || Boolean(uploadTrigger)}>
     <div className="recall" onKeyDown={event => {
     if (draft && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
       event.preventDefault();
@@ -630,5 +635,10 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
             </div>}
           </section>
         </div>}
-  </div></FileActions>;
+  </div>
+    <AttachmentsUpload uploads={session.uploads} trigger={uploadTrigger} isCurrent={ownsFileView} onClose={() => setUploadTrigger(null)}
+      onUploaded={async result => { await refreshFiles(); if (ownsFileView()) revealAncestors(result.id); }}
+      onRefresh={refreshFiles} onCheckFiles={() => { actionFocus.current = idKey(['06_Attachments']); revealAncestors(['06_Attachments', '_']); openFiles(); }}
+      onOpen={result => { if (ownsFileView()) selectNote(result.id); }} />
+  </FileActions>;
 }

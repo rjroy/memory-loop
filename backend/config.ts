@@ -1,6 +1,7 @@
 import { opendir, readFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import type { VaultConfig } from './contract';
+import { hardUploadMaxBytes } from './contract';
 
 type ConfigErrorCode = 'config_missing' | 'config_invalid' | 'vault_unavailable';
 
@@ -34,11 +35,24 @@ export async function loadConfig(projectRoot: string): Promise<VaultConfig> {
     throw new ConfigError('config_invalid', 'Vault configuration is invalid');
   }
 
+  let recall: VaultConfig['recall'];
+  if ('recall' in parsed) {
+    const value = parsed.recall;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ConfigError('config_invalid', 'Vault configuration is invalid');
+    if ('uploads' in value) {
+      const uploads = value.uploads;
+      if (!uploads || typeof uploads !== 'object' || Array.isArray(uploads)) throw new ConfigError('config_invalid', 'Vault configuration is invalid');
+      if ('maxFileBytes' in uploads && (typeof uploads.maxFileBytes !== 'number' || !Number.isSafeInteger(uploads.maxFileBytes) || uploads.maxFileBytes < 1 || uploads.maxFileBytes > hardUploadMaxBytes)) throw new ConfigError('config_invalid', 'Vault configuration is invalid');
+      const maxFileBytes = 'maxFileBytes' in uploads && typeof uploads.maxFileBytes === 'number' ? uploads.maxFileBytes : undefined;
+      recall = { ...value, uploads: { ...uploads, ...(maxFileBytes === undefined ? {} : { maxFileBytes }) } };
+    } else recall = { ...value };
+  }
+
   try {
     const directory = await opendir(parsed.vaultDirectory);
     await directory.close();
   } catch {
     throw new ConfigError('vault_unavailable', 'Vault directory is unavailable');
   }
-  return { vaultDirectory: parsed.vaultDirectory, ...('think' in parsed ? { think: parsed.think } : {}), ...('ground' in parsed ? { ground: parsed.ground } : {}) };
+  return { vaultDirectory: parsed.vaultDirectory, ...(recall === undefined ? {} : { recall }), ...('think' in parsed ? { think: parsed.think } : {}), ...('ground' in parsed ? { ground: parsed.ground } : {}) };
 }

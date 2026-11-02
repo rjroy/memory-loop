@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { appendFile, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EventSubscribeInput, OpenCodeEvent, SessionCreateInput, SessionGetInput, SessionPromptInput, SessionPromptOutput } from '@opencode/client';
 import type { SessionInboxListInput, SessionInboxListOutput, SessionInboxCancelInput, SessionInterruptInput, SessionInterruptOutput } from '@opencode/client';
@@ -519,20 +519,28 @@ describe('Phase 3 authenticated content transfer', () => {
     expect(value).toMatchObject({ error: { code: expect.stringMatching(/content|transfer|range|stale|invalid/i) } });
   }
 
-  async function filesIn(path: string): Promise<number> {
-    let count = 0;
-    for (const entry of await readdir(path, { withFileTypes: true })) {
-      if (entry.isDirectory()) count += await filesIn(join(path, entry.name));
-      else if (entry.isFile()) count++;
-    }
-    return count;
-  }
-
-  async function reclaimedFixture() {
+  async function reclaimedFixture(holdTranscriptRead = false) {
     const x = await fixture('fixture original remains protected');
+    const releaseRead = deferred<void>();
     try {
       const messageId = 'msg_fixture_reclaim';
       const text = 'canonical fixture 🧠';
+      const heldRead = vi.fn();
+      const evictions: Array<{ ref: BodyRef; result: Awaited<ReturnType<BodyStore['evict']>> }> = [];
+      const evict = x.bodies.evict.bind(x.bodies);
+      const eviction = vi.spyOn(x.bodies, 'evict').mockImplementation(async ref => {
+        const result = await evict(ref);
+        evictions.push({ ref, result });
+        return result;
+      });
+      if (holdTranscriptRead) {
+        const open = x.bodies.open.bind(x.bodies);
+        vi.spyOn(x.bodies, 'open').mockImplementation(async ref => {
+          const reader = await open(ref);
+          if (ref.key.owner.kind !== 'assistant-text' || ref.key.owner.messageId !== messageId) return reader;
+          return { ...reader, async read(offset, length) { heldRead(); await releaseRead.promise; return reader.read(offset, length); } };
+        });
+      }
       const message: SessionMessageGetOutput = { id: messageId, type: 'assistant', agent, model, finish: 'stop',
         time: { created: 22, completed: 23 }, content: [{ type: 'text', text }] };
       x.f.messages.push(message);
@@ -546,18 +554,37 @@ describe('Phase 3 authenticated content transfer', () => {
         if (entry?.kind === 'assistant-text') ref = entry.body;
       });
       if (!ref) throw new Error('fixture canonical missing');
-      const resident = await filesIn(join(x.root, 'bodies'));
-      expect(resident).toBeGreaterThanOrEqual(2);
+      const canonical = ref;
+      if (holdTranscriptRead) {
+        await vi.waitFor(() => expect(heldRead).toHaveBeenCalled());
+        await vi.advanceTimersByTimeAsync(6000);
+        expect(eviction).not.toHaveBeenCalledWith(canonical);
+        expect(x.f.getMessage).not.toHaveBeenCalled();
+        releaseRead.resolve();
+      }
+      const transcript = join(x.root, 'vault', 'Conversations', 'Memory Loop', `think-${a.conversationId}.md`);
+      await vi.waitFor(async () => {
+        expect(await readFile(transcript, 'utf8')).toContain(text);
+        expect((await x.f.service.conversation(a.conversationId))?.transcript?.state).toBe('up-to-date');
+      });
       x.advance(1000);
       await vi.advanceTimersByTimeAsync(6000);
-      await vi.waitFor(async () => expect(await filesIn(join(x.root, 'bodies'))).toBeLessThan(resident));
+      await vi.waitFor(() => expect(evictions).toContainEqual({ ref: canonical, result: 'evicted' }));
+      await expect(x.bodies.open(canonical)).rejects.toMatchObject({ code: 'unavailable' });
       expect(x.f.getMessage).not.toHaveBeenCalled();
       const snapshot = await x.f.service.snapshot(a.conversationId);
       expect(snapshot?.entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId, body: ref }));
       expect(x.f.getMessage).not.toHaveBeenCalled();
       return { ...x, canonical: ref, message, text, sid };
-    } catch (error) { await x.close(); throw error; }
+    } catch (error) { releaseRead.resolve(); await x.close(); throw error; }
   }
+
+  it('defers reclamation while the transcript reads canonical bytes and reclaims after synchronization', async () => {
+    vi.useFakeTimers();
+    let x: Awaited<ReturnType<typeof reclaimedFixture>> | undefined;
+    try { x = await reclaimedFixture(true); }
+    finally { try { await x?.close(); } finally { vi.useRealTimers(); } }
+  }, 15000);
 
   it('reclaims verified canonical bytes on maintenance and coalesces concurrent rehydration with independent readers', async () => {
     vi.useFakeTimers();

@@ -1285,12 +1285,12 @@ describe('daemon-owned original body foundation', () => {
 });
 
 describe('real private-store normalized projection', () => {
-  async function fixture() {
+  async function fixture(transcript?: ThinkServiceOptions['transcript']) {
     const root = await mkdtemp('/tmp/opencode/think-projection-test-');
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
     const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
-    const f = setup(model, bodies, vault);
+    const f = setup(model, bodies, vault, undefined, transcript);
     return { f, root, async close() { try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); } } };
   }
   const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: 'original fixture 🧠' };
@@ -1668,7 +1668,12 @@ describe('real private-store normalized projection', () => {
   });
 
   it('keeps an observed partial incomplete after a stream gap until canonical history replaces it', async () => {
-    const fixtureState = await fixture();
+    let now = 1_700_000_000_000;
+    const timers = new Set<{ at: number; callback: () => void }>();
+    const runtime: TranscriptRuntime = { now: () => now, random: () => 0.999, schedule(callback, delay) {
+      const task = { at: now + delay, callback }; timers.add(task); return () => { timers.delete(task); };
+    } };
+    const fixtureState = await fixture({ runtime });
     const { f } = fixtureState;
     try {
       await f.service.create(a);
@@ -1721,6 +1726,15 @@ describe('real private-store normalized projection', () => {
       if (!canonical || canonical.kind !== 'assistant-text') throw new Error('canonical fixture projection missing');
       const canonicalReader = await f.service.content.open(canonical.body);
       try { expect(Buffer.from(await canonicalReader.read(0, canonical.body.through)).toString('utf8')).toBe('canonical fixture'); } finally { await canonicalReader.close(); }
+      const beforeRetry = (await f.service.conversation(a.conversationId))?.transcript;
+      expect(beforeRetry).toMatchObject({ state: 'retrying', warning: true, reason: 'content_gap' });
+      expect(await readFile(transcript, 'utf8')).not.toContain('canonical fixture');
+      // Exercise the writer's scheduled retry, rather than racing its permitted
+      // jitter/backoff against the completion helper's real-I/O wait budget.
+      const retry = [...timers].sort((left, right) => left.at - right.at)[0];
+      if (!retry) throw new Error('fixture transcript retry not scheduled');
+      expect(retry.at).toBeGreaterThan(now);
+      now = retry.at; timers.delete(retry); retry.callback();
       await syncedTranscript(f, transcript, markdown => {
         expect(markdown).toContain('AI (replacement)');
         expect(markdown).toContain('"supersedes_entry_id"');
@@ -1728,6 +1742,11 @@ describe('real private-store normalized projection', () => {
         expect(markdown.split('observed partial')).toHaveLength(2);
         expect(markdown).toMatch(/```text\ncanonical fixture\n```\n<!-- memory-loop-end {"entry_id":"ai:msg_fixture_preview:0:[a-f0-9]{64}"} -->\n\n/);
       });
+      // A warning/no-op callback cannot produce the complete replacement and a
+      // newly successful synchronization at the advanced test-owned clock.
+      const synchronized = (await f.service.conversation(a.conversationId))?.transcript;
+      expect(synchronized?.lastSyncedAt).toBe(new Date(now).toISOString());
+      expect(synchronized?.lastSyncedAt).not.toBe(beforeRetry?.lastSyncedAt);
       expect(f.prompt).toHaveBeenCalledOnce();
     } finally { await fixtureState.close(); }
   }, 15000);

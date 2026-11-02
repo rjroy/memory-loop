@@ -386,8 +386,10 @@ bun --no-env-file run server
 bun --no-env-file run check:daemon
 ```
 
-For an already managed deployment, `bun run restart` stops its recorded web
-processes, builds once, then restarts its recorded daemons and webs. Recorded working
+`bun run restart` is a checkout-testing convenience only. Production lifecycle
+belongs to a user service; this command does not install or manage that service.
+For recorded test instances, it stops the web processes, builds once, then
+restarts their recorded daemons and webs. Recorded working
 directories, executables, arguments, transport selectors and process identities are
 kept in the ignored `.memory-loop/restart.json`. Other environment variables come
 from the shell running the command; they are not restored from a snapshot. Missing

@@ -85,6 +85,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
   }
   // Pin startup namespace independently of native setup/admission. A failed open is retried safely.
   const startup = configurationError ? undefined : namespace?.prepare().catch(() => {});
+  let draining = false;
   let stopped = false;
   let closing: Promise<void> | undefined;
   let cancelRecovery: (() => void) | undefined;
@@ -108,7 +109,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
     onHealth();
   }
   function enqueue(writer: WriterState): void {
-    if (stopping(writer) || active.has(writer) || writer.cancelRetry) return;
+    if (draining || stopping(writer) || active.has(writer) || writer.cancelRetry) return;
     ready.add(writer);
     queueMicrotask(pump);
   }
@@ -117,12 +118,12 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
     writer.reason = reason; writer.state = 'retrying';
     if (writer.firstFailure === undefined) {
       writer.firstFailure = runtime.now();
-      writer.cancelWarning = runtime.schedule(() => { writer.cancelWarning = undefined; writer.attention = true; publish(writer); }, warningAfter);
+      if (!draining) writer.cancelWarning = runtime.schedule(() => { writer.cancelWarning = undefined; writer.attention = true; publish(writer); }, warningAfter);
     }
     writer.attention ||= reason !== 'io_unavailable' || runtime.now() - writer.firstFailure >= warningAfter;
     const backoff = [1000, 2000, 4000, 8000, 16000, 30000, 60000][Math.min(writer.failures++, 6)];
     const delay = Math.min(60000, Math.max(1, Math.round(backoff * (0.9 + runtime.random() * 0.2))));
-    writer.cancelRetry = runtime.schedule(() => { writer.cancelRetry = undefined; enqueue(writer); }, delay);
+    if (!draining) writer.cancelRetry = runtime.schedule(() => { writer.cancelRetry = undefined; enqueue(writer); }, delay);
     console.info('think_transcript_outcome', { conversationId: writer.id, outcome: 'retrying', reason });
     publish(writer);
   }
@@ -295,7 +296,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
     }
   }
   function pump(): void {
-    if (stopped) return;
+    if (draining || stopped) return;
     // At most two conversations perform retry/append I/O concurrently; each owns one worker.
     for (const writer of ready) {
       if (active.size >= 2) break;
@@ -321,7 +322,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
   }
   // Recover only mapped pending bytes here. Native history/chat hydration remains a separate layer.
   function recoverPending(after?: string): void {
-    if (stopped || !options.state) return;
+    if (draining || stopped || !options.state) return;
     cancelRecovery = undefined;
     console.info('think_transcript_recovery_attempt');
     try {
@@ -356,24 +357,46 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
       return work;
     },
     changed(conversationId) {
-      if (stopped || revoked.has(conversationId)) return;
+      if (draining || stopped || revoked.has(conversationId)) return;
       const writer = writerFor(conversationId, true);
-      writer.dirty = true; enqueue(writer);
+      writer.dirty = true;
+      // A completed scan is no longer a sync claim for newly observed source facts.
+      // Keep existing retry/degraded warnings and their backoff intact.
+      if (writer.state === 'up-to-date') { writer.state = 'writing'; publish(writer); }
+      enqueue(writer);
     },
-    retains(ref) { return retained.has(retainedKey(ref)); },
+    retains(ref) {
+      const writer = writers.get(ref.key.conversationId);
+      // Notifications precede the async scan that pins individual entries. Do not
+      // reclaim a newly published body in that gap and force shutdown to rehydrate it.
+      return retained.has(retainedKey(ref)) || Boolean(writer && (writer.dirty || active.has(writer)));
+    },
     health(conversationId) { const writer = writers.get(conversationId); return writer ? health(writer) : { state: 'not-started', warning: false, liveTextPending: false }; },
     warningCount() { let count = 0; for (const writer of writers.values()) if (health(writer).warning) count++; return count; },
     close() {
       if (!closing) {
-        stopped = true; ready.clear();
+        // Freeze notifications/timers, not source access or the active append. The
+        // lifetime owner keeps its projections, bodies and state open until this drains.
+        draining = true; ready.clear();
         cancelRecovery?.(); cancelRecovery = undefined;
-        for (const writer of writers.values()) { writer.cancelRetry?.(); writer.cancelWarning?.(); }
+        for (const writer of writers.values()) {
+          writer.cancelRetry?.(); writer.cancelRetry = undefined;
+          writer.cancelWarning?.(); writer.cancelWarning = undefined;
+        }
         closing = (async () => {
           await startup;
           await Promise.allSettled([...active.values()]);
+          // One final attempt per healthy writer consumes dirty/queued work that had
+          // not reached an active append. No retry loop or backoff bypass on failure;
+          // the daemon's existing shutdown deadline also bounds blocked filesystem I/O.
+          for (const writer of writers.values()) {
+            if (revoked.has(writer.id) || writer.state === 'retrying') continue;
+            if (writer.dirty || writer.pending.size || writer.prepared || writer.started && !writer.headerSynced) await attempt(writer);
+          }
+          stopped = true;
           for (const writer of writers.values()) if (writer.started) {
-            const pending = !writer.headerSynced || writer.pending.size > 0 || Boolean(writer.prepared) || writer.awaitingOriginal || writer.gap || writer.dirty;
-            console.info('think_transcript_outcome', { conversationId: writer.id, outcome: pending ? 'closed_pending' : 'closed_synced' });
+            const pending = !writer.headerSynced || writer.pending.size > 0 || Boolean(writer.prepared) || writer.awaitingOriginal || writer.gap || writer.dirty || writer.firstFailure !== undefined;
+            console.info('think_transcript_outcome', { conversationId: writer.id, outcome: pending ? 'closed_pending' : 'closed_synced', ...(pending && writer.reason ? { reason: writer.reason } : {}) });
           }
           try {
             const results = await Promise.allSettled([...writers.values()].map(async writer => {

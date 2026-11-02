@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Checkpoint, CrashReport, InitialLoadReport, MigrationReport, Observation, OrderMigrationReport, OrderReopenReport, Probe, ReopenReport, ReopenScenario, Report, Scenario, V5MigrationReport, V6PreflightReport } from '../tests/think-transcript-checkpoint-fixture';
+import type { Checkpoint, CompletionReport, CrashReport, InitialLoadReport, MigrationReport, Observation, OrderMigrationReport, OrderReopenReport, Probe, ReopenReport, ReopenScenario, Report, Scenario, V5MigrationReport, V6PreflightReport } from '../tests/think-transcript-checkpoint-fixture';
 import { entryFor } from './think/transcript-format';
 import type { BodyRef } from './think/body-store';
 import type { ProjectionEntry } from './think/projection';
@@ -72,6 +72,96 @@ function pending(probe: Probe, expected: string): void {
   expect(probe.chunks.every(chunk => chunk.size > 0 && chunk.size <= 65536)).toBe(true);
   expect(Buffer.concat(probe.chunks.map(chunk => Buffer.from(chunk.hex, 'hex'))).toString('utf8')).toBe(expected);
 }
+
+function completionIdentity(report: CompletionReport): string {
+  expect(report.counts, 'New chat and transcript I/O cannot replay or interrupt native execution').toEqual({ creates: 2, prompts: 1, stops: 0 });
+  expect(report.promptAborted).toBe(false);
+  expect(report.unusedTranscriptExists).toBe(false);
+  expect(report.publication.command).toMatchObject({ kind: 'send', state: 'completed' });
+  const canonical = report.publication.snapshot.entries.find(entry => entry.kind === 'assistant-text');
+  expect(canonical).toMatchObject({ kind: 'assistant-text', closure: 'closed', capture: 'complete',
+    body: { kind: 'canonical', through: Buffer.byteLength(report.assistant), sha256: sha(report.assistant) } });
+  if (!canonical || canonical.kind !== 'assistant-text') throw new Error('fixture canonical publication missing');
+  const entry = entryFor(canonical, 0);
+  if (!entry) throw new Error('fixture canonical transcript identity missing');
+  return entry.id;
+}
+
+const completionBlock = (text: string, id: string) => `\`\`\`\`text\n${text}\n\`\`\`\`\n<!-- memory-loop-end ${JSON.stringify({ entry_id: id })} -->\n\n`;
+
+describe('observed canonical transcript completion', () => {
+  it('invalidates synchronized health before immediate watch observers can read newly eligible completed canonical text', async () => {
+    const report = await child<CompletionReport>('completion-publication', 'report.json');
+    const id = completionIdentity(report);
+    expect(report.publication.probe.entries).not.toContain(id);
+    expect(report.publication.snapshot.transcript?.warning).toBe(false);
+    expect(report.publication.notification.transcript?.warning).toBe(false);
+    expect(report.publication.notification.transcript?.state, 'the first observer notification cannot carry the old saved claim').not.toBe('up-to-date');
+    expect(report.publication.snapshot.transcript?.state, 'new canonical content is eligible but not yet synchronized').not.toBe('up-to-date');
+  });
+
+  it('does not report saved while the canonical closing fence or file sync is held, then confirms the exact complete record', async () => {
+    const report = await child<CompletionReport>('completion-publication', 'report.json');
+    const id = completionIdentity(report);
+    const block = completionBlock(report.assistant, id);
+    if (!report.append || !report.sync || !report.synchronized) throw new Error('fixture must reach each controlled append/sync boundary');
+    expect(report.append.markdown).toContain(report.assistant);
+    expect(report.append.markdown).not.toContain(block);
+    expect(report.sync.markdown).toContain(block);
+    for (const boundary of [report.append, report.sync]) {
+      expect(boundary.snapshot.transcript?.state).not.toBe('up-to-date');
+      expect(boundary.snapshot.transcript?.warning).toBe(false);
+      expect(boundary.probe.entries).not.toContain(id);
+      expect(checkpoint(boundary.probe, 'before canonical synchronization')).toMatchObject({ pendingEntryId: id, pendingState: 'ready' });
+    }
+    expect(report.sync.probe.checkpoint?.confirmedOffset).toBe(report.append.probe.checkpoint?.confirmedOffset);
+    const synchronized = report.synchronized;
+    expect(synchronized.snapshot.transcript).toMatchObject({ state: 'up-to-date', warning: false });
+    expect(synchronized.markdown).toContain(block);
+    expect(synchronized.markdown).toContain(completionBlock(report.original, entryId));
+    expect(synchronized.markdown.split(report.assistant)).toHaveLength(2);
+    expect(synchronized.probe.entries).toContain(id);
+    expect(checkpoint(synchronized.probe, 'after canonical synchronization')).toMatchObject({ confirmedOffset: Buffer.byteLength(synchronized.markdown),
+      confirmedSha256: sha(synchronized.markdown), pendingEntryId: null });
+  });
+
+  it('hands observed completed canonical text to disk or a sealed recoverable append before graceful close, without native-history recovery', async () => {
+    const report = await child<CompletionReport>('completion-close', 'report.json');
+    const id = completionIdentity(report);
+    // Deliberately independent of publication.health: changing the label cannot
+    // make shutdown discard the newly observed canonical work and pass this test.
+    const fresh = await child<Probe>('probe', 'fresh.json');
+    expect(fresh).toEqual(report.afterClose);
+    const closed = checkpoint(fresh, 'after closing directly from the canonical observer');
+    const confirmed = fresh.entries.includes(id);
+    expect(confirmed || (closed.pendingEntryId === id && closed.pendingState === 'ready'),
+      'graceful close must retain the completed AI record without requiring native history or an old body cache').toBe(true);
+    let markdown = await readFile(join(root, 'vault', 'Conversations', 'Memory Loop', filename), 'utf8');
+    let final = fresh;
+    if (!confirmed) {
+      const staged = Buffer.concat(fresh.chunks.map(chunk => Buffer.from(chunk.hex, 'hex')));
+      expect(staged.length).toBe(closed.pendingLength);
+      expect(sha(staged)).toBe(closed.pendingSha256);
+      expect(staged.toString('utf8')).toContain(completionBlock(report.assistant, id));
+      const recovered = await child<ReopenReport>('reopen-recover', 'recovered.json');
+      expect(recovered.pid).not.toBe(report.pid);
+      expect(recovered.sourceReads, 'pending recovery cannot consult native history').toBe(0);
+      expect(recovered.bodyReads, 'pending recovery cannot consult the old body cache').toBe(0);
+      expect(recovered.health).toMatchObject({ state: 'up-to-date', warning: false });
+      markdown = Buffer.from(recovered.afterHex, 'hex').toString('utf8');
+      final = recovered.after;
+    }
+    expect(markdown).toContain(completionBlock(report.assistant, id));
+    expect(markdown).toContain(completionBlock(report.original, entryId));
+    expect(markdown.split(report.assistant)).toHaveLength(2);
+    expect(final.entries).toContain(id);
+    const committed = checkpoint(final, 'after fresh-process confirmation');
+    expect(sha(Buffer.from(markdown).subarray(0, committed.confirmedOffset))).toBe(committed.confirmedSha256);
+    const block = completionBlock(report.assistant, id);
+    const endOfAI = Buffer.byteLength(markdown.slice(0, markdown.indexOf(block)) + block);
+    expect(committed.confirmedOffset).toBeGreaterThanOrEqual(endOfAI);
+  });
+});
 
 describe('restart-stable transcript entry identity', () => {
   const body: Extract<BodyRef, { kind: 'canonical' }> = { key: { conversationId, owner: { kind: 'assistant-text', messageId: 'msg_fixture', ordinal: 0 } },

@@ -1045,6 +1045,13 @@ watch or creating another conversation does not cancel the writer or force a
 retry. For a conflict, preserve the file and fix the underlying namespace/storage
 condition; do not delete an owned transcript or restart expecting automatic adoption.
 
+Newly eligible transcript work invalidates synchronization health before observers
+are notified. Graceful shutdown fences new work and drains already-observed queued
+transcript work while its projection and body sources remain available. This is
+not an unlimited shutdown guarantee: the daemon's shutdown deadline, forced
+termination, and persistent storage failures can prevent completion. Incomplete
+work must not be reported as synchronized.
+
 The first chunk pins `generation`/`through` and returns a scoped transfer nonce;
 echo it on subsequent chunks. Each response contains at most **64 KiB raw bytes**
 within **128 KiB JSON**. Successful chunks renew a **60-second idle lease**;

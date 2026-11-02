@@ -1294,6 +1294,17 @@ describe('real private-store normalized projection', () => {
     return { f, root, async close() { try { await f.service.close(); } finally { await rm(root, { recursive: true, force: true }); } } };
   }
   const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: 'original fixture 🧠' };
+  const entryEnd = (id: string) => `<!-- memory-loop-end ${JSON.stringify({ entry_id: id })} -->\n\n`;
+  async function syncedTranscript(f: ReturnType<typeof setup>, path: string, complete: (markdown: string) => void, options?: { timeout: number }) {
+    return vi.waitFor(async () => {
+      const markdown = await readFile(path, 'utf8');
+      complete(markdown);
+      // Readable body bytes/end markers precede synchronization. Both boundaries
+      // must hold before returning this snapshot to serialization/privacy assertions.
+      expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ state: 'up-to-date', warning: false });
+      return markdown;
+    }, options);
+  }
 
   it.each(['form-reply', 'cancelled-send'] as const)('P4-03 reports lost original %s capture as content gap, not a pending or saved transcript', async kind => {
     const root = await mkdtemp('/tmp/opencode/think-capture-gap-');
@@ -1426,7 +1437,7 @@ describe('real private-store normalized projection', () => {
       await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
       await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
       await f.service.send(send); await waitForCalls(f.prompts, 1);
-      await vi.waitFor(async () => expect(await readFile(path, 'utf8')).toContain(send.text));
+      await syncedTranscript(f, path, markdown => expect(markdown).toContain(`\`\`\`text\n${send.text}\n\`\`\`\n${entryEnd(`user:${send.clientCommandId}`)}`));
       f.emit({ type: 'session.compaction.ended', id: 'evt_fixture_compaction', created: 30,
         durable: { aggregateID: sessionId(a.conversationId), seq: 5, version: 1 },
         data: { sessionID: sessionId(a.conversationId), reason: 'auto', text: 'fixture-secret-compaction-summary' } });
@@ -1436,14 +1447,14 @@ describe('real private-store normalized projection', () => {
       f.emit({ type: 'session.compaction.ended', id: 'evt_fixture_unowned', created: 31,
         durable: { aggregateID: 'ses_unowned_fixture', seq: 6, version: 1 },
         data: { sessionID: 'ses_unowned_fixture', reason: 'manual', text: 'fixture-unowned-summary' } });
-      await vi.waitFor(async () => {
-        const markdown = await readFile(path, 'utf8');
+      await syncedTranscript(f, path, markdown => {
         expect(markdown).toMatch(/compact/i);
         expect(markdown).toContain(send.text);
         expect(markdown).not.toContain('fixture-secret-compaction-summary');
         expect(markdown).not.toContain('fixture-unowned-summary');
         expect(markdown).not.toContain('evt_fixture_unowned');
         expect(markdown.split('Context compacted.')).toHaveLength(2);
+        expect(markdown).toContain(entryEnd(`compaction:${sessionId(a.conversationId)}:evt_fixture_compaction`));
       }, { timeout: 3000 });
       expect(f.prompt).toHaveBeenCalledOnce();
     } finally { await state.close(); }
@@ -1457,16 +1468,16 @@ describe('real private-store normalized projection', () => {
       await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
       await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
       await f.service.send(send); await waitForCalls(f.prompts, 1);
-      await vi.waitFor(async () => expect(await readFile(path, 'utf8')).toContain(send.text));
+      await syncedTranscript(f, path, markdown => expect(markdown).toContain(`\`\`\`text\n${send.text}\n\`\`\`\n${entryEnd(`user:${send.clientCommandId}`)}`));
       const command = { conversationId: a.conversationId, clientCommandId: '88888888-8888-4888-8888-888888888888', decisionId: 'form_fixture_question', answer: { answer: 'form 🧠 original Ω' } };
       expect(await f.service.reply(command)).toMatchObject({ kind: 'form-reply', state: 'registered' });
       await vi.waitFor(() => expect(f.replyForm).toHaveBeenCalledOnce());
-      await vi.waitFor(async () => {
-        const markdown = await readFile(path, 'utf8');
+      await syncedTranscript(f, path, markdown => {
         expect(markdown).toContain(JSON.stringify(command.answer));
         expect(markdown).toContain('"kind":"form-reply"');
         expect(markdown.indexOf(send.text)).toBeLessThan(markdown.indexOf('form 🧠 original Ω'));
         expect(markdown).not.toContain('do-not-expose');
+        expect(markdown).toContain(`\`\`\`text\n${JSON.stringify(command.answer)}\n\`\`\`\n${entryEnd(`form-reply:${command.clientCommandId}`)}`);
       });
       expect(f.prompt).toHaveBeenCalledOnce();
     } finally { await state.close(); }
@@ -1586,10 +1597,12 @@ describe('real private-store normalized projection', () => {
         durable: { aggregateID: sessionId(a.conversationId), seq, version: 1 }, data: { sessionID: sessionId(a.conversationId) } });
       emit('evt_fixture_transcript', 1);
       await vi.waitFor(async () => expect((await f.service.content.page(a.conversationId)).entries).toContainEqual(expect.objectContaining({ kind: 'assistant-text', messageId: 'msg_fixture_transcript' })));
-      let markdown = '';
-      await vi.waitFor(async () => {
-        markdown = await readFile(path, 'utf8');
-        expect(markdown).toContain(assistant);
+      const markdown = await syncedTranscript(f, path, markdown => {
+        expect(markdown).toContain(`\`\`\`\`\`text\n${original}\n\`\`\`\`\`\n${entryEnd(`user:${send.clientCommandId}`)}`);
+        expect(markdown).toContain(`\`\`\`\`text\n${assistant}\n\`\`\`\``);
+        expect(markdown).toMatch(/<!-- memory-loop-end {"entry_id":"ai:msg_fixture_transcript:0:[a-f0-9]{64}"} -->\n\n/);
+        expect(markdown).toMatch(/Custom tool/);
+        expect(markdown).toContain(entryEnd(`run:${send.clientCommandId}:completed`));
       }, { timeout: 3000 });
       expect(markdown).toContain(`conversation_id: "${a.conversationId}"`);
       expect(markdown).toContain(`\`\`\`\`\`text\n${original}\n\`\`\`\`\``);
@@ -1683,8 +1696,10 @@ describe('real private-store normalized projection', () => {
       const transcript = join(fixtureState.root, 'vault', 'Conversations', 'Memory Loop', `think-${a.conversationId}.md`);
       await vi.waitFor(async () => {
         const markdown = await readFile(transcript, 'utf8');
-        expect(markdown).toContain('observed partial');
+        expect(markdown).toContain('```text\nobserved partial\n```\n');
         expect(markdown).toContain('"capture":"observed-partial"');
+        expect(markdown).toMatch(/<!-- memory-loop-end {"entry_id":"ai:msg_fixture_preview:0:[a-f0-9]{64}"} -->\n\n/);
+        expect((await f.service.conversation(a.conversationId))?.transcript).toMatchObject({ state: 'retrying', warning: true, reason: 'content_gap' });
       });
       // The controlled adapter emits server.connected on each subscription; a
       // subsequent authority query proves that reconnection has been accepted.
@@ -1706,12 +1721,12 @@ describe('real private-store normalized projection', () => {
       if (!canonical || canonical.kind !== 'assistant-text') throw new Error('canonical fixture projection missing');
       const canonicalReader = await f.service.content.open(canonical.body);
       try { expect(Buffer.from(await canonicalReader.read(0, canonical.body.through)).toString('utf8')).toBe('canonical fixture'); } finally { await canonicalReader.close(); }
-      await vi.waitFor(async () => {
-        const markdown = await readFile(transcript, 'utf8');
+      await syncedTranscript(f, transcript, markdown => {
         expect(markdown).toContain('AI (replacement)');
         expect(markdown).toContain('"supersedes_entry_id"');
         expect(markdown.split('canonical fixture')).toHaveLength(2);
         expect(markdown.split('observed partial')).toHaveLength(2);
+        expect(markdown).toMatch(/```text\ncanonical fixture\n```\n<!-- memory-loop-end {"entry_id":"ai:msg_fixture_preview:0:[a-f0-9]{64}"} -->\n\n/);
       });
       expect(f.prompt).toHaveBeenCalledOnce();
     } finally { await fixtureState.close(); }

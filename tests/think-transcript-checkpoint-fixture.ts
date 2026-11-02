@@ -1,18 +1,18 @@
 import { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
-import { constants, lstatSync, readFileSync, writeFileSync } from 'node:fs';
+import { constants, existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, link, mkdir, readFile, rename, symlink, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { MessageListOutput, OpenCodeEvent, SessionFormGetOutput } from '@opencode/client';
+import type { MessageListOutput, OpenCodeEvent, SessionFormGetOutput, SessionPromptOutput } from '@opencode/client';
 import { createBodyStore } from '../backend/think/body-store';
-import { createThinkService, type ThinkService } from '../backend/think/service';
+import { createThinkService, type ConversationSnapshot, type ThinkService } from '../backend/think/service';
 import { openThinkState } from '../backend/think/sqlite-state';
 import type { NativeSession, NativeSessions } from '../backend/think/native';
 import { transcriptIO, type TranscriptIO } from '../backend/think/transcript-file';
 import { createTranscriptWriter, type TranscriptRuntime } from '../backend/think/transcript';
 import { ThinkStateError, type ThinkStateStore, type TranscriptStateStore } from '../backend/think/state';
 import type { ProjectionEntry, ThinkContentReader } from '../backend/think/projection';
-import type { TranscriptHealth } from '../backend/think/contract';
+import type { CommandReceipt, ConversationState, TranscriptHealth } from '../backend/think/contract';
 
 // Real Bun SQLite + the existing Think service/state/transcript-I/O injection seams.
 // No native executable, model, real daemon listener, private configuration or future factory option.
@@ -30,7 +30,8 @@ const decisionId = 'form_fixture_checkpoint';
 const formAnswer = { answer: 'fixture form answer 🧠\nkeep exact' };
 const filename = `think-${conversationId}.md`;
 export type Scenario = 'synced' | 'synced-form' | 'partial' | 'synced-unconfirmed' | 'seal-failed' |
-  'confirm-failed' | 'acquire-failed' | 'confirm-ack-lost' | 'crash-before-confirm' | 'initial-load-failed' | 'unused-load-failed';
+  'confirm-failed' | 'acquire-failed' | 'confirm-ack-lost' | 'crash-before-confirm' | 'initial-load-failed' | 'unused-load-failed' |
+  'completion-publication' | 'completion-close';
 export type ReopenScenario = 'replay' | 'recover' | 'verify-confirmed' | 'legacy' | 'prefix-edit' | 'wrong-tail' |
   'replacement' | 'symlink' | 'hardlink' | 'directory-moved' | 'missing-chunk' | 'unsealed' | 'wrong-hash' | 'changed-original' | 'changed-original-retry';
 
@@ -64,6 +65,26 @@ export interface InitialLoadReport {
   samples: Array<{ elapsedMs: number; callbacks: number; health: TranscriptHealth; observer: TranscriptHealth;
     backgroundWarnings: number; nativeBusy: boolean }>;
   after: Probe;
+}
+export interface CompletionObservation {
+  snapshot: ConversationSnapshot;
+  command: CommandReceipt | null;
+  markdown: string;
+  probe: Probe;
+}
+export interface CompletionReport {
+  publication: CompletionObservation & { notification: ConversationState };
+  append?: CompletionObservation;
+  sync?: CompletionObservation;
+  synchronized?: CompletionObservation;
+  original: string;
+  assistant: string;
+  counts: Report['counts'];
+  promptAborted: boolean;
+  unusedTranscriptExists: boolean;
+  markdown: string;
+  afterClose: Probe;
+  pid: number;
 }
 export interface CrashReport { crashed: true; counts: Report['counts']; expectedOriginal: string; markdown: string; pending: Probe; pid: number }
 export interface ReopenReport {
@@ -213,6 +234,23 @@ async function until<T>(get: () => Promise<T>, ready: (value: T) => boolean): Pr
     await new Promise<void>(resolve => setTimeout(resolve, 5));
   }
   throw new Error('Fixture production path did not settle; this is not the expected durability RED');
+}
+
+function completionSignal<T = void>() {
+  let resolve: (value: T) => void = () => { throw new Error('uninitialized fixture signal'); };
+  const promise = new Promise<T>(yes => { resolve = yes; });
+  return { promise, resolve };
+}
+
+async function watchUntil(service: ThinkService, id: string, ready: (value: ConversationState) => boolean) {
+  const watch = await service.watch(id);
+  if (!watch) throw new Error('fixture conversation missing');
+  try {
+    let value: ConversationState | null = watch.snapshot;
+    while (value && !ready(value)) value = await watch.next();
+    if (!value) throw new Error('fixture closed before the observed boundary');
+    return value;
+  } finally { watch.close(); }
 }
 
 // Same test-owned timer-set pattern as think-transcript-faults.test.ts. No global/fake real-time clock.
@@ -512,7 +550,7 @@ async function reopenV3Order(root: string): Promise<OrderReopenReport> {
     orderBefore, orderAfterVacuum, orderAfterNew: commandOrder(root) };
 }
 
-async function run(root: string, scenario: Scenario, output: string): Promise<Report | InitialLoadReport> {
+async function run(root: string, scenario: Scenario, output: string): Promise<Report | InitialLoadReport | CompletionReport> {
   const projectRoot = join(root, 'project');
   const vault = join(root, 'vault');
   await mkdir(join(projectRoot, '.memory-loop'), { recursive: true, mode: 0o700 });
@@ -523,6 +561,17 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
   const target = join(vault, 'Conversations', 'Memory Loop', filename);
   const observations: Observation[] = [];
   const counts = { creates: 0, prompts: 0, stops: 0 };
+  const completion = scenario === 'completion-publication' || scenario === 'completion-close';
+  const promptCalled = completionSignal<AbortSignal>();
+  const promptAdmission = completionSignal<SessionPromptOutput>();
+  const admittedConfirmed = completionSignal();
+  const terminalConfirmed = completionSignal();
+  const heldAppend = completionSignal(); const releaseAppend = completionSignal();
+  const heldSync = completionSignal(); const releaseSync = completionSignal();
+  const events: OpenCodeEvent[] = [];
+  let wake: (() => void) | undefined;
+  let appendHeld = false;
+  let syncHeld = false;
   const initialLoadFault = scenario === 'initial-load-failed' || scenario === 'unused-load-failed';
   const loadClock = retryClock(now);
   let releaseStartup: () => void = () => {};
@@ -558,11 +607,20 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
     async removeSession() { throw new Error('unexpected fixture removal'); },
     subscribe(_input, signal) { return { async *[Symbol.asyncIterator](): AsyncGenerator<OpenCodeEvent> {
       yield { id: 'evt_fixture_connected', type: 'server.connected', data: {} };
+      if (completion) while (!signal.aborted) {
+        const event = events.shift();
+        if (event) { yield event; continue; }
+        await new Promise<void>(resolve => {
+          const finish = () => { signal.removeEventListener('abort', finish); resolve(); };
+          wake = finish; signal.addEventListener('abort', finish, { once: true });
+        });
+      }
       if (!signal.aborted) await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
     } }; },
-    async prompt(input) {
+    async prompt(input, signal) {
       counts.prompts++;
       if (!input.id) throw new Error('fixture prompt identity missing');
+      if (completion) { promptCalled.resolve(signal); return promptAdmission.promise; }
       if (scenario === 'initial-load-failed') {
         const admitted: Awaited<ReturnType<NativeSessions['prompt']>> = { id: input.id, sessionID: input.sessionID,
           type: 'user', time: { created: now + 20 }, delivery: 'queue', payload: { text: 'fixture prepared while native work continues' } };
@@ -605,9 +663,16 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
     if (flags & constants.O_EXCL) await observe('before-create');
     const handle = await transcriptIO.open(path, flags, mode);
     const file = !!(flags & constants.O_APPEND);
+    let aiEntry = false;
+    let aiBodyWritten = false;
     return { fd: handle.fd, stat: () => handle.stat(), read: (...args) => handle.read(...args), close: () => handle.close(),
       async write(buffer, offset, length, position) {
         transcriptWrites++;
+        const chunk = Buffer.from(buffer.subarray(offset, offset + length));
+        if (completion && chunk.includes(Buffer.from('"message_id":"msg_fixture_checkpoint_answer"'))) aiEntry = true;
+        if (completion && aiEntry && aiBodyWritten && !appendHeld && chunk.toString() === '````') {
+          appendHeld = true; heldAppend.resolve(); await releaseAppend.promise;
+        }
         if (faulted) throw Object.assign(new Error('fixture append failure'), { code: 'ENOSPC' });
         if (firstWrite) { firstWrite = false; await observe('before-first-write'); }
         if (Buffer.from(buffer.subarray(offset, offset + length)).includes(Buffer.from('"kind":"user"'))) {
@@ -615,9 +680,14 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
           await observe('before-original-write');
           if (scenario === 'partial') { faulted = true; return handle.write(buffer, offset, Math.min(7, length), position); }
         }
-        return handle.write(buffer, offset, length, position);
+        const result = await handle.write(buffer, offset, length, position);
+        if (completion && chunk.includes(Buffer.from(assistant))) aiBodyWritten = true;
+        return result;
       },
       async sync() {
+        if (completion && file && aiEntry && !syncHeld) {
+          syncHeld = true; heldSync.resolve(); await releaseSync.promise;
+        }
         await handle.sync();
         if (file && originalInFlight) { originalFileSynced = true; await observe('after-original-file-sync'); }
         if (!file && originalInFlight && originalFileSynced) {
@@ -672,10 +742,13 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
         }
       }
       durable.confirm(...args);
+      if (args[1] === `run:${sendCommandId}:admitted`) admittedConfirmed.resolve();
+      if (args[1] === `run:${sendCommandId}:completed`) terminalConfirmed.resolve();
       if (scenario === 'confirm-ack-lost' && args[1] === `user:${sendCommandId}`) fault('after-confirm');
     },
   };
   const serviceState: ThinkStateStore = { installationId: state.installationId, transcripts: transcriptState, conversations: state.conversations, deletions: state.deletions, cache: state.cache,
+    ...(completion ? { registry: state.registry } : {}),
     command: (...args) => state.command(...args), registerConversation: (...args) => state.registerConversation(...args),
     registerCommand: (...args) => state.registerCommand(...args), attempted: (...args) => state.attempted(...args),
     outcome: (...args) => state.outcome(...args), close: () => state.close() };
@@ -685,7 +758,70 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
       serviceIdentity: { pid: 49123, version: '2.2.2' }, clock: { now: runtime.now }, transcript: { io, runtime, warningAfterMs: 60000 } });
     service = liveService;
     await liveService.create({ conversationId, clientCommandId: createCommandId });
-    await until(() => liveService.conversation(conversationId), value => value?.creation === 'ready');
+    if (completion) await watchUntil(liveService, conversationId, value => value.creation === 'ready');
+    else await until(() => liveService.conversation(conversationId), value => value?.creation === 'ready');
+    if (completion) {
+      await liveService.send({ conversationId, clientCommandId: sendCommandId, text: original });
+      const promptSignal = await promptCalled.promise;
+      const unusedId = '77777777-7777-4777-8777-777777777777';
+      await liveService.create({ conversationId: unusedId, clientCommandId: '88888888-8888-4888-8888-888888888888' });
+      await watchUntil(liveService, unusedId, value => value.creation === 'ready');
+      promptAdmission.resolve({ id: messageId, sessionID: nativeId, type: 'user', time: { created: now + 20 }, delivery: 'queue', payload: { text: 'fixture plugin-prepared' } });
+      // Begin with the admitted entry actually committed, not an earlier healthy snapshot.
+      await admittedConfirmed.promise;
+      await watchUntil(liveService, conversationId, value => value.transcript?.state === 'up-to-date');
+      const sample = (snapshot: ConversationSnapshot): CompletionObservation => ({ snapshot,
+        command: state.command(sendCommandId)?.receipt ?? null, markdown: readFileSync(target, 'utf8'), probe: probe(database) });
+      const observe = async () => {
+        const snapshot = await liveService.snapshot(conversationId);
+        if (!snapshot) throw new Error('fixture completion snapshot missing');
+        return sample(snapshot);
+      };
+      const watch = await liveService.watch(conversationId);
+      if (!watch) throw new Error('fixture publication watch missing');
+      let promptAborted = promptSignal.aborted;
+      try {
+        // This is an immediate ordinary observer callback. No replacement content reader,
+        // artificial source delay, polling interval or diagnostic await precedes close.
+        const observed = watch.next().then(async notification => {
+          if (!notification) throw new Error('fixture publication watch closed');
+          const snapshot = await liveService.snapshot(conversationId);
+          if (!snapshot) throw new Error('fixture publication snapshot missing');
+          const publication = { ...sample(snapshot), notification };
+          promptAborted = promptSignal.aborted;
+          if (scenario === 'completion-close') {
+            const closing = liveService.close();
+            releaseAppend.resolve(); releaseSync.resolve();
+            await closing;
+          }
+          return publication;
+        });
+        messages.push({ id: messageId, type: 'user', text: 'fixture plugin-prepared', time: { created: now + 20 } },
+          { id: 'msg_fixture_checkpoint_answer', type: 'assistant', agent: 'fixture', model: { providerID: 'fixture', id: 'fixture' },
+            finish: 'stop', time: { created: now + 22, completed: now + 23 }, content: [{ type: 'text', text: assistant }] });
+        events.push({ type: 'session.execution.succeeded', id: 'evt_fixture_completion', created: now + 24,
+          durable: { aggregateID: nativeId, seq: 1, version: 1 }, data: { sessionID: nativeId } });
+        wake?.(); wake = undefined;
+        const publication = await observed;
+        let append: CompletionObservation | undefined;
+        let sync: CompletionObservation | undefined;
+        let synchronized: CompletionObservation | undefined;
+        if (scenario === 'completion-publication') {
+          await heldAppend.promise; append = await observe();
+          releaseAppend.resolve();
+          await heldSync.promise; sync = await observe();
+          releaseSync.resolve();
+          await terminalConfirmed.promise;
+          await watchUntil(liveService, conversationId, value => value.transcript?.state === 'up-to-date');
+          synchronized = await observe();
+          await liveService.close();
+        }
+        return { publication, ...(append ? { append } : {}), ...(sync ? { sync } : {}), ...(synchronized ? { synchronized } : {}),
+          original, assistant, counts, promptAborted,
+          unusedTranscriptExists: existsSync(join(vault, 'Conversations', 'Memory Loop', `think-${unusedId}.md`)),
+          markdown: readFileSync(target, 'utf8'), afterClose: probe(database), pid: process.pid };
+      } finally { watch.close(); }
+    }
     if (initialLoadFault) {
       const observerId = '77777777-7777-4777-8777-777777777777';
       await liveService.create({ conversationId: observerId, clientCommandId: '88888888-8888-4888-8888-888888888888' });
@@ -732,7 +868,10 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
     await liveService.close();
     return { scenario, observations, counts, runId: receipt.runId, expectedOriginal,
       markdown: await readFile(target, 'utf8'), health: current?.transcript, afterClose: probe(database), sourceEntries, replies, storeFaults, pid: process.pid };
-  } finally { releaseStartup(); if (service) await service.close(); else { state.close(); await bodies.close(); } }
+  } finally {
+    releaseStartup(); releaseAppend.resolve(); releaseSync.resolve();
+    if (service) await service.close(); else { state.close(); await bodies.close(); }
+  }
 }
 
 async function reopen(root: string, mode: ReopenScenario): Promise<ReopenReport> {
@@ -902,6 +1041,6 @@ if (selected === 'reopen-v3-order') {
   await writeFile(output, JSON.stringify(probe(join(root, 'project', '.memory-loop', 'application.sqlite'))));
 } else {
   if (!['synced', 'synced-form', 'partial', 'synced-unconfirmed', 'seal-failed', 'confirm-failed', 'acquire-failed',
-    'confirm-ack-lost', 'crash-before-confirm', 'initial-load-failed', 'unused-load-failed'].includes(selected ?? '')) throw new Error('Unknown fixture scenario');
+    'confirm-ack-lost', 'crash-before-confirm', 'initial-load-failed', 'unused-load-failed', 'completion-publication', 'completion-close'].includes(selected ?? '')) throw new Error('Unknown fixture scenario');
   await writeFile(output, JSON.stringify(await run(root, selected as Scenario, output)));
 }

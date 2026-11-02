@@ -47,6 +47,11 @@ carried forward; their omission is not a commitment to restore them later.
 - Kept deployment separate from application behavior: listener ports and external HTTPS routing are deployment decisions, not browser configuration.
 - Added a rebuilding restart command for checkout testing and a production user-service setup guide. Production lifecycle belongs to user services, not the testing restart script.
 
+### Fixed
+
+- Transcript health no longer reports newly eligible assistant content as synchronized before it has been written and confirmed.
+- Graceful shutdown drains already-observed queued transcript work before closing its data sources, preserving the durable recovery boundary.
+
 ### Removed
 
 The following legacy features are not included in the rewritten application:

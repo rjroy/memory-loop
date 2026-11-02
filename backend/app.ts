@@ -11,6 +11,7 @@ import { captureBodyLimit, captureErrors, parseCaptureRequest } from './capture-
 import { CaptureError, type CaptureWriter } from './capture';
 import type { GroundReader } from './ground';
 import { validViewToken, type ConversationService } from './think/conversations';
+import { parseVaultSearchRequest, parseVaultSearchContextRequest, vaultSearchBodyLimit } from './contract';
 
 export type VaultState = { reader: VaultReader } |
   { error: Extract<VaultErrorCode, 'config_missing' | 'config_invalid' | 'vault_unavailable'> };
@@ -83,7 +84,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.use('*', async (context, next) => {
     const requestId = randomUUID();
     const path = context.req.path;
-    const operation = path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/vault/file' ? 'file' : path === '/api/vault/content' ? 'content' : path === '/api/vault/attachments' ? 'attachments' : path === '/api/vault/actions' ? 'actions' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
+    const operation = path === '/api/vault/search' || path === '/api/vault/search/context' ? 'search' : path === '/api/vault/tree' ? 'tree' : path === '/api/vault/note' ? 'note' : path === '/api/vault/file' ? 'file' : path === '/api/vault/content' ? 'content' : path === '/api/vault/attachments' ? 'attachments' : path === '/api/vault/actions' ? 'actions' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
     console.info('vault_api_attempt', { requestId, operation });
     try {
       const headers = context.req.raw.headers;
@@ -94,14 +95,14 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         const match = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') ?? '');
         if (!match || !timingSafeEqual(expected, Buffer.from(match[1], 'hex'))) {
           context.res = Response.json({ error: { code: 'unauthorized', message: 'Service authentication required' } }, { status: 401 });
-        } else if (context.req.method !== 'GET' && !(context.req.raw.method === 'HEAD' && path === '/api/vault/content') && !(context.req.method === 'POST' && (path === '/api/vault/note' || path === '/api/vault/actions' || path === '/api/vault/attachments' || path === '/api/capture' || path === thinkBase ||
+        } else if (context.req.method !== 'GET' && !(context.req.raw.method === 'HEAD' && path === '/api/vault/content') && !(context.req.method === 'POST' && (path === '/api/vault/search' || path === '/api/vault/search/context' || path === '/api/vault/note' || path === '/api/vault/actions' || path === '/api/vault/attachments' || path === '/api/capture' || path === thinkBase ||
           path === '/api/think/views' || path === '/api/think/selection' ||
           /^\/api\/think\/conversations\/[^/]+\/(?:resume|delete|messages|runs\/[^/]+\/stop|decisions\/[^/]+\/reply)$/.test(path)))) {
           context.res = Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 });
         } else await next();
       }
     } catch {
-      context.res = operation === 'think' ? thinkError('think_unavailable') : publicError(path === '/api/vault/actions' && context.req.method === 'POST' ? 'file_action_uncertain' : path === '/api/vault/note' && context.req.method === 'POST' ? 'note_save_uncertain' : 'vault_unavailable');
+      context.res = operation === 'think' ? thinkError('think_unavailable') : publicError(operation === 'search' ? 'search_unavailable' : path === '/api/vault/actions' && context.req.method === 'POST' ? 'file_action_uncertain' : path === '/api/vault/note' && context.req.method === 'POST' ? 'note_save_uncertain' : 'vault_unavailable');
     }
     context.header('Cache-Control', 'no-store');
     context.header('X-Content-Type-Options', 'nosniff');
@@ -181,6 +182,44 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.get('/api/vault/tree', async context => {
     if ('error' in options.vault) return publicError(options.vault.error);
     try { return context.json(await options.vault.reader.tree()); } catch (error: unknown) { return serviceError(error); }
+  });
+  for (const path of ['/api/vault/search', '/api/vault/search/context']) {
+    app.get(path, () => Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 }));
+  }
+  app.post('/api/vault/search', async context => {
+    if (new URL(context.req.url).search) return publicError('invalid_request');
+    const input = parseVaultSearchRequest(await jsonInput(context.req.raw, vaultSearchBodyLimit));
+    if (!input) return publicError('invalid_request');
+    if ('error' in options.vault) return publicError('search_unavailable');
+    const started = performance.now();
+    console.info('vault_search_attempt', { mode: input.mode, queryLength: input.query.replace(/\s/gu, '').length });
+    try {
+      const result = await options.vault.reader.search(input, context.req.raw.signal);
+      console.info('vault_search_outcome', { mode: input.mode, durationMs: performance.now() - started, counts: result.counts, coverage: result.coverage, limited: result.limited });
+      return context.json(result);
+    } catch (error) {
+      console.info('vault_search_outcome', { mode: input.mode, durationMs: performance.now() - started, status: 'unavailable' });
+      const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+      return publicError(code === 'invalid_request' ? code : 'search_unavailable');
+    }
+  });
+  app.post('/api/vault/search/context', async context => {
+    if (new URL(context.req.url).search) return publicError('invalid_request');
+    const input = parseVaultSearchContextRequest(await jsonInput(context.req.raw, vaultSearchBodyLimit));
+    if (!input) return publicError('invalid_request');
+    if ('error' in options.vault) return publicError('search_unavailable');
+    const started = performance.now();
+    console.info('vault_search_context_attempt', { queryLength: input.query.replace(/\s/gu, '').length });
+    try {
+      const result = await options.vault.reader.searchContext(input, context.req.raw.signal);
+      console.info('vault_search_context_outcome', { durationMs: performance.now() - started, status: 'loaded', truncated: result.truncated });
+      return context.json(result);
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+      const failure = code === 'search_context_changed' || code === 'invalid_request' ? code : 'search_unavailable';
+      console.info('vault_search_context_outcome', { durationMs: performance.now() - started, status: failure });
+      return publicError(failure);
+    }
   });
   app.get('/api/vault/attachments', context => {
     if (new URL(context.req.url).search) return publicError('invalid_request');

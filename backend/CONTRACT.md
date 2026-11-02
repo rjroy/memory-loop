@@ -18,6 +18,101 @@ Only content-detected passive raster images and video are eligible for inline de
 
 The fixed same-origin Next routes enforce the existing browser request policy and use the server-only bearer credential for the private daemon; they do not forward browser credentials or Origin. Content is streamed rather than buffered through the short JSON-request timeout. Content detection uses the pinned `file-type` dependency, currently 22.3.0, which requires Node 22 or later when run under Node.
 
+## Filename and saved-content search
+
+Search is a read-only daemon capability exposed through fixed same-origin Next routes. These APIs are runnable independently of the Recall search interface; the Filename/Content controls and source-excerpt UI are not implemented by this API layer. Search does not save drafts, change file selection, edit files or invoke a model, shell command or external search service. It scans on demand without a persistent index or content cache.
+
+Both routes accept only JSON objects with the exact fields below, with `Content-Type: application/json` (optionally `charset=utf-8`) and no URL query parameters. The UTF-8 JSON body limit is 16 KiB at both boundaries. Types and parsers are exported from `contract.ts`.
+
+### Search request and results
+
+`POST /api/vault/search` accepts `{ "mode": "filename" | "content", "query": string }`. The raw query is limited to 4096 UTF-16 code units and must round-trip through UTF-8 without replacement. Remove JavaScript `\s` whitespace before matching; the normalized query is limited to 128 UTF-16 code units. Empty or whitespace-only queries return zero counts, no hits, `limited: false` and complete coverage with zero files searched, without traversing the vault. Empty normalized queries are not valid for the context route.
+
+Matching uses pinned `fuzzysort` 4.0.2 with explicitly prepared targets, case-insensitive ordered characters, gaps allowed, and the library's supported accent normalization. There is no acceptance-score cutoff: scores rank matches, not confidence or eligibility. Thus `foo bar` searches as `foobar`, not as reorderable terms. There is no regex, typo-correction, semantic or other query language.
+
+A successful response is a flat discriminated result, not pre-grouped by file:
+
+```ts
+{
+  mode: 'filename' | 'content';
+  hits: VaultFilenameHit[] | VaultContentHit[]; // matches the mode
+  counts: { matches: number; files: number };
+  limited: boolean;
+  coverage: {
+    complete: boolean;
+    filesSearched: number;
+    skippedFiles: { binary: number; invalidEncoding: number; unreadable: number; changed: number };
+    skippedLines: number;
+    timedOut: boolean;
+  };
+}
+```
+
+Filename hits are `{ id, name, path, field: 'name' | 'path', positions, score }`. `id` is the component array; `name` is the basename; `path` is the full vault-relative display string joined with `/`, not a host path. Basename and path are matched separately. Any basename match outranks every path-only match; within each category sort by descending score, then deterministic relative-path order. `positions` contains zero-based UTF-16 offsets into the field identified by `field`. Visible regular files of all kinds, including binary/media files, are eligible; folders are path context, not separate hits.
+
+Content hits are `{ id, name, path, line, version, score, snippets }`. `line` is the 1-based physical source line. Match saved valid UTF-8 text, including Markdown, JSON, TypeScript and extensionless files; do not search unsaved editor drafts. Split LF, CRLF and CR before matching, so characters never bridge lines. For example, `sdk` matches both `software development kit` and `I should know better`, but cannot combine characters from separate lines. Search streams beyond the ordinary reader's 2 MiB preview limit; there is no whole-file search size cutoff. A physical line of at most 256 KiB of source bytes, excluding its terminator, is eligible. Skip longer lines, count them and continue through subsequent lines. Detected binary formats or NUL-containing content are excluded; fatal UTF-8 decoding errors discard the file's provisional matches.
+
+Each snippet is `{ text, start, end, positions }`. `start` and `end` are zero-based, end-exclusive UTF-16 offsets into the original line, and `text` is its literal `slice(start, end)`. `positions` are offsets relative to that snippet's text. Windows retain all matched positions, expand their edges to grapheme boundaries and merge overlaps; omitted source and ellipses are not part of `text`. Render literal escaped text, not Markdown or highlighted HTML. Match positions identify UTF-16 character offsets, not grapheme ranges; presentation should expand highlights to whole graphemes where needed. Clipping does not reduce the line's matching scope. Retain one alignment per matching physical line, ranked globally by descending score, then path, then line number. Clients may group the retained flat hits afterward.
+
+Return at most 50 filename hits or 100 content-line hits. Retention also uses a 2 MiB serialized-result budget with a 1 KiB metadata reserve, dropping the lower-ranked suffix when needed. `counts.matches` counts verified matching files in filename mode and verified matching physical lines in content mode; `counts.files` counts distinct matching file IDs. These are coverage totals, not the number retained. `limited` is true exactly when fewer hits are returned than `counts.matches`, including byte-budget truncation; it does not describe coverage completeness.
+
+`coverage.filesSearched` counts successfully completed, version-verified regular files, including valid text files with skipped overlong lines. Binary, invalid-encoding, unreadable and changed files do not contribute to it. The latter three skip reasons, overlong lines and deadline expiry make `complete: false`; expected binary exclusions alone do not. Hidden entries, symlinks and nonregular entries are omitted from the visible namespace, not counted as binary skips. `unreadable` also records failed directory traversals: one such failure cannot enumerate or count all unknown descendants. `skippedLines` counts overlong lines only in otherwise verified text files. On timeout the unfinished file's provisional hits, counts and skipped-line count are discarded; it is represented by `timedOut: true`, not an additional skipped-file reason. Neither totals nor `complete` imply a transactional snapshot across files. Incomplete coverage with zero hits is not a definitive no-results answer, and a complete scan can still have `limited: true`.
+
+### Version-checked source context
+
+`POST /api/vault/search/context` accepts exactly `{ id, version, line, query }`. Use the `id`, `version` and `line` from a content hit and the corresponding query. `id` must have 1–64 safe components, each at most 255 UTF-16 code units; `version` is a nonempty opaque string of at most 128 code units; `line` is a positive safe integer. Query validation is the same as search except that its normalized value must be nonempty. A successful response is:
+
+```ts
+{
+  id: string[];
+  name: string;
+  version: string;
+  targetLine: number;
+  startLine: number;
+  lines: Array<{ number: number; text: string; positions: number[] }>;
+  truncated: boolean;
+}
+```
+
+Return the target and up to three physical lines on either side, with contiguous 1-based line numbers; `startLine` is the first returned number. Only the target line has match positions, relative to its literal text in UTF-16 units. Return the target line in full within the 256 KiB physical-line limit; do not silently clip target evidence. Surrounding lines are bounded to at most 4096 UTF-16 code units each, clipping long prefixes at a grapheme boundary. `truncated` reports clipped context, including overlong surrounding source lines; fewer neighbors at the beginning/end of a file alone do not set it. Context is bounded by these per-line limits rather than the search hit-retention budget. The Next private transport and response reader reject search or context response bodies exceeding 4 MiB.
+
+Versions use the existing opened reader's secret-scoped file-stat token (identity, size and modification/change times), not the Markdown save revision or a public content hash. Both search and context verify descriptor versions before/after reads and reopen the current vault-relative path to check that it still names that version. Tokens from a different reader/daemon lifetime are stale. Context checks that the requested target still matches the supplied normalized query; it never returns an unverified excerpt after a deadline. It may stop reading after the needed excerpt, rather than decoding the entire remainder of a large file. As with other vault operations, this is not filesystem compare-and-swap against hostile local writers.
+
+Search-specific failures use the fixed sanitized envelope `{ "error": { "code": "...", "message": "..." } }`:
+
+| Status | Code | Message / conditions |
+| --- | --- | --- |
+| 400 | `invalid_request` | `Invalid note identifier` — malformed, oversized or otherwise invalid input, including extra fields/query parameters and an empty context query. |
+| 409 | `search_context_changed` | `This file changed. Search again.` — context version mismatch/replacement, missing or initially unopenable source, missing/nonmatching/overlong target, or binary/invalid UTF-8 encountered while reading context. A disappeared source is not a context 404. |
+| 503 | `search_unavailable` | `Search is unavailable` — unavailable vault/transport, admission refusal, request cancellation, context deadline, or other context/search IO failure that cannot produce verified results. |
+
+Ordinary request-policy/authentication errors remain separate. A search scan reaching its own deadline instead returns **200** with only already verified results, `coverage.complete: false` and `coverage.timedOut: true`. Context deadlines return **503**, never a partial excerpt. A later context IO failure is not necessarily the same as the initial-open 409 described above.
+
+### Budgets, boundaries and an owned-fixture example
+
+The Next boundary allows up to five seconds to receive/parse the bounded JSON request, then uses a separate 35-second daemon-response budget for both search and context. Daemon work has a 30-second deadline from admission; metadata helpers and global startup deadlines are unchanged. At most two nonempty search/context operations run concurrently across the process, with no waiting queue; excess requests fail with `503 search_unavailable`. Each scan processes files sequentially in bounded read chunks with real event-loop yields. There is no 10,000-entry vault rejection. Cancellation/disconnect propagates through the private HTTP transport and closes request-owned file/directory resources; reader shutdown also cancels its searches. Repeat or cancel a search without authorizing any file mutation.
+
+The daemon owns namespace safety, matching, ranking, eligibility, versions and coverage. Next validates/projects bounded results and holds the private credential; browsers send neither a daemon URL nor daemon credentials. Existing same-origin Host/Origin/Fetch-Metadata policy applies at Next. The private daemon still rejects browser Origin/Fetch-Metadata headers and requires its exact Host and bearer authentication. Log attempts/outcomes with operation, query length, duration, counts/coverage or sanitized status as applicable; never log raw queries, snippets, source text, IDs/paths or credentials. Responses are `no-store`/`nosniff`; Next also sets `Referrer-Policy: no-referrer`.
+
+For an isolated instance configured with an **operator-owned fixture vault**, these calls can be made from that instance's own browser origin without prescribing a public origin, port or credential. They exercise APIs, not an available search UI:
+
+```js
+const response = await fetch('/api/vault/search', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ mode: 'content', query: 'sdk' }),
+});
+if (!response.ok) throw new Error('Fixture search failed');
+const result = await response.json();
+const hit = result.hits[0]; // No match is valid; do not invent a file/version.
+if (hit) {
+  const excerpt = await fetch('/api/vault/search/context', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: hit.id, version: hit.version, line: hit.line, query: 'sdk' }),
+  });
+  // Check excerpt.status before using its JSON; 409 requires a fresh search.
+}
+```
+
 ## Attachment uploads
 
 Uploads are available by default without an enable flag. `GET /api/vault/attachments` returns `{ "maxFileBytes": number }` without creating a directory or writing a file. `POST /api/vault/attachments?name=...` accepts one nonempty raw `application/octet-stream` body and a once-query-encoded basename; it returns `{ "id": ["06_Attachments", name], "name": name, "size": number }` only after confirmed publication. Empty files, duplicate or extra query parameters and unsafe basenames are invalid. The API sends the selected original bytes without app-side HEIC conversion or transcoding; native picker integration does not guarantee device or browser codec support.

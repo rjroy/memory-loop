@@ -7,6 +7,8 @@ import { isVaultComponent, isVaultId, isUploadName, parseVaultSaveRequest, parse
 import { renameNoReplace as nativeRenameNoReplace } from './vault-rename';
 import { contentResponse, describeFile } from './vault-media';
 import type { VaultFileResponse } from './contract';
+import type { VaultSearchRequest, VaultSearchResponse, VaultSearchContextRequest, VaultSearchContextResponse } from './contract';
+import { createVaultSearch, type VaultSearchHooks } from './vault-search';
 
 export interface VaultReader {
   tree(): Promise<VaultTreeResponse>;
@@ -16,6 +18,8 @@ export interface VaultReader {
   save(id: VaultId, markdown: string, expectedRevision: string): Promise<VaultSaveResponse>;
   action(input: VaultAction): Promise<VaultActionResponse>;
   upload(name: string, body: ReadableStream<Uint8Array>, limit: number, signal: AbortSignal): Promise<VaultUploadResponse>;
+  search(input: VaultSearchRequest, signal: AbortSignal): Promise<VaultSearchResponse>;
+  searchContext(input: VaultSearchContextRequest, signal: AbortSignal): Promise<VaultSearchContextResponse>;
   close(): Promise<void>;
 }
 
@@ -101,7 +105,7 @@ async function listDirectory(directory: FileHandle, parent: VaultId, identity: (
   return result;
 }
 
-export interface VaultOptions {
+export interface VaultOptions extends VaultSearchHooks {
   flushFile?: (file: FileHandle) => Promise<void>;
   flushDirectory?: (directory: FileHandle) => Promise<void>;
   renameNoReplace?: (sourceParentFd: number, sourceName: string, destinationParentFd: number, destinationName: string) => Promise<void>;
@@ -391,7 +395,15 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
     } catch { throw new VaultError('entry_unavailable', 'Entry is unavailable'); }
     finally { for (const handle of opened.reverse()) await handle.close().catch(() => {}); }
   }
+  const search = createVaultSearch({
+    root: pinnedRoot, directoryPath: descriptorPath,
+    openDirectory: (parent, name) => open(descriptorPath(parent, name), directoryFlags),
+    openFile: (parent, name) => open(descriptorPath(parent, name), fileFlags),
+    openRegular, version,
+  }, options);
   return {
+    search: search.search,
+    searchContext: search.context,
     async tree() {
       try {
         return { rootIdentity: identity(await pinnedRoot.stat()), entries: await listDirectory(pinnedRoot, [], identity, version) };
@@ -458,6 +470,6 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       uploads.add(operation);
       try { return await operation; } finally { uploads.delete(operation); }
     },
-    async close() { closed = true; await Promise.allSettled(uploads); await queue; await pinnedRoot.close(); },
+    async close() { closed = true; await search.close(); await Promise.allSettled(uploads); await queue; await pinnedRoot.close(); },
   };
 }

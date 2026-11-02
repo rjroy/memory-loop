@@ -94,6 +94,8 @@ export const vaultErrors = {
   upload_too_large: { status: 413, message: 'Upload exceeds the file size limit' },
   upload_unavailable: { status: 503, message: 'Upload is unavailable' },
   upload_uncertain: { status: 503, message: 'Upload outcome is uncertain' },
+  search_unavailable: { status: 503, message: 'Search is unavailable' },
+  search_context_changed: { status: 409, message: 'This file changed. Search again.' },
 } as const;
 
 export type VaultErrorCode = keyof typeof vaultErrors;
@@ -114,4 +116,45 @@ export function isVaultId(value: unknown): value is VaultId {
 /** Public messages must not contain filesystem paths or note content. */
 export interface VaultErrorResponse {
   error: { code: VaultErrorCode; message: string };
+}
+
+export type VaultSearchMode = 'filename' | 'content';
+export interface VaultSearchRequest { mode: VaultSearchMode; query: string }
+export interface VaultSearchContextRequest { id: VaultId; version: string; line: number; query: string }
+export interface VaultSearchSnippet { text: string; start: number; end: number; positions: number[] }
+export interface VaultFilenameHit { id: VaultId; name: string; path: string; field: 'name' | 'path'; positions: number[]; score: number }
+export interface VaultContentHit { id: VaultId; name: string; path: string; line: number; version: string; score: number; snippets: VaultSearchSnippet[] }
+export interface VaultSearchCoverage {
+  complete: boolean;
+  filesSearched: number;
+  skippedFiles: { binary: number; invalidEncoding: number; unreadable: number; changed: number };
+  skippedLines: number;
+  timedOut: boolean;
+}
+interface VaultSearchSummary { counts: { matches: number; files: number }; limited: boolean; coverage: VaultSearchCoverage }
+export type VaultSearchResponse = VaultSearchSummary & (
+  { mode: 'filename'; hits: VaultFilenameHit[] } | { mode: 'content'; hits: VaultContentHit[] }
+);
+export interface VaultSearchContextLine { number: number; text: string; positions: number[] }
+export interface VaultSearchContextResponse {
+  id: VaultId; name: string; version: string; targetLine: number; startLine: number;
+  lines: VaultSearchContextLine[]; truncated: boolean;
+}
+export const vaultSearchBodyLimit = 16 * 1024;
+export const normalizeSearchQuery = (query: string): string => query.replace(/\s/gu, '');
+function searchQuery(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 4096 && normalizeSearchQuery(value).length <= 128 &&
+    new TextDecoder('utf-8', { ignoreBOM: true }).decode(new TextEncoder().encode(value)) === value;
+}
+export function parseVaultSearchRequest(value: unknown): VaultSearchRequest | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 2 ||
+      !('mode' in value) || (value.mode !== 'filename' && value.mode !== 'content') || !('query' in value) || !searchQuery(value.query)) return;
+  return { mode: value.mode, query: value.query };
+}
+export function parseVaultSearchContextRequest(value: unknown): VaultSearchContextRequest | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 4 ||
+      !('id' in value) || !isVaultId(value.id) || value.id.length > 64 || value.id.some(part => part.length > 255) ||
+      !('version' in value) || !opaque(value.version) || !('line' in value) || typeof value.line !== 'number' ||
+      !Number.isSafeInteger(value.line) || value.line < 1 || !('query' in value) || !searchQuery(value.query) || !normalizeSearchQuery(value.query)) return;
+  return { id: value.id, version: value.version, line: value.line, query: value.query };
 }

@@ -1,6 +1,7 @@
 import type { LoadedTransport } from '../../backend/transport';
 import { hardUploadMaxBytes, isUploadName, isVaultErrorCode, isVaultId, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultEntry, type VaultId, type VaultErrorCode } from '../../backend/contract';
 import { allowsWebRequest } from './request-policy';
+import { handleSearchRequest } from './vault-search-bff';
 
 export interface BffDependencies {
   transport: LoadedTransport;
@@ -333,6 +334,7 @@ function domainError(value: unknown, status: number): VaultErrorCode | undefined
 export async function handleVaultRequest(request: Request, dependencies: BffDependencies): Promise<Response> {
   const { transport, log } = dependencies;
   const url = new URL(request.url);
+  if (url.pathname === '/api/vault/search' || url.pathname === '/api/vault/search/context') return handleSearchRequest(request, dependencies);
   if (url.pathname === '/api/vault/attachments') return attachmentRequest(request, dependencies);
   if (url.pathname === '/api/vault/file') return fileRequest(request, dependencies, 'file');
   if (url.pathname === '/api/vault/content') return fileRequest(request, dependencies, 'content');

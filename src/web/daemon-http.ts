@@ -1,24 +1,30 @@
 import 'server-only';
 import { request } from 'node:http';
 import { once } from 'node:events';
-import { vaultActionBodyLimit, vaultSaveBodyLimit } from '../../backend/contract';
+import { vaultActionBodyLimit, vaultSaveBodyLimit, vaultSearchBodyLimit } from '../../backend/contract';
 
 /** Node fetch adds Sec-Fetch-Mode even with fresh headers. The service protocol
  * deliberately forbids browser metadata, so use the standard Node HTTP client. */
 export async function daemonFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (!(input instanceof URL)) throw new Error('Invalid service target');
   if (input.protocol !== 'http:' || input.hostname !== '127.0.0.1' || input.username || input.password ||
-      !['/api/vault/tree', '/api/vault/note', '/api/vault/actions', '/api/vault/file', '/api/vault/attachments'].includes(input.pathname) || input.hash) throw new Error('Invalid service target');
+      !['/api/vault/tree', '/api/vault/note', '/api/vault/actions', '/api/vault/file', '/api/vault/attachments', '/api/vault/search', '/api/vault/search/context'].includes(input.pathname) || input.hash) throw new Error('Invalid service target');
   const method = init?.method ?? 'GET';
-  const saving = method === 'POST' && (input.pathname === '/api/vault/note' || input.pathname === '/api/vault/actions') && !input.search;
-  if (method !== 'GET' && !saving || method === 'GET' && input.pathname === '/api/vault/actions') throw new Error('Invalid service method');
-  if (saving && (typeof init?.body !== 'string' || Buffer.byteLength(init.body) > (input.pathname === '/api/vault/actions' ? vaultActionBodyLimit : vaultSaveBodyLimit))) throw new Error('Invalid service body');
+  const searching = input.pathname === '/api/vault/search' || input.pathname === '/api/vault/search/context';
+  const saving = method === 'POST' && (input.pathname === '/api/vault/note' || input.pathname === '/api/vault/actions' || searching) && !input.search;
+  if (method !== 'GET' && !saving || method === 'GET' && (input.pathname === '/api/vault/actions' || searching)) throw new Error('Invalid service method');
+  if (saving && (typeof init?.body !== 'string' || Buffer.byteLength(init.body) > (searching ? vaultSearchBodyLimit : input.pathname === '/api/vault/actions' ? vaultActionBodyLimit : vaultSaveBodyLimit))) throw new Error('Invalid service body');
   const supplied = new Headers(init?.headers);
   const headers = { Accept: supplied.get('accept') ?? 'application/json', Authorization: supplied.get('authorization') ?? '', ...(saving ? { 'Content-Type': 'application/json' } : {}) };
   return new Promise<Response>((resolve, reject) => {
     const upstream = request(input, { method, headers, signal: init?.signal ?? undefined }, response => {
       const chunks: Buffer[] = [];
-      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      let size = 0;
+      response.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (searching && size > 4 * 1024 * 1024) { response.destroy(new Error('Service response too large')); return; }
+        chunks.push(chunk);
+      });
       response.on('error', reject);
       response.on('aborted', () => reject(new Error('Service response abandoned')));
       response.on('end', () => {

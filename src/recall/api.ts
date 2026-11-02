@@ -263,6 +263,8 @@ export const failureCopy: Record<RecallFailure, { heading: string; body: string;
   config_missing: { heading: 'Vault not configured', body: 'Set the vault directory in the JSON config, then restart Memory Loop.', action: 'Check again' },
   config_invalid: { heading: 'Vault configuration is invalid', body: 'Check the JSON configuration and vault directory, then restart Memory Loop.', action: 'Check again' },
   vault_unavailable: { heading: 'Vault unavailable', body: "Memory Loop can't read the configured vault. Check that it exists and is readable, then try again.", action: 'Try again' },
+  search_unavailable: { heading: 'Search unavailable', body: 'Search could not finish. Try again.', action: 'Try again' },
+  search_context_changed: { heading: 'File changed', body: 'This file changed. Search again.', action: 'Search again' },
   note_unavailable: { heading: 'Note unavailable', body: "This note may have moved, been removed, or can't be read. Choose another file or try again.", action: 'Retry note' },
   invalid_request: { heading: 'File address is invalid', body: 'Choose a file from Files.', action: '' },
   note_conflict: { heading: 'Note changed', body: 'The note changed since it was read.', action: 'Retry note' },

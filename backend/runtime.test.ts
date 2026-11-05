@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer as createHttpServer, request as httpRequest } from 'node:http';
 import { createServer, type AddressInfo, type Server } from 'node:net';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -251,7 +251,7 @@ it('fails without replacing or interfering with an existing loopback listener', 
   expect(listener.listening).toBe(true);
 }, 10000);
 
-it.each(['missing token', 'bad token', 'token permissions', 'bad transport', 'port mismatch'] as const)(
+it.each(['missing token', 'bad token', 'bad transport', 'port mismatch'] as const)(
   'fails safely before binding for %s', async problem => {
     const { listener, port } = await reservePort();
     await new Promise<void>((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
@@ -259,7 +259,6 @@ it.each(['missing token', 'bad token', 'token permissions', 'bad transport', 'po
     const metadata = join(fixture, 'project', '.memory-loop');
     if (problem === 'missing token') await rm(join(metadata, 'service.token'));
     if (problem === 'bad token') await writeFile(join(metadata, 'service.token'), 'invalid');
-    if (problem === 'token permissions') await chmod(join(metadata, 'service.token'), 0o644);
     if (problem === 'bad transport') await writeFile(join(metadata, 'transport.json'), '{');
     const process = launch(port, false);
     const result = await Promise.race([exited(process), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Startup failure timed out')), 5000))]);

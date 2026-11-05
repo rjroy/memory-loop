@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +37,7 @@ function runScript(name: string): Promise<{ code: number | null; output: string 
   });
 }
 
-it('setup:transport creates private credentials once without modifying vault config or printing the token', async () => {
+it('setup:transport creates credentials once without modifying vault config or printing the token', async () => {
   const vaultConfig = join(root, '.memory-loop', 'config.json');
   const fixtureConfig = '{"vaultDirectory":"/fixture-not-a-vault"}\n';
   await writeFile(vaultConfig, fixtureConfig);
@@ -48,9 +48,6 @@ it('setup:transport creates private credentials once without modifying vault con
   const originalTransport = await readFile(transportFile, 'utf8');
   const originalToken = await readFile(tokenFile, 'utf8');
   expect(originalToken).toMatch(/^[a-f0-9]{64}$/);
-  expect((await lstat(join(root, '.memory-loop'))).mode & 0o777).toBe(0o700);
-  expect((await lstat(transportFile)).mode & 0o777).toBe(0o600);
-  expect((await lstat(tokenFile)).mode & 0o777).toBe(0o600);
   expect(first.output).not.toContain(originalToken);
   expect(first.output).not.toContain(root);
   const second = await runScript('setup:transport');

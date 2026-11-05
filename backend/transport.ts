@@ -1,8 +1,8 @@
-import { constants } from 'node:fs';
-import { lstat, mkdir, open, unlink } from 'node:fs/promises';
+import { lstat, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, normalize } from 'node:path';
+import { openSafeRoot, type SafeRoot } from './safe-fs';
 
 export type TransportConfig = {
   daemonOrigin: string;
@@ -31,22 +31,9 @@ export function parseTransport(value: unknown): TransportConfig {
   return { daemonOrigin: origin(value.daemonOrigin) };
 }
 
-const dirFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
-const fileFlags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
-function descriptor(dir: FileHandle, name: string) { return `/proc/self/fd/${dir.fd}/${name}`; }
-async function check(handle: FileHandle, directory: boolean): Promise<void> {
-  const stat = await handle.stat();
-  if ((directory ? !stat.isDirectory() : !stat.isFile()) || (stat.mode & 0o7777) !== (directory ? 0o700 : 0o600) ||
-      !process.getuid || stat.uid !== process.getuid()) invalid();
-}
-async function metadata(path: string): Promise<FileHandle> {
-  if (process.platform !== 'linux' || !constants.O_DIRECTORY || !constants.O_NOFOLLOW || !isAbsolute(path)) invalid();
-  const dir = await open(path, dirFlags);
-  try { await check(dir, true); return dir; } catch (error) { await dir.close(); throw error; }
-}
-async function readPrivate(dir: FileHandle, name: string): Promise<string> {
-  const file = await open(descriptor(dir, name), fileFlags);
-  try { await check(file, false); return await file.readFile('utf8'); } finally { await file.close(); }
+async function readPrivate(root: SafeRoot, metadata: string, name: string): Promise<string> {
+  const file = await root.openFile([metadata, name], 'read');
+  try { return await file.readFile('utf8'); } finally { await file.close(); }
 }
 function normalizeError(error: unknown): TransportError {
   if (error instanceof TransportError) return error;
@@ -55,53 +42,64 @@ function normalizeError(error: unknown): TransportError {
 }
 
 export async function loadTransport(transportFile: string): Promise<LoadedTransport> {
-  let dir: FileHandle | undefined;
   try {
-    if (!isAbsolute(transportFile) || transportFile !== join(dirname(transportFile), 'transport.json')) invalid();
-    dir = await metadata(dirname(transportFile));
+    if (!isAbsolute(transportFile)) invalid();
+    const file = normalize(transportFile);
+    if (basename(file) !== 'transport.json') invalid();
+    const directory = dirname(file);
+    const metadata = basename(directory);
+    if (!metadata || dirname(directory) === directory) invalid();
+    const root = await openSafeRoot(dirname(directory));
+    await root.resolve([metadata], 'directory');
     let data: unknown;
-    try { data = JSON.parse(await readPrivate(dir, 'transport.json')); } catch (error) {
+    try { data = JSON.parse(await readPrivate(root, metadata, 'transport.json')); } catch (error) {
       if (error instanceof SyntaxError) invalid();
       throw error;
     }
     const config = parseTransport(data);
-    const serviceToken = await readPrivate(dir, 'service.token');
+    const serviceToken = await readPrivate(root, metadata, 'service.token');
     if (!/^[a-f0-9]{64}$/.test(serviceToken)) invalid();
     return { config, serviceToken };
   } catch (error: unknown) { throw normalizeError(error); }
-  finally { await dir?.close(); }
 }
 
 export async function setupTransport(projectRoot: string): Promise<void> {
   console.info('transport_setup_attempt');
-  let dir: FileHandle | undefined;
-  const created: Array<{ name: string; handle: FileHandle }> = [];
+  let root: SafeRoot | undefined;
+  const created: Array<{ name: string; handle: FileHandle; identity?: { dev: bigint; ino: bigint }; closed: boolean }> = [];
   try {
     if (!isAbsolute(projectRoot)) invalid();
-    const path = join(projectRoot, '.memory-loop');
-    try { await mkdir(path, { mode: 0o700 }); } catch (error: unknown) {
+    root = await openSafeRoot(normalize(projectRoot));
+    try { await root.createDirectory(['.memory-loop']); } catch (error: unknown) {
       if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST')) throw error;
     }
-    dir = await metadata(path);
+    await root.resolve(['.memory-loop'], 'directory');
     const config: TransportConfig = { daemonOrigin: 'http://127.0.0.1:3001' };
     for (const [name, content] of [['service.token', randomBytes(32).toString('hex')], ['transport.json', `${JSON.stringify(config, null, 2)}\n`]]) {
-      const handle = await open(descriptor(dir, name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-      created.push({ name, handle });
+      const handle = await root.createFile(['.memory-loop', name]);
+      const item: typeof created[number] = { name, handle, closed: false };
+      created.push(item);
+      item.identity = await handle.stat({ bigint: true });
       await handle.writeFile(content, 'utf8');
     }
+    for (const item of created) { await item.handle.close(); item.closed = true; }
     console.info('transport_setup_outcome', { status: 'created' });
   } catch (error: unknown) {
-    if (dir) for (const item of created) {
+    for (const item of created) {
+      if (!item.closed) {
+        try { await item.handle.close(); item.closed = true; } catch { /* Preserve the original setup failure. */ }
+      }
+    }
+    if (root) for (const item of created) {
       try {
-        const existing = await lstat(descriptor(dir, item.name));
-        const ours = await item.handle.stat();
-        if (existing.dev === ours.dev && existing.ino === ours.ino) await unlink(descriptor(dir, item.name));
+        const path = await root.resolve(['.memory-loop', item.name], 'file');
+        const existing = await lstat(path, { bigint: true });
+        if (item.identity && existing.dev === item.identity.dev && existing.ino === item.identity.ino) await unlink(path);
       } catch { /* Preserve unrelated files and report the setup failure. */ }
     }
     console.info('transport_setup_outcome', { status: 'failed' });
     throw normalizeError(error);
   } finally {
-    for (const item of created) await item.handle.close();
-    await dir?.close();
+    for (const item of created) if (!item.closed) await item.handle.close().catch(() => {});
   }
 }

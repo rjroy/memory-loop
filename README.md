@@ -39,6 +39,18 @@ Node >=22 when run under Node (Next itself requires Node >=20.9). Bun manages pa
 and runs the daemon. Next build, development and production run under **Node**,
 not Bun's experimental Next adapter or a custom HTTP server.
 
+**Platform migration:** the current backend is Linux-only. Native Windows support
+is being implemented in `memory-loop-68l`; the toolchain versions above alone do
+not make the existing backend run on Windows. The approved target is Windows and
+Linux with shared portable filesystem operations, no descendant symlinks or
+junctions, Windows-compatible new names, collision refusal and stale-save
+protection. Filesystem access permissions are the operating environment's
+responsibility, not a service-enforced requirement. Existing Linux ownership and
+mode checks remain implementation constraints until migrated, not requirements
+to reproduce on Windows. See the [approved filesystem policy](backend/CONTRACT.md#approved-portable-filesystem-policy)
+for the agreed guarantees and limits. Native Windows support must be verified
+against a disposable vault before being described as working.
+
 For an existing live checkout, do not run the build below until **all** web
 processes serving its `.next` have stopped. Follow the authorized stop/build/start
 sequence in the [safe publication handoff](#safe-publication-handoff).

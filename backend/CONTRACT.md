@@ -133,9 +133,23 @@ Actions create a blank `.md` note or empty directory under an identified parent,
 
 A known failure does not authorize a destructive retry. If an acknowledgement is lost or a post-mutation flush fails, the outcome is uncertain: do not automatically repeat the request. Reconcile with a fresh read instead.
 
-Moves use Linux `renameat2(RENAME_NOREPLACE)` through an isolated Bun FFI adapter against glibc. Bun FFI is experimental. If the required runtime, platform or operation is unavailable, moves fail closed; cross-device moves are refused rather than copied. This is not a portable move implementation.
+The existing move implementation uses Linux `renameat2(RENAME_NOREPLACE)` through an isolated Bun FFI adapter against glibc. The approved portable replacement below supersedes that implementation requirement. Until the migration is verified, the existing adapter still fails closed when unavailable; cross-device moves remain refused rather than copied.
 
-## Linux namespace boundary
+## Approved portable filesystem policy
+
+Approved on 2026-11-05 in `memory-loop-68l.1`. This section states the migration target, not a claim that Windows already works. The current Linux descriptor-based implementation remains until the dependent migration tasks replace it and verification establishes support.
+
+- Support native Windows and Linux using a small shared filesystem foundation, ordinary Node filesystem APIs and platform-aware path handling. Do not require procfs, glibc FFI or POSIX ownership/mode checks.
+- Filesystem access permissions belong to the operating environment. The service does not enforce owner-only storage, inspect Windows ACLs or repair filesystem permissions. Application state remains outside the vault. This policy does not redesign transport authentication or network boundaries.
+- Trust the configured root and its ancestors, the OS/account and the personal vault namespace. Memory Loop manages the vault; concurrent external writers are not part of the supported coordination model. This is not a sandbox against hostile local processes.
+- Canonicalize the configured root, validate descendant components and confirm component-aware containment. Reject descendant symbolic links and Windows directory junctions even when their targets are inside the vault. Do not use raw string prefixes or unconditional case folding as proof of containment. Detected root replacement must not silently redirect operations into another directory.
+- Serialize Memory Loop's mutations and refuse observed destination collisions. Use exclusive creates for new files. A destination check followed by ordinary rename is acceptable for file and directory moves: it is not an atomic no-overwrite guarantee against external writers. Preserve the refusal of cross-device moves rather than falling back to copy/delete. Apply the same explicit collision/race policy to upload publication.
+- Require Windows-compatible new file and directory names on both platforms, including uploads and generated relative names. Reject reserved characters, device names and trailing dots/spaces. Do not automatically rename or silently hide existing host-valid entries solely because their names are not portable.
+- Preserve stale-save revision conflicts, including conflicts between browser tabs. Preserve append/checkpoint recovery, ownership records and detection of changed transcript content; removing filesystem permission enforcement does not authorize adopting or overwriting unrelated files. Regular-file and hard-link checks that protect write integrity are distinct from access control.
+- Write replacement content to an exclusively created temporary file, flush the file and publish it using the agreed save/conflict rules. Flush directory metadata where supported; Windows need not support POSIX directory fsync. Preserve definite versus uncertain outcomes and safe cleanup. Do not claim atomic filesystem compare-and-swap or identical power-loss durability across platforms.
+- Use controlled disposable fixtures for validation. Linux checks run locally; the user will run the final native Windows disposable-vault check. Do not use the reported real vault or alter any legacy state inside it without separate permission.
+
+## Current Linux namespace implementation (pending migration)
 
 Trust the configured root and its ancestors, the local OS and the personal vault namespace; this is not a sandbox against hostile local processes. Pin the root directory object until daemon restart. For each request, hold descendant directory descriptors while opening individual components relative to them using Linux procfs and no-follow semantics; reject entry symlinks, including replacement during component open. Open note files nonblocking and check the opened descriptor is a regular file before reading. Close request-scoped descendants and the root at shutdown. If Linux/procfs or required capabilities are unavailable, fail as unavailable; never fall back to pathname-prefix or pre-open realpath checks.
 

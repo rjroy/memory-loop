@@ -1,12 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { expect, it } from 'vitest';
 
 const runner = resolve(import.meta.dirname, '../tests/ground-generation-publication-fixture.ts');
-it.each(['manual', 'absence', 'lost-confirmation', 'v7-migration', 'v8-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate'] as const)(
+it.skipIf(process.platform !== 'linux').each(['manual', 'absence', 'lost-confirmation', 'v7-migration', 'v8-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate', 'permissive-recovery', 'nonportable-publication', 'legacy-target-recovery', 'legacy-parent-recovery', 'nonportable-missing-parent', 'write-sync-normal', 'write-sync-recovery', 'write-sync-terminal-cleanup', 'write-sync-io-failure'] as const)(
   'preserves owned publication boundaries: %s', async scenario => {
-    const root = await mkdtemp('/tmp/opencode/ground-publication-test-');
+    const root = await mkdtemp(join(tmpdir(), 'ground-publication-test-'));
     try {
       const result = spawnSync('/usr/bin/bun', ['--no-env-file', runner, root, scenario], {
         cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 256 * 1024,

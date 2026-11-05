@@ -1,6 +1,9 @@
 import { constants, type Stats } from 'node:fs';
 import { link, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { isVaultComponent } from './contract';
+import { isPortableName } from './portable-name';
+import { openSafeRoot, SafeEntryError, SafeRootChangedError, type SafeRoot } from './safe-fs';
+import { join } from 'node:path';
 import { GroundGenerationError } from './ground-generation-error';
 import { questionDigest, questionResourceLimit } from './ground-generation-questions';
 import { generationCandidates, mergeGenerationCandidates, type GenerationJob } from './ground-generation-formats';
@@ -29,7 +32,6 @@ export interface QuestionPublicationIO {
 }
 export const questionPublicationIO: QuestionPublicationIO = { open, lstat, realpath, rename, link, unlink,
   async mkdir(path, mode) { await mkdir(path, { mode }); } };
-const dirFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 const readFlags = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 const tempFlags = constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 const same = (a: PublicationIdentity, b: PublicationIdentity) => a.dev === b.dev && a.ino === b.ino;
@@ -38,65 +40,103 @@ const fingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeM
 const code = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
 function conflict(): never { throw new GroundGenerationError('conflict'); }
 function unsafe(): never { throw new GroundGenerationError('configuration'); }
-function owner(s: Stats): void {
-  if (!process.getuid || s.uid !== process.getuid() || (s.mode & 0o022) !== 0 || (s.mode & 0o7000) !== 0 ||
-      ![s.dev, s.ino, s.size].every(value => Number.isSafeInteger(value) && value >= 0)) unsafe();
+function validMetadata(s: Stats): void {
+  if (![s.dev, s.ino, s.size].every(value => Number.isSafeInteger(value) && value >= 0)) unsafe();
 }
-function file(s: Stats, links = 1): void { owner(s); if (!s.isFile() || s.nlink !== links) unsafe(); }
+function file(s: Stats, links = 1): void { validMetadata(s); if (!s.isFile() || s.nlink !== links) unsafe(); }
 interface Snapshot { baseline: PublicationBaseline; source: string | null }
 
 class QuestionNamespace {
-  private readonly nodes: Array<{ handle: QuestionPublicationHandle; stat: Stats; named: string }> = [];
-  constructor(private readonly root: string, readonly noteId: readonly string[], readonly io: QuestionPublicationIO, private readonly signal: AbortSignal) {
-    if (process.platform !== 'linux' || noteId.length < 3 || noteId.length > 32 || noteId[0] !== '03_Resources' || noteId[1] !== 'Memory-Loop' ||
-        !noteId.every(isVaultComponent) || !noteId.at(-1)?.endsWith('.md')) unsafe();
-  }
+  private readonly nodes: Array<{ id: string[]; stat: Stats }> = [];
+  private safe: SafeRoot | undefined;
+  constructor(private readonly root: string, readonly noteId: readonly string[], readonly io: QuestionPublicationIO, private readonly signal: AbortSignal) {}
   private check(): void { if (this.signal.aborted) throw new Error('publication stopped'); }
   async prepare(expected?: readonly PublicationIdentity[], create = false): Promise<void> {
-    this.check(); if (await this.io.realpath(this.root) !== this.root) conflict();
-    const names = [this.root, ...this.noteId.slice(0, -1)];
-    for (let index = 0; index < names.length; index++) {
-      this.check(); if (index) await this.validate();
-      const named = index === 0 ? this.root : this.path(names[index]);
-      if (create && index) { try { await this.io.mkdir(named, 0o700); } catch (error) { if (code(error) !== 'EEXIST') throw error; } }
-      let handle: QuestionPublicationHandle;
-      try { handle = await this.io.open(named, dirFlags); }
-      catch (error) {
-        if (code(error) === 'ENOENT' && !create && index >= (expected?.length ?? 0)) break;
-        if (['ENOENT', 'ELOOP', 'ENOTDIR'].includes(String(code(error)))) conflict(); throw error;
-      }
+    this.check();
+    if (this.noteId.length < 3 || this.noteId.length > 32 || this.noteId[0] !== '03_Resources' || this.noteId[1] !== 'Memory-Loop' ||
+        !this.noteId.every(isVaultComponent) || !this.noteId.at(-1)?.endsWith('.md')) unsafe();
+    this.safe = await openSafeRoot(this.root);
+    for (let index = 0; index < this.noteId.length; index++) {
+      this.check();
+      const id = this.noteId.slice(0, index);
       try {
-        const stat = await handle.stat(); owner(stat);
-        if (!stat.isDirectory() || expected?.[index] && !same(stat, expected[index])) conflict();
-        this.nodes.push({ handle, stat, named });
-      } catch (error) { await handle.close(); throw error; }
+        if (create && index) {
+          try {
+            const name = await this.safe.resolve(id, 'missing');
+            if (!isPortableName(id[id.length - 1])) unsafe();
+            await this.io.mkdir(name, 0o700);
+          } catch (error) { if (code(error) !== 'EEXIST') throw error; }
+        }
+        const named = await this.safe.resolve(id, 'directory');
+        const entry = await this.io.lstat(named); validMetadata(entry);
+        if (!entry.isDirectory() || expected?.[index] && !same(entry, expected[index])) conflict();
+        this.nodes.push({ id, stat: entry });
+      } catch (error) {
+        if (code(error) === 'ENOENT' && !create && index >= (expected?.length ?? 0)) {
+          if (!this.noteId.slice(index - 1).every(isPortableName)) unsafe();
+          break;
+        }
+        if (error instanceof SafeEntryError || error instanceof SafeRootChangedError || ['ENOENT', 'ELOOP', 'ENOTDIR'].includes(String(code(error)))) conflict();
+        throw error;
+      }
     }
     if (!this.nodes.length || expected && this.nodes.length < expected.length) conflict();
     await this.validate();
   }
   path(name: string): string {
-    const node = this.nodes.at(-1); if (!node) throw new Error('publication namespace unavailable');
-    return `/proc/self/fd/${node.handle.fd}/${name}`;
+    const valid = name === this.noteId[this.noteId.length - 1] ? isVaultComponent(name) : isPortableName(name);
+    if (!this.safe || !this.nodes.length || !valid) unsafe();
+    return join(this.safe.path, ...this.nodes[this.nodes.length - 1].id, name);
+  }
+  async open(name: string, flags: number, mode?: number): Promise<QuestionPublicationHandle> {
+    if (!this.safe || !this.nodes.length) unsafe();
+    await this.validate();
+    const id = [...this.nodes[this.nodes.length - 1].id, name];
+    const creating = (flags & constants.O_CREAT) !== 0 && (flags & constants.O_EXCL) !== 0;
+    if (creating && !isPortableName(name)) unsafe();
+    try { await this.safe.resolve(id, creating ? 'missing' : 'file'); }
+    catch (error) {
+      if (error instanceof SafeEntryError || error instanceof SafeRootChangedError) conflict();
+      throw error;
+    }
+    return this.io.open(this.path(name), flags, mode);
   }
   identities(): PublicationIdentity[] { return this.nodes.map(node => identity(node.stat)); }
   get complete(): boolean { return this.nodes.length === this.noteId.length; }
   async validate(): Promise<void> {
     this.check();
+    if (!this.safe) conflict();
     for (const node of this.nodes) {
       let named: Stats;
-      try { named = await this.io.lstat(node.named); }
-      catch (error) { if (['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(code(error)))) conflict(); throw error; }
-      const held = await node.handle.stat(); owner(named); owner(held);
-      if (!named.isDirectory() || !held.isDirectory() || !same(named, node.stat) || !same(held, node.stat)) conflict();
+      try { named = await this.io.lstat(await this.safe.resolve(node.id, 'directory')); }
+      catch (error) {
+        if (error instanceof SafeEntryError || error instanceof SafeRootChangedError || ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(code(error)))) conflict();
+        throw error;
+      }
+      validMetadata(named);
+      if (!named.isDirectory() || !same(named, node.stat)) conflict();
     }
     this.check();
   }
-  async sync(): Promise<void> { await this.validate(); for (const node of [...this.nodes].reverse()) { this.check(); await node.handle.sync(); } await this.validate(); }
+  async sync(): Promise<void> {
+    await this.validate();
+    if (!this.safe) conflict();
+    for (const node of [...this.nodes].reverse()) { this.check(); await this.safe.syncDirectory(node.id); }
+    await this.validate();
+  }
   async read(plan?: QuestionPublication, flush = false): Promise<Snapshot> {
     await this.validate(); if (!this.complete) return { baseline: { kind: 'absent' }, source: null };
     const named = this.path(this.noteId[this.noteId.length - 1]); let handle: QuestionPublicationHandle;
-    try { handle = await this.io.open(named, readFlags); }
-    catch (error) { if (code(error) === 'ENOENT') return { baseline: { kind: 'absent' }, source: null }; if (['ELOOP', 'ENOTDIR'].includes(String(code(error)))) unsafe(); throw error; }
+    // Windows requires write access to flush a file; ordinary baseline reads stay read-only.
+    try { handle = await this.open(this.noteId[this.noteId.length - 1], flush ? tempFlags : readFlags); }
+    catch (error) {
+      if (code(error) === 'ENOENT') {
+        if (!isPortableName(this.noteId[this.noteId.length - 1])) unsafe();
+        return { baseline: { kind: 'absent' }, source: null };
+      }
+      if (['ELOOP', 'ENOTDIR'].includes(String(code(error)))) unsafe();
+      throw error;
+    }
     try {
       const before = await handle.stat();
       if (before.nlink === 2 && plan?.publishAttempted && plan.tempIdentity && same(before, plan.tempIdentity)) {
@@ -104,10 +144,15 @@ class QuestionNamespace {
       } else file(before);
       if (before.size > questionResourceLimit) unsafe();
       const bytes = await this.bytes(handle, before.size);
-      if (flush) await handle.sync();
+      let source: string; try { source = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return unsafe(); }
+      if (flush) {
+        if (!plan?.publishAttempted || !plan.outputSha256 || questionDigest(source) !== plan.outputSha256) conflict();
+        await this.validate();
+        if (fingerprint(before) !== fingerprint(await handle.stat()) || fingerprint(before) !== fingerprint(await this.io.lstat(named))) conflict();
+        await handle.sync();
+      }
       await this.validate();
       if (fingerprint(before) !== fingerprint(await handle.stat()) || fingerprint(before) !== fingerprint(await this.io.lstat(named))) conflict();
-      let source: string; try { source = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return unsafe(); }
       return { source, baseline: { kind: 'file', identity: identity(before), fingerprint: fingerprint(before), sha256: questionDigest(source) } };
     } finally { await handle.close(); }
   }
@@ -119,10 +164,7 @@ class QuestionNamespace {
     }
     return bytes;
   }
-  async close(): Promise<void> {
-    const results = await Promise.allSettled([...this.nodes].reverse().map(node => node.handle.close()));
-    if (results.some(result => result.status === 'rejected')) throw new Error('publication close unavailable');
-  }
+  async close(): Promise<void> {}
 }
 function unchanged(expected: PublicationBaseline, actual: PublicationBaseline): void {
   if (expected.kind === 'absent' ? actual.kind !== 'absent'
@@ -155,7 +197,7 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
   }
   async function tempPrefix(ns: QuestionNamespace, plan: QuestionPublication, handle: QuestionPublicationHandle, links = 1, name = plan.tempName): Promise<number> {
     const before = await handle.stat(); file(before, links);
-    if (!plan.tempIdentity || !same(before, plan.tempIdentity) || (before.mode & 0o777) !== 0o600 || plan.output === null) conflict();
+    if (!plan.tempIdentity || !same(before, plan.tempIdentity) || plan.output === null) conflict();
     const output = Buffer.from(plan.output); if (before.size > output.length) conflict();
     const bytes = await ns.bytes(handle, before.size);
     if (!bytes.equals(output.subarray(0, bytes.length)) || fingerprint(before) !== fingerprint(await handle.stat()) ||
@@ -168,7 +210,7 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
   async function creationProof(ns: QuestionNamespace, plan: QuestionPublication, handle: QuestionPublicationHandle): Promise<PublicationIdentity> {
     if (!plan.tempWitnessName) conflict();
     const before = await handle.stat();
-    if (before.nlink !== 2 || before.size !== 0 || (before.mode & 0o777) !== 0o600) conflict();
+    if (before.nlink !== 2 || before.size !== 0) conflict();
     file(before, 2);
     let named: Stats; let witness: Stats;
     try { named = await io.lstat(ns.path(plan.tempName)); witness = await io.lstat(ns.path(plan.tempWitnessName)); }
@@ -183,7 +225,7 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
   async function retireWitness(ns: QuestionNamespace, plan: QuestionPublication, temp?: QuestionPublicationHandle): Promise<void> {
     if (!plan.tempWitnessName) return;
     let handle: QuestionPublicationHandle;
-    try { handle = await io.open(ns.path(plan.tempWitnessName), readFlags); }
+    try { handle = await ns.open(plan.tempWitnessName, readFlags); }
     catch (error) { if (code(error) === 'ENOENT') return; throw error; }
     try {
       if (temp) await tempPrefix(ns, plan, temp, 2);
@@ -197,7 +239,8 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
   async function cleanupTemp(ns: QuestionNamespace, plan: QuestionPublication): Promise<void> {
     if (!plan.tempIdentity && !plan.tempWitnessName) return;
     let handle: QuestionPublicationHandle;
-    try { handle = await io.open(ns.path(plan.tempName), readFlags); }
+    // Unbound recovery must flush the witnessed inode before recording ownership.
+    try { handle = await ns.open(plan.tempName, plan.tempIdentity ? readFlags : tempFlags); }
     catch (error) {
       if (code(error) !== 'ENOENT') throw error;
       await retireWitness(ns, plan); await ns.sync(); state.clearTemp(plan.attemptId); plan.tempIdentity = null; delete plan.tempWitnessName; return;
@@ -224,7 +267,7 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
     if (plan.output === null) unsafe();
     let handle: QuestionPublicationHandle | undefined;
     if (plan.tempIdentity) {
-      try { handle = await io.open(ns.path(plan.tempName), tempFlags); }
+      try { handle = await ns.open(plan.tempName, tempFlags); }
       catch (error) {
         if (code(error) !== 'ENOENT') throw error;
         await retireWitness(ns, plan); await ns.sync(); state.clearTemp(plan.attemptId, true); plan.tempIdentity = null;
@@ -237,8 +280,8 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
           if (!reserved.tempWitnessName) conflict(); plan.tempWitnessName = reserved.tempWitnessName;
         }
         let created = false;
-        try { handle = await io.open(ns.path(plan.tempName), tempFlags | constants.O_CREAT | constants.O_EXCL, 0o600); created = true; }
-        catch (error) { if (code(error) !== 'EEXIST') throw error; handle = await io.open(ns.path(plan.tempName), tempFlags); }
+        try { handle = await ns.open(plan.tempName, tempFlags | constants.O_CREAT | constants.O_EXCL, 0o600); created = true; }
+        catch (error) { if (code(error) !== 'EEXIST') throw error; handle = await ns.open(plan.tempName, tempFlags); }
         // O_EXCL success is the only path allowed to create the independent witness.
         // On EEXIST, recovery must find an already-existing matching proof instead.
         if (created) {
@@ -282,7 +325,7 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
         await writeTemp(ns, plan);
         unchanged(plan.baseline, (await ns.read(plan)).baseline); await ns.validate(); check(signal);
         state.publishing(plan.attemptId); plan.publishAttempted = true;
-        const temp = await io.open(ns.path(plan.tempName), readFlags);
+        const temp = await ns.open(plan.tempName, readFlags);
         try { if (await tempPrefix(ns, plan, temp) !== Buffer.byteLength(plan.output ?? '')) conflict(); }
         finally { await temp.close(); }
         await ns.validate(); check(signal);

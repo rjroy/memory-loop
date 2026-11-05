@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openGround, type GroundReader } from './ground';
 
@@ -10,7 +11,7 @@ let reader: GroundReader | undefined;
 const directory = ['03_Resources', 'Memory-Loop'];
 const path = (name: string) => join(vault, ...directory, name);
 beforeEach(async () => {
-  root = await mkdtemp('/tmp/opencode/ground-reader-test-');
+  root = await mkdtemp(join(tmpdir(), 'ground-reader-test-'));
   vault = join(root, 'vault');
   await mkdir(join(vault, ...directory), { recursive: true });
 });
@@ -37,7 +38,7 @@ describe('Ground resource reader', () => {
     expect(await reader.resource('inspiration')).toEqual({ state: 'unavailable', reason: 'configuration' });
     expect(await reader.resource('goals')).toMatchObject({ state: 'ready', noteId: [...directory, 'custom.md'], data: { markdown: '# Fixture goal' } });
   });
-  it('does not follow an intermediate directory symlink', async () => {
+  it.skipIf(process.platform === 'win32')('does not follow an intermediate directory symlink', async () => {
     const outside = join(root, 'outside');
     await mkdir(outside);
     await writeFile(join(outside, 'goals.md'), 'private fixture');
@@ -48,13 +49,63 @@ describe('Ground resource reader', () => {
     expect(JSON.stringify(result)).not.toContain('private fixture');
     expect(JSON.stringify(result)).not.toContain(root);
   });
-  it.each(['directory', 'hardlink'] as const)('fails closed for a %s resource', async kind => {
-    if (kind === 'directory') await mkdir(path('goals.md'));
-    else { await writeFile(join(root, 'other.md'), 'fixture'); await link(join(root, 'other.md'), path('goals.md')); }
+  it('fails closed for a directory resource', async () => {
+    await mkdir(path('goals.md'));
     reader = await openGround(vault);
     expect(await reader.resource('goals')).toMatchObject({ state: 'unavailable', reason: 'io' });
   });
-  it('reports an unreadable resource without suppressing an independent sibling', async () => {
+  it('reads a hardlinked resource without modifying its alias', async () => {
+    await writeFile(join(root, 'other.md'), '# fixture goal');
+    await link(join(root, 'other.md'), path('goals.md'));
+    reader = await openGround(vault);
+    expect(await reader.resource('goals')).toMatchObject({ state: 'ready', data: { markdown: '# fixture goal' } });
+    expect(await readFile(join(root, 'other.md'), 'utf8')).toBe('# fixture goal');
+  });
+
+  it.skipIf(process.platform === 'win32')('canonicalizes a configured root symlink', async () => {
+    await writeFile(path('goals.md'), '# linked root');
+    const alias = join(root, 'vault-link');
+    await symlink(vault, alias, 'dir');
+    reader = await openGround(alias);
+    expect(await reader.resource('goals')).toMatchObject({ state: 'ready', data: { markdown: '# linked root' } });
+  });
+
+  it('refuses resources and captures after a detectable root replacement', async () => {
+    await writeFile(path('goals.md'), '# original');
+    await mkdir(join(vault, '00_Inbox'));
+    await writeFile(join(vault, '00_Inbox', '2026-02-01.md'), '- [09:10] original\n');
+    reader = await openGround(vault);
+    const original = join(root, 'original-vault');
+    await rename(vault, original);
+    await mkdir(join(vault, ...directory), { recursive: true });
+    await writeFile(path('goals.md'), '# replacement');
+    await mkdir(join(vault, '00_Inbox'));
+    await writeFile(join(vault, '00_Inbox', '2026-02-01.md'), '- [09:10] replacement\n');
+    expect(await reader.resource('goals')).toMatchObject({ state: 'unavailable', reason: 'io' });
+    expect(await reader.captures()).toMatchObject({ state: 'unavailable', reason: 'io' });
+    expect(await readFile(path('goals.md'), 'utf8')).toBe('# replacement');
+    expect(await readFile(join(original, ...directory, 'goals.md'), 'utf8')).toBe('# original');
+  });
+
+  it.skipIf(process.platform === 'win32')('reads existing configured host-valid nonportable resource names', async () => {
+    await writeFile(path('CON.md'), '# legacy');
+    reader = await openGround(vault, { resources: { goals: '03_Resources/Memory-Loop/CON.md' } });
+    expect(await reader.resource('goals')).toMatchObject({ state: 'ready', data: { markdown: '# legacy' } });
+  });
+
+  it.skipIf(process.platform !== 'win32')('accepts a root junction but rejects a descendant junction', async () => {
+    await writeFile(path('goals.md'), '# fixture');
+    const alias = join(root, 'vault-link');
+    await symlink(vault, alias, 'junction');
+    reader = await openGround(alias);
+    expect(await reader.resource('goals')).toMatchObject({ state: 'ready', data: { markdown: '# fixture' } });
+    await reader.close();
+    reader = undefined;
+    reader = await openGround(alias, { resources: { goals: '03_Resources/Memory-Loop/link/goals.md' } });
+    await symlink(join(vault, ...directory), path('link'), 'junction');
+    expect(await reader.resource('goals')).toMatchObject({ state: 'unavailable', reason: 'io' });
+  });
+  it.skipIf(process.platform === 'win32')('reports an unreadable resource without suppressing an independent sibling', async () => {
     await writeFile(path('goals.md'), '# fixture');
     await symlink(join(root, 'absent'), path('prompts.md'));
     reader = await openGround(vault);
@@ -80,7 +131,7 @@ describe('recent capture source coverage', () => {
     reader = await openGround(vault);
     expect(await reader.captures()).toEqual({ state: 'malformed', issue: { code: 'source_coverage' } });
   });
-  it('marks a valid newer capture partial when an older date-named source cannot be read', async () => {
+  it.skipIf(process.platform === 'win32')('marks a valid newer capture partial when an older date-named source cannot be read', async () => {
     const inbox = join(vault, '00_Inbox');
     await mkdir(inbox);
     await writeFile(join(inbox, '2026-02-02.md'), '- [08:00] valid fixture\n');

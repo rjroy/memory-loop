@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { constants, writeFileSync } from 'node:fs';
-import { access, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Database } from 'bun:sqlite';
 import { createQuestionPublisher, createQuotePublisher, questionPublicationIO } from '../backend/ground-generation-publisher';
@@ -9,11 +9,14 @@ import { mergeQuestions, questionCandidates, questionDigest } from '../backend/g
 import { openThinkState } from '../backend/think/sqlite-state';
 
 const root = process.argv[2]; const scenario = process.argv[3];
-if (!root || !['manual', 'absence', 'lost-confirmation', 'v7-migration', 'v8-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate'].includes(scenario)) throw new Error('invalid owned publication fixture');
+if (!root || !['manual', 'absence', 'lost-confirmation', 'v7-migration', 'v8-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate', 'permissive-recovery', 'nonportable-publication', 'legacy-target-recovery', 'legacy-parent-recovery', 'nonportable-missing-parent', 'write-sync-normal', 'write-sync-recovery', 'write-sync-terminal-cleanup', 'write-sync-io-failure'].includes(scenario)) throw new Error('invalid owned publication fixture');
 const project = join(root, 'project'); const vault = join(root, 'vault');
-const noteId = ['03_Resources', 'Memory-Loop', 'prompts.md']; const file = join(vault, ...noteId);
+const noteId = ['03_Resources', 'Memory-Loop',
+  ...(['legacy-parent-recovery', 'nonportable-missing-parent'].includes(scenario) ? ['legacy:folder'] : []),
+  scenario === 'nonportable-publication' ? 'CON.md' : scenario === 'legacy-target-recovery' ? 'legacy:questions.md' : 'prompts.md'];
+const file = join(vault, ...noteId);
 await mkdir(join(project, '.memory-loop'), { recursive: true, mode: 0o700 });
-await mkdir(join(vault, ...noteId.slice(0, -1)), { recursive: true, mode: 0o700 });
+await mkdir(join(vault, ...noteId.slice(0, scenario === 'nonportable-missing-parent' ? -2 : -1)), { recursive: true, mode: 0o700 });
 const initial = '# Owned questions\n\n## Question\nOriginal fixture question?\n';
 const text = JSON.stringify([{ text: 'New fixture question?' }]);
 const candidate = { messageId: 'msg_owned_candidate', text, sha256: questionDigest(text) };
@@ -28,8 +31,106 @@ function wrap(base: GroundGenerationPublicationState, overrides: Partial<GroundG
     clearTemp: base.clearTemp.bind(base), publishing: base.publishing.bind(base), settle: base.settle.bind(base),
     fail: base.fail.bind(base), cleanup: base.cleanup.bind(base), ...overrides };
 }
+// Model write-required file fsync using real owned handles; this is not a native Windows test.
+const writeSyncIO = {
+  ...questionPublicationIO,
+  async open(path: string, flags: number, mode?: number) {
+    const handle = await questionPublicationIO.open(path, flags, mode);
+    const writable = (flags & (constants.O_WRONLY | constants.O_RDWR)) !== 0;
+    return {
+      fd: handle.fd, stat: handle.stat.bind(handle), read: handle.read.bind(handle),
+      write: handle.write.bind(handle), close: handle.close.bind(handle),
+      async sync() {
+        if (!writable) throw Object.assign(new Error('fixture read-only fsync'), { code: 'EBADF' });
+        await handle.sync();
+      },
+    };
+  },
+};
 try {
-  if (scenario === 'manual') {
+  if (scenario === 'write-sync-io-failure') {
+    await writeFile(file, initial);
+    let failed = false;
+    const publisher = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications,
+      io: { ...writeSyncIO, async open(path, flags, mode) {
+        const handle = await writeSyncIO.open(path, flags, mode);
+        return { ...handle, async sync() {
+          if (!failed && (flags & (constants.O_WRONLY | constants.O_RDWR)) !== 0) {
+            failed = true;
+            throw Object.assign(new Error('fixture writable fsync failure'), { code: 'EIO' });
+          }
+          await handle.sync();
+        } };
+      } } });
+    assert.equal(await publisher.complete(attempt, candidate, signal), 'pending');
+    assert.equal(failed, true);
+    assert.equal(await readFile(file, 'utf8'), initial);
+    const plan = store.generation.publications.get(attempt.attemptId);
+    if (!plan?.tempWitnessName) throw new Error('fixture witness missing');
+    assert.equal(plan.tempIdentity, null);
+    const temp = join(vault, ...noteId.slice(0, -1), plan.tempName);
+    const witness = join(vault, ...noteId.slice(0, -1), plan.tempWitnessName);
+    const tempStat = await stat(temp); const witnessStat = await stat(witness);
+    assert.equal(tempStat.ino, witnessStat.ino); assert.equal(tempStat.nlink, 2);
+    store.close(); store = await openThinkState(project, vault);
+    const pending = store.generation.pending(); if (!pending) throw new Error('fixture pending attempt missing after reopening');
+    const recovered = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications, io: writeSyncIO });
+    assert.equal(await recovered.resume(pending, signal), 'settled');
+    assert.match(await readFile(file, 'utf8'), /New fixture question\?/);
+    await assert.rejects(access(temp), { code: 'ENOENT' });
+    await assert.rejects(access(witness), { code: 'ENOENT' });
+  } else if (scenario === 'write-sync-normal') {
+    await writeFile(file, initial);
+    const sentinel = join(vault, ...noteId.slice(0, -1), 'manual-sentinel');
+    await writeFile(sentinel, 'Unrelated manual file\n');
+    const publisher = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications, io: writeSyncIO });
+    assert.equal(await publisher.complete(attempt, candidate, signal), 'settled');
+    const bytes = await readFile(file, 'utf8');
+    assert.match(bytes, /Original fixture question\?/);
+    assert.match(bytes, /New fixture question\?/);
+    assert.equal(store.generation.publications.get(attempt.attemptId)?.phase, 'settled');
+    assert.equal(store.generation.pending(), null);
+    assert.equal(await readFile(sentinel, 'utf8'), 'Unrelated manual file\n');
+  } else if (scenario === 'nonportable-missing-parent') {
+    const publisher = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications });
+    assert.equal(await publisher.complete(attempt, candidate, signal), 'failed');
+    await assert.rejects(access(join(vault, ...noteId.slice(0, -1))), { code: 'ENOENT' });
+    assert.deepEqual(await readdir(join(vault, '03_Resources', 'Memory-Loop')), []);
+  } else if (scenario === 'nonportable-publication') {
+    const publisher = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications });
+    assert.equal(await publisher.complete(attempt, candidate, signal), 'failed');
+    assert.deepEqual(await readdir(join(vault, ...noteId.slice(0, -1))), []);
+  } else if (scenario === 'permissive-recovery') {
+    await writeFile(file, initial);
+    await chmod(vault, 0o777);
+    await chmod(join(vault, '03_Resources'), 0o777);
+    await chmod(join(vault, ...noteId.slice(0, -1)), 0o777);
+    await chmod(file, 0o666);
+    const base = store.generation.publications;
+    const state = wrap(base, { settle() { throw new Error('fixture lost database confirmation'); } });
+    let tempCreated = false;
+    const publisher = createQuestionPublisher({ directory: vault, noteId, state,
+      io: { ...questionPublicationIO, async open(path, flags, mode) {
+        const handle = await questionPublicationIO.open(path, flags, mode);
+        if ((flags & constants.O_CREAT) !== 0 && (flags & constants.O_EXCL) !== 0) {
+          tempCreated = true;
+          await chmod(path, 0o666);
+        }
+        return handle;
+      } } });
+    assert.equal(await publisher.complete(attempt, candidate, signal), 'pending');
+    assert.equal(tempCreated, true);
+    const bytes = await readFile(file, 'utf8'); const before = await stat(file);
+    assert.match(bytes, /New fixture question\?/);
+    assert.equal(base.get(attempt.attemptId)?.phase, 'publishing');
+    store.close(); store = await openThinkState(project, vault);
+    const pending = store.generation.pending(); if (!pending) throw new Error('fixture pending attempt missing after reopening');
+    const recovered = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications });
+    assert.equal(await recovered.resume(pending, signal), 'settled');
+    assert.equal(await readFile(file, 'utf8'), bytes);
+    assert.equal((await stat(file)).ino, before.ino);
+    assert.equal(store.generation.publications.get(attempt.attemptId)?.phase, 'settled');
+  } else if (scenario === 'manual') {
     await writeFile(file, initial);
     const base = store.generation.publications;
     const state = wrap(base, { publishing(id) { base.publishing(id); writeFileSync(file, 'Owned manual change\n'); } });
@@ -50,22 +151,26 @@ try {
     assert.equal(await readFile(file, 'utf8'), 'Owned concurrent file\n');
     assert.equal(store.generation.publications.get(attempt.attemptId)?.phase, 'conflict');
     await publisher.cleanup(signal);
-  } else if (scenario === 'lost-confirmation') {
+  } else if (['lost-confirmation', 'legacy-target-recovery', 'legacy-parent-recovery', 'write-sync-recovery'].includes(scenario)) {
     await writeFile(file, initial);
+    const sentinel = join(vault, ...noteId.slice(0, -1), 'manual-sentinel');
+    if (scenario !== 'lost-confirmation') await writeFile(sentinel, 'Unrelated manual file\n');
     const state = wrap(store.generation.publications, { settle() { throw new Error('fixture lost database confirmation'); } });
-    const publisher = createQuestionPublisher({ directory: vault, noteId, state });
+    const publisher = createQuestionPublisher({ directory: vault, noteId, state, ...(scenario === 'write-sync-recovery' ? { io: writeSyncIO } : {}) });
     assert.equal(await publisher.complete(attempt, candidate, signal), 'pending');
     const bytes = await readFile(file, 'utf8'); const before = await stat(file);
     assert.match(bytes, /New fixture question\?/);
+    assert.match(bytes, /Original fixture question\?/);
     assert.equal(store.generation.publications.get(attempt.attemptId)?.phase, 'publishing');
     store.close(); store = await openThinkState(project, vault);
     const pending = store.generation.pending(); if (!pending) throw new Error('fixture pending attempt missing after reopening');
-    const recovered = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications });
+    const recovered = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications, ...(scenario === 'write-sync-recovery' ? { io: writeSyncIO } : {}) });
     assert.equal(await recovered.resume(pending, signal), 'settled');
     assert.equal(await readFile(file, 'utf8'), bytes);
     const after = await stat(file); assert.equal(after.ino, before.ino); assert.equal(after.mtimeMs, before.mtimeMs);
     assert.equal(store.generation.pending(), null);
     assert.equal(store.generation.publications.get(attempt.attemptId)?.phase, 'settled');
+    if (scenario !== 'lost-confirmation') assert.equal(await readFile(sentinel, 'utf8'), 'Unrelated manual file\n');
   } else if (scenario === 'create-interruption') {
     await writeFile(file, initial);
     const sentinel = join(vault, ...noteId.slice(0, -1), 'manual-sentinel');
@@ -144,15 +249,16 @@ try {
     assert.equal((await stat(witness)).ino, proof.ino);
     assert.equal(await readFile(sentinel, 'utf8'), 'Unrelated manual file\n');
     assert.equal((await stat(sentinel)).ino, sentinelBefore.ino);
-  } else if (scenario === 'terminal-cleanup-interruption') {
+  } else if (scenario === 'terminal-cleanup-interruption' || scenario === 'write-sync-terminal-cleanup') {
     await writeFile(file, initial);
     const sentinel = join(vault, ...noteId.slice(0, -1), 'manual-sentinel');
     await writeFile(sentinel, 'Unrelated manual file\n');
     const sentinelBefore = await stat(sentinel);
     let creationInterrupted = false;
+    const io = scenario === 'write-sync-terminal-cleanup' ? writeSyncIO : questionPublicationIO;
     const publisher = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications,
-      io: { ...questionPublicationIO, async link(from, to) {
-        await questionPublicationIO.link(from, to);
+      io: { ...io, async link(from, to) {
+        await io.link(from, to);
         if (basename(to).endsWith('.owner')) { creationInterrupted = true; throw new Error('fixture interrupted after witness link'); }
       } } });
     assert.equal(await publisher.complete(attempt, candidate, signal), 'pending');
@@ -168,14 +274,14 @@ try {
     const manual = 'Owned manual target change\n';
     await writeFile(file, manual);
     const targetBefore = await stat(file);
-    const recovered = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications });
+    const recovered = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications, io });
     assert.equal(await recovered.resume(attempt, signal), 'failed');
     assert.equal(store.generation.publications.get(attempt.attemptId)?.phase, 'conflict');
     assert.equal(store.generation.publications.get(attempt.attemptId)?.tempIdentity, null);
     let cleanupInterrupted = false;
     const interruptedCleanup = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications,
-      io: { ...questionPublicationIO, async unlink(path) {
-        await questionPublicationIO.unlink(path);
+      io: { ...io, async unlink(path) {
+        await io.unlink(path);
         if (basename(path) === plan.tempWitnessName) { cleanupInterrupted = true; throw new Error('fixture interrupted after witness removal'); }
       } } });
     await interruptedCleanup.cleanup(signal);
@@ -185,7 +291,7 @@ try {
     store.close(); store = await openThinkState(project, vault);
     const reopened = store.generation.publications.get(attempt.attemptId);
     assert.equal(reopened?.phase, 'conflict');
-    const retry = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications });
+    const retry = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications, io });
     await retry.cleanup(signal);
     await assert.rejects(access(temp), { code: 'ENOENT' });
     assert.deepEqual(reopened?.tempIdentity, { dev: original.dev, ino: original.ino });

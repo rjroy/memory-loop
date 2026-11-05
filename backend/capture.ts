@@ -1,6 +1,6 @@
-import { constants } from 'node:fs';
-import { mkdir, open, stat } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
+import { openSafeRoot, type SafeRoot } from './safe-fs';
 
 export class CaptureError extends Error {
   constructor(readonly code: 'capture_unavailable' | 'capture_uncertain') {
@@ -20,24 +20,12 @@ export interface CaptureWriterOptions {
   flush?: (file: FileHandle) => Promise<void>;
 }
 
-const directoryFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
-const fileFlags = constants.O_RDWR | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK;
-const descriptorPath = (file: FileHandle, name?: string) => `/proc/self/fd/${file.fd}${name === undefined ? '' : `/${name}`}`;
 const pad = (value: number) => String(value).padStart(2, '0');
 
 export async function openCaptureWriter(root: string, options: CaptureWriterOptions = {}): Promise<CaptureWriter> {
-  if (process.platform !== 'linux' || !constants.O_DIRECTORY || !constants.O_NOFOLLOW || !constants.O_NONBLOCK) throw new CaptureError('capture_unavailable');
-  let pinned: FileHandle | undefined;
-  try {
-    pinned = await open(root, directoryFlags);
-    const actual = await pinned.stat();
-    const viaProc = await stat(descriptorPath(pinned));
-    if (!viaProc.isDirectory() || actual.dev !== viaProc.dev || actual.ino !== viaProc.ino) throw new Error('descriptor unavailable');
-  } catch {
-    await pinned?.close();
-    throw new CaptureError('capture_unavailable');
-  }
-  const rootHandle = pinned;
+  let safe: SafeRoot;
+  try { safe = await openSafeRoot(root); }
+  catch { throw new CaptureError('capture_unavailable'); }
   const now = options.now ?? (() => new Date());
   const write = options.write ?? (async (file, bytes, offset) => (await file.write(bytes, offset, bytes.length - offset, null)).bytesWritten);
   const flush = options.flush ?? (async file => file.sync());
@@ -45,29 +33,43 @@ export async function openCaptureWriter(root: string, options: CaptureWriterOpti
   let closed = false;
 
   async function append(text: string): Promise<void> {
-    let inbox: FileHandle | undefined;
     let file: FileHandle | undefined;
     let writeAttempted = false;
     try {
       const date = now();
       if (!Number.isFinite(date.getTime())) throw new Error('invalid clock');
       const name = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.md`;
-      const inboxPath = descriptorPath(rootHandle, '00_Inbox');
-      try { await mkdir(inboxPath); } catch (error: unknown) {
+      try { await safe.createDirectory(['00_Inbox']); } catch (error: unknown) {
         if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) throw error;
       }
-      inbox = await open(inboxPath, directoryFlags);
-      file = await open(descriptorPath(inbox, name), fileFlags, 0o600);
-      const info = await file.stat();
-      if (!info.isFile() || info.nlink !== 1) throw new Error('unsafe target');
+      const id = ['00_Inbox', name];
+      let created: { dev: bigint; ino: bigint } | undefined;
+      let newFile: FileHandle | undefined;
+      try {
+        newFile = await safe.createFile(id);
+      } catch (error: unknown) {
+        if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) throw error;
+      }
+      if (newFile) {
+        try { created = await newFile.stat({ bigint: true }); }
+        finally { await newFile.close(); }
+      }
+      file = await safe.openFile(id, 'append');
+      const info = await file.stat({ bigint: true });
+      if (!info.isFile() || info.nlink !== 1n || (created && (info.dev !== created.dev || info.ino !== created.ino))) throw new Error('unsafe target');
       let separator = '';
-      if (info.size > 0) {
+      if (info.size > 0n) {
+        const position = Number(info.size - 1n);
+        if (!Number.isSafeInteger(position)) throw new Error('unsafe target size');
         const last = Buffer.alloc(1);
-        if ((await file.read(last, 0, 1, info.size - 1)).bytesRead !== 1) throw new Error('cannot read target');
+        if ((await file.read(last, 0, 1, position)).bytesRead !== 1) throw new Error('cannot read target');
         if (last[0] !== 10) separator = '\n';
       }
       const normalized = text.replace(/\r\n?/g, '\n').replace(/\n/g, '\n  ');
       const bytes = Buffer.from(`${separator}- [${pad(date.getHours())}:${pad(date.getMinutes())}] ${normalized}\n`, 'utf8');
+      const current = await lstat(await safe.resolve(id, 'file'), { bigint: true });
+      const opened = await file.stat({ bigint: true });
+      if (!current.isFile() || current.nlink !== 1n || current.dev !== opened.dev || current.ino !== opened.ino) throw new Error('unsafe target');
       let offset = 0;
       while (offset < bytes.length) {
         // A failed write call can have progressed even if it did not report a count.
@@ -77,11 +79,12 @@ export async function openCaptureWriter(root: string, options: CaptureWriterOpti
         offset += count;
       }
       await flush(file);
+      await file.close();
+      file = undefined;
     } catch {
       throw new CaptureError(writeAttempted ? 'capture_uncertain' : 'capture_unavailable');
     } finally {
-      // A close error after writing cannot safely turn a potentially saved entry into a rejection.
-      try { await file?.close(); } finally { await inbox?.close(); }
+      await file?.close().catch(() => {});
     }
   }
   return {
@@ -91,6 +94,6 @@ export async function openCaptureWriter(root: string, options: CaptureWriterOpti
       queue = operation.catch(() => {});
       return operation;
     },
-    async close() { closed = true; await queue; await rootHandle.close(); },
+    async close() { closed = true; await queue; },
   };
 }

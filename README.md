@@ -41,8 +41,8 @@ not Bun's experimental Next adapter or a custom HTTP server.
 
 **Platform migration:** the current backend is Linux-only. Native Windows support
 is being implemented in `memory-loop-68l`; the toolchain versions above alone do
-not make the existing backend run on Windows. Transport and Recall have migrated
-to the shared filesystem foundation; Capture, Ground and Think still need their
+not make the existing backend run on Windows. Transport, Recall and Capture have migrated
+to the shared filesystem foundation; Ground and Think still need their
 feature migrations. Native Windows execution remains unverified. The approved target is Windows and
 Linux with shared portable filesystem operations, no descendant symlinks or
 junctions, Windows-compatible new names, collision refusal and stale-save

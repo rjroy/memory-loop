@@ -110,7 +110,7 @@ describe('Capture daemon HTTP ownership', () => {
     expect(await readdir(vault)).toEqual([]);
   });
 
-  it.each(['inbox symlink', 'file symlink', 'hard link', 'directory target'] as const)(
+  it.each(['hard link', 'directory target'] as const)(
     'rejects unsafe %s without modifying its target', async kind => {
       const outside = join(root, 'outside');
       await mkdir(outside);
@@ -118,17 +118,27 @@ describe('Capture daemon HTTP ownership', () => {
       await writeFile(target, 'untouched');
       const inbox = join(vault, '00_Inbox');
       const daily = join(inbox, '2024-12-31.md');
-      if (kind === 'inbox symlink') await symlink(outside, inbox);
-      else {
-        await mkdir(inbox);
-        if (kind === 'file symlink') await symlink(target, daily);
-        if (kind === 'hard link') await link(target, daily);
-        if (kind === 'directory target') await mkdir(daily);
-      }
+      await mkdir(inbox);
+      if (kind === 'hard link') await link(target, daily);
+      if (kind === 'directory target') await mkdir(daily);
       await error(await request(JSON.stringify({ text: 'must not write' })), 503, 'capture_unavailable');
       expect(await readFile(target, 'utf8')).toBe('untouched');
-      if (kind === 'inbox symlink') expect(await readdir(outside)).toEqual(['target.md']);
       if (kind === 'directory target') expect(await readdir(daily)).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32').each(['inbox symlink', 'file symlink'] as const)(
+    'rejects unsafe %s without modifying its target', async kind => {
+      const outside = join(root, 'outside');
+      await mkdir(outside);
+      const target = join(outside, 'target.md');
+      await writeFile(target, 'untouched');
+      const inbox = join(vault, '00_Inbox');
+      if (kind === 'inbox symlink') await symlink(outside, inbox, 'dir');
+      else { await mkdir(inbox); await symlink(target, join(inbox, '2024-12-31.md')); }
+      await error(await request(JSON.stringify({ text: 'must not write' })), 503, 'capture_unavailable');
+      expect(await readFile(target, 'utf8')).toBe('untouched');
+      expect(await readdir(outside)).toEqual(['target.md']);
     },
   );
 });

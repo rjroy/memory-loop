@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { lstat, mkdir, mkdtemp, open, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from './app';
 import { openVault, type VaultReader } from './vault';
+import { contentResponse } from './vault-media';
 
 const authority = '127.0.0.1:3001';
 const token = 'a'.repeat(64);
@@ -19,14 +20,7 @@ beforeEach(async () => {
   fixture = await mkdtemp(join(tmpdir(), 'memory-loop-file-http-'));
   root = join(fixture, 'vault');
   await mkdir(root);
-  vault = await openVault(root, { renameNoReplace: async (sourceFd, name, targetFd, targetName) => {
-    const target = `/proc/self/fd/${targetFd}/${targetName}`;
-    try { await lstat(target); } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return rename(`/proc/self/fd/${sourceFd}/${name}`, target);
-      throw error;
-    }
-    throw Object.assign(new Error('exists'), { code: 'EEXIST' });
-  } });
+  vault = await openVault(root);
   app = createApp({ authority, serviceToken: token, vault: { reader: vault } });
 });
 afterEach(async () => { try { await vault?.close(); } finally { await rm(fixture, { recursive: true, force: true }); } });
@@ -39,12 +33,6 @@ function request(path: string, init: RequestInit = {}) {
 }
 const post = (body: unknown) => request('/api/vault/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 type Entry = { name: string; kind: string; id: string[]; identity: string; version: string; children?: Entry[] };
-
-async function descriptorCount(path: string) {
-  const fds = await readdir('/proc/self/fd');
-  const targets = await Promise.all(fds.map(fd => readlink(`/proc/self/fd/${fd}`).catch(() => '')));
-  return targets.filter(target => target === path || target === `${path} (deleted)`).length;
-}
 
 describe('vault file daemon HTTP', () => {
   it('shows generic regular files without inspecting their contents and supports move and delete', async () => {
@@ -116,7 +104,6 @@ describe('vault file daemon HTTP', () => {
     expect(head.headers.get('content-length')).toBe(String(data.length));
     expect(head.headers.get('content-range')).toBeNull();
     expect(head.body).toBeNull();
-    expect(await descriptorCount(join(root, 'clip.mp4'))).toBe(0);
   });
   it('distinguishes malformed, multirange and unsatisfiable requests', async () => {
     await writeFile(join(root, 'data.bin'), '0123456789');
@@ -131,7 +118,7 @@ describe('vault file daemon HTTP', () => {
     await response.body?.cancel();
   });
   it('uses safe Unicode download disposition and never leaks unsafe headers', async () => {
-    const name = 'résumé "photo".png';
+    const name = process.platform === 'win32' ? 'résumé photo.png' : 'résumé "photo".png';
     await writeFile(join(root, name), png);
     const response = await request(url('content', [name], '&download=1'));
     expect(response.status).toBe(200);
@@ -156,7 +143,6 @@ describe('vault file daemon HTTP', () => {
     expect(Buffer.from(first.value ?? []) .subarray(0, png.length)).toEqual(png);
     expect((first.value?.byteLength ?? 0)).toBeLessThanOrEqual(256 * 1024);
     await reader.cancel();
-    expect(await descriptorCount(join(root, 'original'))).toBe(0);
   });
   it('sniffs and streams the same descriptor even when the pathname changes between them', async () => {
     const path = join(root, 'photo.png');
@@ -171,7 +157,22 @@ describe('vault file daemon HTTP', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/png');
     expect(Buffer.from(await response.arrayBuffer())).toEqual(png);
-    expect(await descriptorCount(join(root, 'original'))).toBe(0);
+  });
+
+  it.each(['HEAD', 'complete', 'cancel'] as const)('closes the owned media handle on %s', async operation => {
+    const path = join(root, 'handle.png');
+    await writeFile(path, Buffer.concat([png, Buffer.alloc(1024)]));
+    const file = await open(path, 'r');
+    const close = vi.spyOn(file, 'close');
+    try {
+      const response = await contentResponse(file, 'handle.png', png.length + 1024, operation === 'HEAD' ? 'HEAD' : 'GET', null, false, new AbortController().signal);
+      if (operation === 'complete') await response.arrayBuffer();
+      if (operation === 'cancel') await response.body?.cancel();
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      if (!close.mock.calls.length) await file.close();
+      close.mockRestore();
+    }
   });
   it('rejects symlinks, directories, escapes and missing entries with sanitized errors', async () => {
     await writeFile(join(fixture, 'secret'), 'secret');

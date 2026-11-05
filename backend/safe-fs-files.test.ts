@@ -74,6 +74,37 @@ describe('checked existing file handles', () => {
 });
 
 describe('replacement of an existing file', () => {
+  it('replaces only the selected pathname when the original has a hardlink alias', async () => {
+    const { root, safe } = await fixture();
+    const target = join(root, 'folder', 'note.md');
+    const alias = join(root, 'folder', 'alias.md');
+    await link(target, alias);
+    const original = await lstat(alias, { bigint: true });
+    const calls: string[] = [];
+    await safe.replaceFile(['folder', 'note.md'], Buffer.from('replacement'), {
+      async flushFile(file) { calls.push('file'); await file.sync(); },
+      async validate() {
+        calls.push('validate');
+        expect(await readFile(target, 'utf8')).toBe('original');
+        expect(await readFile(alias, 'utf8')).toBe('original');
+      },
+      async flushDirectory(id) {
+        calls.push('directory');
+        expect(id).toEqual(['folder']);
+        expect(await readFile(target, 'utf8')).toBe('replacement');
+        expect(await readFile(alias, 'utf8')).toBe('original');
+      },
+    });
+    expect(calls).toEqual(['file', 'validate', 'directory']);
+    expect(await readFile(target, 'utf8')).toBe('replacement');
+    expect(await readFile(alias, 'utf8')).toBe('original');
+    const aliasAfter = await lstat(alias, { bigint: true });
+    const targetAfter = await lstat(target, { bigint: true });
+    expect([aliasAfter.dev, aliasAfter.ino]).toEqual([original.dev, original.ino]);
+    expect([targetAfter.dev, targetAfter.ino]).not.toEqual([original.dev, original.ino]);
+    expect((await readdir(join(root, 'folder'))).sort()).toEqual(['alias.md', 'note.md']);
+  });
+
   it('flushes temp bytes before validation and publishes only after validation', async () => {
     const { root, safe } = await fixture();
     const calls: string[] = [];

@@ -3,6 +3,8 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
+import { isPortableName } from './portable-name';
+export { isPortableName } from './portable-name';
 
 export interface ReplaceFileOptions {
   /** Called immediately before publication; caller owns revision/content validation. */
@@ -16,6 +18,12 @@ export class ReplaceFileError extends Error {
     super('Filesystem replacement failed', { cause });
   }
 }
+
+/** A checked descendant is a link or does not have the requested kind. */
+export class SafeEntryError extends Error {}
+
+/** The configured root no longer identifies the opened directory. */
+export class SafeRootChangedError extends Error {}
 
 /** A canonical, identity-checked root for ordinary portable filesystem access. */
 export interface SafeRoot {
@@ -42,9 +50,16 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
   if (!identity.isDirectory()) throw new Error('Filesystem root is not a directory');
 
   async function checkRoot(): Promise<void> {
-    const current = await lstat(root, { bigint: true });
+    let current;
+    try { current = await lstat(root, { bigint: true }); }
+    catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) {
+        throw new SafeRootChangedError('Filesystem root has changed', { cause: error });
+      }
+      throw error;
+    }
     if (!current.isDirectory() || current.dev !== identity.dev || current.ino !== identity.ino) {
-      throw new Error('Filesystem root has changed');
+      throw new SafeRootChangedError('Filesystem root has changed');
     }
   }
 
@@ -78,7 +93,8 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
         const info = await file.stat({ bigint: true });
         const checkedPath = await safe.resolve(components, 'file');
         const current = await lstat(checkedPath, { bigint: true });
-        if (!info.isFile() || !current.isFile() || info.dev !== current.dev || info.ino !== current.ino ||
+        if (!info.isFile() || !current.isFile()) throw new SafeEntryError('Unexpected filesystem entry kind');
+        if (info.dev !== current.dev || info.ino !== current.ino ||
             (mode !== 'read' && info.nlink !== 1n)) {
           throw new Error('Unsafe or changed filesystem file');
         }
@@ -100,7 +116,6 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
         let targetIdentity: { dev: bigint; ino: bigint };
         try {
           const info = await initial.stat({ bigint: true });
-          if (info.nlink !== 1n) throw new Error('Unsafe hard-linked filesystem file');
           targetIdentity = info;
         } finally {
           await initial.close();
@@ -124,7 +139,7 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
         await options.validate();
         const targetPath = await safe.resolve(target, 'file');
         const current = await lstat(targetPath, { bigint: true });
-        if (!current.isFile() || current.nlink !== 1n || current.dev !== targetIdentity.dev || current.ino !== targetIdentity.ino) {
+        if (!current.isFile() || current.dev !== targetIdentity.dev || current.ino !== targetIdentity.ino) {
           throw new Error('Filesystem target has changed');
         }
         const tempPath = await safe.resolve(tempComponents, 'file');
@@ -246,9 +261,9 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
         if (last && kind === 'missing') {
           throw Object.assign(new Error('Filesystem destination already exists'), { code: 'EEXIST' });
         }
-        if (entry.isSymbolicLink()) throw new Error('Filesystem links are not allowed');
+        if (entry.isSymbolicLink()) throw new SafeEntryError('Filesystem links are not allowed');
         if ((!last || kind === 'directory') ? !entry.isDirectory() : !entry.isFile()) {
-          throw new Error('Unexpected filesystem entry kind');
+          throw new SafeEntryError('Unexpected filesystem entry kind');
         }
         checkContained(await realpath(current));
       }
@@ -257,12 +272,4 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
     },
   };
   return safe;
-}
-
-/** Validate a single new Windows-compatible name, independent of feature visibility rules. */
-export function isPortableName(value: unknown): value is string {
-  return typeof value === 'string' && value !== '' && value !== '.' && value !== '..' &&
-    !/[\x00-\x1f<>:"/\\|?*]/.test(value) && !/[. ]$/.test(value) &&
-    !/^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]) *(?:\.|$)/i.test(value) &&
-    !/^con(?:in|out)\$$/i.test(value);
 }

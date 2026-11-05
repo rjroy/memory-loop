@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createApp } from './app';
 import { openVault, type VaultOptions, type VaultReader } from './vault';
 
@@ -32,7 +33,7 @@ function deferred<T>() {
 }
 
 beforeEach(async () => {
-  fixture = await mkdtemp('/tmp/opencode/recall-search-');
+  fixture = await mkdtemp(join(tmpdir(), 'recall-search-'));
   root = join(fixture, 'vault');
   await mkdir(root);
   vault = await openVault(root);
@@ -237,12 +238,16 @@ describe('vault search daemon HTTP', () => {
     expect(observedYield).toBe(true);
   });
 
-  it('pins the original root and rejects unsafe context IDs', async () => {
+  it('rejects a replaced root and unsafe context IDs', async () => {
     await writeFile(join(root, 'original.txt'), 'needle');
     await rename(root, join(fixture, 'original-root'));
     await mkdir(root);
     await writeFile(join(root, 'replacement.txt'), 'needle');
-    expect((await search('content', 'needle')).hits.map(hit => hit.name)).toEqual(['original.txt']);
+    const searchResponse = await post('/api/vault/search', { mode: 'content', query: 'needle' });
+    expect(searchResponse.status).toBe(503);
+    expect(await searchResponse.json()).toMatchObject({ error: { code: 'search_unavailable' } });
+    expect(await readFile(join(fixture, 'original-root', 'original.txt'), 'utf8')).toBe('needle');
+    expect(await readFile(join(root, 'replacement.txt'), 'utf8')).toBe('needle');
     const response = await post('/api/vault/search/context', { id: ['..', 'secret'], version: 'v', line: 1, query: 'needle' });
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } });

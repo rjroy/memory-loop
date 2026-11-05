@@ -1,10 +1,9 @@
-import { constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { open, readdir, rename, stat, unlink, mkdir, rmdir } from 'node:fs/promises';
+import { readdir, stat, lstat, unlink, rmdir } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { isVaultComponent, isVaultId, isVaultDirectoryId, isUploadName, parseVaultSaveRequest, parseVaultAction, vaultSaveTextLimit, type VaultEntry, type VaultDirectoryEntry, type VaultDirectoryResponse, type VaultId, type VaultNoteResponse, type VaultSaveResponse, type VaultTreeResponse, type VaultAction, type VaultActionResponse, type VaultErrorCode, type VaultUploadResponse } from './contract';
-import { renameNoReplace as nativeRenameNoReplace } from './vault-rename';
+import { openSafeRoot, ReplaceFileError, SafeEntryError, type SafeRoot } from './safe-fs';
 import { contentResponse, describeFile } from './vault-media';
 import type { VaultFileResponse } from './contract';
 import type { VaultSearchRequest, VaultSearchResponse, VaultSearchContextRequest, VaultSearchContextResponse } from './contract';
@@ -53,68 +52,45 @@ export function parseVaultId(value: string): VaultId {
   return validateId(parsed);
 }
 
-const directoryFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
-const fileFlags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
-
-function descriptorPath(handle: FileHandle, name?: string): string {
-  const path = `/proc/self/fd/${handle.fd}`;
-  return name === undefined ? path : `${path}/${name}`;
-}
-
 function isVanishedOrLink(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error &&
     (error.code === 'ENOENT' || error.code === 'ENOTDIR' || error.code === 'ELOOP');
 }
 
-async function listDirectory(directory: FileHandle, parent: VaultId, identity: (stats: Stats) => string, version: (stats: Stats) => string): Promise<VaultEntry[]>;
-async function listDirectory(directory: FileHandle, parent: VaultId, identity: (stats: Stats) => string, version: (stats: Stats) => string, shallow: true, onListed?: (id: VaultId) => void): Promise<VaultDirectoryEntry[]>;
-async function listDirectory(directory: FileHandle, parent: VaultId, identity: (stats: Stats) => string, version: (stats: Stats) => string, shallow = false, onListed?: (id: VaultId) => void): Promise<VaultDirectoryEntry[]> {
-  const entries = await readdir(descriptorPath(directory), { withFileTypes: true });
+async function listDirectory(root: SafeRoot, parent: VaultId, identity: (stats: Stats) => string, version: (stats: Stats) => string, shallow = false, onListed?: (id: VaultId) => void): Promise<VaultEntry[] | VaultDirectoryEntry[]> {
+  const entries = await readdir(await root.resolve(parent, 'directory'), { withFileTypes: true });
   onListed?.(parent);
   entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-  const result: (VaultEntry | VaultDirectoryEntry)[] = [];
+  const result: VaultEntry[] = [];
   for (const entry of entries) {
     if (!isVaultComponent(entry.name)) continue;
     const id = [...parent, entry.name];
-    if (entry.isDirectory()) {
-      let child: FileHandle;
-      try {
-        child = await open(descriptorPath(directory, entry.name), directoryFlags);
-      } catch (error: unknown) {
-        if (isVanishedOrLink(error)) continue;
-        throw error;
-      }
-      try {
-        const stats = await child.stat();
+    try {
+      if (entry.isDirectory()) {
+        const stats = await stat(await root.resolve(id, 'directory'));
         const item = { kind: 'directory' as const, name: entry.name, id, identity: identity(stats), version: version(stats) };
-        result.push(shallow ? item : { ...item, children: await listDirectory(child, id, identity, version) });
-      } finally {
-        await child.close();
+        if (shallow) result.push({ ...item, children: [] });
+        else result.push({ ...item, children: await listDirectory(root, id, identity, version) as VaultEntry[] });
+      } else if (entry.isFile()) {
+        const file = await root.openFile(id, 'read');
+        try {
+          const stats = await file.stat();
+          result.push({ kind: entry.name.endsWith('.md') ? 'note' : 'file', name: entry.name, id, identity: identity(stats), version: version(stats) });
+        } finally { await file.close(); }
       }
-    } else if (entry.isFile()) {
-      let child: FileHandle;
-      try {
-        child = await open(descriptorPath(directory, entry.name), fileFlags);
-      } catch (error: unknown) {
-        if (isVanishedOrLink(error)) continue;
-        throw error;
-      }
-      try {
-        const stats = await child.stat();
-        if (stats.isFile()) result.push({ kind: entry.name.endsWith('.md') ? 'note' : 'file', name: entry.name, id, identity: identity(stats), version: version(stats) });
-      } finally {
-        await child.close();
-      }
+    } catch (error) {
+      if (isVanishedOrLink(error)) continue;
+      throw error;
     }
   }
-  return result;
+  return shallow ? result.map(item => item.kind === 'directory' ? { kind: item.kind, name: item.name, id: item.id, identity: item.identity, version: item.version } : item) : result;
 }
 
 export interface VaultOptions extends VaultSearchHooks {
   onDirectoryListed?: (id: VaultId) => void;
   flushFile?: (file: FileHandle) => Promise<void>;
-  flushDirectory?: (directory: FileHandle) => Promise<void>;
-  renameNoReplace?: (sourceParentFd: number, sourceName: string, destinationParentFd: number, destinationName: string) => Promise<void>;
+  flushDirectory?: (directory: VaultId) => Promise<void>;
+  move?: (source: VaultId, destination: VaultId, kind: 'file' | 'directory') => Promise<void>;
   afterContentSniff?: () => Promise<void>;
 }
 
@@ -125,25 +101,12 @@ function editableBytes(bytes: Buffer): boolean {
 
 /** Open and retain the configured root for the reader lifetime. */
 export async function openVault(root: string, options: VaultOptions = {}): Promise<VaultReader> {
-  if (process.platform !== 'linux' || !constants.O_DIRECTORY || !constants.O_NOFOLLOW || !constants.O_NONBLOCK) {
-    throw new VaultError('vault_unavailable', 'Vault directory is unavailable');
-  }
-  let rootHandle: FileHandle | undefined;
-  try {
-    rootHandle = await open(root, directoryFlags);
-    const actual = await rootHandle.stat();
-    const viaProc = await stat(descriptorPath(rootHandle));
-    if (actual.dev !== viaProc.dev || actual.ino !== viaProc.ino || !viaProc.isDirectory()) {
-      throw new Error('Descriptor access unavailable');
-    }
-  } catch {
-    await rootHandle?.close();
-    throw new VaultError('vault_unavailable', 'Vault directory is unavailable');
-  }
-  const pinnedRoot = rootHandle;
+  let safe: SafeRoot;
+  try { safe = await openSafeRoot(root); }
+  catch { throw new VaultError('vault_unavailable', 'Vault directory is unavailable'); }
   const flushFile = options.flushFile ?? (async (file: FileHandle) => file.sync());
-  const flushDirectory = options.flushDirectory ?? (async (file: FileHandle) => file.sync());
-  const renameNoReplace = options.renameNoReplace ?? nativeRenameNoReplace;
+  const flushDirectory = options.flushDirectory ?? (async (id: VaultId) => safe.syncDirectory(id));
+  const move = options.move ?? ((source: VaultId, destination: VaultId, kind: 'file' | 'directory') => safe.move(source, destination, kind));
   const secret = randomUUID();
   const digest = (input: string | Buffer) => createHash('sha256').update(secret).update(input).digest('hex');
   const identity = (stats: Stats) => digest(`identity:${stats.dev}:${stats.ino}:${stats.birthtimeMs}`);
@@ -155,9 +118,10 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
 
   async function uploadFile(name: string, body: ReadableStream<Uint8Array>, limit: number, signal: AbortSignal): Promise<VaultUploadResponse> {
     if (!isUploadName(name)) throw invalidId();
-    let directory: FileHandle | undefined;
+    const parent = ['06_Attachments'];
     let file: FileHandle | undefined;
-    let temp: string | undefined;
+    let temp: VaultId | undefined;
+    let tempIdentity: { dev: bigint; ino: bigint } | undefined;
     let published = false;
     let complete = false;
     let timedOut = false;
@@ -170,12 +134,17 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
     };
     signal.addEventListener('abort', abort, { once: true });
     try {
+      // Let any already-running mutation finish before creating the upload's temp.
+      // The upload is registered before this wait, so later folder actions refuse it.
+      await queue;
       if (signal.aborted) throw new Error('aborted');
-      try { await mkdir(descriptorPath(pinnedRoot, '06_Attachments'), { mode: 0o700 }); await flushDirectory(pinnedRoot); }
+      try { await safe.createDirectory(parent); await flushDirectory([]); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-      directory = await open(descriptorPath(pinnedRoot, '06_Attachments'), directoryFlags);
-      temp = `.memory-loop-upload-${randomUUID()}.tmp`;
-      file = await open(descriptorPath(directory, temp), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      const directoryIdentity = identity(await stat(await safe.resolve(parent, 'directory')));
+      const tempId = [...parent, `.memory-loop-upload-${randomUUID()}.tmp`];
+      file = await safe.createFile(tempId);
+      temp = tempId;
+      tempIdentity = await file.stat({ bigint: true });
       let size = 0;
       armIdle();
       for (;;) {
@@ -200,29 +169,25 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       if (idleTimer !== undefined) clearTimeout(idleTimer);
       signal.removeEventListener('abort', abort);
       await flushFile(file);
-      const dir = directory;
-      const tempName = temp;
+      await file.close();
+      file = undefined;
       const operation = queue.then(async () => {
-        const check = await open(descriptorPath(pinnedRoot, '06_Attachments'), directoryFlags);
-        try { if (identity(await check.stat()) !== identity(await dir.stat())) throw new Error('Attachment directory changed'); }
-        finally { await check.close(); }
+        if (identity(await stat(await safe.resolve(parent, 'directory'))) !== directoryIdentity) throw new Error('Attachment directory changed');
+        const tempPath = await safe.resolve(tempId, 'file');
+        const currentTemp = await lstat(tempPath, { bigint: true });
+        if (!tempIdentity || currentTemp.dev !== tempIdentity.dev || currentTemp.ino !== tempIdentity.ino || currentTemp.nlink !== 1n) throw new Error('Upload temporary file changed');
         const dot = name.lastIndexOf('.');
         const base = dot > 0 ? name.slice(0, dot) : name;
         const ext = dot > 0 ? name.slice(dot) : '';
         for (let index = 1; index < 100000; index++) {
           const candidate = index === 1 ? name : `${base} (${index})${ext}`;
           if (!isUploadName(candidate)) throw new Error('Collision name too long');
-          try { await renameNoReplace(dir.fd, tempName, dir.fd, candidate); }
-          catch (error) {
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code === 'EEXIST') continue;
-            if (!['ENOSYS', 'ENOTSUP', 'EXDEV', 'EINVAL', 'EACCES', 'ENOENT'].includes(code ?? '')) published = true;
-            throw error;
-          }
+          try { await move(tempId, [...parent, candidate], 'file'); }
+          catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue; throw error; }
           published = true;
           temp = undefined;
-          await flushDirectory(dir);
-          return { id: ['06_Attachments', candidate], name: candidate, size };
+          await flushDirectory(parent);
+          return { id: [...parent, candidate], name: candidate, size };
         }
         throw new Error('Collision limit');
       });
@@ -237,136 +202,121 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       if (idleTimer !== undefined) clearTimeout(idleTimer);
       if (!complete) void reader.cancel().catch(() => {});
       reader.releaseLock();
-      if (temp && directory) await unlink(descriptorPath(directory, temp)).catch(() => {});
       await file?.close().catch(() => {});
-      await directory?.close().catch(() => {});
+      if (temp && tempIdentity) {
+        try {
+          const path = await safe.resolve(temp, 'file');
+          const current = await lstat(path, { bigint: true });
+          if (current.dev === tempIdentity.dev && current.ino === tempIdentity.ino && current.nlink === 1n) await unlink(path);
+        } catch { /* Do not remove an unrelated or inaccessible entry. */ }
+      }
     }
   }
 
   async function save(id: VaultId, markdown: string, expectedRevision: string): Promise<VaultSaveResponse> {
-    const opened: FileHandle[] = [];
-    let parent = pinnedRoot;
-    let temporary: string | undefined;
-    let replaced = false;
     try {
-      for (const component of id.slice(0, -1)) {
-        parent = await open(descriptorPath(parent, component), directoryFlags);
-        opened.push(parent);
-      }
-      const name = id[id.length - 1];
-      let file: FileHandle;
-      try { file = await open(descriptorPath(parent, name), fileFlags); }
-      catch { throw new VaultError('note_unavailable', 'Note is unavailable'); }
-      opened.push(file);
-      const original = await file.stat();
-      if (!original.isFile()) throw new VaultError('note_unavailable', 'Note is unavailable');
-      const bytes = await file.readFile();
-      if (!editableBytes(bytes)) throw new VaultError('note_not_editable', 'Note cannot be edited');
-      if (revisionOf(original, bytes) !== expectedRevision) throw new VaultError('note_conflict', 'Note has changed');
-      const tempName = `.memory-loop-${randomUUID()}.tmp`;
-      const temp = await open(descriptorPath(parent, tempName), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-      temporary = tempName;
-      opened.push(temp);
-      await temp.chmod(original.mode & 0o777);
-      await temp.writeFile(markdown, 'utf8');
-      await flushFile(temp);
-      let check: FileHandle;
-      try { check = await open(descriptorPath(parent, name), fileFlags); }
-      catch { throw new VaultError('note_conflict', 'Note has changed'); }
-      opened.push(check);
-      const current = await check.stat();
-      if (!current.isFile() || current.dev !== original.dev || current.ino !== original.ino || revisionOf(current, await check.readFile()) !== expectedRevision) {
-        throw new VaultError('note_conflict', 'Note has changed');
-      }
-      // External writers can still race between this check and rename; this is not filesystem CAS.
-      await rename(descriptorPath(parent, temporary), descriptorPath(parent, name));
-      replaced = true;
-      temporary = undefined;
-      await flushDirectory(parent);
-      return { revision: revisionOf(await temp.stat(), Buffer.from(markdown, 'utf8')) };
+      let original: Stats;
+      const file = await safe.openFile(id, 'read').catch(() => { throw new VaultError('note_unavailable', 'Note is unavailable'); });
+      try {
+        original = await file.stat();
+        const bytes = await file.readFile();
+        if (!editableBytes(bytes)) throw new VaultError('note_not_editable', 'Note cannot be edited');
+        if (revisionOf(original, bytes) !== expectedRevision) throw new VaultError('note_conflict', 'Note has changed');
+      } finally { await file.close(); }
+      const bytes = Buffer.from(markdown, 'utf8');
+      let replacementStats: Stats | undefined;
+      await safe.replaceFile(id, bytes, {
+        async flushFile(temp) { await flushFile(temp); replacementStats = await temp.stat(); },
+        flushDirectory,
+        async validate() {
+          const current = await safe.openFile(id, 'read').catch(() => { throw new VaultError('note_conflict', 'Note has changed'); });
+          try {
+            const stats = await current.stat();
+            if (stats.dev !== original.dev || stats.ino !== original.ino || revisionOf(stats, await current.readFile()) !== expectedRevision) throw new VaultError('note_conflict', 'Note has changed');
+          } finally { await current.close(); }
+        },
+      });
+      if (!replacementStats) throw new VaultError('note_save_uncertain', 'Note save outcome is uncertain');
+      return { revision: revisionOf(replacementStats, bytes) };
     } catch (error) {
-      if (replaced) throw new VaultError('note_save_uncertain', 'Note save outcome is uncertain');
+      if (error instanceof ReplaceFileError) {
+        if (error.published) throw new VaultError('note_save_uncertain', 'Note save outcome is uncertain');
+        error = error.cause;
+      }
       if (error instanceof VaultError) throw error;
       if (isVanishedOrLink(error)) throw new VaultError('note_unavailable', 'Note is unavailable');
       throw new VaultError('note_save_unavailable', 'Note could not be saved');
-    } finally {
-      if (temporary) await unlink(descriptorPath(parent, temporary)).catch(() => {});
-      for (const handle of opened.reverse()) await handle.close().catch(() => {});
     }
   }
   async function performAction(input: VaultAction): Promise<VaultActionResponse> {
-    const opened: FileHandle[] = [];
     let mutated = false;
     function fail(code: ReaderErrorCode): never { throw new VaultError(code, 'File action failed'); }
-    const directory = async (id: VaultId) => {
-      let current = pinnedRoot;
-      for (const component of id) {
-        current = await open(descriptorPath(current, component), directoryFlags);
-        opened.push(current);
+    const dirStats = async (id: VaultId) => {
+      try { return await stat(await safe.resolve(id, 'directory')); }
+      catch (error) {
+        if (error instanceof SafeEntryError || isVanishedOrLink(error)) return fail('entry_unavailable');
+        throw error;
       }
-      return current;
     };
-    const revalidate = async (id: VaultId, handle: FileHandle) => {
-      const current = await directory(id);
-      if (identity(await current.stat()) !== identity(await handle.stat())) fail('entry_conflict');
-    };
-    const revalidateSource = async (parent: FileHandle, name: string, expected: Stats, kind: 'note' | 'file' | 'directory') => {
-      const check = await open(descriptorPath(parent, name), kind === 'directory' ? directoryFlags : fileFlags);
-      opened.push(check);
-      if (version(await check.stat()) !== version(expected)) fail('entry_conflict');
+    const sourceStats = async (id: VaultId, kind: 'note' | 'file' | 'directory') => {
+      if (kind === 'directory') return dirStats(id);
+      const file = await safe.openFile(id, 'read').catch(error => {
+        if (error instanceof SafeEntryError) return fail('entry_unavailable');
+        throw error;
+      });
+      try { return await file.stat(); } finally { await file.close(); }
     };
     try {
       if (input.action === 'create-note' || input.action === 'create-directory') {
-        const parent = await directory(input.parentId);
-        if (identity(await parent.stat()) !== input.expectedParentIdentity) fail('entry_conflict');
-        await revalidate(input.parentId, parent);
-        const path = descriptorPath(parent, input.name);
+        if (identity(await dirStats(input.parentId)) !== input.expectedParentIdentity) fail('entry_conflict');
         const id = [...input.parentId, input.name];
         if (input.action === 'create-directory') {
-          await mkdir(path);
+          await safe.createDirectory(id);
           mutated = true;
-          const created = await open(path, directoryFlags);
-          opened.push(created);
-          await flushDirectory(created);
-          await flushDirectory(parent);
+          await flushDirectory(id);
+          await flushDirectory(input.parentId);
           return { id };
         }
-        const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-        opened.push(file);
+        const file = await safe.createFile(id);
         mutated = true;
-        await flushFile(file);
-        await flushDirectory(parent);
-        return { id, revision: revisionOf(await file.stat(), Buffer.alloc(0)) };
+        try {
+          await flushFile(file);
+          const revision = revisionOf(await file.stat(), Buffer.alloc(0));
+          await flushDirectory(input.parentId);
+          return { id, revision };
+        } finally { await file.close(); }
       }
-      const parent = await directory(input.id.slice(0, -1));
       const name = input.id[input.id.length - 1];
-      if (input.kind === 'note' && !name.endsWith('.md')) fail('entry_unavailable');
-      if (input.kind === 'file' && name.endsWith('.md')) fail('entry_unavailable');
-      const source = await open(descriptorPath(parent, name), input.kind === 'directory' ? directoryFlags : fileFlags);
-      opened.push(source);
-      const sourceStats = await source.stat();
-      if (input.kind === 'directory' ? !sourceStats.isDirectory() : !sourceStats.isFile()) fail('entry_unavailable');
-      if (version(sourceStats) !== input.expectedVersion) fail('entry_conflict');
+      if ((input.kind === 'note' && !name.endsWith('.md')) || (input.kind === 'file' && name.endsWith('.md'))) fail('entry_unavailable');
+      if (input.kind === 'directory' && input.id.length === 1 && name === '06_Attachments' && uploads.size) fail('entry_conflict');
+      const original = await sourceStats(input.id, input.kind);
+      if (input.kind === 'directory' && input.id.length === 1 && uploads.size) {
+        // A case-insensitive filesystem can name the same directory with another spelling.
+        let attachments: Stats | undefined;
+        try { attachments = await stat(await safe.resolve(['06_Attachments'], 'directory')); } catch { /* Not present yet. */ }
+        if (uploads.size && attachments && identity(original) === identity(attachments)) fail('entry_conflict');
+      }
+      if (version(original) !== input.expectedVersion) fail('entry_conflict');
+      const parent = input.id.slice(0, -1);
       if (input.action === 'delete') {
-        await revalidate(input.id.slice(0, -1), parent);
-        await revalidateSource(parent, name, sourceStats, input.kind);
-        if (input.kind === 'directory') await rmdir(descriptorPath(parent, name));
-        else await unlink(descriptorPath(parent, name));
+        const path = await safe.resolve(input.id, input.kind === 'directory' ? 'directory' : 'file').catch(error => {
+          if (error instanceof SafeEntryError) return fail('entry_unavailable');
+          throw error;
+        });
+        if (version(await sourceStats(input.id, input.kind)) !== version(original)) fail('entry_conflict');
+        if (input.kind === 'directory') await rmdir(path); else await unlink(path);
         mutated = true;
         await flushDirectory(parent);
         return { id: input.id };
       }
-      if (input.destinationParentId.length === input.id.length - 1 && input.destinationParentId.every((part, i) => part === input.id[i])) fail('invalid_request');
+      if (input.destinationParentId.length === parent.length && input.destinationParentId.every((part, i) => part === parent[i])) fail('invalid_request');
       if (input.kind === 'directory' && input.destinationParentId.length >= input.id.length && input.id.every((part, i) => input.destinationParentId[i] === part)) fail('invalid_request');
-      const destination = await directory(input.destinationParentId);
-      if (identity(await destination.stat()) !== input.expectedDestinationIdentity) fail('entry_conflict');
-      await revalidate(input.id.slice(0, -1), parent);
-      await revalidate(input.destinationParentId, destination);
-      await revalidateSource(parent, name, sourceStats, input.kind);
-      await renameNoReplace(parent.fd, name, destination.fd, name);
+      if (identity(await dirStats(input.destinationParentId)) !== input.expectedDestinationIdentity) fail('entry_conflict');
+      if (version(await sourceStats(input.id, input.kind)) !== version(original)) fail('entry_conflict');
+      await move(input.id, [...input.destinationParentId, name], input.kind === 'directory' ? 'directory' : 'file');
       mutated = true;
       await flushDirectory(parent);
-      if (parent.fd !== destination.fd) await flushDirectory(destination);
+      await flushDirectory(input.destinationParentId);
       return { id: [...input.destinationParentId, name] };
     } catch (error) {
       if (mutated) fail('file_action_uncertain');
@@ -378,88 +328,54 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       if (code === 'ENOSYS' || code === 'ENOTSUP' || code === 'EINVAL') fail('move_unsupported');
       if (isVanishedOrLink(error)) fail('entry_unavailable');
       return fail('file_action_unavailable');
-    } finally {
-      for (const handle of opened.reverse()) await handle.close().catch(() => {});
     }
   }
   async function openRegular(rawId: VaultId) {
     const id = validateId(rawId);
-    const opened: FileHandle[] = [];
     try {
-      let parent = pinnedRoot;
-      for (const component of id.slice(0, -1)) {
-        parent = await open(descriptorPath(parent, component), directoryFlags);
-        opened.push(parent);
-      }
-      const name = id[id.length - 1];
-      const file = await open(descriptorPath(parent, name), fileFlags);
+      if (closed) throw new Error('Vault reader is closed');
+      const file = await safe.openFile(id, 'read');
       try {
         const stats = await file.stat();
         if (!stats.isFile() || !Number.isSafeInteger(stats.size)) throw new Error('Not a regular file');
-        return { file, name, size: stats.size };
+        return { file, name: id[id.length - 1], size: stats.size };
       } catch (error) { await file.close(); throw error; }
     } catch { throw new VaultError('entry_unavailable', 'Entry is unavailable'); }
-    finally { for (const handle of opened.reverse()) await handle.close().catch(() => {}); }
   }
   const search = createVaultSearch({
-    root: pinnedRoot, directoryPath: descriptorPath,
-    openDirectory: (parent, name) => open(descriptorPath(parent, name), directoryFlags),
-    openFile: (parent, name) => open(descriptorPath(parent, name), fileFlags),
-    openRegular, version,
+    directoryPath: id => safe.resolve(id, 'directory'), openRegular, version,
   }, options);
   return {
     search: search.search,
     searchContext: search.context,
     async tree() {
       try {
-        return { rootIdentity: identity(await pinnedRoot.stat()), entries: await listDirectory(pinnedRoot, [], identity, version) };
-      } catch {
-        throw new VaultError('vault_unavailable', 'Vault directory is unavailable');
-      }
+        if (closed) throw new Error('Vault reader is closed');
+        return { rootIdentity: identity(await stat(await safe.resolve([], 'directory'))), entries: await listDirectory(safe, [], identity, version) as VaultEntry[] };
+      } catch { throw new VaultError('vault_unavailable', 'Vault directory is unavailable'); }
     },
     async directory(id) {
       if (!isVaultDirectoryId(id)) throw invalidId();
-      const opened: FileHandle[] = [];
       try {
-        let directory = pinnedRoot;
-        for (const component of id) {
-          directory = await open(descriptorPath(directory, component), directoryFlags);
-          opened.push(directory);
-        }
-        const rootIdentity = identity(await pinnedRoot.stat());
-        const directoryIdentity = directory === pinnedRoot ? rootIdentity : identity(await directory.stat());
-        const entries = await listDirectory(directory, id, identity, version, true, options.onDirectoryListed);
+        if (closed) throw new Error('Vault reader is closed');
+        const rootIdentity = identity(await stat(await safe.resolve([], 'directory')));
+        const directoryIdentity = id.length ? identity(await stat(await safe.resolve(id, 'directory'))) : rootIdentity;
+        const entries = await listDirectory(safe, id, identity, version, true, options.onDirectoryListed) as VaultDirectoryEntry[];
         return { rootIdentity, directoryIdentity, id, entries };
-      } catch {
-        throw new VaultError('entry_unavailable', 'Directory is unavailable');
-      } finally {
-        for (const handle of opened.reverse()) await handle.close();
-      }
+      } catch { throw new VaultError('entry_unavailable', 'Directory is unavailable'); }
     },
     async note(rawId) {
       const id = validateId(rawId);
-      if (!id[id.length - 1].endsWith('.md')) {
-        throw new VaultError('note_unavailable', 'Note is unavailable');
-      }
-      const opened: FileHandle[] = [];
+      if (!id[id.length - 1].endsWith('.md')) throw new VaultError('note_unavailable', 'Note is unavailable');
       try {
-        let parent = pinnedRoot;
-        for (const component of id.slice(0, -1)) {
-          parent = await open(descriptorPath(parent, component), directoryFlags);
-          opened.push(parent);
-        }
-        const name = id[id.length - 1];
-        const file = await open(descriptorPath(parent, name), fileFlags);
-        opened.push(file);
-        const stats = await file.stat();
-        if (!stats.isFile()) throw new Error('Not a regular file');
-        const bytes = await file.readFile();
-        return { name, markdown: bytes.toString('utf8'), revision: revisionOf(stats, bytes), editable: editableBytes(bytes) };
-      } catch {
-        throw new VaultError('note_unavailable', 'Note is unavailable');
-      } finally {
-        for (const handle of opened.reverse()) await handle.close();
-      }
+        if (closed) throw new Error('Vault reader is closed');
+        const file = await safe.openFile(id, 'read');
+        try {
+          const stats = await file.stat();
+          const bytes = await file.readFile();
+          return { name: id[id.length - 1], markdown: bytes.toString('utf8'), revision: revisionOf(stats, bytes), editable: editableBytes(bytes) };
+        } finally { await file.close(); }
+      } catch { throw new VaultError('note_unavailable', 'Note is unavailable'); }
     },
     async file(rawId) {
       const opened = await openRegular(rawId);
@@ -495,6 +411,6 @@ export async function openVault(root: string, options: VaultOptions = {}): Promi
       uploads.add(operation);
       try { return await operation; } finally { uploads.delete(operation); }
     },
-    async close() { closed = true; await search.close(); await Promise.allSettled(uploads); await queue; await pinnedRoot.close(); },
+    async close() { closed = true; await search.close(); await Promise.allSettled(uploads); await queue; },
   };
 }

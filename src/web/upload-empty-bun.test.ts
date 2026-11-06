@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 vi.mock('server-only', () => ({}));
@@ -22,11 +22,17 @@ beforeEach(async () => {
   const metadata = join(fixture, 'private');
   await mkdir(root);
   await mkdir(metadata, { mode: 0o700 });
-  const processHandle = spawn('bun', ['--no-env-file', 'backend/upload-empty.fixture.ts', root], {
+  const resolved = spawnSync('bun', ['--no-env-file', '-e', 'process.stdout.write(process.execPath)'], { encoding: 'utf8' });
+  if (resolved.error || resolved.status !== 0 || !isAbsolute(resolved.stdout)) {
+    throw new Error(`Could not resolve Bun executable: ${resolved.error?.message ?? resolved.stderr}`);
+  }
+  const processHandle = spawn(resolved.stdout, ['--no-env-file', 'backend/upload-empty.fixture.ts', root], {
     cwd: process.cwd(), env: { PATH: process.env.PATH ?? '', HOME: fixture, NODE_ENV: 'test' }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   child = processHandle;
-  processHandle.stderr.resume();
+  let stderr = '';
+  processHandle.stderr.setEncoding('utf8');
+  processHandle.stderr.on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-8192); });
   const lines = createInterface({ input: processHandle.stdout });
   const port = await new Promise<number>((resolve, reject) => {
     lines.on('line', line => {
@@ -34,7 +40,7 @@ beforeEach(async () => {
       if (match) resolve(Number(match[1]));
     });
     child?.once('error', reject);
-    child?.once('exit', code => reject(new Error(`Owned daemon exited before ready (${code})`)));
+    processHandle.once('close', code => reject(new Error(`Owned daemon exited before ready (${code}): ${stderr}`)));
   });
   authority = `127.0.0.1:${port}`;
   await writeFile(join(metadata, 'transport.json'), JSON.stringify({ daemonOrigin: `http://${authority}` }), { mode: 0o600 });

@@ -50,7 +50,7 @@ export class RegisteredTranscript {
       namespace = this.mappedNamespace;
       if (JSON.stringify(namespace.components) !== JSON.stringify(components)) throw new TranscriptError('conflict');
     }
-    await namespace.prepare();
+    await namespace.prepare(false);
     await namespace.validate();
     if (JSON.stringify(namespace.identities()) !== JSON.stringify(record.namespace)) throw new TranscriptError('conflict');
     return namespace;

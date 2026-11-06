@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Checkpoint, CompletionReport, CrashReport, InitialLoadReport, MigrationReport, Observation, OrderMigrationReport, OrderReopenReport, Probe, ReopenReport, ReopenScenario, Report, Scenario, V5MigrationReport, V6PreflightReport } from '../tests/think-transcript-checkpoint-fixture';
 import { entryFor } from './think/transcript-format';
@@ -18,15 +19,25 @@ const filename = `think-${conversationId}.md`;
 const runner = resolve(import.meta.dirname, '../tests/think-transcript-checkpoint-fixture.ts');
 const sha = (bytes: string | Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 let root: string;
-beforeEach(async () => { root = await mkdtemp('/tmp/opencode/think-transcript-checkpoint-'); });
+beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'think-transcript-checkpoint-')); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
-async function child<T>(scenario: Scenario | 'probe' | 'migrate-v1' | 'migrate-v2-order' | 'migrate-v5-generation' | 'migrate-v6-preflight' | 'reopen-v3-order' | `reopen-${ReopenScenario}`, filename: string): Promise<T> {
+async function fileSymlinksPermitted(): Promise<boolean> {
+  if (process.platform !== 'win32') return true;
+  const target = join(root, 'symlink-probe-target');
+  await writeFile(target, '');
+  try { await symlink(target, join(root, 'symlink-probe')); return true; }
+  catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'EPERM') return false;
+    throw error;
+  } finally { await rm(join(root, 'symlink-probe'), { force: true }); await rm(target, { force: true }); }
+}
+async function child<T>(scenario: Scenario | 'probe' | 'migrate-v1' | 'migrate-v2-order' | 'migrate-v5-generation' | 'migrate-v6-preflight' | 'reopen-v3-order' | 'cache-native-path' | 'cache-windows-slashes' | `reopen-${ReopenScenario}`, filename: string): Promise<T> {
   const output = join(root, filename);
-  const result = spawnSync('/usr/bin/bun', ['--no-env-file', runner, root, scenario, output], {
+  const result = spawnSync('bun', ['--no-env-file', runner, root, scenario, output], {
     cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 256 * 1024,
-    env: { NODE_ENV: 'test', PATH: '/usr/bin:/bin', HOME: root, XDG_CONFIG_HOME: root,
-      XDG_DATA_HOME: root, XDG_CACHE_HOME: root, XDG_STATE_HOME: root, TMPDIR: root },
+    env: { NODE_ENV: 'test', PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: root,
+      XDG_DATA_HOME: root, XDG_CACHE_HOME: root, XDG_STATE_HOME: root, TMPDIR: root, TEMP: root, TMP: root },
   });
   expect(result.error, result.stderr).toBeUndefined();
   expect(result.status, `existing production factories must run before durability assertions:\n${result.stdout}\n${result.stderr}`).toBe(0);
@@ -56,7 +67,7 @@ function checkpoint(probe: Probe, at: string): Checkpoint {
   if (!probe.checkpoint) throw new Error('missing durable transcript checkpoint');
   expect(probe.issue).toBeUndefined();
   // Checkpoints were introduced in v2 and retained through the v9 quote budget migration.
-  expect(probe.schemaVersion).toBe(10);
+  expect(probe.schemaVersion).toBe(11);
   expect(probe.writerAvailable).toBe(true);
   expect(probe.checkpoint).toMatchObject({ conversationId, ownerConversationId: conversationId,
     nativeSessionId: nativeId, vaultDirectory: join(root, 'vault') });
@@ -309,8 +320,10 @@ describe('fresh Bun process registered transcript reopening', () => {
     expect(result.after.entries.filter(id => id === entryId)).toHaveLength(1);
   });
 
-  it.each(['prefix-edit', 'wrong-tail', 'replacement', 'symlink', 'hardlink', 'directory-moved'] as const)(
-    'preserves every existing file on %s at the ACTUAL fresh-writer reopen boundary', async mode => {
+  it.for(['prefix-edit', 'wrong-tail', 'replacement', 'symlink', 'hardlink', 'directory-moved'] as const)(
+    'preserves every existing file on %s at the ACTUAL fresh-writer reopen boundary', async (mode, { skip }) => {
+      // Windows file symlinks need Developer Mode or elevation; the fixture cannot stage this attack without it.
+      if (mode === 'symlink' && !await fileSymlinksPermitted()) { skip(); return; }
       const seed = await child<Report>(mode === 'wrong-tail' ? 'partial' : 'synced', 'report.json');
       expect(seed.counts).toEqual({ creates: 1, prompts: 1, stops: 0 });
       const result = await child<ReopenReport>(`reopen-${mode}`, 'conflict.json');
@@ -421,9 +434,24 @@ describe('fresh Bun process registered transcript reopening', () => {
 });
 
 describe('production Think SQLite transcript checkpoints', () => {
+  async function verifyCachePath(scenario: 'cache-native-path' | 'cache-windows-slashes') {
+    type Namespace = { conversationId: string; epoch: string; path: string; root: { dev: string; ino: string }; directory: { dev: string; ino: string } | null };
+    const result = await child<{ suppliedPath: string; intent: Namespace; acquired: Namespace; persisted: Namespace;
+      remaining: Namespace[]; folderExists: boolean; rootIdentity: { dev: string; ino: string } }>(scenario, 'cache-path.json');
+    expect(resolve(result.suppliedPath)).toBe(resolve(join(root, 'cache-root')));
+    expect(result.intent).toMatchObject({ conversationId, epoch, root: result.rootIdentity, directory: null });
+    expect(result.acquired).toMatchObject({ conversationId, epoch, root: result.rootIdentity,
+      directory: { dev: expect.stringMatching(/^(0|[1-9]\d*)$/), ino: expect.stringMatching(/^(0|[1-9]\d*)$/) } });
+    expect(resolve(result.acquired.path)).toBe(resolve(result.suppliedPath));
+    expect(result.persisted).toEqual(result.acquired);
+    expect(result.remaining).toEqual([]);
+    expect(result.folderExists).toBe(false);
+  }
+  it('persists and cleans an acquired native-path namespace after reopening', async () => { await verifyCachePath('cache-native-path'); });
+  it.skipIf(process.platform !== 'win32')('persists and cleans an acquired Windows forward-slash namespace after reopening', async () => { await verifyCachePath('cache-windows-slashes'); });
   it('preserves v6 attempt facts and exhausts the v7 preflight budget across SQLite reopenings', async () => {
     const result = await child<V6PreflightReport>('migrate-v6-preflight', 'v6-preflight.json');
-    expect(result.beforeVersion).toBe(6); expect(result.afterVersion).toBe(10);
+    expect(result.beforeVersion).toBe(6); expect(result.afterVersion).toBe(11);
     expect(result.oldBefore).toMatchObject({ state: 'uncertain', createAttempted: true, dispatchAttempted: true,
       inputSha256: 'a'.repeat(64), requested: { agent: 'fixture-agent' }, effective: { agent: 'fixture-agent' } });
     expect(result.oldAfter).toEqual(result.oldBefore);
@@ -436,10 +464,10 @@ describe('production Think SQLite transcript checkpoints', () => {
     expect(third.fact.retryAt).toBeNull(); expect(exhausted.fact).toEqual(third.fact);
   });
 
-  it('migrates a v5 database through v10 without changing originals, checkpoints, selection or deletion tombstones', async () => {
+  it('migrates a v5 database through v11 without changing originals, checkpoints, selection or deletion tombstones', async () => {
     const result = await child<V5MigrationReport>('migrate-v5-generation', 'v5-generation.json');
     expect(result.beforeVersion).toBe(5);
-    expect(result.afterVersion).toBe(10);
+    expect(result.afterVersion).toBe(11);
     expect(result.generationRows).toBe(0);
     expect(result.before.commands.some(command => command.original_type === 'blob' && command.original_hex !== null)).toBe(true);
     expect(result.before.transcript).toMatchObject({ creation_state: 'owned', pending_state: 'ready' });
@@ -456,16 +484,16 @@ describe('production Think SQLite transcript checkpoints', () => {
     expect(result.afterProtection).toEqual(result.beforeProtection);
   });
 
-  it('migrates test-owned v1 admission facts through v10 without replacing originals or adopting transcripts', async () => {
+  it('migrates test-owned v1 admission facts through v11 without replacing originals or adopting transcripts', async () => {
     const result = await child<MigrationReport>('migrate-v1', 'migration.json');
     const original = `  durable fixture original 🧠\r\n\`\`\`\n<!-- fixture literal -->\n${'x'.repeat(70 * 1024)}\nlast  `;
     expect(result).toMatchObject({ installationId: '44444444-4444-4444-8444-444444444444',
       originalHex: Buffer.from(original).toString('hex'), payloadSha256: sha(original), commandState: 'upstream-unconfirmed',
       conversationId, nativeSessionId: nativeId, legacy: 'pre-checkpoint transcript must not be adopted or changed', transcriptMapped: false });
-    expect(result.schemaVersion, 'the additive migration chain must retain the existing private database').toBe(10);
+    expect(result.schemaVersion, 'the additive migration chain must retain the existing private database').toBe(11);
   });
 
-  it('preserves v2 insertion order and all old facts through v10 migration, a fresh Bun process, VACUUM and subsequent admission', async () => {
+  it('preserves v2 insertion order and all old facts through v11 migration, a fresh Bun process, VACUUM and subsequent admission', async () => {
     const bId = '00000000-0000-4000-8000-000000000001';
     const stopId = '88888888-8888-4888-8888-888888888888';
     const formId = '66666666-6666-4666-8666-666666666666';
@@ -474,7 +502,7 @@ describe('production Think SQLite transcript checkpoints', () => {
     const seed = await child<OrderMigrationReport>('migrate-v2-order', 'order-migration.json');
     expect(seed.versionBefore).toBe(2);
     expect(seed.orderTableBefore, 'a real historical v2 input must not already contain v3 order metadata').toBe(false);
-    expect(seed.schemaVersion).toBe(10);
+    expect(seed.schemaVersion).toBe(11);
     expect(seed.insertionIds, 'observe old SQLite insertion order before the migration').toEqual(expectedIds);
     const a = seed.before.commands.find(command => command.command_id === commandId);
     const b = seed.before.commands.find(command => command.command_id === bId);
@@ -520,7 +548,7 @@ describe('production Think SQLite transcript checkpoints', () => {
 
     const reopened = await child<OrderReopenReport>('reopen-v3-order', 'order-reopened.json');
     expect(reopened.pid).not.toBe(seed.pid);
-    expect(reopened.schemaVersion).toBe(10);
+    expect(reopened.schemaVersion).toBe(11);
     expect(reopened.vacuumIntegrity).toBe('ok');
     expect(reopened.before).toEqual(seed.after);
     expect(reopened.afterVacuum).toEqual(seed.after);

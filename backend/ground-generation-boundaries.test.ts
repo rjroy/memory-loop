@@ -1,5 +1,6 @@
-import { mkdir, mkdtemp, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createGroundGeneration } from './ground-generation';
 import { recentGenerationContext } from './ground-generation-context';
@@ -20,7 +21,7 @@ it.each([
   ['before autumn transition', '2026-10-31T12:00:00.000Z', '2026-10-31T00:00:00.000Z'],
   ['after autumn transition', '2026-11-01T12:00:00.000Z', '2026-11-01T00:00:00.000Z'],
 ])('uses the configured New York calendar date %s', async (_label, current, expected) => {
-  root = await mkdtemp('/tmp/opencode/ground-generation-zone-');
+  root = await mkdtemp(join(tmpdir(), 'ground-generation-zone-'));
   vi.useFakeTimers({ now: new Date(current) });
   const begin = vi.fn<GroundGenerationPreflight['beginPreflight']>(() => ({ allowed: false, fact: { attempts: 3, retryAt: null, blocked: false } }));
   const preflight: GroundGenerationPreflight = { beginPreflight: begin, failedPreflight: () => null };
@@ -39,7 +40,7 @@ it.each([
 });
 
 it('GROUND-9YA7-02 bounds pre-admission validation retries for one occurrence with increasing backoff', async () => {
-  root = await mkdtemp('/tmp/opencode/ground-generation-retry-');
+  root = await mkdtemp(join(tmpdir(), 'ground-generation-retry-'));
   vi.useFakeTimers({ now });
   const times: number[] = [];
   const validate = vi.fn(async () => { times.push(Date.now()); throw new Error('fixture validation unavailable'); });
@@ -62,7 +63,7 @@ it('GROUND-9YA7-02 bounds pre-admission validation retries for one occurrence wi
 });
 
 it('retains a new-period demand arriving while the prior period is still running', async () => {
-  root = await mkdtemp('/tmp/opencode/ground-generation-demand-');
+  root = await mkdtemp(join(tmpdir(), 'ground-generation-demand-'));
   vi.useFakeTimers({ now: new Date('2032-04-17T23:59:50.000Z') });
   let release: () => void = () => { throw new Error('validation gate not initialized'); };
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -82,11 +83,11 @@ it('retains a new-period demand arriving while the prior period is still running
     expect(begin.mock.calls.map(([occurrence]) => occurrence.period)).toEqual([
       Date.parse('2032-04-17T00:00:00.000Z'), Date.parse('2032-04-18T00:00:00.000Z'),
     ]);
-  } finally { await runner.close(); }
+  } finally { release(); await runner.close(); }
 });
 
 it('GROUND-9YA7-03 excludes older mapped transcript paths before applying the newest-note cap', async () => {
-  root = await realpath(await mkdtemp('/tmp/opencode/ground-generation-context-'));
+  root = await realpath(await mkdtemp(join(tmpdir(), 'ground-generation-context-')));
   await mkdir(join(root, 'old-transcripts'));
   await mkdir(join(root, 'new-transcripts'));
   await mkdir(join(root, 'notes'));
@@ -103,11 +104,34 @@ it('GROUND-9YA7-03 excludes older mapped transcript paths before applying the ne
   expect(JSON.stringify(excerpts)).not.toContain('Private old mapped transcript');
 });
 
+it.skipIf(process.platform === 'win32')('canonicalizes a linked context root and reads a legacy-named note', async () => {
+  root = await realpath(await mkdtemp(join(tmpdir(), 'ground-generation-linked-context-')));
+  const source = join(root, 'CON.md');
+  await writeFile(source, 'Owned legacy context');
+  await utimes(source, new Date(now - 1000), new Date(now - 1000));
+  const alias = join(root, 'vault-link');
+  await symlink(root, alias, 'dir');
+  const excerpts = await recentGenerationContext({ directory: alias, transcriptDirectory: ['transcripts'], limits: config.context,
+    state: { isTranscript: () => false }, now, signal: new AbortController().signal });
+  expect(excerpts).toEqual([{ noteId: ['CON.md'], modifiedAt: new Date(now - 1000).toISOString(), text: 'Owned legacy context' }]);
+});
+
+it('includes an eligible read-only hardlinked context note', async () => {
+  root = await realpath(await mkdtemp(join(tmpdir(), 'ground-generation-hardlink-context-')));
+  const source = join(root, '.source');
+  await writeFile(source, 'Owned linked context');
+  await link(source, join(root, 'eligible.md'));
+  await utimes(source, new Date(now - 1000), new Date(now - 1000));
+  const excerpts = await recentGenerationContext({ directory: root, transcriptDirectory: ['transcripts'], limits: config.context,
+    state: { isTranscript: () => false }, now, signal: new AbortController().signal });
+  expect(excerpts).toEqual([{ noteId: ['eligible.md'], modifiedAt: new Date(now - 1000).toISOString(), text: 'Owned linked context' }]);
+});
+
 it('selects bounded newest context across more than 10000 vault entries', async () => {
-  root = await realpath(await mkdtemp('/tmp/opencode/ground-generation-large-context-'));
+  root = await realpath(await mkdtemp(join(tmpdir(), 'ground-generation-large-context-')));
   for (const name of ['bulk', 'first', 'last']) await mkdir(join(root, name));
   // A directory symlink must not be traversed, even when it points back to the root.
-  await symlink(root, join(root, 'cycle'));
+  await symlink(root, join(root, 'cycle'), process.platform === 'win32' ? 'junction' : 'dir');
   const older = new Date(now - 3600000);
   for (let start = 0; start < 10001; start += 100) {
     await Promise.all(Array.from({ length: Math.min(100, 10001 - start) }, async (_, index) => {
@@ -130,7 +154,7 @@ it('selects bounded newest context across more than 10000 vault entries', async 
 }, 30000);
 
 it('stops context enumeration when cancelled during traversal', async () => {
-  root = await realpath(await mkdtemp('/tmp/opencode/ground-generation-cancel-context-'));
+  root = await realpath(await mkdtemp(join(tmpdir(), 'ground-generation-cancel-context-')));
   const note = join(root, 'eligible.md'); await writeFile(note, 'Owned cancellation fixture');
   await utimes(note, new Date(now - 1000), new Date(now - 1000));
   const controller = new AbortController();

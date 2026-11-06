@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { lstatSync } from 'node:fs';
 import { chmod, link, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { OpenCodeEvent, SessionActiveOutput, SessionCreateInput, SessionInfo, SessionPromptOutput, SessionMessageInfo, SessionFormGetOutput } from '@opencode/client';
 import { OpenCode } from '@opencode/client';
 import { prepareServer, type PreparedServer } from '../backend/server';
@@ -51,7 +52,7 @@ const uncertainHydration = (scenario: Scenario) => scenario === 'hydrate-uncerta
 const isHydrationCase = (scenario: Scenario): scenario is HydrationCase => hydrationCases.some(item => item === scenario);
 const isCancelledOrder = (scenario: Scenario) => scenario === 'cancelled-input-order' || scenario === 'cancelled-input-order-tie';
 export type Scenario = HydrationCase | 'create' | 'create-ready-restart' | 'history-restart' | 'cancelled-input-order' | 'cancelled-input-order-tie' | 'send' | 'form' | 'uncertain' | 'database-symlink' | 'database-hardlink' |
-  'database-permissions' | 'wal-symlink' | 'shm-symlink' | 'metadata-permissions' | 'state-inside-vault';
+  'wal-symlink' | 'shm-symlink' | 'state-inside-vault';
 
 export interface Probe {
   exists: boolean;
@@ -62,9 +63,6 @@ export interface Probe {
   legacyConversationPresent: boolean;
   integrity: string | null;
   writerAvailable: boolean;
-  directoryMode?: number;
-  fileMode?: number;
-  ownerMatches?: boolean;
 }
 export interface CommandFact {
   commandId: string;
@@ -221,13 +219,9 @@ function probeDatabase(path: string, commandId: string): Probe {
     legacyConversationPresent: false, integrity: null, writerAvailable: false };
   let reader: Database | undefined;
   try {
-    let stat;
-    try { stat = lstatSync(path); }
+    try { lstatSync(path); }
     catch (error) { if (record(error) && error.code === 'ENOENT') return result; throw error; }
     result.exists = true;
-    result.fileMode = stat.mode & 0o7777;
-    result.directoryMode = lstatSync(join(path, '..')).mode & 0o7777;
-    result.ownerMatches = stat.uid === process.getuid?.();
     reader = new Database(path, { readonly: true, create: false });
     result.integrity = String(reader.query('PRAGMA quick_check').values()[0]?.[0]);
     result.schemaVersion = Number(reader.query('PRAGMA user_version').values()[0]?.[0]);
@@ -369,11 +363,6 @@ async function run(root: string, scenario: Scenario): Promise<FixtureReport> {
   if (scenario === 'database-hardlink') await link(outside, database);
   if (scenario === 'wal-symlink') await symlink(outside, `${database}-wal`);
   if (scenario === 'shm-symlink') await symlink(outside, `${database}-shm`);
-  if (scenario === 'database-permissions') {
-    const seed = new Database(database); seed.run('PRAGMA user_version = 0'); seed.close();
-    await chmod(database, 0o644);
-  }
-  if (scenario === 'metadata-permissions') await chmod(metadata, 0o755);
 
   const observations: Observation[] = [];
   const unexpected: string[] = [];
@@ -820,12 +809,42 @@ async function run(root: string, scenario: Scenario): Promise<FixtureReport> {
 }
 
 const scenarios: readonly Scenario[] = [...hydrationCases, 'create', 'create-ready-restart', 'history-restart', 'cancelled-input-order', 'cancelled-input-order-tie', 'send', 'form', 'uncertain', 'database-symlink', 'database-hardlink',
-  'database-permissions', 'wal-symlink', 'shm-symlink', 'metadata-permissions', 'state-inside-vault'];
+  'wal-symlink', 'shm-symlink', 'state-inside-vault'];
 const root = process.argv[2];
 const selected = process.argv[3];
 const output = process.argv[4];
-if (!root?.startsWith('/tmp/opencode/think-durable-admission-') || !output?.startsWith(`${root}/`) || !scenarios.some(item => item === selected)) {
-  throw new Error('Pass a test-owned /tmp/opencode fixture root, known scenario and report path');
+if (!root || resolve(root) !== resolve(tmpdir()) || !basename(root).startsWith('think-durable-admission-') ||
+    !output || dirname(resolve(output)) !== resolve(root) ||
+    !(scenarios.some(item => item === selected) || selected === 'state-permissive' || selected === 'state-normalized' || selected === 'state-windows-slashes')) {
+  throw new Error('Pass a test-owned temporary fixture root, known scenario and report path');
 }
-const result = await run(root, selected as Scenario);
+async function statePolicy(scenario: 'state-permissive' | 'state-normalized' | 'state-windows-slashes') {
+  const project = join(root, 'project');
+  const vault = join(root, 'vault');
+  const metadata = join(project, '.memory-loop');
+  const database = join(metadata, 'application.sqlite');
+  await mkdir(metadata, { recursive: true, mode: 0o700 });
+  await mkdir(vault);
+  await mkdir(join(project, 'child'));
+  const first = await openThinkState(project, vault);
+  const before = first.installationId;
+  first.close();
+  if (scenario === 'state-permissive') { await chmod(metadata, 0o755); await chmod(database, 0o644); }
+  const requested = scenario === 'state-normalized' ? `${project}${sep}child${sep}..` :
+    scenario === 'state-windows-slashes' ? project.replaceAll('\\', '/') : project;
+  let after: string | undefined;
+  let reopenError: string | undefined;
+  try {
+    const reopened = await openThinkState(requested, vault);
+    try { after = reopened.installationId; } finally { reopened.close(); }
+  } catch (error) { reopenError = error instanceof Error ? error.message : 'reopen failed'; }
+  const independent = new Database(database, { readonly: true, create: false });
+  try {
+    const row = independent.query<{ installation_id: string }, []>('SELECT installation_id FROM application_metadata WHERE singleton = 1').get();
+    const integrity = independent.query('PRAGMA quick_check').values()[0]?.[0];
+    const schema = independent.query('PRAGMA user_version').values()[0]?.[0];
+    return { before, after, reopenError, stored: row?.installation_id, integrity, schema };
+  } finally { independent.close(); }
+}
+const result = selected === 'state-permissive' || selected === 'state-normalized' || selected === 'state-windows-slashes' ? await statePolicy(selected) : await run(root, selected as Scenario);
 await writeFile(output, JSON.stringify(result), { mode: 0o600 });

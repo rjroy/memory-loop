@@ -1,14 +1,10 @@
 import { createHash, randomInt } from 'node:crypto';
-import { constants } from 'node:fs';
-import { open, readdir, stat } from 'node:fs/promises';
-import type { FileHandle } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
+import { openSafeRoot, type SafeRoot } from './safe-fs';
 import { isVaultComponent } from './contract';
 import type { CaptureItem, CapturesRead, GroundResource, GroundResourceData, ResourceRead } from './ground-contract';
 import { parseGroundCollection, weightedSelection } from './ground-parsers';
 
-const directoryFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
-const fileFlags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
-const rootPath = (handle: FileHandle, name?: string) => `/proc/self/fd/${handle.fd}${name === undefined ? '' : `/${name}`}`;
 const hash = (value: Uint8Array | string) => createHash('sha256').update(value).digest('hex');
 const missing = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -34,15 +30,9 @@ export function groundResourcePaths(config: unknown): Record<GroundResource, str
   return paths;
 }
 
-async function readFile(root: FileHandle, components: readonly string[], limit: number): Promise<Uint8Array> {
-  const handles: FileHandle[] = [];
+async function readFile(root: SafeRoot, components: readonly string[], limit: number): Promise<Uint8Array> {
+  const file = await root.openFile(components, 'read');
   try {
-    let parent = root;
-    for (const component of components.slice(0, -1)) { parent = await open(rootPath(parent, component), directoryFlags); handles.push(parent); }
-    const file = await open(rootPath(parent, components[components.length - 1]), fileFlags);
-    handles.push(file);
-    const info = await file.stat();
-    if (!info.isFile() || info.nlink !== 1) throw new Error('unsafe file');
     const buffer = Buffer.alloc(limit + 1);
     let offset = 0;
     while (offset < buffer.length) {
@@ -51,7 +41,7 @@ async function readFile(root: FileHandle, components: readonly string[], limit: 
       offset += result.bytesRead;
     }
     return buffer.subarray(0, offset);
-  } finally { for (const handle of handles.reverse()) await handle.close(); }
+  } finally { await file.close(); }
 }
 
 export interface GroundReader {
@@ -61,19 +51,15 @@ export interface GroundReader {
 }
 
 export async function openGround(root: string, config?: unknown, draw: (max: number) => number = randomInt): Promise<GroundReader> {
-  const pinned = await open(root, directoryFlags);
-  try {
-    const actual = await pinned.stat();
-    const viaProc = await stat(rootPath(pinned));
-    if (!actual.isDirectory() || actual.dev !== viaProc.dev || actual.ino !== viaProc.ino) throw new Error('descriptor unavailable');
-  } catch (error) { await pinned.close(); throw error; }
+  const pinned = await openSafeRoot(root);
+  let closed = false;
   const paths = groundResourcePaths(config);
   return {
     async resource(kind) {
       const noteId = paths[kind];
       if (!noteId) return { state: 'unavailable', reason: 'configuration' };
       let bytes: Uint8Array;
-      try { bytes = await readFile(pinned, noteId, 65536); }
+      try { if (closed) throw new Error('reader closed'); bytes = await readFile(pinned, noteId, 65536); }
       catch (error) { return missing(error) ? { state: 'missing', noteId } : { state: 'unavailable', reason: 'io', noteId }; }
       if (bytes.length > 65536) return { state: 'malformed', noteId, issue: { code: 'too_large' } };
       let text: string;
@@ -98,17 +84,17 @@ export async function openGround(root: string, config?: unknown, draw: (max: num
       if (!question) throw new Error('Missing selected question');
       return { state: 'ready', noteId, revision, data: { question } };
     },
-    async captures() { return recentCaptures(pinned); },
-    async close() { await pinned.close(); },
+    async captures() { return closed ? { state: 'unavailable', reason: 'io' } : recentCaptures(pinned); },
+    async close() { closed = true; },
   };
 }
 
-async function recentCaptures(root: FileHandle): Promise<CapturesRead> {
-  let inbox: FileHandle;
-  try { inbox = await open(rootPath(root, '00_Inbox'), directoryFlags); }
+async function recentCaptures(root: SafeRoot): Promise<CapturesRead> {
+  let inbox: string;
+  try { inbox = await root.resolve(['00_Inbox'], 'directory'); }
   catch (error) { return missing(error) ? { state: 'missing' } : { state: 'unavailable', reason: 'io' }; }
   try {
-    const names = (await readdir(rootPath(inbox))).filter(name => {
+    const names = (await readdir(inbox)).filter(name => {
       if (!/^\d{4}-\d{2}-\d{2}\.md$/.test(name)) return false;
       const date = name.slice(0, 10);
       const parsed = new Date(`${date}T00:00:00Z`);
@@ -120,7 +106,7 @@ async function recentCaptures(root: FileHandle): Promise<CapturesRead> {
     for (const name of names) {
       if (items.length >= 5 && name.slice(0, 10) < items[4].localDateTime.slice(0, 10)) break;
       let bytes: Uint8Array;
-      try { bytes = await readFile(inbox, [name], remaining); }
+      try { bytes = await readFile(root, ['00_Inbox', name], remaining); }
       catch { partial = true; continue; }
       if (bytes.length > remaining) { partial = true; break; }
       remaining -= bytes.length;
@@ -153,5 +139,4 @@ async function recentCaptures(root: FileHandle): Promise<CapturesRead> {
     if (!items.length) return partial ? { state: 'malformed', issue: { code: 'source_coverage' } } : { state: 'empty' };
     return { state: 'ready', coverage: partial ? 'partial' : 'complete', items: items.map(({ offset: _offset, ...item }) => item) };
   } catch { return { state: 'unavailable', reason: 'io' }; }
-  finally { await inbox.close(); }
 }

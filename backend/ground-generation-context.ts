@@ -1,16 +1,19 @@
-import { constants, type Stats } from 'node:fs';
-import { lstat, open, opendir, realpath, type FileHandle } from 'node:fs/promises';
+import type { BigIntStats } from 'node:fs';
+import { lstat as lstatNumber, opendir } from 'node:fs/promises';
 import { isVaultComponent } from './contract';
+import { openSafeRoot } from './safe-fs';
 import type { GroundGenerationConfig } from './ground-generation-config';
 import type { GroundGenerationState } from './ground-generation-state';
 import { GroundGenerationError } from './ground-generation-error';
+import { exactFingerprint, sameFileId } from './file-identity';
 
-const directories = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
-const files = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
-const path = (handle: FileHandle, name?: string) => `/proc/self/fd/${handle.fd}${name ? `/${name}` : ''}`;
-const same = (a: Stats, b: Stats) => a.dev === b.dev && a.ino === b.ino;
-const fingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeMs, s.ctimeMs, s.nlink]);
-interface Candidate { id: string[]; stat: Stats }
+// Exact stats: 64-bit file IDs above Number.MAX_SAFE_INTEGER are never rounded together.
+const lstat = (path: string) => lstatNumber(path, { bigint: true });
+const same = sameFileId;
+const fingerprint = (s: BigIntStats) => exactFingerprint(s, true);
+/** Fractional milliseconds without rounding a whole millisecond across a boundary. */
+const modifiedMs = (s: BigIntStats) => Number(s.mtimeNs / 1000000n) + Number(s.mtimeNs % 1000000n) / 1e6;
+interface Candidate { id: string[]; stat: BigIntStats }
 export interface GenerationExcerpt { noteId: string[]; modifiedAt: string; text: string }
 
 /** Traverse the vault asynchronously while bounding retained candidates and payloads. */
@@ -22,82 +25,77 @@ export async function recentGenerationContext(options: {
   const started = Date.now();
   const checkAbort = () => { if (signal.aborted) throw new Error('context stopped'); };
   checkAbort();
-  if (await realpath(directory) !== directory) throw new GroundGenerationError('conflict');
-  const root = await open(directory, directories);
-  let original: Stats;
-  try { original = await root.stat(); } catch (error) { await root.close(); throw error; }
+  const root = await openSafeRoot(directory);
+  const isTranscript = (id: readonly string[]) => options.state.isTranscript(directory, id) ||
+    (root.path !== directory && options.state.isTranscript(root.path, id));
   const check = async () => {
     checkAbort();
-    if (!same(original, await lstat(directory)) || !same(original, await root.stat())) throw new GroundGenerationError('conflict');
+    try { await root.resolve([], 'directory'); } catch { throw new GroundGenerationError('conflict'); }
   };
   const excluded = (id: readonly string[]) => [['03_Resources', 'Memory-Loop'], options.transcriptDirectory].some(prefix => prefix.every((part, index) => id[index] === part));
   const candidates: Candidate[] = [];
   const after = options.now - limits.lookbackDays * 86400000;
   let visited = 0; let selected = 0; let status: 'failed' | 'cancelled' | 'ready' = 'failed';
-  async function walk(handle: FileHandle, parent: string[]): Promise<void> {
+  async function walk(parent: string[]): Promise<void> {
     if (parent.length > 32) throw new GroundGenerationError('configuration');
-    const entries = await opendir(path(handle), { bufferSize: 32 });
+    const entries = await opendir(await root.resolve(parent, 'directory'), { bufferSize: 32 });
     for await (const entry of entries) {
       visited++;
       await check();
       if (!isVaultComponent(entry.name)) continue;
       const id = [...parent, entry.name]; if (excluded(id)) continue;
       if (entry.isDirectory()) {
-        const child = await open(path(handle, entry.name), directories);
-        try { await walk(child, id); } finally { await child.close(); }
+        await walk(id);
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        const file = await open(path(handle, entry.name), files);
+        const file = await root.openFile(id, 'read');
         try {
-          const stat = await file.stat();
-          if (!stat.isFile() || stat.nlink !== 1 || stat.mtimeMs < after || stat.mtimeMs > options.now) continue;
-          checkAbort(); const transcript = options.state.isTranscript(directory, id); checkAbort();
+          const stat = await file.stat({ bigint: true });
+          if (!stat.isFile() || modifiedMs(stat) < after || modifiedMs(stat) > options.now) continue;
+          checkAbort(); const transcript = isTranscript(id); checkAbort();
           if (transcript) continue;
           candidates.push({ id, stat });
-          candidates.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs || (a.id.join('/') < b.id.join('/') ? -1 : 1));
+          candidates.sort((a, b) => modifiedMs(b.stat) - modifiedMs(a.stat) || (a.id.join('/') < b.id.join('/') ? -1 : 1));
           if (candidates.length > limits.maxNotes) candidates.pop();
         } finally { await file.close(); }
       }
     }
   }
   try {
-    await check(); await walk(root, []); await check();
+    await check(); await walk([]); await check();
     const result: GenerationExcerpt[] = []; let remaining = limits.maxTotalBytes;
     for (const candidate of candidates) {
       if (!remaining) break;
-      checkAbort(); const transcript = options.state.isTranscript(directory, candidate.id); checkAbort();
+      checkAbort(); const transcript = isTranscript(candidate.id); checkAbort();
       if (transcript) continue;
-      const held: Array<{ handle: FileHandle; named: string; stat: Stats }> = [];
+      const held: Array<{ id: string[]; stat: BigIntStats }> = [];
       try {
-        let parent = root;
-        for (const component of candidate.id.slice(0, -1)) {
-          const named = path(parent, component); const handle = await open(named, directories);
-          try { held.push({ handle, named, stat: await handle.stat() }); }
-          catch (error) { await handle.close(); throw error; }
-          parent = handle;
+        for (let index = 1; index < candidate.id.length; index++) {
+          const id = candidate.id.slice(0, index);
+          held.push({ id, stat: await lstat(await root.resolve(id, 'directory')) });
         }
-        const named = path(parent, candidate.id[candidate.id.length - 1]); const file = await open(named, files);
+        const file = await root.openFile(candidate.id, 'read');
         try {
-          const before = await file.stat();
-          if (!before.isFile() || before.nlink !== 1 || fingerprint(before) !== fingerprint(candidate.stat)) continue;
-          const count = Math.min(before.size, limits.maxNoteBytes, remaining); const bytes = Buffer.alloc(count);
+          const before = await file.stat({ bigint: true });
+          if (!before.isFile() || fingerprint(before) !== fingerprint(candidate.stat)) continue;
+          const size = Number(before.size);
+          const count = Math.min(size, limits.maxNoteBytes, remaining); const bytes = Buffer.alloc(count);
           let offset = 0;
           while (offset < count) {
             if (signal.aborted) throw new Error('context stopped');
             const read = await file.read(bytes, offset, count - offset, offset); if (!read.bytesRead) break; offset += read.bytesRead;
           }
           await check();
-          if (offset !== count || fingerprint(before) !== fingerprint(await file.stat()) || fingerprint(before) !== fingerprint(await lstat(named))) continue;
+          if (offset !== count || fingerprint(before) !== fingerprint(await file.stat({ bigint: true })) || fingerprint(before) !== fingerprint(await lstat(await root.resolve(candidate.id, 'file')))) continue;
           let stable = true;
-          for (const node of held) if (!same(node.stat, await node.handle.stat()) || !same(node.stat, await lstat(node.named))) stable = false;
+          for (const node of held) if (!same(node.stat, await lstat(await root.resolve(node.id, 'directory')))) stable = false;
           if (!stable) continue;
           // A bounded prefix may end inside a code point; retain only complete UTF-8 text.
-          const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: count < before.size });
+          const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: count < size });
           if (!text.trim()) continue;
           remaining -= Buffer.byteLength(text);
-          result.push({ noteId: candidate.id, modifiedAt: new Date(before.mtimeMs).toISOString(), text });
+          result.push({ noteId: candidate.id, modifiedAt: new Date(modifiedMs(before)).toISOString(), text });
         } finally { await file.close(); }
       } catch { if (signal.aborted) throw new Error('context stopped'); /* Skip a changed/unreadable candidate, never widen the search. */ }
-      finally { for (const node of held.reverse()) await node.handle.close(); }
     }
     await check(); selected = result.length; status = 'ready'; return result;
   } catch (error) {
@@ -105,6 +103,5 @@ export async function recentGenerationContext(options: {
     throw error;
   } finally {
     console.info('ground_generation_context_outcome', { status, scanned: visited, selected, durationMs: Math.max(0, Date.now() - started) });
-    await root.close();
   }
 }

@@ -2,6 +2,7 @@ import { ThinkStateError, type ConfirmedTranscriptEntry, type StoredTranscript, 
   type TranscriptDirectoryIdentity, type TranscriptFileCheckpoint, type TranscriptStateStore } from './state';
 import type { SQLite } from './sqlite-state';
 import { createHash } from 'node:crypto';
+import { parseFileIdentity, parseFileIdValue } from '../file-identity';
 
 const emptySha = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 const sha = /^[a-f0-9]{64}$/;
@@ -10,6 +11,10 @@ type Row = Record<string, unknown>;
 function fail(code: 'conflict' | 'unavailable' = 'unavailable'): never { throw new ThinkStateError(code); }
 function text(row: Row, name: string): string { const value = row[name]; return typeof value === 'string' ? value : fail(); }
 function count(value: unknown): number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fail(); }
+/** Stored identity value: exact TEXT (v11+) or a legacy JSON number in namespace_json. */
+function fileId(value: unknown): string { return parseFileIdValue(value) ?? fail(); }
+/** New writes carry only canonical decimal strings. */
+function writtenId(value: unknown): string { return typeof value === 'string' && parseFileIdValue(value) === value ? value : fail(); }
 function hash(value: unknown): string { return typeof value === 'string' && sha.test(value) ? value : fail(); }
 function object(value: unknown): value is Row { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function identity(row: Row): StoredTranscriptEntry {
@@ -39,6 +44,22 @@ export const transcriptSchemaV2 = `
     PRIMARY KEY(conversation_id, chunk_index)
   );
 `;
+/**
+ * v11: exact file identity. INTEGER cannot hold every 64-bit NTFS file ID (and SQLite would
+ * coerce larger values to REAL), so dev/ino become decimal TEXT. Existing values were safe
+ * integers and CAST to TEXT losslessly. Columns are swapped in place because transcript_entries
+ * and transcript_pending_chunks reference this table. Existing namespace_json keeps its legacy
+ * numbers (safe integers by construction), which reads still accept; new intents write strings.
+ */
+export const transcriptIdentitySchemaV11 = `
+  ALTER TABLE transcripts ADD COLUMN file_dev_text TEXT;
+  ALTER TABLE transcripts ADD COLUMN file_ino_text TEXT;
+  UPDATE transcripts SET file_dev_text = CAST(file_dev AS TEXT), file_ino_text = CAST(file_ino AS TEXT);
+  ALTER TABLE transcripts DROP COLUMN file_dev;
+  ALTER TABLE transcripts DROP COLUMN file_ino;
+  ALTER TABLE transcripts RENAME COLUMN file_dev_text TO file_dev;
+  ALTER TABLE transcripts RENAME COLUMN file_ino_text TO file_ino;
+`;
 export function validateTranscriptSchema(db: SQLite): void {
   db.get(`SELECT t.conversation_id, t.note_id_json, t.created_at, t.namespace_json, t.creation_state,
     t.file_dev, t.file_ino, t.file_fingerprint, t.confirmed_offset, t.confirmed_sha256,
@@ -47,6 +68,14 @@ export function validateTranscriptSchema(db: SQLite): void {
     e.entry_id, e.semantic, e.source_identity, e.serialized_sha256, e.end_offset, p.chunk_index, p.bytes
     FROM transcripts t LEFT JOIN transcript_entries e ON e.conversation_id = t.conversation_id
     LEFT JOIN transcript_pending_chunks p ON p.conversation_id = t.conversation_id LIMIT 0`);
+}
+export function validateTranscriptIdentitySchema(db: SQLite): void {
+  textColumns(db, 'transcripts', ['file_dev', 'file_ino']);
+}
+/** Exact identity columns must be declared TEXT, so no value is coerced to INTEGER or REAL. */
+export function textColumns(db: SQLite, table: string, columns: readonly string[]): void {
+  const types = new Map(db.all(`SELECT name, type FROM pragma_table_info('${table}')`).map(row => [row.name, row.type]));
+  if (columns.some(column => types.get(column) !== 'TEXT')) fail();
 }
 
 /** The existing database/short-transaction boundary, not an independent journal or history mirror. */
@@ -79,7 +108,8 @@ export class SQLiteTranscriptState implements TranscriptStateStore {
       const namespace: unknown = JSON.parse(text(row, 'namespace_json'));
       if (!Array.isArray(noteId) || noteId.length < 2 || noteId.some(part => typeof part !== 'string' || !part || part.startsWith('.') || /[/\\\0]/.test(part)) ||
           noteId.at(-1) !== `think-${conversationId}.md` || !Array.isArray(namespace) || namespace.length !== noteId.length ||
-          namespace.some(node => !object(node) || count(node.dev) !== node.dev || count(node.ino) !== node.ino)) fail();
+          namespace.some(node => !object(node) || !parseFileIdentity(node))) fail();
+      const identities = namespace.map(node => parseFileIdentity(node) ?? fail());
       const offset = count(row.confirmed_offset);
       const digest = hash(row.confirmed_sha256);
       if (row.creation_state !== 'intent' && row.creation_state !== 'owned') fail();
@@ -93,8 +123,8 @@ export class SQLiteTranscriptState implements TranscriptStateStore {
           state: row.pending_state === 'ready' ? 'ready' : 'preparing', sha256: row.pending_sha256 === null ? null : hash(row.pending_sha256) };
         if (pending.state === 'ready' && (!pending.sha256 || count(row.staged_length) !== pending.length)) fail();
       } else if (row.pending_state !== null || count(row.staged_chunks) || count(row.staged_length)) fail();
-      return { conversationId, noteId: noteId as string[], namespace: namespace as TranscriptDirectoryIdentity[], createdAt: count(row.created_at),
-        file: row.creation_state === 'owned' ? { dev: count(row.file_dev), ino: count(row.file_ino), fingerprint: text(row, 'file_fingerprint'), offset, sha256: digest } : null,
+      return { conversationId, noteId: noteId as string[], namespace: identities, createdAt: count(row.created_at),
+        file: row.creation_state === 'owned' ? { dev: fileId(row.file_dev), ino: fileId(row.file_ino), fingerprint: text(row, 'file_fingerprint'), offset, sha256: digest } : null,
         pending };
     });
   }
@@ -116,19 +146,18 @@ export class SQLiteTranscriptState implements TranscriptStateStore {
       this.owner(conversationId, vaultDirectory, true); count(createdAt);
       if (noteId.at(-1) !== `think-${conversationId}.md` || namespace.length !== noteId.length || noteId.length < 2 ||
           noteId.some(part => !part || part.startsWith('.') || /[/\\\0]/.test(part))) fail();
-      for (const node of namespace) { count(node.dev); count(node.ino); }
+      const identities: TranscriptDirectoryIdentity[] = namespace.map(node => ({ dev: writtenId(node.dev), ino: writtenId(node.ino) }));
       if (this.db.get('SELECT 1 FROM transcripts WHERE conversation_id = ?', conversationId)) fail('conflict');
       this.db.run(`INSERT INTO transcripts(conversation_id, note_id_json, created_at, namespace_json, creation_state, confirmed_sha256)
-        VALUES (?, ?, ?, ?, 'intent', ?)`, conversationId, JSON.stringify(noteId), createdAt, JSON.stringify(namespace), emptySha);
+        VALUES (?, ?, ?, ?, 'intent', ?)`, conversationId, JSON.stringify(noteId), createdAt, JSON.stringify(identities), emptySha);
     });
   }
   acquire(conversationId: string, file: TranscriptFileCheckpoint): void {
     this.write(() => {
       const row = this.required(conversationId);
       if (row.creation_state !== 'intent' || file.offset !== 0 || file.sha256 !== emptySha) fail('conflict');
-      count(file.dev); count(file.ino);
       this.db.run("UPDATE transcripts SET creation_state = 'owned', file_dev = ?, file_ino = ?, file_fingerprint = ? WHERE conversation_id = ?",
-        file.dev, file.ino, file.fingerprint, conversationId);
+        writtenId(file.dev), writtenId(file.ino), file.fingerprint, conversationId);
     });
   }
   entry(conversationId: string, entryId: string): StoredTranscriptEntry | null {
@@ -194,7 +223,7 @@ export class SQLiteTranscriptState implements TranscriptStateStore {
     this.write(() => {
       const row = this.required(conversationId);
       if (row.pending_state !== 'ready' || row.pending_entry_id !== entryId || row.creation_state !== 'owned' ||
-          file.dev !== row.file_dev || file.ino !== row.file_ino || count(file.offset) !== count(row.confirmed_offset) + count(row.pending_length) || !sha.test(file.sha256)) fail('conflict');
+          writtenId(file.dev) !== fileId(row.file_dev) || writtenId(file.ino) !== fileId(row.file_ino) || count(file.offset) !== count(row.confirmed_offset) + count(row.pending_length) || !sha.test(file.sha256)) fail('conflict');
       if (row.pending_header !== 1) this.db.run(`INSERT INTO transcript_entries(conversation_id, entry_id, semantic, source_identity, serialized_sha256, end_offset)
         VALUES (?, ?, ?, ?, ?, ?)`, conversationId, entryId, text(row, 'pending_semantic'), text(row, 'pending_source_identity'), hash(row.pending_sha256), file.offset);
       this.db.run(`UPDATE transcripts SET confirmed_offset = ?, confirmed_sha256 = ?, file_fingerprint = ?,

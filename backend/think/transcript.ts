@@ -84,7 +84,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
     if (options.state) try { namespace = new TranscriptNamespace(vaultDirectory, undefined, options.io); } catch { /* Invalid vault root too. */ }
   }
   // Pin startup namespace independently of native setup/admission. A failed open is retried safely.
-  const startup = configurationError ? undefined : namespace?.prepare().catch(() => {});
+  const startup = configurationError ? undefined : namespace?.initialize().catch(() => {});
   let draining = false;
   let stopped = false;
   let closing: Promise<void> | undefined;

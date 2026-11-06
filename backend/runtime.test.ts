@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer as createHttpServer, request as httpRequest } from 'node:http';
 import { createServer, type AddressInfo, type Server } from 'node:net';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -41,7 +41,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   try {
-    if (ownedScriptGroup !== undefined) {
+    if (ownedScriptGroup !== undefined && process.platform === 'win32') {
+      // Windows has no process groups; terminate the owned script's process tree instead.
+      spawnSync('taskkill', ['/pid', String(ownedScriptGroup), '/T', '/F'], { stdio: 'ignore' });
+    } else if (ownedScriptGroup !== undefined) {
       try { process.kill(-ownedScriptGroup, 'SIGKILL'); }
       catch (error: unknown) {
         if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH')) throw error;
@@ -151,7 +154,7 @@ it('preserves the requested Host in the test HTTP transport', async () => {
   }
 });
 
-it('starts the daemon package script with forwarded fixture paths and port', async () => {
+async function startDaemonScript() {
   const { listener, port } = await reservePort();
   await new Promise<void>((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
   setTransport(port);
@@ -171,9 +174,18 @@ it('starts the daemon package script with forwarded fixture paths and port', asy
   const note = await serviceRequest(port, `/api/vault/note?${new URLSearchParams({ id: JSON.stringify(['folder', 'note.md']) })}`, { authorization: `Bearer ${token}` });
   expect(JSON.parse(note.body)).toEqual({ name: 'note.md', markdown: '# fixture\n', revision: expect.stringMatching(/^[a-f0-9]{64}$/), editable: true });
   expect((await serviceRequest(port, '/recall', { authorization: `Bearer ${token}` })).status).toBe(404);
+  return { process, port, group: ownedScriptGroup };
+}
 
+it('starts the daemon package script with forwarded fixture paths and port', async () => {
+  await startDaemonScript();
+}, 10000);
+
+// POSIX-only: stops the detached script by signalling its process group (negative PID), which Windows lacks.
+it.skipIf(globalThis.process.platform === 'win32')('stops the daemon package script process group on SIGTERM and releases its port', async () => {
+  const { process, port, group } = await startDaemonScript();
   // Bun may wrap the runtime; signal only the process group created for this test.
-  globalThis.process.kill(-ownedScriptGroup, 'SIGTERM');
+  globalThis.process.kill(-group, 'SIGTERM');
   await Promise.race([exited(process), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Script shutdown timed out')), 3000))]);
   const deadline = Date.now() + 3000;
   let released = false;
@@ -191,8 +203,7 @@ it('starts the daemon package script with forwarded fixture paths and port', asy
   expect(released).toBe(true);
 }, 10000);
 
-it.each(['SIGTERM', 'SIGINT'] as const)('serves fixture API, rejects untrusted host/origin, and shuts down on %s', async signal => {
-  const { process, port } = await startRuntime();
+async function expectFixtureApi(port: number) {
   const tree = await serviceRequest(port, '/api/vault/tree', { authorization: `Bearer ${token}` });
   expect(tree.status).toBe(200);
   expect(JSON.parse(tree.body)).toMatchObject({ entries: [{ name: 'folder', children: [{ name: 'note.md' }] }] });
@@ -202,6 +213,17 @@ it.each(['SIGTERM', 'SIGINT'] as const)('serves fixture API, rejects untrusted h
   expect((await requestWithHost(port, 'evil.example')).status).toBe(403);
   expect((await serviceRequest(port, '/api/vault/tree', { origin: 'http://evil.example', authorization: `Bearer ${token}` })).status).toBe(403);
   expect((await serviceRequest(port, '/api/vault/tree')).status).toBe(401);
+}
+
+it('serves fixture API and rejects untrusted host/origin', async () => {
+  const { port } = await startRuntime();
+  await expectFixtureApi(port);
+}, 10000);
+
+// POSIX-only: Windows has no SIGTERM/SIGINT delivery to a child; kill() terminates it without a clean exit code.
+it.skipIf(globalThis.process.platform === 'win32').each(['SIGTERM', 'SIGINT'] as const)('serves fixture API, rejects untrusted host/origin, and shuts down on %s', async signal => {
+  const { process, port } = await startRuntime();
+  await expectFixtureApi(port);
   const exit = exited(process);
   process.kill(signal);
   const result = await Promise.race([exit, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Shutdown timed out')), 3000))]);
@@ -251,7 +273,7 @@ it('fails without replacing or interfering with an existing loopback listener', 
   expect(listener.listening).toBe(true);
 }, 10000);
 
-it.each(['missing token', 'bad token', 'token permissions', 'bad transport', 'port mismatch'] as const)(
+it.each(['missing token', 'bad token', 'bad transport', 'port mismatch'] as const)(
   'fails safely before binding for %s', async problem => {
     const { listener, port } = await reservePort();
     await new Promise<void>((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
@@ -259,7 +281,6 @@ it.each(['missing token', 'bad token', 'token permissions', 'bad transport', 'po
     const metadata = join(fixture, 'project', '.memory-loop');
     if (problem === 'missing token') await rm(join(metadata, 'service.token'));
     if (problem === 'bad token') await writeFile(join(metadata, 'service.token'), 'invalid');
-    if (problem === 'token permissions') await chmod(join(metadata, 'service.token'), 0o644);
     if (problem === 'bad transport') await writeFile(join(metadata, 'transport.json'), '{');
     const process = launch(port, false);
     const result = await Promise.race([exited(process), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Startup failure timed out')), 5000))]);

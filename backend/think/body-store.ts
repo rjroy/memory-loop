@@ -46,12 +46,13 @@ export interface BodyStore {
 }
 
 import { createHash, randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { lstat, mkdir, open, realpath, rmdir, unlink } from 'node:fs/promises';
+import { lstat, rmdir, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, normalize } from 'node:path';
+import { openSafeRoot } from '../safe-fs';
+import { sameFileId, statIdentity } from '../file-identity';
 import type { BodyCacheStateStore, CacheNamespace } from './state';
-import { removeCacheNamespace } from './body-cleanup';
+import { checkCacheOutsideVault, removeCacheNamespace } from './body-cleanup';
 
 class StoreError extends Error implements BodyStoreError {
   constructor(readonly code: BodyStoreErrorCode, readonly reason?: 'evicted') { super('Think body store operation failed'); }
@@ -60,37 +61,41 @@ class StoreError extends Error implements BodyStoreError {
 interface StoredBody {
   ref: BodyRef;
   name: string;
-  dev: number;
-  ino: number;
+  /** Exact decimal file identity (see ../file-identity). */
+  dev: string;
+  ino: string;
   prefixes: Set<number>;
   resident: boolean;
   pins: number;
   evictPending: boolean;
 }
 
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+async function createNamespace(path: string, vault: string, epoch: string) {
+  if (!isAbsolute(path) || path.includes('\0') || !uuid.test(epoch)) throw new StoreError('resource_failure');
+  const nativePath = normalize(path);
+  const parent = await openSafeRoot(dirname(nativePath));
+  await checkCacheOutsideVault(parent.path, vault);
+  const rootName = basename(nativePath);
+  // The configured parent may be linked; the newly generated root may not exist at all.
+  await parent.createDirectory([rootName]);
+  const directory = await parent.resolve([rootName], 'directory');
+  const stat = await lstat(directory, { bigint: true });
+  const namespace = statIdentity(stat);
+  if (!stat.isDirectory() || !namespace) throw new StoreError('resource_failure');
+  const root = await openSafeRoot(directory);
+  const named = await lstat(await parent.resolve([rootName], 'directory'), { bigint: true });
+  if (!named.isDirectory() || !sameFileId(named, namespace)) throw new StoreError('resource_failure');
+  await parent.syncDirectory([]);
+  return { parent, root, rootName, directory, namespace };
+}
+
 /** Create a new private daemon-owned namespace; existing namespaces are never adopted. */
 export async function createBodyStore(options: { directory: string; epoch: string; vaultDirectory: string }): Promise<BodyStore> {
-  const { directory, epoch, vaultDirectory } = options;
-  let dir: FileHandle | undefined;
-  try {
-    if (!isAbsolute(directory) || !isAbsolute(vaultDirectory) || !process.getuid || process.platform !== 'linux') throw new Error();
-    const parent = await realpath(dirname(directory));
-    const vault = await realpath(vaultDirectory);
-    const parentStat = await lstat(parent);
-    if (!parentStat.isDirectory() || parentStat.uid !== process.getuid() || (parentStat.mode & 0o077) !== 0) throw new Error();
-    const target = join(parent, directory.slice(dirname(directory).length + 1));
-    const fromVault = relative(vault, target);
-    if (target !== directory || fromVault === '' || (fromVault !== '..' && !fromVault.startsWith(`..${sep}`) && !isAbsolute(fromVault))) throw new Error();
-    await mkdir(directory, { mode: 0o700 });
-    dir = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-    const stat = await dir.stat();
-    if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o7777) !== 0o700) throw new Error();
-  } catch {
-    await dir?.close();
-    throw new StoreError('resource_failure');
-  }
-  const directoryHandle = dir;
-  const namespace = await directoryHandle.stat();
+  const { epoch, vaultDirectory } = options;
+  const { parent, root, rootName, directory, namespace } = await createNamespace(options.directory, vaultDirectory, epoch)
+    .catch(() => { throw new StoreError('resource_failure'); });
   const records = new Map<string, StoredBody>();
   const current = new Map<string, StoredBody>();
   const contentIds = new Map<string, string>();
@@ -98,52 +103,67 @@ export async function createBodyStore(options: { directory: string; epoch: strin
   const readers = new Set<FileHandle>();
   const readerClosers = new Map<FileHandle, { conversationId: string; close(): Promise<void> }>();
   const revoked = new Set<string>();
-  const spaces = new Map<string, Promise<{ handle: FileHandle; record: CacheNamespace }>>();
+  const spaces = new Map<string, Promise<CacheNamespace>>();
   const spaceIntents = new Map<string, CacheNamespace>();
   let cache: BodyCacheStateStore | undefined;
   let closed = false;
   let closing: Promise<void> | undefined;
+  const checkRoot = async () => {
+    const named = await lstat(await parent.resolve([rootName], 'directory'), { bigint: true });
+    if (!named.isDirectory() || !sameFileId(named, namespace)) throw new StoreError('unavailable');
+    await root.resolve([], 'directory');
+  };
   const namespaceFor = (conversationId: string) => {
     let work = spaces.get(conversationId);
     if (!work) {
       work = (async () => {
-        if (!/^[0-9a-f-]{36}$/.test(conversationId) || revoked.has(conversationId)) throw new StoreError('closed');
-        const record: CacheNamespace = { conversationId, epoch, path: directory, root: { dev: namespace.dev, ino: namespace.ino }, directory: null };
+        if (!uuid.test(conversationId) || revoked.has(conversationId)) throw new StoreError('closed');
+        await checkRoot();
+        const record: CacheNamespace = { conversationId, epoch, path: directory, root: { ...namespace }, directory: null };
         spaceIntents.set(conversationId, record);
         cache?.intent(record); // Commit attribution before creating a directory or writing any content.
-        const path = `/proc/self/fd/${directoryHandle.fd}/${conversationId}`;
-        await mkdir(path, { mode: 0o700 });
-        const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-        try {
-          const stat = await handle.stat();
-          if (!stat.isDirectory() || stat.uid !== process.getuid?.() || (stat.mode & 0o7777) !== 0o700) throw new StoreError('resource_failure');
-          record.directory = { dev: stat.dev, ino: stat.ino };
-          cache?.acquire(conversationId, epoch, record.directory);
-          await directoryHandle.sync();
-          return { handle, record };
-        } catch (error) { await handle.close(); throw error; }
+        await root.createDirectory([conversationId]);
+        const stat = await lstat(await root.resolve([conversationId], 'directory'), { bigint: true });
+        const identity = statIdentity(stat);
+        if (!stat.isDirectory() || !identity) throw new StoreError('resource_failure');
+        await checkRoot();
+        cache?.acquire(conversationId, epoch, identity);
+        // A failed acquisition acknowledgement must not grant cleanup authority in memory.
+        record.directory = identity;
+        await root.syncDirectory([]);
+        return record;
       })();
       spaces.set(conversationId, work);
     }
     return work;
   };
-  const pathFor = async (conversationId: string, name: string) => {
+  const pathFor = async (conversationId: string, name: string, kind: 'file' | 'missing' = 'file') => {
+    if (!uuid.test(name)) throw new StoreError('unavailable');
     const space = await namespaceFor(conversationId);
-    const root = await lstat(directory); const named = await lstat(`/proc/self/fd/${directoryHandle.fd}/${conversationId}`); const held = await space.handle.stat();
-    if (!root.isDirectory() || root.dev !== namespace.dev || root.ino !== namespace.ino || !named.isDirectory() || !held.isDirectory() ||
-        named.dev !== space.record.directory?.dev || named.ino !== space.record.directory.ino || held.dev !== named.dev || held.ino !== named.ino) throw new StoreError('unavailable');
-    return `/proc/self/fd/${space.handle.fd}/${name}`;
+    await checkRoot();
+    const named = await lstat(await root.resolve([conversationId], 'directory'), { bigint: true });
+    if (!space.directory || !named.isDirectory() || !sameFileId(named, space.directory)) throw new StoreError('unavailable');
+    return root.resolve([conversationId, name], kind);
   };
   const fingerprint = (key: BodyKey) => JSON.stringify([key.conversationId, key.owner.kind, key.owner.kind === 'assistant-text' ? key.owner.messageId : key.owner.clientCommandId,
     key.owner.kind === 'assistant-text' ? key.owner.ordinal : key.owner.kind === 'original' ? key.owner.messageId : key.owner.decisionId]);
   const snapshot = (ref: BodyRef): BodyRef => structuredClone(ref);
   const checkOpen = () => { if (closed) throw new StoreError('closed'); };
   const checkConversation = (id: string) => { checkOpen(); if (revoked.has(id)) throw new StoreError('closed'); };
+  const namedFile = async (item: StoredBody) => {
+    const path = await pathFor(item.ref.key.conversationId, item.name);
+    const stat = await lstat(path, { bigint: true });
+    if (!stat.isFile() || stat.nlink !== 1n || !sameFileId(stat, item)) throw new StoreError('unavailable');
+    return path;
+  };
   const verify = async (handle: FileHandle, expected?: StoredBody) => {
-    const stat = await handle.stat();
-    if (!stat.isFile() || stat.uid !== process.getuid?.() || (stat.mode & 0o7777) !== 0o600 || stat.nlink !== 1 ||
-        (expected && (stat.dev !== expected.dev || stat.ino !== expected.ino))) throw new StoreError('unavailable');
-    return stat;
+    const stat = await handle.stat({ bigint: true });
+    const identity = statIdentity(stat);
+    const size = Number(stat.size);
+    if (!stat.isFile() || stat.nlink !== 1n || !identity || !Number.isSafeInteger(size) ||
+        (expected && !sameFileId(identity, expected))) throw new StoreError('unavailable');
+    if (expected) await namedFile(expected);
+    return { ...identity, size };
   };
   const get = (ref: BodyRef): StoredBody => {
     try {
@@ -156,9 +176,10 @@ export async function createBodyStore(options: { directory: string; epoch: strin
     } catch { throw new StoreError('stale_ref'); }
   };
   const remove = async (item: StoredBody) => {
-    const path = await pathFor(item.ref.key.conversationId, item.name);
-    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    try { await verify(handle, item); await unlink(path); } finally { await handle.close(); }
+    await pathFor(item.ref.key.conversationId, item.name);
+    const handle = await root.openFile([item.ref.key.conversationId, item.name], 'read');
+    try { await verify(handle, item); } finally { await handle.close(); }
+    await unlink(await namedFile(item));
   };
   const serial = async <T>(key: string, work: () => Promise<T>): Promise<T> => {
     const previous = locks.get(key) ?? Promise.resolve();
@@ -170,15 +191,17 @@ export async function createBodyStore(options: { directory: string; epoch: strin
     try { checkConversation(JSON.parse(key)[0]); return await work(); }
     finally { release(); if (locks.get(key) === queued) locks.delete(key); }
   };
-  const write = async (handle: FileHandle, source: AsyncIterable<Uint8Array>, offset: number, hash?: ReturnType<typeof createHash>) => {
+  const write = async (handle: FileHandle, source: AsyncIterable<Uint8Array>, offset: number, item: StoredBody, hash?: ReturnType<typeof createHash>) => {
     let position = offset;
     for await (const chunk of source) {
       if (!(chunk instanceof Uint8Array)) throw new StoreError('resource_failure');
       hash?.update(chunk);
       for (let i = 0; i < chunk.length;) {
+        await verify(handle, item);
+        checkConversation(item.ref.key.conversationId);
         const size = Math.min(65536, chunk.length - i);
         const result = await handle.write(chunk, i, size, position);
-        if (!result.bytesWritten) throw new StoreError('resource_failure');
+        if (!result.bytesWritten || result.bytesWritten > size) throw new StoreError('resource_failure');
         i += result.bytesWritten; position += result.bytesWritten;
       }
     }
@@ -189,7 +212,8 @@ export async function createBodyStore(options: { directory: string; epoch: strin
     item.pins++;
     let handle: FileHandle;
     try {
-      handle = await open(await pathFor(requested.key.conversationId, item.name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      await pathFor(requested.key.conversationId, item.name);
+      handle = await root.openFile([requested.key.conversationId, item.name], 'read');
       try { const stat = await verify(handle, item); if (stat.size < requested.through) throw new StoreError('unavailable'); checkConversation(requested.key.conversationId); }
       catch (error) { await handle.close(); throw error; }
     } catch { item.pins--; throw new StoreError('unavailable'); }
@@ -233,7 +257,7 @@ export async function createBodyStore(options: { directory: string; epoch: strin
     const work = spaces.get(conversationId);
     if (work) {
       const space = await work.catch(() => undefined);
-      if (space) { await space.handle.close(); await removeCacheNamespace(space.record, vaultDirectory); }
+      if (space) await removeCacheNamespace(space, vaultDirectory);
       else {
         const record = spaceIntents.get(conversationId);
         if (!record) throw new StoreError('resource_failure');
@@ -259,13 +283,14 @@ export async function createBodyStore(options: { directory: string; epoch: strin
         let handle: FileHandle | undefined;
         let item: StoredBody | undefined;
         try {
-          handle = await open(await pathFor(key.conversationId, name), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+          await pathFor(key.conversationId, name, 'missing');
+          handle = await root.createFile([key.conversationId, name]);
           const stat = await verify(handle);
           const contentId = contentIds.get(logical) ?? randomUUID();
           const generation = randomUUID();
           item = { name, dev: stat.dev, ino: stat.ino, prefixes: new Set(), resident: true, pins: 0, evictPending: false, ref: { key: ownedKey, epoch, contentId, generation, through: 0, kind: 'preview' } };
           const hash = createHash('sha256');
-          const through = await write(handle, source, 0, hash);
+          const through = await write(handle, source, 0, item, hash);
           const digest = hash.digest('hex');
           await verify(handle, item);
           await handle.close(); handle = undefined;
@@ -301,11 +326,12 @@ export async function createBodyStore(options: { directory: string; epoch: strin
         let handle: FileHandle | undefined;
         let verified = false;
         try {
-          handle = await open(await pathFor(requested.key.conversationId, item.name), constants.O_WRONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+          await pathFor(requested.key.conversationId, item.name);
+          handle = await root.openFile([requested.key.conversationId, item.name], 'read-write');
           const stat = await verify(handle, item);
           verified = true;
           if (stat.size !== requested.through) throw new StoreError('unavailable');
-          const through = await write(handle, source, requested.through);
+          const through = await write(handle, source, requested.through, item);
           await verify(handle, item);
           checkConversation(requested.key.conversationId);
           item.ref = { ...requested, through };
@@ -346,11 +372,12 @@ export async function createBodyStore(options: { directory: string; epoch: strin
         let handle: FileHandle | undefined;
         let candidate: StoredBody | undefined;
         try {
-          handle = await open(await pathFor(requested.key.conversationId, name), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+          await pathFor(requested.key.conversationId, name, 'missing');
+          handle = await root.createFile([requested.key.conversationId, name]);
           const stat = await verify(handle);
           candidate = { ...item, name, dev: stat.dev, ino: stat.ino, resident: true, pins: 0, evictPending: false };
           const hash = createHash('sha256');
-          const length = await write(handle, source, 0, hash);
+          const length = await write(handle, source, 0, candidate, hash);
           if (length !== requested.through || hash.digest('hex') !== requested.sha256) throw new Error('restore mismatch');
           await verify(handle, candidate); await handle.close(); handle = undefined;
           checkConversation(requested.key.conversationId);
@@ -373,11 +400,9 @@ export async function createBodyStore(options: { directory: string; epoch: strin
           for (const id of [...spaces.keys()]) { try { await purge(id); } catch { failed = true; } }
           await Promise.all([...readerClosers.values()].map(reader => reader.close())); readers.clear();
           try {
-            const stat = await lstat(directory);
-            if (!stat.isDirectory() || stat.dev !== namespace.dev || stat.ino !== namespace.ino) throw new Error();
-            if (!failed) await rmdir(directory);
+            await checkRoot();
+            if (!failed) { await rmdir(directory); await parent.syncDirectory([]); }
           } catch { failed = true; }
-          await directoryHandle.close();
           if (failed) throw new StoreError('resource_failure');
         })();
       }

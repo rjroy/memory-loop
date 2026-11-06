@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../../backend/app';
 import { openVault, type VaultReader } from '../../backend/vault';
@@ -21,7 +22,7 @@ function request(path: string, body: unknown, extra: Record<string, string> = {}
 }
 
 beforeEach(async () => {
-  fixture = await mkdtemp('/tmp/opencode/recall-search-route-');
+  fixture = await mkdtemp(join(tmpdir(), 'recall-search-route-'));
   const root = join(fixture, 'vault');
   const metadata = join(fixture, 'private');
   await mkdir(root);
@@ -58,7 +59,7 @@ afterEach(async () => {
   else process.env.MEMORY_LOOP_TRANSPORT_FILE = originalSelector;
   server?.closeAllConnections();
   await new Promise<void>(resolve => server?.close(() => resolve()) ?? resolve());
-  try { await vault?.close(); } finally { await rm(fixture, { recursive: true, force: true }); }
+  try { await vault?.close(); } finally { if (fixture) await rm(fixture, { recursive: true, force: true }); }
 });
 
 describe('search through the actual Next vault route and private HTTP transport', () => {

@@ -1,9 +1,9 @@
 import { afterEach, expect, it } from 'vitest';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
-import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 
 const source = resolve(import.meta.dirname, '..');
 const bun = '/usr/bin/bun';
@@ -26,6 +26,12 @@ async function waitForFile(path: string, predicate: (value: string) => boolean) 
     await new Promise(resolveWait => setTimeout(resolveWait, 30));
   }
   throw new Error('fixture process did not become ready');
+}
+async function withDeadline<T>(work: Promise<T>, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), 3000); })]);
+  } finally { if (timer !== undefined) clearTimeout(timer); }
 }
 async function birth(pid: number): Promise<string> {
   const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
@@ -91,7 +97,7 @@ afterEach(async () => {
   }
 });
 
-it('stops both managed webs before building and restarts the same managed settings', async () => {
+it.skipIf(process.platform !== 'linux')('stops both managed webs before building and restarts the same managed settings', async () => {
   const f = await fixture();
   const result = f.invoke();
   expect(result.status, result.stderr).toBe(0);
@@ -113,7 +119,7 @@ it('stops both managed webs before building and restarts the same managed settin
   }
 });
 
-it('starts recorded services after their processes have exited, as after a reboot', async () => {
+it.skipIf(process.platform !== 'linux')('starts recorded services after their processes have exited, as after a reboot', async () => {
   const f = await fixture();
   for (const child of children) child.kill('SIGTERM');
   await waitForFile(f.events, value => (value.match(/^stop /gm) ?? []).length === 4);
@@ -123,7 +129,7 @@ it('starts recorded services after their processes have exited, as after a reboo
   expect(text).toMatch(/^build$/m);
 });
 
-it('accepts the recorded service executable when restart uses a different Bun binary', async () => {
+it.skipIf(process.platform !== 'linux')('accepts the recorded service executable when restart uses a different Bun binary', async () => {
   const f = await fixture();
   const bin = join(f.root, 'bin');
   await mkdir(bin);
@@ -132,7 +138,7 @@ it('accepts the recorded service executable when restart uses a different Bun bi
   expect(result.status, result.stderr).toBe(0);
 });
 
-it('refuses an unrelated PID before stopping any managed service or building', async () => {
+it.skipIf(process.platform !== 'linux')('refuses an unrelated PID before stopping any managed service or building', async () => {
   const f = await fixture();
   const sentinel = spawn(bun, ['--no-env-file', '-e', 'setInterval(() => {}, 1000)'], { cwd: f.root, env: { NODE_ENV: 'test', PATH: fixturePath, HOME: f.root }, stdio: 'ignore' });
   children.push(sentinel);
@@ -150,7 +156,7 @@ it('refuses an unrelated PID before stopping any managed service or building', a
   expect(() => process.kill(sentinelPid, 0)).not.toThrow();
 });
 
-it('reports build failure and does not pretend the services restarted', async () => {
+it.skipIf(process.platform !== 'linux')('reports build failure and does not pretend the services restarted', async () => {
   const f = await fixture();
   const result = f.invoke({ FIXTURE_BUILD_FAIL: '1' });
   expect(result.status).not.toBe(0);
@@ -159,3 +165,83 @@ it('reports build failure and does not pretend the services restarted', async ()
   expect((text.match(/^start /gm) ?? [])).toHaveLength(4);
   expect(result.stdout + result.stderr).not.toMatch(/\bready\b/i);
 });
+
+it.skipIf(process.platform !== 'linux').each(['existing-lock', 'invalid-metadata'] as const)(
+  'refuses a simulated Windows managed restart before inspecting %s', async obstacle => {
+    const root = await mkdtemp(join(tmpdir(), 'memory-loop-restart-test-'));
+    roots.push(root);
+    await mkdir(join(root, 'scripts'), { recursive: true });
+    await mkdir(join(root, '.memory-loop'));
+    await copyFile(join(source, 'scripts', 'restart.ts'), join(root, 'scripts', 'restart.ts'));
+    const events = join(root, 'events.log');
+    await writeFile(events, '');
+    const metadata = join(root, '.memory-loop', 'restart.json');
+    const lock = join(root, '.memory-loop', 'restart.lock');
+    await writeFile(metadata, 'fixture invalid metadata');
+    if (obstacle === 'existing-lock') await writeFile(lock, 'fixture lock sentinel');
+    const preload = join(root, 'simulated-windows.ts');
+    await writeFile(preload, `import { appendFileSync } from 'node:fs';\nObject.defineProperty(process, 'platform', { value: 'win32' });\nprocess.kill = () => { appendFileSync(${JSON.stringify(events)}, 'unexpected kill\\n'); throw new Error('unexpected kill'); };\n`);
+    const result = spawnSync(bun, ['--no-env-file', '--preload', preload, join(root, 'scripts', 'restart.ts')], {
+      cwd: root, env: { NODE_ENV: 'test', PATH: fixturePath, HOME: root }, encoding: 'utf8', timeout: 5000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).not.toBe(0);
+    const output = result.stdout + result.stderr;
+    expect(output).toMatch(/windows|unsupported/i);
+    expect(output).toMatch(/daemon/i);
+    expect(output).toMatch(/web/i);
+    expect(output).toMatch(/ctrl\s*\+\s*c|sigint/i);
+    expect(output).not.toMatch(/EEXIST|Invalid restart metadata/);
+    expect(await readFile(metadata, 'utf8')).toBe('fixture invalid metadata');
+    expect(await readFile(events, 'utf8')).toBe('');
+    if (obstacle === 'existing-lock') expect(await readFile(lock, 'utf8')).toBe('fixture lock sentinel');
+    else await expect(lstat(lock)).rejects.toMatchObject({ code: 'ENOENT' });
+  },
+);
+
+it.skipIf(process.platform !== 'linux')('forwards SIGINT to the owned web child and waits for its graceful drain', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'memory-loop-restart-test-'));
+  roots.push(root);
+  for (const dir of ['src/web', 'backend', '.memory-loop', 'node_modules/next/dist/bin']) await mkdir(join(root, dir), { recursive: true });
+  await copyFile(join(source, 'src/web/start.ts'), join(root, 'src/web/start.ts'));
+  await copyFile(join(source, 'src/web/shutdown-policy.ts'), join(root, 'src/web/shutdown-policy.ts'));
+  for (const name of ['transport.ts', 'safe-fs.ts', 'portable-name.ts']) await copyFile(join(source, 'backend', name), join(root, 'backend', name));
+  await writeFile(join(root, '.memory-loop', 'transport.json'), JSON.stringify({ daemonOrigin: 'http://127.0.0.1:3001' }));
+  await writeFile(join(root, '.memory-loop', 'service.token'), 'a'.repeat(64));
+  const events = join(root, 'events.log');
+  await writeFile(events, '');
+  await writeFile(join(root, 'node_modules/next/dist/bin/next'), `const { appendFileSync } = require('node:fs');\nconst log = value => appendFileSync(${JSON.stringify(events)}, value + '\\n');\nprocess.on('SIGINT', () => { log('child SIGINT'); setTimeout(() => { log('child drained'); process.exit(0); }, 150); });\nlog('child ready');\nsetInterval(() => {}, 1000);\n`);
+  // Vitest runs under Node; expose that executable without inheriting the caller's PATH.
+  const path = [dirname(process.execPath), fixturePath].join(delimiter);
+  const launcher = spawn(bun, ['--no-env-file', join(root, 'src/web/start.ts'), 'start'], {
+    cwd: root, detached: true, env: { NODE_ENV: 'test', PATH: path, HOME: root }, stdio: 'pipe',
+  });
+  children.push(launcher);
+  let logs = '';
+  launcher.stdout?.on('data', data => { logs += String(data); });
+  launcher.stderr?.on('data', data => { logs += String(data); });
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit, reject) => {
+    launcher.once('error', reject);
+    launcher.once('exit', (code, signal) => resolveExit({ code, signal }));
+  });
+  let complete = false;
+  try {
+    try {
+      await Promise.race([
+        waitForFile(events, value => value.includes('child ready')),
+        exited.then(result => { throw new Error(`Launcher exited before readiness: ${JSON.stringify(result)}`); }),
+      ]);
+    } catch (error) { throw new Error(`Web child readiness failed: ${String(error)}\n${logs}`); }
+    launcher.kill('SIGINT');
+    const result = await withDeadline(exited, 'Owned launcher did not stop');
+    expect(result).toEqual({ code: 0, signal: null });
+    expect(await readFile(events, 'utf8')).toBe('child ready\nchild SIGINT\nchild drained\n');
+    expect(logs).toMatch(/web_shutdown_outcome[\s\S]*?status\s*:\s*['"]?complete/);
+    complete = true;
+  } finally {
+    if (!complete && launcher.pid) {
+      try { process.kill(-launcher.pid, 'SIGTERM'); } catch { /* Owned process group already exited. */ }
+      await withDeadline(exited.catch(() => undefined), 'Owned launcher cleanup timed out');
+    }
+  }
+}, 10000);

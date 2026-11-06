@@ -17,10 +17,7 @@ export interface VaultSearchHooks {
   searchNow?: () => number;
 }
 interface SearchBoundary {
-  root: FileHandle;
-  directoryPath: (directory: FileHandle) => string;
-  openDirectory: (directory: FileHandle, name: string) => Promise<FileHandle>;
-  openFile: (directory: FileHandle, name: string) => Promise<FileHandle>;
+  directoryPath: (id: VaultId) => Promise<string>;
   openRegular: (id: VaultId) => Promise<{ file: FileHandle }>;
   version: (stats: Stats) => string;
 }
@@ -256,10 +253,10 @@ export function createVaultSearch(boundary: SearchBoundary, hooks: VaultSearchHo
     scope.check();
   }
 
-  async function walk(directory: FileHandle, parent: VaultId, scope: ScanScope,
-    coverage: VaultSearchCoverage, visit: (id: VaultId, parent: FileHandle) => Promise<void>): Promise<void> {
+  async function walk(parent: VaultId, scope: ScanScope,
+    coverage: VaultSearchCoverage, visit: (id: VaultId) => Promise<void>): Promise<void> {
     scope.check();
-    const entries = scope.own(await opendir(boundary.directoryPath(directory)));
+    const entries = scope.own(await opendir(await boundary.directoryPath(parent)));
     try {
       for (;;) {
         scope.check();
@@ -270,10 +267,8 @@ export function createVaultSearch(boundary: SearchBoundary, hooks: VaultSearchHo
         const id = [...parent, entry.name];
         try {
           if (entry.isDirectory()) {
-            const child = scope.own(await boundary.openDirectory(directory, entry.name));
-            try { await walk(child, id, scope, coverage, visit); }
-            finally { await scope.release(child); }
-          } else if (entry.isFile()) await visit(id, directory);
+            await walk(id, scope, coverage, visit);
+          } else if (entry.isFile()) await visit(id);
         } catch (error) {
           scope.check();
           if (error instanceof ScanDeadline || error instanceof ScanAborted) throw error;
@@ -310,13 +305,13 @@ export function createVaultSearch(boundary: SearchBoundary, hooks: VaultSearchHo
     if (!query) return result();
     return run(signal, async scope => {
       try {
-        await walk(boundary.root, [], scope, coverage, async (id, parent) => {
+        await walk([], scope, coverage, async id => {
           let file: FileHandle | undefined;
           let expected: string | undefined;
           try {
             const name = id[id.length - 1];
             const path = id.join('/');
-            file = scope.own(await boundary.openFile(parent, name));
+            file = scope.own((await boundary.openRegular(id)).file);
             const stats = await file.stat();
             if (!stats.isFile()) throw new ChangedFile();
             expected = boundary.version(stats);

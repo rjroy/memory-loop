@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Http, Mode, Report } from '../tests/ground-conversations-fixture';
 
@@ -13,7 +14,7 @@ const conversation = (index: number) => id(1, index);
 const firstOriginal = '\r\n \t\r\n   First   useful\tline 🧠  \r\nprivate second line, not a title';
 const sha = (value: string) => createHash('sha256').update(value).digest('hex');
 let root: string;
-beforeEach(async () => { root = await mkdtemp('/tmp/opencode/ground-conversations-'); });
+beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'ground-conversations-')); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
 interface Recent {
@@ -34,10 +35,10 @@ const activityFacts = (rows: Recent[]) => rows.map(({ conversationId, title, las
 
 async function exercise(mode: Mode): Promise<Report> {
   const output = join(root, 'report.json');
-  const child = spawnSync('/usr/bin/bun', ['--no-env-file', runner, root, mode, output], {
+  const child = spawnSync('bun', ['--no-env-file', runner, root, mode, output], {
     cwd: root, timeout: 15000, maxBuffer: 512 * 1024, encoding: 'utf8',
-    env: { NODE_ENV: 'test', PATH: '/usr/bin:/bin', HOME: root, XDG_CONFIG_HOME: root, XDG_DATA_HOME: root,
-      XDG_CACHE_HOME: root, XDG_STATE_HOME: root, TMPDIR: root },
+    env: { NODE_ENV: 'test', PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: root, XDG_DATA_HOME: root,
+      XDG_CACHE_HOME: root, XDG_STATE_HOME: root, TMPDIR: root, TEMP: root, TMP: root },
   });
   expect(child.error, child.stderr).toBeUndefined();
   expect(child.status, `current factories/native protocol must work BEFORE new-route assertions:\n${child.stdout}\n${child.stderr}`).toBe(0);
@@ -157,8 +158,6 @@ describe('Ground 3ry real registry listing, explicit Resume and view selection r
     if (!value) throw new Error('missing descriptor-removal observations');
     expect(value.descriptorMissing, 'only the test-owned native registration file is absent').toBe(true);
     expect(value.databaseIntegrity).toBe('ok');
-    expect(value.databaseMode).toBe(0o600);
-    expect(value.directoryMode).toBe(0o700);
     const transcript = Buffer.from(value.transcriptBefore.bytesHex, 'hex');
     expect(value.transcriptBefore).toMatchObject({ noteId: ['Conversations', 'Memory Loop', `think-${conversation(1)}.md`],
       creationState: 'owned', offset: transcript.length, sha256: createHash('sha256').update(transcript).digest('hex'), pendingEntryId: null });

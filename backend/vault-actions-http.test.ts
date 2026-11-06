@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from './app';
-import { openVault, type VaultReader } from './vault';
+import { openVault, type VaultOptions, type VaultReader } from './vault';
 
 const authority = '127.0.0.1:3001';
 const token = 'a'.repeat(64);
@@ -14,19 +14,8 @@ let root: string;
 let vault: VaultReader;
 let app: ReturnType<typeof createApp>;
 
-// Controlled-fixture mock only: the check and rename are not atomic like renameat2.
-async function mockRenameNoReplaceWithoutAtomicGuarantee(sourceParentFd: number, sourceName: string, destinationParentFd: number, destinationName: string) {
-  const source = `/proc/self/fd/${sourceParentFd}/${sourceName}`;
-  const destination = `/proc/self/fd/${destinationParentFd}/${destinationName}`;
-  try { await lstat(destination); } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return rename(source, destination);
-    throw error;
-  }
-  throw Object.assign(new Error('destination exists'), { code: 'EEXIST' });
-}
-async function start(options: { flushFile?: (file: import('node:fs/promises').FileHandle) => Promise<void>; flushDirectory?: (directory: import('node:fs/promises').FileHandle) => Promise<void> } = {}) {
-  const hooks = { ...options, renameNoReplace: mockRenameNoReplaceWithoutAtomicGuarantee };
-  vault = await openVault(root, hooks);
+async function start(options: Pick<VaultOptions, 'flushFile' | 'flushDirectory' | 'move'> = {}) {
+  vault = await openVault(root, options);
   app = createApp({ authority, serviceToken: token, vault: { reader: vault } });
 }
 beforeEach(async () => {
@@ -91,6 +80,17 @@ describe('vault actions daemon HTTP', () => {
       { action: 'create-directory', parentId: [], expectedParentIdentity: t.rootIdentity, name: 'folder', extra: true },
       { action: 'delete', kind: 'directory', id: [], expectedVersion: 'v' },
     ]) expect((await action(body)).status).toBe(400);
+    expect((await tree()).entries).toEqual([]);
+  });
+
+  it.each([
+    ['create-note', 'CON.md'], ['create-note', 'bad?.md'], ['create-note', 'NUL .md'],
+    ['create-directory', 'LPT1'], ['create-directory', 'bad:name'], ['create-directory', 'trailing.'],
+  ])('rejects nonportable new %s name %s', async (kind, name) => {
+    const t = await tree();
+    const response = await action({ action: kind, parentId: [], expectedParentIdentity: t.rootIdentity, name });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } });
     expect((await tree()).entries).toEqual([]);
   });
 
@@ -163,7 +163,8 @@ describe('vault actions daemon HTTP', () => {
     expect(await readFile(join(root, 'other', 'data.txt'), 'utf8')).toBe('data');
   });
 
-  it('rejects stale source and parent identities and never follows substituted symlinks', async () => {
+  // Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+  it.skipIf(process.platform === 'win32')('rejects stale source and parent identities and never follows substituted symlinks', async () => {
     await mkdir(join(root, 'dir'));
     await writeFile(join(root, 'note.md'), 'original');
     const outside = join(fixture, 'outside');
@@ -184,15 +185,78 @@ describe('vault actions daemon HTTP', () => {
     expect(await readFile(join(outside, 'secret.md'), 'utf8')).toBe('secret');
   });
 
-  it('keeps mutations in the pinned root after its pathname is replaced', async () => {
+  it.each([['note', 'note.md', 'delete'], ['file', 'data.txt', 'move']] as const)(
+    'reports listed %s %s replaced by a directory as unavailable on %s', async (kind, name, operation) => {
+      await mkdir(join(root, 'destination'));
+      await writeFile(join(root, name), 'original');
+      const t = await tree();
+      await rename(join(root, name), join(root, 'original-kept'));
+      await mkdir(join(root, name));
+      await writeFile(join(root, name, 'sentinel'), 'replacement');
+      const source = entry(t, name);
+      const body = operation === 'delete'
+        ? { action: 'delete', kind, id: source.id, expectedVersion: source.version }
+        : { action: 'move', kind, id: source.id, expectedVersion: source.version, destinationParentId: ['destination'], expectedDestinationIdentity: entry(t, 'destination').identity };
+      const response = await action(body);
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ error: { code: 'entry_unavailable' } });
+      expect((await lstat(join(root, name))).isDirectory()).toBe(true);
+      expect(await readFile(join(root, name, 'sentinel'), 'utf8')).toBe('replacement');
+      expect(await readFile(join(root, 'original-kept'), 'utf8')).toBe('original');
+      expect(await readdir(join(root, 'destination'))).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32').each([['note', 'note.md', 'move'], ['file', 'data.txt', 'delete']] as const)(
+    'reports listed %s %s replaced by a symlink as unavailable on %s', async (kind, name, operation) => {
+      await mkdir(join(root, 'destination'));
+      await writeFile(join(root, name), 'original');
+      const outside = join(fixture, 'outside-sentinel');
+      await writeFile(outside, 'outside');
+      const t = await tree();
+      await rename(join(root, name), join(root, 'original-kept'));
+      await symlink(outside, join(root, name));
+      const source = entry(t, name);
+      const body = operation === 'delete'
+        ? { action: 'delete', kind, id: source.id, expectedVersion: source.version }
+        : { action: 'move', kind, id: source.id, expectedVersion: source.version, destinationParentId: ['destination'], expectedDestinationIdentity: entry(t, 'destination').identity };
+      const response = await action(body);
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ error: { code: 'entry_unavailable' } });
+      expect((await lstat(join(root, name))).isSymbolicLink()).toBe(true);
+      expect(await readFile(outside, 'utf8')).toBe('outside');
+      expect(await readFile(join(root, 'original-kept'), 'utf8')).toBe('original');
+      expect(await readdir(join(root, 'destination'))).toEqual([]);
+    },
+  );
+
+  it('reports an operational move I/O failure as unavailable service, not missing entry', async () => {
+    await vault.close();
+    await start({ move: async () => { throw Object.assign(new Error('fixture I/O failure'), { code: 'EIO' }); } });
+    await mkdir(join(root, 'destination'));
+    await writeFile(join(root, 'note.md'), 'original');
+    const t = await tree();
+    const response = await action({ action: 'move', kind: 'note', id: ['note.md'], expectedVersion: entry(t, 'note.md').version, destinationParentId: ['destination'], expectedDestinationIdentity: entry(t, 'destination').identity });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'file_action_unavailable' } });
+    expect(await readFile(join(root, 'note.md'), 'utf8')).toBe('original');
+    expect(await readdir(join(root, 'destination'))).toEqual([]);
+  });
+
+  it('refuses mutations after its root pathname is replaced', async () => {
+    await writeFile(join(root, 'sentinel.txt'), 'original');
     const t = await tree();
     const original = join(fixture, 'original');
     await rename(root, original);
     await mkdir(root);
+    await writeFile(join(root, 'sentinel.txt'), 'replacement');
     const response = await action({ action: 'create-note', parentId: [], expectedParentIdentity: t.rootIdentity, name: 'pinned.md' });
-    expect(response.status).toBe(200);
-    expect(await readFile(join(original, 'pinned.md'), 'utf8')).toBe('');
+    expect([404, 409, 503]).toContain(response.status);
+    expect((await response.json() as { error: { code: string } }).error.code).toMatch(/unavailable|conflict/);
+    await expect(lstat(join(original, 'pinned.md'))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(lstat(join(root, 'pinned.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(join(original, 'sentinel.txt'), 'utf8')).toBe('original');
+    expect(await readFile(join(root, 'sentinel.txt'), 'utf8')).toBe('replacement');
   });
 
   it('binds save revisions to physical identity as well as bytes', async () => {

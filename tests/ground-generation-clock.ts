@@ -10,7 +10,7 @@ jest.useFakeTimers({ now: initial });
 const fakeSetTimeout = globalThis.setTimeout;
 globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
   const timer = fakeSetTimeout(...args);
-  if (args[1] === 30000 && new Error().stack?.includes('/backend/ground-generation.ts')) {
+  if (args[1] === 30000 && /[\\/]backend[\\/]ground-generation\.ts\b/.test(new Error().stack ?? '')) {
     console.info('ground_fixture_generation_poll_armed');
   }
   return timer;
@@ -22,6 +22,12 @@ console.info('ground_fixture_clock', JSON.stringify({ now: Date.now(), pulses })
 const input = createInterface({ input: process.stdin });
 input.on('line', line => {
   const value: unknown = JSON.parse(line);
+  // Windows cannot deliver SIGTERM to a child (kill() terminates it), so the owning test asks
+  // this preload to run the production SIGTERM handler instead. POSIX tests send a real signal.
+  if (process.platform === 'win32' && value && typeof value === 'object' && 'signal' in value && value.signal === 'SIGTERM') {
+    process.emit('SIGTERM', 'SIGTERM');
+    return;
+  }
   if (!value || typeof value !== 'object' || !('id' in value) || typeof value.id !== 'string' ||
       !('advanceMs' in value) || typeof value.advanceMs !== 'number' || !Number.isSafeInteger(value.advanceMs) ||
       value.advanceMs < 0 || value.advanceMs > 30000) throw new Error('invalid fixture clock step');

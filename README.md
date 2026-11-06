@@ -39,6 +39,17 @@ Node >=22 when run under Node (Next itself requires Node >=20.9). Bun manages pa
 and runs the daemon. Next build, development and production run under **Node**,
 not Bun's experimental Next adapter or a custom HTTP server.
 
+**Platform migration:** transport, Recall, Capture, Ground and Think now use the
+shared portable filesystem foundation. Native Windows execution remains
+unverified; final end-to-end verification is still tracked in
+`memory-loop-68l`. The target is Windows and Linux, with no descendant symlinks or
+junctions, Windows-compatible new names, collision refusal and stale-save
+protection. Filesystem access permissions are the operating environment's
+responsibility, not a service-enforced requirement. See the
+[approved filesystem policy](backend/CONTRACT.md#approved-portable-filesystem-policy)
+for guarantees and limits. Source portability is not verified platform support;
+the agreed native Windows check must use a disposable vault.
+
 For an existing live checkout, do not run the build below until **all** web
 processes serving its `.next` have stopped. Follow the authorized stop/build/start
 sequence in the [safe publication handoff](#safe-publication-handoff).
@@ -143,8 +154,8 @@ neither restoration nor transcript recovery replays accepted work.
 Transcripts contain full original user and AI text in literal fenced blocks,
 plus conservative tool/lifecycle summaries—not reasoning or raw tool payloads.
 They are sensitive vault notes covered by the vault's normal sync/backups;
-secrets deliberately written in user/AI text are not redacted. Newly created
-files are owner-only `0600`. Only a private-registry mapping with a verified
+secrets deliberately written in user/AI text are not redacted. Filesystem access
+permissions are managed by the operating environment. Only a private-registry mapping with a verified
 checkpoint permits reopening an existing file. Unregistered legacy files and
 registry entries without a checkpoint are not adopted by filename. Linked,
 replaced, moved or externally edited targets are conflicts: their bytes are
@@ -204,13 +215,13 @@ insertion order without changing original bytes or timestamps, ownership or
 transcript checkpoints/pending work. Pending bytes are cleared after confirmation;
 confirmed assistant history is not mirrored in the database.
 
-The state directory must be outside the real vault and owner-only `0700`; the
-database and any SQLite sidecars must be owner-only `0600` regular files with one
-hard link and no symlinks.
+The state directory must be outside the real vault. The database and any SQLite
+sidecars must be regular files with one hard link and no symlinks; those checks
+protect write integrity, not access permissions. The service does not require
+particular owner IDs, permission bits or Windows ACLs.
 Treat originals, pending transcript text, validated generation candidates/proposed
 resource output and ownership/checkpoint metadata as
-sensitive private data. Keep them out of vault sync and version control;
-restrict backups to the same owner and preserve permissions.
+sensitive application data. Keep them out of vault sync and version control.
 For a consistent file-copy backup, stop the daemon first. No raw database access
 is exposed to the browser.
 
@@ -344,9 +355,10 @@ bun --no-env-file run setup:transport --project-root /absolute/scratch/app
 ```
 
 The root must already exist. Setup never creates/reads vault configuration and
-refuses to replace existing credentials. It creates a 0700 `.memory-loop/`
-directory and owner-only 0600 regular transport/token files; symlinks, unsafe
-permissions and a different owner are rejected. The generated transport defaults to:
+refuses to replace existing credentials. It creates a `.memory-loop/` directory
+and regular transport/token files, rejecting descendant links rather than
+following them. Filesystem permissions are left to the operating environment.
+The generated transport defaults to:
 
 ```json
 {
@@ -386,7 +398,37 @@ bun --no-env-file run server
 bun --no-env-file run check:daemon
 ```
 
-`bun run restart` is a checkout-testing convenience only. Production lifecycle
+#### Windows terminal workflow
+
+On Windows, use separate PowerShell terminals for the daemon and web tier, using
+the same commands above. Install the documented toolchain and build first. Stop
+each tier with **Ctrl+C in its own terminal**, and wait for shutdown before
+starting it again or rebuilding. Windows `SIGTERM` is not a graceful-stop
+substitute. Do not stop the separate OpenCode service as part of an app restart.
+
+For an explicitly selected application root, initialize its configuration and
+transport first, then set these values in **each** terminal. The path is a
+placeholder, not an instruction to replace an existing selection:
+
+```powershell
+$projectRoot = 'C:\path\to\app-root'
+$env:MEMORY_LOOP_TRANSPORT_FILE = Join-Path $projectRoot '.memory-loop\transport.json'
+```
+
+- Terminal 1: `bun --no-env-file run daemon --project-root $projectRoot`
+- Terminal 2: `bun --no-env-file run server`
+- Optional status terminal: `bun --no-env-file run check:daemon --project-root $projectRoot`
+
+The environment setting is local to each terminal. For the checkout's default
+application root, omit the override and use the original commands above.
+Native Windows operation still needs the agreed disposable-vault verification.
+Use the [Windows verification guide](docs/windows-verification.md) for the owned
+test selection and fresh application-root/vault procedure; it never requires the
+real vault.
+
+`bun run restart` is **Linux-only**, a checkout-testing convenience, not the
+Windows workflow. Windows operators restart the two terminal commands manually.
+Production lifecycle
 belongs to a user service; this command does not install or manage that service.
 For recorded test instances, it stops the web processes, builds once, then
 restarts their recorded daemons and webs. Recorded working
@@ -439,7 +481,7 @@ MEMORY_LOOP_TRANSPORT_FILE=/absolute/scratch/app/.memory-loop/transport.json \
 ```
 
 Occupied ports fail without fallback or eviction. Missing/invalid transport or credentials fail before serving vault
-data; correct the private files/permissions rather than weakening validation.
+data; correct the transport configuration or credentials rather than weakening validation.
 
 `bun --no-env-file run dev` launches standard Node `next dev`.
 It requires the same transport preflight and fixed BFF routes, not a dev proxy.
@@ -701,13 +743,29 @@ empty notes, config failures, unavailable notes/vaults and transport failures
 are distinct states. See the [approved Recall design](.lore/work/design/recall-read-only.md)
 and [daemon contract](backend/CONTRACT.md).
 
-The reader requires Linux procfs/no-follow descriptor access. It trusts the
-configured root and ancestors, local OS and personal namespace, not hostile
-local filesystem processes. Eligible hardlinked files have no provenance
-guarantee; relocation/rename/delete can affect in-flight reads. Browsing is not a
+The reader uses checked ordinary filesystem paths. It trusts the configured root
+and ancestors, local OS and personal namespace, not hostile local filesystem
+processes. Descendant links are refused and detected root replacement makes
+access unavailable. Eligible hardlinked files have no provenance guarantee;
+external relocation/rename/delete can affect in-flight reads. Browsing is not a
 transactional snapshot.
 
 ## Checks and current acceptance
+
+On **2026-11-06**, the filesystem portability work passed isolated Linux checks
+with Bun **1.4.3**, Node **26.13.0** and system Chromium: frontend **229 passed**,
+backend **1,172 passed / 12 skipped**, and browser **68 passed**. Application/test
+typechecking and the production build passed. Backend checks, types and build
+were refreshed after the final invalid-component classification correction;
+the frontend/browser results are from the preceding isolated run. No live vault,
+configuration, provider or serving build was used.
+
+Browser coverage exercised Recall reading/search, Capture and Ground; editing
+navigation tests intercept note APIs. Recall mutations and Think stream/reload/
+deletion have owned backend/fake-native fixture coverage, not a live-provider
+end-to-end demonstration. Native Windows and isolated native OpenCode conversation
+verification remain open gates in `memory-loop-68l.9`; these Linux results do not
+establish Windows support. See the [Windows procedure](docs/windows-verification.md).
 
 On **2026-11-01**, Ground's reduced weekly-quote slice (`memory-loop-9ya.8`)
 passed independent final validation: frontend **144**, backend **745 across 34

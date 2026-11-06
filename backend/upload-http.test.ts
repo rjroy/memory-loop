@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createApp } from './app';
 import { prepareServer, type PreparedServer } from './server';
 import { openVault, type VaultReader } from './vault';
+import { openSafeRoot } from './safe-fs';
 
 const authority = '127.0.0.1:31234';
 const token = 'a'.repeat(64);
@@ -14,21 +16,12 @@ let vault: VaultReader;
 let app: ReturnType<typeof createApp>;
 let configured: PreparedServer | undefined;
 
-// Controlled fixture only; queue serialization supplies test mutual exclusion.
-async function renameNoReplace(sourceFd: number, source: string, targetFd: number, target: string) {
-  const dst = `/proc/self/fd/${targetFd}/${target}`;
-  try { await lstat(dst); } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return rename(`/proc/self/fd/${sourceFd}/${source}`, dst);
-    throw error;
-  }
-  throw Object.assign(new Error('exists'), { code: 'EEXIST' });
-}
-async function start(options: { flushFile?: (file: FileHandle) => Promise<void>; flushDirectory?: (file: FileHandle) => Promise<void> } = {}) {
-  vault = await openVault(root, { renameNoReplace, ...options });
+async function start(options: { flushFile?: (file: FileHandle) => Promise<void>; flushDirectory?: (directory: readonly string[]) => Promise<void> } = {}) {
+  vault = await openVault(root, options);
   app = createApp({ authority, serviceToken: token, vault: { reader: vault } });
 }
 beforeEach(async () => {
-  fixture = await mkdtemp('/tmp/opencode/j21-upload-http-');
+  fixture = await mkdtemp(join(tmpdir(), 'memory-loop-upload-http-'));
   root = join(fixture, 'vault');
   await mkdir(root);
   configured = undefined;
@@ -47,6 +40,14 @@ function request(path: string, init: RequestInit = {}, fetch = app) {
 function post(name: string, body: BodyInit, extra: Record<string, string> = {}, fetch = app) {
   const init: RequestInit & { duplex: 'half' } = { method: 'POST', headers: { 'content-type': 'application/octet-stream', ...extra }, body, duplex: 'half' };
   return request(`/api/vault/attachments?${new URLSearchParams({ name })}`, init, fetch);
+}
+async function beforeUploadRelease<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([operation, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Action blocked behind active upload')), 2000);
+    })]);
+  } finally { if (timer !== undefined) clearTimeout(timer); }
 }
 async function prepared(limit: number) {
   const projectRoot = join(fixture, 'project');
@@ -121,17 +122,122 @@ describe('attachment upload daemon boundary', () => {
     const gate = new Promise<void>(resolve => { release = resolve; });
     await start({ flushFile: async file => { entered(); await gate; await file.sync(); } });
     const pending = post('private.bin', 'complete');
-    const first = await Promise.race([flushing.then(() => 'flush' as const), pending.then(() => 'early' as const)]);
-    if (first !== 'flush') { release(); expect(first).toBe('flush'); return; }
     try {
+      const first = await beforeUploadRelease(Promise.race([flushing.then(() => 'flush' as const), pending.then(() => 'early' as const)]));
+      expect(first).toBe('flush');
       const dir = join(root, '06_Attachments');
       const files = await readdir(dir);
       expect(files).toHaveLength(1);
       expect(files[0]).toMatch(/^\./);
-      expect((await lstat(join(dir, files[0]))).mode & 0o777).toBe(0o600);
+      expect((await lstat(join(dir, files[0]))).isFile()).toBe(true);
       await expect(lstat(join(dir, 'private.bin'))).rejects.toMatchObject({ code: 'ENOENT' });
-    } finally { release(); }
+    } finally { release(); await pending.catch(() => {}); }
     expect((await pending).status).toBe(200);
+  });
+  it('refuses attachment folder actions during publication without blocking unrelated actions, then allows a move', async () => {
+    await vault.close();
+    await mkdir(join(root, '06_Attachments'));
+    await mkdir(join(root, 'destination'));
+    let entered: () => void = () => {};
+    let release: () => void = () => {};
+    const flushing = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let firstFlush = true;
+    await start({ flushFile: async file => {
+      if (firstFlush) { firstFlush = false; entered(); await gate; }
+      await file.sync();
+    } });
+    const pending = post('finished.bin', 'complete');
+    try {
+      const first = await beforeUploadRelease(Promise.race([flushing.then(() => 'flush' as const), pending.then(() => 'early' as const)]));
+      expect(first).toBe('flush');
+      const tree = await vault.tree();
+      const folder = tree.entries.find(entry => entry.name === '06_Attachments');
+      const destination = tree.entries.find(entry => entry.name === 'destination');
+      if (!folder || !destination) throw new Error('Missing fixture directories');
+      const move = { action: 'move' as const, kind: 'directory' as const, id: folder.id, expectedVersion: folder.version, destinationParentId: destination.id, expectedDestinationIdentity: destination.identity };
+      const remove = { action: 'delete' as const, kind: 'directory' as const, id: folder.id, expectedVersion: folder.version };
+      await expect(beforeUploadRelease(vault.action(move))).rejects.toMatchObject({ code: 'entry_conflict' });
+      await expect(beforeUploadRelease(vault.action(remove))).rejects.toMatchObject({ code: 'entry_conflict' });
+      expect(await beforeUploadRelease(vault.action({ action: 'create-note', parentId: [], expectedParentIdentity: tree.rootIdentity, name: 'unrelated.md' }))).toMatchObject({ id: ['unrelated.md'] });
+      const names = await readdir(join(root, '06_Attachments'));
+      expect(names).toHaveLength(1);
+      expect(names[0]).toMatch(/^\.memory-loop-upload-.*\.tmp$/);
+      expect(await readFile(join(root, '06_Attachments', names[0]), 'utf8')).toBe('complete');
+      expect(await readdir(join(root, 'destination'))).toEqual([]);
+    } finally { release(); await pending.catch(() => {}); }
+    expect((await pending).status).toBe(200);
+    const current = await vault.tree();
+    const folder = current.entries.find(entry => entry.name === '06_Attachments');
+    const destination = current.entries.find(entry => entry.name === 'destination');
+    if (!folder || !destination) throw new Error('Missing fixture directories');
+    await vault.action({ action: 'move', kind: 'directory', id: folder.id, expectedVersion: folder.version, destinationParentId: destination.id, expectedDestinationIdentity: destination.identity });
+    expect(await readFile(join(root, 'destination', '06_Attachments', 'finished.bin'), 'utf8')).toBe('complete');
+    expect(await readFile(join(root, 'unrelated.md'), 'utf8')).toBe('');
+  });
+
+  it('holds folder protection during a partial stream and releases it after failed upload cleanup', async () => {
+    await mkdir(join(root, '06_Attachments'));
+    let pulled: () => void = () => {};
+    const waiting = new Promise<void>(resolve => { pulled = resolve; });
+    const state: { controller?: ReadableStreamDefaultController<Uint8Array> } = {};
+    const stream = new ReadableStream<Uint8Array>({
+      start(value) { state.controller = value; value.enqueue(Buffer.from('partial')); },
+      pull() { pulled(); },
+    }, { highWaterMark: 0 });
+    const pending = post('failed.bin', stream);
+    try {
+      const first = await beforeUploadRelease(Promise.race([waiting.then(() => 'waiting' as const), pending.then(() => 'early' as const)]));
+      expect(first).toBe('waiting');
+      const tree = await vault.tree();
+      const folder = tree.entries.find(entry => entry.name === '06_Attachments');
+      if (!folder) throw new Error('Missing fixture directory');
+      await expect(beforeUploadRelease(vault.action({ action: 'delete', kind: 'directory', id: folder.id, expectedVersion: folder.version }))).rejects.toMatchObject({ code: 'entry_conflict' });
+      const names = await readdir(join(root, '06_Attachments'));
+      expect(names).toHaveLength(1);
+      expect(await readFile(join(root, '06_Attachments', names[0]), 'utf8')).toBe('partial');
+    } finally {
+      try { state.controller?.error(new Error('fixture interrupted')); } catch { /* Stream already settled. */ }
+      await pending.catch(() => {});
+    }
+    const response = await pending;
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'upload_unavailable' } });
+    expect(await readdir(join(root, '06_Attachments'))).toEqual([]);
+    const tree = await vault.tree();
+    const folder = tree.entries.find(entry => entry.name === '06_Attachments');
+    if (!folder) throw new Error('Missing fixture directory');
+    await vault.action({ action: 'delete', kind: 'directory', id: folder.id, expectedVersion: folder.version });
+    await expect(lstat(join(root, '06_Attachments'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('protects the attachment folder during its initial setup', async () => {
+    await vault.close();
+    await mkdir(join(root, 'destination'));
+    const safe = await openSafeRoot(root);
+    let entered: () => void = () => {};
+    let release: () => void = () => {};
+    const flushing = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let firstFlush = true;
+    await start({ flushDirectory: async id => {
+      if (firstFlush) { firstFlush = false; entered(); await gate; }
+      await safe.syncDirectory(id);
+    } });
+    const pending = post('new.bin', 'content');
+    try {
+      const first = await beforeUploadRelease(Promise.race([flushing.then(() => 'flush' as const), pending.then(() => 'early' as const)]));
+      expect(first).toBe('flush');
+      const tree = await vault.tree();
+      const folder = tree.entries.find(entry => entry.name === '06_Attachments');
+      const destination = tree.entries.find(entry => entry.name === 'destination');
+      if (!folder || !destination) throw new Error('Missing fixture directories');
+      await expect(beforeUploadRelease(vault.action({ action: 'move', kind: 'directory', id: folder.id, expectedVersion: folder.version, destinationParentId: destination.id, expectedDestinationIdentity: destination.identity }))).rejects.toMatchObject({ code: 'entry_conflict' });
+      expect(await readdir(join(root, '06_Attachments'))).toEqual([]);
+      expect(await readdir(join(root, 'destination'))).toEqual([]);
+    } finally { release(); await pending.catch(() => {}); }
+    expect((await pending).status).toBe(200);
+    expect(await readFile(join(root, '06_Attachments', 'new.bin'), 'utf8')).toBe('content');
   });
   it('preserves collisions and serializes concurrent publication with suffixes', async () => {
     const dir = join(root, '06_Attachments');
@@ -144,7 +250,7 @@ describe('attachment upload daemon boundary', () => {
     expect(await readFile(join(dir, 'photo.png'), 'utf8')).toBe('original');
     expect([await readFile(join(dir, names[0]), 'utf8'), await readFile(join(dir, names[1]), 'utf8')].sort()).toEqual(['first', 'second']);
   });
-  it.each(['', '.', '..', '.hidden', '../escape', 'a/b', 'a\\b', 'bad\r\nname', 'bad\0name'])('rejects unsafe basename %o', async name => {
+  it.each(['', '.', '..', '.hidden', '../escape', 'a/b', 'a\\b', 'bad\r\nname', 'bad\0name', 'CON.txt', 'nul .txt', 'bad?.png', 'trailing.'])('rejects unsafe basename %o', async name => {
     const response = await post(name, 'x');
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } });
@@ -155,7 +261,8 @@ describe('attachment upload daemon boundary', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } });
   });
-  it('rejects a symlinked attachment directory without touching the outside target', async () => {
+  // Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+  it.skipIf(process.platform === 'win32')('rejects a symlinked attachment directory without touching the outside target', async () => {
     const outside = join(fixture, 'outside');
     await mkdir(outside);
     await symlink(outside, join(root, '06_Attachments'));
@@ -175,21 +282,29 @@ describe('attachment upload daemon boundary', () => {
     }, { highWaterMark: 0 });
     const init: RequestInit & { duplex: 'half' } = { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: stream, signal: abort.signal, duplex: 'half' };
     const pending = request('/api/vault/attachments?name=partial.bin', init);
-    const first = await Promise.race([started.then(() => 'pull' as const), pending.then(() => 'early' as const)]);
-    if (first !== 'pull') { state.controller?.close(); expect(first).toBe('pull'); return; }
-    abort.abort();
-    try { state.controller?.error(new Error('fixture interrupted')); } catch { /* The reader may already have cancelled. */ }
-    await pending.catch(() => undefined);
+    try {
+      const first = await beforeUploadRelease(Promise.race([started.then(() => 'pull' as const), pending.then(() => 'early' as const)]));
+      expect(first).toBe('pull');
+    } finally {
+      abort.abort();
+      try { state.controller?.error(new Error('fixture interrupted')); } catch { /* The reader may already have cancelled. */ }
+      await pending.catch(() => {});
+    }
     expect(await readdir(join(root, '06_Attachments')).catch(() => [])).toEqual([]);
   });
-  it('keeps the pinned root if its configured path is replaced', async () => {
+  it('refuses uploads if its configured root is replaced', async () => {
+    await writeFile(join(root, 'sentinel.txt'), 'original');
     const original = join(fixture, 'original');
     await rename(root, original);
     await mkdir(root);
+    await writeFile(join(root, 'sentinel.txt'), 'replacement');
     const response = await post('pinned.bin', 'pinned');
-    expect(response.status).toBe(200);
-    expect(await readFile(join(original, '06_Attachments', 'pinned.bin'), 'utf8')).toBe('pinned');
-    expect(await readdir(root)).toEqual([]);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'upload_unavailable' } });
+    expect(await readdir(original)).toEqual(['sentinel.txt']);
+    expect(await readdir(root)).toEqual(['sentinel.txt']);
+    expect(await readFile(join(original, 'sentinel.txt'), 'utf8')).toBe('original');
+    expect(await readFile(join(root, 'sentinel.txt'), 'utf8')).toBe('replacement');
   });
   it('reports post-publication directory flush failure as uncertain', async () => {
     await vault.close();
@@ -202,7 +317,9 @@ describe('attachment upload daemon boundary', () => {
     expect(body).not.toContain('private flush detail');
     expect(await readFile(join(root, '06_Attachments', 'saved.bin'), 'utf8')).toBe('complete');
   });
-  it('refuses publication if the attachment namespace changes during the upload', async () => {
+  // POSIX-only: substitutes the attachment directory with a symlink (needs elevation on Windows) and renames it
+  // while the temp file handle is open, which Windows refuses with EPERM.
+  it.skipIf(process.platform === 'win32')('refuses publication if the attachment namespace changes during the upload', async () => {
     await vault.close();
     const dir = join(root, '06_Attachments');
     const outside = join(fixture, 'outside');
@@ -213,13 +330,20 @@ describe('attachment upload daemon boundary', () => {
     const gate = new Promise<void>(resolve => { release = resolve; });
     await start({ flushFile: async file => { entered(); await gate; await file.sync(); } });
     const pending = post('race.bin', 'content');
-    const first = await Promise.race([flushEntered.then(() => 'flush' as const), pending.then(() => 'early' as const)]);
-    if (first !== 'flush') { release(); expect(first).toBe('flush'); return; }
-    try { await rename(dir, join(root, 'old-attachments')); await symlink(outside, dir); } finally { release(); }
+    try {
+      const first = await beforeUploadRelease(Promise.race([flushEntered.then(() => 'flush' as const), pending.then(() => 'early' as const)]));
+      expect(first).toBe('flush');
+      await rename(dir, join(root, 'old-attachments')); await symlink(outside, dir);
+    } finally { release(); await pending.catch(() => {}); }
     const response = await pending;
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({ error: { code: 'upload_unavailable' } });
     expect(await readdir(outside)).toEqual([]);
-    expect(await readdir(join(root, 'old-attachments'))).toEqual([]);
+    const relocated = join(root, 'old-attachments');
+    const remaining = await readdir(relocated);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toMatch(/^\.memory-loop-upload-.*\.tmp$/);
+    expect(await readFile(join(relocated, remaining[0]), 'utf8')).toBe('content');
+    await expect(lstat(join(relocated, 'race.bin'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

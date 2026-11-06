@@ -5,6 +5,11 @@ import { createConnection } from 'node:net';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+if (process.platform !== 'linux') {
+  console.error('Managed restart is unsupported on this platform (Linux-only). On Windows, start the daemon and web server manually in separate terminals; stop each with Ctrl+C.');
+  process.exit(1);
+}
+
 type Service = { kind: 'web' | 'daemon'; name: string; pid: number; startTime: string; cwd: string; executable: string; args: string[]; transportFile: string };
 type State = { version: 1; services: Service[] };
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');

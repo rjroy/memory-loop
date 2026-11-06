@@ -1,11 +1,15 @@
 import { constants } from 'node:fs';
-import { appendFile, link, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, link, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { expect, it, vi } from 'vitest';
 import { OwnedTranscriptFile, TranscriptNamespace, transcriptIO, type TranscriptBytes, type TranscriptHandle, type TranscriptIO } from './think/transcript-file';
 import { createTranscriptWriter, type TranscriptRuntime } from './think/transcript';
 import { createBodyStore } from './think/body-store';
 import type { ProjectionEntry, ThinkContentReader } from './think/projection';
+import { removeMappedTranscript } from './think/transcript-remove';
+import { verifiedTranscriptNote } from './think/conversations';
+import type { StoredTranscript } from './think/state';
 
 const filename = 'think-11111111-1111-4111-8111-111111111111.md';
 const bytes = (text: string): TranscriptBytes => {
@@ -14,8 +18,204 @@ const bytes = (text: string): TranscriptBytes => {
 };
 const running = () => false;
 
+it('verifies and removes an owned transcript using read-only file access', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-read-delete-'));
+  const namespace = new TranscriptNamespace(root, 'Conversations/Memory Loop');
+  try {
+    const file = new OwnedTranscriptFile(namespace, filename);
+    await file.append(bytes('owned checkpoint bytes'), running);
+    const noteId = ['Conversations', 'Memory Loop', filename];
+    const record: StoredTranscript = { conversationId: '11111111-1111-4111-8111-111111111111', noteId,
+      createdAt: 1, namespace: namespace.identities(), file: file.confirmedCheckpoint(), pending: null };
+    const path = join(root, ...noteId);
+    const sentinel = join(root, 'sentinel');
+    await writeFile(sentinel, 'unrelated');
+    expect(await readFile(path, 'utf8')).toBe('owned checkpoint bytes');
+    await namespace.close();
+    let readOpens = 0;
+    let readBytes = 0;
+    let fileSyncs = 0;
+    const io: TranscriptIO = { ...transcriptIO, async open(name, flags, mode) {
+      if ((flags & (constants.O_WRONLY | constants.O_RDWR)) !== 0) {
+        throw Object.assign(new Error('fixture denies file write access'), { code: 'EACCES' });
+      }
+      const handle = await transcriptIO.open(name, flags, mode);
+      readOpens++;
+      return { fd: handle.fd, stat: () => handle.stat(), close: () => handle.close(),
+        async read(...args) { const result = await handle.read(...args); readBytes += result.bytesRead; return result; },
+        write: (...args) => handle.write(...args),
+        async sync() { fileSyncs++; throw new Error('deletion must not sync the verified file'); } };
+    } };
+    await removeMappedTranscript(root, record, () => null, running, io);
+    expect(readOpens).toBeGreaterThan(0);
+    expect(readBytes).toBeGreaterThanOrEqual(Buffer.byteLength('owned checkpoint bytes'));
+    expect(fileSyncs).toBe(0);
+    await expect(lstat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(sentinel, 'utf8')).toBe('unrelated');
+  } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it('syncs owned transcript file handles with write access and deletes only the verified mapping', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-write-sync-'));
+  let synced = 0;
+  let refused = 0;
+  const io: TranscriptIO = { ...transcriptIO, async open(path, flags, mode) {
+    const handle = await transcriptIO.open(path, flags, mode);
+    const writable = (flags & (constants.O_WRONLY | constants.O_RDWR)) !== 0;
+    return { fd: handle.fd, stat: () => handle.stat(), read: (...args) => handle.read(...args),
+      write: (...args) => handle.write(...args), close: () => handle.close(),
+      async sync() {
+        if (!writable) { refused++; throw Object.assign(new Error('fixture read-only file sync'), { code: 'EBADF' }); }
+        synced++; await handle.sync();
+      } };
+  } };
+  const namespace = new TranscriptNamespace(root, 'Conversations/Memory Loop', io);
+  try {
+    const file = new OwnedTranscriptFile(namespace, filename);
+    await file.append(bytes('owned prefix'), running);
+    await file.checkpoint(running);
+    await file.append(bytes(' continuation'), running);
+    const noteId = ['Conversations', 'Memory Loop', filename];
+    const record: StoredTranscript = { conversationId: '11111111-1111-4111-8111-111111111111', noteId,
+      createdAt: 1, namespace: namespace.identities(), file: file.confirmedCheckpoint(), pending: null };
+    const path = join(root, ...noteId);
+    expect(await readFile(path, 'utf8')).toBe('owned prefix continuation');
+    const sentinel = join(root, 'sentinel');
+    await writeFile(sentinel, 'untouched');
+    await namespace.close();
+    await removeMappedTranscript(root, record, () => null, running, io);
+    await expect(lstat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(sentinel, 'utf8')).toBe('untouched');
+    expect(synced).toBeGreaterThan(0);
+    expect(refused).toBe(0);
+  } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it.skipIf(process.platform === 'win32')('canonicalizes a linked vault root for an owned transcript append', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-linked-root-'));
+  const vault = join(root, 'vault'); const alias = join(root, 'vault-link');
+  await mkdir(vault);
+  await symlink(vault, alias, 'dir');
+  const namespace = new TranscriptNamespace(alias, 'Conversations/Memory Loop');
+  try {
+    await new OwnedTranscriptFile(namespace, filename).append(bytes('owned transcript'), running);
+    expect(await readFile(join(vault, 'Conversations', 'Memory Loop', filename), 'utf8')).toBe('owned transcript');
+  } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it.skipIf(process.platform === 'win32').each(['recent', 'delete'] as const)('handles a verified mapped transcript through a linked root for %s', async operation => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-linked-mapping-'));
+  const vault = join(root, 'vault'); const alias = join(root, 'vault-link');
+  await mkdir(vault);
+  await symlink(vault, alias, 'dir');
+  const namespace = new TranscriptNamespace(vault, 'Conversations/Memory Loop');
+  try {
+    const file = new OwnedTranscriptFile(namespace, filename);
+    await file.append(bytes('owned transcript'), running);
+    const record: StoredTranscript = { conversationId: '11111111-1111-4111-8111-111111111111',
+      noteId: ['Conversations', 'Memory Loop', filename], createdAt: 1,
+      namespace: namespace.identities(), file: file.confirmedCheckpoint(), pending: null };
+    const sentinel = join(vault, 'sentinel');
+    await writeFile(sentinel, 'unrelated');
+    await namespace.close();
+    if (operation === 'recent') {
+      expect(await verifiedTranscriptNote(alias, record)).toEqual(record.noteId);
+      expect(await verifiedTranscriptNote(alias, { ...record, file: null })).toBeUndefined();
+      expect(await readFile(join(vault, ...record.noteId), 'utf8')).toBe('owned transcript');
+    } else {
+      await removeMappedTranscript(alias, record, () => null, running);
+      await expect(lstat(join(vault, ...record.noteId))).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+    expect(await readFile(sentinel, 'utf8')).toBe('unrelated');
+  } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it('refuses a new nonportable transcript directory without creating it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-new-name-'));
+  await mkdir(join(root, 'Conversations'));
+  await writeFile(join(root, 'sentinel'), 'untouched');
+  const namespace = new TranscriptNamespace(root, 'Conversations/CON');
+  try {
+    await expect(new OwnedTranscriptFile(namespace, filename).append(bytes('must not write'), running)).rejects.toThrow();
+    await expect(lstat(join(root, 'Conversations', 'CON'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(join(root, 'sentinel'), 'utf8')).toBe('untouched');
+  } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it.skipIf(process.platform === 'win32')('uses an existing host-valid nonportable transcript parent without adopting existing files', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-legacy-parent-'));
+  const parent = join(root, 'legacy:folder');
+  await mkdir(parent);
+  await writeFile(join(parent, 'sentinel'), 'untouched');
+  const namespace = new TranscriptNamespace(root, 'legacy:folder');
+  try {
+    const file = new OwnedTranscriptFile(namespace, filename);
+    await file.append(bytes('owned'), running);
+    await file.append(bytes(' continuation'), running);
+    expect(await readFile(join(parent, filename), 'utf8')).toBe('owned continuation');
+    expect(await readFile(join(parent, 'sentinel'), 'utf8')).toBe('untouched');
+  } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it.skipIf(process.platform === 'win32')('accepts an exclusively created transcript with accessible non-owner-only mode', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-modes-'));
+  let changed = false;
+  const io: TranscriptIO = { ...transcriptIO, async open(path, flags, mode) {
+    const handle = await transcriptIO.open(path, flags, mode);
+    if ((flags & constants.O_CREAT) && (flags & constants.O_EXCL)) {
+      try { await chmod(path, 0o644); changed = true; }
+      catch (error) { await handle.close(); throw error; }
+    }
+    return handle;
+  } };
+  const namespace = new TranscriptNamespace(root, 'Conversations/Memory Loop', io);
+  try {
+    const file = new OwnedTranscriptFile(namespace, filename);
+    await file.append(bytes('first'), running);
+    await file.append(bytes(' second'), running);
+    expect(changed).toBe(true);
+    expect(await readFile(join(root, 'Conversations', 'Memory Loop', filename), 'utf8')).toBe('first second');
+    expect(file.confirmedCheckpoint().offset).toBe(Buffer.byteLength('first second'));
+  } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it('rejects an observed vault root replacement before further transcript writes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-root-swap-'));
+  const vault = join(root, 'vault'); const original = join(root, 'original');
+  await mkdir(vault);
+  const namespace = new TranscriptNamespace(vault, 'Conversations/Memory Loop');
+  const file = new OwnedTranscriptFile(namespace, filename);
+  try {
+    await file.append(bytes('owned prefix'), running);
+    await rename(vault, original);
+    await mkdir(join(vault, 'Conversations', 'Memory Loop'), { recursive: true });
+    const replacement = join(vault, 'Conversations', 'Memory Loop', filename);
+    await writeFile(replacement, 'replacement sentinel');
+    await expect(file.append(bytes(' unsafe'), running)).rejects.toMatchObject({ reason: 'conflict' });
+    expect(await readFile(join(original, 'Conversations', 'Memory Loop', filename), 'utf8')).toBe('owned prefix');
+    expect(await readFile(replacement, 'utf8')).toBe('replacement sentinel');
+  } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it.skipIf(process.platform !== 'win32')('accepts a configured root junction but refuses a descendant junction', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-junction-'));
+  const vault = join(root, 'vault'); const outside = join(root, 'outside'); const alias = join(root, 'alias');
+  await mkdir(vault); await mkdir(outside);
+  await writeFile(join(outside, 'sentinel'), 'untouched');
+  await symlink(vault, alias, 'junction');
+  await symlink(outside, join(vault, 'linked'), 'junction');
+  const valid = new TranscriptNamespace(alias, 'Conversations/Memory Loop');
+  const linked = new TranscriptNamespace(alias, 'linked');
+  try {
+    await new OwnedTranscriptFile(valid, filename).append(bytes('owned'), running);
+    await expect(new OwnedTranscriptFile(linked, filename).append(bytes('unsafe'), running)).rejects.toThrow();
+    expect(await readFile(join(vault, 'Conversations', 'Memory Loop', filename), 'utf8')).toBe('owned');
+    expect(await readFile(join(outside, 'sentinel'), 'utf8')).toBe('untouched');
+  } finally { await valid.close(); await linked.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 it('resumes short writes and failed sync without duplicating bytes or rescanning confirmed history', async () => {
-  const root = await mkdtemp('/tmp/opencode/think-transcript-fault-');
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-fault-'));
   let phase: 'normal' | 'short' | 'write-fail' | 'sync-fail' = 'normal';
   let readBytes = 0;
   let fileSyncs = 0;
@@ -61,8 +261,8 @@ it('resumes short writes and failed sync without duplicating bytes or rescanning
   } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-it('rejects existing targets and symlinked directories without touching owned outside sentinels', async () => {
-  const root = await mkdtemp('/tmp/opencode/think-transcript-namespace-');
+it.skipIf(process.platform === 'win32')('rejects existing targets and symlinked directories without touching owned outside sentinels', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-namespace-'));
   const vault = join(root, 'vault');
   const outside = join(root, 'outside');
   await mkdir(vault); await mkdir(outside);
@@ -76,8 +276,9 @@ it('rejects existing targets and symlinked directories without touching owned ou
   } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-it.each(['collision', 'symlink', 'hardlink', 'edit', 'replacement'] as const)('preserves existing or externally changed files on %s conflict', async scenario => {
-  const root = await mkdtemp('/tmp/opencode/think-transcript-conflict-');
+for (const scenario of ['collision', 'symlink', 'hardlink', 'edit', 'replacement'] as const) {
+it.skipIf(process.platform === 'win32' && scenario === 'symlink')(`preserves existing or externally changed files on ${scenario} conflict`, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-conflict-'));
   const directory = join(root, 'Conversations', 'Memory Loop');
   await mkdir(directory, { recursive: true });
   const target = join(directory, filename);
@@ -105,9 +306,10 @@ it.each(['collision', 'symlink', 'hardlink', 'edit', 'replacement'] as const)('p
     if (scenario === 'symlink') expect((await lstat(target)).isSymbolicLink()).toBe(true);
   } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
 });
+}
 
-it('rejects a directory replaced by a symlink after opening without writing either namespace', async () => {
-  const root = await mkdtemp('/tmp/opencode/think-transcript-swap-');
+it.skipIf(process.platform === 'win32')('rejects a directory replaced by a symlink after opening without writing either namespace', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-swap-'));
   const vault = join(root, 'vault');
   const outside = join(root, 'outside');
   await mkdir(vault); await mkdir(outside);
@@ -129,8 +331,8 @@ it('rejects a directory replaced by a symlink after opening without writing eith
   } finally { await namespace.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-it.each(['uid', 'link-count', 'type'] as const)('rejects controlled invalid %s metadata before writing', async scenario => {
-  const root = await mkdtemp('/tmp/opencode/think-transcript-stat-');
+it.each(['link-count', 'type'] as const)('rejects controlled invalid %s metadata before writing', async scenario => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-stat-'));
   const io: TranscriptIO = { ...transcriptIO, async open(path, flags, mode) {
     const handle = await transcriptIO.open(path, flags, mode);
     if (!(flags & constants.O_APPEND)) return handle;
@@ -138,7 +340,6 @@ it.each(['uid', 'link-count', 'type'] as const)('rejects controlled invalid %s m
       async stat() {
         const stat = await handle.stat();
         return new Proxy(stat, { get(target, property, receiver) {
-          if (scenario === 'uid' && property === 'uid') return stat.uid + 1;
           if (scenario === 'link-count' && property === 'nlink') return 2;
           if (scenario === 'type' && property === 'isFile') return () => false;
           return Reflect.get(target, property, receiver);
@@ -153,7 +354,7 @@ it.each(['uid', 'link-count', 'type'] as const)('rejects controlled invalid %s m
 });
 
 it.each([['P4-01', 'checkpoint'], ['P4-02', 'attention']] as const)('%s preserves pending progress and attention through retry failures', async (_id, scenario) => {
-  const root = await mkdtemp('/tmp/opencode/think-writer-review-');
+  const root = await mkdtemp(join(tmpdir(), 'think-writer-review-'));
   const vault = join(root, 'vault');
   await mkdir(vault);
   const conversationId = '11111111-1111-4111-8111-111111111111';

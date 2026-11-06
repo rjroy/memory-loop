@@ -4,12 +4,18 @@ import { ThinkStateError, type CommandPosition, type OwnedConversation, type Reg
 import { isAbsolute, normalize } from 'node:path';
 import { ThinkStateFile } from './state-file';
 import type { NativeSession } from './native';
-import { SQLiteTranscriptState, transcriptSchemaV2, validateTranscriptSchema } from './sqlite-transcript-state';
+import { SQLiteTranscriptState, transcriptIdentitySchemaV11, transcriptSchemaV2, validateTranscriptIdentitySchema, validateTranscriptSchema } from './sqlite-transcript-state';
 import { SQLiteConversations, conversationSchemaV4, validateConversationSchema } from './sqlite-conversations';
-import { SQLiteDeletions, deletionSchemaV5, validateDeletionSchema } from './sqlite-deletions';
+import { SQLiteDeletions, deletionIdentitySchemaV11, deletionSchemaV5, validateDeletionIdentitySchema, validateDeletionSchema } from './sqlite-deletions';
 import { SQLiteGroundGeneration, generationSchemaV6, generationSchemaV7, generationSchemaV9, generationSchemaV10, validateGenerationSchema, validateGenerationPreflightSchema, validateGenerationPeriodSchema,
   type GroundGenerationStore } from '../ground-generation-state';
-import { generationSchemaV8, validateGenerationPublicationSchema } from '../ground-generation-publication-state';
+import { generationSchemaV8, publicationIdentitySchemaV11, validateGenerationPublicationSchema, validatePublicationIdentitySchema } from '../ground-generation-publication-state';
+
+/** Current schema; v11 stores every persisted file identity as exact decimal TEXT. */
+export const thinkSchemaVersion = 11;
+function validateIdentitySchemaV11(db: SQLite): void {
+  validateTranscriptIdentitySchema(db); validateDeletionIdentitySchema(db); validatePublicationIdentitySchema(db);
+}
 
 type Parameter = string | number | Uint8Array | null;
 type Row = Record<string, unknown>;
@@ -221,11 +227,11 @@ class SQLiteThinkState implements ThinkStateStore {
     file.validate();
     if (db.get('PRAGMA quick_check')?.quick_check !== 'ok') unavailable();
     const version = Number(db.get('PRAGMA user_version')?.user_version);
-    if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(version)) unavailable();
+    if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(version)) unavailable();
     if (version === 0) {
       const existing = db.get("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
       if (existing?.count !== 0) unavailable();
-    } else { validateV1(db); if (version >= 2) validateTranscriptSchema(db); if (version >= 3) validateV3(db); if (version >= 4) validateConversationSchema(db); if (version >= 5) validateDeletionSchema(db); if (version >= 6) validateGenerationSchema(db); if (version >= 7) validateGenerationPreflightSchema(db); if (version >= 8) validateGenerationPublicationSchema(db); if (version >= 10) validateGenerationPeriodSchema(db); }
+    } else { validateV1(db); if (version >= 2) validateTranscriptSchema(db); if (version >= 3) validateV3(db); if (version >= 4) validateConversationSchema(db); if (version >= 5) validateDeletionSchema(db); if (version >= 6) validateGenerationSchema(db); if (version >= 7) validateGenerationPreflightSchema(db); if (version >= 8) validateGenerationPublicationSchema(db); if (version >= 10) validateGenerationPeriodSchema(db); if (version >= 11) validateIdentitySchemaV11(db); }
     db.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = EXTRA; PRAGMA busy_timeout = 1000;');
     if (db.get('PRAGMA foreign_keys')?.foreign_keys !== 1 || db.get('PRAGMA synchronous')?.synchronous !== 3) unavailable();
     // EXTRA syncs rollback-journal deletion too; no WAL/checkpointer service is needed.
@@ -283,6 +289,14 @@ class SQLiteThinkState implements ThinkStateStore {
       db.exec(generationSchemaV10);
       db.exec('PRAGMA user_version = 10');
     });
+    if (version < 11) this.write('migrate', () => {
+      if (Number(db.get('PRAGMA user_version')?.user_version) !== 10) unavailable();
+      db.exec(transcriptIdentitySchemaV11);
+      db.exec(deletionIdentitySchemaV11);
+      db.exec(publicationIdentitySchemaV11);
+      validateDeletionSchema(db); validateGenerationPublicationSchema(db); validateIdentitySchemaV11(db);
+      db.exec('PRAGMA user_version = 11');
+    });
     this.installationId = validateV1(db);
     validateTranscriptSchema(db);
     validateV3(db);
@@ -292,6 +306,7 @@ class SQLiteThinkState implements ThinkStateStore {
     validateGenerationPreflightSchema(db);
     validateGenerationPublicationSchema(db);
     validateGenerationPeriodSchema(db);
+    validateIdentitySchemaV11(db);
     this.conversations = new SQLiteConversations(db, () => this.check(), (name, operation) => this.write(name, operation),
       this.installationId, row => decodeConversation(row, this.installationId));
     this.transcripts = new SQLiteTranscriptState(db, () => this.check(), operation => this.write('transcript', operation), this.installationId);
@@ -478,7 +493,7 @@ export async function openThinkState(projectRoot: string, vaultDirectory: string
     file = new ThinkStateFile(projectRoot, vaultDirectory);
     db = await connect(file.path);
     const store = new SQLiteThinkState(db, file);
-    console.info('think_state_setup_outcome', { status: 'ready', schema: 10 });
+    console.info('think_state_setup_outcome', { status: 'ready', schema: thinkSchemaVersion });
     return store;
   } catch {
     try { db?.close(); } catch { console.info('think_state_cleanup_outcome', { status: 'failed' }); }

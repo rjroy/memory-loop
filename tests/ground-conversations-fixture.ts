@@ -2,7 +2,8 @@ import { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, lstat, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { createServer, type ServerResponse } from 'node:http';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { SessionInfo, SessionMessageInfo } from '@opencode/client';
 import { prepareServer, type PreparedServer } from '../backend/server';
 import { createApp } from '../backend/app';
@@ -594,6 +595,7 @@ async function run(root: string, mode: Mode): Promise<Report> {
 }
 
 const [root, mode, output] = process.argv.slice(2);
-if (!root?.startsWith('/tmp/opencode/ground-conversations-') || !output?.startsWith(`${root}/`) ||
+if (!root || resolve(root) !== resolve(tmpdir()) || !basename(root).startsWith('ground-conversations-') ||
+    !output || dirname(resolve(output)) !== resolve(root) ||
     !['recent', 'resume', 'leases', 'unknown-selection', 'canonical', 'offline', 'lease-lost-ack', 'resume-unknown', 'registration-absent', 'delete-idle', 'delete-selected', 'delete-lease', 'delete-busy', 'delete-child', 'delete-transcript-conflict', 'delete-remove-ack-lost'].includes(mode ?? '')) throw new Error('Use an owned Ground conversation fixture root/mode');
 await writeFile(output, JSON.stringify(await run(root, mode as Mode)));

@@ -94,10 +94,11 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   const { epoch, native, bodies } = options;
   const identity = { ...options.serviceIdentity };
   const minimumVersion = options.minimumVersion ?? defaultNativeMinimum;
-  const { directory, agent } = options.context;
+  const { agent } = options.context;
+  const directory = normalize(options.context.directory);
   const model = options.context.model ? { ...options.context.model } : undefined;
   if (!bodies || typeof bodies.replace !== 'function' || typeof bodies.append !== 'function' || typeof bodies.open !== 'function' || typeof bodies.close !== 'function' ||
-      !uuid.test(epoch) || !Number.isSafeInteger(identity.pid) || identity.pid < 1 || !validNativeVersion(minimumVersion) || !isAbsolute(directory) || normalize(directory) !== directory || directory.includes('\0')) throw new ThinkServiceError('invalid_request');
+      !uuid.test(epoch) || !Number.isSafeInteger(identity.pid) || identity.pid < 1 || !validNativeVersion(minimumVersion) || !isAbsolute(directory) || directory.includes('\0')) throw new ThinkServiceError('invalid_request');
   const commands = new Map<string, CommandReceipt>();
   const registeredTimes = new Map<string, number>();
   const replyPayloads = new Map<string, string>();

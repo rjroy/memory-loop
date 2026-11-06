@@ -64,7 +64,7 @@ it('lists just the requested directory without enumerating closed descendants', 
   expect(listed).toEqual([['shelf']]);
 });
 
-it('refreshes a directory after external creation and refuses symlink traversal', async () => {
+it('refreshes a directory after external creation and refuses parent traversal', async () => {
   const initial = await directory(['shelf']);
   expect(initial.status).toBe(200);
   await writeFile(join(root, 'shelf', 'added.md'), 'fixture');
@@ -73,8 +73,12 @@ it('refreshes a directory after external creation and refuses symlink traversal'
   expect(await refreshed.json()).toMatchObject({ entries: expect.arrayContaining([
     expect.objectContaining({ kind: 'note', id: ['shelf', 'added.md'] }),
   ]) });
+  expect((await directory(['..'])).status).toBe(400);
+});
 
+// Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+it.skipIf(process.platform === 'win32')('refuses symlink traversal', async () => {
+  expect((await directory(['shelf'])).status).toBe(200);
   await symlink(join(root, 'shelf'), join(root, 'link'));
   expect((await directory(['link'])).status).not.toBe(200);
-  expect((await directory(['..'])).status).toBe(400);
 });

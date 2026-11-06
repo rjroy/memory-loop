@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { access, mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prepareServer, type PreparedServer } from './server';
 
@@ -15,7 +16,7 @@ let vault: string;
 let server: PreparedServer | undefined;
 
 beforeEach(async () => {
-  root = await mkdtemp('/tmp/opencode/ground-http-test-');
+  root = await mkdtemp(join(tmpdir(), 'ground-http-test-'));
   project = join(root, 'project');
   vault = join(root, 'vault');
   const metadata = join(project, '.memory-loop');
@@ -108,10 +109,14 @@ describe('Ground authenticated daemon resource reads', () => {
     expect(await response.json()).toEqual({ state: 'malformed', noteId: note('goals'), issue: { code } });
   });
 
-  it('does not follow a resource symlink outside the vault', async () => {
+  it('does not follow a resource symlink outside the vault', async ({ skip }) => {
     const outside = join(root, 'outside.md');
     await writeFile(outside, 'fixture private outside');
-    await symlink(outside, join(vault, ...note('goals')));
+    try { await symlink(outside, join(vault, ...note('goals'))); }
+    catch (error) {
+      if (process.platform === 'win32' && error instanceof Error && 'code' in error && error.code === 'EPERM') { skip(); return; }
+      throw error;
+    }
     const request = await start();
     const response = await request('/api/ground/goals');
     expect(response.status).toBe(503);

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, normalize } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { EventSubscribeInput, OpenCodeEvent, SessionCreateInput, SessionGetInput, SessionPromptInput, SessionPromptOutput } from '@opencode/client';
 import type { SessionInboxListInput, SessionInboxListOutput, SessionInboxCancelInput, SessionInterruptInput, SessionInterruptOutput } from '@opencode/client';
 import type { MessageListInput, MessageListOutput, ServerInfo, SessionActiveOutput, SessionInfo, SessionMessageGetInput, SessionMessageGetOutput } from '@opencode/client';
@@ -19,7 +20,7 @@ import { ThinkStateError, type RegisteredConversation, type StoredCommand, type 
 import type { CommandReceipt } from './think/contract';
 
 const epoch = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const vaultDirectory = '/fixture/canonical-vault';
+const vaultDirectory = normalize('/fixture/canonical-vault');
 const agent = 'fixture-agent';
 const model = { providerID: 'fixture-provider', id: 'fixture-model' };
 const a = { conversationId: '11111111-1111-4111-8111-111111111111', clientCommandId: '22222222-2222-4222-8222-222222222222' };
@@ -369,7 +370,7 @@ describe('Phase 3 authenticated snapshot and watch', () => {
 
   it('leases only the watch and preserves a progressing transfer across authenticated reconnection', async () => {
     let now = 0;
-    const root = await mkdtemp('/tmp/opencode/think-watch-lease-test-');
+    const root = await mkdtemp(join(tmpdir(), 'think-watch-lease-test-'));
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
     let bodies: BodyStore;
@@ -462,7 +463,7 @@ describe('Phase 3 authenticated content transfer', () => {
   const authority = '127.0.0.1:3000';
   const token = 'a'.repeat(64);
   async function fixture(text: string) {
-    const root = await mkdtemp('/tmp/opencode/think-transfer-test-');
+    const root = await mkdtemp(join(tmpdir(), 'think-transfer-test-'));
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
     const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
@@ -1255,7 +1256,7 @@ describe('daemon-owned original body foundation', () => {
   });
 
   it('retains original UTF-8 through the real private store and exposes it in the content projection', async () => {
-    const root = await mkdtemp('/tmp/opencode/think-content-test-');
+    const root = await mkdtemp(join(tmpdir(), 'think-content-test-'));
     const vault = join(root, 'vault');
     let f: ReturnType<typeof setup> | undefined;
     let bodies: BodyStore | undefined;
@@ -1286,7 +1287,7 @@ describe('daemon-owned original body foundation', () => {
 
 describe('real private-store normalized projection', () => {
   async function fixture(transcript?: ThinkServiceOptions['transcript']) {
-    const root = await mkdtemp('/tmp/opencode/think-projection-test-');
+    const root = await mkdtemp(join(tmpdir(), 'think-projection-test-'));
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
     const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
@@ -1307,7 +1308,7 @@ describe('real private-store normalized projection', () => {
   }
 
   it.each(['form-reply', 'cancelled-send'] as const)('P4-03 reports lost original %s capture as content gap, not a pending or saved transcript', async kind => {
-    const root = await mkdtemp('/tmp/opencode/think-capture-gap-');
+    const root = await mkdtemp(join(tmpdir(), 'think-capture-gap-'));
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
     const actual = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
@@ -1346,7 +1347,7 @@ describe('real private-store normalized projection', () => {
   });
 
   it('Phase 4 retries unavailable transcript storage autonomously while execution continues and clears warning only after sync', async () => {
-    const root = await mkdtemp('/tmp/opencode/think-transcript-retry-');
+    const root = await mkdtemp(join(tmpdir(), 'think-transcript-retry-'));
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
     const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
@@ -1484,7 +1485,7 @@ describe('real private-store normalized projection', () => {
   });
 
   it('Phase 4 reports external edits until the same owned file is restored and synchronized without a retry route', async () => {
-    const root = await mkdtemp('/tmp/opencode/think-transcript-health-');
+    const root = await mkdtemp(join(tmpdir(), 'think-transcript-health-'));
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
     const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });
@@ -1535,7 +1536,7 @@ describe('real private-store normalized projection', () => {
   it('Phase 4 invalid transcript path degrades logging without disabling Recall or native execution', async () => {
     const config = parseThinkConfig({ service: { registrationFile: '/fixture/registration.json', requiredVersion: '2.2.2' }, location: { kind: 'vault' }, transcriptDirectory: '../outside' });
     expect(config?.transcriptDirectory).toBe('../outside');
-    const root = await mkdtemp('/tmp/opencode/think-transcript-config-');
+    const root = await mkdtemp(join(tmpdir(), 'think-transcript-config-'));
     const vault = join(root, 'vault');
     await mkdir(vault, { mode: 0o700 });
     const bodies = await createBodyStore({ directory: join(root, 'bodies'), vaultDirectory: vault, epoch });

@@ -4,6 +4,7 @@ import type { FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openVault, type VaultReader } from './vault';
+import { openSafeRoot } from './safe-fs';
 
 let fixture: string;
 let root: string;
@@ -24,7 +25,8 @@ describe('existing Markdown save', () => {
   it('reads an opaque revision and durably saves exact UTF-8 with a new revision', async () => {
     await vault.close();
     const flushFile = vi.fn(async (file: FileHandle) => { await file.sync(); });
-    const flushDirectory = vi.fn(async (directory: FileHandle) => { await directory.sync(); });
+    const safe = await openSafeRoot(root);
+    const flushDirectory = vi.fn(async (directory: readonly string[]) => { await safe.syncDirectory(directory); });
     vault = await openVault(root, { flushFile, flushDirectory });
     await writeFile(join(root, 'note.md'), 'original\r\n');
     const original = await vault.note(['note.md']);
@@ -58,29 +60,40 @@ describe('existing Markdown save', () => {
     expect(['first', 'second']).toContain(await readFile(path, 'utf8'));
   });
 
-  it('uses the pinned root for replacement after its pathname changes', async () => {
+  it('refuses replacement after the root pathname changes', async () => {
     await writeFile(join(root, 'note.md'), 'original');
     const { revision } = await vault.note(['note.md']);
     const originalRoot = join(fixture, 'original-root');
     await rename(root, originalRoot);
     await mkdir(root);
     await writeFile(join(root, 'note.md'), 'unrelated');
-    await vault.save(['note.md'], 'changed', revision);
-    expect(await readFile(join(originalRoot, 'note.md'), 'utf8')).toBe('changed');
+    await expect(vault.save(['note.md'], 'changed', revision)).rejects.toMatchObject({ code: expect.stringMatching(/unavailable|conflict/) });
+    expect(await readFile(join(originalRoot, 'note.md'), 'utf8')).toBe('original');
     expect(await readFile(join(root, 'note.md'), 'utf8')).toBe('unrelated');
   });
 
-  it('refuses path escape, symlinks, missing files and directories', async () => {
+  it('refuses path escape, missing files and directories', async () => {
+    const outside = join(fixture, 'outside');
+    await mkdir(outside);
+    await writeFile(join(outside, 'secret.md'), 'sentinel');
+    await mkdir(join(root, 'directory.md'));
+    for (const id of [['missing.md'], ['directory.md']]) {
+      await expect(vault.save(id, 'changed', 'revision')).rejects.toMatchObject({ code: 'note_unavailable' });
+    }
+    await expect(vault.save(['..', 'outside', 'secret.md'], 'changed', 'revision')).rejects.toMatchObject({ code: 'invalid_request' });
+    expect(await readFile(join(outside, 'secret.md'), 'utf8')).toBe('sentinel');
+  });
+
+  // Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+  it.skipIf(process.platform === 'win32')('refuses intermediate and final symlinks', async () => {
     const outside = join(fixture, 'outside');
     await mkdir(outside);
     await writeFile(join(outside, 'secret.md'), 'sentinel');
     await symlink(outside, join(root, 'link-dir'));
     await symlink(join(outside, 'secret.md'), join(root, 'link.md'));
-    await mkdir(join(root, 'directory.md'));
-    for (const id of [['link-dir', 'secret.md'], ['link.md'], ['missing.md'], ['directory.md']]) {
+    for (const id of [['link-dir', 'secret.md'], ['link.md']]) {
       await expect(vault.save(id, 'changed', 'revision')).rejects.toMatchObject({ code: 'note_unavailable' });
     }
-    await expect(vault.save(['..', 'outside', 'secret.md'], 'changed', 'revision')).rejects.toMatchObject({ code: 'invalid_request' });
     expect(await readFile(join(outside, 'secret.md'), 'utf8')).toBe('sentinel');
   });
 
@@ -135,9 +148,10 @@ describe('existing Markdown save', () => {
     const path = join(root, 'note.md');
     await writeFile(path, 'original');
     const events: string[] = [];
+    const safe = await openSafeRoot(root);
     vault = await openVault(root, {
       flushFile: async file => { expect(await readFile(path, 'utf8')).toBe('original'); events.push('file'); await file.sync(); },
-      flushDirectory: async directory => { expect(await readFile(path, 'utf8')).toBe('changed'); events.push('directory'); await directory.sync(); },
+      flushDirectory: async directory => { expect(await readFile(path, 'utf8')).toBe('changed'); events.push('directory'); await safe.syncDirectory(directory); },
     });
     const { revision } = await vault.note(['note.md']);
     await vault.save(['note.md'], 'changed', revision);

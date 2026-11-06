@@ -1,3 +1,5 @@
+import { isPortableName } from './portable-name';
+
 /** One vault, configured by .memory-loop/config.json at daemon startup. */
 export interface VaultConfig {
   vaultDirectory: string;
@@ -11,7 +13,7 @@ export const hardUploadMaxBytes = 1024 * 1024 * 1024;
 export interface VaultUploadLimit { maxFileBytes: number }
 export interface VaultUploadResponse { id: VaultId; name: string; size: number }
 export function isUploadName(value: unknown): value is string {
-  return typeof value === 'string' && isVaultComponent(value) && !/[\x00-\x1f\x7f]/.test(value) && new TextEncoder().encode(value).length <= 255 && new TextDecoder('utf-8', { fatal: true }).decode(new TextEncoder().encode(value)) === value;
+  return typeof value === 'string' && isVaultComponent(value) && isPortableName(value) && !/[\x00-\x1f\x7f]/.test(value) && new TextEncoder().encode(value).length <= 255 && new TextDecoder('utf-8', { fatal: true }).decode(new TextEncoder().encode(value)) === value;
 }
 
 /** Identifiers are vault-relative sequences of individual filename components. */
@@ -59,10 +61,10 @@ const parentId = (v: unknown): v is VaultId => Array.isArray(v) && v.length <= 6
 export function parseVaultAction(value: unknown): VaultAction | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const v = value as Record<string, unknown>;
-  if ((v.action === 'create-note' || v.action === 'create-directory') && Object.keys(v).length === 4 && parentId(v.parentId) && opaque(v.expectedParentIdentity) && isVaultComponent(v.name) && new TextEncoder().encode(v.name).length <= 255 && (v.action !== 'create-note' || v.name.endsWith('.md'))) return { action: v.action, parentId: v.parentId, expectedParentIdentity: v.expectedParentIdentity, name: v.name };
+  if ((v.action === 'create-note' || v.action === 'create-directory') && Object.keys(v).length === 4 && parentId(v.parentId) && opaque(v.expectedParentIdentity) && isVaultComponent(v.name) && isPortableName(v.name) && new TextEncoder().encode(v.name).length <= 255 && (v.action !== 'create-note' || v.name.endsWith('.md'))) return { action: v.action, parentId: v.parentId, expectedParentIdentity: v.expectedParentIdentity, name: v.name };
   if ((v.action === 'move' || v.action === 'delete') && (v.kind === 'note' || v.kind === 'file' || v.kind === 'directory') && isVaultId(v.id) && v.id.length <= 64 && opaque(v.expectedVersion)) {
     if (v.action === 'delete' && Object.keys(v).length === 4) return { action: v.action, kind: v.kind, id: v.id, expectedVersion: v.expectedVersion };
-    if (v.action === 'move' && Object.keys(v).length === 6 && parentId(v.destinationParentId) && opaque(v.expectedDestinationIdentity)) return { action: v.action, kind: v.kind, id: v.id, expectedVersion: v.expectedVersion, destinationParentId: v.destinationParentId, expectedDestinationIdentity: v.expectedDestinationIdentity };
+    if (v.action === 'move' && Object.keys(v).length === 6 && parentId(v.destinationParentId) && opaque(v.expectedDestinationIdentity) && isPortableName(v.id[v.id.length - 1])) return { action: v.action, kind: v.kind, id: v.id, expectedVersion: v.expectedVersion, destinationParentId: v.destinationParentId, expectedDestinationIdentity: v.expectedDestinationIdentity };
   }
 }
 

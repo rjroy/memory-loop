@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 vi.mock('server-only', () => ({}));
@@ -15,7 +16,7 @@ let firstArrived: () => void;
 let calls: Array<{ method: string; url: string; headers: import('node:http').IncomingHttpHeaders; bytes: Buffer }>;
 
 beforeEach(async () => {
-  fixture = await mkdtemp('/tmp/opencode/j21-upload-transport-');
+  fixture = await mkdtemp(join(tmpdir(), 'j21-upload-transport-'));
   const metadata = join(fixture, 'private');
   await mkdir(metadata, { mode: 0o700 });
   calls = [];
@@ -39,7 +40,7 @@ afterEach(async () => {
   else process.env.MEMORY_LOOP_TRANSPORT_FILE = previous;
   server?.closeAllConnections();
   await new Promise<void>(resolve => server?.close(() => resolve()) ?? resolve());
-  await rm(fixture, { recursive: true, force: true });
+  if (fixture) await rm(fixture, { recursive: true, force: true });
 });
 
 describe('runtime-bound upload route over real private HTTP', () => {

@@ -398,7 +398,34 @@ bun --no-env-file run server
 bun --no-env-file run check:daemon
 ```
 
-`bun run restart` is a checkout-testing convenience only. Production lifecycle
+#### Windows terminal workflow
+
+On Windows, use separate PowerShell terminals for the daemon and web tier, using
+the same commands above. Install the documented toolchain and build first. Stop
+each tier with **Ctrl+C in its own terminal**, and wait for shutdown before
+starting it again or rebuilding. Windows `SIGTERM` is not a graceful-stop
+substitute. Do not stop the separate OpenCode service as part of an app restart.
+
+For an explicitly selected application root, initialize its configuration and
+transport first, then set these values in **each** terminal. The path is a
+placeholder, not an instruction to replace an existing selection:
+
+```powershell
+$projectRoot = 'C:\path\to\app-root'
+$env:MEMORY_LOOP_TRANSPORT_FILE = Join-Path $projectRoot '.memory-loop\transport.json'
+```
+
+- Terminal 1: `bun --no-env-file run daemon --project-root $projectRoot`
+- Terminal 2: `bun --no-env-file run server`
+- Optional status terminal: `bun --no-env-file run check:daemon --project-root $projectRoot`
+
+The environment setting is local to each terminal. For the checkout's default
+application root, omit the override and use the original commands above.
+Native Windows operation still needs the agreed disposable-vault verification.
+
+`bun run restart` is **Linux-only**, a checkout-testing convenience, not the
+Windows workflow. Windows operators restart the two terminal commands manually.
+Production lifecycle
 belongs to a user service; this command does not install or manage that service.
 For recorded test instances, it stops the web processes, builds once, then
 restarts their recorded daemons and webs. Recorded working

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTransport } from '../../backend/transport';
+import { webSignalAction } from './shutdown-policy';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -26,9 +27,11 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     console.info('web_shutdown_attempt', { signal });
-    child.kill(signal);
-    timeout = setTimeout(() => { child.kill('SIGKILL'); }, 4000);
-    timeout.unref();
+    if (webSignalAction(process.platform, signal) === 'forward') {
+      child.kill(signal);
+      timeout = setTimeout(() => { child.kill('SIGKILL'); }, 4000);
+      timeout.unref();
+    }
   };
   const interrupt = () => stop('SIGINT');
   const terminate = () => stop('SIGTERM');

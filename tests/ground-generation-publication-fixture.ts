@@ -288,6 +288,7 @@ try {
     const temp = join(vault, ...noteId.slice(0, -1), plan.tempName);
     const witness = join(vault, ...noteId.slice(0, -1), plan.tempWitnessName);
     const original = await stat(temp); const proof = await stat(witness);
+    const originalExact = await stat(temp, { bigint: true });
     assert.equal(original.dev, proof.dev); assert.equal(original.ino, proof.ino);
     assert.equal(original.nlink, 2); assert.equal(original.size, 0);
     const manual = 'Owned manual target change\n';
@@ -313,7 +314,8 @@ try {
     const retry = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications, io });
     await retry.cleanup(signal);
     await assert.rejects(access(temp), { code: 'ENOENT' });
-    assert.deepEqual(reopened?.tempIdentity, { dev: original.dev, ino: original.ino });
+    // Persisted identities are exact decimal strings of the bigint stat.
+    assert.deepEqual(reopened?.tempIdentity, { dev: String(originalExact.dev), ino: String(originalExact.ino) });
     assert.equal(await readFile(file, 'utf8'), manual);
     assert.equal((await stat(file)).ino, targetBefore.ino);
     assert.equal(await readFile(sentinel, 'utf8'), 'Unrelated manual file\n');

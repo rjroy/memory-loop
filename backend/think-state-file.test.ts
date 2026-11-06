@@ -25,6 +25,15 @@ it.each(['root', 'metadata', 'database'] as const)('detects replacement of the %
   const f = await fixture();
   const state = new ThinkStateFile(f.project, f.vault);
   try {
+    if (process.platform === 'win32' && kind !== 'database') {
+      // Windows refuses to rename any ancestor directory of a file with an open handle, so the
+      // pinned database descriptor already prevents this replacement; validation stays usable.
+      const moved = kind === 'root' ? [f.project, join(f.base, 'original-project')] : [f.metadata, join(f.project, 'original-metadata')];
+      await expect(rename(moved[0], moved[1])).rejects.toMatchObject({ code: expect.stringMatching(/^(EPERM|EBUSY|EACCES)$/) });
+      expect(() => state.validate()).not.toThrow();
+      expect(await readFile(f.database, 'utf8')).toBe('owned state');
+      return;
+    }
     if (kind === 'root') {
       await rename(f.project, join(f.base, 'original-project'));
       await mkdir(f.metadata, { recursive: true });

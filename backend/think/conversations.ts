@@ -2,7 +2,8 @@ import { lstat } from 'node:fs/promises';
 import type { CommandReceipt, CreateConversationCommand, DeleteConversationCommand, DeleteReceipt, RecentConversation, RecentConversations, ResumeReceipt, SelectConversationCommand, ViewRegistration, ViewSelection } from './contract';
 import { ThinkStateError, type RegisteredConversation, type StoredView, type StoredTranscript, type ThinkStateStore } from './state';
 import { ThinkServiceError } from './errors';
-import { TranscriptNamespace, transcriptFingerprint } from './transcript-file';
+import { TranscriptNamespace, transcriptFingerprintMatches } from './transcript-file';
+import { sameFileId } from '../file-identity';
 import { createDeletionService, type DeletionService } from './deletion';
 import { mintViewToken, viewHash } from './view-token';
 export { validViewToken, viewHash, mintViewToken } from './view-token';
@@ -232,10 +233,9 @@ export async function verifiedTranscriptNote(directory: string, stored: StoredTr
     await namespace.prepare(false);
     if (JSON.stringify(namespace.identities()) !== JSON.stringify(stored.namespace)) return;
     const name = stored.noteId[stored.noteId.length - 1];
-    const file = await lstat(await namespace.resolve(name, 'file'));
-    if (!file.isFile() || file.isSymbolicLink() || file.nlink !== 1 ||
-        file.dev !== stored.file.dev || file.ino !== stored.file.ino ||
-        file.size !== stored.file.offset || transcriptFingerprint(file) !== stored.file.fingerprint) return;
+    const file = await lstat(await namespace.resolve(name, 'file'), { bigint: true });
+    if (!file.isFile() || file.isSymbolicLink() || file.nlink !== 1n || !sameFileId(file, stored.file) ||
+        file.size !== BigInt(stored.file.offset) || !transcriptFingerprintMatches(file, stored.file.fingerprint)) return;
     await namespace.validate();
     return [...stored.noteId];
   } finally {

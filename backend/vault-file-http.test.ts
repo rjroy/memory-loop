@@ -174,22 +174,32 @@ describe('vault file daemon HTTP', () => {
       close.mockRestore();
     }
   });
-  it('rejects symlinks, directories, escapes and missing entries with sanitized errors', async () => {
-    await writeFile(join(fixture, 'secret'), 'secret');
-    await symlink(join(fixture, 'secret'), join(root, 'link'));
-    await symlink(fixture, join(root, 'dirlink'));
-    await mkdir(join(root, 'directory'));
+  async function expectSanitizedUnavailable(ids: string[][]) {
     for (const endpoint of ['file', 'content']) {
-      for (const id of [['link'], ['dirlink', 'secret'], ['directory'], ['missing']]) {
+      for (const id of ids) {
         const response = await request(url(endpoint, id));
         expect(response.status).toBe(404);
         const body = await response.text();
         expect(JSON.parse(body)).toMatchObject({ error: { code: 'entry_unavailable' } });
         expect(body).not.toContain(fixture);
       }
+    }
+  }
+  it('rejects directories, escapes and missing entries with sanitized errors', async () => {
+    await writeFile(join(fixture, 'secret'), 'secret');
+    await mkdir(join(root, 'directory'));
+    await expectSanitizedUnavailable([['directory'], ['missing']]);
+    for (const endpoint of ['file', 'content']) {
       const invalid = await request(url(endpoint, ['..', 'secret']));
       expect(invalid.status).toBe(400);
       expect(await invalid.json()).toMatchObject({ error: { code: 'invalid_request' } });
     }
+  });
+  // Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+  it.skipIf(process.platform === 'win32')('rejects file and directory symlinks with sanitized errors', async () => {
+    await writeFile(join(fixture, 'secret'), 'secret');
+    await symlink(join(fixture, 'secret'), join(root, 'link'));
+    await symlink(fixture, join(root, 'dirlink'));
+    await expectSanitizedUnavailable([['link'], ['dirlink', 'secret']]);
   });
 });

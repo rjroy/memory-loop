@@ -110,14 +110,21 @@ it.each([
   expect(() => parseVaultId(value)).toThrow(expect.objectContaining({ code: 'invalid_request' }));
 });
 
-it('rejects intermediate and final symlinks, missing notes and nonregular targets', async () => {
+it('rejects missing notes and nonregular targets', async () => {
+  await mkdir(join(root, 'directory.md'));
+  for (const id of [['missing.md'], ['directory.md']]) {
+    await expect(reader.note(id)).rejects.toMatchObject({ code: 'note_unavailable' });
+  }
+});
+
+// Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+it.skipIf(process.platform === 'win32')('rejects intermediate and final symlinks', async () => {
   const outside = join(fixture, 'vault-sibling');
   await mkdir(outside);
   await writeFile(join(outside, 'secret.md'), 'outside sentinel');
   await symlink(outside, join(root, 'outside'));
   await symlink(join(outside, 'secret.md'), join(root, 'escape.md'));
-  await mkdir(join(root, 'directory.md'));
-  for (const id of [['outside', 'secret.md'], ['escape.md'], ['missing.md'], ['directory.md']]) {
+  for (const id of [['outside', 'secret.md'], ['escape.md']]) {
     await expect(reader.note(id)).rejects.toMatchObject({ code: 'note_unavailable' });
   }
 });

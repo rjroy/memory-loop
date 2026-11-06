@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { constants, type Stats } from 'node:fs';
+import { constants, type BigIntStats } from 'node:fs';
 import { lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
 import { isAbsolute, join, normalize } from 'node:path';
 import { isPortableName, openSafeRoot, SafeEntryError, SafeRootChangedError, type SafeRoot } from '../safe-fs';
+import { exactFingerprint, fingerprintMatches, parseFileIdValue, sameFileId, statIdentity, type FileIdentity } from '../file-identity';
 import type { TranscriptDirectoryIdentity, TranscriptFileCheckpoint } from './state';
 
 export type TranscriptFailure = 'io_unavailable' | 'conflict' | 'content_gap' | 'invalid_configuration';
@@ -10,10 +11,11 @@ export class TranscriptError extends Error {
   constructor(readonly reason: TranscriptFailure) { super('Think transcript operation failed'); }
 }
 
-/** Narrow native-I/O seam: fault tests can wrap real owned handles, without mocking modules. */
+/** Narrow native-I/O seam: fault tests can wrap real owned handles, without mocking modules.
+ * Stats are exact (`bigint: true`), so 64-bit file IDs are never rounded. */
 export interface TranscriptHandle {
   readonly fd: number;
-  stat(): Promise<Stats>;
+  stat(): Promise<BigIntStats>;
   read(buffer: Uint8Array, offset: number, length: number, position: number): Promise<{ bytesRead: number }>;
   write(buffer: Uint8Array, offset: number, length: number, position: null): Promise<{ bytesWritten: number }>;
   sync(): Promise<void>;
@@ -22,16 +24,22 @@ export interface TranscriptHandle {
 export interface TranscriptIO {
   open(path: string, flags: number, mode?: number): Promise<TranscriptHandle>;
   mkdir(path: string, mode: number): Promise<void>;
-  lstat(path: string): Promise<Stats>;
+  lstat(path: string): Promise<BigIntStats>;
   realpath(path: string): Promise<string>;
   unlink(path: string): Promise<void>;
   /** Separate from file opens: no directory FileHandles are needed on Windows. */
   syncDirectory(root: SafeRoot, components: readonly string[]): Promise<void>;
 }
 export const transcriptIO: TranscriptIO = {
-  open,
+  async open(path, flags, mode) {
+    const handle = await open(path, flags, mode);
+    return { fd: handle.fd, stat: () => handle.stat({ bigint: true }),
+      read: (buffer, offset, length, position) => handle.read(buffer, offset, length, position),
+      write: (buffer, offset, length, position) => handle.write(buffer, offset, length, position),
+      sync: () => handle.sync(), close: () => handle.close() };
+  },
   async mkdir(path, mode) { await mkdir(path, { mode }); },
-  lstat, realpath, unlink,
+  lstat: path => lstat(path, { bigint: true }), realpath, unlink,
   syncDirectory: (root, components) => root.syncDirectory(components),
 };
 export interface TranscriptBytes {
@@ -47,14 +55,31 @@ export function transcriptComponents(value: unknown = 'Conversations/Memory Loop
   return components;
 }
 const fileFlags = constants.O_RDWR | constants.O_APPEND | (constants.O_NONBLOCK ?? 0);
-const sameIdentity = (a: Pick<Stats, 'dev' | 'ino'>, b: Pick<Stats, 'dev' | 'ino'>) => a.dev === b.dev && a.ino === b.ino;
-export const transcriptFingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeMs, s.ctimeMs, s.nlink, s.uid, s.mode]);
+const sameIdentity = sameFileId;
+/**
+ * POSIX ctime is kernel-maintained, so it is part of the fingerprint there. NTFS ChangeTime is
+ * not usable for exact comparison: it is updated lazily when a written handle is flushed or
+ * closed, an open handle can report an older value than its path, and (like mtime) callers can
+ * set it directly. Windows fingerprints therefore omit only ctime; identity, size, mtime, link
+ * count, owner and mode remain exact.
+ */
+const fingerprintsCtime = process.platform !== 'win32';
+/** Exact identity, size and nanosecond times as decimal strings. */
+export const transcriptFingerprint = (s: BigIntStats) => exactFingerprint(s, fingerprintsCtime);
+/** Also accepts a checkpoint persisted in the pre-exact numeric fingerprint form. */
+export const transcriptFingerprintMatches = (s: BigIntStats, persisted: string) => fingerprintMatches(s, persisted, fingerprintsCtime);
 const fingerprint = transcriptFingerprint;
 function code(error: unknown): unknown { return typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined; }
 function conflict(): never { throw new TranscriptError('conflict'); }
-function fileStat(stat: Stats): void {
-  if (!stat.isFile() || stat.nlink !== 1 ||
-      ![stat.size, stat.dev, stat.ino].every(value => Number.isSafeInteger(value) && value >= 0)) conflict();
+/** Transcript sizes are byte offsets; only file IDs may exceed the safe-integer range. */
+export function transcriptSize(stat: BigIntStats): number {
+  const size = Number(stat.size);
+  return stat.size >= 0n && Number.isSafeInteger(size) ? size : conflict();
+}
+function identityOf(stat: BigIntStats): FileIdentity { return statIdentity(stat) ?? conflict(); }
+function fileStat(stat: BigIntStats): void {
+  if (!stat.isFile() || stat.nlink !== 1n) conflict();
+  transcriptSize(stat); identityOf(stat);
 }
 function namespaceFailure(error: unknown): never {
   if (error instanceof SafeEntryError || error instanceof SafeRootChangedError ||
@@ -64,7 +89,7 @@ function namespaceFailure(error: unknown): never {
 
 /** Canonical paths and directory identities, not directory handles or a writer sandbox. */
 export class TranscriptNamespace {
-  private readonly nodes: Stats[] = [];
+  private readonly nodes: BigIntStats[] = [];
   private safeRoot?: SafeRoot;
   private stopped = false;
   private initializing?: Promise<void>;
@@ -157,10 +182,7 @@ export class TranscriptNamespace {
   }
   identities(): TranscriptDirectoryIdentity[] {
     if (this.nodes.length !== this.components.length + 1) throw new TranscriptError('io_unavailable');
-    return this.nodes.map(stat => {
-      if (![stat.dev, stat.ino].every(value => Number.isSafeInteger(value) && value >= 0)) conflict();
-      return { dev: stat.dev, ino: stat.ino };
-    });
+    return this.nodes.map(identityOf);
   }
   async sync(ancestors = true): Promise<void> {
     await this.validate();
@@ -187,7 +209,7 @@ export interface TranscriptFileOptions {
 /** A living writer or a verified registry checkpoint; never filename-based adoption. */
 export class OwnedTranscriptFile {
   private created = false;
-  private identity?: Pick<Stats, 'dev' | 'ino'>;
+  private identity?: FileIdentity;
   private expected?: string;
   private rejected?: string;
   private confirmed = 0;
@@ -201,9 +223,11 @@ export class OwnedTranscriptFile {
   constructor(private readonly namespace: TranscriptNamespace, private readonly name: string, private readonly options: TranscriptFileOptions = {}) {
     const checkpoint = options.checkpoint;
     if (checkpoint) {
-      if (![checkpoint.offset, checkpoint.dev, checkpoint.ino].every(value => Number.isSafeInteger(value) && value >= 0) ||
-          !/^[a-f0-9]{64}$/.test(checkpoint.sha256)) conflict();
-      this.created = true; this.identity = checkpoint; this.expected = checkpoint.fingerprint;
+      const dev = parseFileIdValue(checkpoint.dev); const ino = parseFileIdValue(checkpoint.ino);
+      if (dev === undefined || ino === undefined || !Number.isSafeInteger(checkpoint.offset) || checkpoint.offset < 0 ||
+          typeof checkpoint.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(checkpoint.sha256)) conflict();
+      // A legacy numeric fingerprint never matches; the restored digest forces a full prefix verification first.
+      this.created = true; this.identity = { dev, ino }; this.expected = checkpoint.fingerprint;
       this.confirmed = checkpoint.offset; this.restoredDigest = checkpoint.sha256;
     }
   }
@@ -214,10 +238,10 @@ export class OwnedTranscriptFile {
 
   checkpoint(stopping: () => boolean): Promise<void> { return this.append(this.checkpointBytes, stopping); }
 
-  private async stat(handle: TranscriptHandle): Promise<Stats> {
+  private async stat(handle: TranscriptHandle): Promise<BigIntStats> {
     await this.namespace.validate();
     const actual = await handle.stat();
-    let named: Stats;
+    let named: BigIntStats;
     try { named = await this.namespace.io.lstat(await this.namespace.resolve(this.name, 'file')); }
     catch (error) { if (['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(code(error)))) conflict(); throw error; }
     fileStat(actual); fileStat(named);
@@ -233,11 +257,12 @@ export class OwnedTranscriptFile {
     }
     return bytes;
   }
-  private async verifyChanged(handle: TranscriptHandle, before: Stats, source: TranscriptBytes, stopping: () => boolean): Promise<void> {
+  private async verifyChanged(handle: TranscriptHandle, before: BigIntStats, source: TranscriptBytes, stopping: () => boolean): Promise<void> {
     const observed = fingerprint(before);
     if (this.rejected === observed) conflict();
     try {
-      if (before.size < this.confirmed || before.size > this.confirmed + source.length) conflict();
+      const size = transcriptSize(before);
+      if (size < this.confirmed || size > this.confirmed + source.length) conflict();
       const hash = createHash('sha256');
       for (let at = 0; at < this.confirmed; at += 65536) {
         if (stopping()) throw new TranscriptError('io_unavailable');
@@ -245,7 +270,7 @@ export class OwnedTranscriptFile {
       }
       if (hash.copy().digest('hex') !== (this.restoredDigest ?? this.confirmedHash.copy().digest('hex'))) conflict();
       const confirmedHash = hash.copy();
-      const tail = before.size - this.confirmed;
+      const tail = size - this.confirmed;
       let compared = 0;
       for await (const bytes of source.chunks(0)) {
         if (stopping()) throw new TranscriptError('io_unavailable');
@@ -258,7 +283,7 @@ export class OwnedTranscriptFile {
       }
       if (compared !== tail || fingerprint(await this.stat(handle)) !== observed) conflict();
       this.confirmedHash = confirmedHash; this.restoredDigest = undefined;
-      this.verified = before.size; this.verifiedHash = hash; this.expected = observed; this.rejected = undefined;
+      this.verified = size; this.verifiedHash = hash; this.expected = observed; this.rejected = undefined;
     } catch (error) {
       if (error instanceof TranscriptError && error.reason === 'conflict') {
         try { if (fingerprint(await this.stat(handle)) === observed) this.rejected = observed; } catch { /* Recheck namespace on the next bounded attempt. */ }
@@ -290,9 +315,10 @@ export class OwnedTranscriptFile {
         this.created = true;
         const initial = await handle.stat();
         fileStat(initial);
-        if (initial.size !== 0) conflict();
-        this.identity = initial; this.expected = fingerprint(initial);
-        this.options.acquired?.({ dev: initial.dev, ino: initial.ino, fingerprint: this.expected, offset: 0, sha256: this.confirmedHash.copy().digest('hex') });
+        if (initial.size !== 0n) conflict();
+        const identity = identityOf(initial);
+        this.identity = identity; this.expected = fingerprint(initial);
+        this.options.acquired?.({ dev: identity.dev, ino: identity.ino, fingerprint: this.expected, offset: 0, sha256: this.confirmedHash.copy().digest('hex') });
       } else {
         if (!this.identity) conflict();
         try {
@@ -311,20 +337,20 @@ export class OwnedTranscriptFile {
         this.pending = undefined;
         return;
       }
-      if (this.restoredDigest !== undefined || fingerprint(before) !== this.expected || before.size !== this.verified) await this.verifyChanged(handle, before, source, stopping);
+      if (this.restoredDigest !== undefined || fingerprint(before) !== this.expected || transcriptSize(before) !== this.verified) await this.verifyChanged(handle, before, source, stopping);
       for await (const bytes of source.chunks(this.verified - this.confirmed)) {
         if (bytes.length > 65536) throw new TranscriptError('content_gap');
         for (let offset = 0; offset < bytes.length;) {
           if (stopping()) throw new TranscriptError('io_unavailable');
           const current = await this.stat(handle);
-          if (fingerprint(current) !== this.expected || current.size !== this.verified) conflict();
+          if (fingerprint(current) !== this.expected || transcriptSize(current) !== this.verified) conflict();
           if (stopping()) throw new TranscriptError('io_unavailable');
           const { bytesWritten } = await handle.write(bytes, offset, bytes.length - offset, null);
           if (!bytesWritten || bytesWritten > bytes.length - offset) throw new TranscriptError('io_unavailable');
           this.verifiedHash.update(bytes.subarray(offset, offset + bytesWritten));
           this.verified += bytesWritten; offset += bytesWritten;
           const after = await this.stat(handle);
-          if (after.size !== this.verified) conflict();
+          if (transcriptSize(after) !== this.verified) conflict();
           this.expected = fingerprint(after);
         }
       }

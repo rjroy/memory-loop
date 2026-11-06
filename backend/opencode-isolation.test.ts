@@ -54,7 +54,9 @@ async function expectDenied(value: IsolationInput, inspect: Inspect = metadata()
   expect(launch).not.toHaveBeenCalled();
 }
 
-describe('OpenCode isolated launch guard', () => {
+// Linux-only for now: the isolation guard models POSIX paths (/etc/opencode, absolute binaries, link checks).
+// Native Windows OpenCode needs its own isolated setup; see docs/windows-verification.md "Think conversation gate".
+describe.skipIf(process.platform === 'win32')('OpenCode isolated launch guard', () => {
   it('prepares a fixed foreground loopback spec from a complete isolated fixture without spawning', async () => {
     const inspect = metadata();
     const spec = await prepareIsolatedLaunch(input(), inspect);

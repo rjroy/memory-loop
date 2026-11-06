@@ -1,4 +1,4 @@
-import { constants, type Stats } from 'node:fs';
+import { constants, type BigIntStats } from 'node:fs';
 import { link, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { isVaultComponent } from './contract';
 import { isPortableName } from './portable-name';
@@ -11,10 +11,12 @@ import { publicationTempName, type GroundGenerationPublicationState, type Public
   type QuestionPublication, type QuestionPublicationPlan } from './ground-generation-publication-state';
 import type { GenerationAttempt } from './ground-generation-state';
 import type { GenerationCandidate } from './ground-generation-native';
+import { exactFingerprint, fingerprintMatches, sameFileId, statIdentity } from './file-identity';
 
+/** Stats are exact (`bigint: true`), so 64-bit file IDs are never rounded. */
 export interface QuestionPublicationHandle {
   readonly fd: number;
-  stat(): Promise<Stats>;
+  stat(): Promise<BigIntStats>;
   read(bytes: Uint8Array, offset: number, length: number, position: number): Promise<{ bytesRead: number }>;
   write(bytes: Uint8Array, offset: number, length: number, position: number): Promise<{ bytesWritten: number }>;
   sync(): Promise<void>;
@@ -23,31 +25,41 @@ export interface QuestionPublicationHandle {
 /** A narrow owned-filesystem seam for conflict, short-write and flush/crash boundary tests. */
 export interface QuestionPublicationIO {
   open(path: string, flags: number, mode?: number): Promise<QuestionPublicationHandle>;
-  lstat(path: string): Promise<Stats>;
+  lstat(path: string): Promise<BigIntStats>;
   realpath(path: string): Promise<string>;
   mkdir(path: string, mode: number): Promise<void>;
   rename(from: string, to: string): Promise<void>;
   link(from: string, to: string): Promise<void>;
   unlink(path: string): Promise<void>;
 }
-export const questionPublicationIO: QuestionPublicationIO = { open, lstat, realpath, rename, link, unlink,
+export const questionPublicationIO: QuestionPublicationIO = {
+  async open(path, flags, mode) {
+    const handle = await open(path, flags, mode);
+    return { fd: handle.fd, stat: () => handle.stat({ bigint: true }),
+      read: (bytes, offset, length, position) => handle.read(bytes, offset, length, position),
+      write: (bytes, offset, length, position) => handle.write(bytes, offset, length, position),
+      sync: () => handle.sync(), close: () => handle.close() };
+  },
+  lstat: path => lstat(path, { bigint: true }), realpath, rename, link, unlink,
   async mkdir(path, mode) { await mkdir(path, { mode }); } };
 const readFlags = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 const tempFlags = constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK;
-const same = (a: PublicationIdentity, b: PublicationIdentity) => a.dev === b.dev && a.ino === b.ino;
-const identity = (s: Stats): PublicationIdentity => ({ dev: s.dev, ino: s.ino });
-const fingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeMs, s.ctimeMs, s.nlink, s.uid, s.mode]);
+const same = sameFileId;
 const code = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
 function conflict(): never { throw new GroundGenerationError('conflict'); }
 function unsafe(): never { throw new GroundGenerationError('configuration'); }
-function validMetadata(s: Stats): void {
-  if (![s.dev, s.ino, s.size].every(value => Number.isSafeInteger(value) && value >= 0)) unsafe();
-}
-function file(s: Stats, links = 1): void { validMetadata(s); if (!s.isFile() || s.nlink !== links) unsafe(); }
-interface Snapshot { baseline: PublicationBaseline; source: string | null }
+const identity = (s: BigIntStats): PublicationIdentity => statIdentity(s) ?? unsafe();
+const fingerprintsCtime = true;
+const fingerprint = (s: BigIntStats) => exactFingerprint(s, fingerprintsCtime);
+/** Exact byte size; only file IDs may exceed the safe-integer range. */
+function size(s: BigIntStats): number { const value = Number(s.size); return s.size >= 0n && Number.isSafeInteger(value) ? value : unsafe(); }
+function validMetadata(s: BigIntStats): void { identity(s); size(s); }
+function file(s: BigIntStats, links = 1): void { validMetadata(s); if (!s.isFile() || s.nlink !== BigInt(links)) unsafe(); }
+/** `stat` is the observed file behind a `file` baseline; it is not persisted. */
+interface Snapshot { baseline: PublicationBaseline; source: string | null; stat?: BigIntStats }
 
 class QuestionNamespace {
-  private readonly nodes: Array<{ id: string[]; stat: Stats }> = [];
+  private readonly nodes: Array<{ id: string[]; stat: BigIntStats }> = [];
   private safe: SafeRoot | undefined;
   constructor(private readonly root: string, readonly noteId: readonly string[], readonly io: QuestionPublicationIO, private readonly signal: AbortSignal) {}
   private check(): void { if (this.signal.aborted) throw new Error('publication stopped'); }
@@ -107,7 +119,7 @@ class QuestionNamespace {
     this.check();
     if (!this.safe) conflict();
     for (const node of this.nodes) {
-      let named: Stats;
+      let named: BigIntStats;
       try { named = await this.io.lstat(await this.safe.resolve(node.id, 'directory')); }
       catch (error) {
         if (error instanceof SafeEntryError || error instanceof SafeRootChangedError || ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(code(error)))) conflict();
@@ -139,11 +151,11 @@ class QuestionNamespace {
     }
     try {
       const before = await handle.stat();
-      if (before.nlink === 2 && plan?.publishAttempted && plan.tempIdentity && same(before, plan.tempIdentity)) {
+      if (before.nlink === 2n && plan?.publishAttempted && plan.tempIdentity && same(before, plan.tempIdentity)) {
         const temp = await this.io.lstat(this.path(plan.tempName)); file(temp, 2); if (!same(temp, before)) conflict(); file(before, 2);
       } else file(before);
-      if (before.size > questionResourceLimit) unsafe();
-      const bytes = await this.bytes(handle, before.size);
+      if (size(before) > questionResourceLimit) unsafe();
+      const bytes = await this.bytes(handle, size(before));
       let source: string; try { source = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return unsafe(); }
       if (flush) {
         if (!plan?.publishAttempted || !plan.outputSha256 || questionDigest(source) !== plan.outputSha256) conflict();
@@ -153,7 +165,7 @@ class QuestionNamespace {
       }
       await this.validate();
       if (fingerprint(before) !== fingerprint(await handle.stat()) || fingerprint(before) !== fingerprint(await this.io.lstat(named))) conflict();
-      return { source, baseline: { kind: 'file', identity: identity(before), fingerprint: fingerprint(before), sha256: questionDigest(source) } };
+      return { source, stat: before, baseline: { kind: 'file', identity: identity(before), fingerprint: fingerprint(before), sha256: questionDigest(source) } };
     } finally { await handle.close(); }
   }
   async bytes(handle: QuestionPublicationHandle, size: number): Promise<Buffer> {
@@ -166,9 +178,12 @@ class QuestionNamespace {
   }
   async close(): Promise<void> {}
 }
-function unchanged(expected: PublicationBaseline, actual: PublicationBaseline): void {
+/** Plans staged before exact identities carry the legacy numeric fingerprint; compare it against the observed file. */
+function unchanged(expected: PublicationBaseline, snapshot: Snapshot): void {
+  const actual = snapshot.baseline;
   if (expected.kind === 'absent' ? actual.kind !== 'absent'
-    : actual.kind !== 'file' || !same(expected.identity, actual.identity) || expected.fingerprint !== actual.fingerprint || expected.sha256 !== actual.sha256) conflict();
+    : actual.kind !== 'file' || !snapshot.stat || !same(expected.identity, actual.identity) ||
+      !fingerprintMatches(snapshot.stat, expected.fingerprint, fingerprintsCtime) || expected.sha256 !== actual.sha256) conflict();
 }
 const hasOutput = (plan: QuestionPublication, snapshot: Snapshot) => snapshot.baseline.kind === 'file' && snapshot.baseline.sha256 === plan.outputSha256;
 export type QuestionPublicationResult = 'settled' | 'failed' | 'pending';
@@ -198,11 +213,11 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
   async function tempPrefix(ns: QuestionNamespace, plan: QuestionPublication, handle: QuestionPublicationHandle, links = 1, name = plan.tempName): Promise<number> {
     const before = await handle.stat(); file(before, links);
     if (!plan.tempIdentity || !same(before, plan.tempIdentity) || plan.output === null) conflict();
-    const output = Buffer.from(plan.output); if (before.size > output.length) conflict();
-    const bytes = await ns.bytes(handle, before.size);
+    const output = Buffer.from(plan.output); if (size(before) > output.length) conflict();
+    const bytes = await ns.bytes(handle, size(before));
     if (!bytes.equals(output.subarray(0, bytes.length)) || fingerprint(before) !== fingerprint(await handle.stat()) ||
         fingerprint(before) !== fingerprint(await io.lstat(ns.path(name)))) conflict();
-    return before.size;
+    return size(before);
   }
   /** A pre-recorded random witness holds the exclusive-create inode across loss of its SQL binding.
    * No payload is written before binding. A lone filename, missing witness or substituted path is NOT proof.
@@ -210,9 +225,9 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
   async function creationProof(ns: QuestionNamespace, plan: QuestionPublication, handle: QuestionPublicationHandle): Promise<PublicationIdentity> {
     if (!plan.tempWitnessName) conflict();
     const before = await handle.stat();
-    if (before.nlink !== 2 || before.size !== 0) conflict();
+    if (before.nlink !== 2n || before.size !== 0n) conflict();
     file(before, 2);
-    let named: Stats; let witness: Stats;
+    let named: BigIntStats; let witness: BigIntStats;
     try { named = await io.lstat(ns.path(plan.tempName)); witness = await io.lstat(ns.path(plan.tempWitnessName)); }
     catch (error) { if (['ENOENT', 'ELOOP', 'ENOTDIR'].includes(String(code(error)))) conflict(); throw error; }
     file(named, 2); file(witness, 2);
@@ -254,11 +269,11 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
       }
       await retireWitness(ns, plan, handle);
       const stat = await handle.stat();
-      if (stat.nlink === 2) {
+      if (stat.nlink === 2n) {
         const target = await io.lstat(ns.path(plan.noteId[plan.noteId.length - 1]));
         if (!plan.publishAttempted || !same(target, stat)) conflict();
       }
-      await tempPrefix(ns, plan, handle, stat.nlink === 2 ? 2 : 1); await ns.validate();
+      await tempPrefix(ns, plan, handle, stat.nlink === 2n ? 2 : 1); await ns.validate();
       await io.unlink(ns.path(plan.tempName)); await ns.sync();
       state.clearTemp(plan.attemptId); plan.tempIdentity = null; delete plan.tempWitnessName;
     } finally { await handle.close(); }
@@ -315,21 +330,21 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
           await cleanupTemp(ns, plan); if (!hasOutput(plan, await ns.read(plan, true))) conflict();
           await ns.sync(); check(signal); state.settle(plan.attemptId); return;
         }
-        unchanged(plan.baseline, actual.baseline);
+        unchanged(plan.baseline, actual);
         if (!plan.writeRequired) { check(signal); state.settle(plan.attemptId); return; }
       });
       const stored = state.get(plan.attemptId); if (stored?.phase === 'settled') { log(plan.attemptId, 'settled', 'publish'); return 'settled'; }
       await withNamespace(plan, signal, true, async ns => {
         if (ns.identities().length !== plan.directories.length) { await ns.sync(); state.directories(plan.attemptId, ns.identities()); plan.directories = ns.identities(); }
-        unchanged(plan.baseline, (await ns.read(plan)).baseline);
+        unchanged(plan.baseline, await ns.read(plan));
         await writeTemp(ns, plan);
-        unchanged(plan.baseline, (await ns.read(plan)).baseline); await ns.validate(); check(signal);
+        unchanged(plan.baseline, await ns.read(plan)); await ns.validate(); check(signal);
         state.publishing(plan.attemptId); plan.publishAttempted = true;
         const temp = await ns.open(plan.tempName, readFlags);
         try { if (await tempPrefix(ns, plan, temp) !== Buffer.byteLength(plan.output ?? '')) conflict(); }
         finally { await temp.close(); }
         await ns.validate(); check(signal);
-        unchanged(plan.baseline, (await ns.read(plan)).baseline); check(signal);
+        unchanged(plan.baseline, await ns.read(plan)); check(signal);
         const target = ns.path(plan.noteId[plan.noteId.length - 1]);
         log(plan.attemptId, 'attempt', plan.baseline.kind === 'absent' ? 'create' : 'replace');
         try { if (plan.baseline.kind === 'absent') await io.link(ns.path(plan.tempName), target); else await io.rename(ns.path(plan.tempName), target); }

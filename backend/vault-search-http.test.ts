@@ -73,11 +73,24 @@ describe('vault search daemon HTTP', () => {
     expect(hit?.version).toEqual(expect.any(String));
   });
 
-  it('ranks basename before path-only hits and includes visible binary names, not symlinks or dot entries', async () => {
+  it('ranks basename before path-only hits and includes visible binary names, not dot entries', async () => {
     await mkdir(join(root, 'sdk-folder'));
     await writeFile(join(root, 'sdk-folder', 'other.bin'), Buffer.from([0, 255, 1]));
     await writeFile(join(root, 'sdk.txt'), 'plain');
     await writeFile(join(root, '.sdk'), 'hidden');
+    const result = await search('filename', 'sdk');
+    expect(result.hits.map(hit => [hit.path, hit.field])).toEqual([
+      ['sdk.txt', 'name'], ['sdk-folder/other.bin', 'path'],
+    ]);
+    expect(result.hits.every(hit => hit.positions.length === 3 && Number.isFinite(hit.score))).toBe(true);
+    expect(result.counts).toEqual({ matches: 2, files: 2 });
+  });
+
+  // Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+  it.skipIf(process.platform === 'win32')('excludes symlinks from filename hits', async () => {
+    await mkdir(join(root, 'sdk-folder'));
+    await writeFile(join(root, 'sdk-folder', 'other.bin'), Buffer.from([0, 255, 1]));
+    await writeFile(join(root, 'sdk.txt'), 'plain');
     await symlink('sdk.txt', join(root, 'sdk-link'));
     const result = await search('filename', 'sdk');
     expect(result.hits.map(hit => [hit.path, hit.field])).toEqual([

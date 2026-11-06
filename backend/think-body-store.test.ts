@@ -43,10 +43,10 @@ describe('persisted body namespace cleanup', () => {
   async function ownedNamespace(): Promise<CacheNamespace> {
     await mkdir(directory, { mode: 0o700 });
     await mkdir(join(directory, conversationId), { mode: 0o700 });
-    const rootStat = await lstat(directory);
-    const folder = await lstat(join(directory, conversationId));
-    return { conversationId, epoch, path: directory, root: { dev: rootStat.dev, ino: rootStat.ino },
-      directory: { dev: folder.dev, ino: folder.ino } };
+    const rootStat = await lstat(directory, { bigint: true });
+    const folder = await lstat(join(directory, conversationId), { bigint: true });
+    return { conversationId, epoch, path: directory, root: { dev: String(rootStat.dev), ino: String(rootStat.ino) },
+      directory: { dev: String(folder.dev), ino: String(folder.ino) } };
   }
 
   it.skipIf(process.platform === 'win32')('cleans acquired owned files despite accessible permissive modes', async () => {
@@ -176,7 +176,7 @@ describe('private Think body store', () => {
     finally { await reader.close(); }
     expect(events).toEqual(['intent', 'acquire']);
     expect(records[0]).toMatchObject({ conversationId: key.conversationId, epoch, path: directory,
-      root: { dev: expect.any(Number), ino: expect.any(Number) }, directory: { dev: expect.any(Number), ino: expect.any(Number) } });
+      root: { dev: expect.stringMatching(/^\d+$/), ino: expect.stringMatching(/^\d+$/) }, directory: { dev: expect.stringMatching(/^\d+$/), ino: expect.stringMatching(/^\d+$/) } });
     await store.close(); store = undefined;
     expect(events).toEqual(['intent', 'acquire', 'removed']);
     await expect(lstat(directory)).rejects.toMatchObject({ code: 'ENOENT' });

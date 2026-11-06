@@ -55,16 +55,24 @@ it.each([
   await expectConfigError(root, 'config_invalid');
 });
 
-it.each(['missing', 'file', 'symlink loop'] as const)(
+async function expectUnavailableVault(target: 'missing' | 'file' | 'symlink loop') {
+  const root = await createRoot();
+  const vault = join(root, 'vault');
+  if (target === 'file') await writeFile(vault, 'not a directory');
+  if (target === 'symlink loop') await symlink('vault', vault);
+  await writeConfig(root, JSON.stringify({ vaultDirectory: vault }));
+  await expectConfigError(root, 'vault_unavailable');
+}
+
+it.each(['missing', 'file'] as const)(
   'reports an unavailable vault for a %s target without exposing its host path',
-  async target => {
-    const root = await createRoot();
-    const vault = join(root, 'vault');
-    if (target === 'file') await writeFile(vault, 'not a directory');
-    if (target === 'symlink loop') await symlink('vault', vault);
-    await writeConfig(root, JSON.stringify({ vaultDirectory: vault }));
-    await expectConfigError(root, 'vault_unavailable');
-  },
+  expectUnavailableVault,
+);
+
+// Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+it.skipIf(process.platform === 'win32')(
+  'reports an unavailable vault for a symlink loop target without exposing its host path',
+  () => expectUnavailableVault('symlink loop'),
 );
 
 it('loads a configured absolute vault directory from app metadata', async () => {

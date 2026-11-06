@@ -2,6 +2,8 @@ import type { DeleteReceipt } from './contract';
 import { ThinkStateError, type BodyCacheStateStore, type DeletionStateStore, type RegisteredConversation, type StoredDeletion } from './state';
 import type { SQLite } from './sqlite-state';
 import { isAbsolute } from 'node:path';
+import { parseFileIdValue } from '../file-identity';
+import { textColumns } from './sqlite-transcript-state';
 
 /** Additive to v4: no original, command sequence, checkpoint or lease is rebuilt. */
 export const deletionSchemaV5 = `
@@ -30,9 +32,32 @@ export function validateDeletionSchema(db: SQLite): void {
   db.get('SELECT conversation_id, epoch, root_path, root_dev, root_ino, directory_dev, directory_ino FROM body_namespaces LIMIT 0');
   if (db.get('PRAGMA foreign_key_check(body_namespaces)')) fail();
 }
+/**
+ * v11: exact directory identities as decimal TEXT (see transcriptIdentitySchemaV11). Nothing
+ * references this table, so it is rebuilt with the same columns, key and foreign key; existing
+ * INTEGER values (safe integers) CAST to TEXT losslessly and NULL directories stay NULL.
+ */
+export const deletionIdentitySchemaV11 = `
+  CREATE TABLE body_namespaces_v11 (
+    conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id), epoch TEXT NOT NULL,
+    root_path TEXT NOT NULL, root_dev TEXT NOT NULL, root_ino TEXT NOT NULL,
+    directory_dev TEXT, directory_ino TEXT,
+    PRIMARY KEY(conversation_id, epoch)
+  );
+  INSERT INTO body_namespaces_v11(conversation_id, epoch, root_path, root_dev, root_ino, directory_dev, directory_ino)
+    SELECT conversation_id, epoch, root_path, CAST(root_dev AS TEXT), CAST(root_ino AS TEXT), CAST(directory_dev AS TEXT), CAST(directory_ino AS TEXT)
+    FROM body_namespaces;
+  DROP TABLE body_namespaces;
+  ALTER TABLE body_namespaces_v11 RENAME TO body_namespaces;
+`;
+export function validateDeletionIdentitySchema(db: SQLite): void {
+  textColumns(db, 'body_namespaces', ['root_dev', 'root_ino', 'directory_dev', 'directory_ino']);
+}
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function fail(code: ThinkStateError['code'] = 'unavailable'): never { throw new ThinkStateError(code); }
 function count(value: unknown): number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fail(); }
+function fileId(value: unknown): string { return parseFileIdValue(value) ?? fail(); }
+function writtenId(value: unknown): string { return typeof value === 'string' && parseFileIdValue(value) === value ? value : fail(); }
 function id(value: unknown): string { return typeof value === 'string' && uuid.test(value) ? value : fail(); }
 function bit(value: unknown): boolean { return value === 0 ? false : value === 1 ? true : fail(); }
 type Row = Record<string, unknown>;
@@ -57,21 +82,21 @@ export class SQLiteDeletions implements DeletionStateStore {
       intent: namespace => this.cacheWrite(() => {
         const owner = this.live(namespace.conversationId);
         if (!uuid.test(namespace.epoch) || !isAbsolute(namespace.path) || namespace.path.includes('\0') || namespace.directory !== null || !owner) fail();
-        count(namespace.root.dev); count(namespace.root.ino);
-        this.db.run('INSERT INTO body_namespaces VALUES (?, ?, ?, ?, ?, NULL, NULL)', namespace.conversationId, namespace.epoch, namespace.path, namespace.root.dev, namespace.root.ino);
+        this.db.run(`INSERT INTO body_namespaces(conversation_id, epoch, root_path, root_dev, root_ino, directory_dev, directory_ino)
+          VALUES (?, ?, ?, ?, ?, NULL, NULL)`, namespace.conversationId, namespace.epoch, namespace.path, writtenId(namespace.root.dev), writtenId(namespace.root.ino));
       }),
       acquire: (conversationId, epoch, identity) => this.cacheWrite(() => {
-        this.live(conversationId); count(identity.dev); count(identity.ino);
+        this.live(conversationId); const dev = writtenId(identity.dev); const ino = writtenId(identity.ino);
         const row = this.db.get('SELECT directory_dev FROM body_namespaces WHERE conversation_id = ? AND epoch = ?', conversationId, epoch);
         if (!row || row.directory_dev !== null) fail('conflict');
-        this.db.run('UPDATE body_namespaces SET directory_dev = ?, directory_ino = ? WHERE conversation_id = ? AND epoch = ?', identity.dev, identity.ino, conversationId, epoch);
+        this.db.run('UPDATE body_namespaces SET directory_dev = ?, directory_ino = ? WHERE conversation_id = ? AND epoch = ?', dev, ino, conversationId, epoch);
       }),
       namespaces: (conversationId, afterEpoch = '') => this.read(() => this.db.all('SELECT * FROM body_namespaces WHERE conversation_id = ? AND epoch > ? ORDER BY epoch LIMIT 32', conversationId, afterEpoch).map(row => {
         const path = row.root_path;
         if (typeof path !== 'string' || !isAbsolute(path) || path.includes('\0')) fail();
         return { conversationId: id(row.conversation_id), epoch: id(row.epoch), path,
-          root: { dev: count(row.root_dev), ino: count(row.root_ino) },
-          directory: row.directory_dev === null && row.directory_ino === null ? null : { dev: count(row.directory_dev), ino: count(row.directory_ino) } };
+          root: { dev: fileId(row.root_dev), ino: fileId(row.root_ino) },
+          directory: row.directory_dev === null && row.directory_ino === null ? null : { dev: fileId(row.directory_dev), ino: fileId(row.directory_ino) } };
       })),
       removed: (conversationId, epoch) => this.cacheWrite(() => { this.db.run('DELETE FROM body_namespaces WHERE conversation_id = ? AND epoch = ?', conversationId, epoch); }),
     };

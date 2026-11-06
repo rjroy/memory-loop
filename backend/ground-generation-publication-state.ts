@@ -4,8 +4,11 @@ import { ThinkStateError } from './think/state';
 import { isVaultComponent } from './contract';
 import { questionDigest, questionResourceLimit } from './ground-generation-questions';
 import { generationCandidates, validGenerationOutput, type GenerationJob } from './ground-generation-formats';
+import { parseFileIdentity, parseFileIdValue, type FileIdentity } from './file-identity';
+import { textColumns } from './think/sqlite-transcript-state';
 
-export interface PublicationIdentity { dev: number; ino: number }
+/** Exact `dev`/`ino` decimal strings; historical plans' JSON numbers are accepted on read. */
+export type PublicationIdentity = FileIdentity;
 export type PublicationBaseline = { kind: 'absent' } | { kind: 'file'; identity: PublicationIdentity; fingerprint: string; sha256: string };
 export interface QuestionPublicationPlan {
   /** Historical v8 plans omit this field and are questions only. New plans always record it. */
@@ -48,15 +51,37 @@ export function validateGenerationPublicationSchema(db: SQLite): void {
   db.get(`SELECT attempt_id, phase, plan_json, output_text, output_sha256, temp_dev, temp_ino, publish_attempted, failure_code, finished_at FROM ground_generation_publications LIMIT 0`);
   if (db.get('PRAGMA foreign_key_check(ground_generation_publications)')) fail();
 }
+/**
+ * v11: exact temporary-file identity as decimal TEXT (see transcriptIdentitySchemaV11). Nothing
+ * references this table, so it is rebuilt with identical columns, checks and foreign key;
+ * existing INTEGER values (safe integers) CAST to TEXT losslessly. plan_json identities keep their
+ * legacy numbers until the plan is next written, and reads accept both forms.
+ */
+export const publicationIdentitySchemaV11 = `
+  CREATE TABLE ground_generation_publications_v11 (
+    attempt_id TEXT PRIMARY KEY NOT NULL REFERENCES ground_generation_attempts(attempt_id),
+    phase TEXT NOT NULL CHECK(phase IN ('validated', 'publishing', 'settled', 'conflict', 'rejected')),
+    plan_json TEXT, output_text TEXT, output_sha256 TEXT, temp_dev TEXT, temp_ino TEXT,
+    publish_attempted INTEGER NOT NULL DEFAULT 0 CHECK(publish_attempted IN (0, 1)),
+    failure_code TEXT CHECK(failure_code IN ('invalid_output', 'unsafe_target', 'conflict')), finished_at INTEGER,
+    CHECK((temp_dev IS NULL) = (temp_ino IS NULL)), CHECK(phase = 'rejected' OR plan_json IS NOT NULL)
+  );
+  INSERT INTO ground_generation_publications_v11(attempt_id, phase, plan_json, output_text, output_sha256, temp_dev, temp_ino, publish_attempted, failure_code, finished_at)
+    SELECT attempt_id, phase, plan_json, output_text, output_sha256, CAST(temp_dev AS TEXT), CAST(temp_ino AS TEXT), publish_attempted, failure_code, finished_at
+    FROM ground_generation_publications;
+  DROP TABLE ground_generation_publications;
+  ALTER TABLE ground_generation_publications_v11 RENAME TO ground_generation_publications;
+`;
+export function validatePublicationIdentitySchema(db: SQLite): void {
+  textColumns(db, 'ground_generation_publications', ['temp_dev', 'temp_ino']);
+}
 function fail(): never { throw new ThinkStateError('unavailable'); }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
-const integer = (value: unknown): number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fail();
 const string = (value: unknown): string => typeof value === 'string' ? value : fail();
 const digest = (value: unknown): string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ? value : fail();
-function identity(value: unknown): PublicationIdentity {
-  if (!record(value) || Object.keys(value).length !== 2) return fail();
-  return { dev: integer(value.dev), ino: integer(value.ino) };
-}
+function identity(value: unknown): PublicationIdentity { return parseFileIdentity(value) ?? fail(); }
+/** New writes carry only canonical decimal strings. */
+const writtenId = (value: unknown): string => typeof value === 'string' && parseFileIdValue(value) === value ? value : fail();
 function decode(row: Record<string, unknown>): QuestionPublication {
   const attemptId = string(row.attempt_id); const phase = row.phase; const job = row.job_key;
   if (job !== 'questions' && job !== 'quotes') return fail();
@@ -97,7 +122,9 @@ function decode(row: Record<string, unknown>): QuestionPublication {
     ...(typeof tempWitnessName === 'string' ? { tempWitnessName } : {}), tempIdentity, publishAttempted };
 }
 function serialized(plan: QuestionPublicationPlan): string {
-  return JSON.stringify({ noteId: plan.noteId, directories: plan.directories, baseline: plan.baseline, candidatesJson: plan.candidatesJson,
+  const exact = (value: PublicationIdentity): PublicationIdentity => ({ dev: writtenId(value.dev), ino: writtenId(value.ino) });
+  const baseline = plan.baseline.kind === 'file' ? { ...plan.baseline, identity: exact(plan.baseline.identity) } : plan.baseline;
+  return JSON.stringify({ noteId: plan.noteId, directories: plan.directories.map(exact), baseline, candidatesJson: plan.candidatesJson,
     sourceMessageId: plan.sourceMessageId, sourceSha256: plan.sourceSha256, writeRequired: plan.writeRequired, tempName: plan.tempName,
     ...(plan.tempWitnessName === undefined ? {} : { tempWitnessName: plan.tempWitnessName }), ...(plan.job === undefined ? {} : { job: plan.job }) });
 }
@@ -149,7 +176,7 @@ export class SQLiteGenerationPublications implements GroundGenerationPublication
         WHERE a.attempt_id = ? AND a.dispatch_attempted = 1 AND o.job_key = ? AND o.state = ?`, attemptId, plan.job ?? 'questions', expectedState);
       if (!owner) return fail();
       this.db.run(`UPDATE ground_generation_publications SET temp_dev = ?, temp_ino = ?
-        WHERE attempt_id = ? AND phase = ? AND temp_dev IS NULL AND temp_ino IS NULL`, integer(value.dev), integer(value.ino), attemptId, plan.phase);
+        WHERE attempt_id = ? AND phase = ? AND temp_dev IS NULL AND temp_ino IS NULL`, writtenId(value.dev), writtenId(value.ino), attemptId, plan.phase);
     });
   }
   clearTemp(attemptId: string, preserveCreationIntent = false): void {

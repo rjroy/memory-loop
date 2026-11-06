@@ -3,6 +3,7 @@ import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:chil
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
+import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { createInterface } from 'node:readline';
 
@@ -17,7 +18,7 @@ let child: ChildProcessWithoutNullStreams | undefined;
 let authority: string;
 
 beforeEach(async () => {
-  fixture = await mkdtemp('/tmp/opencode/j21-empty-bun-');
+  fixture = await mkdtemp(join(tmpdir(), 'j21-empty-bun-'));
   root = join(fixture, 'vault');
   const metadata = join(fixture, 'private');
   await mkdir(root);
@@ -56,7 +57,7 @@ afterEach(async () => {
     await exited;
   }
   child = undefined;
-  await rm(fixture, { recursive: true, force: true });
+  if (fixture) await rm(fixture, { recursive: true, force: true });
 });
 
 function daemon(method: string, path: string, headers: Record<string, string> = {}) {

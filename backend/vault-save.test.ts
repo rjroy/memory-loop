@@ -72,17 +72,28 @@ describe('existing Markdown save', () => {
     expect(await readFile(join(root, 'note.md'), 'utf8')).toBe('unrelated');
   });
 
-  it('refuses path escape, symlinks, missing files and directories', async () => {
+  it('refuses path escape, missing files and directories', async () => {
+    const outside = join(fixture, 'outside');
+    await mkdir(outside);
+    await writeFile(join(outside, 'secret.md'), 'sentinel');
+    await mkdir(join(root, 'directory.md'));
+    for (const id of [['missing.md'], ['directory.md']]) {
+      await expect(vault.save(id, 'changed', 'revision')).rejects.toMatchObject({ code: 'note_unavailable' });
+    }
+    await expect(vault.save(['..', 'outside', 'secret.md'], 'changed', 'revision')).rejects.toMatchObject({ code: 'invalid_request' });
+    expect(await readFile(join(outside, 'secret.md'), 'utf8')).toBe('sentinel');
+  });
+
+  // Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+  it.skipIf(process.platform === 'win32')('refuses intermediate and final symlinks', async () => {
     const outside = join(fixture, 'outside');
     await mkdir(outside);
     await writeFile(join(outside, 'secret.md'), 'sentinel');
     await symlink(outside, join(root, 'link-dir'));
     await symlink(join(outside, 'secret.md'), join(root, 'link.md'));
-    await mkdir(join(root, 'directory.md'));
-    for (const id of [['link-dir', 'secret.md'], ['link.md'], ['missing.md'], ['directory.md']]) {
+    for (const id of [['link-dir', 'secret.md'], ['link.md']]) {
       await expect(vault.save(id, 'changed', 'revision')).rejects.toMatchObject({ code: 'note_unavailable' });
     }
-    await expect(vault.save(['..', 'outside', 'secret.md'], 'changed', 'revision')).rejects.toMatchObject({ code: 'invalid_request' });
     expect(await readFile(join(outside, 'secret.md'), 'utf8')).toBe('sentinel');
   });
 

@@ -50,6 +50,7 @@ import { lstat, rmdir, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, normalize } from 'node:path';
 import { openSafeRoot } from '../safe-fs';
+import { sameFileId, statIdentity } from '../file-identity';
 import type { BodyCacheStateStore, CacheNamespace } from './state';
 import { checkCacheOutsideVault, removeCacheNamespace } from './body-cleanup';
 
@@ -60,8 +61,9 @@ class StoreError extends Error implements BodyStoreError {
 interface StoredBody {
   ref: BodyRef;
   name: string;
-  dev: number;
-  ino: number;
+  /** Exact decimal file identity (see ../file-identity). */
+  dev: string;
+  ino: string;
   prefixes: Set<number>;
   resident: boolean;
   pins: number;
@@ -79,11 +81,12 @@ async function createNamespace(path: string, vault: string, epoch: string) {
   // The configured parent may be linked; the newly generated root may not exist at all.
   await parent.createDirectory([rootName]);
   const directory = await parent.resolve([rootName], 'directory');
-  const namespace = await lstat(directory);
-  if (!namespace.isDirectory()) throw new StoreError('resource_failure');
+  const stat = await lstat(directory, { bigint: true });
+  const namespace = statIdentity(stat);
+  if (!stat.isDirectory() || !namespace) throw new StoreError('resource_failure');
   const root = await openSafeRoot(directory);
-  const named = await lstat(await parent.resolve([rootName], 'directory'));
-  if (!named.isDirectory() || named.dev !== namespace.dev || named.ino !== namespace.ino) throw new StoreError('resource_failure');
+  const named = await lstat(await parent.resolve([rootName], 'directory'), { bigint: true });
+  if (!named.isDirectory() || !sameFileId(named, namespace)) throw new StoreError('resource_failure');
   await parent.syncDirectory([]);
   return { parent, root, rootName, directory, namespace };
 }
@@ -106,8 +109,8 @@ export async function createBodyStore(options: { directory: string; epoch: strin
   let closed = false;
   let closing: Promise<void> | undefined;
   const checkRoot = async () => {
-    const named = await lstat(await parent.resolve([rootName], 'directory'));
-    if (!named.isDirectory() || named.dev !== namespace.dev || named.ino !== namespace.ino) throw new StoreError('unavailable');
+    const named = await lstat(await parent.resolve([rootName], 'directory'), { bigint: true });
+    if (!named.isDirectory() || !sameFileId(named, namespace)) throw new StoreError('unavailable');
     await root.resolve([], 'directory');
   };
   const namespaceFor = (conversationId: string) => {
@@ -116,14 +119,14 @@ export async function createBodyStore(options: { directory: string; epoch: strin
       work = (async () => {
         if (!uuid.test(conversationId) || revoked.has(conversationId)) throw new StoreError('closed');
         await checkRoot();
-        const record: CacheNamespace = { conversationId, epoch, path: directory, root: { dev: namespace.dev, ino: namespace.ino }, directory: null };
+        const record: CacheNamespace = { conversationId, epoch, path: directory, root: { ...namespace }, directory: null };
         spaceIntents.set(conversationId, record);
         cache?.intent(record); // Commit attribution before creating a directory or writing any content.
         await root.createDirectory([conversationId]);
-        const stat = await lstat(await root.resolve([conversationId], 'directory'));
-        if (!stat.isDirectory()) throw new StoreError('resource_failure');
+        const stat = await lstat(await root.resolve([conversationId], 'directory'), { bigint: true });
+        const identity = statIdentity(stat);
+        if (!stat.isDirectory() || !identity) throw new StoreError('resource_failure');
         await checkRoot();
-        const identity = { dev: stat.dev, ino: stat.ino };
         cache?.acquire(conversationId, epoch, identity);
         // A failed acquisition acknowledgement must not grant cleanup authority in memory.
         record.directory = identity;
@@ -138,8 +141,8 @@ export async function createBodyStore(options: { directory: string; epoch: strin
     if (!uuid.test(name)) throw new StoreError('unavailable');
     const space = await namespaceFor(conversationId);
     await checkRoot();
-    const named = await lstat(await root.resolve([conversationId], 'directory'));
-    if (!space.directory || !named.isDirectory() || named.dev !== space.directory.dev || named.ino !== space.directory.ino) throw new StoreError('unavailable');
+    const named = await lstat(await root.resolve([conversationId], 'directory'), { bigint: true });
+    if (!space.directory || !named.isDirectory() || !sameFileId(named, space.directory)) throw new StoreError('unavailable');
     return root.resolve([conversationId, name], kind);
   };
   const fingerprint = (key: BodyKey) => JSON.stringify([key.conversationId, key.owner.kind, key.owner.kind === 'assistant-text' ? key.owner.messageId : key.owner.clientCommandId,
@@ -149,16 +152,18 @@ export async function createBodyStore(options: { directory: string; epoch: strin
   const checkConversation = (id: string) => { checkOpen(); if (revoked.has(id)) throw new StoreError('closed'); };
   const namedFile = async (item: StoredBody) => {
     const path = await pathFor(item.ref.key.conversationId, item.name);
-    const stat = await lstat(path);
-    if (!stat.isFile() || stat.nlink !== 1 || stat.dev !== item.dev || stat.ino !== item.ino) throw new StoreError('unavailable');
+    const stat = await lstat(path, { bigint: true });
+    if (!stat.isFile() || stat.nlink !== 1n || !sameFileId(stat, item)) throw new StoreError('unavailable');
     return path;
   };
   const verify = async (handle: FileHandle, expected?: StoredBody) => {
-    const stat = await handle.stat();
-    if (!stat.isFile() || stat.nlink !== 1 ||
-        (expected && (stat.dev !== expected.dev || stat.ino !== expected.ino))) throw new StoreError('unavailable');
+    const stat = await handle.stat({ bigint: true });
+    const identity = statIdentity(stat);
+    const size = Number(stat.size);
+    if (!stat.isFile() || stat.nlink !== 1n || !identity || !Number.isSafeInteger(size) ||
+        (expected && !sameFileId(identity, expected))) throw new StoreError('unavailable');
     if (expected) await namedFile(expected);
-    return stat;
+    return { ...identity, size };
   };
   const get = (ref: BodyRef): StoredBody => {
     try {

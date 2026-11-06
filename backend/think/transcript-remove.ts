@@ -1,7 +1,8 @@
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import type { StoredTranscript } from './state';
-import { TranscriptError, TranscriptNamespace, transcriptFingerprint, transcriptIO, type TranscriptIO } from './transcript-file';
+import { TranscriptError, TranscriptNamespace, transcriptFingerprint, transcriptFingerprintMatches, transcriptIO, transcriptSize, type TranscriptIO } from './transcript-file';
+import { sameFileId } from '../file-identity';
 
 const files = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0);
 const absent = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
@@ -38,8 +39,8 @@ export async function removeMappedTranscript(vault: string, record: StoredTransc
       const verify = async () => {
         await check();
         const stat = await file.stat(); const named = await io.lstat(await namespace.resolve(name, 'file'));
-        if (!stat.isFile() || !named.isFile() || stat.nlink !== 1 || named.nlink !== 1 ||
-            stat.dev !== checkpoint.dev || stat.ino !== checkpoint.ino || named.dev !== stat.dev || named.ino !== stat.ino ||
+        if (!stat.isFile() || !named.isFile() || stat.nlink !== 1n || named.nlink !== 1n ||
+            !sameFileId(stat, checkpoint) || !sameFileId(named, stat) ||
             transcriptFingerprint(stat) !== transcriptFingerprint(baseline) || transcriptFingerprint(named) !== transcriptFingerprint(stat)) conflict();
       };
       await verify();
@@ -54,10 +55,11 @@ export async function removeMappedTranscript(vault: string, record: StoredTransc
         return bytes;
       };
       const pending = record.pending;
-      const tail = baseline.size - checkpoint.offset;
+      const tail = transcriptSize(baseline) - checkpoint.offset;
       if (tail < 0 || tail > (pending?.state === 'ready' ? pending.length : 0)) conflict();
       if (!pending || pending.state !== 'ready') {
-        if (transcriptFingerprint(baseline) !== checkpoint.fingerprint) conflict();
+        // Checkpoints confirmed before exact identities carry the legacy numeric fingerprint.
+        if (!transcriptFingerprintMatches(baseline, checkpoint.fingerprint)) conflict();
       }
       const prefix = createHash('sha256');
       for (let at = 0; at < checkpoint.offset; at += 65536) prefix.update(await read(at, Math.min(65536, checkpoint.offset - at)));

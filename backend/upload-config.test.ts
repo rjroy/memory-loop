@@ -1,17 +1,18 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from './config';
 
 let fixture: string;
 let vault: string;
 beforeEach(async () => {
-  fixture = await mkdtemp('/tmp/opencode/j21-upload-config-');
+  fixture = await mkdtemp(join(tmpdir(), 'j21-upload-config-'));
   vault = join(fixture, 'vault');
   await mkdir(vault);
   await mkdir(join(fixture, '.memory-loop'));
 });
-afterEach(async () => { await rm(fixture, { recursive: true, force: true }); });
+afterEach(async () => { if (fixture) await rm(fixture, { recursive: true, force: true }); });
 async function config(recall: unknown) {
   await writeFile(join(fixture, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault, recall }));
   return loadConfig(fixture);

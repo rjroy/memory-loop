@@ -1,14 +1,19 @@
-import type { Stats } from 'node:fs';
-import { lstat, opendir } from 'node:fs/promises';
+import type { BigIntStats } from 'node:fs';
+import { lstat as lstatNumber, opendir } from 'node:fs/promises';
 import { isVaultComponent } from './contract';
 import { openSafeRoot } from './safe-fs';
 import type { GroundGenerationConfig } from './ground-generation-config';
 import type { GroundGenerationState } from './ground-generation-state';
 import { GroundGenerationError } from './ground-generation-error';
+import { exactFingerprint, sameFileId } from './file-identity';
 
-const same = (a: Stats, b: Stats) => a.dev === b.dev && a.ino === b.ino;
-const fingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeMs, s.ctimeMs, s.nlink]);
-interface Candidate { id: string[]; stat: Stats }
+// Exact stats: 64-bit file IDs above Number.MAX_SAFE_INTEGER are never rounded together.
+const lstat = (path: string) => lstatNumber(path, { bigint: true });
+const same = sameFileId;
+const fingerprint = (s: BigIntStats) => exactFingerprint(s, true);
+/** Fractional milliseconds without rounding a whole millisecond across a boundary. */
+const modifiedMs = (s: BigIntStats) => Number(s.mtimeNs / 1000000n) + Number(s.mtimeNs % 1000000n) / 1e6;
+interface Candidate { id: string[]; stat: BigIntStats }
 export interface GenerationExcerpt { noteId: string[]; modifiedAt: string; text: string }
 
 /** Traverse the vault asynchronously while bounding retained candidates and payloads. */
@@ -44,12 +49,12 @@ export async function recentGenerationContext(options: {
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
         const file = await root.openFile(id, 'read');
         try {
-          const stat = await file.stat();
-          if (!stat.isFile() || stat.mtimeMs < after || stat.mtimeMs > options.now) continue;
+          const stat = await file.stat({ bigint: true });
+          if (!stat.isFile() || modifiedMs(stat) < after || modifiedMs(stat) > options.now) continue;
           checkAbort(); const transcript = isTranscript(id); checkAbort();
           if (transcript) continue;
           candidates.push({ id, stat });
-          candidates.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs || (a.id.join('/') < b.id.join('/') ? -1 : 1));
+          candidates.sort((a, b) => modifiedMs(b.stat) - modifiedMs(a.stat) || (a.id.join('/') < b.id.join('/') ? -1 : 1));
           if (candidates.length > limits.maxNotes) candidates.pop();
         } finally { await file.close(); }
       }
@@ -62,7 +67,7 @@ export async function recentGenerationContext(options: {
       if (!remaining) break;
       checkAbort(); const transcript = isTranscript(candidate.id); checkAbort();
       if (transcript) continue;
-      const held: Array<{ id: string[]; stat: Stats }> = [];
+      const held: Array<{ id: string[]; stat: BigIntStats }> = [];
       try {
         for (let index = 1; index < candidate.id.length; index++) {
           const id = candidate.id.slice(0, index);
@@ -70,24 +75,25 @@ export async function recentGenerationContext(options: {
         }
         const file = await root.openFile(candidate.id, 'read');
         try {
-          const before = await file.stat();
+          const before = await file.stat({ bigint: true });
           if (!before.isFile() || fingerprint(before) !== fingerprint(candidate.stat)) continue;
-          const count = Math.min(before.size, limits.maxNoteBytes, remaining); const bytes = Buffer.alloc(count);
+          const size = Number(before.size);
+          const count = Math.min(size, limits.maxNoteBytes, remaining); const bytes = Buffer.alloc(count);
           let offset = 0;
           while (offset < count) {
             if (signal.aborted) throw new Error('context stopped');
             const read = await file.read(bytes, offset, count - offset, offset); if (!read.bytesRead) break; offset += read.bytesRead;
           }
           await check();
-          if (offset !== count || fingerprint(before) !== fingerprint(await file.stat()) || fingerprint(before) !== fingerprint(await lstat(await root.resolve(candidate.id, 'file')))) continue;
+          if (offset !== count || fingerprint(before) !== fingerprint(await file.stat({ bigint: true })) || fingerprint(before) !== fingerprint(await lstat(await root.resolve(candidate.id, 'file')))) continue;
           let stable = true;
           for (const node of held) if (!same(node.stat, await lstat(await root.resolve(node.id, 'directory')))) stable = false;
           if (!stable) continue;
           // A bounded prefix may end inside a code point; retain only complete UTF-8 text.
-          const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: count < before.size });
+          const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: count < size });
           if (!text.trim()) continue;
           remaining -= Buffer.byteLength(text);
-          result.push({ noteId: candidate.id, modifiedAt: new Date(before.mtimeMs).toISOString(), text });
+          result.push({ noteId: candidate.id, modifiedAt: new Date(modifiedMs(before)).toISOString(), text });
         } finally { await file.close(); }
       } catch { if (signal.aborted) throw new Error('context stopped'); /* Skip a changed/unreadable candidate, never widen the search. */ }
     }

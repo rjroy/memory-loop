@@ -104,7 +104,9 @@ async function until(test: () => boolean, ms = 3000): Promise<boolean> {
 async function stop(owned: OwnedChild): Promise<void> {
   const child = owned.child;
   if (child.exitCode !== null || child.signalCode !== null) return;
-  child.stdin.end(); child.kill('SIGTERM');
+  // Windows has no SIGTERM delivery; the owned clock preload runs the production handler instead.
+  if (process.platform === 'win32') { child.stdin.write(`${JSON.stringify({ signal: 'SIGTERM' })}\n`); child.stdin.end(); }
+  else { child.stdin.end(); child.kill('SIGTERM'); }
   if (!await until(() => child.exitCode !== null || child.signalCode !== null)) {
     child.kill('SIGKILL');
     if (!await until(() => child.exitCode !== null || child.signalCode !== null)) throw new Error('owned daemon cleanup failed');

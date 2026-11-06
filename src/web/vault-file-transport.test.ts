@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { createApp } from '../../backend/app';
@@ -28,7 +29,7 @@ const webRequest = (path: string, init: RequestInit = {}) => vaultRoute(new Requ
 }));
 
 beforeEach(async () => {
-  fixture = await mkdtemp('/tmp/opencode/j21-file-transport-');
+  fixture = await mkdtemp(join(tmpdir(), 'j21-file-transport-'));
   root = join(fixture, 'vault');
   const metadata = join(fixture, 'private');
   await mkdir(root);
@@ -89,7 +90,7 @@ afterEach(async () => {
   else process.env.MEMORY_LOOP_TRANSPORT_FILE = originalSelector;
   server?.closeAllConnections();
   await new Promise<void>(resolve => server?.close(() => resolve()) ?? resolve());
-  try { await vault?.close(); } finally { await rm(fixture, { recursive: true, force: true }); }
+  try { await vault?.close(); } finally { if (fixture) await rm(fixture, { recursive: true, force: true }); }
 });
 
 describe('real Next vault route transport to owned daemon', () => {

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -29,6 +29,17 @@ let root: string;
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'think-durable-admission-')); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
+async function fileSymlinksPermitted(): Promise<boolean> {
+  if (process.platform !== 'win32') return true;
+  const target = join(root, 'symlink-probe-target');
+  await writeFile(target, '');
+  try { await symlink(target, join(root, 'symlink-probe')); return true; }
+  catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'EPERM') return false;
+    throw error;
+  } finally { await rm(join(root, 'symlink-probe'), { force: true }); await rm(target, { force: true }); }
+}
+
 async function statePolicy(scenario: 'state-permissive' | 'state-normalized' | 'state-windows-slashes') {
   const output = join(root, 'state-policy-report.json');
   const child = spawnSync('bun', ['--no-env-file', runner, root, scenario, output], {
@@ -48,7 +59,7 @@ it.skipIf(process.platform === 'win32')('reopens actual SQLite facts with access
   expect(report.after).toBe(report.before);
   expect(report.stored).toBe(report.before);
   expect(report.integrity).toBe('ok');
-  expect(report.schema).toBe(10);
+  expect(report.schema).toBe(11);
 });
 
 it('reopens the same SQLite facts from a native noncanonical absolute project path', async () => {
@@ -58,7 +69,7 @@ it('reopens the same SQLite facts from a native noncanonical absolute project pa
   expect(report.after).toBe(report.before);
   expect(report.stored).toBe(report.before);
   expect(report.integrity).toBe('ok');
-  expect(report.schema).toBe(10);
+  expect(report.schema).toBe(11);
 });
 
 it.skipIf(process.platform !== 'win32')('reopens native Windows state using forward-slash absolute spelling', async () => {
@@ -67,7 +78,7 @@ it.skipIf(process.platform !== 'win32')('reopens native Windows state using forw
   expect(report.after).toBe(report.before);
   expect(report.stored).toBe(report.before);
   expect(report.integrity).toBe('ok');
-  expect(report.schema).toBe(10);
+  expect(report.schema).toBe(11);
 });
 
 async function exercise(scenario: Scenario): Promise<FixtureReport> {
@@ -99,9 +110,9 @@ function durable(probe: Probe | undefined, at: string): Probe {
   expect(probe.error, 'the independent SQLite reader must open successfully').toBeUndefined();
   expect(probe.integrity).toBe('ok');
   // v2 checkpoints, v3 order, v4 views, v5 deletion, v6 generation, v7 preflight,
-  // v8 publication, v9 quote budgets, v10 freshness-period links.
+  // v8 publication, v9 quote budgets, v10 freshness-period links, v11 exact file identities.
   // Probe controls read unmigrated v1 snapshots too, so enumerate supported versions explicitly.
-  expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).toContain(probe.schemaVersion);
+  expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).toContain(probe.schemaVersion);
   expect(probe.writerAvailable, 'a SQLite write transaction must not span an external native call').toBe(true);
   return probe;
 }
@@ -553,8 +564,10 @@ describe('production Think durable admission through prepareServer and the offic
     expect(['upstream-unconfirmed', 'admitted']).toContain(retained.state);
   });
 
-  it.each(['database-symlink', 'database-hardlink', 'wal-symlink', 'shm-symlink',
-    'state-inside-vault'] as const)('fails closed for %s without native mutation or sibling read failure', async scenario => {
+  it.for(['database-symlink', 'database-hardlink', 'wal-symlink', 'shm-symlink',
+    'state-inside-vault'] as const)('fails closed for %s without native mutation or sibling read failure', async (scenario, { skip }) => {
+    // Windows file symlinks need Developer Mode or elevation; the fixture cannot stage this attack without it.
+    if (scenario.endsWith('-symlink') && !await fileSymlinksPermitted()) { skip(); return; }
     const report = await exercise(scenario);
     expect(report.createStatus, 'unsafe private durable state must fail before native ownership creation').toBe(503);
     expect(report.createReceipt).toMatchObject({ error: { code: 'think_unavailable' } });

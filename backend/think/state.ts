@@ -87,7 +87,8 @@ export interface ThinkRegistryReader {
   commands(conversationId: string, after?: CommandPosition): StoredCommand[];
 }
 
-export interface TranscriptDirectoryIdentity { dev: number; ino: number }
+/** Exact `dev`/`ino` as canonical decimal strings (see ../file-identity); persisted as TEXT. */
+export interface TranscriptDirectoryIdentity { dev: string; ino: string }
 export interface TranscriptFileCheckpoint extends TranscriptDirectoryIdentity {
   fingerprint: string;
   offset: number;

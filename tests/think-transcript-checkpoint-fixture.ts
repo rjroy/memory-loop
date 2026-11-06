@@ -39,7 +39,7 @@ export type ReopenScenario = 'replay' | 'recover' | 'verify-confirmed' | 'legacy
 
 export interface Checkpoint {
   conversationId: string; ownerConversationId: string; nativeSessionId: string; vaultDirectory: string;
-  noteIdJson: string; creationState: string; fileDev: number | null; fileIno: number | null;
+  noteIdJson: string; creationState: string; fileDev: string | null; fileIno: string | null;
   fileFingerprint: string | null; confirmedOffset: number; confirmedSha256: string;
   pendingEntryId: string | null; pendingLength: number | null; pendingSha256: string | null;
   pendingState: string | null;
@@ -50,7 +50,7 @@ export interface Probe {
 }
 export interface Observation {
   at: 'before-create' | 'before-first-write' | 'before-original-write' | 'after-original-file-sync' | 'after-directory-sync';
-  probe: Probe; fileHex: string; fileDev?: number; fileIno?: number;
+  probe: Probe; fileHex: string; fileDev?: string; fileIno?: string;
 }
 export interface Report {
   scenario: Scenario; observations: Observation[]; counts: { creates: number; prompts: number; stops: number };
@@ -126,7 +126,7 @@ export interface V2Facts {
     creation_epoch: string; context_json: string; effective_context_json: string | null; created_at: number; creation_state: string };
   commands: MigrationCommand[];
   transcript: { conversation_id: string; note_id_json: string; created_at: number; namespace_json: string;
-    creation_state: string; file_dev: number | null; file_ino: number | null; file_fingerprint: string | null;
+    creation_state: string; file_dev: string | null; file_ino: string | null; file_fingerprint: string | null;
     confirmed_offset: number; confirmed_sha256: string; pending_entry_id: string | null; pending_semantic: string | null;
     pending_source_identity: string | null; pending_header: number | null; pending_length: number | null;
     pending_sha256: string | null; pending_state: string | null; staged_length: number; staged_chunks: number };
@@ -212,7 +212,7 @@ function probe(database: string): Probe {
     try {
       result.checkpoint = db.query<Checkpoint, [string]>(`SELECT t.conversation_id AS conversationId,
         c.conversation_id AS ownerConversationId, c.native_session_id AS nativeSessionId, c.vault_directory AS vaultDirectory,
-        t.note_id_json AS noteIdJson, t.creation_state AS creationState, t.file_dev AS fileDev, t.file_ino AS fileIno,
+        t.note_id_json AS noteIdJson, t.creation_state AS creationState, CAST(t.file_dev AS TEXT) AS fileDev, CAST(t.file_ino AS TEXT) AS fileIno,
         t.file_fingerprint AS fileFingerprint, t.confirmed_offset AS confirmedOffset, t.confirmed_sha256 AS confirmedSha256,
         t.pending_entry_id AS pendingEntryId, t.pending_length AS pendingLength, t.pending_sha256 AS pendingSha256,
         t.pending_state AS pendingState
@@ -340,13 +340,17 @@ async function seedV2Order(root: string): Promise<void> {
   const target = join(directory, filename);
   await writeFile(target, prefix, { mode: 0o600 });
   const stat = lstatSync(target);
+  const exact = lstatSync(target, { bigint: true });
   await appendFile(target, pending.subarray(0, 7));
   const sourceA = sha(JSON.stringify([`user:${sendCommandId}`, 'User', { kind: 'user', message_id: messageId, delivery: 'registered' },
     null, [conversationId, 'canonical', Buffer.byteLength(original), sha(original)]]));
   const sourceB = sha(JSON.stringify([`user:${orderedB}`, 'User', { kind: 'user', message_id: `msg_memoryloop_${orderedB.replaceAll('-', '')}`, delivery: 'registered' },
     null, [conversationId, 'canonical', Buffer.byteLength(orderedOriginalB), sha(orderedOriginalB)]]));
+  // Historical v2 rows used JSON numbers, which only ever held safe integers. A filesystem ID
+  // beyond that range (common on NTFS) could not have been written by v2, so use its exact string.
+  const historical = (value: bigint) => value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : String(value);
   const namespace = [vault, join(vault, 'Conversations'), directory].map(path => {
-    const node = lstatSync(path); return { dev: node.dev, ino: node.ino };
+    const node = lstatSync(path, { bigint: true }); return { dev: historical(node.dev), ino: historical(node.ino) };
   });
   const seed = new Database(database, { readwrite: true, create: false });
   try {
@@ -372,7 +376,7 @@ async function seedV2Order(root: string): Promise<void> {
     // preserve every field/chunk, not "repair" pending work or infer anything from the file.
     seed.query(`INSERT INTO transcripts VALUES (?, ?, ?, ?, 'owned', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'ready', ?, 1)`)
       .run(conversationId, JSON.stringify(['Conversations', 'Memory Loop', filename]), now, JSON.stringify(namespace),
-        stat.dev, stat.ino, JSON.stringify([stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs, stat.nlink, stat.uid, stat.mode]),
+        exact.dev, exact.ino, JSON.stringify([stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs, stat.nlink, stat.uid, stat.mode]),
         Buffer.byteLength(prefix), sha(prefix), `user:${orderedB}`, `user:${orderedB}`, sourceB, pending.length, sha(pending), pending.length);
     seed.query('INSERT INTO transcript_entries VALUES (?, ?, ?, ?, ?, ?)').run(conversationId, `user:${sendCommandId}`,
       `user:${sendCommandId}`, sourceA, sha(originalFraming(orderedRunA)), Buffer.byteLength(prefix));
@@ -388,8 +392,12 @@ function v2Facts(root: string): V2Facts {
     // Compare EVERY historical ownership column, not v4's newly added derivative fields.
     const owner = db.query<V2Facts['owner'], [string]>(`SELECT conversation_id, native_session_id, vault_directory, owner_marker_json,
       creation_epoch, context_json, effective_context_json, created_at, creation_state FROM conversations WHERE conversation_id = ?`).get(conversationId);
-    const transcript = db.query<V2Facts['transcript'], [string]>('SELECT * FROM transcripts WHERE conversation_id = ?').get(conversationId);
-    if (!metadata || !owner || !transcript) throw new Error('fixture v2 ownership/checkpoint facts missing');
+    const row = db.query<V2Facts['transcript'], [string]>('SELECT * FROM transcripts WHERE conversation_id = ?').get(conversationId);
+    // v11 retypes file identity INTEGER -> TEXT; compare its exact decimal value across the migration.
+    const identity = db.query<{ dev: string | null; ino: string | null }, [string]>(
+      'SELECT CAST(file_dev AS TEXT) AS dev, CAST(file_ino AS TEXT) AS ino FROM transcripts WHERE conversation_id = ?').get(conversationId);
+    if (!metadata || !owner || !row || !identity) throw new Error('fixture v2 ownership/checkpoint facts missing');
+    const transcript = { ...row, file_dev: identity.dev, file_ino: identity.ino };
     return { installationId: metadata.installationId, owner, transcript,
       commands: db.query<MigrationCommand, [string]>(`SELECT command_id, conversation_id, kind, state,
         typeof(original_input) AS original_type,
@@ -446,14 +454,15 @@ async function cacheNativePath(root: string, forwardSlashes: boolean) {
   const project = join(root, 'project'); const vault = join(root, 'vault');
   const cacheRoot = join(root, 'cache-root'); const folder = join(cacheRoot, conversationId);
   await mkdir(cacheRoot, { mode: 0o700 });
-  const rootStat = lstatSync(cacheRoot);
+  const rootStat = lstatSync(cacheRoot, { bigint: true });
+  const rootIdentity = { dev: String(rootStat.dev), ino: String(rootStat.ino) };
   const suppliedPath = forwardSlashes ? cacheRoot.replaceAll('\\', '/') : cacheRoot;
   const state = await openThinkState(project, vault);
   let intent;
   let acquired;
   try {
     state.cache.intent({ conversationId, epoch, path: suppliedPath,
-      root: { dev: rootStat.dev, ino: rootStat.ino }, directory: null });
+      root: rootIdentity, directory: null });
     intent = state.cache.namespaces(conversationId)[0];
     await mkdir(folder, { mode: 0o700 });
     const body = join(folder, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
@@ -461,8 +470,8 @@ async function cacheNativePath(root: string, forwardSlashes: boolean) {
     let unacquiredRejected = false;
     try { await removeCacheNamespace(intent, vault); } catch { unacquiredRejected = true; }
     if (!unacquiredRejected || await readFile(body, 'utf8') !== 'owned cached body') throw new Error('unacquired intent allowed cleanup');
-    const folderStat = lstatSync(folder);
-    state.cache.acquire(conversationId, epoch, { dev: folderStat.dev, ino: folderStat.ino });
+    const folderStat = lstatSync(folder, { bigint: true });
+    state.cache.acquire(conversationId, epoch, { dev: String(folderStat.dev), ino: String(folderStat.ino) });
     acquired = state.cache.namespaces(conversationId)[0];
   } finally { state.close(); }
   const reopened = await openThinkState(project, vault);
@@ -471,7 +480,7 @@ async function cacheNativePath(root: string, forwardSlashes: boolean) {
     await removeCacheNamespace(persisted, vault);
     reopened.cache.removed(conversationId, epoch);
     return { suppliedPath, intent, acquired, persisted, remaining: reopened.cache.namespaces(conversationId),
-      folderExists: existsSync(folder), rootIdentity: { dev: rootStat.dev, ino: rootStat.ino } };
+      folderExists: existsSync(folder), rootIdentity };
   } finally { reopened.close(); }
 }
 
@@ -688,9 +697,9 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
   async function observe(at: Observation['at']) {
     let file = Buffer.alloc(0);
     let stat;
-    try { file = await readFile(target); stat = lstatSync(target); }
+    try { file = await readFile(target); stat = lstatSync(target, { bigint: true }); }
     catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
-    observations.push({ at, probe: probe(database), fileHex: file.toString('hex'), ...(stat ? { fileDev: stat.dev, fileIno: stat.ino } : {}) });
+    observations.push({ at, probe: probe(database), fileHex: file.toString('hex'), ...(stat ? { fileDev: String(stat.dev), fileIno: String(stat.ino) } : {}) });
   }
   const io: TranscriptIO = { ...transcriptIO,
     // Hold first transcript initialization until admission/native observation, avoiding an earlier cached null load.

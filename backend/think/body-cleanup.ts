@@ -2,6 +2,7 @@ import type { BigIntStats } from 'node:fs';
 import { lstat, opendir, rmdir, unlink } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, normalize } from 'node:path';
 import { openSafeRoot, SafeEntryError, SafeRootChangedError, sameFileIdentity } from '../safe-fs';
+import { parseFileIdentity, sameFileId } from '../file-identity';
 import type { CacheNamespace } from './state';
 import { TranscriptError } from './transcript-file';
 
@@ -38,19 +39,21 @@ export async function removeCacheNamespace(record: CacheNamespace, vault: string
 }
 async function removeNamespace(record: CacheNamespace, vault: string): Promise<void> {
   if (!uuid.test(record.conversationId) || !uuid.test(record.epoch) || !isAbsolute(record.path) || record.path.includes('\0')) conflict();
+  const rootIdentity = parseFileIdentity(record.root) ?? conflict();
+  const directoryIdentity = record.directory === null ? null : parseFileIdentity(record.directory) ?? conflict();
   const nativePath = normalize(record.path);
   const parent = await openSafeRoot(dirname(nativePath));
   const rootName = basename(nativePath);
   const rootPath = await parent.resolve([rootName], 'directory');
   // The generated root is NOT a trusted configured link. Check it before realpath
   // can hide a replacement symlink/junction, even one pointing at the original inode.
-  const initial = await lstat(rootPath);
-  if (!initial.isDirectory() || initial.dev !== record.root.dev || initial.ino !== record.root.ino) conflict();
+  const initial = await lstat(rootPath, { bigint: true });
+  if (!initial.isDirectory() || !sameFileId(initial, rootIdentity)) conflict();
   await checkCacheOutsideVault(rootPath, vault);
   const root = await openSafeRoot(rootPath);
   const checkRoot = async () => {
-    const named = await lstat(await parent.resolve([rootName], 'directory'));
-    if (!named.isDirectory() || named.dev !== record.root.dev || named.ino !== record.root.ino) conflict();
+    const named = await lstat(await parent.resolve([rootName], 'directory'), { bigint: true });
+    if (!named.isDirectory() || !sameFileId(named, rootIdentity)) conflict();
     await root.resolve([], 'directory');
   };
   await checkRoot();
@@ -60,12 +63,12 @@ async function removeNamespace(record: CacheNamespace, vault: string): Promise<v
     if (!absent(error)) throw error;
     await checkRoot(); await root.syncDirectory([]); return; // rmdir preceded its SQLite acknowledgement.
   }
-  if (!record.directory) conflict(); // An unacquired existing directory is not ours to adopt.
-  const identity = record.directory;
+  if (!directoryIdentity) conflict(); // An unacquired existing directory is not ours to adopt.
+  const identity = directoryIdentity;
   const check = async () => {
     await checkRoot();
-    const named = await lstat(await root.resolve([record.conversationId], 'directory'));
-    if (!named.isDirectory() || named.dev !== identity.dev || named.ino !== identity.ino) conflict();
+    const named = await lstat(await root.resolve([record.conversationId], 'directory'), { bigint: true });
+    if (!named.isDirectory() || !sameFileId(named, identity)) conflict();
   };
   await check();
   // Streaming enumeration closes its Dir before rmdir, including on iteration failures.

@@ -163,7 +163,8 @@ describe('vault actions daemon HTTP', () => {
     expect(await readFile(join(root, 'other', 'data.txt'), 'utf8')).toBe('data');
   });
 
-  it('rejects stale source and parent identities and never follows substituted symlinks', async () => {
+  // Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+  it.skipIf(process.platform === 'win32')('rejects stale source and parent identities and never follows substituted symlinks', async () => {
     await mkdir(join(root, 'dir'));
     await writeFile(join(root, 'note.md'), 'original');
     const outside = join(fixture, 'outside');

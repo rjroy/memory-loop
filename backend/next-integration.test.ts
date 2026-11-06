@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { constants } from 'node:fs';
 import { createServer, request as httpRequest, type IncomingHttpHeaders, type IncomingMessage, type ClientRequest, type Server } from 'node:http';
-import { access, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
 
 const root = resolve(import.meta.dirname, '..');
@@ -159,20 +158,13 @@ async function ready() {
   throw new Error('Next did not become ready');
 }
 
-async function ownedNodeNext(rootPid: number) {
+async function ownedNodeNext(rootPid: number, serverEnv: NodeJS.ProcessEnv) {
   const runnerExecutable = await realpath(process.execPath);
-  let pathNode: string | undefined;
-  for (const directory of (env.PATH ?? '').split(delimiter)) {
-    try {
-      const candidate = resolve(fixture, directory || '.', 'node');
-      await access(candidate, constants.X_OK);
-      pathNode = await realpath(candidate);
-      break;
-    } catch (error: unknown) {
-      if (!(error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'EACCES' || error.code === 'ENOTDIR'))) throw error;
-    }
-  }
-  if (!pathNode) throw new Error('Fixture PATH has no executable node');
+  // A PATH entry can be a version-manager shim; ask the selected Node for its actual executable.
+  const probe = spawnSync('node', ['-p', 'process.execPath'], { cwd: fixture, env: serverEnv, encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024 });
+  const selectedNode = probe.stdout?.trim();
+  if (probe.error || probe.status !== 0 || !selectedNode || !isAbsolute(selectedNode)) throw new Error(`Fixture Node probe failed: ${probe.error?.message ?? probe.stderr}`);
+  const pathNode = await realpath(selectedNode);
   const result = { owned: false, descendantObserved: false, executableMatched: false, nextCommandMatched: false,
     vanishedProc: false, pathNodeFound: true, pathNodeMatchesRunner: pathNode === runnerExecutable,
     runnerIsBun: typeof process.versions.bun === 'string', traversalTruncated: false };
@@ -216,7 +208,8 @@ describe('production Next HTTP boundary', () => {
     await cp(join(root, 'tsconfig.json'), join(project, 'tsconfig.json'));
     await cp(join(root, 'next.config.ts'), join(project, 'next.config.ts'));
     await cp(join(root, 'bunfig.toml'), join(project, 'bunfig.toml'));
-    await symlink(join(root, 'node_modules'), join(project, 'node_modules'), 'dir');
+    // Fixture plumbing only: Windows directory symlinks need elevation, junctions do not.
+    await symlink(join(root, 'node_modules'), join(project, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
     const build = spawnSync(process.execPath, [next, 'build', project, '--webpack'], { cwd: fixture, env: { ...env, HOME: fixture }, encoding: 'utf8', timeout: 120_000 });
     if (build.status !== 0) throw new Error(`Fixture Next build failed: ${build.stdout}\n${build.stderr}`);
     upstream = createServer((req, res) => {
@@ -848,7 +841,8 @@ describe('production Next HTTP boundary', () => {
     await scan(directory);
     expect(checked).toBeGreaterThan(0);
   });
-  it('starts and stops the canonical server package entrypoint from an unrelated directory', async () => {
+  // POSIX-only: verifies ownership via /proc and stops the detached process group with a negative-PID signal.
+  it.skipIf(process.platform === 'win32')('starts and stops the canonical server package entrypoint from an unrelated directory', async () => {
     const reservation = createServer();
     const serverPort = await listen(reservation);
     await close(reservation);
@@ -857,8 +851,9 @@ describe('production Next HTTP boundary', () => {
     await writeFile(join(metadata, 'service.token'), token, { mode: 0o600 });
     const upstreamPort = (upstream.address() as AddressInfo).port;
     await writeFile(join(metadata, 'transport.json'), JSON.stringify({ daemonOrigin: `http://127.0.0.1:${upstreamPort}`, web: { mode: 'loopback', origin: `http://127.0.0.1:${serverPort}` } }), { mode: 0o600 });
+    const serverEnv = { ...env, HOME: fixture, MEMORY_LOOP_TRANSPORT_FILE: join(metadata, 'transport.json') };
     const server = spawn('bun', ['--no-env-file', 'run', '--cwd', join(fixture, 'project'), 'server', '--port', String(serverPort)], {
-      cwd: fixture, env: { ...env, HOME: fixture, MEMORY_LOOP_TRANSPORT_FILE: join(metadata, 'transport.json') }, detached: true, stdio: 'pipe',
+      cwd: fixture, env: serverEnv, detached: true, stdio: 'pipe',
     });
     let logs = '';
     server.stdout.on('data', data => { logs += String(data); });
@@ -880,7 +875,7 @@ describe('production Next HTTP boundary', () => {
       expect(response?.headers['content-type']).toContain('text/html');
       expect((response?.body ?? '') + logs).not.toContain(token);
       if (server.pid === undefined) throw new Error('Owned server process has no PID');
-      const ownership = await ownedNodeNext(server.pid);
+      const ownership = await ownedNodeNext(server.pid, serverEnv);
       const launcherState = server.exitCode !== null ? 'exited' : server.signalCode !== null ? 'signalled' : 'running';
       expect(ownership.owned, `owned Next process not found: ${JSON.stringify({ ...ownership, launcherState })}`).toBe(true);
       process.kill(-server.pid, 'SIGTERM');

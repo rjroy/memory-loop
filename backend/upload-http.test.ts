@@ -261,7 +261,8 @@ describe('attachment upload daemon boundary', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } });
   });
-  it('rejects a symlinked attachment directory without touching the outside target', async () => {
+  // Symlink fixtures need elevated privileges on Windows; link tests are POSIX-only.
+  it.skipIf(process.platform === 'win32')('rejects a symlinked attachment directory without touching the outside target', async () => {
     const outside = join(fixture, 'outside');
     await mkdir(outside);
     await symlink(outside, join(root, '06_Attachments'));
@@ -316,7 +317,9 @@ describe('attachment upload daemon boundary', () => {
     expect(body).not.toContain('private flush detail');
     expect(await readFile(join(root, '06_Attachments', 'saved.bin'), 'utf8')).toBe('complete');
   });
-  it('refuses publication if the attachment namespace changes during the upload', async () => {
+  // POSIX-only: substitutes the attachment directory with a symlink (needs elevation on Windows) and renames it
+  // while the temp file handle is open, which Windows refuses with EPERM.
+  it.skipIf(process.platform === 'win32')('refuses publication if the attachment namespace changes during the upload', async () => {
     await vault.close();
     const dir = join(root, '06_Attachments');
     const outside = join(fixture, 'outside');

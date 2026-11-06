@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, realpathSync, type Stats } from 'node:fs';
+import { type BigIntStats, closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, realpathSync, type Stats } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { isAbsolute, join, normalize, relative, sep } from 'node:path';
@@ -33,6 +33,23 @@ type FileIdentity = { readonly dev: bigint; readonly ino: bigint };
 
 export function sameFileIdentity(a: FileIdentity, b: FileIdentity): boolean {
   return a.dev === b.dev && a.ino === b.ino;
+}
+
+/**
+ * Identity of a replacement temp file. `ctimeNs` is recorded only after the
+ * writing handle is closed: Windows updates the change time when the last
+ * handle closes, so a value captured from the open handle would not match.
+ */
+type TempIdentity = { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs?: bigint };
+
+function openTempIdentity(info: BigIntStats): TempIdentity {
+  return { dev: info.dev, ino: info.ino, size: info.size, mtimeNs: info.mtimeNs };
+}
+
+function matchesTempIdentity(info: BigIntStats, identity: TempIdentity): boolean {
+  return info.isFile() && info.nlink === 1n && info.dev === identity.dev && info.ino === identity.ino &&
+    info.size === identity.size && info.mtimeNs === identity.mtimeNs &&
+    (identity.ctimeNs === undefined || info.ctimeNs === identity.ctimeNs);
 }
 
 function checkResolutionRequest(components: readonly string[], kind: EntryKind): void {
@@ -140,7 +157,7 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
     async replaceFile(components, bytes, options) {
       let published = false;
       let temporary: readonly string[] | undefined;
-      let tempIdentity: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bigint } | undefined;
+      let tempIdentity: TempIdentity | undefined;
       let tempHandle: FileHandle | undefined;
       try {
         const target = [...components];
@@ -157,17 +174,22 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
         const tempComponents = [...parent, `.memory-loop-${randomUUID()}.tmp`];
         tempHandle = await safe.createFile(tempComponents);
         temporary = tempComponents;
-        tempIdentity = await tempHandle.stat({ bigint: true });
+        tempIdentity = openTempIdentity(await tempHandle.stat({ bigint: true }));
         try {
           await tempHandle.writeFile(bytes);
         } catch (error) {
-          tempIdentity = await tempHandle.stat({ bigint: true });
+          tempIdentity = openTempIdentity(await tempHandle.stat({ bigint: true }));
           throw error;
         }
-        tempIdentity = await tempHandle.stat({ bigint: true });
+        tempIdentity = openTempIdentity(await tempHandle.stat({ bigint: true }));
         await (options.flushFile ?? (async file => file.sync()))(tempHandle);
         await tempHandle.close();
         tempHandle = undefined;
+        const closed = await lstat(await safe.resolve(tempComponents, 'file'), { bigint: true });
+        if (!matchesTempIdentity(closed, tempIdentity)) {
+          throw new Error('Filesystem temporary file has changed');
+        }
+        tempIdentity = { ...tempIdentity, ctimeNs: closed.ctimeNs };
 
         await options.validate();
         const targetPath = await safe.resolve(target, 'file');
@@ -177,8 +199,7 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
         }
         const tempPath = await safe.resolve(tempComponents, 'file');
         const temp = await lstat(tempPath, { bigint: true });
-        if (!temp.isFile() || temp.nlink !== 1n || temp.dev !== tempIdentity.dev || temp.ino !== tempIdentity.ino ||
-            temp.size !== tempIdentity.size || temp.mtimeNs !== tempIdentity.mtimeNs || temp.ctimeNs !== tempIdentity.ctimeNs) {
+        if (!matchesTempIdentity(temp, tempIdentity)) {
           throw new Error('Filesystem temporary file has changed');
         }
         await rename(tempPath, targetPath);
@@ -194,8 +215,7 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
           try {
             const tempPath = await safe.resolve(temporary, 'file');
             const current = await lstat(tempPath, { bigint: true });
-            if (current.isFile() && current.nlink === 1n && current.dev === tempIdentity.dev && current.ino === tempIdentity.ino &&
-                current.size === tempIdentity.size && current.mtimeNs === tempIdentity.mtimeNs && current.ctimeNs === tempIdentity.ctimeNs) {
+            if (matchesTempIdentity(current, tempIdentity)) {
               await unlink(tempPath);
             }
           } catch (cleanupError) {

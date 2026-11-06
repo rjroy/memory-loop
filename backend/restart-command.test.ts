@@ -3,7 +3,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { copyFile, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 
 const source = resolve(import.meta.dirname, '..');
 const bun = '/usr/bin/bun';
@@ -211,8 +211,10 @@ it.skipIf(process.platform !== 'linux')('forwards SIGINT to the owned web child 
   const events = join(root, 'events.log');
   await writeFile(events, '');
   await writeFile(join(root, 'node_modules/next/dist/bin/next'), `const { appendFileSync } = require('node:fs');\nconst log = value => appendFileSync(${JSON.stringify(events)}, value + '\\n');\nprocess.on('SIGINT', () => { log('child SIGINT'); setTimeout(() => { log('child drained'); process.exit(0); }, 150); });\nlog('child ready');\nsetInterval(() => {}, 1000);\n`);
+  // Vitest runs under Node; expose that executable without inheriting the caller's PATH.
+  const path = [dirname(process.execPath), fixturePath].join(delimiter);
   const launcher = spawn(bun, ['--no-env-file', join(root, 'src/web/start.ts'), 'start'], {
-    cwd: root, detached: true, env: { NODE_ENV: 'test', PATH: fixturePath, HOME: root }, stdio: 'pipe',
+    cwd: root, detached: true, env: { NODE_ENV: 'test', PATH: path, HOME: root }, stdio: 'pipe',
   });
   children.push(launcher);
   let logs = '';
@@ -224,7 +226,12 @@ it.skipIf(process.platform !== 'linux')('forwards SIGINT to the owned web child 
   });
   let complete = false;
   try {
-    await waitForFile(events, value => value.includes('child ready'));
+    try {
+      await Promise.race([
+        waitForFile(events, value => value.includes('child ready')),
+        exited.then(result => { throw new Error(`Launcher exited before readiness: ${JSON.stringify(result)}`); }),
+      ]);
+    } catch (error) { throw new Error(`Web child readiness failed: ${String(error)}\n${logs}`); }
     launcher.kill('SIGINT');
     const result = await withDeadline(exited, 'Owned launcher did not stop');
     expect(result).toEqual({ code: 0, signal: null });

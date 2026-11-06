@@ -185,7 +185,7 @@ function Conversation({ presentation }: ThinkPresenterProps) {
   }, [state.identity?.conversationId, state.creation, state.run.state]);
   useLayoutEffect(() => {
     const request = state.messageFocus;
-    if (!request || request.conversationId !== state.identity?.conversationId || state.creation !== 'ready' || !editor.current) return;
+    if (!request || request.conversationId !== (state.identity?.conversationId ?? '') || (!request.immediate && !state.preparedDraft && state.creation !== 'ready') || !editor.current) return;
     if (actions.claimMessageFocus && !actions.claimMessageFocus(request.token)) return;
     editor.current.focus();
     const end = editor.current.value.length;
@@ -240,6 +240,7 @@ function Conversation({ presentation }: ThinkPresenterProps) {
 
   const exceptions: string[] = [];
   if (state.newChat === 'starting') exceptions.push('Starting chat…');
+  else if (state.preparedDraft) exceptions.push('Draft ready. Start a chat when you are ready to send.');
   else if (state.creation === 'registered') exceptions.push('Starting chat…');
   else if (state.creation === 'upstream-unconfirmed') exceptions.push('Checking whether this chat was started…');
   else if (state.creation === 'rejected') exceptions.push(state.creationFailure === 'configuration_invalid' ? 'Think setup needs attention.' : 'This chat couldn’t be started.');

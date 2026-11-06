@@ -36,7 +36,7 @@ export interface ThinkHandoffState {
   readonly canCheck: boolean;
   readonly kind: ThinkHandoffRequest['kind'];
 }
-export interface ThinkMessageFocus { readonly conversationId: string; readonly token: string }
+export interface ThinkMessageFocus { readonly conversationId: string; readonly token: string; readonly immediate?: boolean }
 
 /** The last verified text remains visible while a newer generation is loaded. */
 export type ThinkTextContent =
@@ -125,6 +125,7 @@ export interface ThinkPresentationState {
   readonly rejectedSubmissions: readonly ThinkRejectedSubmission[];
   /** One explicit Ground handoff, not routine route/message focus. */
   readonly messageFocus?: ThinkMessageFocus;
+  readonly preparedDraft?: boolean;
   readonly selectionUnavailable?: boolean;
   readonly mutationsAvailable?: boolean;
 }
@@ -143,6 +144,7 @@ export interface ThinkPresentationActions {
   replyQuestion(identity: ThinkKnownIdentity, decisionId: string, answer: FormReplyCommand['answer']): void;
   recoverRejected(identity: ThinkKnownIdentity, clientCommandId: string, replaceDraftVersion?: number): void;
   claimMessageFocus?(token: string): boolean;
+  startPreparedDraft?(): void;
 }
 
 export interface ThinkPresentation {

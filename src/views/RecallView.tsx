@@ -8,6 +8,7 @@ import type { VaultAction as VaultActionRequest, VaultActionResponse, VaultId, V
 import { containsId, failureCopy, fileContentLocation, findEntry, idKey, noteLocation, readFile, readNote, readTree, selectionFromSearch } from '../recall/api';
 import type { RecallFailure } from '../recall/api';
 import { useRecallSession } from '../recall/RecallSession';
+import { useThinkSession } from '../think/presentation';
 import { useDesktop } from '../recall/useDesktop';
 import { useVaultRead } from '../recall/useVaultRead';
 import { useDirectoryTree } from '../recall/useDirectoryTree';
@@ -80,6 +81,7 @@ export default function RecallView() {
 
 function RecallContent({ location, navigate, navigationType, isNavigating, navigationGeneration, claimNativeRecallSelection, recallSnapshot, rememberEntry, registerRecallCapture, registerNavigationGuard }: Presentation) {
   const session = useRecallSession();
+  const { session: think } = useThinkSession();
   const editor = session.editor;
   const editing = useSyncExternalStore(editor.subscribe, editor.getSnapshot, editor.getSnapshot);
   const searching = useSyncExternalStore(session.search.subscribe, session.search.getSnapshot, session.search.getSnapshot);
@@ -700,7 +702,17 @@ function RecallContent({ location, navigate, navigationType, isNavigating, navig
   };
 
   return <FileActions tree={tree.status === 'ready' ? tree.data : null} loadFullTree={loadFullTree} guard={guardFileAction} onSuccess={fileActionSucceeded}
-    isCurrent={ownsFileView} onUpload={setUploadTrigger}
+    isCurrent={ownsFileView} onUpload={setUploadTrigger} onThinkAbout={id => {
+      const owns = admitSelection();
+      if (!owns) return;
+      const commit = () => {
+        if (!owns()) return;
+        editor.finish();
+        actionNavigation.current = true;
+        try { think.prepareRecallPath(id.join('/')); } finally { actionNavigation.current = false; }
+      };
+      if (editor.request(commit)) commit();
+    }}
     refresh={reconcileFiles} onBusy={busy => { fileBusyRef.current = busy; setFileBusy(busy); }} fenced={fileFenced}
     setFenced={fenced => { session.fileActionFenced = fenced; session.fileActionAffectedId = fenced ? uncertainAffectedId.current : null; setFileFenced(fenced); }} unavailable={Boolean(editing.pending) || isNavigating || Boolean(uploadTrigger)}>
     <div className="recall" onKeyDown={event => {

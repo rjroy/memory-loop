@@ -22,6 +22,9 @@ export class ReplaceFileError extends Error {
 /** A checked descendant is a link or does not have the requested kind. */
 export class SafeEntryError extends Error {}
 
+/** A path component is not valid for the current filesystem platform. */
+export class SafeComponentError extends Error {}
+
 /** The configured root no longer identifies the opened directory. */
 export class SafeRootChangedError extends Error {}
 
@@ -40,7 +43,7 @@ function checkResolutionRequest(components: readonly string[], kind: EntryKind):
     if (typeof component !== 'string' || component === '' || component === '.' || component === '..' ||
         /[/\\\0]/.test(component) || isAbsolute(component) ||
         (process.platform === 'win32' && component.includes(':'))) {
-      throw new Error('Invalid filesystem path component');
+      throw new SafeComponentError('Invalid filesystem path component');
     }
   }
   if (components.length === 0 && kind !== 'directory') {

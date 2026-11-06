@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { constants, writeFileSync } from 'node:fs';
 import { access, chmod, mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { Database } from 'bun:sqlite';
 import { createQuestionPublisher, createQuotePublisher, questionPublicationIO } from '../backend/ground-generation-publisher';
 import type { GroundGenerationPublicationState } from '../backend/ground-generation-publication-state';
@@ -9,14 +10,14 @@ import { mergeQuestions, questionCandidates, questionDigest } from '../backend/g
 import { openThinkState } from '../backend/think/sqlite-state';
 
 const root = process.argv[2]; const scenario = process.argv[3];
-if (!root || !['manual', 'absence', 'lost-confirmation', 'v7-migration', 'v8-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate', 'permissive-recovery', 'nonportable-publication', 'legacy-target-recovery', 'legacy-parent-recovery', 'nonportable-missing-parent', 'write-sync-normal', 'write-sync-recovery', 'write-sync-terminal-cleanup', 'write-sync-io-failure'].includes(scenario)) throw new Error('invalid owned publication fixture');
+if (!root || resolve(root) !== resolve(tmpdir()) || !basename(root).startsWith('ground-publication-test-') || !['manual', 'absence', 'lost-confirmation', 'v7-migration', 'v8-migration', 'create-interruption', 'unbound-substitution', 'terminal-cleanup-interruption', 'case-duplicate', 'permissive-recovery', 'nonportable-publication', 'legacy-target-recovery', 'legacy-parent-recovery', 'nonportable-missing-parent', 'write-sync-normal', 'write-sync-recovery', 'write-sync-terminal-cleanup', 'write-sync-io-failure', 'simulated-win-invalid-parent'].includes(scenario)) throw new Error('invalid owned publication fixture');
 const project = join(root, 'project'); const vault = join(root, 'vault');
 const noteId = ['03_Resources', 'Memory-Loop',
-  ...(['legacy-parent-recovery', 'nonportable-missing-parent'].includes(scenario) ? ['legacy:folder'] : []),
+  ...(['legacy-parent-recovery', 'nonportable-missing-parent', 'simulated-win-invalid-parent'].includes(scenario) ? ['legacy:folder'] : []),
   scenario === 'nonportable-publication' ? 'CON.md' : scenario === 'legacy-target-recovery' ? 'legacy:questions.md' : 'prompts.md'];
 const file = join(vault, ...noteId);
 await mkdir(join(project, '.memory-loop'), { recursive: true, mode: 0o700 });
-await mkdir(join(vault, ...noteId.slice(0, scenario === 'nonportable-missing-parent' ? -2 : -1)), { recursive: true, mode: 0o700 });
+await mkdir(join(vault, ...noteId.slice(0, ['nonportable-missing-parent', 'simulated-win-invalid-parent'].includes(scenario) ? -2 : -1)), { recursive: true, mode: 0o700 });
 const initial = '# Owned questions\n\n## Question\nOriginal fixture question?\n';
 const text = JSON.stringify([{ text: 'New fixture question?' }]);
 const candidate = { messageId: 'msg_owned_candidate', text, sha256: questionDigest(text) };
@@ -48,7 +49,25 @@ const writeSyncIO = {
   },
 };
 try {
-  if (scenario === 'write-sync-io-failure') {
+  if (scenario === 'simulated-win-invalid-parent') {
+    // Only this owned child and publication call select the Windows component-validation
+    // branch. Paths and filesystem operations remain native Linux, not Windows evidence.
+    const sentinel = join(vault, 'unrelated-sentinel');
+    await writeFile(sentinel, 'untouched');
+    const publisher = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications });
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    if (!platform || process.platform !== 'linux') throw new Error('fixture requires native Linux');
+    let result;
+    try {
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+      result = await publisher.complete(attempt, candidate, signal);
+    } finally { Object.defineProperty(process, 'platform', platform); }
+    assert.equal(result, 'failed');
+    assert.equal(store.generation.pending(), null);
+    await assert.rejects(access(join(vault, ...noteId.slice(0, -1))), { code: 'ENOENT' });
+    assert.deepEqual(await readdir(join(vault, '03_Resources', 'Memory-Loop')), []);
+    assert.equal(await readFile(sentinel, 'utf8'), 'untouched');
+  } else if (scenario === 'write-sync-io-failure') {
     await writeFile(file, initial);
     let failed = false;
     const publisher = createQuestionPublisher({ directory: vault, noteId, state: store.generation.publications,

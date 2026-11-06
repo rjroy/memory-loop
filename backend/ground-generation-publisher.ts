@@ -2,7 +2,7 @@ import { constants, type Stats } from 'node:fs';
 import { link, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { isVaultComponent } from './contract';
 import { isPortableName } from './portable-name';
-import { openSafeRoot, SafeEntryError, SafeRootChangedError, type SafeRoot } from './safe-fs';
+import { openSafeRoot, SafeComponentError, SafeEntryError, SafeRootChangedError, type SafeRoot } from './safe-fs';
 import { join } from 'node:path';
 import { GroundGenerationError } from './ground-generation-error';
 import { questionDigest, questionResourceLimit } from './ground-generation-questions';
@@ -340,7 +340,7 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
       });
       log(plan.attemptId, 'settled', 'publish'); return 'settled';
     } catch (error) {
-      if (!signal.aborted && (error instanceof GroundGenerationError && error.code !== 'unavailable' || ['ELOOP', 'ENOTDIR', 'EISDIR'].includes(String(code(error))))) {
+      if (!signal.aborted && (error instanceof SafeComponentError || error instanceof GroundGenerationError && error.code !== 'unavailable' || ['ELOOP', 'ENOTDIR', 'EISDIR'].includes(String(code(error))))) {
         state.fail(plan.attemptId, error instanceof GroundGenerationError && error.code === 'conflict' ? 'conflict' : 'unsafe_target');
         log(plan.attemptId, 'conflict', 'publish'); return 'failed';
       }
@@ -366,7 +366,7 @@ function createGenerationPublisher(options: PublisherOptions & { job: Generation
           candidatesJson, sourceMessageId: candidate.messageId, sourceSha256: candidate.sha256,
           ...merged, outputSha256: merged.output === null ? null : questionDigest(merged.output), tempName: publicationTempName(attempt.attemptId, options.job) });
       } catch (error) {
-        if (!signal.aborted && error instanceof GroundGenerationError) { state.fail(attempt.attemptId, error.code === 'conflict' ? 'conflict' : 'unsafe_target'); return 'failed'; }
+        if (!signal.aborted && (error instanceof GroundGenerationError || error instanceof SafeComponentError)) { state.fail(attempt.attemptId, error instanceof GroundGenerationError && error.code === 'conflict' ? 'conflict' : 'unsafe_target'); return 'failed'; }
         log(attempt.attemptId, 'pending', 'stage'); return 'pending';
       } finally { await ns.close(); }
       return apply(plan, signal);

@@ -20,11 +20,15 @@ afterEach(async () => {
   await Promise.all(fixtures.splice(0).map(path => rm(path, { recursive: true, force: true })));
 });
 
-it.skipIf(process.platform !== 'linux')('moves distinct case-sensitive siblings despite win32 relative case folding', async () => {
+it.skipIf(process.platform !== 'linux')('moves distinct case-sensitive siblings despite win32 relative case folding', async context => {
   const root = await mkdtemp(join(tmpdir(), 'memory-loop-win-relative-'));
   fixtures.push(root);
   await mkdir(join(root, 'source'));
-  await mkdir(join(root, 'SOURCE'));
+  try { await mkdir(join(root, 'SOURCE')); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return context.skip();
+    throw error;
+  }
   await writeFile(join(root, 'source', 'file.txt'), 'original');
   await writeFile(join(root, 'SOURCE', 'keep.txt'), 'destination');
   const safe = await openSafeRoot(root);

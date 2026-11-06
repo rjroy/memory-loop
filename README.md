@@ -41,7 +41,7 @@ not Bun's experimental Next adapter or a custom HTTP server.
 
 **Platform migration:** transport, Recall, Capture, Ground and Think now use the
 shared portable filesystem foundation. Native Windows execution remains
-unverified; operator tooling and end-to-end verification are still tracked in
+unverified; final end-to-end verification is still tracked in
 `memory-loop-68l`. The target is Windows and Linux, with no descendant symlinks or
 junctions, Windows-compatible new names, collision refusal and stale-save
 protection. Filesystem access permissions are the operating environment's
@@ -422,6 +422,9 @@ $env:MEMORY_LOOP_TRANSPORT_FILE = Join-Path $projectRoot '.memory-loop\transport
 The environment setting is local to each terminal. For the checkout's default
 application root, omit the override and use the original commands above.
 Native Windows operation still needs the agreed disposable-vault verification.
+Use the [Windows verification guide](docs/windows-verification.md) for the owned
+test selection and fresh application-root/vault procedure; it never requires the
+real vault.
 
 `bun run restart` is **Linux-only**, a checkout-testing convenience, not the
 Windows workflow. Windows operators restart the two terminal commands manually.
@@ -748,6 +751,21 @@ external relocation/rename/delete can affect in-flight reads. Browsing is not a
 transactional snapshot.
 
 ## Checks and current acceptance
+
+On **2026-11-06**, the filesystem portability work passed isolated Linux checks
+with Bun **1.4.3**, Node **26.13.0** and system Chromium: frontend **229 passed**,
+backend **1,172 passed / 12 skipped**, and browser **68 passed**. Application/test
+typechecking and the production build passed. Backend checks, types and build
+were refreshed after the final invalid-component classification correction;
+the frontend/browser results are from the preceding isolated run. No live vault,
+configuration, provider or serving build was used.
+
+Browser coverage exercised Recall reading/search, Capture and Ground; editing
+navigation tests intercept note APIs. Recall mutations and Think stream/reload/
+deletion have owned backend/fake-native fixture coverage, not a live-provider
+end-to-end demonstration. Native Windows and isolated native OpenCode conversation
+verification remain open gates in `memory-loop-68l.9`; these Linux results do not
+establish Windows support. See the [Windows procedure](docs/windows-verification.md).
 
 On **2026-11-01**, Ground's reduced weekly-quote slice (`memory-loop-9ya.8`)
 passed independent final validation: frontend **144**, backend **745 across 34

@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import type { ModelInfo, SessionInfo } from '@opencode/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -224,8 +225,8 @@ function launch(state: Fixture, prepareOnly = false, instant = now): OwnedChild 
     const response=await prepared.fetch(new Request('http://127.0.0.1:${state.port}/api/ground/goals',{headers:{host:'127.0.0.1:${state.port}',authorization:'Bearer ${serviceToken}'}}));
     console.info('ground_fixture_prepared',JSON.stringify({status:response.status,body:await response.json()}));`;
   const args = ['--no-env-file', '--preload', clock, ...(prepareOnly ? ['--eval', preparedScript] : [runtime, '--project-root', state.project, '--port', String(state.port)])];
-  const child = spawn('/usr/bin/bun', args, { cwd: state.root, stdio: 'pipe', env: { NODE_ENV: 'test', PATH: '/usr/bin:/bin', HOME: state.root,
-    XDG_CONFIG_HOME: state.root, XDG_DATA_HOME: state.root, XDG_CACHE_HOME: state.root, XDG_STATE_HOME: state.root, TMPDIR: state.root, TZ: 'UTC', GROUND_FIXTURE_NOW: String(instant) } });
+  const child = spawn('bun', args, { cwd: state.root, stdio: 'pipe', env: { NODE_ENV: 'test', PATH: process.env.PATH, HOME: state.root,
+    XDG_CONFIG_HOME: state.root, XDG_DATA_HOME: state.root, XDG_CACHE_HOME: state.root, XDG_STATE_HOME: state.root, TMPDIR: state.root, TEMP: state.root, TMP: state.root, TZ: 'UTC', GROUND_FIXTURE_NOW: String(instant) } });
   const owned: OwnedChild = { child, output: '', errors: '' };
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
   child.stdout.on('data', (value: string) => { owned.output += value; }); child.stderr.on('data', (value: string) => { owned.errors += value; });
@@ -443,7 +444,7 @@ describe('lazy Ground freshness', () => {
   }, 20000);
 });
 
-beforeEach(async () => { root = await mkdtemp('/tmp/opencode/ground-generation-runtime-'); });
+beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'ground-generation-runtime-')); });
 afterEach(async () => {
   try {
     for (const state of fixtures.splice(0)) {

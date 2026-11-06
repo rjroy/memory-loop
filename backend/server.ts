@@ -46,7 +46,10 @@ const unavailableThink = (error: ThinkUnavailableCode): PreparedThink => ({ thin
 
 async function prepareThink(config: VaultConfig | undefined, vault: VaultState, transportFile: string, projectRoot: string, generation: GroundGenerationSettings): Promise<PreparedThink> {
   // Read-only/unconfigured applications must not acquire a private application database.
-  if (config?.think === undefined) return unavailableThink('think_config_missing');
+  if (config?.think === undefined) {
+    console.info('think_config_outcome', { status: 'missing' });
+    return unavailableThink('think_config_missing');
+  }
   const think = parseThinkConfig(config.think);
   if (!think) {
     console.info('think_config_outcome', { status: 'invalid', field: 'configuration (including requiredVersion)' });

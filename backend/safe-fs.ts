@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
+import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, realpathSync, type Stats } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { isAbsolute, join, normalize, relative, sep } from 'node:path';
 import { isPortableName } from './portable-name';
 export { isPortableName } from './portable-name';
 
@@ -24,6 +24,46 @@ export class SafeEntryError extends Error {}
 
 /** The configured root no longer identifies the opened directory. */
 export class SafeRootChangedError extends Error {}
+
+type EntryKind = 'file' | 'directory' | 'missing';
+type FileIdentity = { readonly dev: bigint; readonly ino: bigint };
+
+export function sameFileIdentity(a: FileIdentity, b: FileIdentity): boolean {
+  return a.dev === b.dev && a.ino === b.ino;
+}
+
+function checkResolutionRequest(components: readonly string[], kind: EntryKind): void {
+  if (!Array.isArray(components) || !['file', 'directory', 'missing'].includes(kind)) {
+    throw new Error('Invalid filesystem resolution request');
+  }
+  for (const component of components) {
+    if (typeof component !== 'string' || component === '' || component === '.' || component === '..' ||
+        /[/\\\0]/.test(component) || isAbsolute(component) ||
+        (process.platform === 'win32' && component.includes(':'))) {
+      throw new Error('Invalid filesystem path component');
+    }
+  }
+  if (components.length === 0 && kind !== 'directory') {
+    throw new Error('Filesystem root is a directory');
+  }
+}
+
+// Compare canonical path components exactly; Windows directories can be case-sensitive.
+function checkContained(root: string, candidate: string): void {
+  const rootParts = root.endsWith(sep) ? root.slice(0, -1).split(sep) : root.split(sep);
+  const candidateParts = candidate.split(sep);
+  if (candidateParts.length < rootParts.length ||
+      rootParts.some((part, index) => candidateParts[index] !== part)) {
+    throw new Error('Filesystem path is outside the root');
+  }
+}
+
+function checkEntry(entry: Pick<Stats, 'isSymbolicLink' | 'isDirectory' | 'isFile'>, directory: boolean): void {
+  if (entry.isSymbolicLink()) throw new SafeEntryError('Filesystem links are not allowed');
+  if (directory ? !entry.isDirectory() : !entry.isFile()) {
+    throw new SafeEntryError('Unexpected filesystem entry kind');
+  }
+}
 
 /** A canonical, identity-checked root for ordinary portable filesystem access. */
 export interface SafeRoot {
@@ -58,18 +98,8 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
       }
       throw error;
     }
-    if (!current.isDirectory() || current.dev !== identity.dev || current.ino !== identity.ino) {
+    if (!current.isDirectory() || !sameFileIdentity(current, identity)) {
       throw new SafeRootChangedError('Filesystem root has changed');
-    }
-  }
-
-  // Compare canonical path components exactly; Windows directories can be case-sensitive.
-  function checkContained(candidate: string): void {
-    const rootParts = root.endsWith(sep) ? root.slice(0, -1).split(sep) : root.split(sep);
-    const candidateParts = candidate.split(sep);
-    if (candidateParts.length < rootParts.length ||
-        rootParts.some((part, index) => candidateParts[index] !== part)) {
-      throw new Error('Filesystem path is outside the root');
     }
   }
 
@@ -224,19 +254,7 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
       await rename(sourcePath, destinationPath);
     },
     async resolve(components, kind) {
-      if (!Array.isArray(components) || !['file', 'directory', 'missing'].includes(kind)) {
-        throw new Error('Invalid filesystem resolution request');
-      }
-      for (const component of components) {
-        if (typeof component !== 'string' || component === '' || component === '.' || component === '..' ||
-            /[/\\\0]/.test(component) || isAbsolute(component) ||
-            (process.platform === 'win32' && component.includes(':'))) {
-          throw new Error('Invalid filesystem path component');
-        }
-      }
-      if (components.length === 0 && kind !== 'directory') {
-        throw new Error('Filesystem root is a directory');
-      }
+      checkResolutionRequest(components, kind);
 
       await checkRoot();
       let current = root;
@@ -261,14 +279,89 @@ export async function openSafeRoot(path: string): Promise<SafeRoot> {
         if (last && kind === 'missing') {
           throw Object.assign(new Error('Filesystem destination already exists'), { code: 'EEXIST' });
         }
-        if (entry.isSymbolicLink()) throw new SafeEntryError('Filesystem links are not allowed');
-        if ((!last || kind === 'directory') ? !entry.isDirectory() : !entry.isFile()) {
-          throw new SafeEntryError('Unexpected filesystem entry kind');
-        }
-        checkContained(await realpath(current));
+        checkEntry(entry, !last || kind === 'directory');
+        checkContained(root, await realpath(current));
       }
       await checkRoot();
       return current;
+    },
+  };
+  return safe;
+}
+
+/** Only the synchronous checks needed to bracket synchronous storage operations. */
+export interface SafeRootSync {
+  readonly path: string;
+  resolve(components: readonly string[], kind: EntryKind): string;
+  /** Validates first; directory fsync is explicitly unsupported on Windows. */
+  syncDirectory(components: readonly string[]): void;
+}
+
+export function openSafeRootSync(path: string): SafeRootSync {
+  if (!isAbsolute(path) || path.includes('\0')) throw new Error('Invalid filesystem root');
+  const root = realpathSync(normalize(path));
+  const identity = lstatSync(root, { bigint: true });
+  if (!identity.isDirectory()) throw new Error('Filesystem root is not a directory');
+
+  function checkRoot(): void {
+    let current;
+    try { current = lstatSync(root, { bigint: true }); }
+    catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) {
+        throw new SafeRootChangedError('Filesystem root has changed', { cause: error });
+      }
+      throw error;
+    }
+    if (!current.isDirectory() || !sameFileIdentity(current, identity)) {
+      throw new SafeRootChangedError('Filesystem root has changed');
+    }
+  }
+
+  const safe: SafeRootSync = {
+    path: root,
+    resolve(components, kind) {
+      checkResolutionRequest(components, kind);
+      checkRoot();
+      let current = root;
+      for (let index = 0; index < components.length; index++) {
+        current = join(current, components[index]);
+        const relativePath = relative(root, current);
+        if (!relativePath || relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
+          throw new Error('Filesystem path is outside the root');
+        }
+        const last = index === components.length - 1;
+        let entry;
+        try { entry = lstatSync(current, { bigint: true }); }
+        catch (error) {
+          if (last && kind === 'missing' && typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+            checkRoot();
+            return current;
+          }
+          throw error;
+        }
+        if (last && kind === 'missing') {
+          throw Object.assign(new Error('Filesystem destination already exists'), { code: 'EEXIST' });
+        }
+        checkEntry(entry, !last || kind === 'directory');
+        checkContained(root, realpathSync(current));
+      }
+      checkRoot();
+      return current;
+    },
+    syncDirectory(components) {
+      const path = safe.resolve(components, 'directory');
+      if (process.platform === 'win32') return;
+      const fd = openSync(path, 'r');
+      try {
+        const held = fstatSync(fd, { bigint: true });
+        const current = lstatSync(safe.resolve(components, 'directory'), { bigint: true });
+        if (!held.isDirectory() || !current.isDirectory() || !sameFileIdentity(held, current)) {
+          throw new Error('Filesystem directory has changed');
+        }
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
     },
   };
   return safe;

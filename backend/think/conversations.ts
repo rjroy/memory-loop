@@ -1,9 +1,8 @@
-import { lstat, realpath } from 'node:fs/promises';
-import { join } from 'node:path';
+import { lstat } from 'node:fs/promises';
 import type { CommandReceipt, CreateConversationCommand, DeleteConversationCommand, DeleteReceipt, RecentConversation, RecentConversations, ResumeReceipt, SelectConversationCommand, ViewRegistration, ViewSelection } from './contract';
 import { ThinkStateError, type RegisteredConversation, type StoredView, type StoredTranscript, type ThinkStateStore } from './state';
 import { ThinkServiceError } from './errors';
-import { transcriptFingerprint } from './transcript-file';
+import { TranscriptNamespace, transcriptFingerprint } from './transcript-file';
 import { createDeletionService, type DeletionService } from './deletion';
 import { mintViewToken, viewHash } from './view-token';
 export { validViewToken, viewHash, mintViewToken } from './view-token';
@@ -226,16 +225,20 @@ export function createConversationService(options: ConversationServiceOptions): 
 
 /** A mapped, confirmed, unchanged file only. No filename/config guessing, content scan or writes. */
 export async function verifiedTranscriptNote(directory: string, stored: StoredTranscript | null): Promise<string[] | undefined> {
-  if (!stored?.file || stored.pending || await realpath(directory) !== directory) return;
-  let path = directory;
-  for (const [index, identity] of stored.namespace.entries()) {
-    const node = await lstat(path);
-    if (!node.isDirectory() || node.isSymbolicLink() || node.dev !== identity.dev || node.ino !== identity.ino) return;
-    if (index < stored.noteId.length - 1) path = join(path, stored.noteId[index]);
+  if (!stored?.file || stored.pending || stored.namespace.length !== stored.noteId.length ||
+      stored.noteId.at(-1) !== `think-${stored.conversationId}.md`) return;
+  const namespace = new TranscriptNamespace(directory, stored.noteId.slice(0, -1).join('/'));
+  try {
+    await namespace.prepare(false);
+    if (JSON.stringify(namespace.identities()) !== JSON.stringify(stored.namespace)) return;
+    const name = stored.noteId[stored.noteId.length - 1];
+    const file = await lstat(await namespace.resolve(name, 'file'));
+    if (!file.isFile() || file.isSymbolicLink() || file.nlink !== 1 ||
+        file.dev !== stored.file.dev || file.ino !== stored.file.ino ||
+        file.size !== stored.file.offset || transcriptFingerprint(file) !== stored.file.fingerprint) return;
+    await namespace.validate();
+    return [...stored.noteId];
+  } finally {
+    await namespace.close();
   }
-  const file = await lstat(join(path, stored.noteId[stored.noteId.length - 1]));
-  if (!file.isFile() || file.isSymbolicLink() || file.nlink !== 1 || file.uid !== process.getuid?.() ||
-      (file.mode & 0o7777) !== 0o600 || file.dev !== stored.file.dev || file.ino !== stored.file.ino ||
-      file.size !== stored.file.offset || transcriptFingerprint(file) !== stored.file.fingerprint) return;
-  return [...stored.noteId];
 }

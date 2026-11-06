@@ -1,6 +1,7 @@
 import type { DeleteReceipt } from './contract';
 import { ThinkStateError, type BodyCacheStateStore, type DeletionStateStore, type RegisteredConversation, type StoredDeletion } from './state';
 import type { SQLite } from './sqlite-state';
+import { isAbsolute } from 'node:path';
 
 /** Additive to v4: no original, command sequence, checkpoint or lease is rebuilt. */
 export const deletionSchemaV5 = `
@@ -55,7 +56,7 @@ export class SQLiteDeletions implements DeletionStateStore {
     this.cache = {
       intent: namespace => this.cacheWrite(() => {
         const owner = this.live(namespace.conversationId);
-        if (!uuid.test(namespace.epoch) || !namespace.path.startsWith('/') || namespace.path.includes('\0') || namespace.directory !== null || !owner) fail();
+        if (!uuid.test(namespace.epoch) || !isAbsolute(namespace.path) || namespace.path.includes('\0') || namespace.directory !== null || !owner) fail();
         count(namespace.root.dev); count(namespace.root.ino);
         this.db.run('INSERT INTO body_namespaces VALUES (?, ?, ?, ?, ?, NULL, NULL)', namespace.conversationId, namespace.epoch, namespace.path, namespace.root.dev, namespace.root.ino);
       }),
@@ -67,7 +68,7 @@ export class SQLiteDeletions implements DeletionStateStore {
       }),
       namespaces: (conversationId, afterEpoch = '') => this.read(() => this.db.all('SELECT * FROM body_namespaces WHERE conversation_id = ? AND epoch > ? ORDER BY epoch LIMIT 32', conversationId, afterEpoch).map(row => {
         const path = row.root_path;
-        if (typeof path !== 'string' || !path.startsWith('/') || path.includes('\0')) fail();
+        if (typeof path !== 'string' || !isAbsolute(path) || path.includes('\0')) fail();
         return { conversationId: id(row.conversation_id), epoch: id(row.epoch), path,
           root: { dev: count(row.root_dev), ino: count(row.root_ino) },
           directory: row.directory_dev === null && row.directory_ino === null ? null : { dev: count(row.directory_dev), ino: count(row.directory_ino) } };

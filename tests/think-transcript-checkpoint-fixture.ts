@@ -2,9 +2,11 @@ import { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants, existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, link, mkdir, readFile, rename, symlink, truncate, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { MessageListOutput, OpenCodeEvent, SessionFormGetOutput, SessionPromptOutput } from '@opencode/client';
 import { createBodyStore } from '../backend/think/body-store';
+import { removeCacheNamespace } from '../backend/think/body-cleanup';
 import { createThinkService, type ConversationSnapshot, type ThinkService } from '../backend/think/service';
 import { openThinkState } from '../backend/think/sqlite-state';
 import type { NativeSession, NativeSessions } from '../backend/think/native';
@@ -439,6 +441,40 @@ async function migrateV2Order(root: string): Promise<OrderMigrationReport> {
     before, after: v2Facts(root), registryIds: ids, order: commandOrder(root), metadata };
 }
 
+async function cacheNativePath(root: string, forwardSlashes: boolean) {
+  await migrateV2Order(root);
+  const project = join(root, 'project'); const vault = join(root, 'vault');
+  const cacheRoot = join(root, 'cache-root'); const folder = join(cacheRoot, conversationId);
+  await mkdir(cacheRoot, { mode: 0o700 });
+  const rootStat = lstatSync(cacheRoot);
+  const suppliedPath = forwardSlashes ? cacheRoot.replaceAll('\\', '/') : cacheRoot;
+  const state = await openThinkState(project, vault);
+  let intent;
+  let acquired;
+  try {
+    state.cache.intent({ conversationId, epoch, path: suppliedPath,
+      root: { dev: rootStat.dev, ino: rootStat.ino }, directory: null });
+    intent = state.cache.namespaces(conversationId)[0];
+    await mkdir(folder, { mode: 0o700 });
+    const body = join(folder, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    await writeFile(body, 'owned cached body', { mode: 0o600 });
+    let unacquiredRejected = false;
+    try { await removeCacheNamespace(intent, vault); } catch { unacquiredRejected = true; }
+    if (!unacquiredRejected || await readFile(body, 'utf8') !== 'owned cached body') throw new Error('unacquired intent allowed cleanup');
+    const folderStat = lstatSync(folder);
+    state.cache.acquire(conversationId, epoch, { dev: folderStat.dev, ino: folderStat.ino });
+    acquired = state.cache.namespaces(conversationId)[0];
+  } finally { state.close(); }
+  const reopened = await openThinkState(project, vault);
+  try {
+    const persisted = reopened.cache.namespaces(conversationId)[0];
+    await removeCacheNamespace(persisted, vault);
+    reopened.cache.removed(conversationId, epoch);
+    return { suppliedPath, intent, acquired, persisted, remaining: reopened.cache.namespaces(conversationId),
+      folderExists: existsSync(folder), rootIdentity: { dev: rootStat.dev, ino: rootStat.ino } };
+  } finally { reopened.close(); }
+}
+
 async function migrateV5Generation(root: string): Promise<V5MigrationReport> {
   // Build the historical v5 schema by removing the empty v6-v8 tables and v6 index
   // from the existing owned migration fixture, then seed actual v4/v5 durable facts.
@@ -690,15 +726,19 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
         }
         await handle.sync();
         if (file && originalInFlight) { originalFileSynced = true; await observe('after-original-file-sync'); }
-        if (!file && originalInFlight && originalFileSynced) {
-          originalDirectoriesSynced++;
-          await observe('after-directory-sync');
-          if (scenario === 'synced-unconfirmed') { faulted = true; throw Object.assign(new Error('fixture directory sync acknowledgement lost'), { code: 'EIO' }); }
-          if (originalDirectoriesSynced === 3) originalInFlight = false;
-        }
       },
     };
-  } };
+  },
+    async syncDirectory(root, components) {
+      await transcriptIO.syncDirectory(root, components);
+      if (originalInFlight && originalFileSynced) {
+        originalDirectoriesSynced++;
+        await observe('after-directory-sync');
+        if (scenario === 'synced-unconfirmed') { faulted = true; throw Object.assign(new Error('fixture directory sync acknowledgement lost'), { code: 'EIO' }); }
+        if (originalDirectoriesSynced === 3) originalInFlight = false;
+      }
+    },
+  };
   // Retries are owned/recorded but not fired before we close this controlled failed writer.
   const runtime: TranscriptRuntime = initialLoadFault ? loadClock.runtime
     : { now: () => now, random: () => 0.5, schedule() { return () => {}; } };
@@ -965,7 +1005,9 @@ async function reopen(root: string, mode: ReopenScenario): Promise<ReopenReport>
   let bodyReads = 0;
   const lockAvailable: boolean[] = [];
   const boundary = () => { lockAvailable.push(probe(database).writerAvailable); };
-  const io: TranscriptIO = { ...transcriptIO, async open(path, flags, permissions) {
+  const io: TranscriptIO = { ...transcriptIO, async syncDirectory(root, components) {
+    boundary(); await transcriptIO.syncDirectory(root, components);
+  }, async open(path, flags, permissions) {
     boundary();
     const handle = await transcriptIO.open(path, flags, permissions);
     return { fd: handle.fd, stat: () => handle.stat(), read: (...args) => handle.read(...args), close: () => handle.close(),
@@ -1020,8 +1062,11 @@ async function reopen(root: string, mode: ReopenScenario): Promise<ReopenReport>
 const root = process.argv[2];
 const selected = process.argv[3];
 const output = process.argv[4];
-if (!root?.startsWith('/tmp/opencode/think-transcript-checkpoint-') || !output?.startsWith(`${root}/`)) throw new Error('Use a test-owned checkpoint root/report path');
-if (selected === 'reopen-v3-order') {
+if (!root || resolve(root) !== resolve(tmpdir()) || !basename(root).startsWith('think-transcript-checkpoint-') ||
+    !output || dirname(resolve(output)) !== resolve(root)) throw new Error('Use a test-owned checkpoint root/report path');
+if (selected === 'cache-native-path' || selected === 'cache-windows-slashes') {
+  await writeFile(output, JSON.stringify(await cacheNativePath(root, selected === 'cache-windows-slashes')));
+} else if (selected === 'reopen-v3-order') {
   await writeFile(output, JSON.stringify(await reopenV3Order(root)));
 } else if (selected?.startsWith('reopen-')) {
   const mode = selected.slice('reopen-'.length);

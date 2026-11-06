@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CommandFact, FixtureReport, HydrationCoverage, Probe, Scenario } from '../tests/think-durable-admission-fixture';
 
@@ -25,15 +26,56 @@ const orderedStopCommandId = '88888888-8888-4888-8888-888888888888';
 const digest = (text: string) => createHash('sha256').update(text).digest('hex');
 let root: string;
 
-beforeEach(async () => { root = await mkdtemp('/tmp/opencode/think-durable-admission-'); });
+beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'think-durable-admission-')); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+
+async function statePolicy(scenario: 'state-permissive' | 'state-normalized' | 'state-windows-slashes') {
+  const output = join(root, 'state-policy-report.json');
+  const child = spawnSync('bun', ['--no-env-file', runner, root, scenario, output], {
+    cwd: root, timeout: 15000, maxBuffer: 512 * 1024, encoding: 'utf8',
+    env: { NODE_ENV: 'test', PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: root,
+      XDG_DATA_HOME: root, XDG_CACHE_HOME: root, XDG_STATE_HOME: root, TMPDIR: root, TEMP: root, TMP: root },
+  });
+  expect(child.error, child.stderr).toBeUndefined();
+  expect(child.status, `owned state fixture setup failed:\n${child.stdout}\n${child.stderr}`).toBe(0);
+  return JSON.parse(await readFile(output, 'utf8')) as { before: string; after?: string; stored: string; integrity: string; schema: number; reopenError?: string };
+}
+
+it.skipIf(process.platform === 'win32')('reopens actual SQLite facts with accessible non-owner-only modes', async () => {
+  const report = await statePolicy('state-permissive');
+  expect(report.reopenError).toBeUndefined();
+  expect(report.before).toEqual(expect.any(String));
+  expect(report.after).toBe(report.before);
+  expect(report.stored).toBe(report.before);
+  expect(report.integrity).toBe('ok');
+  expect(report.schema).toBe(10);
+});
+
+it('reopens the same SQLite facts from a native noncanonical absolute project path', async () => {
+  const report = await statePolicy('state-normalized');
+  expect(report.reopenError).toBeUndefined();
+  expect(report.before).toEqual(expect.any(String));
+  expect(report.after).toBe(report.before);
+  expect(report.stored).toBe(report.before);
+  expect(report.integrity).toBe('ok');
+  expect(report.schema).toBe(10);
+});
+
+it.skipIf(process.platform !== 'win32')('reopens native Windows state using forward-slash absolute spelling', async () => {
+  const report = await statePolicy('state-windows-slashes');
+  expect(report.reopenError).toBeUndefined();
+  expect(report.after).toBe(report.before);
+  expect(report.stored).toBe(report.before);
+  expect(report.integrity).toBe('ok');
+  expect(report.schema).toBe(10);
+});
 
 async function exercise(scenario: Scenario): Promise<FixtureReport> {
   const output = join(root, 'report.json');
-  const child = spawnSync('/usr/bin/bun', ['--no-env-file', runner, root, scenario, output], {
+  const child = spawnSync('bun', ['--no-env-file', runner, root, scenario, output], {
     cwd: root, timeout: 15000, maxBuffer: 512 * 1024, encoding: 'utf8',
-    env: { NODE_ENV: 'test', PATH: '/usr/bin:/bin', HOME: root, XDG_CONFIG_HOME: root,
-      XDG_DATA_HOME: root, XDG_CACHE_HOME: root, XDG_STATE_HOME: root, TMPDIR: root },
+    env: { NODE_ENV: 'test', PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: root,
+      XDG_DATA_HOME: root, XDG_CACHE_HOME: root, XDG_STATE_HOME: root, TMPDIR: root, TEMP: root, TMP: root },
   });
   expect(child.error, child.stderr).toBeUndefined();
   expect(child.status, `fixture must execute the existing production API before durability assertions:\n${child.stdout}\n${child.stderr}`).toBe(0);
@@ -60,9 +102,6 @@ function durable(probe: Probe | undefined, at: string): Probe {
   // v8 publication, v9 quote budgets, v10 freshness-period links.
   // Probe controls read unmigrated v1 snapshots too, so enumerate supported versions explicitly.
   expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).toContain(probe.schemaVersion);
-  expect(probe.fileMode).toBe(0o600);
-  expect(probe.directoryMode).toBe(0o700);
-  expect(probe.ownerMatches).toBe(true);
   expect(probe.writerAvailable, 'a SQLite write transaction must not span an external native call').toBe(true);
   return probe;
 }
@@ -514,8 +553,8 @@ describe('production Think durable admission through prepareServer and the offic
     expect(['upstream-unconfirmed', 'admitted']).toContain(retained.state);
   });
 
-  it.each(['database-symlink', 'database-hardlink', 'database-permissions', 'wal-symlink', 'shm-symlink',
-    'metadata-permissions', 'state-inside-vault'] as const)('fails closed for %s without native mutation or sibling read failure', async scenario => {
+  it.each(['database-symlink', 'database-hardlink', 'wal-symlink', 'shm-symlink',
+    'state-inside-vault'] as const)('fails closed for %s without native mutation or sibling read failure', async scenario => {
     const report = await exercise(scenario);
     expect(report.createStatus, 'unsafe private durable state must fail before native ownership creation').toBe(503);
     expect(report.createReceipt).toMatchObject({ error: { code: 'think_unavailable' } });

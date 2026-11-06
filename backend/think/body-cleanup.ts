@@ -1,13 +1,29 @@
-import { constants } from 'node:fs';
-import { lstat, open, opendir, realpath, rmdir, unlink } from 'node:fs/promises';
-import { isAbsolute, relative, sep } from 'node:path';
+import type { BigIntStats } from 'node:fs';
+import { lstat, opendir, rmdir, unlink } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, normalize } from 'node:path';
+import { openSafeRoot, SafeEntryError, SafeRootChangedError, sameFileIdentity } from '../safe-fs';
 import type { CacheNamespace } from './state';
 import { TranscriptError } from './transcript-file';
 
-const dirFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const absent = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 function conflict(): never { throw new TranscriptError('conflict'); }
+
+/** The existing directory and each physical ancestor must be outside the canonical vault.
+ * Filesystem identity handles both case-sensitive Windows siblings and case aliases. */
+export async function checkCacheOutsideVault(directory: string, vault: string): Promise<void> {
+  if (!isAbsolute(vault) || vault.includes('\0')) conflict();
+  const safe = await openSafeRoot(normalize(vault));
+  const identity = await lstat(await safe.resolve([], 'directory'), { bigint: true });
+  for (let ancestor = directory;;) {
+    const entry = await lstat(ancestor, { bigint: true });
+    if (!entry.isDirectory() || sameFileIdentity(entry, identity)) conflict();
+    const parent = dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  await safe.resolve([], 'directory');
+}
 
 /** Only a persisted, acquired conversation namespace authorizes its derivative-file cleanup.
  * Unknown old epoch directories are never scanned or adopted. */
@@ -16,51 +32,63 @@ export async function removeCacheNamespace(record: CacheNamespace, vault: string
   catch (error) {
     if (error instanceof TranscriptError) throw error;
     const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
-    throw new TranscriptError(['ENOENT', 'ENOTDIR', 'ELOOP', 'ENOTEMPTY'].includes(String(code)) ? 'conflict' : 'io_unavailable');
+    throw new TranscriptError(error instanceof SafeEntryError || error instanceof SafeRootChangedError ||
+      ['ENOENT', 'ENOTDIR', 'ELOOP', 'ENOTEMPTY'].includes(String(code)) ? 'conflict' : 'io_unavailable');
   }
 }
 async function removeNamespace(record: CacheNamespace, vault: string): Promise<void> {
-  if (!uuid.test(record.conversationId) || !uuid.test(record.epoch)) conflict();
-  const fromVault = relative(await realpath(vault), record.path);
-  if (!isAbsolute(record.path) || !fromVault || fromVault !== '..' && !fromVault.startsWith(`..${sep}`) && !isAbsolute(fromVault) || await realpath(record.path) !== record.path) conflict();
-  const root = await open(record.path, dirFlags);
-  try {
-    const rootStat = await root.stat(); const namedRoot = await lstat(record.path);
-    if (!rootStat.isDirectory() || rootStat.uid !== process.getuid?.() || (rootStat.mode & 0o7777) !== 0o700 ||
-        rootStat.dev !== record.root.dev || rootStat.ino !== record.root.ino || namedRoot.dev !== rootStat.dev || namedRoot.ino !== rootStat.ino) conflict();
-    const path = `/proc/self/fd/${root.fd}/${record.conversationId}`;
-    let folder;
-    try { folder = await open(path, dirFlags); } catch (error) {
-      if (!absent(error)) throw error;
-      await root.sync(); return; // rmdir succeeded before its SQLite acknowledgement.
-    }
+  if (!uuid.test(record.conversationId) || !uuid.test(record.epoch) || !isAbsolute(record.path) || record.path.includes('\0')) conflict();
+  const nativePath = normalize(record.path);
+  const parent = await openSafeRoot(dirname(nativePath));
+  const rootName = basename(nativePath);
+  const rootPath = await parent.resolve([rootName], 'directory');
+  // The generated root is NOT a trusted configured link. Check it before realpath
+  // can hide a replacement symlink/junction, even one pointing at the original inode.
+  const initial = await lstat(rootPath);
+  if (!initial.isDirectory() || initial.dev !== record.root.dev || initial.ino !== record.root.ino) conflict();
+  await checkCacheOutsideVault(rootPath, vault);
+  const root = await openSafeRoot(rootPath);
+  const checkRoot = async () => {
+    const named = await lstat(await parent.resolve([rootName], 'directory'));
+    if (!named.isDirectory() || named.dev !== record.root.dev || named.ino !== record.root.ino) conflict();
+    await root.resolve([], 'directory');
+  };
+  await checkRoot();
+  let path: string;
+  try { path = await root.resolve([record.conversationId], 'directory'); }
+  catch (error) {
+    if (!absent(error)) throw error;
+    await checkRoot(); await root.syncDirectory([]); return; // rmdir preceded its SQLite acknowledgement.
+  }
+  if (!record.directory) conflict(); // An unacquired existing directory is not ours to adopt.
+  const identity = record.directory;
+  const check = async () => {
+    await checkRoot();
+    const named = await lstat(await root.resolve([record.conversationId], 'directory'));
+    if (!named.isDirectory() || named.dev !== identity.dev || named.ino !== identity.ino) conflict();
+  };
+  await check();
+  // Streaming enumeration closes its Dir before rmdir, including on iteration failures.
+  const entries = await opendir(path, { bufferSize: 32 });
+  for await (const entry of entries) {
+    const name = entry.name;
+    if (!uuid.test(name)) conflict();
+    await check();
+    const components = [record.conversationId, name];
+    const file = await root.openFile(components, 'read');
+    let held: BigIntStats;
     try {
-      if (!record.directory) conflict(); // An unacquired existing directory is not ours to adopt.
-      const check = async () => {
-        const held = await folder.stat(); const named = await lstat(path); const namedRoot = await lstat(record.path);
-        if (!held.isDirectory() || !named.isDirectory() || held.uid !== process.getuid?.() || (held.mode & 0o7777) !== 0o700 ||
-            held.dev !== record.directory?.dev || held.ino !== record.directory.ino || named.dev !== held.dev || named.ino !== held.ino ||
-            !namedRoot.isDirectory() || namedRoot.dev !== rootStat.dev || namedRoot.ino !== rootStat.ino) conflict();
-      };
-      await check();
-      // Streaming enumeration: no whole epoch, vault, recursive traversal or arbitrary names.
-      const entries = await opendir(`/proc/self/fd/${folder.fd}`, { bufferSize: 32 });
-      for await (const entry of entries) {
-        const name = entry.name;
-        if (!uuid.test(name)) conflict();
-        await check();
-        const filePath = `/proc/self/fd/${folder.fd}/${name}`;
-        const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-        try {
-          const held = await file.stat(); const named = await lstat(filePath);
-          if (!held.isFile() || !named.isFile() || held.uid !== process.getuid?.() || held.nlink !== 1 || (held.mode & 0o7777) !== 0o600 ||
-              named.dev !== held.dev || named.ino !== held.ino || named.nlink !== 1) conflict();
-          await check(); await unlink(filePath);
-        } finally { await file.close(); }
-      }
-      await folder.sync();
-      await check();
-      await rmdir(path); await root.sync();
-    } finally { await folder.close(); }
-  } finally { await root.close(); }
+      held = await file.stat({ bigint: true });
+      const named = await lstat(await root.resolve(components, 'file'), { bigint: true });
+      if (!held.isFile() || held.nlink !== 1n || !named.isFile() || named.nlink !== 1n || !sameFileIdentity(named, held)) conflict();
+    } finally { await file.close(); }
+    await check();
+    const filePath = await root.resolve(components, 'file');
+    const named = await lstat(filePath, { bigint: true });
+    if (!named.isFile() || named.nlink !== 1n || !sameFileIdentity(named, held)) conflict();
+    await unlink(filePath);
+  }
+  await check(); await root.syncDirectory([record.conversationId]);
+  await check(); await rmdir(path);
+  await checkRoot(); await root.syncDirectory([]);
 }

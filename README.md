@@ -39,19 +39,16 @@ Node >=22 when run under Node (Next itself requires Node >=20.9). Bun manages pa
 and runs the daemon. Next build, development and production run under **Node**,
 not Bun's experimental Next adapter or a custom HTTP server.
 
-**Platform migration:** the current backend is Linux-only. Native Windows support
-is being implemented in `memory-loop-68l`; the toolchain versions above alone do
-not make the existing backend run on Windows. Transport, Recall, Capture and Ground have migrated
-to the shared filesystem foundation; Think still needs its feature migration.
-Native Windows execution remains unverified. The approved target is Windows and
-Linux with shared portable filesystem operations, no descendant symlinks or
+**Platform migration:** transport, Recall, Capture, Ground and Think now use the
+shared portable filesystem foundation. Native Windows execution remains
+unverified; operator tooling and end-to-end verification are still tracked in
+`memory-loop-68l`. The target is Windows and Linux, with no descendant symlinks or
 junctions, Windows-compatible new names, collision refusal and stale-save
 protection. Filesystem access permissions are the operating environment's
-responsibility, not a service-enforced requirement. Existing Linux ownership and
-mode checks remain implementation constraints until migrated, not requirements
-to reproduce on Windows. See the [approved filesystem policy](backend/CONTRACT.md#approved-portable-filesystem-policy)
-for the agreed guarantees and limits. Native Windows support must be verified
-against a disposable vault before being described as working.
+responsibility, not a service-enforced requirement. See the
+[approved filesystem policy](backend/CONTRACT.md#approved-portable-filesystem-policy)
+for guarantees and limits. Source portability is not verified platform support;
+the agreed native Windows check must use a disposable vault.
 
 For an existing live checkout, do not run the build below until **all** web
 processes serving its `.next` have stopped. Follow the authorized stop/build/start
@@ -157,8 +154,8 @@ neither restoration nor transcript recovery replays accepted work.
 Transcripts contain full original user and AI text in literal fenced blocks,
 plus conservative tool/lifecycle summaries—not reasoning or raw tool payloads.
 They are sensitive vault notes covered by the vault's normal sync/backups;
-secrets deliberately written in user/AI text are not redacted. Newly created
-files are owner-only `0600`. Only a private-registry mapping with a verified
+secrets deliberately written in user/AI text are not redacted. Filesystem access
+permissions are managed by the operating environment. Only a private-registry mapping with a verified
 checkpoint permits reopening an existing file. Unregistered legacy files and
 registry entries without a checkpoint are not adopted by filename. Linked,
 replaced, moved or externally edited targets are conflicts: their bytes are
@@ -218,13 +215,13 @@ insertion order without changing original bytes or timestamps, ownership or
 transcript checkpoints/pending work. Pending bytes are cleared after confirmation;
 confirmed assistant history is not mirrored in the database.
 
-The state directory must be outside the real vault and owner-only `0700`; the
-database and any SQLite sidecars must be owner-only `0600` regular files with one
-hard link and no symlinks.
+The state directory must be outside the real vault. The database and any SQLite
+sidecars must be regular files with one hard link and no symlinks; those checks
+protect write integrity, not access permissions. The service does not require
+particular owner IDs, permission bits or Windows ACLs.
 Treat originals, pending transcript text, validated generation candidates/proposed
 resource output and ownership/checkpoint metadata as
-sensitive private data. Keep them out of vault sync and version control;
-restrict backups to the same owner and preserve permissions.
+sensitive application data. Keep them out of vault sync and version control.
 For a consistent file-copy backup, stop the daemon first. No raw database access
 is exposed to the browser.
 
@@ -358,9 +355,10 @@ bun --no-env-file run setup:transport --project-root /absolute/scratch/app
 ```
 
 The root must already exist. Setup never creates/reads vault configuration and
-refuses to replace existing credentials. It creates a 0700 `.memory-loop/`
-directory and owner-only 0600 regular transport/token files; symlinks, unsafe
-permissions and a different owner are rejected. The generated transport defaults to:
+refuses to replace existing credentials. It creates a `.memory-loop/` directory
+and regular transport/token files, rejecting descendant links rather than
+following them. Filesystem permissions are left to the operating environment.
+The generated transport defaults to:
 
 ```json
 {
@@ -453,7 +451,7 @@ MEMORY_LOOP_TRANSPORT_FILE=/absolute/scratch/app/.memory-loop/transport.json \
 ```
 
 Occupied ports fail without fallback or eviction. Missing/invalid transport or credentials fail before serving vault
-data; correct the private files/permissions rather than weakening validation.
+data; correct the transport configuration or credentials rather than weakening validation.
 
 `bun --no-env-file run dev` launches standard Node `next dev`.
 It requires the same transport preflight and fixed BFF routes, not a dev proxy.
@@ -715,10 +713,11 @@ empty notes, config failures, unavailable notes/vaults and transport failures
 are distinct states. See the [approved Recall design](.lore/work/design/recall-read-only.md)
 and [daemon contract](backend/CONTRACT.md).
 
-The reader requires Linux procfs/no-follow descriptor access. It trusts the
-configured root and ancestors, local OS and personal namespace, not hostile
-local filesystem processes. Eligible hardlinked files have no provenance
-guarantee; relocation/rename/delete can affect in-flight reads. Browsing is not a
+The reader uses checked ordinary filesystem paths. It trusts the configured root
+and ancestors, local OS and personal namespace, not hostile local filesystem
+processes. Descendant links are refused and detected root replacement makes
+access unavailable. Eligible hardlinked files have no provenance guarantee;
+external relocation/rename/delete can affect in-flight reads. Browsing is not a
 transactional snapshot.
 
 ## Checks and current acceptance

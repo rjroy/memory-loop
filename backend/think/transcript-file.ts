@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
 import { lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
-import { isAbsolute, normalize } from 'node:path';
+import { isAbsolute, join, normalize } from 'node:path';
+import { isPortableName, openSafeRoot, SafeEntryError, SafeRootChangedError, type SafeRoot } from '../safe-fs';
 import type { TranscriptDirectoryIdentity, TranscriptFileCheckpoint } from './state';
 
 export type TranscriptFailure = 'io_unavailable' | 'conflict' | 'content_gap' | 'invalid_configuration';
@@ -24,11 +25,14 @@ export interface TranscriptIO {
   lstat(path: string): Promise<Stats>;
   realpath(path: string): Promise<string>;
   unlink(path: string): Promise<void>;
+  /** Separate from file opens: no directory FileHandles are needed on Windows. */
+  syncDirectory(root: SafeRoot, components: readonly string[]): Promise<void>;
 }
 export const transcriptIO: TranscriptIO = {
   open,
   async mkdir(path, mode) { await mkdir(path, { mode }); },
   lstat, realpath, unlink,
+  syncDirectory: (root, components) => root.syncDirectory(components),
 };
 export interface TranscriptBytes {
   readonly length: number;
@@ -42,101 +46,135 @@ export function transcriptComponents(value: unknown = 'Conversations/Memory Loop
   if (components.some(component => !component || component.startsWith('.'))) throw new TranscriptError('invalid_configuration');
   return components;
 }
-const dirFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
-const fileFlags = constants.O_RDWR | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK;
-const descriptor = (handle: TranscriptHandle, name: string) => `/proc/self/fd/${handle.fd}/${name}`;
+const fileFlags = constants.O_RDWR | constants.O_APPEND | (constants.O_NONBLOCK ?? 0);
 const sameIdentity = (a: Pick<Stats, 'dev' | 'ino'>, b: Pick<Stats, 'dev' | 'ino'>) => a.dev === b.dev && a.ino === b.ino;
 export const transcriptFingerprint = (s: Stats) => JSON.stringify([s.dev, s.ino, s.size, s.mtimeMs, s.ctimeMs, s.nlink, s.uid, s.mode]);
 const fingerprint = transcriptFingerprint;
 function code(error: unknown): unknown { return typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined; }
 function conflict(): never { throw new TranscriptError('conflict'); }
 function fileStat(stat: Stats): void {
-  if (!stat.isFile() || stat.uid !== process.getuid?.() || stat.nlink !== 1 || (stat.mode & 0o7777) !== 0o600 ||
+  if (!stat.isFile() || stat.nlink !== 1 ||
       ![stat.size, stat.dev, stat.ino].every(value => Number.isSafeInteger(value) && value >= 0)) conflict();
 }
+function namespaceFailure(error: unknown): never {
+  if (error instanceof SafeEntryError || error instanceof SafeRootChangedError ||
+      ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(code(error)))) conflict();
+  throw error;
+}
 
-/** Held directory descriptors pin the namespace, but do not excuse a moved/replaced path. */
+/** Canonical paths and directory identities, not directory handles or a writer sandbox. */
 export class TranscriptNamespace {
-  private readonly nodes: Array<{ handle: TranscriptHandle; stat: Stats }> = [];
+  private readonly nodes: Stats[] = [];
+  private safeRoot?: SafeRoot;
   private stopped = false;
+  private initializing?: Promise<void>;
   private preparing?: Promise<void>;
   readonly components: string[];
-  constructor(private readonly root: string, relative: unknown, readonly io: TranscriptIO = transcriptIO) {
+  private readonly root: string;
+  constructor(root: string, relative: unknown, readonly io: TranscriptIO = transcriptIO) {
     this.components = transcriptComponents(relative);
-    if (process.platform !== 'linux' || !process.getuid || !isAbsolute(root) || normalize(root) !== root || root.includes('\0')) throw new TranscriptError('invalid_configuration');
+    if (!isAbsolute(root) || root.includes('\0')) throw new TranscriptError('invalid_configuration');
+    this.root = normalize(root);
   }
   private checkOpen(): void { if (this.stopped) throw new TranscriptError('io_unavailable'); }
-  prepare(): Promise<void> {
-    if (!this.preparing) this.preparing = this.prepareDirectories().finally(() => { this.preparing = undefined; });
+  /** Pin only the configured root; startup must not recreate a mapped namespace. */
+  initialize(): Promise<void> {
+    this.checkOpen();
+    if (!this.initializing) this.initializing = this.initializeRoot().finally(() => { this.initializing = undefined; });
+    return this.initializing;
+  }
+  private async initializeRoot(): Promise<void> {
+    if (!this.safeRoot) {
+      // Retain the injected root-I/O boundary, including startup fault/gating hooks.
+      const root = await openSafeRoot(await this.io.realpath(this.root));
+      const stat = await this.io.lstat(await root.resolve([], 'directory'));
+      if (!stat.isDirectory() || stat.isSymbolicLink()) conflict();
+      await root.resolve([], 'directory');
+      this.checkOpen();
+      this.safeRoot = root;
+      this.nodes.push(stat);
+    }
+    await this.validate();
+  }
+  /** Existing mapped parents are checked with create=false, never repaired or recreated. */
+  prepare(create = true): Promise<void> {
+    if (!this.preparing) this.preparing = this.prepareDirectories(create).finally(() => { this.preparing = undefined; });
     return this.preparing;
   }
-  private async prepareDirectories(): Promise<void> {
+  private async prepareDirectories(create: boolean): Promise<void> {
     this.checkOpen();
-    if (!this.nodes.length) {
-      if (await this.io.realpath(this.root) !== this.root) conflict();
-      const handle = await this.io.open(this.root, dirFlags);
-      try {
-        const stat = await handle.stat();
-        const named = await this.io.lstat(this.root);
-        if (!stat.isDirectory() || !named.isDirectory() || !sameIdentity(stat, named)) conflict();
-        this.nodes.push({ handle, stat });
-      } catch (error) { await handle.close(); throw error; }
-    }
-    await this.validate();
-    for (let index = this.nodes.length - 1; index < this.components.length; index++) {
-      this.checkOpen();
+    await this.initialize();
+    const root = this.safeRoot;
+    if (!root) throw new TranscriptError('io_unavailable');
+    try {
+      for (let index = this.nodes.length - 1; index < this.components.length; index++) {
+        await this.validate();
+        const components = this.components.slice(0, index + 1);
+        let path: string;
+        try { path = await root.resolve(components, 'directory'); }
+        catch (error) {
+          if (code(error) !== 'ENOENT') throw error;
+          if (!create) conflict();
+          if (!isPortableName(this.components[index])) throw new TranscriptError('invalid_configuration');
+          path = await root.resolve(components, 'missing');
+          try { await this.io.mkdir(path, 0o700); }
+          catch (error) { if (code(error) !== 'EEXIST') throw error; }
+          path = await root.resolve(components, 'directory');
+        }
+        const stat = await this.io.lstat(path);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) conflict();
+        this.nodes.push(stat);
+      }
       await this.validate();
-      const path = descriptor(this.nodes[index].handle, this.components[index]);
-      try { await this.io.mkdir(path, 0o700); }
-      catch (error) { if (code(error) !== 'EEXIST') throw error; }
-      let handle: TranscriptHandle;
-      try { handle = await this.io.open(path, dirFlags); }
-      catch (error) { if (['ELOOP', 'ENOTDIR'].includes(String(code(error)))) conflict(); throw error; }
-      try {
-        const stat = await handle.stat();
-        const named = await this.io.lstat(path);
-        if (!stat.isDirectory() || !named.isDirectory() || !sameIdentity(stat, named)) conflict();
-        this.nodes.push({ handle, stat });
-      } catch (error) { await handle.close(); throw error; }
-    }
-    await this.validate();
+    } catch (error) { namespaceFailure(error); }
   }
   async validate(): Promise<void> {
     this.checkOpen();
-    for (let index = 0; index < this.nodes.length; index++) {
-      const node = this.nodes[index];
-      let named: Stats;
-      try { named = await this.io.lstat(index === 0 ? this.root : descriptor(this.nodes[index - 1].handle, this.components[index - 1])); }
-      catch (error) { if (['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(code(error)))) conflict(); throw error; }
-      const held = await node.handle.stat();
-      if (!named.isDirectory() || !held.isDirectory() || !sameIdentity(named, node.stat) || !sameIdentity(held, node.stat)) conflict();
-    }
+    const root = this.safeRoot;
+    if (!root) throw new TranscriptError('io_unavailable');
+    try {
+      for (let index = 0; index < this.nodes.length; index++) {
+        const path = await root.resolve(this.components.slice(0, index), 'directory');
+        const named = await this.io.lstat(path);
+        if (!named.isDirectory() || named.isSymbolicLink() || !sameIdentity(named, this.nodes[index])) conflict();
+      }
+    } catch (error) { namespaceFailure(error); }
+  }
+  /** A checked ordinary path, not a reservation; file opens still use the injected I/O seam. */
+  async resolve(name: string, kind: 'file' | 'missing'): Promise<string> {
+    this.path(name);
+    await this.validate();
+    if (!this.safeRoot) throw new TranscriptError('io_unavailable');
+    try { return await this.safeRoot.resolve([...this.components, name], kind); }
+    catch (error) { namespaceFailure(error); }
   }
   path(name: string): string {
     this.checkOpen();
-    if (this.nodes.length !== this.components.length + 1 || !/^think-[0-9a-f-]{36}\.md$/.test(name)) throw new TranscriptError('invalid_configuration');
-    return descriptor(this.nodes[this.nodes.length - 1].handle, name);
+    if (!this.safeRoot || this.nodes.length !== this.components.length + 1 || !/^think-[0-9a-f-]{36}\.md$/.test(name) || !isPortableName(name)) {
+      throw new TranscriptError('invalid_configuration');
+    }
+    return join(this.safeRoot.path, ...this.components, name);
   }
   identities(): TranscriptDirectoryIdentity[] {
     if (this.nodes.length !== this.components.length + 1) throw new TranscriptError('io_unavailable');
-    return this.nodes.map(({ stat }) => {
+    return this.nodes.map(stat => {
       if (![stat.dev, stat.ino].every(value => Number.isSafeInteger(value) && value >= 0)) conflict();
       return { dev: stat.dev, ino: stat.ino };
     });
   }
-  async sync(): Promise<void> {
+  async sync(ancestors = true): Promise<void> {
     await this.validate();
+    if (!this.safeRoot) throw new TranscriptError('io_unavailable');
     // Flush both the file name and any newly created directory names before confirming bytes.
-    for (const node of [...this.nodes].reverse()) await node.handle.sync();
+    try {
+      for (let index = this.nodes.length - 1; index >= (ancestors ? 0 : this.nodes.length - 1); index--) {
+        await this.io.syncDirectory(this.safeRoot, this.components.slice(0, index));
+      }
+      await this.validate();
+    } catch (error) { namespaceFailure(error); }
   }
   async close(): Promise<void> {
     this.stopped = true;
-    const nodes = [...this.nodes].reverse();
-    const results = await Promise.allSettled(nodes.map(node => node.handle.close()));
-    for (const [index, result] of results.entries()) if (result.status === 'fulfilled') {
-      const at = this.nodes.indexOf(nodes[index]); if (at >= 0) this.nodes.splice(at, 1);
-    }
-    if (results.some(result => result.status === 'rejected')) throw new TranscriptError('io_unavailable');
   }
 }
 
@@ -180,7 +218,7 @@ export class OwnedTranscriptFile {
     await this.namespace.validate();
     const actual = await handle.stat();
     let named: Stats;
-    try { named = await this.namespace.io.lstat(this.namespace.path(this.name)); }
+    try { named = await this.namespace.io.lstat(await this.namespace.resolve(this.name, 'file')); }
     catch (error) { if (['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(code(error)))) conflict(); throw error; }
     fileStat(actual); fileStat(named);
     if (!this.identity || !sameIdentity(actual, this.identity) || !sameIdentity(named, this.identity) || fingerprint(actual) !== fingerprint(named)) conflict();
@@ -238,12 +276,15 @@ export class OwnedTranscriptFile {
     }
     this.pending = source;
     if (stopping()) throw new TranscriptError('io_unavailable');
-    await this.namespace.prepare();
+    await this.namespace.prepare(!this.created);
     let handle: TranscriptHandle | undefined;
     try {
       const path = this.namespace.path(this.name);
       if (!this.created) {
-        try { handle = await this.namespace.io.open(path, fileFlags | constants.O_CREAT | constants.O_EXCL, 0o600); }
+        try {
+          await this.namespace.resolve(this.name, 'missing');
+          handle = await this.namespace.io.open(path, fileFlags | constants.O_CREAT | constants.O_EXCL, 0o600);
+        }
         catch (error) { if (code(error) === 'EEXIST') conflict(); throw error; }
         // Even a failed first fstat must never authorize a later recreate/adoption.
         this.created = true;
@@ -255,7 +296,7 @@ export class OwnedTranscriptFile {
       } else {
         if (!this.identity) conflict();
         try {
-          const named = await this.namespace.io.lstat(path);
+          const named = await this.namespace.io.lstat(await this.namespace.resolve(this.name, 'file'));
           fileStat(named);
           if (!sameIdentity(named, this.identity)) conflict();
           handle = await this.namespace.io.open(path, fileFlags);
@@ -274,6 +315,9 @@ export class OwnedTranscriptFile {
       for await (const bytes of source.chunks(this.verified - this.confirmed)) {
         if (bytes.length > 65536) throw new TranscriptError('content_gap');
         for (let offset = 0; offset < bytes.length;) {
+          if (stopping()) throw new TranscriptError('io_unavailable');
+          const current = await this.stat(handle);
+          if (fingerprint(current) !== this.expected || current.size !== this.verified) conflict();
           if (stopping()) throw new TranscriptError('io_unavailable');
           const { bytesWritten } = await handle.write(bytes, offset, bytes.length - offset, null);
           if (!bytesWritten || bytesWritten > bytes.length - offset) throw new TranscriptError('io_unavailable');

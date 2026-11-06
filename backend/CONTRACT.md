@@ -137,7 +137,7 @@ Moves use checked source/destination paths and ordinary filesystem rename. The d
 
 ## Approved portable filesystem policy
 
-Approved on 2026-11-05 in `memory-loop-68l.1`. Transport, Recall, Capture and Ground now use the shared portable foundation; remaining feature migrations are tracked in `memory-loop-68l`. This policy is not a claim that native Windows execution has been verified or that the entire app runs there yet.
+Approved on 2026-11-05 in `memory-loop-68l.1`. Transport, Recall, Capture, Ground and Think now use the shared portable foundation; remaining operator tooling and verification are tracked in `memory-loop-68l`. This policy is not a claim that native Windows execution has been verified or that the entire app runs there yet.
 
 - Support native Windows and Linux using a small shared filesystem foundation, ordinary Node filesystem APIs and platform-aware path handling. Do not require procfs, glibc FFI or POSIX ownership/mode checks.
 - Filesystem access permissions belong to the operating environment. The service does not enforce owner-only storage, inspect Windows ACLs or repair filesystem permissions. Application state remains outside the vault. This policy does not redesign transport authentication or network boundaries.

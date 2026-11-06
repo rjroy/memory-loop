@@ -46,6 +46,7 @@ export interface ThinkSession {
   cancelHandoff(): void;
   checkHandoff(): void;
   editDraft(text: string): void;
+  prepareRecallPath(path: string): void;
   requestNewChat(): void;
   cancelNewChat(): void;
   confirmNewChat(): void;
@@ -88,6 +89,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
   let locationPath = '';
   let navigationPending = false;
   let viewStarted = false;
+  let preparedDraft = false;
   type PrefillHandoff = {
     request: ThinkHandoffRequest;
     originId: string | null;
@@ -210,6 +212,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       questions: identity ? questions.get(identity.conversationId) ?? [] : [], history: { state: state.history }, newChat: state.newChat,
       rejectedSubmissions: identity?.epoch ? rejected.get(identityKey(identity)) ?? [] : [],
       ...(state.messageFocus ? { messageFocus: state.messageFocus } : {}),
+      ...(preparedDraft ? { preparedDraft: true } : {}),
       selectionUnavailable: !!identity && state.view.status === 'unavailable', mutationsAvailable: !unavailable && state.connection !== 'reconnecting' };
   }
 
@@ -900,6 +903,7 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       update({ messageFocus: undefined });
       return eligible;
     },
+    startPreparedDraft() { if (preparedDraft && !state.identity) void startNew(true); },
   };
   presentation = { state: project(), actions };
   session = {
@@ -933,10 +937,11 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       // A Next transition can still render Ground while its requested Think URL
       // is being prepared. Preserve our one-shot focus until that visit commits.
       if (state.messageFocus) {
-        const expected = location.pathname === '/think' && new URLSearchParams(location.search).get('conversation') === state.messageFocus.conversationId;
+        const params = new URLSearchParams(location.search);
+        const expected = location.pathname === '/think' && (params.get('conversation') ?? (params.get('draft') === '1' ? '' : null)) === state.messageFocus.conversationId;
         const arriving = expected && locationChanged && handoffFocusAwaitingVisit;
         if (expected && locationChanged) handoffFocusAwaitingVisit = false;
-        if ((!navigationPending && !expected) || (pendingChanged && navigationPending && !arriving && !handoffFocusAwaitingVisit) || (locationChanged && location.pathname !== '/ground' && !expected)) {
+        if ((!navigationPending && !expected && !handoffFocusAwaitingVisit) || (pendingChanged && navigationPending && !arriving && !handoffFocusAwaitingVisit) || (locationChanged && location.pathname !== '/ground' && location.pathname !== '/recall' && !expected)) {
           handoffFocusAwaitingVisit = false;
           update({ messageFocus: undefined });
         }
@@ -961,6 +966,12 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       const explicit = params.getAll('conversation');
       if (explicit.length > 1) { select(''); return; }
       const selected = explicit.length ? explicit[0] : readPointer() ?? state.identity?.conversationId ?? null;
+      if (selected === null && params.get('draft') === '1') {
+        preparedDraft = true;
+        update({ connection: 'inactive', history: 'complete' });
+        return;
+      }
+      preparedDraft = false;
       if (selected === null) { void startNew(true); return; }
       if (!explicit.length && uuid.test(selected)) options.navigate(`/think?${new URLSearchParams({ conversation: selected })}`, { replace: true, focus: 'preserve' });
       select(selected);
@@ -1018,6 +1029,20 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       // Someone already writing in the pending target does not need delayed focus.
       if (state.messageFocus) handoffFocusAwaitingVisit = false;
       update({ draft, ...(state.messageFocus ? { messageFocus: undefined } : {}) });
+    },
+    prepareRecallPath(path) {
+      if (closed || !path) return;
+      console.info('think_recall_draft_attempt', { existingConversation: Boolean(state.identity) });
+      const text = state.draft.text;
+      const draft = { text: `${text}${text && !text.endsWith('\n') ? '\n' : ''}${path}`, version: state.draft.version + 1 };
+      const id = state.identity?.conversationId;
+      if (id) drafts.set(id, draft);
+      handoffFocusAwaitingVisit = true;
+      const token = randomUUID();
+      update({ draft, messageFocus: { conversationId: id ?? '', token, immediate: true } });
+      options.navigate(id ? `/think?${new URLSearchParams({ conversation: id })}` : '/think?draft=1', { replace: true, focus: 'preserve' });
+      focusNavigationGeneration = options.navigationGeneration?.();
+      console.info('think_recall_draft_outcome', { state: 'prepared', existingConversation: Boolean(id) });
     },
     requestNewChat() { if (state.draft.text.length) update({ newChat: 'confirm-discard' }); else void startNew(); },
     cancelNewChat() { if (state.newChat === 'confirm-discard') update({ newChat: 'idle' }); },

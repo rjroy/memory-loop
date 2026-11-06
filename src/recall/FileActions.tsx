@@ -23,7 +23,8 @@ interface Context {
 const Actions = createContext<Context | null>(null);
 
 // Both entry points use these definitions; future commands add a definition here.
-const definitions: { action: Action | 'upload'; label: (target: Target) => string; applies: (target: Target) => boolean }[] = [
+const definitions: { action: Action | 'upload' | 'think-about'; label: (target: Target) => string; applies: (target: Target) => boolean }[] = [
+  { action: 'think-about', label: () => 'Think About', applies: target => Boolean(target) },
   { action: 'create-note', label: () => 'New file…', applies: target => !target || target.kind === 'directory' },
   { action: 'create-directory', label: () => 'New folder…', applies: target => !target || target.kind === 'directory' },
   { action: 'upload', label: () => 'Upload files…', applies: target => !target },
@@ -106,9 +107,10 @@ interface Props {
   setFenced: (fenced: boolean) => void;
   unavailable: boolean;
   onUpload?: (trigger: HTMLElement) => void;
+  onThinkAbout: (id: VaultId) => void;
 }
 
-export default function FileActions({ children, tree, loadFullTree, guard, onSuccess, isCurrent, refresh, onBusy, fenced, setFenced, unavailable, onUpload }: Props) {
+export default function FileActions({ children, tree, loadFullTree, guard, onSuccess, isCurrent, refresh, onBusy, fenced, setFenced, unavailable, onUpload, onThinkAbout }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   const [moveTree, setMoveTree] = useState<VaultTreeResponse | null>(null);
@@ -288,6 +290,7 @@ export default function FileActions({ children, tree, loadFullTree, guard, onSuc
       {definitions.filter(item => item.applies(menu.target) && (item.action !== 'upload' || onUpload)).map(item => <button key={item.action} role="menuitem" type="button"
         className={item.action === 'delete' ? 'file-menu-delete' : ''} onClick={() => {
           if (item.action === 'upload') { dismissMenu(false); onUpload?.(menu.trigger); return; }
+          if (item.action === 'think-about') { const target = menu.target; dismissMenu(false); if (target) onThinkAbout(target.id); return; }
           setForm({ action: item.action, target: menu.target, trigger: menu.trigger }); setName(''); setDestination(null); setIssue(''); setRefreshOnly(false); dismissMenu(false);
           if (item.action === 'move') {
             setMoveTree(null);

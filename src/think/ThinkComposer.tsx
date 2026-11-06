@@ -72,6 +72,8 @@ export default function ThinkComposer({ presentation: { state, actions }, editor
         if (!event.repeat) send();
       }} />
     <div className="think-action-column">
+      {state.preparedDraft && !state.identity ? <button type="button" className="think-button think-primary" disabled={state.newChat === 'starting'}
+        onClick={actions.startPreparedDraft}>Start chat</button> :
       <button type="button" className="think-button think-primary" disabled={!canSend && !canStop}
         aria-keyshortcuts={action.kind === 'send' ? 'Enter Control+Enter Meta+Enter' : undefined}
         title={action.kind === 'send' ? 'Send (Enter); new line (Shift+Enter)' : undefined}
@@ -93,7 +95,7 @@ export default function ThinkComposer({ presentation: { state, actions }, editor
           if (started !== null && started !== signature) return;
           if (canSend) send();
           else if (identity && canStop && action.kind === 'stop') actions.stop(identity, action.runId);
-        }}>{label}</button>
+        }}>{label}</button>}
     </div>
   </div>;
 }

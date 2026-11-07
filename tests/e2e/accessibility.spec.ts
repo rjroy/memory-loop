@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from './recall-fixture';
+import { observeThinkResponses } from './think-response-observer';
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   for (const name of ['Ground', 'Capture', 'Think', 'Recall']) {
@@ -8,31 +9,18 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       const allowedOrigin = new URL(baseURL).origin;
       await page.setViewportSize(viewport);
       const failures: string[] = [];
+      const failedRequests: string[] = [];
       const groundRequests = new Set<string>();
       const groundPaths = new Set(['quick-actions', 'inspiration', 'prompts', 'goals', 'recent-captures', 'recent-conversations'].map(path => `/api/ground/${path}`));
-      let expectedConsoleErrors = 0;
-      let expectedResponses = 0;
-      const responseChecks: Promise<void>[] = [];
+      const responseObserver = observeThinkResponses(name === 'Think', allowedOrigin, failures);
       page.on('pageerror', error => failures.push(error.message));
-      page.on('console', message => {
-        if (message.type() !== 'error') return;
-        const location = message.location().url;
-        const url = location ? new URL(location, allowedOrigin) : undefined;
-        if (name === 'Think' && url?.origin === allowedOrigin && url.pathname === '/api/think/conversations' && !url.search &&
-            message.text() === 'Failed to load resource: the server responded with a status of 503 (Service Unavailable)') expectedConsoleErrors++;
-        else failures.push(message.text());
-      });
-      page.on('response', response => {
-        if (name !== 'Think' || response.status() < 400) return;
-        const url = new URL(response.url());
-        responseChecks.push((async () => {
-          try {
-            const value: unknown = await response.json();
-            if (url.origin === allowedOrigin && url.pathname === '/api/think/conversations' && !url.search && response.request().method() === 'POST' && response.status() === 503 &&
-                typeof value === 'object' && value !== null && 'error' in value && typeof value.error === 'object' && value.error !== null && 'code' in value.error && value.error.code === 'think_unavailable') { expectedResponses++; return; }
-          } catch { /* Unexpected or unreadable error responses remain failures. */ }
-          failures.push('Unexpected Think HTTP error response');
-        })());
+      page.on('console', message => responseObserver.onConsole(message));
+      page.on('response', response => responseObserver.onResponse(response));
+      page.on('requestfailed', request => {
+        const url = new URL(request.url());
+        const detail = `${request.method()} ${url.pathname} ${request.failure()?.errorText ?? 'unknown'}`;
+        failedRequests.push(detail);
+        if (name === 'Think' && url.origin === allowedOrigin && url.pathname === '/api/think/conversations' && !url.search && request.method() === 'POST') failures.push(`Request failed: ${detail}`);
       });
       page.on('request', request => {
         const url = new URL(request.url());
@@ -40,6 +28,12 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         const viewMetadata = !url.search && (url.pathname === '/api/think/views' && request.method() === 'POST' || url.pathname === '/api/think/selection' && ['GET', 'POST'].includes(request.method()));
         if (groundRead) groundRequests.add(url.pathname);
         if (url.origin !== allowedOrigin || (name !== 'Recall' && url.pathname.startsWith('/api/') && !groundRead && !viewMetadata && !(name === 'Think' && (url.pathname === '/api/think/conversations' || url.pathname.startsWith('/api/think/conversations/'))))) failures.push(request.url());
+      });
+      if (name === 'Think') await page.route('**/api/think/conversations', async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (url.origin !== allowedOrigin || url.pathname !== '/api/think/conversations' || url.search || request.method() !== 'POST') { await route.continue(); return; }
+        await route.fulfill({ status: 503, json: { error: { code: 'think_unavailable', message: 'Think service is unavailable' } } });
       });
       await page.goto(`/${name.toLowerCase()}`);
       if (name === 'Think') await expect(page).toHaveURL(/\/think\?conversation=[0-9a-f-]{36}$/);
@@ -79,8 +73,16 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
           if (lastBox && navBox) expect(lastBox.y).toBeGreaterThanOrEqual(navBox.y + navBox.height - 1);
         }
       }
-      await Promise.all(responseChecks);
-      if (name === 'Think') { expect(expectedResponses).toBe(1); expect(expectedConsoleErrors).toBe(1); }
+      if (name === 'Think') {
+        try { await expect.poll(() => responseObserver.createResponseSeen, { message: 'Expected Think create response was not observed' }).toBe(true); }
+        catch (error) { throw new Error(`Think create response missing; failed requests: ${JSON.stringify(failedRequests)}`, { cause: error }); }
+      }
+      await responseObserver.waitForResponses();
+      if (name === 'Think') {
+        expect(responseObserver.expectedResponses).toBe(1);
+        await expect.poll(() => responseObserver.expectedConsoleErrors > 0, { message: 'Expected Think create console error was not observed' }).toBe(true);
+        expect(responseObserver.expectedConsoleErrors).toBe(1);
+      }
       expect(failures).toEqual([]);
     });
   }

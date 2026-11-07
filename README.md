@@ -42,12 +42,13 @@ not Bun's experimental Next adapter or a custom HTTP server.
 **Platform migration:** transport, Recall, Capture, Ground and Think now use the
 shared portable filesystem foundation. Native Windows execution remains
 unverified; final end-to-end verification is still tracked in
-`memory-loop-68l`. The target is Windows and Linux, with no descendant symlinks or
-junctions, Windows-compatible new names, collision refusal and stale-save
-protection. Filesystem access permissions are the operating environment's
-responsibility, not a service-enforced requirement. See the
-[approved filesystem policy](backend/CONTRACT.md#approved-portable-filesystem-policy)
-for guarantees and limits. Source portability is not verified platform support;
+`memory-loop-68l`. The portability target is Windows and Linux. The current
+implementation rejects descendant symlinks and junctions, checks new names for
+Windows compatibility, refuses observed collisions and protects against stale saves.
+Link handling is not a settled product policy. Filesystem access permissions are
+the operating environment's responsibility. See the
+[implementation notes](backend/IMPLEMENTATION.md) for current mechanics and limits.
+Source portability is not verified platform support;
 the agreed native Windows check must use a disposable vault.
 
 For an existing live checkout, do not run the build below until **all** web
@@ -707,7 +708,7 @@ remain literal. Think and Ground retain their existing Markdown media suppressio
 The attachment API accepts original file bytes one file at a time and places
 them under `06_Attachments/`, creating that directory when needed. It keeps both
 files on a name collision, adding suffixes such as `photo (2).jpg`. An interrupted
-partial upload is cleaned up; a lost acknowledgement or a failure after
+partial upload is cleaned up when its checked namespace remains available; a lost acknowledgement or a failure after
 publication can instead leave an **uncertain** outcome. Reconcile with the vault
 before trying again; the API does not automatically retry.
 
@@ -741,7 +742,9 @@ Recall has no AI action. Dot entries, symlinks and nonregular files are
 omitted from the tree. Empty trees,
 empty notes, config failures, unavailable notes/vaults and transport failures
 are distinct states. See the [approved Recall design](.lore/work/design/recall-read-only.md)
-and [daemon contract](backend/CONTRACT.md).
+and [daemon API reference](backend/API.md). The earlier design describes its
+read-only slice, not a limit on current Recall features. See also the
+[architecture and work boundaries](ARCHITECTURE.md).
 
 The reader uses checked ordinary filesystem paths. It trusts the configured root
 and ancestors, local OS and personal namespace, not hostile local filesystem

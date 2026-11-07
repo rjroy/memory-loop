@@ -8,6 +8,8 @@ related: [.lore/work/intents/project-restart.md]
 
 # Read-only Recall
 
+This intent describes the original read-only layer, not a permanent restriction on Recall. Later work added editing, search, media and uploads. Those capabilities and this direction remain revisable as needs change; see the [current application overview](../../../README.md) and [work boundaries](../../../ARCHITECTURE.md).
+
 ## Why this layer comes next
 
 The four-tab frontend shell is the starting point. The next functional layer is read-only Recall, before Capture or Think. Quick capture remains the product's core capability, but Recall establishes shared foundations first: vault configuration, daemon file retrieval, and Markdown rendering. Think will need a vault to record chat history; establish that foundation without implementing chat yet.

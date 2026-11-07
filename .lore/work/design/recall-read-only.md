@@ -15,7 +15,7 @@ Titlebar refinement (`memory-loop-53h`, 2026-10-30): the user's later request su
 
 **Approved by the user: “Implement this design.”** The read-only slice is complete: independent frontend unit 24/24, Recall browser 17/17 in one run, typecheck/build pass, technical **Accept** and visual **ship**. The original 15-failure RED remains historical evidence. Acceptance does not activate a real vault or remote transport.
 
-Authority: [Recall intent](../intents/recall.md), [local plan](../../local/plans/read-only-recall.md), [PRODUCT.md](../../../PRODUCT.md), approved dark [DESIGN.md](../../../DESIGN.md), and the backend-owned [typed contract](../../../backend/contract.ts) / [contract notes](../../../backend/CONTRACT.md). This brief records the accepted route/interaction design; canonical DESIGN.md records the actual built system. The placeholder Recall interior was replaced.
+Context for this historical slice: [Recall intent](../intents/recall.md), [local plan](../../local/plans/read-only-recall.md), [PRODUCT.md](../../../PRODUCT.md), and [DESIGN.md](../../../DESIGN.md). This brief records the accepted route and interaction design at the time; later work can revise it. The current backend interface is described in the [API reference](../../../backend/API.md) and [types](../../../backend/contract.ts). See [architecture and work boundaries](../../../ARCHITECTURE.md) for how these documents relate. The placeholder Recall interior was replaced.
 
 ## Direction contract
 
@@ -33,7 +33,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 Original read-only finish contract discharged: technical **Accept**, visual **ship**, canonical DESIGN.md/sidecar recorded; no rasters were introduced in that original slice. Later 44w artwork integration and current acceptance are recorded above.
 
-The loopback daemon implements configuration, tree/note reads, static hosting, and the development Vite proxy. The built UI consumes those same-origin endpoints. Standalone preview remains static-only; see [current startup/transport guidance](../../../README.md#operator-guide). Real-note activation remains a separate deployment decision.
+At the time of this slice, the loopback daemon implemented configuration, tree/note reads, static hosting and a development Vite proxy. That topology is historical; see [current startup/transport guidance](../../../README.md#operator-guide).
 
 ## Job and direction
 
@@ -167,7 +167,7 @@ Verification used controlled disposable fixtures, not real notes or mutable pers
 
 ## Approved decisions and implementation sequence
 
-Fixed requirements remain fixed: one JSON-configured vault, daemon reads, Markdown-only/read-only, non-modal narrow Files closing on selection and default-visible desktop Files. The later approved four-mode board/top-navigation correction supersedes original global dark/rail/bottom-bar styling, not these behavior contracts. **Original read-only decisions (subsequently visually adapted above):**
+The original slice used one JSON-configured vault, daemon reads, Markdown-only/read-only, non-modal narrow Files closing on selection and default-visible desktop Files. These historical decisions do not freeze later Recall work. The later approved four-mode board/top-navigation correction supersedes original global dark/rail/bottom-bar styling, not these behavior contracts. **Original read-only decisions (subsequently visually adapted above):**
 1. **Layout:** unboxed reader, independent desktop panes, initial narrow Files only without a selected note, task toolbar instead of redundant narrow branding, obsolete preview-label removal.
 2. **Navigation:** native disclosures/file links rather than an ARIA tree; non-modal full-screen Files, explicit pane-focus helpers, persistent app tabs.
 3. **History:** note query URLs, native Back/Forward, no toggle history, session-only cross-tab reading restoration with explicit bare-URL Back behavior.

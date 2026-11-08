@@ -13,6 +13,7 @@ function isTree(value: unknown): value is VaultTreeResponse {
         /[/\\\0]/.test(entry.name) || !Array.isArray(entry.id) ||
         entry.id.length !== parent.length + 1 || !entry.id.every((part, index) => part === [...parent, entry.name][index])) return false;
     if (entry.kind === 'note') return entry.name.endsWith('.md');
+    if (entry.kind === 'file') return true;
     return entry.kind === 'directory' && validEntries(entry.children, [...parent, entry.name]);
   });
   return object(value) && validEntries(value.entries, []);

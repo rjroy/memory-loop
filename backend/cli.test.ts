@@ -80,12 +80,39 @@ async function checkFixture(body: string, contentType: string) {
 
 it.each([
   { rootIdentity: 'root', entries: [{ kind: 'note', name: 'private-fixture-name.md', id: ['private-fixture-name.md'], identity: 'note-id', version: 'note-version' }] },
+  { rootIdentity: 'root', entries: [{ kind: 'directory', name: 'docs', id: ['docs'], identity: 'dir-id', version: 'dir-version', children: [
+    { kind: 'note', name: 'nested.md', id: ['docs', 'nested.md'], identity: 'note-id', version: 'note-version' },
+  ] }] },
   { rootIdentity: 'root', entries: [] },
 ])('check:daemon accepts a valid fixture tree without printing its contents', async tree => {
   const result = await checkFixture(JSON.stringify(tree), 'application/json');
   expect(result.code).toBe(0);
   expect(result.output).toMatch(/200|ready|available/i);
   expect(result.output).not.toContain('private-fixture-name.md');
+}, 10000);
+
+it('check:daemon accepts root and nested file entries alongside notes and directories', async () => {
+  const tree = { rootIdentity: 'root', entries: [
+    { kind: 'file', name: 'image.png', id: ['image.png'], identity: 'file-id', version: 'file-version' },
+    { kind: 'directory', name: 'docs', id: ['docs'], identity: 'dir-id', version: 'dir-version', children: [
+      { kind: 'note', name: 'nested.md', id: ['docs', 'nested.md'], identity: 'note-id', version: 'note-version' },
+      { kind: 'file', name: 'attachment.pdf', id: ['docs', 'attachment.pdf'], identity: 'nested-file-id', version: 'nested-file-version' },
+    ] },
+  ] };
+  const result = await checkFixture(JSON.stringify(tree), 'application/json');
+  expect(result.code).toBe(0);
+  expect(result.output).not.toContain('attachment.pdf');
+}, 10000);
+
+it.each([
+  ['missing name', { kind: 'file', id: ['image.png'], identity: 'file-id', version: 'file-version' }],
+  ['hidden name', { kind: 'file', name: '.image.png', id: ['.image.png'], identity: 'file-id', version: 'file-version' }],
+  ['path separator', { kind: 'file', name: 'docs/image.png', id: ['docs/image.png'], identity: 'file-id', version: 'file-version' }],
+  ['mismatched id', { kind: 'file', name: 'image.png', id: ['other.png'], identity: 'file-id', version: 'file-version' }],
+  ['missing id', { kind: 'file', name: 'image.png', identity: 'file-id', version: 'file-version' }],
+] as const)('check:daemon rejects a file entry with %s', async (_label, entry) => {
+  const result = await checkFixture(JSON.stringify({ rootIdentity: 'root', entries: [entry] }), 'application/json');
+  expect(result.code).not.toBe(0);
 }, 10000);
 
 it.each([

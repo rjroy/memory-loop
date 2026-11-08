@@ -139,6 +139,17 @@ and registered process-identity checks remain enforced. `full` is the current
 permission mode. Optional `agent`/`model` overrides stay
 daemon-owned; omission uses native defaults. The vault is the native working
 directory, **not a tool sandbox**.
+After the daemon owns its listener, Think installs its bundled dashboard setup
+skill at `.opencode/skills/memory-loop-dashboard-setup/SKILL.md` in that vault.
+It records the last installed content digest in private application state and
+updates only an unchanged managed file. Existing unowned files, user edits and
+unsafe links are left alone; an installation conflict needs operator attention.
+The daemon logs installation and native discovery outcomes. OpenCode must allow
+project skill discovery and its selected agent's skill permissions; disabled
+discovery, unavailable watchers, a conflicting skill ID or an unavailable native
+service can prevent use. Think does not reload the shared service or change its
+configuration. Ask Think to use `@memory-loop-dashboard-setup` for help with
+Ground resources once the skill is discoverable.
 These settings select new chats. Restoring a registered chat verifies its stored
 creation selections, not today's new-chat defaults, and does not reset native
 permissions or model choices.

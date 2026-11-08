@@ -22,6 +22,7 @@ import { transcriptComponents } from './think/transcript-file';
 import { openThinkState } from './think/sqlite-state';
 import { createConversationService, type ConversationService } from './think/conversations';
 import { nativeVersionStatus } from './think/native-version';
+import { installDashboardSkill } from './think/dashboard-skill';
 
 export interface ServerOptions {
   /** Directory containing .memory-loop/config.json, independent of the web build. */
@@ -127,15 +128,40 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     console.info('think_setup_outcome', { status: 'ready' });
     // Jobs borrow Think's private connection; drain them BEFORE Think closes it.
     let closing: Promise<void> | undefined;
+    let skillSetup: Promise<void> | undefined;
+    const skillStop = new AbortController();
     return { think: service, groundDemand(job) { jobs.find(entry => entry.job === job)?.runner.demand(); }, close() {
       closing ??= (async () => {
         try {
+          skillStop.abort();
+          await skillSetup;
           const results = await Promise.allSettled(jobs.map(({ runner }) => runner.close()));
           if (results.some(result => result.status === 'rejected')) throw new Error('generation close unavailable');
         } finally { await service.close(); }
       })();
       return closing;
     }, startRecovery() {
+      skillSetup ??= (async () => {
+        console.info('think_dashboard_skill_install_attempt');
+        try {
+          const status = await installDashboardSkill(directory, projectRoot);
+          console.info('think_dashboard_skill_install_outcome', { status });
+          if (status === 'conflict') return;
+          console.info('think_dashboard_skill_discovery_attempt');
+          const info = await client.server.info({ signal: AbortSignal.any([skillStop.signal, AbortSignal.timeout(5000)]) });
+          if (info.pid !== registration.pid || nativeVersionStatus(info.version, think.requiredVersion) !== 'compatible') throw new Error('Native identity unavailable');
+          for (let attempt = 0; attempt < 10; attempt++) {
+            const skills = await client.skill.list({ location: { directory } }, { signal: AbortSignal.any([skillStop.signal, AbortSignal.timeout(5000)]) });
+            if (skills.data.some(skill => skill.id === 'memory-loop-dashboard-setup' && skill.path === join(directory, '.opencode', 'skills', 'memory-loop-dashboard-setup', 'SKILL.md'))) {
+              console.info('think_dashboard_skill_discovery_outcome', { status: 'discovered' });
+              return;
+            }
+            await new Promise<void>(resolve => setTimeout(resolve, 250));
+            if (skillStop.signal.aborted) return;
+          }
+          console.info('think_dashboard_skill_discovery_outcome', { status: 'unavailable' });
+        } catch { console.info('think_dashboard_skill_setup_outcome', { status: 'unavailable' }); }
+      })();
       service.startRecovery();
       for (const { job, runner } of jobs) {
         try { runner.start(); } catch { console.info('ground_generation_setup_outcome', { job, state: 'unavailable' }); }

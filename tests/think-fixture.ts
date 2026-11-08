@@ -87,13 +87,14 @@ export interface ThinkFixture {
   root: string;
   workspace: string;
   credentialFile: string;
+  skillIdsBeforeThink?: string[];
   headers: Record<string, string>;
   control: { release(): void; info(): { requests: number; held: number }; generation(): { forced: number; toolResults: number; advertised: string[][] } };
   restartDaemon(): Promise<{ previousPid: number; pid: number }>;
   close(): Promise<void>;
 }
 
-export async function launchThinkFixture(options: { binary: string; generationProbe?: { gatewayUrl: string } }): Promise<ThinkFixture> {
+export async function launchThinkFixture(options: { binary: string; generationProbe?: { gatewayUrl: string }; projectSkills?: boolean }): Promise<ThinkFixture> {
   if (options.generationProbe) {
     const target = new URL(options.generationProbe.gatewayUrl);
     if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || !target.port || target.pathname !== '/probe' || target.search || target.hash || target.username || target.password || forbidden.has(Number(target.port))) throw new Error('invalid owned gateway fixture');
@@ -101,6 +102,14 @@ export async function launchThinkFixture(options: { binary: string; generationPr
   await preflightExecutable(options.binary);
   if (await inspect('/etc/opencode') !== 'missing') throw new Error('system OpenCode configuration is not definitely absent');
   if (await realpath('/tmp/opencode') !== '/tmp/opencode' || await inspect('/tmp/opencode') !== 'directory') throw new Error('invalid fixture anchor');
+  if (options.projectSkills) {
+    // Project discovery walks every ancestor, so reject host configuration before enabling it.
+    for (const parent of ['/tmp/opencode', '/tmp', '/']) {
+      for (const name of ['opencode.json', 'opencode.jsonc', '.opencode', '.agents', '.claude']) {
+        if (await inspect(join(parent, name)) !== 'missing') throw new Error('project skill fixture ancestor configuration is not definitely absent');
+      }
+    }
+  }
   const root = await mkdtemp('/tmp/opencode/think-fixture-');
   const children: ChildProcess[] = [];
   const receipts: Array<{ operation: string; pid: number }> = [];
@@ -188,9 +197,18 @@ export async function launchThinkFixture(options: { binary: string; generationPr
     const origin = `http://127.0.0.1:${address.port}`;
     const password = randomBytes(24).toString('hex');
     const workspace = join(root, 'workspace');
+    if (options.projectSkills) {
+      await mkdir(join(workspace, '.opencode/skills/fixture-user-skill'), { recursive: true });
+      await writeFile(join(workspace, '.opencode/skills/fixture-user-skill/SKILL.md'), '---\nname: fixture-user-skill\ndescription: A user-owned fixture skill.\n---\n\nKeep this fixture untouched.\n', { flag: 'wx' });
+      await writeFile(join(workspace, '.opencode/opencode.json'), '{"snapshots":false}\n', { flag: 'wx' });
+    }
     const paths = { HOME: join(root, 'home'), OPENCODE_TEST_HOME: join(root, 'home'), XDG_CONFIG_HOME: join(root, 'xdg-config'), XDG_DATA_HOME: join(root, 'data'), XDG_CACHE_HOME: join(root, 'cache'), XDG_STATE_HOME: join(root, 'state'), TMPDIR: join(root, 'tmp'), OPENCODE_CONFIG_DIR: join(root, 'config'), OPENCODE_DB: join(root, 'db/opencode.db'), GIT_CONFIG_GLOBAL: join(root, 'empty.gitconfig') };
     const config = JSON.stringify({ model: 'fixture-provider/fixture-model', update: 'disable', share: 'disabled', snapshots: false, providers: { 'fixture-provider': { env: [], package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: `${origin}/v1`, apiKey: 'fixture-only' }, models: { 'fixture-model': { type: 'chat', capabilities: { tools: true, input: ['text'], output: ['text'] }, limit: { context: 131072, output: 2048 } } } } } });
     const spec = await prepareIsolatedLaunch({ root, cwd: workspace, paths, config, providerOrigin: origin, password, host: '127.0.0.1', port: 0, hostEnvironment: { OPENCODE_TEST_BINARY: options.binary } }, inspect);
+    if (options.projectSkills) {
+      delete spec.env.OPENCODE_CONFIG_PROJECT_DISABLE;
+      delete spec.env.OPENCODE_DISABLE_FILEWATCHER;
+    }
     const version = start('version', spec.executable, ['--version'], spec.cwd, spec.env);
     let versionOutput = '';
     const collectVersion = (chunk: Buffer) => { versionOutput += chunk.toString(); if (versionOutput.length > 4096) version.kill('SIGKILL'); };
@@ -212,6 +230,9 @@ export async function launchThinkFixture(options: { binary: string; generationPr
     const enabled = models.data.filter(model => model.enabled && model.type === 'chat');
     const selected = await client.model.default({ location: { directory: workspace } }, { signal: AbortSignal.timeout(10000) });
     if (enabled.length !== 1 || enabled[0].providerID !== 'fixture-provider' || enabled[0].id !== 'fixture-model' || selected.data?.providerID !== 'fixture-provider' || selected.data.id !== 'fixture-model') throw new Error('unexpected fixture model catalog');
+    const skillIdsBeforeThink = options.projectSkills
+      ? (await client.skill.list({ location: { directory: workspace } }, { signal: AbortSignal.timeout(10000) })).data.map(skill => skill.id)
+      : undefined;
     const descriptor = join(root, 'service-discovery.json');
     await writeFile(descriptor, JSON.stringify({ url, pid: info.pid, version: info.version, password }), { mode: 0o600, flag: 'wx' });
     const daemonPort = await freePort();
@@ -296,7 +317,7 @@ export async function launchThinkFixture(options: { binary: string; generationPr
       restarting = work;
       try { return await work; } finally { restarting = undefined; }
     };
-    return { webUrl, daemonUrl, root, workspace, credentialFile, headers: { authorization: `Bearer ${token}`, host: `127.0.0.1:${daemonPort}` }, control: { release: () => held.forEach(release => release()), info: () => ({ requests, held: held.size }), generation: () => ({ forced: generationForced, toolResults: generationToolResults, advertised: generationAdvertised.map(names => [...names]) }) }, restartDaemon, close };
+    return { webUrl, daemonUrl, root, workspace, credentialFile, skillIdsBeforeThink, headers: { authorization: `Bearer ${token}`, host: `127.0.0.1:${daemonPort}` }, control: { release: () => held.forEach(release => release()), info: () => ({ requests, held: held.size }), generation: () => ({ forced: generationForced, toolResults: generationToolResults, advertised: generationAdvertised.map(names => [...names]) }) }, restartDaemon, close };
   } catch (error) { await close(); throw error; }
   finally { process.removeListener('SIGINT', interruptStartup); process.removeListener('SIGTERM', interruptStartup); }
 }

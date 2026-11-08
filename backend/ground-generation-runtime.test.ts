@@ -142,6 +142,13 @@ async function fixture(settings: unknown = generation, occupied?: number, versio
       if (request.method === 'GET' && path === '/api/info') { reply({ version: versions.reported ?? '2.2.2', pid: process.pid, urls: [], paths: { tmp: base } }); return; }
       if (request.method === 'GET' && path === '/api/model') { reply({ location: { directory: vault }, data: [catalog] }); return; }
       if (request.method === 'GET' && path === '/api/model/default') { reply({ location: { directory: vault }, data: catalog }); return; }
+      if (request.method === 'GET' && path === '/api/skill') {
+        if (url.searchParams.get('location[directory]') !== vault) throw new Error('wrong native skill location');
+        const skillPath = join(vault, '.opencode', 'skills', 'memory-loop-dashboard-setup', 'SKILL.md');
+        const content = await readFile(skillPath, 'utf8');
+        reply({ location: { directory: vault }, data: [{ id: 'memory-loop-dashboard-setup', name: 'memory-loop-dashboard-setup',
+          description: 'Owned dashboard skill fixture', path: skillPath, content }] }); return;
+      }
       if (request.method === 'GET' && path === '/api/event') {
         response.writeHead(200, { 'content-type': 'text/event-stream' }); response.flushHeaders();
         response.write(`data: ${JSON.stringify({ id: 'evt_owned_generation_connected', type: 'server.connected', data: {} })}\n\n`);

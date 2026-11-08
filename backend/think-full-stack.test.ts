@@ -15,6 +15,51 @@ import type { BodyRef } from './think/body-store';
 const forbidden = new Set([3000, 3001, 9443, 4173, 4317, 48763]);
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
+it('Think makes its bundled dashboard skill discoverable in an already-loaded external vault without changing user skills', async () => {
+  const binary = process.env.OPENCODE_TEST_BINARY;
+  if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');
+  const fixture = await launchThinkFixture({ binary, projectSkills: true });
+  try {
+    expect(fixture.skillIdsBeforeThink).toContain('fixture-user-skill');
+    expect(fixture.skillIdsBeforeThink).not.toContain('memory-loop-dashboard-setup');
+    const endpoint = await Service.discover({ file: `${fixture.root}/service-discovery.json`, version: '2.2.2' });
+    if (!endpoint) throw new Error('owned native registration unavailable');
+    const native = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+    const userSkill = `${fixture.workspace}/.opencode/skills/fixture-user-skill/SKILL.md`;
+    const config = `${fixture.workspace}/.opencode/opencode.json`;
+    const userBefore = await readFile(userSkill, 'utf8');
+    const configBefore = await readFile(config, 'utf8');
+    const status = await new Promise<number | undefined>((resolve, reject) => {
+      const request = httpRequest(new URL('/api/think/conversations', fixture.daemonUrl), {
+        method: 'POST', headers: { ...fixture.headers, 'content-type': 'application/json' }, signal: AbortSignal.timeout(5000),
+      }, response => { response.resume(); response.on('end', () => resolve(response.statusCode)); });
+      request.on('error', reject);
+      request.end(JSON.stringify({ conversationId: '11111111-1111-4111-8111-111111111111', clientCommandId: '22222222-2222-4222-8222-222222222222' }));
+    });
+    expect(status).toBe(202);
+    const sessionId = 'ses_memoryloop_11111111111141118111111111111111';
+    await vi.waitFor(async () => {
+      const session = await native.session.get({ sessionID: sessionId }, { signal: AbortSignal.timeout(5000) });
+      expect(session.location.directory).toBe(fixture.workspace);
+    }, { timeout: 30000 });
+    await vi.waitFor(async () => {
+      const skills = (await native.skill.list({ location: { directory: fixture.workspace } }, { signal: AbortSignal.timeout(5000) })).data;
+      expect(skills.map(skill => skill.id)).toContain('fixture-user-skill');
+      expect(skills.map(skill => skill.id)).toContain('memory-loop-dashboard-setup');
+      expect(skills.find(skill => skill.id === 'memory-loop-dashboard-setup')?.content).toContain('quick-actions.md');
+    }, { timeout: 10000, interval: 100 });
+    expect(await readFile(userSkill, 'utf8')).toBe(userBefore);
+    expect(await readFile(config, 'utf8')).toBe(configBefore);
+    const installed = `${fixture.workspace}/.opencode/skills/memory-loop-dashboard-setup/SKILL.md`;
+    const customized = `${await readFile(installed, 'utf8')}\nUser-owned customization.\n`;
+    await writeFile(installed, customized);
+    await fixture.restartDaemon();
+    expect(await readFile(installed, 'utf8')).toBe(customized);
+    expect(await readFile(userSkill, 'utf8')).toBe(userBefore);
+    expect(await readFile(config, 'utf8')).toBe(configBefore);
+  } finally { await fixture.close(); }
+}, 180000);
+
 it('Think creates and renders a verified native reply on non-localhost HTTP', async () => {
   const binary = process.env.OPENCODE_TEST_BINARY;
   if (!binary) throw new Error('OPENCODE_TEST_BINARY is required for the native fixture');

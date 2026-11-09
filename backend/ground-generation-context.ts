@@ -1,3 +1,4 @@
+import { serverLogger } from '../src/server/logger';
 import type { BigIntStats } from 'node:fs';
 import { lstat as lstatNumber, opendir } from 'node:fs/promises';
 import { isVaultComponent } from './contract';
@@ -102,6 +103,6 @@ export async function recentGenerationContext(options: {
     if (signal.aborted) status = 'cancelled';
     throw error;
   } finally {
-    console.info('ground_generation_context_outcome', { status, scanned: visited, selected, durationMs: Math.max(0, Date.now() - started) });
+    serverLogger.log('ground_generation_context_outcome', { status, scanned: visited, selected, durationMs: Math.max(0, Date.now() - started) });
   }
 }

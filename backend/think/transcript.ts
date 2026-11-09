@@ -1,3 +1,4 @@
+import { serverLogger } from '../../src/server/logger';
 import type { BodyRef } from './body-store';
 import type { TranscriptHealth } from './contract';
 import type { ProjectionEntry, ThinkContentReader } from './projection';
@@ -124,7 +125,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
     const backoff = [1000, 2000, 4000, 8000, 16000, 30000, 60000][Math.min(writer.failures++, 6)];
     const delay = Math.min(60000, Math.max(1, Math.round(backoff * (0.9 + runtime.random() * 0.2))));
     if (!draining) writer.cancelRetry = runtime.schedule(() => { writer.cancelRetry = undefined; enqueue(writer); }, delay);
-    console.info('think_transcript_outcome', { conversationId: writer.id, outcome: 'retrying', reason });
+    serverLogger.log('think_transcript_outcome', { conversationId: writer.id, outcome: 'retrying', reason });
     publish(writer);
   }
 
@@ -246,7 +247,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
       const hasWrites = !writer.headerSynced || writer.prepared || writer.pending.size;
       if (hasWrites) {
         writer.state = 'writing'; publish(writer);
-        console.info('think_transcript_attempt', { conversationId: writer.id });
+        serverLogger.log('think_transcript_attempt', { conversationId: writer.id });
       }
       if (!writer.headerSynced) {
         if (writer.durable) await writer.durable.append(writer.header, writer.createdAt, null, () => stopping(writer));
@@ -280,14 +281,14 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
       if (writer.gap || writer.durable?.load()?.pending) throw new TranscriptError('content_gap');
       if (writer.awaitingOriginal) { writer.state = 'writing'; publish(writer); return; }
       if (!hasWrites && writer.firstFailure !== undefined) {
-        console.info('think_transcript_attempt', { conversationId: writer.id });
+        serverLogger.log('think_transcript_attempt', { conversationId: writer.id });
         if (writer.durable) await writer.durable.checkpoint(() => stopping(writer));
         else if (writer.file) await writer.file.checkpoint(() => stopping(writer));
         writer.lastSyncedAt = new Date(runtime.now()).toISOString();
       }
       // A fact arriving during checkpoint I/O still needs a fresh scan and synchronization.
       if (stopping(writer) || writer.dirty) return;
-      if (hasWrites || writer.firstFailure !== undefined) console.info('think_transcript_outcome', { conversationId: writer.id, outcome: 'synced' });
+      if (hasWrites || writer.firstFailure !== undefined) serverLogger.log('think_transcript_outcome', { conversationId: writer.id, outcome: 'synced' });
       writer.state = 'up-to-date'; writer.reason = undefined; writer.firstFailure = undefined; writer.failures = 0; writer.attention = false;
       writer.cancelWarning?.(); writer.cancelWarning = undefined;
       publish(writer);
@@ -324,15 +325,15 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
   function recoverPending(after?: string): void {
     if (draining || stopped || !options.state) return;
     cancelRecovery = undefined;
-    console.info('think_transcript_recovery_attempt');
+    serverLogger.log('think_transcript_recovery_attempt');
     try {
       const ids = options.state.pending(vaultDirectory, after);
       for (const id of ids) if (!revoked.has(id)) { const writer = writerFor(id, false); writer.started = true; enqueue(writer); }
       recoveryFailures = 0;
-      console.info('think_transcript_recovery_outcome', { status: 'ready', pending: ids.length });
+      serverLogger.log('think_transcript_recovery_outcome', { status: 'ready', pending: ids.length });
       if (ids.length === 100) queueMicrotask(() => recoverPending(ids.at(-1)));
     } catch {
-      console.info('think_transcript_recovery_outcome', { status: 'unavailable' });
+      serverLogger.log('think_transcript_recovery_outcome', { status: 'unavailable' });
       cancelRecovery = runtime.schedule(() => recoverPending(after), Math.min(60000, 1000 * 2 ** Math.min(recoveryFailures++, 6)));
     }
   }
@@ -396,7 +397,7 @@ export function createTranscriptWriter(vaultDirectory: string, content: ThinkCon
           stopped = true;
           for (const writer of writers.values()) if (writer.started) {
             const pending = !writer.headerSynced || writer.pending.size > 0 || Boolean(writer.prepared) || writer.awaitingOriginal || writer.gap || writer.dirty || writer.firstFailure !== undefined;
-            console.info('think_transcript_outcome', { conversationId: writer.id, outcome: pending ? 'closed_pending' : 'closed_synced', ...(pending && writer.reason ? { reason: writer.reason } : {}) });
+            serverLogger.log('think_transcript_outcome', { conversationId: writer.id, outcome: pending ? 'closed_pending' : 'closed_synced', ...(pending && writer.reason ? { reason: writer.reason } : {}) });
           }
           try {
             const results = await Promise.allSettled([...writers.values()].map(async writer => {

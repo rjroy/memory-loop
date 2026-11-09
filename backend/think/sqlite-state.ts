@@ -1,3 +1,4 @@
+import { safeError, serverLogger } from '../../src/server/logger';
 import { createHash, randomUUID } from 'node:crypto';
 import type { CommandReceipt, CreateReceipt, CreateFailureCode, FormReplyReceipt, ResumeReceipt, SendReceipt, StopReceipt } from './contract';
 import { ThinkStateError, type CommandPosition, type OwnedConversation, type RegisteredConversation, type StoredCommand, type ThinkRegistryReader, type ThinkStateStore, type TranscriptStateStore } from './state';
@@ -320,7 +321,7 @@ class SQLiteThinkState implements ThinkStateStore {
   private check(): void { if (this.closed) unavailable(); this.file.validate(); }
 
   private write<T>(name: 'migrate' | 'create-register' | 'command-register' | 'dispatch-attempt' | 'outcome' | 'transcript' | 'view-register' | 'selection' | 'activity' | 'delete' | 'cache' | 'generation', operation: () => T): T {
-    console.info('think_state_write_attempt', { operation: name });
+    serverLogger.log('think_state_write_attempt', { operation: name });
     let inTransaction = false;
     let committed = false;
     try {
@@ -329,11 +330,11 @@ class SQLiteThinkState implements ThinkStateStore {
       const result = operation();
       this.db.exec('COMMIT'); inTransaction = false; committed = true;
       this.file.validate();
-      console.info('think_state_write_outcome', { operation: name, status: 'committed' });
+      serverLogger.log('think_state_write_outcome', { operation: name, status: 'committed' });
       return result;
     } catch (error) {
       if (inTransaction) try { this.db.exec('ROLLBACK'); } catch { /* Keep the original controlled failure. */ }
-      console.info('think_state_write_outcome', { operation: name, status: 'unavailable', commit: committed ? 'confirmed' : 'not-confirmed' });
+      serverLogger.log('think_state_write_outcome', { operation: name, status: 'unavailable', commit: committed ? 'confirmed' : 'not-confirmed', ...safeError(error, 'state_write_failure') });
       if (error instanceof ThinkStateError) throw error;
       return unavailable();
     }
@@ -486,19 +487,19 @@ class SQLiteThinkState implements ThinkStateStore {
 }
 
 export async function openThinkState(projectRoot: string, vaultDirectory: string): Promise<ThinkStateStore & { readonly transcripts: TranscriptStateStore; readonly generation: GroundGenerationStore }> {
-  console.info('think_state_setup_attempt');
+  serverLogger.log('think_state_setup_attempt');
   let file: ThinkStateFile | undefined;
   let db: SQLite | undefined;
   try {
     file = new ThinkStateFile(projectRoot, vaultDirectory);
     db = await connect(file.path);
     const store = new SQLiteThinkState(db, file);
-    console.info('think_state_setup_outcome', { status: 'ready', schema: thinkSchemaVersion });
+    serverLogger.log('think_state_setup_outcome', { status: 'ready', schema: thinkSchemaVersion });
     return store;
-  } catch {
-    try { db?.close(); } catch { console.info('think_state_cleanup_outcome', { status: 'failed' }); }
-    try { file?.close(); } catch { console.info('think_state_cleanup_outcome', { status: 'failed' }); }
-    console.info('think_state_setup_outcome', { status: 'unavailable' });
+  } catch (error) {
+    try { db?.close(); } catch { serverLogger.log('think_state_cleanup_outcome', { status: 'failed' }); }
+    try { file?.close(); } catch { serverLogger.log('think_state_cleanup_outcome', { status: 'failed' }); }
+    serverLogger.error('think_state_setup_outcome', { operation: 'open_state', status: 'unavailable', ...safeError(error, 'state_setup_failure') });
     throw new ThinkStateError('unavailable');
   }
 }

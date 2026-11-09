@@ -18,6 +18,19 @@ function setup(upstream: (input: RequestInfo | URL, init?: RequestInit) => Promi
 }
 
 describe('vault file BFF boundary', () => {
+  it.each(['file', 'content'] as const)('reports a %s upstream connection failure with safe correlated diagnostics', async operation => {
+    const { request, log } = setup(async () => { throw Object.assign(new Error('private filename and payload'), { code: 'ECONNREFUSED', token }); });
+    const response = await request(`/api/vault/${operation}?${query(['private-fixture-name'])}`);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'service_unavailable' } });
+    const attempt = log.mock.calls.find(([event]) => event === 'vault_bff_attempt');
+    expect(attempt?.[1].requestId).toEqual(expect.any(String));
+    expect(log).toHaveBeenCalledWith('vault_bff_outcome', expect.objectContaining({
+      operation, requestId: attempt?.[1].requestId, status: 503, code: 'ECONNREFUSED', category: expect.any(String),
+    }));
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/private filename|private-fixture-name/);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(token);
+  });
   it('projects flat metadata and encodes the ID exactly once at a fixed authenticated upstream', async () => {
     const id = ['folder', 'a % &.txt'];
     const { request, fetcher } = setup(async () => json({ name: id[1], kind: 'text', text: 'hello', private: 'discard' }));

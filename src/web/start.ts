@@ -1,3 +1,4 @@
+import { safeError, serverLogger } from '../server/logger';
 import { spawn } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +10,7 @@ const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 async function main(): Promise<void> {
   const [mode, ...args] = process.argv.slice(2);
   if (mode !== 'start' && mode !== 'dev') throw new Error('invalid_arguments');
-  console.info('web_start_attempt', { mode });
+  serverLogger.log('web_start_attempt', { mode });
   const file = process.env.MEMORY_LOOP_TRANSPORT_FILE ?? join(projectRoot, '.memory-loop', 'transport.json');
   if (!isAbsolute(file)) throw new Error('transport_unavailable');
   await loadTransport(file);
@@ -26,7 +27,7 @@ async function main(): Promise<void> {
   const stop = (signal: 'SIGINT' | 'SIGTERM') => {
     if (stopping) return;
     stopping = true;
-    console.info('web_shutdown_attempt', { signal });
+    serverLogger.log('web_shutdown_attempt', { signal });
     if (webSignalAction(process.platform, signal) === 'forward') {
       child.kill(signal);
       timeout = setTimeout(() => { child.kill('SIGKILL'); }, 4000);
@@ -42,7 +43,7 @@ async function main(): Promise<void> {
       child.once('error', reject);
       child.once('exit', (status, signal) => resolve(status ?? (stopping && signal !== 'SIGKILL' ? 0 : 1)));
     });
-    console.info(stopping ? 'web_shutdown_outcome' : 'web_exit_outcome', { status: code === 0 ? 'complete' : 'failed' });
+    serverLogger.log(stopping ? 'web_shutdown_outcome' : 'web_exit_outcome', { status: code === 0 ? 'complete' : 'failed' });
     process.exitCode = code;
   } finally {
     if (timeout) clearTimeout(timeout);
@@ -54,6 +55,6 @@ async function main(): Promise<void> {
 main().catch((error: unknown) => {
   const reason = error instanceof Error && error.message === 'invalid_arguments'
     ? error.message : 'transport_or_startup_unavailable';
-  console.error('web_start_outcome', { status: 'failed', reason });
+  serverLogger.error('web_start_outcome', { operation: 'start', status: 'failed', reason, ...safeError(error, 'startup_failure') });
   process.exitCode = 1;
 });

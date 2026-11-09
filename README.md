@@ -394,6 +394,17 @@ absolute non-secret transport-file selector to Node; application builds and page
 rendering never read transport credentials or the vault. Vault reads begin
 through the authenticated API.
 
+Both the daemon and web server accept `MEMORY_LOOP_LOG_LEVEL=error`, `warning`,
+`info`, or `verbose`, in increasing order of detail. The default is `info`;
+an unrecognized value also uses `info`. Set the variable in each server's
+environment before launch (the web launcher passes it to Next). For example,
+`MEMORY_LOOP_LOG_LEVEL=verbose bun --no-env-file run daemon` includes recurring
+refresh and state-write events. Info records lifecycle and meaningful state
+changes, warning records degraded operation, and error records failures. Logs
+include safe operation and failure categories or known infrastructure codes;
+they do not include arbitrary exception messages or request contents. This
+setting does not control browser console logging.
+
 ### Start both tiers
 
 **Bare daemon startup reads the existing selected vault.** Start from the project

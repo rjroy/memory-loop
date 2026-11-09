@@ -1,3 +1,4 @@
+import { serverLogger } from '../src/server/logger';
 import { lstat, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -64,7 +65,7 @@ export async function loadTransport(transportFile: string): Promise<LoadedTransp
 }
 
 export async function setupTransport(projectRoot: string): Promise<void> {
-  console.info('transport_setup_attempt');
+  serverLogger.log('transport_setup_attempt');
   let root: SafeRoot | undefined;
   const created: Array<{ name: string; handle: FileHandle; identity?: { dev: bigint; ino: bigint }; closed: boolean }> = [];
   try {
@@ -83,7 +84,7 @@ export async function setupTransport(projectRoot: string): Promise<void> {
       await handle.writeFile(content, 'utf8');
     }
     for (const item of created) { await item.handle.close(); item.closed = true; }
-    console.info('transport_setup_outcome', { status: 'created' });
+    serverLogger.log('transport_setup_outcome', { status: 'created' });
   } catch (error: unknown) {
     for (const item of created) {
       if (!item.closed) {
@@ -97,7 +98,7 @@ export async function setupTransport(projectRoot: string): Promise<void> {
         if (item.identity && existing.dev === item.identity.dev && existing.ino === item.identity.ino) await unlink(path);
       } catch { /* Preserve unrelated files and report the setup failure. */ }
     }
-    console.info('transport_setup_outcome', { status: 'failed' });
+    serverLogger.log('transport_setup_outcome', { status: 'failed' });
     throw normalizeError(error);
   } finally {
     for (const item of created) if (!item.closed) await item.handle.close().catch(() => {});

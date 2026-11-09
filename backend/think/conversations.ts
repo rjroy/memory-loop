@@ -1,3 +1,4 @@
+import { safeError, serverLogger } from '../../src/server/logger';
 import { lstat } from 'node:fs/promises';
 import type { CommandReceipt, CreateConversationCommand, DeleteConversationCommand, DeleteReceipt, RecentConversation, RecentConversations, ResumeReceipt, SelectConversationCommand, ViewRegistration, ViewSelection } from './contract';
 import { ThinkStateError, type RegisteredConversation, type StoredView, type StoredTranscript, type ThinkStateStore } from './state';
@@ -196,7 +197,7 @@ export function createConversationService(options: ConversationServiceOptions): 
           : !options.native ? { ...command, kind: 'resume', epoch, state: 'rejected', failure: { code: 'service_unavailable' } }
           : { ...command, kind: 'resume', epoch, state: observed.state === 'ready' ? 'ready' : 'upstream-unconfirmed' };
         try { store.outcome(next); }
-        catch { options.onPersistenceFailure?.(); console.info('think_resume_outcome', { status: 'persistence_unavailable' }); }
+        catch (error) { options.onPersistenceFailure?.(); serverLogger.warning('think_resume_outcome', { operation: 'resume', conversationId: command.conversationId, clientCommandId: command.clientCommandId, status: 'persistence_unavailable', ...safeError(error, 'resume_persistence_failure') }); }
         remember(next);
         return next;
       }).finally(() => preparations.delete(command.clientCommandId));

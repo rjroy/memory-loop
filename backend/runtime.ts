@@ -1,3 +1,4 @@
+import { safeError, serverLogger } from '../src/server/logger';
 import { serve } from 'bun';
 import { isAbsolute } from 'node:path';
 import { prepareServer } from './server';
@@ -30,7 +31,7 @@ function optionsFromArgs(args: string[]): RuntimeOptions {
 
 async function main(): Promise<void> {
   const options = optionsFromArgs(process.argv.slice(2));
-  console.info('daemon_start_attempt');
+  serverLogger.log('daemon_start_attempt');
   const transport = await loadTransport(transportFileFor(options.projectRoot));
   const port = Number(new URL(transport.config.daemonOrigin).port || 80);
   if (options.port !== undefined && options.port !== port) throw new Error('Daemon port does not match transport configuration');
@@ -61,28 +62,28 @@ async function main(): Promise<void> {
     await prepared.close();
     throw error;
   }
-  console.info('daemon_start_outcome', { status: 'listening', port });
+  serverLogger.log('daemon_start_outcome', { status: 'listening', port });
   prepared.startRecovery();
 
   let shuttingDown = false;
   const shutdown = async (signal: 'SIGINT' | 'SIGTERM') => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.info('daemon_shutdown_attempt', { signal });
+    serverLogger.log('daemon_shutdown_attempt', { signal });
     const timeout = setTimeout(() => {
-      console.error('daemon_shutdown_outcome', { status: 'timeout' });
+      serverLogger.error('daemon_shutdown_outcome', { status: 'timeout' });
       process.exit(1);
     }, 2500);
     timeout.unref();
     try {
       await server.stop(true);
       await prepared.close();
-      console.info('daemon_shutdown_outcome', { status: 'complete' });
+      serverLogger.log('daemon_shutdown_outcome', { status: 'complete' });
       clearTimeout(timeout);
       process.exitCode = 0;
-    } catch {
+    } catch (error) {
       clearTimeout(timeout);
-      console.error('daemon_shutdown_outcome', { status: 'failed' });
+      serverLogger.error('daemon_shutdown_outcome', { operation: 'shutdown', status: 'failed', ...safeError(error, 'shutdown_failure') });
       process.exitCode = 1;
     }
   };
@@ -95,6 +96,6 @@ main().catch((error: unknown) => {
   const reason = code === 'EADDRINUSE' ? 'EADDRINUSE' :
     code === 'transport_invalid' || code === 'transport_unavailable' || code === 'transport_exists' ? 'transport_unavailable' :
       error instanceof Error && error.message === 'Daemon port does not match transport configuration' ? 'port_mismatch' : 'startup_failed';
-  console.error('daemon_start_outcome', { status: 'failed', reason });
+  serverLogger.error('daemon_start_outcome', { operation: 'start', status: 'failed', reason, ...safeError(error, 'startup_failure') });
   process.exitCode = 1;
 });

@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApp, type AppOptions, type VaultState } from './app';
 import type { VaultReader } from './vault';
+import { createServerLogger } from '../src/server/logger';
 
 const authority = '127.0.0.1:3000';
 const origin = 'http://127.0.0.1:5173';
 const secret = '/test-owned/private-host-path/note.md';
 const token = 'a'.repeat(64);
 
-function setup(vault?: VaultState) {
+function setup(vault?: VaultState, log?: AppOptions['log']) {
   const reader: VaultReader = {
     tree: vi.fn(async () => ({ rootIdentity: 'root', entries: [{ kind: 'note' as const, name: 'note.md', id: ['note.md'], identity: 'note-id', version: 'note-version' }] })),
     directory: vi.fn(async () => { throw new Error('unused directory'); }),
@@ -18,7 +19,7 @@ function setup(vault?: VaultState) {
     action: vi.fn(),
     close: vi.fn(async () => {}),
   };
-  const options = { authority, vault: vault ?? { reader }, serviceToken: token } satisfies AppOptions & { serviceToken: string };
+  const options = { authority, vault: vault ?? { reader }, serviceToken: token, log } satisfies AppOptions & { serviceToken: string };
   const app = createApp(options);
   const request = (path: string, init: RequestInit = {}, authenticate = true) => {
     const headers = new Headers(init.headers);
@@ -159,9 +160,9 @@ describe('vault HTTP API', () => {
   });
 
   it('logs attempts and outcomes without credentials, identifiers or internal error details', async () => {
-    const logs = vi.spyOn(console, 'info').mockImplementation(() => {});
-    const { request } = setup();
-    try {
+    const logs = vi.fn();
+    const logger = createServerLogger({ env: { MEMORY_LOOP_LOG_LEVEL: 'verbose' }, sink: logs });
+    const { request } = setup(undefined, logger.log);
       await request(`/api/vault/note?${new URLSearchParams({ id: JSON.stringify(['fixture-private-name.md']) })}`);
       await request('/api/vault/tree', { headers: { authorization: `Bearer ${'b'.repeat(64)}` } });
       expect(logs.mock.calls.length).toBeGreaterThanOrEqual(4);
@@ -170,7 +171,6 @@ describe('vault HTTP API', () => {
       expect(output).not.toContain('b'.repeat(64));
       expect(output).not.toContain('fixture-private-name.md');
       expect(output).not.toContain(secret);
-    } finally { logs.mockRestore(); }
   });
 
   it.each(['HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'])('rejects %s without touching the vault', async method => {

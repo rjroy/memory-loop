@@ -34,6 +34,21 @@ describe('search BFF deadline', () => {
 describe('search BFF projection', () => {
   const request = (body: unknown) => new Request('http://127.0.0.1:3000/api/vault/search', { method: 'POST', headers: { host: '127.0.0.1:3000', 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const coverage = { complete: true, filesSearched: 1, skippedFiles: { binary: 0, invalidEncoding: 0, unreadable: 0, changed: 0 }, skippedLines: 0, timedOut: false };
+  it('reports a failed search with safe cause and correlation, without logging the query', async () => {
+    const log = vi.fn<(event: string, details: Record<string, unknown>) => void>();
+    const response = await handleVaultRequest(request({ mode: 'content', query: 'private-search-query' }), {
+      transport, log, fetch: async () => { throw Object.assign(new Error('private transport payload'), { code: 'ECONNREFUSED' }); },
+    });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'search_unavailable' } });
+    const attempt = log.mock.calls.find(([event]) => event === 'vault_bff_attempt');
+    expect(attempt?.[1].requestId).toEqual(expect.any(String));
+    expect(log).toHaveBeenCalledWith('vault_bff_outcome', expect.objectContaining({
+      operation: 'search', requestId: attempt?.[1].requestId, status: 503, code: 'ECONNREFUSED', category: expect.any(String),
+    }));
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-search-query|private transport payload/);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(transport.serviceToken);
+  });
   it('projects only allowlisted fields and rejects unsafe offsets', async () => {
     const value = { mode: 'filename', hits: [{ id: ['note.txt'], name: 'note.txt', path: 'note.txt', field: 'name', positions: [0], score: 1, secret: 'private' }], counts: { matches: 1, files: 1 }, limited: false, coverage, secret: 'private' };
     const deps = { transport, log: vi.fn(), fetch: async () => Response.json(value) };

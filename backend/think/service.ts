@@ -1,3 +1,4 @@
+import { safeError, serverLogger } from '../../src/server/logger';
 import type { CommandReceipt, ConversationState, CreateConversationCommand, CreateReceipt, DeleteConversationCommand, DeleteReceipt, FormDecision, FormReplyCommand, FormReplyReceipt, RecentConversations, ResumeReceipt, SelectConversationCommand, SendCommand, SendReceipt, StopCommand, StopReceipt, ViewRegistration, ViewSelection } from './contract';
 import type { FormInfo, SessionCreateInput } from '@opencode/client';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -262,7 +263,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   function disablePersistence(): void {
     persistenceFailed = true;
     refreshAllEligibility();
-    console.info('think_state_outcome', { status: 'unavailable' });
+    serverLogger.log('think_state_outcome', { status: 'unavailable' });
   }
 
   function stateFailure(error: unknown): never {
@@ -307,7 +308,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       // Derivative recency failure never rewrites a native outcome or stops accepted work.
       // Keep retrying the verified source; do not present stale activity as a complete recent card.
       activityWritesPending.add(conversationId);
-      console.info('think_activity_outcome', { status: 'unavailable' });
+      serverLogger.log('think_activity_outcome', { status: 'unavailable' });
     }
   }
 
@@ -419,7 +420,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       if (!wasIncomplete) {
         projectionChanged(conversationId);
       }
-      console.info('think_content_outcome', { status: 'unavailable' });
+      serverLogger.log('think_content_outcome', { status: 'unavailable' });
     }
   }
   let maintenanceRunning = false;
@@ -432,7 +433,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (closed) break;
           if (transcripts.retains(ref)) continue;
           try { const result = await bodies.evict(ref); if (result === 'evicted' || result === 'already-evicted') reclaimable.delete(key); }
-          catch { console.info('think_content_reclaim_outcome', { status: 'unavailable' }); }
+          catch { serverLogger.log('think_content_reclaim_outcome', { status: 'unavailable' }); }
         }
       })().finally(() => { maintenanceRunning = false; });
       void trackTransfer(maintenance);
@@ -501,7 +502,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   function invalidateOwnership(conversationId: string): void {
     ownershipInvalid.add(conversationId);
     refreshEligibility(conversationId);
-    console.info('think_ownership_outcome', { conversationId, status: 'unavailable' });
+    serverLogger.log('think_ownership_outcome', { conversationId, status: 'unavailable' });
   }
 
   function nativeBusy(session: Awaited<ReturnType<NativeSessions['getSession']>>): boolean {
@@ -516,13 +517,14 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
   }
 
   async function nativeCall<T>(controller: AbortController, operation: 'create' | 'creation-selection' | 'readback' | 'monitor-connect' | 'prompt' | 'inbox-list' | 'inbox-cancel' | 'interrupt' | 'status' | 'active' | 'history' | 'identity' | 'form-list' | 'form-get' | 'form-reply' | 'permission-list' | 'message-get' | 'children' | 'remove', call: (signal: AbortSignal) => Promise<T>): Promise<T> {
-    console.info('think_native_attempt', { operation });
+    serverLogger.log('think_native_attempt', { operation });
     const signal = controller.signal;
     if (signal.aborted) {
-      console.info('think_native_outcome', { operation, outcome: 'aborted' });
+      serverLogger.log('think_native_outcome', { operation, outcome: 'aborted' });
       throw new Error('Native call aborted');
     }
-    const timer = setTimeout(() => controller.abort(), 10000);
+    let timedOut = false;
+    const timer = setTimeout(() => { if (!signal.aborted) { timedOut = true; controller.abort(); } }, 10000);
     let onAbort: (() => void) | undefined;
     const aborted = new Promise<never>((_, reject) => {
       onAbort = () => reject(new Error('Native call aborted'));
@@ -531,10 +533,11 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     });
     try {
       const result = await Promise.race([call(signal), aborted]);
-      console.info('think_native_outcome', { operation, outcome: 'success' });
+      serverLogger.log('think_native_outcome', { operation, outcome: 'success' });
       return result;
     } catch (error) {
-      console.info('think_native_outcome', { operation, outcome: signal.aborted ? 'aborted' : 'failed' });
+      if (timedOut) serverLogger.warning('think_native_outcome', { operation, outcome: 'timeout', code: 'ETIMEDOUT', category: 'native_deadline' });
+      else serverLogger.log('think_native_outcome', { operation, outcome: signal.aborted ? 'aborted' : 'failed', ...(!signal.aborted ? safeError(error, 'native_call_failure') : {}) });
       throw error;
     } finally {
       clearTimeout(timer);
@@ -550,14 +553,14 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         available = false;
         refreshAllEligibility();
         monitor?.controller.abort();
-        console.info('think_identity_outcome', { status: 'changed' });
+        serverLogger.log('think_identity_outcome', { status: 'changed' });
         return false;
       }
       const versionStatus = nativeVersionStatus(info.version, minimumVersion);
       if (versionStatus !== 'compatible') {
         available = false;
         refreshAllEligibility();
-        console.info('think_native_version_outcome', { source: 'live', status: versionStatus, requiredVersion: minimumVersion });
+        serverLogger.log('think_native_version_outcome', { source: 'live', status: versionStatus, requiredVersion: minimumVersion });
         return false;
       }
       if (!identityChanged && !closed) { available = true; refreshAllEligibility(); }
@@ -708,7 +711,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       await nativeCall(controller, 'create', signal => native.createSession(input, signal));
       const session = await nativeCall(controller, 'readback', signal => native.getSession({ sessionID: id }, signal));
       const valid = matches(session, id, receipt.conversationId);
-      console.info('think_create_readback', { outcome: valid ? 'verified' : 'mismatch' });
+      serverLogger.log('think_create_readback', { outcome: valid ? 'verified' : 'mismatch' });
       update(receipt, valid ? 'ready' : 'rejected', valid ? session : undefined);
     } catch {
       update(receipt, 'upstream-unconfirmed');
@@ -731,7 +734,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     monitor = current;
     refreshAllEligibility();
     current.task = (async () => {
-      console.info('think_monitor_attempt');
+      serverLogger.log('think_monitor_attempt');
       try {
         let delay = 100;
         while (!controller.signal.aborted && !identityChanged) {
@@ -775,9 +778,9 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
                 }
               }
             }
-            console.info('think_monitor_outcome', { outcome: controller.signal.aborted ? 'closed' : 'ended' });
-          } catch {
-            console.info('think_monitor_outcome', { outcome: 'failed' });
+            serverLogger.log('think_monitor_outcome', { outcome: controller.signal.aborted ? 'closed' : 'ended' });
+          } catch (error) {
+            serverLogger.log('think_monitor_outcome', { operation: 'event_stream', outcome: 'failed', ...safeError(error, 'native_stream_failure') });
           } finally {
             if (current.healthy && !controller.signal.aborted) markPreviewGaps();
             current.healthy = false;
@@ -823,7 +826,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     if (registered.directory !== directory || registered.creation === 'rejected' || registered.lifecycle !== 'live' || registered.purpose !== 'think') throw new ThinkServiceError('think_unavailable');
     const controller = new AbortController();
     const task = Promise.resolve().then(async () => {
-      console.info('think_hydration_attempt', { conversationId });
+      serverLogger.log('think_hydration_attempt', { conversationId });
       try {
         if (!await verifyIdentity(controller)) throw new Error('Native process unavailable');
         const session = await nativeCall(controller, 'readback', signal => native.getSession({ sessionID: registered.nativeSessionId }, signal));
@@ -852,7 +855,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         try { for (const key of missingConfirmedText(options.state?.transcripts, conversationId, history.entries)) history.missing.add(key); }
         catch {
           checkpointReadsPending.add(conversationId);
-          console.info('think_transcript_read_outcome', { conversationId, status: 'unavailable' });
+          serverLogger.log('think_transcript_read_outcome', { conversationId, status: 'unavailable' });
           // Ordinary storage failure keeps the writer's existing delayed I/O warning policy.
         }
         const creates = history.commands.filter(command => command.receipt.kind === 'create');
@@ -905,10 +908,10 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           ...(otherTranscriptWarnings ? { otherTranscriptWarnings } : {}) });
         setPermissionPending(conversationId, permissions.data.some(permission => permission.sessionID === registered.nativeSessionId));
         requestRefresh(conversationId);
-        console.info('think_hydration_outcome', { conversationId, status: 'ready' });
+        serverLogger.log('think_hydration_outcome', { conversationId, status: 'ready' });
       } catch {
         controller.abort();
-        console.info('think_hydration_outcome', { conversationId, status: 'unavailable' });
+        serverLogger.log('think_hydration_outcome', { conversationId, status: 'unavailable' });
         throw new ThinkServiceError('think_unavailable');
       }
     });
@@ -943,15 +946,15 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     if (controller.signal.aborted || deleting.has(receipt.conversationId)) return;
     const messageId = `msg_memoryloop_${receipt.clientCommandId.replaceAll('-', '')}`;
     try {
-      console.info('think_original_capture_attempt');
+      serverLogger.log('think_original_capture_attempt');
       const body = await bodies.replace({ conversationId: receipt.conversationId, owner: { kind: 'original', clientCommandId: receipt.clientCommandId, messageId } }, bodyBytes(text), 'canonical');
       if (controller.signal.aborted || closed || deleting.has(receipt.conversationId)) return;
       putEntry(receipt.conversationId, { kind: 'original', clientCommandId: receipt.clientCommandId, messageId, body, runId: receipt.runId, sourceTime: registeredTimes.get(receipt.clientCommandId) });
       originalCapture(receipt, 'captured');
-      console.info('think_original_capture_outcome', { status: 'stored' });
+      serverLogger.log('think_original_capture_outcome', { status: 'stored' });
       if (stoppedRuns.has(receipt.runId)) return;
     } catch {
-      console.info('think_original_capture_outcome', { status: 'failed' });
+      serverLogger.log('think_original_capture_outcome', { status: 'failed' });
       originalCapture(receipt, 'failed');
       // Stop owns the cancellation receipt when capture fails after Stop was registered.
       settleSend(receipt, stoppedRuns.has(receipt.runId) ? undefined : 'rejected');
@@ -1026,11 +1029,11 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (restoredOwners.has(conversationId)) reads.push(nativeCall(batch, 'inbox-list', signal => native.listInbox({ sessionID }, signal)).then(value => { inbox = value; }));
           try {
             await Promise.all(reads);
-          } catch {
+          } catch (error) {
             // The bounded call wrappers settle on abort even if an adapter ignores its signal.
             batch.abort();
             await Promise.allSettled(reads);
-            console.info('think_reconciliation_outcome', { outcome: controller.signal.aborted ? 'aborted' : 'unavailable' });
+            serverLogger.log('think_reconciliation_outcome', { operation: 'read_batch', conversationId, runId, outcome: controller.signal.aborted ? 'aborted' : 'unavailable', ...(!controller.signal.aborted ? safeError(error, 'native_read_failure') : {}) });
           } finally {
             controller.signal.removeEventListener('abort', abortBatch);
           }
@@ -1143,7 +1146,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
               : session.outcome === 'failed' && assistantCorrelated && assistantTime?.outcome === 'failed' ? 'failed' : undefined;
             if (terminal) {
               settleSend(receipt, terminal);
-              console.info('think_run_reconciled', { outcome: terminal });
+              serverLogger.log('think_run_reconciled', { outcome: terminal });
             }
           }
           if (!terminal && restoredOwners.has(conversationId) && runId && receipt?.kind === 'send' &&
@@ -1153,12 +1156,12 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
             // The same durable reservation is now verifiably admitted, even while native work
             // remains queued/running. Preserve it; only terminal evidence may release the run.
             updateSend(receipt, 'admitted');
-            console.info('think_run_reconciled', { outcome: 'admitted' });
+            serverLogger.log('think_run_reconciled', { outcome: 'admitted' });
           }
           if (state.generation === generation) break;
         }
-      } catch {
-        console.info('think_reconciliation_outcome', { outcome: controller.signal.aborted ? 'aborted' : 'unavailable' });
+      } catch (error) {
+        serverLogger.log('think_reconciliation_outcome', { operation: 'refresh', conversationId, outcome: controller.signal.aborted ? 'aborted' : 'unavailable', ...(!controller.signal.aborted ? safeError(error, 'reconciliation_failure') : {}) });
       } finally {
         state.running = false;
         tasks.delete(controller);
@@ -1425,7 +1428,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       setConversation(conversationId, state);
       lifecycle(receipt);
       sessionConversations.set(`ses_memoryloop_${conversationId.replaceAll('-', '')}`, conversationId);
-      console.info('think_create_registered');
+      serverLogger.log('think_create_registered');
       const controller = new AbortController();
       const task = Promise.resolve().then(() => dispatch(receipt, controller)).finally(() => { tasks.delete(controller); });
       trackTask(controller, task, conversationId);
@@ -1467,7 +1470,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       lifecycle(receipt);
       originalCapture(receipt, 'pending');
       sendDigests.set(clientCommandId, digest);
-      console.info('think_send_registered');
+      serverLogger.log('think_send_registered');
       const controller = new AbortController();
       const task = Promise.resolve().then(() => dispatchSend(receipt, text, controller)).finally(() => { tasks.delete(controller); });
       trackTask(controller, task, conversationId);
@@ -1505,7 +1508,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
       commands.set(clientCommandId, receipt);
       lifecycle(receipt);
       stoppedRuns.add(runId);
-      console.info('think_stop_registered');
+      serverLogger.log('think_stop_registered');
       const controller = new AbortController();
       const task = Promise.resolve().then(() => dispatchStop(receipt, run.sendCommandId, controller)).finally(() => { tasks.delete(controller); });
       trackTask(controller, task, conversationId);
@@ -1615,7 +1618,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
             }
           });
           trackTask(controller, task, conversationId);
-          console.info('think_form_reply_registered');
+          serverLogger.log('think_form_reply_registered');
           return { ...receipt };
         } catch (error) { formLocks.delete(lock); throw error; }
       })();
@@ -1740,7 +1743,7 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         const registryClose = registryConversations.close();
         for (const listeners of watchers.values()) for (const notify of listeners) notify(null);
         clearInterval(refreshTimer);
-        console.info('think_service_closed');
+        serverLogger.log('think_service_closed');
         const pending = [...tasks.entries()];
         const ownedMonitor = monitor;
         ownedMonitor?.controller.abort();

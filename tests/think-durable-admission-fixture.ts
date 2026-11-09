@@ -392,7 +392,7 @@ async function run(root: string, scenario: Scenario): Promise<FixtureReport> {
         { type: 'text', text: assistantTexts[0] },
         { type: 'reasoning', text: 'fixture-private-reasoning-must-not-be-projected' },
         { type: 'text', text: assistantTexts[1] },
-      ] });
+      ] }, { id: 'msg_fixture_completion_idle', type: 'idle', outcome: 'succeeded', time: { created: at + 3 } });
     session.outcome = 'succeeded';
     session.time = { ...session.time, busy: at - 1, idle: at + 3, updated: at + 3 };
     delete active[session.id]; inbox.length = 0;

@@ -675,7 +675,8 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
       }
       messages.push({ id: input.id, type: 'user', text: 'fixture plugin-prepared text is NOT the original', time: { created: now + 20 } },
         { id: 'msg_fixture_checkpoint_answer', type: 'assistant', agent: 'fixture', model: { providerID: 'fixture', id: 'fixture' },
-          finish: 'stop', time: { created: now + 22, completed: now + 23 }, content: [{ type: 'text', text: assistant }] });
+          finish: 'stop', time: { created: now + 22, completed: now + 23 }, content: [{ type: 'text', text: assistant }] },
+        { id: 'msg_fixture_checkpoint_idle', type: 'idle', outcome: 'succeeded', time: { created: now + 24 } });
       return { id: input.id, sessionID: input.sessionID, type: 'user', time: { created: now + 20 }, delivery: 'queue', payload: { text: 'fixture prepared' } };
     },
     async listInbox() { return [...inbox]; }, async cancelInbox() { counts.stops++; },
@@ -847,7 +848,8 @@ async function run(root: string, scenario: Scenario, output: string): Promise<Re
         });
         messages.push({ id: messageId, type: 'user', text: 'fixture plugin-prepared', time: { created: now + 20 } },
           { id: 'msg_fixture_checkpoint_answer', type: 'assistant', agent: 'fixture', model: { providerID: 'fixture', id: 'fixture' },
-            finish: 'stop', time: { created: now + 22, completed: now + 23 }, content: [{ type: 'text', text: assistant }] });
+            finish: 'stop', time: { created: now + 22, completed: now + 23 }, content: [{ type: 'text', text: assistant }] },
+          { id: 'msg_fixture_checkpoint_idle', type: 'idle', outcome: 'succeeded', time: { created: now + 24 } });
         events.push({ type: 'session.execution.succeeded', id: 'evt_fixture_completion', created: now + 24,
           durable: { aggregateID: nativeId, seq: 1, version: 1 }, data: { sessionID: nativeId } });
         wake?.(); wake = undefined;

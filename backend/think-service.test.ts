@@ -18,6 +18,7 @@ import type { TranscriptRuntime } from './think/transcript';
 import { parseThinkConfig } from './think/config';
 import { ThinkStateError, type RegisteredConversation, type StoredCommand, type ThinkStateStore } from './think/state';
 import type { CommandReceipt } from './think/contract';
+import { serverLogger } from '../src/server/logger';
 
 const epoch = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const vaultDirectory = normalize('/fixture/canonical-vault');
@@ -1182,7 +1183,8 @@ describe('durable admission storage faults', () => {
         delete f.active[sessionId(a.conversationId)];
         f.inbox.splice(0);
         f.messages.push({ id: 'msg_fixture_after_state_fault', type: 'assistant', agent, model, content: [], finish: 'stop',
-          time: { created: 22, completed: 23 } });
+          time: { created: 22, completed: 23 } },
+          { id: 'msg_fixture_after_state_fault_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } });
         f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
         f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_after_state_fault', created: 24,
           durable: { aggregateID: sessionId(a.conversationId), seq: 2, version: 1 }, data: { sessionID: sessionId(a.conversationId) } });
@@ -1444,7 +1446,8 @@ describe('real private-store normalized projection', () => {
       pending.result.resolve({ id: pending.input.id, sessionID: sessionId(a.conversationId), time: { created: 20 }, type: 'user', payload: { text: 'prepared fixture' }, delivery: 'queue' });
       f.messages.push({ id: pending.input.id, type: 'user', text: 'prepared fixture', time: { created: 20 } },
         { id: 'msg_fixture_retry', type: 'assistant', agent, model, finish: 'stop', time: { created: 22, completed: 23 }, content: [{ type: 'text', text: 'fixture answer after failure' },
-          { type: 'tool', id: 'tool_fixture_retry', name: 'read', time: { created: 22, completed: 23 }, state: { status: 'error', input: { path: 'private-retry-tool-path' }, error: { type: 'fixture', message: 'private-retry-tool-error' } } }] });
+          { type: 'tool', id: 'tool_fixture_retry', name: 'read', time: { created: 22, completed: 23 }, state: { status: 'error', input: { path: 'private-retry-tool-path' }, error: { type: 'fixture', message: 'private-retry-tool-error' } } }] },
+        { id: 'msg_fixture_retry_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } });
       f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
       f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_retry', created: 24, durable: { aggregateID: sessionId(a.conversationId), seq: 1, version: 1 }, data: { sessionID: sessionId(a.conversationId) } });
       await vi.waitFor(async () => expect((await f.service.command(a.conversationId, send.clientCommandId))?.state).toBe('completed'));
@@ -1637,6 +1640,7 @@ describe('real private-store normalized projection', () => {
           { type: 'text', text: assistant },
           { type: 'tool', id: 'fixture-transcript-tool', name: 'unknown-custom-tool', time: { created: 22, completed: 23 }, state: { status: 'error', input: { path: 'fixture-private-tool-argument' }, error: { type: 'fixture', message: 'fixture-private-tool-error' } } },
         ] },
+        { id: 'msg_fixture_transcript_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } },
       );
       f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
       const emit = (id: string, seq: number) => f.emit({ type: 'session.execution.succeeded', id, created: 24,
@@ -2395,6 +2399,52 @@ describe('R6 positive owned permission incompatibility', () => {
 });
 
 describe('R5 positively observed background execution', () => {
+  it('keeps a resident Send blocked after foreground completion when later native activity is busy and the active read fails', async () => {
+    const f = setup();
+    const activeFailure = deferred<SessionActiveOutput>();
+    try {
+      await f.service.create(a); await waitForCalls(f.calls, 1); f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: 'fixture foreground' };
+      await f.service.send(send); await waitForCalls(f.prompts, 1);
+      const pending = f.prompts[0];
+      if (!pending?.input.id) throw new Error('fixture prompt missing');
+      const sid = sessionId(a.conversationId);
+      f.messages.push(
+        { id: pending.input.id, type: 'user', text: send.text, time: { created: 20 } },
+        { id: 'msg_fixture_done', type: 'assistant', agent, model, finish: 'stop', content: [], time: { created: 22, completed: 23 } },
+        { id: 'msg_fixture_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } },
+        { id: 'msg_fixture_background', type: 'synthetic', text: 'background continuation', time: { created: 25 } },
+      );
+      f.setStatus({ time: { created: 1, updated: 25, busy: 25, idle: 24 } });
+      const beforeStatus = f.getSession.mock.calls.length;
+      const beforeActive = f.activeSessions.mock.calls.length;
+      f.activeSessions.mockImplementation(() => activeFailure.promise);
+      pending.result.resolve({ id: pending.input.id, sessionID: sid, time: { created: 20 }, type: 'user', payload: { text: send.text }, delivery: 'queue' });
+      await vi.waitFor(() => {
+        expect(f.getSession.mock.calls.length).toBeGreaterThan(beforeStatus);
+        expect(f.activeSessions.mock.calls.length).toBeGreaterThan(beforeActive);
+      });
+      await expect(f.getSession.mock.results[beforeStatus]?.value).resolves.toMatchObject({ time: { busy: 25, idle: 24 } });
+      activeFailure.reject(new Error('fixture active read unavailable'));
+
+      await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ state: 'completed' }));
+      const eligibility = (await authenticatedSnapshot(f)).sendEligibility;
+      expect(['busy', 'unavailable']).toContain(eligibility);
+      const next = { ...send, clientCommandId: '66666666-6666-4666-8666-666666666666' };
+      await expect(f.service.send(next)).rejects.toMatchObject({ code: 'command_conflict' });
+      expect(f.prompt).toHaveBeenCalledOnce();
+
+      f.messages.push({ id: 'msg_fixture_background_idle', type: 'idle', outcome: 'succeeded', time: { created: 30 } });
+      f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 30, busy: 25, idle: 30 } });
+      f.activeSessions.mockImplementation(async () => ({}));
+      f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_background_idle', created: 30,
+        durable: { aggregateID: sid, seq: 1, version: 1 }, data: { sessionID: sid } });
+      await vi.waitFor(async () => expect(await authenticatedSnapshot(f)).toMatchObject({ sendEligibility: 'available' }));
+      expect(await f.service.send(next)).toMatchObject({ kind: 'send', clientCommandId: next.clientCommandId });
+    } finally { await f.service.close(); }
+  });
+
   it('R5 keeps a positive background-running observation when a concurrent history read fails', async () => {
     const f = setup();
     try {
@@ -2408,7 +2458,8 @@ describe('R5 positively observed background execution', () => {
       pending.result.resolve({ id: pending.input.id, sessionID: sid, time: { created: 20 }, type: 'user', payload: { text: send.text }, delivery: 'queue' });
       await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ state: 'admitted' }));
       f.messages.push({ id: pending.input.id, type: 'user', text: send.text, time: { created: 20 } },
-        { id: 'msg_fixture_done', type: 'assistant', agent, model, finish: 'stop', content: [], time: { created: 22, completed: 23 } });
+        { id: 'msg_fixture_done', type: 'assistant', agent, model, finish: 'stop', content: [], time: { created: 22, completed: 23 } },
+        { id: 'msg_fixture_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } });
       f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
       const emit = (id: string, seq: number) => f.emit({ type: 'session.execution.started', id, created: seq,
         durable: { aggregateID: sid, seq, version: 1 }, data: { sessionID: sid } });
@@ -2443,7 +2494,8 @@ describe('R5 positively observed background execution', () => {
       pending.result.resolve({ id: pending.input.id, sessionID: sid, time: { created: 20 }, type: 'user', payload: { text: send.text }, delivery: 'queue' });
       await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ state: 'admitted' }));
       f.messages.push({ id: pending.input.id, type: 'user', text: send.text, time: { created: 20 } },
-        { id: 'msg_fixture_done', type: 'assistant', agent, model, finish: 'stop', content: [], time: { created: 22, completed: 23 } });
+        { id: 'msg_fixture_done', type: 'assistant', agent, model, finish: 'stop', content: [], time: { created: 22, completed: 23 } },
+        { id: 'msg_fixture_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } });
       f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
       const emit = (id: string, seq: number) => f.emit({ type: 'session.execution.started', id, created: seq,
         durable: { aggregateID: sid, seq, version: 1 }, data: { sessionID: sid } });
@@ -2484,7 +2536,8 @@ describe('R5/R6 independent authority channels', () => {
       pending.result.resolve({ id: pending.input.id, sessionID: sid, time: { created: 20 }, type: 'user', payload: { text: send.text }, delivery: 'queue' });
       await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ state: 'admitted' }));
       f.messages.push({ id: pending.input.id, type: 'user', text: send.text, time: { created: 20 } },
-        { id: 'msg_fixture_done', type: 'assistant', agent, model, finish: 'stop', content: [], time: { created: 22, completed: 23 } });
+        { id: 'msg_fixture_done', type: 'assistant', agent, model, finish: 'stop', content: [], time: { created: 22, completed: 23 } },
+        { id: 'msg_fixture_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } });
       f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
       f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_completed', created: 24,
         durable: { aggregateID: sid, seq: 1, version: 1 }, data: { sessionID: sid } });
@@ -2550,7 +2603,8 @@ describe('R4 projection capture failure', () => {
           { type: 'text', text: 'fixture canonical' },
           { type: 'text', text: 'fixture second canonical' },
           { type: 'tool', id: 'fixture-tool', name: 'custom', time: { created: 22, completed: 23 }, state: { status: 'error', input: {}, error: { type: 'fixture', message: 'fixture-generic-tool-error' } } },
-        ] });
+        ] },
+        { id: 'msg_fixture_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } });
       f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
       f.emit({ type: 'session.execution.succeeded', id: 'evt_fixture_capture', created: 24,
         durable: { aggregateID: sid, seq: 2, version: 1 }, data: { sessionID: sid } });
@@ -2582,6 +2636,76 @@ describe('R4 projection capture failure', () => {
 });
 
 describe('daemon-owned authoritative terminal reconciliation', () => {
+  it.each([
+    { name: 'a length finish followed by a succeeded native idle marker', scenario: 'length', expected: 'completed' },
+    { name: 'a failed native idle marker without an assistant', scenario: 'failed', expected: 'failed' },
+    { name: 'a foreground terminal followed by a synthetic continuation', scenario: 'continuation', expected: 'completed' },
+    { name: 'a steered user in the same native turn', scenario: 'steered', expected: 'completed' },
+    { name: 'an earlier unrelated native terminal and an unfinished foreground turn', scenario: 'earlier', expected: 'admitted' },
+    { name: 'a length finish with idle session status but no native terminal marker', scenario: 'unmarked', expected: 'admitted' },
+    { name: 'a stop finish with succeeded status but no native terminal marker', scenario: 'unmarked-stop', expected: 'admitted' },
+    { name: 'a shutdown interruption with no native terminal marker', scenario: 'shutdown', expected: 'admitted' },
+  ] as const)('reconciles $name', async ({ scenario, expected }) => {
+    const f = setup();
+    const logs = vi.spyOn(serverLogger, 'log');
+    try {
+      await f.service.create(a);
+      await waitForCalls(f.calls, 1);
+      f.complete(0);
+      await vi.waitFor(async () => expect((await f.service.conversation(a.conversationId))?.creation).toBe('ready'));
+      const send = { conversationId: a.conversationId, clientCommandId: '55555555-5555-4555-8555-555555555555', text: 'foreground fixture' };
+      const receipt = await f.service.send(send);
+      await waitForCalls(f.prompts, 1);
+      const pending = f.prompts[0];
+      if (!pending?.input.id) throw new Error('fixture expected an identified prompt');
+      const sid = sessionId(a.conversationId);
+      pending.result.resolve({ id: pending.input.id, sessionID: sid, time: { created: 20 }, type: 'user', payload: { text: send.text }, delivery: 'queue' });
+      await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ state: 'admitted' }));
+      await vi.waitFor(() => expect(f.listMessages).toHaveBeenCalled());
+      await new Promise<void>(resolve => setImmediate(resolve));
+
+      if (scenario === 'earlier') f.messages.push(
+        { id: 'msg_fixture_old_user', type: 'user', text: 'earlier input', time: { created: 2 } },
+        { id: 'msg_fixture_old_idle', type: 'idle', outcome: 'succeeded', time: { created: 4 } },
+      );
+      f.messages.push({ id: pending.input.id, type: 'user', text: send.text, time: { created: 20 }, metadata: pending.input.metadata });
+      if (scenario === 'steered') f.messages.push({ id: 'msg_fixture_steered', type: 'user', text: 'steered input', time: { created: 21 } });
+      if (scenario !== 'failed' && scenario !== 'earlier') f.messages.push(
+        { id: 'msg_fixture_answer', type: 'assistant', agent, model, content: [], finish: scenario === 'unmarked-stop' || scenario === 'shutdown' ? 'stop' : 'length', time: { created: 22, completed: 23 } },
+      );
+      if (scenario !== 'earlier' && scenario !== 'unmarked' && scenario !== 'unmarked-stop' && scenario !== 'shutdown') f.messages.push(
+        { id: 'msg_fixture_idle', type: 'idle', outcome: scenario === 'failed' ? 'failed' : 'succeeded', time: { created: 24 } },
+      );
+      if (scenario === 'continuation') f.messages.push(
+        { id: 'msg_fixture_synthetic', type: 'synthetic', text: 'background continuation', time: { created: 25 } },
+        { id: 'msg_fixture_background_idle', type: 'idle', outcome: 'failed', time: { created: 30 } },
+      );
+      f.setStatus({ outcome: scenario === 'shutdown' ? 'interrupted' : scenario === 'failed' || scenario === 'continuation' ? 'failed' : 'succeeded',
+        time: { created: 1, updated: scenario === 'continuation' ? 30 : 24, busy: scenario === 'continuation' ? 25 : 19, idle: scenario === 'continuation' ? 30 : 24 } });
+      if (expected === 'admitted') {
+        // Refreshes are serialized and the maintenance timer only starts one when none is
+        // running. A second read of this snapshot proves the first reducer pass finished.
+        let snapshotReads = 0;
+        f.listMessages.mockImplementation(async () => {
+          snapshotReads++;
+          return { data: [...f.messages], cursor: {} };
+        });
+        await vi.waitFor(() => expect(snapshotReads).toBeGreaterThanOrEqual(2), { timeout: 12_000, interval: 25 });
+        expect(logs.mock.calls.some(([event, details]) => event === 'think_reconciliation_outcome' && details?.operation === 'refresh')).toBe(false);
+      } else {
+        const previous = f.listMessages.mock.calls.length;
+        f.emit({ type: 'session.execution.started', id: 'evt_fixture_refresh', created: 31,
+          durable: { aggregateID: sid, seq: 1, version: 1 }, data: { sessionID: sid } });
+        await vi.waitFor(() => expect(f.listMessages.mock.calls.length).toBeGreaterThan(previous));
+      }
+      await vi.waitFor(async () => expect(await f.service.command(a.conversationId, send.clientCommandId)).toMatchObject({ runId: receipt.runId, state: expected }));
+      expect(f.prompt).toHaveBeenCalledOnce();
+      const next = { ...send, clientCommandId: '66666666-6666-4666-8666-666666666666' };
+      if (expected === 'admitted') await expect(f.service.send(next)).rejects.toMatchObject({ code: 'command_conflict' });
+      else expect(await f.service.send(next)).toMatchObject({ kind: 'send', clientCommandId: next.clientCommandId });
+    } finally { await f.service.close(); logs.mockRestore(); }
+  }, 15_000);
+
   it('reconciles a quiet completed run without a terminal event or browser subscriber', async () => {
     const f = setup();
     try {
@@ -2602,6 +2726,7 @@ describe('daemon-owned authoritative terminal reconciliation', () => {
       f.messages.push(
         { id: pending.input.id, type: 'user', text: send.text, time: { created: 20 }, metadata: pending.input.metadata },
         { id: 'msg_fixture_answer', type: 'assistant', agent, model, content: [], finish: 'stop', time: { created: 22, completed: 23 } },
+        { id: 'msg_fixture_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } },
       );
       f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });
       const previous = f.listMessages.mock.calls.length;
@@ -2643,6 +2768,7 @@ describe('daemon-owned authoritative terminal reconciliation', () => {
       f.setStatus({ outcome, time: { created: 1, updated: 24, busy: 21, idle: 24 } });
       const error = { type: 'fixture_error', message: 'controlled fixture error' };
       if (outcome === 'failed') f.messages.push({ id: 'msg_fixture_error', type: 'assistant', agent, model, content: [], finish: 'error', error, time: { created: 22, completed: 23 } });
+      f.messages.push({ id: 'msg_fixture_idle', type: 'idle', outcome, time: { created: 24 } });
       const common = { id: 'evt_fixture_terminal', created: 24, durable: { aggregateID: sid, seq: 2, version: 1 as const } };
       f.emit(outcome === 'failed'
         ? { ...common, type: 'session.execution.failed', data: { sessionID: sid, error } }
@@ -2723,6 +2849,7 @@ describe('daemon-owned authoritative terminal reconciliation', () => {
       f.messages.push(
         { id: promptId, type: 'user', text: send.text, time: { created: 20 }, metadata: promptCall.input.metadata },
         { id: 'msg_fixture_current_answer', type: 'assistant', agent, model, content: [], finish: 'stop', time: { created: 22, completed: 23 } },
+        { id: 'msg_fixture_current_idle', type: 'idle', outcome: 'succeeded', time: { created: 24 } },
       );
       // Native 2.2.2 can mark busy before promoting the admitted user message.
       f.setStatus({ outcome: 'succeeded', time: { created: 1, updated: 24, busy: 19, idle: 24 } });

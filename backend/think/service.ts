@@ -1041,23 +1041,21 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (!await verifyIdentity(controller)) break;
           if (state.generation !== generation) continue;
           if (closed || deleting.has(conversationId) || identityChanged || monitor !== monitored || !monitor?.healthy || monitored.generation !== monitorGeneration || activeRuns.get(conversationId) !== runId) break;
-          // Only a successful read can replace its channel's facts; unrelated failures retain them.
-          if (active) {
-            if (active[sessionID] || restoredOwners.has(conversationId) && ((session && nativeBusy(session)) || (inbox?.length ?? 0) > 0)) activeSessions.add(conversationId);
-            else activeSessions.delete(conversationId);
-            refreshEligibility(conversationId);
-          }
-          if (restoredOwners.has(conversationId)) {
-            if (session && active && inbox) activityUnknown.delete(conversationId); else activityUnknown.add(conversationId);
-            refreshEligibility(conversationId);
-          }
+          // Positive observations survive failed siblings. Clear activity only after all
+          // applicable channels succeed, including the inbox for restored ownership.
+          const activityReadComplete = !!session && !!active && (!restoredOwners.has(conversationId) || !!inbox);
+          if (active?.[sessionID] || session && nativeBusy(session) || (inbox?.length ?? 0) > 0) activeSessions.add(conversationId);
+          else if (activityReadComplete) activeSessions.delete(conversationId);
+          if (activityReadComplete) activityUnknown.delete(conversationId); else activityUnknown.add(conversationId);
+          refreshEligibility(conversationId);
           if (permissions) setPermissionPending(conversationId, permissions.data.some(permission => permission.sessionID === sessionID || childConversations.get(permission.sessionID) === conversationId));
           if (!session) break;
           let cursor: string | undefined;
           const seen = new Set<string>();
           let userTime: number | undefined;
           const observedUsers = new Set<string>();
-          let assistantTime: { created: number; completed: number; outcome: 'completed' | 'failed' } | undefined;
+          let promptTime: number | undefined;
+          let promptTerminal: 'completed' | 'failed' | 'interrupted' | undefined;
           const captured: ProjectionEntry[] = [];
           const succeededKeys = new Set<string>();
           const failedKeys = new Set<string>();
@@ -1074,13 +1072,13 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
               if (message.type === 'user') {
                 observedUsers.add(message.id);
                 userTime = message.id === promptID ? message.time.created : undefined;
-                assistantTime = undefined;
+                if (message.id === promptID) promptTime = message.time.created;
               } else if (message.type === 'synthetic') {
                 userTime = undefined;
-                assistantTime = undefined;
-              } else if (userTime !== undefined && message.type === 'assistant') {
-                assistantTime = message.time.completed !== undefined && (message.finish === 'stop' && !message.error || message.finish === 'error' && message.error)
-                  ? { created: message.time.created, completed: message.time.completed, outcome: message.error ? 'failed' : 'completed' } : undefined;
+              } else if (message.type === 'idle' && promptTime !== undefined && promptTerminal === undefined && message.time.created >= promptTime) {
+                // Native idle history closes the turn, including any steered user inputs.
+                // Retain the first terminal even if a later background turn has started.
+                promptTerminal = message.outcome === 'succeeded' ? 'completed' : message.outcome;
               }
             }
             const next = page.cursor.next;
@@ -1137,13 +1135,8 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
           if (runId && receipt?.kind === 'send' && dispatchedRuns.has(runId) &&
               (receipt.state === 'registered' || receipt.state === 'admitted' || receipt.state === 'upstream-unconfirmed') && matches(session, sessionID, conversationId) &&
               (!restoredOwners.has(conversationId) || inbox?.every(item => item.id !== promptID)) &&
-              active && !active[sessionID] && userTime !== undefined &&
-              session.time.busy !== undefined && session.time.idle !== undefined && userTime <= session.time.idle &&
-              session.time.idle >= session.time.busy) {
-            const assistantCorrelated = assistantTime && assistantTime.created >= userTime && assistantTime.created >= session.time.busy && assistantTime.completed <= session.time.idle;
-            terminal = session.outcome === 'interrupted' ? 'interrupted'
-              : session.outcome === 'succeeded' && assistantCorrelated && assistantTime?.outcome === 'completed' ? 'completed'
-              : session.outcome === 'failed' && assistantCorrelated && assistantTime?.outcome === 'failed' ? 'failed' : undefined;
+              promptTerminal) {
+            terminal = promptTerminal;
             if (terminal) {
               settleSend(receipt, terminal);
               serverLogger.log('think_run_reconciled', { outcome: terminal });
